@@ -11,3 +11,8 @@ COPY --from=livepeerci/build:latest /build/livepeer_router /usr/bin/livepeer_rou
 COPY --from=livepeerci/build:latest /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
 
 COPY --from=livepeerci/build:latest /build/tasmodel.pb /tasmodel.pb
+
+# libtensorflow shared libraries are in /usr/local
+COPY --from=livepeerci/build:latest /usr/local /usr/local
+# Configure linker
+RUN ldconfig
