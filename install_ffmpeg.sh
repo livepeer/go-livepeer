@@ -111,7 +111,7 @@ else
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
 
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-libtensorflow --enable-filter=lvpdnn"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-libtensorflow --enable-filter=lvpdnn --enable-filter=sr"
   fi
 fi
 
