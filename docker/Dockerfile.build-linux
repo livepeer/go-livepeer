@@ -25,3 +25,5 @@ RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
 ENV GOPATH /go
 RUN mkdir -p /go
 WORKDIR /build
+
+RUN curl -LO https://storage.googleapis.com/lp_testharness_assets/tasmodel.pb
