@@ -71,4 +71,4 @@ require (
 	pgregory.net/rapid v0.4.0
 )
 
-replace github.com/livepeer/lpms => /home/darkapex/go/src/github.com/livepeer/lpms
+replace github.com/livepeer/lpms => github.com/livepeer/lpms v0.0.0-20210608221704-9ceb55e4d76f
