@@ -271,11 +271,11 @@ func main() {
 			if *sceneClassification {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = fmt.Sprintf("%s/%s", core.WorkDir, ffmpeg.DSceneAdultSoccer.ModelPath)
-				err = ffmpeg.InitFFmpegWithDetectProfile(&detectorProfile, strings.Join(devices, ","))
+				err = ffmpeg.InitFFmpegWithDetectorProfile(&detectorProfile, strings.Join(devices, ","))
 				if err != nil {
 					glog.Fatalf("Could not initialize detector profiles")
 				}
-				defer ffmpeg.ReleaseFFmpeg()
+				defer ffmpeg.ReleaseFFmpegDetectorProfile()
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
