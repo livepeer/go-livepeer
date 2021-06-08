@@ -84,9 +84,9 @@ func main() {
 		},
 	}
 	t := time.Now()
-	err = ffmpeg.InitFFmpegWithDetectProfile(detectionOpts.Detector, *nvidia)
+	err = ffmpeg.InitFFmpegWithDetectorProfile(detectionOpts.Detector, *nvidia)
 	end := time.Now()
-	defer ffmpeg.ReleaseFFmpeg()
+	defer ffmpeg.ReleaseFFmpegDetectorProfile()
 	if err != nil {
 		glog.Fatalf("Could not initializ DNN engine!")
 	}
