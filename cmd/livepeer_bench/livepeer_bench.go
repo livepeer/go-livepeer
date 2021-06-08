@@ -72,8 +72,26 @@ func main() {
 			glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
 		}
 	}
+	detectionOpts := ffmpeg.TranscodeOptions{
+		Accel:        accel,
+		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		Detector: &ffmpeg.SceneClassificationProfile{
+			SampleRate: *detectionSampleRate,
+			ModelPath:  fmt.Sprintf("%s/%s", "/home/darkapex/.lpData/offchain", ffmpeg.DSceneAdultSoccer.ModelPath),
+			Input:      ffmpeg.DSceneAdultSoccer.Input,
+			Output:     ffmpeg.DSceneAdultSoccer.Output,
+			Classes:    ffmpeg.DSceneAdultSoccer.Classes,
+		},
+	}
+	t := time.Now()
+	err = ffmpeg.InitFFmpegWithDetectProfile(detectionOpts.Detector, *nvidia)
+	end := time.Now()
+	defer ffmpeg.ReleaseFFmpeg()
+	if err != nil {
+		glog.Fatalf("Could not initializ DNN engine!")
+	}
+	fmt.Printf("InitFFmpegWithDetectProfile time %0.4v\n", end.Sub(t).Seconds())
 
-	ffmpeg.InitFFmpeg()
 	var wg sync.WaitGroup
 	dir := path.Dir(*in)
 
@@ -150,17 +168,7 @@ func main() {
 					}
 					// add detector profile if freq > 0
 					if *detectionFreq > 0 && j%*detectionFreq == 0 {
-						opts = append(opts, ffmpeg.TranscodeOptions{
-							Accel:        accel,
-							AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-							Detector: &ffmpeg.SceneClassificationProfile{
-								SampleRate: *detectionSampleRate,
-								ModelPath:  fmt.Sprintf("%s/%s", "/home/darkapex/.lpData/offchain", ffmpeg.DSceneAdultSoccer.ModelPath),
-								Input:      ffmpeg.DSceneAdultSoccer.Input,
-								Output:     ffmpeg.DSceneAdultSoccer.Output,
-								Classes:    ffmpeg.DSceneAdultSoccer.Classes,
-							},
-						})
+						opts = append(opts, detectionOpts)
 					}
 					return opts
 				}
