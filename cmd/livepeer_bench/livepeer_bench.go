@@ -107,11 +107,11 @@ func main() {
 		},
 	}
 	if *detectionFreq > 0 {
-		err = ffmpeg.InitFFmpegWithDetectProfile(detectionOpts.Detector, *nvidia)
+		err = ffmpeg.InitFFmpegWithDetectorProfile(detectionOpts.Detector, *nvidia)
 		if err != nil {
 			glog.Fatalf("Could not initialize detector profiles")
 		}
-		defer ffmpeg.ReleaseFFmpeg()
+		defer ffmpeg.ReleaseFFmpegDetectorProfile()
 		fmt.Println("timestamp,session,segment,seg_dur,transcode_time,detect_data")
 	} else {
 		ffmpeg.InitFFmpeg()
