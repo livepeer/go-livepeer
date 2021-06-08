@@ -105,6 +105,7 @@ func main() {
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
+	sceneClassification := flag.Bool("sceneClassification", false, "Enable scene classification")
 
 	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -267,13 +268,15 @@ func main() {
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection model for the whole node
-			detectorProfile := ffmpeg.DSceneAdultSoccer
-			detectorProfile.ModelPath = fmt.Sprintf("%s/%s", core.WorkDir, ffmpeg.DSceneAdultSoccer.ModelPath)
-			err = ffmpeg.InitFFmpegWithDetectProfile(&detectorProfile, strings.Join(devices, ","))
-			if err != nil {
-				glog.Fatalf("Could not initialize detector profiles")
+			if *sceneClassification {
+				detectorProfile := ffmpeg.DSceneAdultSoccer
+				detectorProfile.ModelPath = fmt.Sprintf("%s/%s", core.WorkDir, ffmpeg.DSceneAdultSoccer.ModelPath)
+				err = ffmpeg.InitFFmpegWithDetectProfile(&detectorProfile, strings.Join(devices, ","))
+				if err != nil {
+					glog.Fatalf("Could not initialize detector profiles")
+				}
+				defer ffmpeg.ReleaseFFmpeg()
 			}
-			defer ffmpeg.ReleaseFFmpeg()
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
 		} else {
