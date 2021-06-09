@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"math"
 	"math/big"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -569,15 +568,20 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				glog.Errorf("Unable to marshal detection result into JSON manifestID=%v seqNo=%v", mid, seqNo)
 				return
 			}
-			resp, err := http.Post(DetectionWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+			resp, err := DetectionWhClient.Post(DetectionWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
 			if err != nil {
-				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v",
-					DetectionWebhookURL, mid, seqNo)
+				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v, err=%v",
+					DetectionWebhookURL, mid, seqNo, err)
 			} else if resp.StatusCode != 200 {
-				rbody, _ := ioutil.ReadAll(resp.Body)
+				rbody, rerr := ioutil.ReadAll(resp.Body)
 				resp.Body.Close()
-				glog.Errorf("Detection webhook returned error status=%v err=%v manifestID=%v seqNo=%v",
-					resp.StatusCode, string(rbody), mid, seqNo)
+				if rerr != nil {
+					glog.Errorf("Detection webhook returned error status=%v manifestID=%v seqNo=%v with unreadable body err=%v",
+						resp.StatusCode, mid, seqNo, rerr)
+				} else {
+					glog.Errorf("Detection webhook returned error status=%v err=%v manifestID=%v seqNo=%v",
+						resp.StatusCode, string(rbody), mid, seqNo)
+				}
 			}
 		}(cxn.mid, seg.SeqNo, res.Detections)
 	}
