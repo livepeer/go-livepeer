@@ -216,7 +216,7 @@ func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, prof
 		switch profiles[i].Type() {
 		case ffmpeg.SceneClassification:
 			classifier := profiles[i].(*ffmpeg.SceneClassificationProfile)
-			classifier.ModelPath = fmt.Sprintf("%s/%s", workDir, ffmpeg.DSceneAdultSoccer.ModelPath)
+			classifier.ModelPath = ffmpeg.DSceneAdultSoccer.ModelPath
 			classifier.Input = ffmpeg.DSceneAdultSoccer.Input
 			classifier.Output = ffmpeg.DSceneAdultSoccer.Output
 			glog.Warningf("!====    Here's the detector profile: %v", *classifier)
