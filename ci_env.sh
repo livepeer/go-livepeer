@@ -48,4 +48,11 @@ if [[ $HIGHEST_CHAIN_TAG != "mainnet" ]]; then
   fi
 fi
 
+export BUILD_TAGS="$HIGHEST_CHAIN_TAG"
+
+# Only build with experimental tag for non-semver tagged releases
+if [[ $generatedVersion != $definedVersion ]]; then
+  export BUILD_TAGS="${BUILD_TAGS},experimental"
+fi
+
 exec "$@"
