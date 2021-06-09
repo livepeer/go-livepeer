@@ -62,6 +62,7 @@ var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmp
 
 var AuthWebhookURL string
 var DetectionWebhookURL string
+var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
 // For HTTP push watchdog
 var httpPushTimeout = 1 * time.Minute
