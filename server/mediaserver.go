@@ -419,6 +419,8 @@ func jsonDetectionToDetectionConfig(resp *authWebhookResponse) core.DetectionCon
 				Name: class.Name,
 			})
 	}
+	glog.V(common.DEBUG).Infof("Parsed scene classification config from webhook %v with freq=%v",
+		sceneClassification, resp.Detection.Freq)
 	detection := core.DetectionConfig{
 		Freq:     resp.Detection.Freq,
 		Profiles: []ffmpeg.DetectorProfile{&sceneClassification},
