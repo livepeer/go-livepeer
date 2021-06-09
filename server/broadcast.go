@@ -549,6 +549,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 
 	// [EXPERIMENTAL] send content detection results to callback webhook
 	if DetectionWebhookURL != "" && len(res.Detections) > 0 {
+		glog.V(common.DEBUG).Infof("Got detection result %v", res.Detections)
 		go func(mid core.ManifestID, seqNo uint64, detections []*net.DetectData) {
 			type DetectionWebhookRequest struct {
 				ManifestID          core.ManifestID               `json:"manifestID"`
