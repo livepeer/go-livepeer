@@ -41,6 +41,10 @@ func (s *stubGasPriceOracle) Queries() int {
 	return s.queries
 }
 
+func (s *stubGasPriceOracle) GasPrice() *big.Int {
+	return s.gasPrice
+}
+
 func (s *stubGasPriceOracle) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

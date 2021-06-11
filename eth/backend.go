@@ -51,12 +51,13 @@ type backend struct {
 	abiMap       map[string]*abi.ABI
 	nonceManager *NonceManager
 	signer       types.Signer
+	gpm          *GasPriceMonitor
 
 	sync.RWMutex
 	maxGasPrice *big.Int
 }
 
-func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) {
+func NewBackend(client *ethclient.Client, signer types.Signer, gpm *GasPriceMonitor) (Backend, error) {
 	abiMap, err := makeABIMap()
 	if err != nil {
 		return nil, err
@@ -67,6 +68,7 @@ func NewBackend(client *ethclient.Client, signer types.Signer) (Backend, error) 
 		abiMap:       abiMap,
 		nonceManager: NewNonceManager(client),
 		signer:       signer,
+		gpm:          gpm,
 	}, nil
 }
 
@@ -107,10 +109,9 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 }
 
 func (b *backend) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
-	gp, err := b.Client.SuggestGasPrice(ctx)
-	if err != nil {
-		return nil, err
-	}
+
+	// Use the gas price monitor instead of the ethereum client to suggest a gas price
+	gp := b.gpm.GasPrice()
 
 	if b.maxGasPrice != nil && gp.Cmp(b.maxGasPrice) > 0 {
 		return nil, fmt.Errorf("current gas price exceeds maximum gas price max=%v GWei current=%v GWei",

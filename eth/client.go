@@ -148,7 +148,7 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth *ethclient.Client, controllerAddr ethcommon.Address, txTimeout time.Duration, maxGasPrice *big.Int) (LivepeerEthClient, error) {
+func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth *ethclient.Client, gpm *GasPriceMonitor, controllerAddr ethcommon.Address, txTimeout time.Duration, maxGasPrice *big.Int) (LivepeerEthClient, error) {
 	chainID, err := eth.ChainID(context.Background())
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth 
 
 	signer := types.NewEIP155Signer(chainID)
 
-	backend, err := NewBackend(eth, signer)
+	backend, err := NewBackend(eth, signer, gpm)
 	if err != nil {
 		return nil, err
 	}

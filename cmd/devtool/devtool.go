@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -159,7 +160,16 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	glog.Infof("Using controller address %s", ethController)
 
-	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend,
+	gpm := eth.NewGasPriceMonitor(backend, 5*time.Second, big.NewInt(0))
+	// Start gas price monitor
+	_, err = gpm.Start(context.Background())
+	if err != nil {
+		glog.Errorf("error starting gas price monitor: %v", err)
+		return
+	}
+	defer gpm.Stop()
+
+	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend, gpm,
 		ethcommon.HexToAddress(ethController), ethTxTimeout, nil)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)

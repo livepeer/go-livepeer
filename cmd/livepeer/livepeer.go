@@ -380,7 +380,16 @@ func main() {
 			bigMaxGasPrice = big.NewInt(int64(*maxGasPrice))
 		}
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, *ethPassword, backend, ethcommon.HexToAddress(*ethController), EthTxTimeout, bigMaxGasPrice)
+		gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, minGasPrice)
+		// Start gas price monitor
+		_, err = gpm.Start(ctx)
+		if err != nil {
+			glog.Errorf("Error starting gas price monitor: %v", err)
+			return
+		}
+		defer gpm.Stop()
+
+		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, *ethPassword, backend, gpm, ethcommon.HexToAddress(*ethController), EthTxTimeout, bigMaxGasPrice)
 		if err != nil {
 			glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
 			return
@@ -537,14 +546,6 @@ func main() {
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
-			gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, minGasPrice)
-			// Start gas price monitor
-			_, err := gpm.Start(ctx)
-			if err != nil {
-				glog.Errorf("error starting gas price monitor: %v", err)
-				return
-			}
-			defer gpm.Stop()
 
 			var sm pm.SenderMonitor
 			if *redeemerAddr != "" {
