@@ -121,14 +121,11 @@ type authWebhookResponse struct {
 	PreviousSessions []string `json:"previousSessions"`
 	Detection        struct {
 		// Run detection on 1/freq segments
-		Freq                       uint `json:"freq"`
-		SceneClassificationProfile struct {
-			SampleRate uint `json:"sampleRate"`
-			Classes    []struct {
-				ID   int    `json:"id"`
-				Name string `json:"name"`
-			} `json:"classes"`
-		} `json:"sceneClassificationProfile"`
+		Freq                uint `json:"freq"`
+		SampleRate          uint `json:"sampleRate"`
+		SceneClassification []struct {
+			Name string `json:"name"`
+		} `json:"sceneClassification"`
 	} `json:"detection"`
 }
 
@@ -277,7 +274,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			// set Detection profile if provided
 			if resp.Detection.Freq != 0 {
-				detectionConfig = jsonDetectionToDetectionConfig(resp)
+				detectionConfig, err = jsonDetectionToDetectionConfig(resp)
+				if err != nil {
+					glog.Errorf("Failed to parse detection config from JSON for streamID url=%s err=%v", url.String(), err)
+					return nil
+				}
 			}
 		} else {
 			profiles = BroadcastJobVideoProfiles
@@ -407,25 +408,30 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 	return profiles, nil
 }
 
-func jsonDetectionToDetectionConfig(resp *authWebhookResponse) core.DetectionConfig {
-	sceneClassification := ffmpeg.SceneClassificationProfile{
-		SampleRate: resp.Detection.SceneClassificationProfile.SampleRate,
-		Classes:    []ffmpeg.DetectorClass{},
-	}
-	for _, class := range resp.Detection.SceneClassificationProfile.Classes {
-		sceneClassification.Classes = append(sceneClassification.Classes,
-			ffmpeg.DetectorClass{
-				ID:   class.ID,
-				Name: class.Name,
-			})
-	}
-	glog.V(common.DEBUG).Infof("Parsed scene classification config from webhook %v with freq=%v",
-		sceneClassification, resp.Detection.Freq)
+func jsonDetectionToDetectionConfig(resp *authWebhookResponse) (core.DetectionConfig, error) {
 	detection := core.DetectionConfig{
-		Freq:     resp.Detection.Freq,
-		Profiles: []ffmpeg.DetectorProfile{&sceneClassification},
+		Freq:               resp.Detection.Freq,
+		SelectedClassNames: []string{},
+		Profiles:           []ffmpeg.DetectorProfile{},
 	}
-	return detection
+	modelPaths := make(map[string]bool)
+	for _, class := range resp.Detection.SceneClassification {
+		c, ok := ffmpeg.SceneClassificationProfileLookup[class.Name]
+		if !ok {
+			return detection, errors.New("No detector found for class: " + class.Name)
+		}
+		detection.SelectedClassNames = append(detection.SelectedClassNames, class.Name)
+		if _, ok := modelPaths[c.ModelPath]; ok {
+			// Skip this profile because we already have a profile with a model that covers this class
+			continue
+		}
+		modelPaths[c.ModelPath] = true
+		c.SampleRate = resp.Detection.SampleRate
+		detection.Profiles = append(detection.Profiles, &c)
+	}
+	glog.V(common.DEBUG).Infof("Configuring detection for classes=%v with segment freq=%v and frame sampleRate=%v",
+		detection.SelectedClassNames, detection.Freq, resp.Detection.SampleRate)
+	return detection, nil
 }
 
 func streamParams(d stream.AppData) *core.StreamParameters {
