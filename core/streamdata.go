@@ -23,8 +23,9 @@ const (
 )
 
 type DetectionConfig struct {
-	Freq     uint
-	Profiles []ffmpeg.DetectorProfile
+	Freq               uint
+	SelectedClassNames []string
+	Profiles           []ffmpeg.DetectorProfile
 }
 
 type StreamParameters struct {
