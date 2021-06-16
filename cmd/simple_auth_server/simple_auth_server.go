@@ -17,19 +17,14 @@ type authWebhookReq struct {
 	Url string `json:"url"`
 }
 
-type detectClass struct {
-	ID   int    `json:"id"`
-	Name string `json: "name"`
-}
-
 type sceneClassificationProfile struct {
-	SampleRate uint          `json:"sampleRate"`
-	Classes    []detectClass `json:"classes"`
+	Name string `json:"name"`
 }
 
 type detection struct {
-	Freq                       uint                       `json:"freq"`
-	SceneClassificationProfile sceneClassificationProfile `json:"sceneClassificationProfile"`
+	Freq                       uint                         `json:"freq"`
+	SampleRate                 uint                         `json:"sampleRate"`
+	SceneClassificationProfile []sceneClassificationProfile `json:"sceneClassification"`
 }
 
 type profile struct {
@@ -83,13 +78,11 @@ func main() {
 				FPS:     0,
 			}},
 			Detection: detection{
-				Freq: 4,
-				SceneClassificationProfile: sceneClassificationProfile{
-					SampleRate: 1,
-					Classes: []detectClass{
-						{ID: 0, Name: "adult"},
-						{ID: 1, Name: "soccer"},
-					},
+				Freq:       4,
+				SampleRate: 1,
+				SceneClassificationProfile: []sceneClassificationProfile{
+					{Name: "adult"},
+					{Name: "soccer"},
 				},
 			},
 		}
