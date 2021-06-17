@@ -267,17 +267,11 @@ message TranscodedSegmentData {
     int64 pixels = 2;
 }
 
-// Fraction data structure
-message Fraction {
-  uint32 num = 1;
-  uint32 denom = 2;
-}
-
 // [EXPERIMENTAL]
 // Describes scene classification results
 message SceneClassificationData {
   // Probability that the segment is detected as a particular classID (uint32)
-  map<uint32, Fraction> class_probs = 1;
+  map<uint32, double> class_probs = 1;
 }
 
 // [EXPERIMENTAL]

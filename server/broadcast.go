@@ -553,7 +553,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
 			type SceneClassificationResult struct {
 				Name        string  `json:"name"`
-				Probability float32 `json:"probability"`
+				Probability float64 `json:"probability"`
 			}
 			type DetectionWebhookRequest struct {
 				ManifestID          core.ManifestID             `json:"manifestID"`
@@ -572,7 +572,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 								req.SceneClassification = append(req.SceneClassification,
 									SceneClassificationResult{
 										Name:        name,
-										Probability: float32(prob.Num) / float32(prob.Denom),
+										Probability: prob,
 									})
 							}
 						}
