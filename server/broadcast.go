@@ -550,18 +550,33 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	// [EXPERIMENTAL] send content detection results to callback webhook
 	if DetectionWebhookURL != "" && len(res.Detections) > 0 {
 		glog.V(common.DEBUG).Infof("Got detection result %v", res.Detections)
-		go func(mid core.ManifestID, seqNo uint64, detections []*net.DetectData) {
+		go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
+			type SceneClassificationResult struct {
+				Name        string  `json:"name"`
+				Probability float32 `json:"probability"`
+			}
 			type DetectionWebhookRequest struct {
-				ManifestID          core.ManifestID               `json:"manifestID"`
-				SeqNo               uint64                        `json:"seqNo"`
-				SceneClassification []net.SceneClassificationData `json:"sceneClassification"`
+				ManifestID          core.ManifestID             `json:"manifestID"`
+				SeqNo               uint64                      `json:"seqNo"`
+				SceneClassification []SceneClassificationResult `json:"sceneClassification"`
 			}
 			req := DetectionWebhookRequest{ManifestID: mid, SeqNo: seqNo}
 			for _, detection := range detections {
 				switch x := detection.Value.(type) {
 				case *net.DetectData_SceneClassification:
-					data := x.SceneClassification
-					req.SceneClassification = append(req.SceneClassification, *data)
+					probs := x.SceneClassification.ClassProbs
+					// match returned probs (key: class id) with one of the user-selected class names
+					for _, name := range config.SelectedClassNames {
+						if id, ok := ffmpeg.DetectorClassIDLookup[name]; ok {
+							if prob, ok := probs[uint32(id)]; ok {
+								req.SceneClassification = append(req.SceneClassification,
+									SceneClassificationResult{
+										Name:        name,
+										Probability: float32(prob.Num) / float32(prob.Denom),
+									})
+							}
+						}
+					}
 				}
 			}
 			jsonValue, err := json.Marshal(req)
@@ -584,7 +599,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 						resp.StatusCode, string(rbody), mid, seqNo)
 				}
 			}
-		}(cxn.mid, seg.SeqNo, res.Detections)
+		}(cxn.mid, cxn.params.Detection, seg.SeqNo, res.Detections)
 	}
 
 	var dlErr error
