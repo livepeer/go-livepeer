@@ -393,7 +393,17 @@ func main() {
 		}
 		defer gpm.Stop()
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, *ethPassword, backend, gpm, ethcommon.HexToAddress(*ethController), EthTxTimeout, bigMaxGasPrice)
+		ethCfg := eth.LivepeerEthClientConfig{
+			AccountAddr:         ethcommon.HexToAddress(*ethAcctAddr),
+			KeystoreDir:         keystoreDir,
+			Password:            *ethPassword,
+			ControllerAddr:      ethcommon.HexToAddress(*ethController),
+			TxTimeout:           EthTxTimeout,
+			MaxGasPrice:         bigMaxGasPrice,
+			ReplaceTransactions: *replaceTx,
+		}
+
+		client, err := eth.NewClient(backend, gpm, ethCfg)
 		if err != nil {
 			glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
 			return

@@ -161,6 +161,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	glog.Infof("Using controller address %s", ethController)
 
 	gpm := eth.NewGasPriceMonitor(backend, 5*time.Second, big.NewInt(0))
+
 	// Start gas price monitor
 	_, err = gpm.Start(context.Background())
 	if err != nil {
@@ -169,8 +170,17 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	defer gpm.Stop()
 
-	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend, gpm,
-		ethcommon.HexToAddress(ethController), ethTxTimeout, nil)
+	clientCfg := eth.LivepeerEthClientConfig{
+		AccountAddr:         ethcommon.HexToAddress(ethAcctAddr),
+		KeystoreDir:         keystoreDir,
+		Password:            passphrase,
+		ControllerAddr:      ethcommon.HexToAddress(ethController),
+		TxTimeout:           ethTxTimeout,
+		MaxGasPrice:         nil,
+		ReplaceTransactions: false,
+	}
+
+	client, err := eth.NewClient(backend, gpm, clientCfg)
 	if err != nil {
 		glog.Errorf("Failed to create client: %v", err)
 		return

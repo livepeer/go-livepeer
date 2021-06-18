@@ -17,10 +17,8 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
-	"strings"
 	"time"
 
-	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -113,7 +111,6 @@ type LivepeerEthClient interface {
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
-	ReplaceTransaction(*types.Transaction, string, *big.Int) (*types.Transaction, error)
 	Sign([]byte) ([]byte, error)
 	SetGasInfo(uint64) error
 }
@@ -148,7 +145,17 @@ type client struct {
 	txTimeout time.Duration
 }
 
-func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth *ethclient.Client, gpm *GasPriceMonitor, controllerAddr ethcommon.Address, txTimeout time.Duration, maxGasPrice *big.Int) (LivepeerEthClient, error) {
+type LivepeerEthClientConfig struct {
+	AccountAddr         ethcommon.Address
+	KeystoreDir         string
+	Password            string
+	ControllerAddr      ethcommon.Address
+	TxTimeout           time.Duration
+	MaxGasPrice         *big.Int
+	ReplaceTransactions bool
+}
+
+func NewClient(eth *ethclient.Client, gpm *GasPriceMonitor, cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
 	chainID, err := eth.ChainID(context.Background())
 	if err != nil {
 		return nil, err
@@ -156,26 +163,24 @@ func NewClient(accountAddr ethcommon.Address, keystoreDir, password string, eth 
 
 	signer := types.NewEIP155Signer(chainID)
 
-	backend, err := NewBackend(eth, signer, gpm)
-	if err != nil {
-		return nil, err
-	}
-	backend.SetMaxGasPrice(maxGasPrice)
-
-	am, err := NewAccountManager(accountAddr, keystoreDir, signer)
+	am, err := NewAccountManager(cfg.AccountAddr, cfg.KeystoreDir, signer)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := am.Unlock(password); err != nil {
+	tm := NewTransactionManager(eth, gpm, am, cfg.TxTimeout, true)
+
+	backend := NewBackend(eth, signer, gpm, tm)
+
+	if err := am.Unlock(cfg.Password); err != nil {
 		return nil, err
 	}
 
 	return &client{
 		accountManager: am,
 		backend:        backend,
-		controllerAddr: controllerAddr,
-		txTimeout:      txTimeout,
+		controllerAddr: cfg.ControllerAddr,
+		txTimeout:      cfg.TxTimeout,
 	}, nil
 }
 
