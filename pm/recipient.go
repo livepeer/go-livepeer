@@ -24,6 +24,8 @@ var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewI
 var paramsExpirationBlock = big.NewInt(10)
 var paramsExpiryBuffer = int64(1)
 
+var evMultiplier = big.NewInt(100)
+
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -229,14 +231,8 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// faceValue = txCost * txCostMultiplier
 	faceValue := new(big.Int).Mul(r.txCost(), big.NewInt(int64(r.cfg.TxCostMultiplier)))
 
-	// TODO: Consider setting faceValue to some value higher than
-	// EV in this case where the default faceValue < the desired EV.
-	// At the moment, for simplicity we just adjust faceValue to the
-	// desired EV in this case (which would result in winProb = 100%).
-	// In practice, EV should be smaller than the default faceValue
-	// so this shouldn't be a problem in most cases
 	if faceValue.Cmp(r.cfg.EV) < 0 {
-		faceValue = r.cfg.EV
+		faceValue = new(big.Int).Mul(r.cfg.EV, evMultiplier)
 	}
 
 	// Fetch current max float for sender
