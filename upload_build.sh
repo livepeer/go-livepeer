@@ -11,6 +11,9 @@ if [[ $(uname) == *"MSYS"* ]]; then
 else
   ARCH=$(uname | tr '[:upper:]' '[:lower:]')
   EXT=""
+  if [[ -n "${RELEASE_TAG:-}" ]]; then
+      ARCH="$ARCH-$RELEASE_TAG"
+  fi
 fi
 
 BASE="livepeer-$ARCH-amd64"
