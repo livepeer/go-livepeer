@@ -111,14 +111,14 @@ else
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
 
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-libtensorflow --enable-filter=lvpdnn --enable-filter=sr"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc --enable-libtensorflow --enable-filter=lvpdnn"
   fi
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/oscar-davids/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 81877502c2e4d2ee955f1950d84fae4fa4aa7f68
+  git checkout a10074df762e38ea40dc709897f6a76573e08f9b
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
