@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.1-base
+FROM nvidia/cuda:10.1-cudnn7-runtime
 
 ENTRYPOINT ["/usr/bin/livepeer"]
 
@@ -9,3 +9,10 @@ COPY --from=livepeerci/build:latest /build/livepeer /usr/bin/livepeer
 COPY --from=livepeerci/build:latest /build/livepeer_cli /usr/bin/livepeer_cli
 COPY --from=livepeerci/build:latest /build/livepeer_router /usr/bin/livepeer_router
 COPY --from=livepeerci/build:latest /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
+
+COPY --from=livepeerci/build:latest /build/tasmodel.pb /tasmodel.pb
+
+# libtensorflow shared libraries are in /usr/local
+COPY --from=livepeerci/build:latest /usr/local /usr/local
+# Configure linker
+RUN ldconfig

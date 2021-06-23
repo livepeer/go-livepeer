@@ -61,6 +61,8 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL string
+var DetectionWebhookURL string
+var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
 // For HTTP push watchdog
 var httpPushTimeout = 1 * time.Minute
@@ -117,6 +119,14 @@ type authWebhookResponse struct {
 		GOP     string `json:"gop"`
 	} `json:"profiles"`
 	PreviousSessions []string `json:"previousSessions"`
+	Detection        struct {
+		// Run detection on 1/freq segments
+		Freq                uint `json:"freq"`
+		SampleRate          uint `json:"sampleRate"`
+		SceneClassification []struct {
+			Name string `json:"name"`
+		} `json:"sceneClassification"`
+	} `json:"detection"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -221,6 +231,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var os, ros drivers.OSDriver
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
+		detectionConfig := core.DetectionConfig{}
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Errorf("Authentication denied for streamID url=%s err=%v", url.String(), err)
 			return nil
@@ -257,6 +268,15 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
 				if err != nil {
 					glog.Errorf("Failed to parse recording object store url for streamID url=%s err=%v", url.String(), err)
+					return nil
+				}
+			}
+
+			// set Detection profile if provided
+			if resp.Detection.Freq != 0 {
+				detectionConfig, err = jsonDetectionToDetectionConfig(resp)
+				if err != nil {
+					glog.Errorf("Failed to parse detection config from JSON for streamID url=%s err=%v", url.String(), err)
 					return nil
 				}
 			}
@@ -298,9 +318,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			ManifestID: mid,
 			RtmpKey:    key,
 			// HTTP push mutates `profiles` so make a copy of it
-			Profiles: append([]ffmpeg.VideoProfile(nil), profiles...),
-			OS:       oss,
-			RecordOS: ross,
+			Profiles:  append([]ffmpeg.VideoProfile(nil), profiles...),
+			OS:        oss,
+			RecordOS:  ross,
+			Detection: detectionConfig,
 		}
 	}
 }
@@ -385,6 +406,32 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 		profiles = append(profiles, prof)
 	}
 	return profiles, nil
+}
+
+func jsonDetectionToDetectionConfig(resp *authWebhookResponse) (core.DetectionConfig, error) {
+	detection := core.DetectionConfig{
+		Freq:               resp.Detection.Freq,
+		SelectedClassNames: []string{},
+		Profiles:           []ffmpeg.DetectorProfile{},
+	}
+	modelPaths := make(map[string]bool)
+	for _, class := range resp.Detection.SceneClassification {
+		c, ok := ffmpeg.SceneClassificationProfileLookup[class.Name]
+		if !ok {
+			return detection, errors.New("No detector found for class: " + class.Name)
+		}
+		detection.SelectedClassNames = append(detection.SelectedClassNames, class.Name)
+		if _, ok := modelPaths[c.ModelPath]; ok {
+			// Skip this profile because we already have a profile with a model that covers this class
+			continue
+		}
+		modelPaths[c.ModelPath] = true
+		c.SampleRate = resp.Detection.SampleRate
+		detection.Profiles = append(detection.Profiles, &c)
+	}
+	glog.V(common.DEBUG).Infof("Configuring detection for classes=%v with segment freq=%v and frame sampleRate=%v",
+		detection.SelectedClassNames, detection.Freq, resp.Detection.SampleRate)
+	return detection, nil
 }
 
 func streamParams(d stream.AppData) *core.StreamParameters {

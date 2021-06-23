@@ -17,6 +17,33 @@ type authWebhookReq struct {
 	Url string `json:"url"`
 }
 
+type sceneClassificationProfile struct {
+	Name string `json:"name"`
+}
+
+type detection struct {
+	Freq                       uint                         `json:"freq"`
+	SampleRate                 uint                         `json:"sampleRate"`
+	SceneClassificationProfile []sceneClassificationProfile `json:"sceneClassification"`
+}
+
+type profile struct {
+	Name    string `json:"name"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bitrate int    `json:"bitrate"`
+	FPS     uint   `json:"fps"`
+	FPSDen  uint   `json:"fpsDen"`
+	Profile string `json:"profile"`
+	GOP     string `json:"gop"`
+}
+
+type authWebhookResponse struct {
+	ManifestID string    `json:"manifestID"`
+	Profiles   []profile `json:"profiles"`
+	Detection  detection `json:"detection"`
+}
+
 func main() {
 	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
@@ -40,7 +67,27 @@ func main() {
 			fmt.Printf("Detected \"fizz\" as manifestID. Crazy! Renaming to \"buzz\".\n")
 		}
 		fmt.Printf("Stream started with manifestID: %v\n", mid)
-		w.Write([]byte(fmt.Sprintf("{\"ManifestID\":\"%v\"}", mid)))
+
+		resp := authWebhookResponse{
+			ManifestID: string(mid),
+			Profiles: []profile{{
+				Name:    "240p",
+				Width:   426,
+				Height:  240,
+				Bitrate: 250000,
+				FPS:     0,
+			}},
+			Detection: detection{
+				Freq:       4,
+				SampleRate: 1,
+				SceneClassificationProfile: []sceneClassificationProfile{
+					{Name: "adult"},
+					{Name: "soccer"},
+				},
+			},
+		}
+		byteSlice, _ := json.Marshal(resp)
+		w.Write(byteSlice)
 	})
 
 	fmt.Println("Listening on localhost:8000/auth\nTry something crazy - stream with \"fizz\" as the manifestID.")

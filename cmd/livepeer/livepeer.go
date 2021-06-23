@@ -39,6 +39,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
@@ -66,29 +67,6 @@ var (
 const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
-
-// Add to this list as new features are added. Orchestrator only
-var defaultCapabilities = []core.Capability{
-	core.Capability_H264,
-	core.Capability_MPEGTS,
-	core.Capability_MP4,
-	core.Capability_FractionalFramerates,
-	core.Capability_StorageDirect,
-	core.Capability_StorageS3,
-	core.Capability_StorageGCS,
-	core.Capability_ProfileH264Baseline,
-	core.Capability_ProfileH264Main,
-	core.Capability_ProfileH264High,
-	core.Capability_ProfileH264ConstrainedHigh,
-	core.Capability_GOP,
-	core.Capability_AuthToken,
-}
-
-// Add to this list as certain features become mandatory. Orchestrator only
-// Use sparingly, as adding to this is a hard break with older nodes
-var mandatoryCapabilities = []core.Capability{
-	core.Capability_AuthToken,
-}
 
 func main() {
 	// Override the default flag set since there are dependencies that
@@ -127,6 +105,7 @@ func main() {
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
+	sceneClassificationModelPath := flag.String("sceneClassificationModelPath", "", "Path to scene classification model")
 
 	// Onchain:
 	ethAcctAddr := flag.String("ethAcctAddr", "", "Existing Eth account address")
@@ -169,6 +148,7 @@ func main() {
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
+	detectionWebhookURL := flag.String("detectionWebhookUrl", "", "(Experimental) Detection results callback URL")
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
@@ -286,6 +266,16 @@ func main() {
 				if err != nil {
 					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
 				}
+			}
+			// FIXME: Short-term hack to pre-load the detection model for the whole node
+			if *sceneClassificationModelPath != "" {
+				detectorProfile := ffmpeg.DSceneAdultSoccer
+				detectorProfile.ModelPath = *sceneClassificationModelPath
+				err = ffmpeg.InitFFmpegWithDetectorProfile(&detectorProfile, strings.Join(devices, ","))
+				if err != nil {
+					glog.Fatalf("Could not initialize detector profiles")
+				}
+				defer ffmpeg.ReleaseFFmpegDetectorProfile()
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder)
@@ -764,6 +754,15 @@ func main() {
 		server.AuthWebhookURL = *authWebhookURL
 	}
 
+	if *detectionWebhookURL != "" {
+		_, err := validateURL(*detectionWebhookURL)
+		if err != nil {
+			glog.Fatal("Error setting detection webhook URL ", err)
+		}
+		glog.Info("Using detection webhook URL ", *detectionWebhookURL)
+		server.DetectionWebhookURL = *detectionWebhookURL
+	}
+
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
@@ -851,7 +850,7 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		n.Capabilities = core.NewCapabilities(defaultCapabilities, mandatoryCapabilities)
+		n.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryCapabilities())
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")

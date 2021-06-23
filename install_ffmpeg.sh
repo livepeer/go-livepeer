@@ -110,14 +110,20 @@ else
   # If we have clang, we can compile with CUDA support!
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
+
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
+
+    if [[ $BUILD_TAGS == *"experimental"* ]]; then
+        echo "experimental tag detected, building with Tensorflow support"
+        EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
+    fi
   fi
 fi
 
 if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone https://github.com/livepeer/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
+  git clone https://github.com/livepeer/FFmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$HOME/ffmpeg"
-  git checkout 1fdf06e14239e1aaa9ddfb648fa374ca3cb1b269
+  git checkout b344789a31a2d806be702239d7614f7a9f51f941
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
@@ -129,7 +135,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,extract_extradata \
     --enable-parser=aac,aac_latm,h264 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat \
-    --enable-filter=aresample,asetnsamples,fps,scale \
+    --enable-filter=aresample,asetnsamples,fps,scale,lvpdnn \
     --enable-encoder=aac,libx264 \
     --enable-decoder=aac,h264 \
     --extra-cflags="-I${HOME}/compiled/include" \

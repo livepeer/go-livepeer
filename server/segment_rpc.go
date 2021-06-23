@@ -206,8 +206,9 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
-				Segments: segments,
-				Sig:      res.Sig,
+				Segments:   segments,
+				Sig:        res.Sig,
+				Detections: makeNetDetectData(res.TranscodeData.Detections),
 			}},
 		}
 	}
@@ -293,6 +294,28 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 		profiles = append(profiles, prof)
 	}
 	return profiles, nil
+}
+
+func makeNetDetectData(ffmpegDetectData []ffmpeg.DetectData) []*net.DetectData {
+	netDataList := []*net.DetectData{}
+	for _, data := range ffmpegDetectData {
+		var netData *net.DetectData
+		switch data.Type() {
+		case ffmpeg.SceneClassification:
+			d := data.(ffmpeg.SceneClassificationData)
+			netClasses := make(map[uint32]float64)
+			for classID, prob := range d {
+				netClasses[uint32(classID)] = prob
+			}
+			netData = &net.DetectData{Value: &net.DetectData_SceneClassification{
+				SceneClassification: &net.SceneClassificationData{
+					ClassProbs: netClasses,
+				},
+			}}
+		}
+		netDataList = append(netDataList, netData)
+	}
+	return netDataList
 }
 
 func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
@@ -557,18 +580,29 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		storage = bos.GetInfo()
 	}
 
+	detectorProfiles := []ffmpeg.DetectorProfile{}
+	detectorEnabled := false
+	if sess.Params.Detection.Freq != 0 {
+		detectorProfiles = sess.Params.Detection.Profiles
+		if seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
+			detectorEnabled = true
+		}
+	}
+
 	// Generate signature for relevant parts of segment
 	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
-		ManifestID: params.ManifestID,
-		Seq:        int64(seg.SeqNo),
-		Hash:       ethcommon.BytesToHash(hash),
-		Profiles:   params.Profiles,
-		OS:         storage,
-		Duration:   time.Duration(seg.Duration * float64(time.Second)),
-		Caps:       params.Capabilities,
-		AuthToken:  sess.OrchestratorInfo.GetAuthToken(),
+		ManifestID:       params.ManifestID,
+		Seq:              int64(seg.SeqNo),
+		Hash:             ethcommon.BytesToHash(hash),
+		Profiles:         params.Profiles,
+		OS:               storage,
+		Duration:         time.Duration(seg.Duration * float64(time.Second)),
+		Caps:             params.Capabilities,
+		AuthToken:        sess.OrchestratorInfo.GetAuthToken(),
+		DetectorEnabled:  detectorEnabled,
+		DetectorProfiles: detectorProfiles,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {

@@ -22,6 +22,12 @@ const (
 	DefaultManifestIDLength = 4
 )
 
+type DetectionConfig struct {
+	Freq               uint
+	SelectedClassNames []string
+	Profiles           []ffmpeg.DetectorProfile
+}
+
 type StreamParameters struct {
 	ManifestID   ManifestID
 	RtmpKey      string
@@ -31,6 +37,7 @@ type StreamParameters struct {
 	OS           drivers.OSSession
 	RecordOS     drivers.OSSession
 	Capabilities *Capabilities
+	Detection    DetectionConfig
 }
 
 func (s *StreamParameters) StreamID() string {
@@ -38,15 +45,17 @@ func (s *StreamParameters) StreamID() string {
 }
 
 type SegTranscodingMetadata struct {
-	ManifestID ManifestID
-	Fname      string
-	Seq        int64
-	Hash       ethcommon.Hash
-	Profiles   []ffmpeg.VideoProfile
-	OS         *net.OSInfo
-	Duration   time.Duration
-	Caps       *Capabilities
-	AuthToken  *net.AuthToken
+	ManifestID       ManifestID
+	Fname            string
+	Seq              int64
+	Hash             ethcommon.Hash
+	Profiles         []ffmpeg.VideoProfile
+	OS               *net.OSInfo
+	Duration         time.Duration
+	Caps             *Capabilities
+	AuthToken        *net.AuthToken
+	DetectorEnabled  bool
+	DetectorProfiles []ffmpeg.DetectorProfile
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -72,15 +81,41 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		storage = append(storage, md.OS)
 	}
 
+	detectorProfiles := []*net.DetectorProfile{}
+	for _, detector := range md.DetectorProfiles {
+		var netProfile *net.DetectorProfile
+		switch detector.Type() {
+		case ffmpeg.SceneClassification:
+			profile := detector.(*ffmpeg.SceneClassificationProfile)
+			classes := []*net.DetectorClass{}
+			for _, class := range profile.Classes {
+				classes = append(classes, &net.DetectorClass{
+					ClassId:   uint32(class.ID),
+					ClassName: class.Name,
+				})
+			}
+			netProfile = &net.DetectorProfile{
+				Value: &net.DetectorProfile_SceneClassification{
+					SceneClassification: &net.SceneClassificationProfile{
+						SampleRate: uint32(profile.SampleRate),
+						Classes:    classes,
+					},
+				},
+			}
+		}
+		detectorProfiles = append(detectorProfiles, netProfile)
+	}
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId:   []byte(md.ManifestID),
-		Seq:          md.Seq,
-		Hash:         md.Hash.Bytes(),
-		Storage:      storage,
-		Duration:     int32(md.Duration / time.Millisecond),
-		Capabilities: md.Caps.ToNetCapabilities(),
-		AuthToken:    md.AuthToken,
+		ManifestId:       []byte(md.ManifestID),
+		Seq:              md.Seq,
+		Hash:             md.Hash.Bytes(),
+		Storage:          storage,
+		Duration:         int32(md.Duration / time.Millisecond),
+		Capabilities:     md.Caps.ToNetCapabilities(),
+		AuthToken:        md.AuthToken,
+		DetectorEnabled:  md.DetectorEnabled,
+		DetectorProfiles: detectorProfiles,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
 	}
