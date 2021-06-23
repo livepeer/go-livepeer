@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1049,6 +1050,23 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.Equal(200, resp.StatusCode)
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.True(len(body) > 0)
+
+	// check that segment with 0-frame is not saved to recording store
+	breader := bytes.NewReader(zero_frame_ts)
+	req = httptest.NewRequest("POST", "/live/sess1/2.ts", breader)
+	req.Header.Set("Accept", "multipart/mixed")
+	handler.ServeHTTP(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	fi, err = sess1.ReadData(ctx, "OSTEST01/source/2.ts")
+	assert.Nil(err)
+	assert.NotNil(fi)
+	body, _ = ioutil.ReadAll(fi.Body)
+	assert.Equal(zero_frame_ts, body)
+	assert.Equal("OSTEST01/source/2.ts", fi.Name)
+	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/source/2.ts", lpmon.NodeID))
+	assert.EqualError(err, "Not found")
+	assert.Nil(fi)
 }
 
 func TestPush_ConcurrentSegments(t *testing.T) {

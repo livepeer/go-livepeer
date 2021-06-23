@@ -166,6 +166,10 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 		return nil
 	}
 
+	if ev.Cmp(new(big.Rat).SetInt(ticketParams.FaceValue)) >= 0 {
+		return fmt.Errorf("ticket faceValue too low faceValue=%v", ticketParams.FaceValue)
+	}
+
 	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
 	if err != nil {
 		return err

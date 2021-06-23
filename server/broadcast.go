@@ -389,6 +389,19 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	if ros != nil {
 		go func() {
 			now := time.Now()
+			hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(seg.Data)
+			if err != nil {
+				glog.Warningf("Error checking for zero video frame nonce=%d manifestID=%s name=%s bytes=%d took=%s err=%v",
+					nonce, mid, name, len(seg.Data), time.Since(now), err)
+			} else {
+				if hasZeroVideoFrame == 1 {
+					glog.Infof("Checking for zero video frame nonce=%d manifestID=%s name=%s bytes=%d took=%s returned res=%v",
+						nonce, mid, name, len(seg.Data), time.Since(now), hasZeroVideoFrame)
+					// segment has zero video frame, skipping
+					return
+				}
+			}
+			now = time.Now()
 			uri, err := drivers.SaveRetried(ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
 			took := time.Since(now)
 			if err != nil {

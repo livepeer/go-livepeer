@@ -1251,7 +1251,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 
 	err := orch.ProcessPayment(payment, manifestID)
 	assert.Nil(err)
-	recipient.On("EV").Return(big.NewRat(100, 1))
+	recipient.On("EV").Return(big.NewRat(100, 100))
 	assert.True(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
