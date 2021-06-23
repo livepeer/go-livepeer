@@ -6,6 +6,8 @@
 
 #### General
 
+- \#1911 [Experimental] Enable scene classification for Adult/Soccer (@jailuthra, @yondonfu)
+
 #### Broadcaster
 
 - \#1877 Refresh TicketParams for the active session before expiry (@kyriediculous)
