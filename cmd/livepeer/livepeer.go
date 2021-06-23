@@ -114,6 +114,7 @@ func main() {
 	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
+	minGasPrice := flag.Int64("minGasPrice", 0, "Minimum gas price for ETH transactions")
 	maxGasPrice := flag.Int("maxGasPrice", 0, "Maximum gas price for ETH transactions")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
@@ -173,7 +174,7 @@ func main() {
 
 	type NetworkConfig struct {
 		ethController string
-		minGasPrice   *big.Int
+		minGasPrice   int64
 	}
 
 	ctx := context.Background()
@@ -184,7 +185,7 @@ func main() {
 		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
-			minGasPrice:   big.NewInt(int64(params.GWei)),
+			minGasPrice:   int64(params.GWei),
 		},
 	}
 
@@ -207,12 +208,15 @@ func main() {
 	}
 
 	// Setting config options based on specified network
-	var minGasPrice = big.NewInt(0)
 	if netw, ok := configOptions[*network]; ok {
 		if *ethController == "" {
 			*ethController = netw.ethController
-			minGasPrice = netw.minGasPrice
 		}
+
+		if !isFlagSet["minGasPrice"] {
+			*minGasPrice = netw.minGasPrice
+		}
+
 		glog.Infof("***Livepeer is running on the %v network: %v***", *network, *ethController)
 	} else {
 		glog.Infof("***Livepeer is running on the %v network***", *network)
@@ -380,7 +384,7 @@ func main() {
 			bigMaxGasPrice = big.NewInt(int64(*maxGasPrice))
 		}
 
-		gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, minGasPrice)
+		gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, big.NewInt(*minGasPrice))
 		// Start gas price monitor
 		_, err = gpm.Start(ctx)
 		if err != nil {
