@@ -112,9 +112,12 @@ func TestBackend_SetMaxGasPrice(t *testing.T) {
 func TestBackend_SuggestGasPrice(t *testing.T) {
 	assert := assert.New(t)
 	gp := big.NewInt(10)
-	gpm := &GasPriceMonitor{
-		gasPrice: gp,
-	}
+	gpo := &stubGasPriceOracle{gasPrice: gp}
+
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
+	_, err := gpm.Start(context.Background())
+	assert.Nil(err)
+	defer gpm.Stop()
 
 	b := &backend{
 		gpm: gpm,
