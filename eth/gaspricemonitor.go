@@ -59,6 +59,10 @@ func (gpm *GasPriceMonitor) GasPrice() *big.Int {
 	gpm.gasPriceMu.RLock()
 	defer gpm.gasPriceMu.RUnlock()
 
+	if gpm.gasPrice.Cmp(gpm.minGasPrice) < 0 {
+		return gpm.minGasPrice
+	}
+
 	return gpm.gasPrice
 }
 
