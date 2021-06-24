@@ -43,7 +43,7 @@ var (
 
 type LivepeerEthClient interface {
 	Account() accounts.Account
-	Backend() (Backend, error)
+	Backend() Backend
 
 	// Rounds
 	InitializeRound() (*types.Transaction, error)
@@ -361,12 +361,8 @@ func (c *client) Account() accounts.Account {
 	return c.accountManager.Account()
 }
 
-func (c *client) Backend() (Backend, error) {
-	if c.backend == nil {
-		return nil, ErrMissingBackend
-	} else {
-		return c.backend, nil
-	}
+func (c *client) Backend() Backend {
+	return c.backend
 }
 
 // Rounds

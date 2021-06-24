@@ -223,7 +223,7 @@ func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) 
 func (e *StubClient) Account() accounts.Account {
 	return accounts.Account{Address: e.TranscoderAddress}
 }
-func (e *StubClient) Backend() (Backend, error) { return nil, nil }
+func (e *StubClient) Backend() Backend { return nil }
 
 // Rounds
 
