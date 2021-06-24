@@ -1133,6 +1133,11 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	})
 
 	mux.HandleFunc("/maxGasPrice", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.Eth == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+
 		b := s.LivepeerNode.Eth.Backend()
 		gprice := b.MaxGasPrice()
 		if gprice == nil {
