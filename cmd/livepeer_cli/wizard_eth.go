@@ -17,6 +17,18 @@ func (w *wizard) setMaxGasPrice() {
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxGasPrice", w.host, w.httpPort), val)
 }
 
+func (w *wizard) setMinGasPrice() {
+	fmt.Printf("Current minimum gas price: %v\n", w.minGasPrice())
+	fmt.Printf("Enter new minimum gas price in Wei")
+	minGasPrice := w.readBigInt()
+
+	val := url.Values{
+		"minGasPrice": {fmt.Sprintf("%v", minGasPrice.String())},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setMinGasPrice", w.host, w.httpPort), val)
+}
+
 func (w *wizard) signMessage() {
 	fmt.Printf("Enter or paste the message to sign: \n")
 	msg := w.readMultilineString()
