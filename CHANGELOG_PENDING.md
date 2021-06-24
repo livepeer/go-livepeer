@@ -8,6 +8,7 @@
 
 - \#1911 [Experimental] Enable scene classification for Adult/Soccer (@jailuthra, @yondonfu)
 - \#1915 Use gas price monitor for gas price suggestions for all Ethereum transactions (@kyriediculous)
+- \#1930 Support custom minimum gas price (@yondonfu)
 
 #### Broadcaster
 
