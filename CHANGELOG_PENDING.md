@@ -18,6 +18,8 @@
 
 #### Orchestrator
 
+- \#1931 Bump ticket redemption gas estimate to 350k to account for occasional higher gas usage (@yondonfu)
+
 #### Transcoder
 
 ### Bug Fixes 🐞
