@@ -44,6 +44,8 @@ type Backend interface {
 	ChainID(ctx context.Context) (*big.Int, error)
 	MaxGasPrice() *big.Int
 	SetMaxGasPrice(gp *big.Int)
+	MinGasPrice() *big.Int
+	SetMinGasPrice(gp *big.Int)
 }
 
 type backend struct {
@@ -133,6 +135,14 @@ func (b *backend) MaxGasPrice() *big.Int {
 	b.RLock()
 	defer b.RUnlock()
 	return b.maxGasPrice
+}
+
+func (b *backend) SetMinGasPrice(gp *big.Int) {
+	b.gpm.SetMinGasPrice(gp)
+}
+
+func (b *backend) MinGasPrice() *big.Int {
+	return b.gpm.MinGasPrice()
 }
 
 type txLog struct {

@@ -28,7 +28,7 @@ type GasPriceMonitor struct {
 	// pollingMu protects access to polling related fields
 	pollingMu sync.Mutex
 
-	// gasPriceMu protects access to gasPrice
+	// gasPriceMu protects access to gasPrice and minGasPrice
 	gasPriceMu sync.RWMutex
 	// gasPrice is the current gas price to be returned to users
 	gasPrice *big.Int
@@ -64,6 +64,18 @@ func (gpm *GasPriceMonitor) GasPrice() *big.Int {
 	}
 
 	return gpm.gasPrice
+}
+
+func (gpm *GasPriceMonitor) SetMinGasPrice(minGasPrice *big.Int) {
+	gpm.gasPriceMu.Lock()
+	defer gpm.gasPriceMu.Unlock()
+	gpm.minGasPrice = minGasPrice
+}
+
+func (gpm *GasPriceMonitor) MinGasPrice() *big.Int {
+	gpm.gasPriceMu.RLock()
+	defer gpm.gasPriceMu.RUnlock()
+	return gpm.minGasPrice
 }
 
 // Start starts polling for gas price updates and returns a channel to receive
