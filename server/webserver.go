@@ -1161,6 +1161,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		b.SetMaxGasPrice(gprice)
 	})
 
+	mux.Handle("/minGasPrice", minGasPriceHandler(s.LivepeerNode.Eth))
+	mux.Handle("/setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(s.LivepeerNode.Eth), "minGasPrice"))
+
 	mux.Handle("/currentBlock", currentBlockHandler(s.LivepeerNode.Database))
 
 	// TicketBroker

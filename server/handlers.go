@@ -364,3 +364,34 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 		w.Write(tx.Hash().Bytes())
 	})
 }
+
+func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(client.Backend().MinGasPrice().String()))
+	})
+}
+
+func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+
+		minGasPrice, err := common.ParseBigInt(r.FormValue("minGasPrice"))
+		if err != nil {
+			respondWith400(w, fmt.Sprintf("invalid minGasPrice: %v", err))
+			return
+		}
+		client.Backend().SetMinGasPrice(minGasPrice)
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("setMinGasPrice success"))
+	})
+}
