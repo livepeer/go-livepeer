@@ -509,7 +509,7 @@ func main() {
 			CleanupInterval: cleanupInterval,
 			TTL:             smTTL,
 			RedeemGas:       redeemGas,
-			SuggestGasPrice: backend.SuggestGasPrice,
+			SuggestGasPrice: client.Backend().SuggestGasPrice,
 			RPCTimeout:      ethRPCTimeout,
 		}
 
