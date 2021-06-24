@@ -101,6 +101,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"withdraw broadcasting funds\"", invoke: w.withdraw, notOrchestrator: true},
 		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notOrchestrator: true},
 		{desc: "Set maximum Ethereum gas price", invoke: w.setMaxGasPrice},
+		{desc: "Set minimum Ethereum gas price", invoke: w.setMinGasPrice},
 		{desc: "Get test LPT", invoke: w.requestTokens, testnet: true},
 		{desc: "Get test ETH", invoke: func() {
 			fmt.Print("For Rinkeby Eth, go to the Rinkeby faucet (https://faucet.rinkeby.io/).")

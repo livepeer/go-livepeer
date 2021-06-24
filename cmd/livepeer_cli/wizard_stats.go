@@ -51,6 +51,12 @@ func (w *wizard) stats(showOrchestrator bool) {
 		maxGasPriceStr = fmt.Sprintf("%v GWei", eth.FromWei(maxGasPrice, params.GWei))
 	}
 
+	minGasPriceStr := "n/a"
+	minGasPrice, _ := new(big.Int).SetString(w.minGasPrice(), 10)
+	if minGasPrice != nil {
+		minGasPriceStr = fmt.Sprintf("%v GWei", eth.FromWei(minGasPrice, params.GWei))
+	}
+
 	table := tablewriter.NewWriter(os.Stdout)
 	data := [][]string{
 		{"Node's version", status.Version},
@@ -65,6 +71,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 		{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
 		{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
 		{"Max Gas Price", maxGasPriceStr},
+		{"Min Gas Price", minGasPriceStr},
 	}
 
 	for _, v := range data {
@@ -420,6 +427,10 @@ func (w *wizard) maxGasPrice() string {
 		max = "n/a"
 	}
 	return max
+}
+
+func (w *wizard) minGasPrice() string {
+	return httpGet(fmt.Sprintf("http://%v:%v/minGasPrice", w.host, w.httpPort))
 }
 
 func (w *wizard) currentBlock() (*big.Int, error) {
