@@ -954,12 +954,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/ethBalance", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			b, err := s.LivepeerNode.Eth.Backend()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
+			b := s.LivepeerNode.Eth.Backend()
 			balance, err := b.BalanceAt(r.Context(), s.LivepeerNode.Eth.Account().Address, nil)
 			if err != nil {
 				glog.Error(err)
@@ -1075,12 +1070,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				glog.Errorf("Unable to get the time for the next valid request from faucet: %v", err)
 				return
 			}
-			backend, err := s.LivepeerNode.Eth.Backend()
-			if err != nil {
-				glog.Errorf("Unable to get LivepeerEthClient backend: %v", err)
-				return
-			}
 
+			backend := s.LivepeerNode.Eth.Backend()
 			blk, err := backend.BlockByNumber(r.Context(), nil)
 			if err != nil {
 				glog.Errorf("Unable to get latest block")
@@ -1142,11 +1133,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	})
 
 	mux.HandleFunc("/maxGasPrice", func(w http.ResponseWriter, r *http.Request) {
-		b, err := s.LivepeerNode.Eth.Backend()
-		if err != nil {
-			respondWith400(w, err.Error())
-			return
-		}
+		b := s.LivepeerNode.Eth.Backend()
 		gprice := b.MaxGasPrice()
 		if gprice == nil {
 			w.Write([]byte(""))
@@ -1170,11 +1157,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if amount == "0" {
 			gprice = nil
 		}
-		b, err := s.LivepeerNode.Eth.Backend()
-		if err != nil {
-			respondWith400(w, err.Error())
-			return
-		}
+		b := s.LivepeerNode.Eth.Backend()
 		b.SetMaxGasPrice(gprice)
 	})
 
