@@ -217,3 +217,17 @@ func TestStop(t *testing.T) {
 	_, ok := (<-gpm.update)
 	assert.False(ok)
 }
+
+func TestMinGasPrice(t *testing.T) {
+	gasPrice := big.NewInt(777)
+	gpo := newStubGasPriceOracle(gasPrice)
+	gpo.SetGasPrice(gasPrice)
+
+	assert := assert.New(t)
+
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
+	assert.Equal(big.NewInt(0), gpm.MinGasPrice())
+
+	gpm.SetMinGasPrice(big.NewInt(1))
+	assert.Equal(big.NewInt(1), gpm.MinGasPrice())
+}
