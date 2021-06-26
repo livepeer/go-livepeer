@@ -153,7 +153,7 @@ func (os *gsSession) createClient() error {
 	return nil
 }
 
-func (os *gsSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.useFullAPI {
 		if os.client == nil {
 			if err := os.createClient(); err != nil {
@@ -163,7 +163,10 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string) 
 		keyname := os.key + "/" + name
 		objh := os.client.Bucket(os.bucket).Object(keyname)
 		glog.V(common.VERBOSE).Infof("Saving to GS %s/%s", os.bucket, keyname)
-		ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+		if timeout == 0 {
+			timeout = saveTimeout
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		wr := objh.NewWriter(ctx)
 		if len(meta) > 0 && wr.Metadata == nil {
@@ -185,7 +188,7 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string) 
 		glog.V(common.VERBOSE).Infof("Saved to GS %s", uri)
 		return uri, err
 	}
-	return os.s3Session.SaveData(name, data, meta)
+	return os.s3Session.SaveData(name, data, meta, timeout)
 }
 
 type gsPageInfo struct {

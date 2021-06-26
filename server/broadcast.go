@@ -416,7 +416,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 			}
 		}()
 	}
-	uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil)
+	uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil, 0)
 	if err != nil {
 		glog.Errorf("Error saving segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
 		if monitor.Enabled {
@@ -448,7 +448,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 				return nil, err
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil)
+			uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil, 0)
 			if err != nil {
 				glog.Errorf("Error saving segment manifestID=%s nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
 				if monitor.Enabled {
@@ -526,7 +526,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	// storage the orchestrator prefers
 	if ios := sess.OrchestratorOS; ios != nil {
 		// XXX handle case when orch expects direct upload
-		uri, err := ios.SaveData(name, seg.Data, nil)
+		uri, err := ios.SaveData(name, seg.Data, nil, 0)
 		if err != nil {
 			glog.Errorf("Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
 			if monitor.Enabled {
@@ -714,7 +714,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				return
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			newURL, err := bos.SaveData(name, data, nil)
+			newURL, err := bos.SaveData(name, data, nil, 0)
 			if err != nil {
 				switch err.Error() {
 				case "Session ended":
@@ -858,7 +858,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 				// Hence, trim the /stream/<manifestID> prefix if it exists.
 				pfx := fmt.Sprintf("/stream/%s/", sess.Params.ManifestID)
 				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
-				_, err := sess.BroadcasterOS.SaveData(uri, data, nil)
+				_, err := sess.BroadcasterOS.SaveData(uri, data, nil, 0)
 				if err != nil {
 					return err
 				}

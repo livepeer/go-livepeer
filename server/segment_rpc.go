@@ -182,7 +182,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		}
 		name := fmt.Sprintf("%s/%d%s", segData.Profiles[i].Name, segData.Seq, ext)
 		// The use of := here is probably a bug?!?
-		uri, err := res.OS.SaveData(name, res.TranscodeData.Segments[i].Data, nil)
+		uri, err := res.OS.SaveData(name, res.TranscodeData.Segments[i].Data, nil, 0)
 		if err != nil {
 			glog.Error("Could not upload segment ", segData.Seq)
 			break

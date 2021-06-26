@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
@@ -270,10 +271,12 @@ func (os *stubOS) GetInfo() *net.OSInfo {
 	}
 	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
 }
-func (os *stubOS) EndSession()                                                {}
-func (os *stubOS) SaveData(string, []byte, map[string]string) (string, error) { return "", nil }
-func (os *stubOS) IsExternal() bool                                           { return false }
-func (os *stubOS) IsOwn(url string) bool                                      { return true }
+func (os *stubOS) EndSession() {}
+func (os *stubOS) SaveData(string, []byte, map[string]string, time.Duration) (string, error) {
+	return "", nil
+}
+func (os *stubOS) IsExternal() bool      { return false }
+func (os *stubOS) IsOwn(url string) bool { return true }
 func (os *stubOS) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }

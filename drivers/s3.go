@@ -273,7 +273,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	return res, nil
 }
 
-func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string) (string, error) {
+func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	now := time.Now()
 	bucket := aws.String(os.bucket)
 	keyname := aws.String(os.key + "/" + name)
@@ -294,7 +294,10 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 		ContentType:   contentType,
 		ContentLength: aws.Int64(int64(len(data))),
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+	if timeout == 0 {
+		timeout = saveTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	resp, err := os.s3svc.PutObjectWithContext(ctx, params, request.WithLogLevel(aws.LogDebug))
 	cancel()
 	if err != nil {
@@ -306,14 +309,14 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 	return uri, err
 }
 
-func (os *s3Session) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+func (os *s3Session) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.s3svc != nil {
-		return os.saveDataPut(name, data, meta)
+		return os.saveDataPut(name, data, meta, timeout)
 	}
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
-	path, err := os.postData(name, data, meta)
+	path, err := os.postData(name, data, meta, timeout)
 	if err != nil {
 		// handle error
 		glog.Errorf("Save S3 error: %v", err)
@@ -358,7 +361,7 @@ func (os *s3Session) getContentType(fileName string, buffer []byte) string {
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string) (string, error) {
+func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := os.getContentType(fileName, buffer)
 	path, fileName := path.Split(path.Join(os.key, fileName))
@@ -375,7 +378,7 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	if !strings.Contains(postURL, os.bucket) {
 		postURL += "/" + os.bucket
 	}
-	req, cancel, err := newfileUploadRequest(postURL, fields, fileBytes, fileName)
+	req, cancel, err := newfileUploadRequest(postURL, fields, fileBytes, fileName, timeout)
 	if err != nil {
 		glog.Error(err)
 		return "", err
@@ -446,7 +449,7 @@ func createPolicy(key, bucket, region, secret, path string) (string, string, str
 	return policy, signString(policy, region, xAmzDate, secret), xAmzCredential, xAmzDate + "T000000Z"
 }
 
-func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string) (*http.Request, context.CancelFunc, error) {
+func newfileUploadRequest(uri string, params map[string]string, fData io.Reader, fileName string, timeout time.Duration) (*http.Request, context.CancelFunc, error) {
 	glog.Infof("Posting data to %s (params %+v)", uri, params)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -466,8 +469,10 @@ func newfileUploadRequest(uri string, params map[string]string, fData io.Reader,
 	if err != nil {
 		return nil, nil, err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+	if timeout == 0 {
+		timeout = saveTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	req, err := http.NewRequestWithContext(ctx, "POST", uri, body)
 	if err != nil {
 		cancel()

@@ -764,7 +764,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 
 	mos := &drivers.MockOSSession{}
 
-	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
+	mos.On("SaveData", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errors.New("SaveData error"))
 
 	tData := &core.TranscodeData{Segments: []*core.TranscodedSegmentData{{Data: []byte("foo")}}}
 	tRes := &core.TranscodeResult{
@@ -1561,8 +1561,8 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 
-	mos.On("SaveData", mock.Anything, mock.Anything).Return("720pdotcom", nil).Once()
-	mos.On("SaveData", mock.Anything, mock.Anything).Return("", errors.New("SaveData error")).Once()
+	mos.On("SaveData", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("720pdotcom", nil).Once()
+	mos.On("SaveData", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("", errors.New("SaveData error")).Once()
 
 	orch.On("DebitFees", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId), mock.Anything, tData720.Pixels)
 

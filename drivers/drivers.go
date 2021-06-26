@@ -62,7 +62,7 @@ type PageInfo interface {
 type OSSession interface {
 	OS() OSDriver
 
-	SaveData(name string, data []byte, meta map[string]string) (string, error)
+	SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC
@@ -187,12 +187,12 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 // SaveRetried tries to SaveData specified number of times
 func SaveRetried(sess OSSession, name string, data []byte, meta map[string]string, retryCount int) (string, error) {
 	if retryCount < 1 {
-		return "", fmt.Errorf("Invalid retry count %d", retryCount)
+		return "", fmt.Errorf("invalid retry count %d", retryCount)
 	}
 	var uri string
 	var err error
 	for i := 0; i < retryCount; i++ {
-		uri, err = sess.SaveData(name, data, meta)
+		uri, err = sess.SaveData(name, data, meta, 0)
 		if err == nil {
 			return uri, err
 		}

@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"time"
 
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/mock"
@@ -11,7 +12,7 @@ type MockOSSession struct {
 	mock.Mock
 }
 
-func (s *MockOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+func (s *MockOSSession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	args := s.Called()
 	return args.String(0), args.Error(1)
 }
