@@ -257,7 +257,7 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 		}
 		go func(name string, data []byte) {
 			now := time.Now()
-			_, err := mgr.recordSession.SaveData(name, b, nil)
+			_, err := mgr.recordSession.SaveData(name, b, nil, 0)
 			took := time.Since(now)
 			if err != nil {
 				glog.Errorf("Error saving json playlist name=%s bytes=%d took=%s err=%v", name,

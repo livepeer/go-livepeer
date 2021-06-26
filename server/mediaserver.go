@@ -1393,7 +1393,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
-			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil)
+			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil, 0)
 			glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", fileName, manifestID, time.Since(nows))
 			if err != nil {
 				glog.Error(err)
@@ -1402,7 +1402,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			}
 		}
 		nows := time.Now()
-		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil)
+		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil, 0)
 		glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", "index.m3u8", manifestID, time.Since(nows))
 		if err != nil {
 			glog.Error(err)
