@@ -1378,8 +1378,12 @@ func TestVerifier_Invocation(t *testing.T) {
 
 func TestVerifier_Verify(t *testing.T) {
 	assert := assert.New(t)
-
 	os := drivers.NewMemoryDriver(nil).NewSession("")
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
 	c := core.NewBasicPlaylistManager(core.ManifestID("streamName"), os, nil)
 	cxn := &rtmpConnection{
 		pl: c,
@@ -1456,6 +1460,7 @@ func TestVerifier_Verify(t *testing.T) {
 	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
+	c.Cleanup()
 }
 
 func TestVerifier_HLSInsertion(t *testing.T) {

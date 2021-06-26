@@ -169,6 +169,11 @@ func TestPush_MultipartReturn(t *testing.T) {
 	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
 
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
 	cxn := &rtmpConnection{
@@ -306,6 +311,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal("Error reading http request body: input bigger than max buffer size\n", string(body))
 	assert.Equal(500, resp.StatusCode)
+	pl.Cleanup()
 }
 
 func TestPush_MemoryRequestError(t *testing.T) {
@@ -1017,6 +1023,12 @@ func TestPush_WebhookRequestURL(t *testing.T) {
 }
 
 func TestPush_OSPerStream(t *testing.T) {
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
+
 	lpmon.NodeID = "testNode"
 	drivers.Testing = true
 	assert := assert.New(t)
@@ -1220,7 +1232,12 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 }
 
 func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
 	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
 
 	reader := strings.NewReader("InsteadOf.TS")
 	oldRI := httpPushTimeout
@@ -1285,4 +1302,5 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	assert.False(exists)
 	assert.False(extEx)
 	assert.False(extEx2)
+	serverCleanup(s)
 }
