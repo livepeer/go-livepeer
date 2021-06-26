@@ -11,14 +11,20 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
-	"github.com/livepeer/go-livepeer/monitor"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
 )
 
 const LIVE_LIST_LENGTH uint = 6
 
-const jsonPlaylistRotationInterval = 60 * 60 * 1000 // 1 hour (in ms)
+const (
+	jsonPlaylistRotationInterval = 60 * 60 * 1000 // 1 hour (in ms)
+	jsonPlaylistMaxRetries       = 30
+	JsonPlaylistInitialTimeout   = 5 * time.Second
+	JsonPlaylistMaxTimeout       = 120 * time.Second
+)
+
+var JsonPlaylistQuitTimeout = 60 * time.Second
 
 //	PlaylistManager manages playlists and data for one video stream, backed by one object storage.
 type PlaylistManager interface {
@@ -47,11 +53,12 @@ type BasicPlaylistManager struct {
 	recordSession  drivers.OSSession
 	manifestID     ManifestID
 	// Live playlist used for broadcasting
-	masterPList  *m3u8.MasterPlaylist
-	mediaLists   map[string]*m3u8.MediaPlaylist
-	mapSync      *sync.RWMutex
-	jsonList     *JsonPlaylist
-	jsonListSync *sync.Mutex
+	masterPList        *m3u8.MasterPlaylist
+	mediaLists         map[string]*m3u8.MediaPlaylist
+	mapSync            *sync.RWMutex
+	jsonList           *JsonPlaylist
+	jsonListWriteQueue *drivers.OverwriteQueue
+	jsonListSync       *sync.Mutex
 }
 
 type jsonSeg struct {
@@ -226,8 +233,18 @@ func NewBasicPlaylistManager(manifestID ManifestID,
 	if recordSession != nil {
 		bplm.jsonList = NewJSONPlaylist()
 		bplm.jsonListSync = &sync.Mutex{}
+		bplm.makeNewOverwriteQueue()
 	}
 	return bplm
+}
+
+func (mgr *BasicPlaylistManager) makeNewOverwriteQueue() {
+	if mgr.jsonListWriteQueue != nil {
+		mgr.jsonListWriteQueue.StopAfter(JsonPlaylistQuitTimeout)
+	}
+	mgr.jsonListWriteQueue = drivers.NewOverwriteQueue(mgr.recordSession, mgr.jsonList.name,
+		fmt.Sprintf("json playlist for manifestId=%s", mgr.manifestID),
+		jsonPlaylistMaxRetries, JsonPlaylistInitialTimeout, JsonPlaylistMaxTimeout)
 }
 
 func (mgr *BasicPlaylistManager) ManifestID() ManifestID {
@@ -235,7 +252,12 @@ func (mgr *BasicPlaylistManager) ManifestID() ManifestID {
 }
 
 func (mgr *BasicPlaylistManager) Cleanup() {
-	mgr.storageSession.EndSession()
+	if mgr.storageSession != nil {
+		mgr.storageSession.EndSession()
+	}
+	if mgr.jsonListWriteQueue != nil {
+		mgr.jsonListWriteQueue.StopAfter(JsonPlaylistQuitTimeout)
+	}
 }
 
 func (mgr *BasicPlaylistManager) GetOSSession() drivers.OSSession {
@@ -255,23 +277,10 @@ func (mgr *BasicPlaylistManager) FlushRecord() {
 			glog.Error("Error encoding playlist: ", err)
 			return
 		}
-		go func(name string, data []byte) {
-			now := time.Now()
-			_, err := mgr.recordSession.SaveData(name, b, nil, 0)
-			took := time.Since(now)
-			if err != nil {
-				glog.Errorf("Error saving json playlist name=%s bytes=%d took=%s err=%v", name,
-					len(b), took, err)
-			} else {
-				glog.V(common.VERBOSE).Infof("Saving json playlist name=%s bytes=%d took=%s err=%v", name,
-					len(b), took, err)
-			}
-			if monitor.Enabled {
-				monitor.RecordingPlaylistSaved(took, err)
-			}
-		}(mgr.jsonList.name, b)
+		go mgr.jsonListWriteQueue.Save(b)
 		if mgr.jsonList.DurationMs > jsonPlaylistRotationInterval {
 			mgr.jsonList = NewJSONPlaylist()
+			mgr.makeNewOverwriteQueue()
 		}
 	}
 }

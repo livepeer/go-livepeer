@@ -69,6 +69,9 @@ func serverCleanup(s *LivepeerServer) {
 		if cxn != nil && cxn.stream != nil {
 			cxn.stream.Close()
 		}
+		if cxn != nil {
+			cxn.pl.Cleanup()
+		}
 	}
 	s.connectionLock.Unlock()
 }
