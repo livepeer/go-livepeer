@@ -15,6 +15,7 @@
 - \#1899 Record million pixels processed metric (@yondonfu)
 - \#1888 Should not save (when recording) segments with zero video frames (@darkdarkdragon)
 - \#1908 Prevent Broadcaster from sending low face value PM tickets (@kyriediculous)
+- \#1934 http push: return 422 for non-retryable errors (@darkdarkdragon)
 
 #### Orchestrator
 
