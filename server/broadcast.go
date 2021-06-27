@@ -386,22 +386,16 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	name := fmt.Sprintf("%s/%d%s", vProfile.Name, seg.SeqNo, ext)
 	ros := cpl.GetRecordOSSession()
 	segDurMs := getSegDurMsString(seg)
-	if ros != nil {
+
+	now := time.Now()
+	hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(seg.Data)
+	if err != nil {
+		glog.Warningf("Error checking for zero video frame manifestID=%s name=%s bytes=%d took=%s err=%v",
+			mid, seg.Name, len(seg.Data), time.Since(now), err)
+	}
+	if ros != nil && !hasZeroVideoFrame {
 		go func() {
 			now := time.Now()
-			hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(seg.Data)
-			if err != nil {
-				glog.Warningf("Error checking for zero video frame nonce=%d manifestID=%s name=%s bytes=%d took=%s err=%v",
-					nonce, mid, name, len(seg.Data), time.Since(now), err)
-			} else {
-				if hasZeroVideoFrame == 1 {
-					glog.Infof("Checking for zero video frame nonce=%d manifestID=%s name=%s bytes=%d took=%s returned res=%v",
-						nonce, mid, name, len(seg.Data), time.Since(now), hasZeroVideoFrame)
-					// segment has zero video frame, skipping
-					return
-				}
-			}
-			now = time.Now()
 			uri, err := drivers.SaveRetried(ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
 			took := time.Since(now)
 			if err != nil {
@@ -434,10 +428,40 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
 	}
 	if err != nil {
-		glog.Errorf("Error inserting segment nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
+		glog.Errorf("Error inserting segment manifestID=%s nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 		}
+	}
+
+	if hasZeroVideoFrame {
+		var urls []string
+		for _, profile := range cxn.params.Profiles {
+			ext, err := common.ProfileFormatExtension(profile.Format)
+			if err != nil {
+				glog.Errorf("Error getting extension for profile=%v with segment manifestID=%s nonce=%d seqNo=%d err=%v",
+					profile.Format, cxn.mid, nonce, seg.SeqNo, err)
+				return nil, err
+			}
+			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
+			uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil)
+			if err != nil {
+				glog.Errorf("Error saving segment manifestID=%s nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
+				if monitor.Enabled {
+					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
+				}
+				return nil, err
+			}
+			urls = append(urls, uri)
+			err = cpl.InsertHLSSegment(&profile, seg.SeqNo, uri, seg.Duration)
+			if err != nil {
+				glog.Errorf("Error inserting segment manifestID=%s nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
+				if monitor.Enabled {
+					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
+				}
+			}
+		}
+		return urls, nil
 	}
 
 	var sv *verification.SegmentVerifier
@@ -453,7 +477,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		}
 
 		if shouldStopStream(err) {
-			glog.Warningf("Stopping current stream due to: %v", err)
+			glog.Warningf("Stopping current stream due to err=%v", err)
 			rtmpStrm.Close()
 			return nil, err
 		}
@@ -500,7 +524,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// XXX handle case when orch expects direct upload
 		uri, err := ios.SaveData(name, seg.Data, nil)
 		if err != nil {
-			glog.Errorf("Error saving segment to OS nonce=%d seqNo=%d: %v", nonce, seg.SeqNo, err)
+			glog.Errorf("Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
 			if monitor.Enabled {
 				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
 			}

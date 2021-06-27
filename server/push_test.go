@@ -1132,18 +1132,48 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert.True(len(body) > 0)
 
 	// check that segment with 0-frame is not saved to recording store
+	w = httptest.NewRecorder()
 	breader := bytes.NewReader(zero_frame_ts)
 	req = httptest.NewRequest("POST", "/live/sess1/2.ts", breader)
 	req.Header.Set("Accept", "multipart/mixed")
 	handler.ServeHTTP(w, req)
 	resp = w.Result()
 	defer resp.Body.Close()
-	fi, err = sess1.ReadData(ctx, "OSTEST01/source/2.ts")
+	zfr, err := sess1.ReadData(ctx, "OSTEST01/source/2.ts")
 	assert.Nil(err)
-	assert.NotNil(fi)
-	body, _ = ioutil.ReadAll(fi.Body)
-	assert.Equal(zero_frame_ts, body)
-	assert.Equal("OSTEST01/source/2.ts", fi.Name)
+	zfb, zerr := ioutil.ReadAll(zfr.Body)
+	assert.Nil(zerr)
+	assert.Equal(zero_frame_ts, zfb)
+	_, err = sess2.ReadData(ctx, "OSTEST01/source/2.ts")
+	assert.Error(err, "Not found")
+	assert.Equal(200, resp.StatusCode)
+	assert.Equal(int64(-1), resp.ContentLength)
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	assert.Equal("multipart/mixed", mediaType)
+	assert.Nil(err)
+	mr := multipart.NewReader(resp.Body, params["boundary"])
+	i := 0
+	for {
+		p, merr := mr.NextPart()
+		if merr == io.EOF {
+			break
+		}
+		assert.Nil(merr)
+		mediaType, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		assert.Nil(err)
+		disposition, dispParams, err := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
+		assert.Nil(err)
+		body, merr := ioutil.ReadAll(p)
+		assert.Nil(merr)
+		assert.True(len(body) > 0)
+		assert.Equal("video/mp2t", mediaType)
+		assert.Equal("attachment", disposition)
+		assert.Equal("P720p25fps16x9_2.ts", dispParams["filename"])
+		assert.Equal(zero_frame_ts, body)
+		i++
+	}
+	assert.Equal(len(BroadcastJobVideoProfiles), i)
+
 	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/source/2.ts", lpmon.NodeID))
 	assert.EqualError(err, "Not found")
 	assert.Nil(fi)
