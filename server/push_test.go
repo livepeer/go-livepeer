@@ -42,6 +42,86 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 	return handler, reader, writer
 }
 
+func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
+	assert := assert.New(t)
+	s := setupServer()
+	defer serverCleanup(s)
+	reader := strings.NewReader("InsteadOf.TS")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+
+	oldAttempts := MaxAttempts
+	defer func() {
+		MaxAttempts = oldAttempts
+	}()
+	MaxAttempts = 1
+
+	dummyRes := func(err string) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Error{Error: err},
+		}
+	}
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	tr := dummyRes("unknown error (test)")
+	buf, err := proto.Marshal(tr)
+	require.Nil(t, err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+
+	url, _ := url.ParseRequestURI("test://some.host")
+	osd := drivers.NewMemoryDriver(url)
+	osSession := osd.NewSession("testPath")
+
+	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("mani"),
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}},
+	}
+
+	s.rtmpConnections["mani"] = cxn
+
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.Equal(500, resp.StatusCode)
+	body, err := ioutil.ReadAll(resp.Body)
+	assert.NoError(err)
+	assert.Contains(string(body), "unknown error (test)")
+
+	sess = StubBroadcastSession(ts.URL)
+	bsm = bsmWithSessList([]*BroadcastSession{sess})
+	cxn.sessManager = bsm
+	tr = dummyRes("No keyframes in input")
+	buf, err = proto.Marshal(tr)
+	require.Nil(t, err)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	assert.Equal(422, resp.StatusCode)
+	body, err = ioutil.ReadAll(resp.Body)
+	assert.NoError(err)
+	assert.Contains(string(body), "No keyframes in input")
+}
+
 func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
 	s := setupServer()

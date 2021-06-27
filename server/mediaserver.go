@@ -916,10 +916,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Do the transcoding!
 	urls, err := processSegment(cxn, seg)
 	if err != nil {
-		// TODO distinguish between user errors (400) and server errors (500)
 		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%v", r.URL, mid, err)
 		glog.Error(httpErr)
-		http.Error(w, httpErr, http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if isNonRetryableError(err) {
+			status = http.StatusUnprocessableEntity
+		}
+		http.Error(w, httpErr, status)
 		return
 	}
 	select {
