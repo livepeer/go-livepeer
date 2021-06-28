@@ -271,7 +271,7 @@ func main() {
 			if *sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *sceneClassificationModelPath
-				err = ffmpeg.InitFFmpegWithDetectorProfile(&detectorProfile, strings.Join(devices, ","))
+				err = ffmpeg.InitFFmpegWithDetectorProfile(&detectorProfile, "0")
 				if err != nil {
 					glog.Fatalf("Could not initialize detector profiles")
 				}
