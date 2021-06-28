@@ -43,7 +43,7 @@ var capProfileConv = errors.New("capability: unknown profile")
 
 func DefaultCapabilities() []Capability {
 	// Add to this list as new features are added.
-	var defaultCapabilities = []Capability{
+	return []Capability{
 		Capability_H264,
 		Capability_MPEGTS,
 		Capability_MP4,
@@ -58,8 +58,11 @@ func DefaultCapabilities() []Capability {
 		Capability_GOP,
 		Capability_AuthToken,
 	}
+}
+
+func ExperimentalCapabilities() []Capability {
 	// Add experimental capabilities if enabled during build
-	return append(defaultCapabilities, experimentalCapabilities...)
+	return experimentalCapabilities
 }
 
 func MandatoryCapabilities() []Capability {

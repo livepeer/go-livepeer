@@ -850,7 +850,12 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		n.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryCapabilities())
+		caps := core.DefaultCapabilities()
+		if *sceneClassificationModelPath != "" {
+			// Only enable experimental capabilities if scene classification model is actually loaded
+			caps = append(caps, core.ExperimentalCapabilities()...)
+		}
+		n.Capabilities = core.NewCapabilities(caps, core.MandatoryCapabilities())
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
