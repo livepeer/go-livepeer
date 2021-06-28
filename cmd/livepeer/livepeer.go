@@ -751,20 +751,26 @@ func main() {
 	}
 
 	if *authWebhookURL != "" {
-		_, err := validateURL(*authWebhookURL)
+		parsedUrl, err := validateURL(*authWebhookURL)
 		if err != nil {
 			glog.Fatal("Error setting auth webhook URL ", err)
 		}
-		glog.Info("Using auth webhook URL ", *authWebhookURL)
+		if parsedUrl.User != nil {
+			parsedUrl.User = url.User("REDACTED")
+		}
+		glog.Info("Using auth webhook URL ", parsedUrl)
 		server.AuthWebhookURL = *authWebhookURL
 	}
 
 	if *detectionWebhookURL != "" {
-		_, err := validateURL(*detectionWebhookURL)
+		parsedUrl, err := validateURL(*detectionWebhookURL)
 		if err != nil {
 			glog.Fatal("Error setting detection webhook URL ", err)
 		}
-		glog.Info("Using detection webhook URL ", *detectionWebhookURL)
+		if parsedUrl.User != nil {
+			parsedUrl.User = url.User("REDACTED")
+		}
+		glog.Info("Using detection webhook URL ", parsedUrl)
 		server.DetectionWebhookURL = *detectionWebhookURL
 	}
 
