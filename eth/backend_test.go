@@ -3,14 +3,17 @@ package eth
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"log"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,7 +83,12 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	signedTx, err := types.SignTx(tx, signer, privateKey)
 	require.Nil(t, err)
 
-	bi, err := NewBackend(client, signer)
+	gpm := NewGasPriceMonitor(&stubGasPriceOracle{
+		gasPrice: big.NewInt(1),
+	}, 1*time.Second, big.NewInt(0))
+	gpm.gasPrice = big.NewInt(1)
+
+	bi, err := NewBackend(client, signer, gpm)
 	require.Nil(t, err)
 
 	nonceLockBefore := bi.(*backend).nonceManager.getNonceLock(fromAddress)
@@ -99,4 +107,33 @@ func TestBackend_SetMaxGasPrice(t *testing.T) {
 	backend := &backend{}
 	backend.SetMaxGasPrice(gp)
 	assert.Equal(t, gp, backend.MaxGasPrice())
+}
+
+func TestBackend_SuggestGasPrice(t *testing.T) {
+	assert := assert.New(t)
+	gp := big.NewInt(10)
+	gpm := &GasPriceMonitor{
+		gasPrice: gp,
+	}
+
+	b := &backend{
+		gpm: gpm,
+	}
+
+	actualGp, err := b.SuggestGasPrice(context.Background())
+	assert.Nil(err)
+	assert.Equal(gp, actualGp)
+
+	b.maxGasPrice = big.NewInt(9)
+
+	actualGp, err = b.SuggestGasPrice(context.Background())
+	assert.EqualError(
+		err,
+		fmt.Sprintf(
+			"current gas price exceeds maximum gas price max=%v GWei current=%v GWei",
+			FromWei(b.maxGasPrice, params.GWei),
+			FromWei(gp, params.GWei),
+		),
+	)
+	assert.Nil(actualGp)
 }
