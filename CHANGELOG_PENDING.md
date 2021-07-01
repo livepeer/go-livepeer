@@ -26,6 +26,8 @@
 
 #### Transcoder
 
+- \#1944 Enable B-frames in Nvidia encoder output (@jailuthra)
+
 ### Bug Fixes 🐞
 
 #### General
