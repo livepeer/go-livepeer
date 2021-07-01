@@ -135,12 +135,12 @@ type (
 		mOrchestratorSwaps            *stats.Int64Measure
 
 		// Metrics for sending payments
-		mTicketValueSent    *stats.Float64Measure
-		mTicketsSent        *stats.Int64Measure
-		mPaymentCreateError *stats.Int64Measure
-		mDeposit            *stats.Float64Measure
-		mReserve            *stats.Float64Measure
-
+		mTicketValueSent     *stats.Float64Measure
+		mTicketsSent         *stats.Int64Measure
+		mPaymentCreateError  *stats.Int64Measure
+		mDeposit             *stats.Float64Measure
+		mReserve             *stats.Float64Measure
+		mMaxTranscodingPrice *stats.Float64Measure
 		// Metrics for receiving payments
 		mTicketValueRecv       *stats.Float64Measure
 		mTicketsRecv           *stats.Int64Measure
@@ -268,7 +268,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTicketsSent = stats.Int64("tickets_sent", "TicketsSent", "tot")
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
 	census.mDeposit = stats.Float64("broadcaster_deposit", "Current remaining deposit for the broadcaster node", "gwei")
-	census.mReserve = stats.Float64("broadcaster_reserve", "Current remaiing reserve for the broadcaster node", "gwei")
+	census.mReserve = stats.Float64("broadcaster_reserve", "Current remaing reserve for the broadcaster node", "gwei")
+	census.mMaxTranscodingPrice = stats.Float64("max_transcoding_price", "MaxTranscodingPrice", "wei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -644,6 +645,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "broadcaster_reserve",
 			Measure:     census.mReserve,
 			Description: "Current remaining reserve for the broadcaster node",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "max_transcoding_price",
+			Measure:     census.mMaxTranscodingPrice,
+			Description: "Maximum price per pixel to pay for transcoding",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
@@ -1353,6 +1361,16 @@ func Deposit(sender string, deposit *big.Int) {
 
 func Reserve(sender string, reserve *big.Int) {
 	stats.Record(census.ctx, census.mReserve.M(wei2gwei(reserve)))
+}
+
+func MaxTranscodingPrice(maxPrice *big.Rat) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	floatWei, ok := maxPrice.Float64()
+	if ok {
+		stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
+	}
 }
 
 // TicketValueRecv records the ticket value received from a sender for a manifestID

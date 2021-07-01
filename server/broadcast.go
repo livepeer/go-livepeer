@@ -61,6 +61,10 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 	cfg.maxPrice = price
+
+	if monitor.Enabled {
+		monitor.MaxTranscodingPrice(price)
+	}
 }
 
 type BroadcastSessionsManager struct {
