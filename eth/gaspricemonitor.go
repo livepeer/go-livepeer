@@ -46,6 +46,9 @@ func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGa
 	if minGasPrice != nil {
 		minGasP = minGasPrice
 	}
+	if monitor.Enabled {
+		monitor.MinGasPrice(minGasP)
+	}
 	return &GasPriceMonitor{
 		gpo:             gpo,
 		pollingInterval: pollingInterval,
@@ -70,6 +73,10 @@ func (gpm *GasPriceMonitor) SetMinGasPrice(minGasPrice *big.Int) {
 	gpm.gasPriceMu.Lock()
 	defer gpm.gasPriceMu.Unlock()
 	gpm.minGasPrice = minGasPrice
+
+	if monitor.Enabled {
+		monitor.MinGasPrice(minGasPrice)
+	}
 }
 
 func (gpm *GasPriceMonitor) MinGasPrice() *big.Int {
