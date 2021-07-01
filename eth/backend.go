@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth/contracts"
+	"github.com/livepeer/go-livepeer/monitor"
 )
 
 var abis = []string{
@@ -129,6 +130,10 @@ func (b *backend) SetMaxGasPrice(gp *big.Int) {
 	b.Lock()
 	defer b.Unlock()
 	b.maxGasPrice = gp
+
+	if monitor.Enabled {
+		monitor.MaxGasPrice(gp)
+	}
 }
 
 func (b *backend) MaxGasPrice() *big.Int {

@@ -149,6 +149,8 @@ type (
 		mValueRedeemed         *stats.Float64Measure
 		mTicketRedemptionError *stats.Int64Measure
 		mSuggestedGasPrice     *stats.Float64Measure
+		mMinGasPrice           *stats.Float64Measure
+		mMaxGasPrice           *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
 
 		// Metrics for pixel accounting
@@ -276,6 +278,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
 	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
 	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
+	census.mMinGasPrice = stats.Float64("min_gas_price", "MinGasPrice", "gwei")
+	census.mMaxGasPrice = stats.Float64("max_gas_price", "MaxGasPrice", "gwei")
 	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
 
 	// Metrics for pixel accounting
@@ -687,6 +691,21 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     baseTags,
 			Aggregation: view.Sum(),
 		},
+		{
+			Name:        "min_gas_price",
+			Measure:     census.mMinGasPrice,
+			Description: "Minimum gas price to use for gas price suggestions",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "max_gas_price",
+			Measure:     census.mMaxGasPrice,
+			Description: "Maximum gas price to use for gas price suggestions",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+
 		// Metrics for pixel accounting
 		{
 			Name:        "mil_pixels_processed",
@@ -1434,6 +1453,20 @@ func SuggestedGasPrice(gasPrice *big.Int) {
 	defer census.lock.Unlock()
 
 	stats.Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
+}
+
+func MinGasPrice(minGasPrice *big.Int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	stats.Record(census.ctx, census.mMinGasPrice.M(wei2gwei(minGasPrice)))
+}
+
+func MaxGasPrice(maxGasPrice *big.Int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	stats.Record(census.ctx, census.mMaxGasPrice.M(wei2gwei(maxGasPrice)))
 }
 
 // TranscodingPrice records the last transcoding price
