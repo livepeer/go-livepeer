@@ -33,7 +33,7 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
 	github.com/jaypipes/ghw v0.7.0
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
-	github.com/livepeer/lpms v0.0.0-20210629190434-fa12d09872b6
+	github.com/livepeer/lpms v0.0.0-20210701040639-0da8cb64714d
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
