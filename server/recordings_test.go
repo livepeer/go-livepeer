@@ -38,7 +38,7 @@ func TestRecordingHandler(t *testing.T) {
 	defer whts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = whts.URL
+	AuthWebhookURL = mustParseUrl(whts.URL)
 
 	makeReq := func(method, uri string) *http.Response {
 		writer := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestRecording(t *testing.T) {
 	defer whts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = whts.URL
+	AuthWebhookURL = mustParseUrl(whts.URL)
 	makeReq := func(method, uri string) *http.Response {
 		writer := httptest.NewRecorder()
 		req := httptest.NewRequest(method, uri, nil)

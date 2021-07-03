@@ -1177,9 +1177,9 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 
 	require := require.New(t)
 
-	AuthWebhookURL = "i'm enabled"
+	AuthWebhookURL = &url.URL{Path: "i'm enabled"}
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	origRandomIDGenerator := common.RandomIDGenerator
