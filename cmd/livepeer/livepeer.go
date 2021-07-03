@@ -755,11 +755,8 @@ func main() {
 		if err != nil {
 			glog.Fatal("Error setting auth webhook URL ", err)
 		}
-		if parsedUrl.User != nil {
-			parsedUrl.User = url.User("REDACTED")
-		}
-		glog.Info("Using auth webhook URL ", parsedUrl)
-		server.AuthWebhookURL = *authWebhookURL
+		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
+		server.AuthWebhookURL = parsedUrl
 	}
 
 	if *detectionWebhookURL != "" {
@@ -767,11 +764,8 @@ func main() {
 		if err != nil {
 			glog.Fatal("Error setting detection webhook URL ", err)
 		}
-		if parsedUrl.User != nil {
-			parsedUrl.User = url.User("REDACTED")
-		}
-		glog.Info("Using detection webhook URL ", parsedUrl)
-		server.DetectionWebhookURL = *detectionWebhookURL
+		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
+		server.DetectionWebhookURL = parsedUrl
 	}
 
 	if n.NodeType == core.BroadcasterNode {

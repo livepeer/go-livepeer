@@ -351,8 +351,8 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(s)
 
-	AuthWebhookURL = "http://localhost:8938/notexisting"
-	u, _ := url.Parse("http://hot/something/id1")
+	AuthWebhookURL = mustParseUrl("http://localhost:8938/notexisting")
+	u := mustParseUrl("http://hot/something/id1")
 	sid := createSid(u)
 	assert.Nil(sid, "Webhook auth failed")
 
@@ -369,7 +369,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		w.Write(nil)
 	}))
 	defer ts.Close()
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(ts.URL)
 	sid = createSid(u)
 	assert.NotNil(sid, "On empty response with 200 code should pass")
 
@@ -378,10 +378,10 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		t := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(resp))
 		}))
-		AuthWebhookURL = t.URL
+		AuthWebhookURL = mustParseUrl(t.URL)
 		return t
 	}
-	defer func() { AuthWebhookURL = "" }()
+	defer func() { AuthWebhookURL = nil }()
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}
 
 	// empty manifestID
@@ -1160,4 +1160,12 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	p, err = jsonProfileToVideoProfile(resp)
 	assert.Nil(p)
 	assert.Equal(common.ErrProfName, err)
+}
+
+func mustParseUrl(str string) *url.URL {
+	url, err := url.Parse(str)
+	if err != nil {
+		panic(err)
+	}
+	return url
 }

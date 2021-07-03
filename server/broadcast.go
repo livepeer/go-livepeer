@@ -561,7 +561,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	// [EXPERIMENTAL] send content detection results to callback webhook
-	if DetectionWebhookURL != "" && len(res.Detections) > 0 {
+	if DetectionWebhookURL != nil && len(res.Detections) > 0 {
 		glog.V(common.DEBUG).Infof("Got detection result %v", res.Detections)
 		go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
 			type SceneClassificationResult struct {
@@ -597,10 +597,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				glog.Errorf("Unable to marshal detection result into JSON manifestID=%v seqNo=%v", mid, seqNo)
 				return
 			}
-			resp, err := DetectionWhClient.Post(DetectionWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+			resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
 			if err != nil {
 				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v, err=%v",
-					DetectionWebhookURL, mid, seqNo, err)
+					DetectionWebhookURL.Redacted(), mid, seqNo, err)
 			} else if resp.StatusCode != 200 {
 				rbody, rerr := ioutil.ReadAll(resp.Body)
 				resp.Body.Close()

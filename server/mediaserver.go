@@ -60,8 +60,8 @@ const BroadcastRetry = 15 * time.Second
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
-var AuthWebhookURL string
-var DetectionWebhookURL string
+var AuthWebhookURL *url.URL
+var DetectionWebhookURL *url.URL
 var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
 // For HTTP push watchdog
@@ -327,7 +327,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 }
 
 func authenticateStream(url string) (*authWebhookResponse, error) {
-	if AuthWebhookURL == "" {
+	if AuthWebhookURL == nil {
 		return nil, nil
 	}
 	started := time.Now()
@@ -336,7 +336,7 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValue))
+	resp, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
 
 	if err != nil {
 		return nil, err
