@@ -812,7 +812,7 @@ func main() {
 			glog.Errorf("Error checking for local -httpAddr: %v", err)
 			return
 		}
-		if !isFlagSet["httpIngest"] && !isLocalHTTP && server.AuthWebhookURL == "" {
+		if !isFlagSet["httpIngest"] && !isLocalHTTP && server.AuthWebhookURL == nil {
 			glog.Warning("HTTP ingest is disabled because -httpAddr is publicly accessible. To enable, configure -authWebhookUrl or use the -httpIngest flag")
 			*httpIngest = false
 		}
