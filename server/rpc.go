@@ -268,7 +268,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 }
 
 func getPriceInfo(orch Orchestrator, addr ethcommon.Address) (*net.PriceInfo, error) {
-	if AuthWebhookURL != "" {
+	if AuthWebhookURL != nil {
 		webhookRes := getFromDiscoveryAuthWebhookCache(addr.Hex())
 		if webhookRes != nil && webhookRes.PriceInfo != nil {
 			return webhookRes.PriceInfo, nil
@@ -330,7 +330,7 @@ type discoveryAuthWebhookRes struct {
 // authenticateBroadcaster returns an error if authentication fails
 // on success it caches the webhook response
 func authenticateBroadcaster(id string) (*discoveryAuthWebhookRes, error) {
-	if AuthWebhookURL == "" {
+	if AuthWebhookURL == nil {
 		return nil, nil
 	}
 
@@ -339,7 +339,7 @@ func authenticateBroadcaster(id string) (*discoveryAuthWebhookRes, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValues))
+	res, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValues))
 	if err != nil {
 		return nil, err
 	}

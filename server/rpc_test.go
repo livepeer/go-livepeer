@@ -852,7 +852,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 
 func TestGetOrchestrator_WebhookAuth_Error(t *testing.T) {
 	orch := &mockOrchestrator{}
-	AuthWebhookURL = "http://fail"
+	AuthWebhookURL = mustParseUrl(t, "http://fail")
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 
@@ -873,9 +873,9 @@ func TestGetOrchestrator_WebhookAuth_ReturnsNotOK(t *testing.T) {
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -902,9 +902,9 @@ func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -1066,9 +1066,9 @@ func TestGetPriceInfo_Webhook_NoCache_ReturnsDefaultPrice(t *testing.T) {
 	assert := assert.New(t)
 	orch := &mockOrchestrator{}
 
-	AuthWebhookURL = "i'm enabled"
+	AuthWebhookURL = &url.URL{Path: "i'm enabled"}
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	addr := ethcommon.HexToAddress("foo")
@@ -1090,9 +1090,9 @@ func TestGetPriceInfo_Webhook_Cache_WrongType_ReturnsDefaultPrice(t *testing.T) 
 	assert := assert.New(t)
 	orch := &mockOrchestrator{}
 
-	AuthWebhookURL = "i'm enabled"
+	AuthWebhookURL = &url.URL{Path: "i'm enabled"}
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	addr := ethcommon.HexToAddress("foo")
@@ -1116,9 +1116,9 @@ func TestGetPriceInfo_Webhook_Cache_ReturnsCachePrice(t *testing.T) {
 	assert := assert.New(t)
 	orch := &mockOrchestrator{}
 
-	AuthWebhookURL = "i'm enabled"
+	AuthWebhookURL = &url.URL{Path: "i'm enabled"}
 	defer func() {
-		AuthWebhookURL = ""
+		AuthWebhookURL = nil
 	}()
 
 	addr := ethcommon.HexToAddress("foo")

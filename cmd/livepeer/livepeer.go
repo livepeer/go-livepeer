@@ -751,21 +751,21 @@ func main() {
 	}
 
 	if *authWebhookURL != "" {
-		_, err := validateURL(*authWebhookURL)
+		parsedUrl, err := validateURL(*authWebhookURL)
 		if err != nil {
 			glog.Fatal("Error setting auth webhook URL ", err)
 		}
-		glog.Info("Using auth webhook URL ", *authWebhookURL)
-		server.AuthWebhookURL = *authWebhookURL
+		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
+		server.AuthWebhookURL = parsedUrl
 	}
 
 	if *detectionWebhookURL != "" {
-		_, err := validateURL(*detectionWebhookURL)
+		parsedUrl, err := validateURL(*detectionWebhookURL)
 		if err != nil {
 			glog.Fatal("Error setting detection webhook URL ", err)
 		}
-		glog.Info("Using detection webhook URL ", *detectionWebhookURL)
-		server.DetectionWebhookURL = *detectionWebhookURL
+		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
+		server.DetectionWebhookURL = parsedUrl
 	}
 
 	if n.NodeType == core.BroadcasterNode {
@@ -812,7 +812,7 @@ func main() {
 			glog.Errorf("Error checking for local -httpAddr: %v", err)
 			return
 		}
-		if !isFlagSet["httpIngest"] && !isLocalHTTP && server.AuthWebhookURL == "" {
+		if !isFlagSet["httpIngest"] && !isLocalHTTP && server.AuthWebhookURL == nil {
 			glog.Warning("HTTP ingest is disabled because -httpAddr is publicly accessible. To enable, configure -authWebhookUrl or use the -httpIngest flag")
 			*httpIngest = false
 		}

@@ -612,7 +612,7 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	defer ts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 
 	h, r, w = requestSetup(s)
 	req = httptest.NewRequest("POST", "/live/web/0.mp4", r)
@@ -672,7 +672,7 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	defer ts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/extmid1/1.ts", nil)
@@ -927,7 +927,7 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = "notaurl"
+	AuthWebhookURL = &url.URL{Path: "notaurl"}
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 
 	handler.ServeHTTP(w, req)
@@ -1005,7 +1005,7 @@ func TestPush_WebhookRequestURL(t *testing.T) {
 
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 	handler, reader, w := requestSetup(s)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 	handler.ServeHTTP(w, req)
@@ -1041,7 +1041,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	defer whts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = whts.URL
+	AuthWebhookURL = mustParseUrl(t, whts.URL)
 
 	ts, mux := stubTLSServer()
 	defer ts.Close()
@@ -1188,7 +1188,7 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = ""
+	AuthWebhookURL = nil
 
 	var wg sync.WaitGroup
 	start := make(chan struct{})
@@ -1240,7 +1240,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	defer ts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = ts.URL
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/extmid1/0.ts", reader)
