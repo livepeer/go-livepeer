@@ -17,6 +17,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -473,10 +474,21 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		sv = verification.NewSegmentVerifier(Policy)
 	}
 
+	var (
+		attempts []transcodeAttemptInfo
+		urls     []string
+	)
+	defer func() {
+		// TODO: Send saved attempts somewhere. Or better yet, avoid this defer and
+		// refactor the retry loop below to send the attempts after looping.
+	}()
 	for i := 0; i < MaxAttempts; i++ {
-		// if fails, retry; rudimentary
-		var urls []string
-		if urls, err = transcodeSegment(cxn, seg, name, sv); err == nil {
+		// if transcodeSegment fails, retry; rudimentary
+		info := transcodeAttemptInfo{}
+		urls, err = transcodeSegment(cxn, seg, name, sv, &info)
+		attempts = append(attempts, info)
+
+		if err == nil {
 			return urls, nil
 		}
 
@@ -499,8 +511,24 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	return nil, err
 }
 
+// TODO: Declare this somewhere else, probably with func that sends to queue.
+type orchShortInfo struct {
+	Address       string
+	TranscoderUri string
+}
+
+type transcodeAttemptInfo struct {
+	Orchestrator orchShortInfo
+	LatencyMs    int64
+	Error        error
+}
+
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) ([]string, error) {
+	verifier *verification.SegmentVerifier, info *transcodeAttemptInfo) (urls []string, err error) {
+	defer func(startTime time.Time) {
+		info.LatencyMs = time.Since(startTime).Milliseconds()
+		info.Error = err
+	}(time.Now())
 
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -516,6 +544,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// would help error propagation for live ingest.
 		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil, nil
+	}
+	info.Orchestrator = orchShortInfo{
+		TranscoderUri: sess.OrchestratorInfo.Transcoder,
+		Address:       hexutil.Encode(sess.OrchestratorInfo.Address),
 	}
 
 	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d", cxn.mid, nonce, seg.SeqNo)
