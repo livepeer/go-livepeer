@@ -207,6 +207,8 @@ github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cO
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
 github.com/livepeer/lpms v0.0.0-20210701040639-0da8cb64714d h1:06XMtzdNci2A4NhcItEGXenHfFkv3Z8pkV8Sxtz7Ecw=
 github.com/livepeer/lpms v0.0.0-20210701040639-0da8cb64714d/go.mod h1:POdMzwnvPmf6UgRkaXGP/ZI7akrzHhzjCNygZej3gzc=
+github.com/livepeer/lpms v0.0.0-20210708211442-0054a3bd93aa h1:jo8cdMEJ3wq2NKusVXgxnrbsnBBPMoSIMes/gVUS0uk=
+github.com/livepeer/lpms v0.0.0-20210708211442-0054a3bd93aa/go.mod h1:POdMzwnvPmf6UgRkaXGP/ZI7akrzHhzjCNygZej3gzc=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
 github.com/livepeer/m3u8 v0.11.1/go.mod h1:IUqAtwWPAG2CblfQa4SVzTQoDcEMPyfNOaBSxqHMS04=
 github.com/mattn/go-colorable v0.1.2 h1:/bC9yWikZXAL9uJdulbSfyVNIR3n3trXl+v8+1sx8mU=
