@@ -21,6 +21,7 @@
 - \#1934 http push: return 422 for non-retryable errors (@darkdarkdragon)
 - \#1933 server: Return 0 video frame segments unchanged
 - \#1943 log maximum transcoding price when monitoring is enabled (@kyriediculous)
+- \#1950 Fix extremely long delay before uploaded segment gets transcoded (@darkdarkdragon)
 
 #### Orchestrator
 
