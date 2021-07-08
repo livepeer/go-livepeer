@@ -101,7 +101,7 @@ if [ ! -e "$ROOT/gnutls-3.7.0" ]; then
   make install
   # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
   # don't know that they need gmp, nettle, and hogweed
-  sed -i'' -e "s/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS/g" ~/compiled/lib/pkgconfig/gnutls.pc
+  sed -i'' -e "s/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS/g" $ROOT/compiled/lib/pkgconfig/gnutls.pc
 fi
 
 EXTRA_FFMPEG_FLAGS=""
