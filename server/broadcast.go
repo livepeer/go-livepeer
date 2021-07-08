@@ -478,37 +478,31 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		attempts []transcodeAttemptInfo
 		urls     []string
 	)
-	defer func() {
-		// TODO: Send saved attempts somewhere. Or better yet, avoid this defer and
-		// refactor the retry loop below to send the attempts after looping.
-	}()
-	for i := 0; i < MaxAttempts; i++ {
+	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
-		info := transcodeAttemptInfo{}
-		urls, err = transcodeSegment(cxn, seg, name, sv, &info)
+		var info transcodeAttemptInfo
+		urls, info, err = transcodeSegment(cxn, seg, name, sv)
 		attempts = append(attempts, info)
-
 		if err == nil {
-			return urls, nil
+			break
 		}
 
 		if shouldStopStream(err) {
 			glog.Warningf("Stopping current stream due to err=%v", err)
 			rtmpStrm.Close()
-			return nil, err
+			break
 		}
-
 		if isNonRetryableError(err) {
 			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to non-retryable error err=%v", nonce, seg.SeqNo, err)
-			return nil, err
+			break
 		}
-
 		// recoverable error, retry
 	}
-	if err != nil {
+	// TODO: Send attempts info somewhere
+	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
 	}
-	return nil, err
+	return urls, err
 }
 
 // TODO: Declare this somewhere else, probably with func that sends to queue.
@@ -520,14 +514,16 @@ type orchShortInfo struct {
 type transcodeAttemptInfo struct {
 	Orchestrator orchShortInfo
 	LatencyMs    int64
-	Error        error
+	Error        string
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier, info *transcodeAttemptInfo) (urls []string, err error) {
+	verifier *verification.SegmentVerifier) (urls []string, info transcodeAttemptInfo, err error) {
 	defer func(startTime time.Time) {
 		info.LatencyMs = time.Since(startTime).Milliseconds()
-		info.Error = err
+		if err != nil {
+			info.Error = err.Error()
+		}
 	}(time.Now())
 
 	nonce := cxn.nonce
@@ -543,7 +539,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// We may want to introduce a "non-retryable" error type here
 		// would help error propagation for live ingest.
 		// similar to the orchestrator's RemoteTranscoderFatalError
-		return nil, nil
+		return nil, info, nil
 	}
 	info.Orchestrator = orchShortInfo{
 		TranscoderUri: sess.OrchestratorInfo.Transcoder,
@@ -566,7 +562,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 			cxn.sessManager.suspendOrch(sess)
 			cxn.sessManager.removeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
@@ -576,7 +572,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
 		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
-		return nil, err
+		return nil, info, err
 	}
 
 	if refresh {
@@ -585,7 +581,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
 			cxn.sessManager.suspendOrch(sess)
 			cxn.sessManager.removeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		// if sess was lastSess, we need to update lastSess,
 		// or else content of SegsInFlight will be lost
@@ -598,14 +594,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	if err != nil || res == nil {
 		if isNonRetryableError(err) {
 			cxn.sessManager.completeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
 			err = errors.New("empty response")
 		}
-		return nil, err
+		return nil, info, err
 	}
 
 	// download transcoded segments from the transcoder
@@ -794,7 +790,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 	cond.L.Unlock()
 	if dlErr != nil {
-		return nil, dlErr
+		return nil, info, dlErr
 	}
 
 	cxn.sessManager.completeSession(updateSession(sess, res))
@@ -809,7 +805,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-			return nil, err
+			return nil, info, err
 		}
 	}
 
@@ -832,7 +828,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-	return segURLs, nil
+	return segURLs, info, nil
 }
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
