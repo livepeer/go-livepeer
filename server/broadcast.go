@@ -1006,6 +1006,11 @@ func nonRetryableErrMapInit() map[string]bool {
 
 var NonRetryableErrMap = nonRetryableErrMapInit()
 
-func isNonRetryableError(e error) bool {
-	return NonRetryableErrMap[e.Error()]
+func isNonRetryableError(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if NonRetryableErrMap[e.Error()] {
+			return true
+		}
+	}
+	return false
 }
