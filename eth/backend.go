@@ -131,7 +131,7 @@ func (b *backend) SetMaxGasPrice(gp *big.Int) {
 	defer b.Unlock()
 	b.maxGasPrice = gp
 
-	if monitor.Enabled {
+	if gp != nil && monitor.Enabled {
 		monitor.MaxGasPrice(gp)
 	}
 }
