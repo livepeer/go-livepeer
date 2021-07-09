@@ -15,11 +15,15 @@ const (
 	PublishQueueSize     = 100
 	RetryMinDelay        = 5 * time.Second
 	PublishLogSampleRate = 0.1
+	MaxRetries           = 3
 )
 
 type publishMessage struct {
 	amqp.Publishing
 	Exchange, Key string
+
+	// internal loop state
+	retries int
 }
 
 type amqpProducer struct {
@@ -100,6 +104,16 @@ func (p *amqpProducer) connectAndLoopPublish() error {
 	defer conn.Close()
 
 	closed := channel.NotifyClose(make(chan *amqp.Error, 1))
+	confirms := channel.NotifyPublish(make(chan amqp.Confirmation, PublishQueueSize))
+
+	nextMsgTag := uint64(1)
+	outstandingMsgs := map[uint64]*publishMessage{}
+	defer func() {
+		// we only return on connection errors, so retry all outstanding messages
+		for _, msg := range outstandingMsgs {
+			p.retryMsg(msg)
+		}
+	}()
 
 	for {
 		select {
@@ -110,23 +124,44 @@ func (p *amqpProducer) connectAndLoopPublish() error {
 		case msg := <-p.publishQ:
 			mandatory, immediate := false, false
 			err := channel.Publish(p.exchange, msg.Key, mandatory, immediate, msg.Publishing)
-			if err == amqp.ErrClosed {
-				select {
-				case p.publishQ <- msg:
-				default:
-					glog.Errorf("Failed to re-enqueue message: exchange=%q, key=%q, body=%q", p.exchange, msg.Key, msg.Body)
-				}
+			if err != nil {
+				p.retryMsg(msg)
+				glog.Errorf("Error publishing message: exchange=%q, key=%q, error=%q, body=%q", p.exchange, msg.Key, err, msg.Body)
 				return err
 			}
 
-			if err != nil {
-				glog.Errorf("Error publishing message: exchange=%q, key=%q, error=%q, body=%q", p.exchange, msg.Key, err, msg.Body)
-				break
-			}
+			outstandingMsgs[nextMsgTag] = msg
+			nextMsgTag++
+
 			if glog.V(4) && rand.Float32() < PublishLogSampleRate {
 				glog.Infof("Sampled: Message published: exchange=%q, key=%q, body=%q", p.exchange, msg.Key, msg.Body)
 			}
+		case conf := <-confirms:
+			tag, success := conf.DeliveryTag, conf.Ack
+			msg, ok := outstandingMsgs[tag]
+			if !ok {
+				glog.Errorf("Received confirmation for unknown message: tag=%v, success=%v", tag, success)
+				break
+			}
+			delete(outstandingMsgs, tag)
+			if !success {
+				p.retryMsg(msg)
+			}
 		}
+	}
+}
+
+func (p *amqpProducer) retryMsg(msg *publishMessage) {
+	msg.retries++
+	if msg.retries >= MaxRetries {
+		glog.Errorf("Dropping message reaching max retries: exchange=%q, key=%q, body=%q", p.exchange, msg.Key, msg.Body)
+		return
+	}
+
+	select {
+	case p.publishQ <- msg:
+	default:
+		glog.Errorf("Failed to re-enqueue message: exchange=%q, key=%q, body=%q", p.exchange, msg.Key, msg.Body)
 	}
 }
 
@@ -140,6 +175,10 @@ func (p *amqpProducer) setupConnection() (*amqp.Connection, *amqp.Channel, error
 	if err != nil {
 		conn.Close()
 		return nil, nil, fmt.Errorf("open channel: %w", err)
+	}
+	if err := channel.Confirm(false); err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("request confirms: %w", err)
 	}
 
 	var (
