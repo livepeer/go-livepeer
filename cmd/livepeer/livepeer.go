@@ -28,6 +28,7 @@ import (
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
+	"github.com/livepeer/go-livepeer/server/event"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -142,6 +143,8 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+	metadataAmqpUri := flag.String("metadataAmqpUri", "", "URI for AMQP host to send operation metadata")
+	metadataExchange := flag.String("metadataExchange", "lp_golivepeer_metadata", "Name of AMQP exchange to send operation metadata")
 
 	// Storage:
 	datadir := flag.String("datadir", "", "Directory that data is stored in")
@@ -900,6 +903,11 @@ func main() {
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
 		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
+	}
+
+	if *metadataAmqpUri != "" {
+		uri, exchange, keyNs := *metadataAmqpUri, *metadataExchange, n.NodeType.String()
+		server.MetadataQueue = event.NewAMQPProducer(context.Background(), uri, exchange, keyNs)
 	}
 
 	//Create Livepeer Node

@@ -45,6 +45,22 @@ const (
 	RedeemerNode
 )
 
+var nodeTypeStrs = map[NodeType]string{
+	DefaultNode:      "default",
+	BroadcasterNode:  "broadcaster",
+	OrchestratorNode: "orchestrator",
+	TranscoderNode:   "transcoder",
+	RedeemerNode:     "redeemer",
+}
+
+func (t NodeType) String() string {
+	str, ok := nodeTypeStrs[t]
+	if !ok {
+		return "unknown"
+	}
+	return str
+}
+
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
