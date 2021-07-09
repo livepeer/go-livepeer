@@ -2,15 +2,13 @@
 
 set -ex
 
-DEFAULT_ROOT="${HOME:-/build}"
-ROOT="${1:-$DEFAULT_ROOT}"
-mkdir -p $ROOT
+ROOT="${1:-$HOME}"
 
 # Windows (MSYS2) needs a few tweaks
 if [[ $(uname) == *"MSYS"* ]]; then
+  ROOT="/build"
   export PATH="$PATH:/usr/bin:/mingw64/bin"
   export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/mingw64/lib"
-  export HOME="$ROOT"
 
   export PATH="$ROOT/compiled/bin":$PATH
   export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
@@ -25,6 +23,8 @@ fi
 
 export PATH="$ROOT/compiled/bin":$PATH
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$ROOT/compiled/lib/pkgconfig"
+
+mkdir -p $ROOT
 
 # NVENC only works on Windows/Linux
 if [ $(uname) != "Darwin" ]; then
