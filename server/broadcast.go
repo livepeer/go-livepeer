@@ -475,12 +475,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 
 	var (
-		attempts []transcodeAttemptInfo
-		urls     []string
+		startTime = time.Now()
+		attempts  []TranscodeAttemptInfo
+		urls      []string
 	)
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
-		var info transcodeAttemptInfo
+		var info TranscodeAttemptInfo
 		urls, info, err = transcodeSegment(cxn, seg, name, sv)
 		attempts = append(attempts, info)
 		if err == nil {
@@ -498,31 +499,25 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		}
 		// recoverable error, retry
 	}
-	// TODO: Send attempts info somewhere
+	if MetadataQueue != nil {
+		key := fmt.Sprintf("stream_health.transcode.%s", mid)
+		success := err == nil && len(urls) > 0
+		shte := NewStreamHealthTranscodeEvent(string(mid), seg, startTime, success, attempts)
+		BackgroundPublish(MetadataQueue, key, shte)
+	}
 	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
 	}
 	return urls, err
 }
 
-// TODO: Declare this somewhere else, probably with func that sends to queue.
-type orchShortInfo struct {
-	Address       string
-	TranscoderUri string
-}
-
-type transcodeAttemptInfo struct {
-	Orchestrator orchShortInfo
-	LatencyMs    int64
-	Error        string
-}
-
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) (urls []string, info transcodeAttemptInfo, err error) {
+	verifier *verification.SegmentVerifier) (urls []string, info TranscodeAttemptInfo, err error) {
 	defer func(startTime time.Time) {
 		info.LatencyMs = time.Since(startTime).Milliseconds()
 		if err != nil {
-			info.Error = err.Error()
+			errStr := err.Error()
+			info.Error = &errStr
 		}
 	}(time.Now())
 
@@ -541,7 +536,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil, info, nil
 	}
-	info.Orchestrator = orchShortInfo{
+	info.Orchestrator = OrchestratorMetadata{
 		TranscoderUri: sess.OrchestratorInfo.Transcoder,
 		Address:       hexutil.Encode(sess.OrchestratorInfo.Address),
 	}
