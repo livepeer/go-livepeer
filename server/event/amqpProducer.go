@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
@@ -136,7 +137,10 @@ func (p *amqpProducer) connectAndLoopPublish() error {
 			if glog.V(4) && rand.Float32() < PublishLogSampleRate {
 				glog.Infof("Sampled: Message published: exchange=%q, key=%q, body=%q", p.exchange, msg.Key, msg.Body)
 			}
-		case conf := <-confirms:
+		case conf, ok := <-confirms:
+			if !ok {
+				return errors.New("channel or connection closed")
+			}
 			tag, success := conf.DeliveryTag, conf.Ack
 			msg, ok := outstandingMsgs[tag]
 			if !ok {
