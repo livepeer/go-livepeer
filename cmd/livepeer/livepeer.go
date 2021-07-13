@@ -907,7 +907,10 @@ func main() {
 
 	if *metadataAmqpUri != "" {
 		uri, exchange, keyNs := *metadataAmqpUri, *metadataExchange, n.NodeType.String()
-		server.MetadataQueue = event.NewAMQPProducer(context.Background(), uri, exchange, keyNs)
+		server.MetadataQueue, err = event.NewAMQPProducer(context.Background(), uri, exchange, keyNs)
+		if err != nil {
+			glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
+		}
 	}
 
 	//Create Livepeer Node

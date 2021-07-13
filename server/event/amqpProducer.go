@@ -41,11 +41,17 @@ type amqpProducer struct {
 	connectFn       connectFunc
 }
 
-func NewAMQPProducer(ctx context.Context, uri, exchange, keyNs string) Producer {
+func NewAMQPProducer(ctx context.Context, uri, exchange, keyNs string) (Producer, error) {
 	return newAMQPProducerInternal(ctx, uri, exchange, keyNs, amqpConnect)
 }
 
-func newAMQPProducerInternal(ctx context.Context, uri, exchange, keyNs string, connectFn connectFunc) Producer {
+func newAMQPProducerInternal(ctx context.Context, uri, exchange, keyNs string, connectFn connectFunc) (Producer, error) {
+	testCtx, cancel := context.WithCancel(ctx)
+	_, err := connectFn(testCtx, uri, exchange, nil, nil)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
 	amqp := &amqpProducer{
 		ctx:       ctx,
 		amqpURI:   uri,
@@ -55,7 +61,7 @@ func newAMQPProducerInternal(ctx context.Context, uri, exchange, keyNs string, c
 		connectFn: connectFn,
 	}
 	go amqp.mainLoop()
-	return amqp
+	return amqp, nil
 }
 
 func (p *amqpProducer) Publish(ctx context.Context, key string, body interface{}) error {
@@ -216,7 +222,11 @@ func amqpConnect(ctx context.Context, uri, exchange string,
 		conn.Close()
 		return nil, fmt.Errorf("exchange declare: %w", err)
 	}
-	channel.NotifyPublish(confirms)
-	channel.NotifyClose(closed)
+	if confirms != nil {
+		channel.NotifyPublish(confirms)
+	}
+	if closed != nil {
+		channel.NotifyClose(closed)
+	}
 	return channel, nil
 }
