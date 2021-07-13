@@ -22,6 +22,7 @@
 - \#1933 server: Return 0 video frame segments unchanged
 - \#1943 log maximum transcoding price when monitoring is enabled (@kyriediculous)
 - \#1950 Fix extremely long delay before uploaded segment gets transcoded (@darkdarkdragon)
+- \#1874 Fetch as many orchestrators as possible during discovery before a shorter timeout (@kyriediculous)
 
 #### Orchestrator
 

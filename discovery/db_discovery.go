@@ -177,7 +177,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorCutoffTime)
 	defer cancel()
 
 	currentRound := dbo.rm.LastInitializedRound()
@@ -253,7 +253,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	ctx, cancel := context.WithTimeout(context.Background(), common.HTTPTimeout)
 	defer cancel()
 
 	getOrchInfo := func(dbOrch *common.DBOrch) {

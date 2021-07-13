@@ -31,6 +31,8 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+var minWorkingSetRatio = 0.1
+
 var refreshTimeout = 2500 * time.Millisecond
 var maxDurationSec = common.MaxDuration.Seconds()
 
@@ -40,6 +42,8 @@ var MaxAttempts = 3
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = drivers.GetSegmentData
+
+const MIN_SIZE = 1
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -91,7 +95,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 
 	checkSessions := func(m *BroadcastSessionsManager) bool {
 		numSess := m.sel.Size()
-		if numSess < int(math.Ceil(float64(m.numOrchs)/2.0)) {
+		if numSess < int(math.Ceil(float64(m.numOrchs)/5.0)) {
 			go m.refreshSessions()
 		}
 		return (numSess > 0 || bsm.lastSess != nil)
@@ -273,30 +277,33 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 }
 
 func (bsm *BroadcastSessionsManager) suspendOrch(sess *BroadcastSession) {
-	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), bsm.poolSize/bsm.numOrchs)
+	poolSize := math.Max(MIN_SIZE, float64(bsm.poolSize))
+	selSize := math.Max(MIN_SIZE, float64(bsm.sel.Size()))
+	penalty := int(math.Ceil(poolSize / selSize))
+	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), penalty)
 }
 
 func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
-	var poolSize float64
+	var poolSize int
 	if node.OrchestratorPool != nil {
-		poolSize = float64(node.OrchestratorPool.Size())
+		poolSize = node.OrchestratorPool.Size()
 	}
-	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
-	numOrchs := int(math.Min(poolSize, maxInflight*2))
+
 	sus := newSuspender()
 	bsm := &BroadcastSessionsManager{
 		mid:     params.ManifestID,
 		sel:     sel,
 		sessMap: make(map[string]*BroadcastSession),
 		createSessions: func() ([]*BroadcastSession, error) {
-			return selectOrchestrator(node, params, numOrchs, sus)
+			return selectOrchestrator(node, params, poolSize, sus)
 		},
 		sessLock: &sync.Mutex{},
-		numOrchs: numOrchs,
-		poolSize: int(poolSize),
+		numOrchs: poolSize,
+		poolSize: poolSize,
 		sus:      sus,
 	}
 	bsm.refreshSessions()
+	glog.Infof("Created new broadcast session manager with pool size %v", poolSize)
 	return bsm
 }
 
@@ -315,6 +322,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		return nil, err
 	}
 
+	glog.Infof("Found %v orchestrators", len(tinfos))
 	var sessions []*BroadcastSession
 
 	for _, tinfo := range tinfos {
@@ -980,4 +988,8 @@ var NonRetryableErrMap = nonRetryableErrMapInit()
 
 func isNonRetryableError(e error) bool {
 	return NonRetryableErrMap[e.Error()]
+}
+
+func MinWorkingSetSize(numOrchs int) int {
+	return int(math.Ceil(float64(numOrchs) * minWorkingSetRatio))
 }

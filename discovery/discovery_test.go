@@ -1318,7 +1318,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	assert.Len(res, len(addresses)-1)
 	// Ensure that the timeout did not fire
 	assert.Less(end.Sub(start).Milliseconds(),
-		getOrchestratorsTimeoutLoop.Milliseconds())
+		getOrchestratorCutoffTime.Milliseconds())
 
 }
 
@@ -1358,13 +1358,18 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	assert.NotEqual(res[1].GetTranscoder(), "https://127.0.0.1:8938")
 
 	// include suspended O's if not enough non-suspended O's available
+	sus.list["https://127.0.0.1:8937"] = 5
+
 	wg.Add(len(addresses))
 	require.Greater(sus.Suspended("https://127.0.0.1:8938"), 0)
+	require.Greater(sus.Suspended("https://127.0.0.1:8937"), 0)
 	res, err = pool.GetOrchestrators(3, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 	// suspended Os are added last
-	assert.Equal(res[2].Transcoder, "https://127.0.0.1:8938")
+	assert.NotEqual(res[0].Transcoder, "https://127.0.0.1:8937")
+	assert.NotEqual(res[0].Transcoder, "https://127.0.0.1:8938")
+	assert.True(res[1].Transcoder == "https://127.0.0.1:8937" || res[1].Transcoder == "https://127.0.0.1:8938")
 
 	// no suspended O's, insufficient non-suspended O's
 	sus = newStubSuspender()
@@ -1375,13 +1380,16 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 
 	// insufficient non-suspended O's, insufficient suspended O's
 	wg.Add(len(addresses))
+	sus.list["https://127.0.0.1:8937"] = 5
 	sus.list["https://127.0.0.1:8938"] = 5
 	require.Greater(sus.Suspended("https://127.0.0.1:8938"), 0)
 	res, err = pool.GetOrchestrators(4, sus, caps)
 	assert.Nil(err)
 	assert.Len(res, 3)
 	// suspended Os are added last
-	assert.Equal(res[2].Transcoder, "https://127.0.0.1:8938")
+	assert.NotEqual(res[0].Transcoder, "https://127.0.0.1:8937")
+	assert.NotEqual(res[0].Transcoder, "https://127.0.0.1:8938")
+	assert.True(res[1].Transcoder == "https://127.0.0.1:8937" || res[1].Transcoder == "https://127.0.0.1:8938")
 
 	// lower penalty is included before a higher penalty
 	wg.Add(len(addresses))
@@ -1470,14 +1478,14 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 		return &net.OrchestratorInfo{}, nil
 	}
 
-	oldTimeout := getOrchestratorsTimeoutLoop
-	getOrchestratorsTimeoutLoop = 1 * time.Millisecond
-	defer func() { getOrchestratorsTimeoutLoop = oldTimeout }()
+	oldTimeout := getOrchestratorCutoffTime
+	getOrchestratorCutoffTime = 1 * time.Millisecond
+	defer func() { getOrchestratorCutoffTime = oldTimeout }()
 
 	pool := NewOrchestratorPool(nil, addresses)
 
 	timedOut := func(start, end time.Time) bool {
-		return end.Sub(start).Milliseconds() >= getOrchestratorsTimeoutLoop.Milliseconds()
+		return end.Sub(start).Milliseconds() >= getOrchestratorCutoffTime.Milliseconds()
 	}
 
 	// We may only return a subset of responses for a given test
@@ -1519,7 +1527,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	assert.True(responsesDrained(), "Did not drain responses in time")
 
 	// Sanity check we get addresses with a reasonable timeout and no forced delay
-	getOrchestratorsTimeoutLoop = 25 * time.Millisecond
+	getOrchestratorCutoffTime = 25 * time.Millisecond
 	go drainOrchResponses(len(addresses))
 	start = time.Now()
 	res, err = getOrchestrators(len(addresses))
