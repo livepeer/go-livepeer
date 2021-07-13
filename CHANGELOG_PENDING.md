@@ -13,6 +13,8 @@
 
 #### Broadcaster
 
+- \#1874 Fetch as many orchestrators as possible during discovery before a shorter timeout (@kyriediculous)
+
 #### Orchestrator
 
 #### Transcoder

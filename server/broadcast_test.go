@@ -248,22 +248,16 @@ func TestNewSessionManager(t *testing.T) {
 	sess := NewSessionManager(n, params, &LIFOSelector{})
 	assert.Equal(0, sess.numOrchs)
 
-	// Check numOrchs up to maximum and a bit beyond
+	// Check numOrchs equals poolSize
 	sd := &stubDiscovery{}
 	n.OrchestratorPool = sd
-	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(n, params, &LIFOSelector{})
-		if i < max {
-			assert.Equal(i, sess.numOrchs)
-		} else {
-			assert.Equal(max, sess.numOrchs)
-		}
 		sd.infos = append(sd.infos, &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{}})
+		sess = NewSessionManager(n, params, &LIFOSelector{})
+		assert.Equal(i+1, sess.numOrchs)
 	}
 	// sanity check some expected postconditions
-	assert.Equal(sess.numOrchs, max)
-	assert.True(sd.Size() > max, "pool should be greater than max numOrchs")
+	assert.Equal(sess.numOrchs, sd.Size())
 }
 
 func wgWait(wg *sync.WaitGroup) bool {
@@ -991,6 +985,7 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	bsm.poolSize = 40
 	bsm.numOrchs = 8
+	selSize := bsm.sel.Size()
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
 		nonce:       7,
@@ -1002,7 +997,7 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 	_, _, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 
 	assert.EqualError(err, "OrchestratorBusy")
-	assert.Equal(bsm.sus.Suspended(ts.URL), bsm.poolSize/bsm.numOrchs)
+	assert.Equal(bsm.sus.Suspended(ts.URL), bsm.poolSize/selSize)
 }
 
 func TestTranscodeSegment_CompleteSession(t *testing.T) {

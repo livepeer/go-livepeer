@@ -17,7 +17,9 @@ import (
 	"github.com/golang/glog"
 )
 
-var getOrchestratorsTimeoutLoop = 3 * time.Second
+const MinWorkingSetSize = 8
+
+var getOrchestratorCutoffTime = 1 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
@@ -49,7 +51,6 @@ func (o *orchestratorPool) GetURLs() []*url.URL {
 func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
 	numAvailableOrchs := len(o.uris)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 
 	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
@@ -80,6 +81,9 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorCutoffTime)
+
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		if err == nil && isCompatible(info) {
@@ -126,7 +130,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 	}
 	cancel()
 
-	if len(infos) < numOrchestrators {
+	if len(infos) <= server.MinWorkingSetSize(numOrchestrators) {
 		diff := numOrchestrators - len(infos)
 		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {
 			info := heap.Pop(suspendedInfos).(*suspension).orch
