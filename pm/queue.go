@@ -131,7 +131,8 @@ ticketLoop:
 						// If the ticket is used, we can mark it as redeemed
 						if res.err != nil {
 							glog.Errorf("Error redeeming err=%v", res.err)
-							if res.err != errIsUsedTicket {
+							_, checkTxErr := res.err.(errCheckTx)
+							if res.err != errIsUsedTicket && !checkTxErr {
 								continue
 							}
 						}
