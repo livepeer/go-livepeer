@@ -195,7 +195,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(tx)
 	assert.EqualError(
 		err,
-		fmt.Sprintf("Replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
+		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
 	)
 	eth.err["TransactionByHash"] = nil
 
@@ -205,7 +205,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(tx)
 	assert.EqualError(
 		err,
-		fmt.Sprintf("Replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
+		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
 	)
 
 	// Error signing replacement tx
@@ -243,7 +243,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	// Replacement gas price lower than suggest gas price
 	// Use market gas price
 	gpm.gasPrice = big.NewInt(999)
-	require.Greater(gpm.GasPrice(), calcReplacementGasPrice(stubTx))
+	require.True(gpm.GasPrice().Cmp(calcReplacementGasPrice(stubTx)) > 0)
 	logsBefore = glog.Stats.Info.Lines()
 	tx, err = tm.replace(stubTx)
 	logsAfter = glog.Stats.Info.Lines()

@@ -216,7 +216,6 @@ func (tm *TransactionManager) checkTxLoop() {
 
 		receipt, err = tm.wait(tx)
 
-		fmt.Println("max replacements", tm.maxReplacements)
 		// context.DeadlineExceeded indicates that we hit the txTimeout
 		// If we hit the txTimeout, replace the tx up to maxReplacements times
 		for i := 0; err == context.DeadlineExceeded && i < tm.maxReplacements; i++ {

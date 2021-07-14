@@ -1139,7 +1139,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 
 		b := s.LivepeerNode.Eth.Backend()
-		gprice := b.MaxGasPrice()
+		gprice := b.GasPriceMonitor().MaxGasPrice()
 		if gprice == nil {
 			w.Write([]byte(""))
 		} else {
@@ -1162,8 +1162,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		if amount == "0" {
 			gprice = nil
 		}
-		b := s.LivepeerNode.Eth.Backend()
-		b.SetMaxGasPrice(gprice)
+		s.LivepeerNode.Eth.Backend().GasPriceMonitor().SetMaxGasPrice(gprice)
 	})
 
 	mux.Handle("/minGasPrice", minGasPriceHandler(s.LivepeerNode.Eth))
