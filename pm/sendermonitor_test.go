@@ -787,14 +787,15 @@ func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
 	sm := NewSenderMonitor(cfg, b, smgr, tm, ts)
 	sm.Start()
 	defer sm.Stop()
-	b.checkTxErr = errors.New("checktx error")
+	expErr := errCheckTx(errors.New("checktx error"))
+	b.checkTxErr = expErr
 	assert := assert.New(t)
 
 	signedT := defaultSignedTicket(addr, uint32(0))
 
 	tx, err := sm.redeemWinningTicket(signedT)
 	assert.Nil(tx)
-	assert.EqualError(err, b.checkTxErr.Error())
+	assert.IsType(expErr, err)
 }
 
 func TestRedeemWinningTicket_SingleTicket(t *testing.T) {

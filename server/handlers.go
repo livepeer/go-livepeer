@@ -373,7 +373,7 @@ func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(client.Backend().MinGasPrice().String()))
+		w.Write([]byte(client.Backend().GasPriceMonitor().MinGasPrice().String()))
 	})
 }
 
@@ -389,7 +389,7 @@ func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 			respondWith400(w, fmt.Sprintf("invalid minGasPrice: %v", err))
 			return
 		}
-		client.Backend().SetMinGasPrice(minGasPrice)
+		client.Backend().GasPriceMonitor().SetMinGasPrice(minGasPrice)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("setMinGasPrice success"))

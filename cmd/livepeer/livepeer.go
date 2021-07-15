@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/build"
@@ -45,8 +46,7 @@ import (
 )
 
 var (
-	ErrKeygen    = errors.New("ErrKeygen")
-	EthTxTimeout = 600 * time.Second
+	ErrKeygen = errors.New("ErrKeygen")
 
 	// The timeout for ETH RPC calls
 	ethRPCTimeout = 20 * time.Second
@@ -113,6 +113,8 @@ func main() {
 	ethKeystorePath := flag.String("ethKeystorePath", "", "Path for the Eth Key")
 	ethOrchAddr := flag.String("ethOrchAddr", "", "ETH address of an on-chain registered orchestrator")
 	ethUrl := flag.String("ethUrl", "", "Ethereum node JSON-RPC URL")
+	txTimeout := flag.Duration("transactionTimeout", 5*time.Minute, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
+	maxTxReplacements := flag.Int("maxTransactionReplacements", 1, "Number of times to automatically replace pending Ethereum transactions")
 	gasLimit := flag.Int("gasLimit", 0, "Gas limit for ETH transactions")
 	minGasPrice := flag.Int64("minGasPrice", 0, "Minimum gas price for ETH transactions")
 	maxGasPrice := flag.Int("maxGasPrice", 0, "Maximum gas price for ETH transactions")
@@ -384,7 +386,7 @@ func main() {
 			bigMaxGasPrice = big.NewInt(int64(*maxGasPrice))
 		}
 
-		gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, big.NewInt(*minGasPrice))
+		gpm := eth.NewGasPriceMonitor(backend, blockPollingTime, big.NewInt(*minGasPrice), bigMaxGasPrice)
 		// Start gas price monitor
 		_, err = gpm.Start(ctx)
 		if err != nil {
@@ -393,7 +395,32 @@ func main() {
 		}
 		defer gpm.Stop()
 
-		client, err := eth.NewClient(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, *ethPassword, backend, gpm, ethcommon.HexToAddress(*ethController), EthTxTimeout, bigMaxGasPrice)
+		signer := types.NewEIP155Signer(chainID)
+
+		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, signer)
+		if err != nil {
+			glog.Errorf("Error creating Ethereum account manager: %v", err)
+			return
+		}
+
+		if err := am.Unlock(*ethPassword); err != nil {
+			glog.Errorf("Error unlocking Ethereum account: %v", err)
+			return
+		}
+
+		tm := eth.NewTransactionManager(backend, gpm, am, *txTimeout, *maxTxReplacements)
+		go tm.Start()
+		defer tm.Stop()
+
+		ethCfg := eth.LivepeerEthClientConfig{
+			AccountManager:     am,
+			ControllerAddr:     ethcommon.HexToAddress(*ethController),
+			EthClient:          backend,
+			GasPriceMonitor:    gpm,
+			TransactionManager: tm,
+		}
+
+		client, err := eth.NewClient(ethCfg)
 		if err != nil {
 			glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
 			return

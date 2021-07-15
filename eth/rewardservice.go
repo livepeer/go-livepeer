@@ -91,30 +91,11 @@ func (s *RewardService) tryReward() error {
 			return err
 		}
 
-		err = s.client.CheckTx(tx)
-		if err != nil {
-			if err == context.DeadlineExceeded {
-				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx once")
-				// Previous attempt to call reward() still pending
-				// Replace pending tx by bumping gas price
-				tx, err = s.client.ReplaceTransaction(tx, "reward", nil)
-				if err != nil {
-					return err
-				}
-				if err := s.client.CheckTx(tx); err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
-		}
-
-		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
-		if err != nil {
+		if err := s.client.CheckTx(tx); err != nil {
 			return err
 		}
 
-		glog.Infof("Called reward for round %v - %v rewards minted", currentRound, FormatUnits(tp.RewardPool, "LPTU"))
+		glog.Infof("Called reward for round %v", currentRound)
 
 		return nil
 	}

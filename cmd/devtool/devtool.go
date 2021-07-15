@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/eth"
@@ -160,7 +161,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	glog.Infof("Using controller address %s", ethController)
 
-	gpm := eth.NewGasPriceMonitor(backend, 5*time.Second, big.NewInt(0))
+	gpm := eth.NewGasPriceMonitor(backend, 5*time.Second, big.NewInt(0), nil)
+
 	// Start gas price monitor
 	_, err = gpm.Start(context.Background())
 	if err != nil {
@@ -169,10 +171,40 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	defer gpm.Stop()
 
-	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend, gpm,
-		ethcommon.HexToAddress(ethController), ethTxTimeout, nil)
+	chainID, err := backend.ChainID(context.Background())
 	if err != nil {
-		glog.Errorf("Failed to create client: %v", err)
+		glog.Errorf("Failed to get chain ID from remote ethereum node: %v", err)
+		return
+	}
+
+	signer := types.NewEIP155Signer(chainID)
+
+	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, signer)
+	if err != nil {
+		glog.Errorf("Error creating Ethereum account manager: %v", err)
+		return
+	}
+
+	if err := am.Unlock(passphrase); err != nil {
+		glog.Errorf("Error unlocking Ethereum account: %v", err)
+		return
+	}
+
+	tm := eth.NewTransactionManager(backend, gpm, am, 5*time.Minute, 0)
+	go tm.Start()
+	defer tm.Stop()
+
+	ethCfg := eth.LivepeerEthClientConfig{
+		AccountManager:     am,
+		ControllerAddr:     ethcommon.HexToAddress(ethController),
+		EthClient:          backend,
+		GasPriceMonitor:    gpm,
+		TransactionManager: tm,
+	}
+
+	client, err := eth.NewClient(ethCfg)
+	if err != nil {
+		glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
 		return
 	}
 

@@ -101,7 +101,6 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 
 	eth.AssertNumberOfCalls(t, "Reward", 1)
 	eth.AssertNumberOfCalls(t, "CheckTx", 1)
-	eth.AssertNotCalled(t, "ReplaceTransaction")
 
 	errorLogsAfter := glog.Stats.Error.Lines()
 	infoLogsAfter := glog.Stats.Info.Lines()
@@ -109,11 +108,8 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	assert.Equal(int64(1), infoLogsAfter-infoLogsBefore)
 
 	// Test for transaction time out error
-	// Call replace transaction
 	eth.On("Reward").Return(&types.Transaction{}, nil).Once()
 	eth.On("CheckTx").Return(context.DeadlineExceeded).Once()
-	eth.On("ReplaceTransaction").Return(&types.Transaction{}, nil)
-	eth.On("CheckTx").Return(nil).Once()
 
 	errorLogsBefore = glog.Stats.Error.Lines()
 	infoLogsBefore = glog.Stats.Info.Lines()
@@ -122,31 +118,10 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	eth.AssertNumberOfCalls(t, "Reward", 2)
-	eth.AssertNumberOfCalls(t, "CheckTx", 3)
-	eth.AssertNumberOfCalls(t, "ReplaceTransaction", 1)
-
-	errorLogsAfter = glog.Stats.Error.Lines()
-	infoLogsAfter = glog.Stats.Info.Lines()
-	assert.Equal(int64(0), errorLogsAfter-errorLogsBefore)
-	assert.Equal(int64(2), infoLogsAfter-infoLogsBefore)
-
-	// Test replacement timeout error
-	eth.On("Reward").Return(&types.Transaction{}, nil).Once()
-	eth.On("CheckTx").Return(context.DeadlineExceeded)
-	eth.On("ReplaceTransaction").Return(&types.Transaction{}, nil)
-
-	errorLogsBefore = glog.Stats.Error.Lines()
-	infoLogsBefore = glog.Stats.Info.Lines()
-
-	tw.roundSink <- types.Log{}
-	time.Sleep(1 * time.Second)
-
-	eth.AssertNumberOfCalls(t, "Reward", 3)
-	eth.AssertNumberOfCalls(t, "CheckTx", 5)
-	eth.AssertNumberOfCalls(t, "ReplaceTransaction", 2)
+	eth.AssertNumberOfCalls(t, "CheckTx", 2)
 
 	errorLogsAfter = glog.Stats.Error.Lines()
 	infoLogsAfter = glog.Stats.Info.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
-	assert.Equal(int64(1), infoLogsAfter-infoLogsBefore)
+	assert.Equal(int64(0), infoLogsAfter-infoLogsBefore)
 }

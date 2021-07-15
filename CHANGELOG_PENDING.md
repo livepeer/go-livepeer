@@ -10,6 +10,7 @@
 - \#1915 Use gas price monitor for gas price suggestions for all Ethereum transactions (@kyriediculous)
 - \#1930 Support custom minimum gas price (@yondonfu)
 - \#1942 Log min and max gas price when monitoring is enabled (@kyriediculous)
+- \#1923 Use a transaction manager with better transaction handling and optional replacement transactions instead of the default JSON-RPC client (@kyriediculous)
 
 #### Broadcaster
 
