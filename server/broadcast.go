@@ -322,7 +322,6 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		return nil, err
 	}
 
-	glog.Infof("Found %v orchestrators", len(tinfos))
 	var sessions []*BroadcastSession
 
 	for _, tinfo := range tinfos {

@@ -83,7 +83,6 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorCutoffTime)
-	defer cancel()
 
 	getOrchInfo := func(uri *url.URL) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
