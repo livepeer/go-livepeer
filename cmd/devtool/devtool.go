@@ -200,6 +200,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		EthClient:          backend,
 		GasPriceMonitor:    gpm,
 		TransactionManager: tm,
+		Signer:             signer,
 	}
 
 	client, err := eth.NewClient(ethCfg)

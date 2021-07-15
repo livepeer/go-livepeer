@@ -418,6 +418,7 @@ func main() {
 			EthClient:          backend,
 			GasPriceMonitor:    gpm,
 			TransactionManager: tm,
+			Signer:             signer,
 		}
 
 		client, err := eth.NewClient(ethCfg)

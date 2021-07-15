@@ -11,6 +11,7 @@
 - \#1930 Support custom minimum gas price (@yondonfu)
 - \#1942 Log min and max gas price when monitoring is enabled (@kyriediculous)
 - \#1923 Use a transaction manager with better transaction handling and optional replacement transactions instead of the default JSON-RPC client (@kyriediculous)
+- \#1954 Add signer to Ethereum client config (@kyriediculous)
 
 #### Broadcaster
 
