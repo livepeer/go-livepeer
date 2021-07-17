@@ -696,22 +696,15 @@ func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
 		return
 	}
 
-	// If the update's credit has not been spent then add the existing credit
-	// back to the balance
-	if update.Status == Staged {
-		sess.Balance.Credit(update.ExistingCredit)
-		return
-	}
-
+	// If the update's credit has not been spent then the balance remains unchanged
 	// If the update did not include a processed debit then no change was received
 	// so we exit without updating the balance because the credit was spent already
-	if update.Status != ReceivedChange {
+	if update.Status == Staged || update.Status != ReceivedChange {
 		return
 	}
 
-	credit := new(big.Rat).Add(update.ExistingCredit, update.NewCredit)
 	// The change could be negative if the debit > credit
-	change := credit.Sub(credit, update.Debit)
+	change := new(big.Rat).Sub(update.NewCredit, update.Debit)
 
 	// If the change is negative then this is equivalent to debiting abs(change)
 	sess.Balance.Credit(change)

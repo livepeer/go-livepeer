@@ -32,7 +32,7 @@ func (b *Balance) Credit(amount *big.Rat) {
 // StageUpdate prepares a balance update by reserving the current balance and returning the number of tickets
 // to send with a payment, the new credit represented by the payment and the existing credit (i.e reserved balance)
 func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) {
-	existingCredit := b.balances.Reserve(b.addr, b.manifestID)
+	existingCredit := b.balances.Balance(b.addr, b.manifestID)
 
 	// If the existing credit exceeds the minimum credit then no tickets are required
 	// and the total payment value is 0
