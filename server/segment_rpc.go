@@ -36,6 +36,7 @@ const paymentHeader = "Livepeer-Payment"
 const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
+const milPixels = 1000000.0
 
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
@@ -197,6 +198,10 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	// Debit the fee for the total pixel count
 	orch.DebitFees(sender, core.ManifestID(segData.AuthToken.SessionId), payment.GetExpectedPrice(), pixels)
+
+	if monitor.Enabled {
+		monitor.MilPixelsProcessed(float64(pixels) / milPixels)
+	}
 
 	// construct the response
 	var result net.TranscodeResult
@@ -553,7 +558,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
 
 		if monitor.Enabled {
-			monitor.MilPixelsProcessed(float64(pixelCount) / 1000000.0)
+			monitor.MilPixelsProcessed(float64(pixelCount) / milPixels)
 		}
 	}
 
