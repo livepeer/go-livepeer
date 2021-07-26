@@ -1126,7 +1126,7 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Equal(time.Minute, p[0].GOP)
 
 	// test gop 0
-	resp.Profiles[0].GOP = "60"
+	resp.Profiles[0].GOP = "0"
 	p, err = jsonProfileToVideoProfile(resp)
 	assert.Nil(err)
 	assert.Equal(time.Duration(0), p[0].GOP)
