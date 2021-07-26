@@ -400,11 +400,15 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		return nil, err
 	}
 
+	glog.Infof("Estimated fee manifestID=%v sessionID=%v fee=%v", sess.Params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, fee.FloatString(6))
+
 	// Create a BalanceUpdate to be completed when this function returns
 	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
 		return nil, err
 	}
+
+	glog.Infof("Created new balance update existingCredit=%v newCredit=%v numTickets=%v", balUpdate.ExistingCredit.FloatString(6), balUpdate.NewCredit.FloatString(6), balUpdate.NumTickets)
 
 	// The balance update should be completed when this function returns
 	// The logic of balance update completion depends on the status of the update
@@ -555,11 +559,14 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 			pixelCount += res.Pixels
 		}
 
-		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
+		debit := new(big.Rat).Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
+		balUpdate.Debit = debit
 
 		if monitor.Enabled {
 			monitor.MilPixelsProcessed(float64(pixelCount) / milPixels)
 		}
+
+		glog.Infof("Debited balance debit=%v pixels=%v price=%v", debit.FloatString(6), pixelCount, priceInfo.FloatString(6))
 	}
 
 	// transcode succeeded; continue processing response
