@@ -384,7 +384,7 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 				if err != nil {
 					return nil, err
 				}
-				if gopFloat <= 0.0 {
+				if gopFloat < 0.0 {
 					return nil, errors.New("invalid gop value")
 				}
 				gop = time.Duration(gopFloat * float64(time.Second))

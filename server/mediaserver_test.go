@@ -431,10 +431,11 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts7 := makeServer(`{"manifestID":"a", "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456, "profile": "H264Baseline"},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987, "gop": "intra"},
-		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"}]}`)
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"},
+		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 	defer ts7.Close()
 	params = createSid(u).(*core.StreamParameters)
-	assert.Len(params.Profiles, 3)
+	assert.Len(params.Profiles, 4)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
 		{
@@ -464,9 +465,18 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 			GOP:          time.Duration(123) * time.Second,
 		},
+		{
+			Name:         "gop0",
+			Bitrate:      "800",
+			Resolution:   "400x220",
+			Framerate:    0,
+			FramerateDen: 0,
+			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
+			GOP:          time.Duration(0),
+		},
 	}
 
-	assert.Len(params.Profiles, 3)
+	assert.Len(params.Profiles, 4)
 	assert.Equal(expectedProfiles, params.Profiles, "Did not have matching profiles")
 
 	// set profiles with invalid values, presets empty
@@ -482,13 +492,14 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts9 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "P720p30fps16x9"], "profiles": [
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456, "profile": "H264Baseline"},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "fpsDen": 12, "width": 456, "height": 987, "gop":"intra"},
-		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"}]}`)
+		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"},
+		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 
 	defer ts9.Close()
 	params = createSid(u).(*core.StreamParameters)
 	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
 
-	assert.Len(params.Profiles, 5)
+	assert.Len(params.Profiles, 6)
 	assert.Equal(jointProfiles, params.Profiles, "Did not have matching profiles")
 
 	// all invalid presets in webhook should lead to empty set
@@ -501,9 +512,10 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts11 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": " 1 "}]}`)
 	defer ts11.Close()
 	assert.Nil(createSid(u))
-	ts12 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "0"}]}`)
-	defer ts12.Close()
-	assert.Nil(createSid(u))
+	// we accept gop: 0 now
+	//ts12 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "0"}]}`)
+	//defer ts12.Close()
+	//assert.Nil(createSid(u))
 	ts13 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "-0,01"}]}`)
 	defer ts13.Close()
 	assert.Nil(createSid(u))
@@ -1128,9 +1140,8 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	// test gop 0
 	resp.Profiles[0].GOP = "0"
 	p, err = jsonProfileToVideoProfile(resp)
-	assert.Nil(p)
-	assert.NotNil(err)
-	assert.Equal("invalid gop value", err.Error())
+	assert.Nil(err)
+	assert.Equal(time.Duration(0), p[0].GOP)
 
 	// test gop <0
 	resp.Profiles[0].GOP = "-0.001"
