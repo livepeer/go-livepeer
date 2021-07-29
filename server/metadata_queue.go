@@ -6,7 +6,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/server/event"
+	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -18,7 +18,7 @@ func BackgroundPublish(queue event.Producer, key string, body interface{}) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), queuePublishTimeout)
 		defer cancel()
-		if err := queue.Publish(ctx, key, body); err != nil {
+		if err := queue.Publish(ctx, key, body, false); err != nil {
 			glog.Errorf("Error publishing event: key=%q, err=%q", key, err)
 		}
 	}()

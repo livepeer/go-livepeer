@@ -28,7 +28,7 @@ import (
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
-	"github.com/livepeer/go-livepeer/server/event"
+	"github.com/livepeer/livepeer-data/pkg/event"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -907,7 +907,7 @@ func main() {
 
 	if *metadataAmqpUri != "" {
 		uri, exchange, keyNs := *metadataAmqpUri, *metadataExchange, n.NodeType.String()
-		server.MetadataQueue, err = event.NewAMQPProducer(context.Background(), uri, exchange, keyNs)
+		server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uri, exchange, keyNs)
 		if err != nil {
 			glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
 		}
