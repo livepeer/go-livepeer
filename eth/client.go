@@ -875,7 +875,7 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 		case err := <-txSub.Err():
 			return err
 		case receipt := <-receipts:
-			if tx.Hash() == receipt.TxHash {
+			if tx.Hash() == receipt.originTxHash {
 				if receipt.err != nil {
 					return receipt.err
 				}
