@@ -24,7 +24,7 @@ fi
 export PATH="$ROOT/compiled/bin":$PATH
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$ROOT/compiled/lib/pkgconfig"
 
-mkdir -p $ROOT
+mkdir -p "$ROOT/"
 
 # NVENC only works on Windows/Linux
 if [ $(uname) != "Darwin" ]; then
