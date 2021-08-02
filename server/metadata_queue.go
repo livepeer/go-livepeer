@@ -41,12 +41,14 @@ type SegmentMetadata struct {
 	Name     string  `json:"name"`
 	SeqNo    uint64  `json:"seqNo"`
 	Duration float64 `json:"duration"`
+	ByteSize int     `json:"byteSize"`
 }
 
 type StreamHealthTranscodeEvent struct {
 	NodeID     string                 `json:"nodeId"`
 	ManifestID string                 `json:"manifestId"`
 	Segment    SegmentMetadata        `json:"segment"`
+	Timestamp  int64                  `json:"timestamp"`
 	StartTime  int64                  `json:"startTime"`
 	LatencyMs  int64                  `json:"latencyMs"`
 	Success    bool                   `json:"success"`
@@ -54,6 +56,7 @@ type StreamHealthTranscodeEvent struct {
 }
 
 func NewStreamHealthTranscodeEvent(mid string, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []TranscodeAttemptInfo) StreamHealthTranscodeEvent {
+	now := time.Now()
 	return StreamHealthTranscodeEvent{
 		NodeID:     monitor.NodeID,
 		ManifestID: string(mid),
@@ -61,9 +64,11 @@ func NewStreamHealthTranscodeEvent(mid string, seg *stream.HLSSegment, startTime
 			Name:     seg.Name,
 			SeqNo:    seg.SeqNo,
 			Duration: seg.Duration,
+			ByteSize: len(seg.Data),
 		},
+		Timestamp: now.UnixNano(),
 		StartTime: startTime.UnixNano(),
-		LatencyMs: time.Since(startTime).Milliseconds(),
+		LatencyMs: now.Sub(startTime).Milliseconds(),
 		Success:   success,
 		Attempts:  attempts,
 	}
