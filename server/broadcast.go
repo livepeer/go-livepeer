@@ -27,6 +27,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/livepeer-data/pkg/data"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -476,12 +477,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 
 	var (
 		startTime = time.Now()
-		attempts  []TranscodeAttemptInfo
+		attempts  []data.TranscodeAttemptInfo
 		urls      []string
 	)
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
-		var info TranscodeAttemptInfo
+		var info data.TranscodeAttemptInfo
 		urls, info, err = transcodeSegment(cxn, seg, name, sv)
 		attempts = append(attempts, info)
 		if err == nil {
@@ -500,10 +501,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		// recoverable error, retry
 	}
 	if MetadataQueue != nil {
-		key := fmt.Sprintf("stream_health.transcode.%s", mid)
-		success := err == nil && len(urls) > 0
-		shte := NewStreamHealthTranscodeEvent(string(mid), seg, startTime, success, attempts)
-		BackgroundPublish(MetadataQueue, key, shte)
+		var (
+			key      = fmt.Sprintf("stream_health.transcode.%c.%s", mid[0], mid)
+			segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
+			success  = err == nil && len(urls) > 0
+			transEvt = data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
+		)
+		BackgroundPublish(MetadataQueue, key, transEvt)
 	}
 	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
@@ -512,7 +516,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) (urls []string, info TranscodeAttemptInfo, err error) {
+	verifier *verification.SegmentVerifier) (urls []string, info data.TranscodeAttemptInfo, err error) {
 	defer func(startTime time.Time) {
 		info.LatencyMs = time.Since(startTime).Milliseconds()
 		if err != nil {
@@ -536,7 +540,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// similar to the orchestrator's RemoteTranscoderFatalError
 		return nil, info, nil
 	}
-	info.Orchestrator = OrchestratorMetadata{
+	info.Orchestrator = data.OrchestratorMetadata{
 		TranscoderUri: sess.OrchestratorInfo.Transcoder,
 		Address:       hexutil.Encode(sess.OrchestratorInfo.Address),
 	}
