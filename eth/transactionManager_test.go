@@ -308,6 +308,8 @@ func TestTransactionManager_CheckTxLoop(t *testing.T) {
 	sub = tm.Subscribe(sink)
 	tm.SendTransaction(context.Background(), stubTx)
 	event = <-sink
+	assert.NotNil(event.Receipt)
+	assert.Equal(event.originTxHash, stubTx.Hash())
 	assert.NotNil(event)
 	assert.EqualError(event.err, context.DeadlineExceeded.Error())
 	eth.err["TransactionReceipt"] = nil
@@ -323,6 +325,8 @@ func TestTransactionManager_CheckTxLoop(t *testing.T) {
 
 	tm.SendTransaction(context.Background(), stubTx)
 	event = <-sink
+	assert.NotNil(event.Receipt)
+	assert.Equal(event.originTxHash, stubTx.Hash())
 	assert.EqualError(event.err, eth.err["TransactionByHash"].Error())
 	assert.Equal(eth.callsToTxByHash, 1)
 	sub.Unsubscribe()
@@ -337,6 +341,8 @@ func TestTransactionManager_CheckTxLoop(t *testing.T) {
 
 	tm.SendTransaction(context.Background(), stubTx)
 	event = <-sink
+	assert.NotNil(event.Receipt)
+	assert.Equal(event.originTxHash, stubTx.Hash())
 	assert.EqualError(event.err, eth.err["TransactionByHash"].Error())
 	assert.Equal(eth.callsToTxByHash, 1)
 	assert.LessOrEqual(eth.callsToTxByHash, tm.maxReplacements)
@@ -351,6 +357,8 @@ func TestTransactionManager_CheckTxLoop(t *testing.T) {
 
 	tm.SendTransaction(context.Background(), stubTx)
 	event = <-sink
+	assert.NotNil(event.Receipt)
+	assert.Equal(event.originTxHash, stubTx.Hash())
 	assert.EqualError(event.err, context.DeadlineExceeded.Error())
 	assert.Equal(eth.callsToTxByHash, tm.maxReplacements)
 	sub.Unsubscribe()

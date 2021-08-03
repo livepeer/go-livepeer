@@ -37,6 +37,7 @@
 ### Bug Fixes 🐞
 
 #### General
+- \#1968 Fix nil pointer error in embedded transaction receipts returned from the TransactionManager (@kyriediculous)
 
 - \#1977 Fix error logging for failed replacement transaction (@yondonfu)
 

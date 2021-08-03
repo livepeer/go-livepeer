@@ -50,7 +50,8 @@ type TransactionManager struct {
 type transactionQueue []*types.Transaction
 
 type transactionReceipt struct {
-	*types.Receipt
+	originTxHash ethcommon.Hash
+	types.Receipt
 	err error
 }
 
@@ -209,12 +210,11 @@ func (tm *TransactionManager) checkTxLoop() {
 		tx := tm.queue.pop()
 		tm.cond.L.Unlock()
 
-		var (
-			receipt *types.Receipt
-			err     error
-		)
+		originHash := tx.Hash()
 
-		receipt, err = tm.wait(tx)
+		var txReceipt types.Receipt
+
+		receipt, err := tm.wait(tx)
 
 		// context.DeadlineExceeded indicates that we hit the txTimeout
 		// If we hit the txTimeout, replace the tx up to maxReplacements times
@@ -228,9 +228,16 @@ func (tm *TransactionManager) checkTxLoop() {
 			receipt, err = tm.wait(tx)
 		}
 
+		if receipt == nil {
+			txReceipt = types.Receipt{}
+		} else {
+			txReceipt = *(receipt)
+		}
+
 		tm.feed.Send(&transactionReceipt{
-			Receipt: receipt,
-			err:     err,
+			originTxHash: originHash,
+			Receipt:      txReceipt,
+			err:          err,
 		})
 
 	}
