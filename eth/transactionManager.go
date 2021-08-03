@@ -182,8 +182,8 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 	if err != nil {
 		txLog.method = "unknown"
 	}
-	if sendErr == nil {
-		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Gas Price: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.GasPrice().String(), err, strings.Repeat("*", 75))
+	if sendErr != nil {
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Gas Price: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.GasPrice().String(), sendErr, strings.Repeat("*", 75))
 	} else {
 		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\".  Gas Price: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.Hash().String(), newSignedTx.GasPrice().String(), strings.Repeat("*", 75))
 	}

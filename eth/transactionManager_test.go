@@ -237,6 +237,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	logsAfter = glog.Stats.Info.Lines()
 	assert.Nil(err)
 	expTx := types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, calcReplacementGasPrice(stubTx), stubTx.Data())
+	assert.Equal(tx.Hash(), expTx.Hash())
 	assert.Equal(tx, expTx)
 	assert.Equal(logsAfter-logsBefore, int64(1))
 
@@ -249,6 +250,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	logsAfter = glog.Stats.Info.Lines()
 	assert.Nil(err)
 	expTx = types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, gpm.gasPrice, stubTx.Data())
+	assert.Equal(tx.Hash(), expTx.Hash())
 	assert.Equal(tx, expTx)
 	assert.Equal(logsAfter-logsBefore, int64(1))
 }
