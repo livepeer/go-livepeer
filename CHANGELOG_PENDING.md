@@ -38,6 +38,8 @@
 
 #### General
 
+- \#1977 Fix error logging for failed replacement transaction (@yondonfu)
+
 #### Broadcaster
 
 #### Orchestrator
