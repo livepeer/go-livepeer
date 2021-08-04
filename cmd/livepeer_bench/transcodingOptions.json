@@ -4,27 +4,31 @@
   "fps": 0,
   "bitrate": 250000,
   "width": 426,
-  "height": 240
+  "height": 240,
+  "profile": "h264constrainedhigh"
 },
 {
   "name": "360p0",
   "fps": 0,
   "bitrate": 800000,
   "width": 640,
-  "height": 360
+  "height": 360,
+  "profile": "h264constrainedhigh"
 },
 {
   "name": "480p0",
   "fps": 0,
   "bitrate": 1600000,
   "width": 854,
-  "height": 480
+  "height": 480,
+  "profile": "h264constrainedhigh"
 },
 {
   "name": "720p0",
   "fps": 0,
   "bitrate": 3000000,
   "width": 1280,
-  "height": 720
+  "height": 720,
+  "profile": "h264constrainedhigh"
 }
 ]
