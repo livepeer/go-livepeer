@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 
-all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli
+all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=plugins=grpc:. $^
