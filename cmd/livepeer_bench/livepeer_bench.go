@@ -104,17 +104,25 @@ func main() {
 			Input:      ffmpeg.DSceneAdultSoccer.Input,
 			Output:     ffmpeg.DSceneAdultSoccer.Output,
 			Classes:    ffmpeg.DSceneAdultSoccer.Classes,
+			ModelPath:  ffmpeg.DSceneAdultSoccer.ModelPath,
 		},
 	}
+
+	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogWarning)
+	var detectorTc *ffmpeg.Transcoder
 	if *detectionFreq > 0 {
-		err = ffmpeg.InitFFmpegWithDetectorProfile(detectionOpts.Detector, *nvidia)
+		t := time.Now()
+		// We don't actually use this transcoder session, but initialize it to save time for model loading
+		detectorTc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, *nvidia)
+		end := time.Now()
 		if err != nil {
 			glog.Fatalf("Could not initialize detector profiles")
 		}
-		defer ffmpeg.ReleaseFFmpegDetectorProfile()
+
+		fmt.Printf("InitDetectorSession time %0.4v\n", end.Sub(t).Seconds())
+		defer detectorTc.StopTranscoder()
 		fmt.Println("timestamp,session,segment,seg_dur,transcode_time,detect_data")
 	} else {
-		ffmpeg.InitFFmpeg()
 		fmt.Println("timestamp,session,segment,seg_dur,transcode_time")
 	}
 
@@ -126,7 +134,18 @@ func main() {
 	for i := 0; i < *concurrentSessions; i++ {
 		wg.Add(1)
 		go func(k int, wg *sync.WaitGroup) {
-			tc := ffmpeg.NewTranscoder()
+			var tc *ffmpeg.Transcoder
+			if *detectionFreq > 0 {
+				t := time.Now()
+				tc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, *nvidia)
+				end := time.Now()
+				fmt.Printf("InitDetectorSession time %0.4v for session %v\n", end.Sub(t).Seconds(), i)
+				if err != nil {
+					glog.Fatalf("Could not initialize detector")
+				}
+			} else {
+				tc = ffmpeg.NewTranscoder()
+			}
 			for j, v := range pl.Segments {
 				iterStart := time.Now()
 				if *segs > 0 && j >= *segs {
