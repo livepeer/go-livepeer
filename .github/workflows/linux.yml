@@ -59,7 +59,7 @@ jobs:
     - name: Build binaries
       run: |
         export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-        ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
+        ./ci_env.sh make
         rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
