@@ -145,6 +145,14 @@ func NewNvidiaTranscoder(gpu string) TranscoderSession {
 	}
 }
 
+func NewNvidiaTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error) {
+	session, err := ffmpeg.NewTranscoderWithDetector(detector, gpu)
+	return &NvidiaTranscoder{
+		device:  gpu,
+		session: session,
+	}, err
+}
+
 func (nv *NvidiaTranscoder) Stop() {
 	nv.session.StopTranscoder()
 }

@@ -15,16 +15,23 @@ import (
 var ErrTranscoderBusy = errors.New("TranscoderBusy")
 var ErrTranscoderStopped = errors.New("TranscoderStopped")
 
+// This is for temporary convenience - as we currently
+// only support loading a single detection model.
+var DetectorProfile ffmpeg.DetectorProfile
+
 type TranscoderSession interface {
 	Transcoder
 	Stop()
 }
 
 type newTranscoderFn func(device string) TranscoderSession
+type newTranscoderWithDetectorFn func(detector ffmpeg.DetectorProfile, device string) (TranscoderSession, error)
 
 type LoadBalancingTranscoder struct {
-	transcoders []string // Slice of device IDs
-	newT        newTranscoderFn
+	transcoders   []string // Slice of device IDs
+	newT          newTranscoderFn
+	newDetectorT  newTranscoderWithDetectorFn
+	detectorModel string
 
 	// The following fields need to be protected by the mutex `mu`
 	mu       *sync.RWMutex
@@ -33,13 +40,15 @@ type LoadBalancingTranscoder struct {
 	idx      int // Ensures a non-tapered work distribution
 }
 
-func NewLoadBalancingTranscoder(devices []string, newTranscoderFn newTranscoderFn) Transcoder {
+func NewLoadBalancingTranscoder(devices []string, newTranscoderFn newTranscoderFn,
+	newTranscoderWithDetectorFn newTranscoderWithDetectorFn) Transcoder {
 	return &LoadBalancingTranscoder{
-		transcoders: devices,
-		newT:        newTranscoderFn,
-		mu:          &sync.RWMutex{},
-		load:        make(map[string]int),
-		sessions:    make(map[string]*transcoderSession),
+		transcoders:  devices,
+		newT:         newTranscoderFn,
+		newDetectorT: newTranscoderWithDetectorFn,
+		mu:           &sync.RWMutex{},
+		load:         make(map[string]int),
+		sessions:     make(map[string]*transcoderSession),
 	}
 }
 
@@ -52,10 +61,10 @@ func (lb *LoadBalancingTranscoder) Transcode(md *SegTranscodingMetadata) (*Trans
 		glog.V(common.DEBUG).Info("LB: Using existing transcode session for ", session.key)
 	} else {
 		var err error
-		session, err = lb.createSession(md)
 		if len(md.DetectorProfiles) > 0 {
 			md.DetectorEnabled = true
 		}
+		session, err = lb.createSession(md)
 		if err != nil {
 			return nil, err
 		}
@@ -80,8 +89,18 @@ func (lb *LoadBalancingTranscoder) createSession(md *SegTranscodingMetadata) (*t
 	// Acquire transcode session. Map to job id + assigned transcoder
 	key := job + "_" + transcoder
 	costEstimate := calculateCost(md.Profiles)
+	var lpmsSession TranscoderSession
+	if md.DetectorEnabled {
+		var err error
+		lpmsSession, err = lb.newDetectorT(DetectorProfile, transcoder)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		lpmsSession = lb.newT(transcoder)
+	}
 	session := &transcoderSession{
-		transcoder:  lb.newT(transcoder),
+		transcoder:  lpmsSession,
 		key:         key,
 		done:        make(chan struct{}),
 		sender:      make(chan *transcoderParams, maxSegmentChannels),
