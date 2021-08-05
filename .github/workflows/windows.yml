@@ -25,6 +25,8 @@ jobs:
     - name: Build ffmpeg
       shell: msys2 {0}
       run: ./install_ffmpeg.sh
+    - name: Install protoc
+      uses: arduino/setup-protoc@v1
     - name: Build Livepeer
       shell: msys2 {0}
       run: ./ci_env.sh make
