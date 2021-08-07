@@ -143,8 +143,9 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	metadataAmqpUri := flag.String("metadataAmqpUri", "", "URI for AMQP host to send operation metadata")
-	metadataExchange := flag.String("metadataExchange", "lp_golivepeer_metadata", "Name of AMQP exchange to send operation metadata")
+	metadataUri := flag.String("metadataUri", "", "URI for message broker to send operation metadata")
+	metadataAmqpExchange := flag.String("metadataAmqpExchange", "lp_golivepeer_metadata", "Name of AMQP exchange to send operation metadata")
+	metadataPublishTimeout := flag.Duration("metadataPublishtimeout", 1*time.Second, "Max time to wait in background for publishing operation metadata events")
 
 	// Storage:
 	datadir := flag.String("datadir", "", "Directory that data is stored in")
@@ -905,11 +906,23 @@ func main() {
 		drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
 	}
 
-	if *metadataAmqpUri != "" {
-		uri, exchange, keyNs := *metadataAmqpUri, *metadataExchange, n.NodeType.String()
-		server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uri, exchange, keyNs)
+	if *metadataPublishTimeout > 0 {
+		server.MetadatPublishTimeout = *metadataPublishTimeout
+	}
+	if *metadataUri != "" {
+		uri, err := url.ParseRequestURI(*metadataUri)
 		if err != nil {
-			glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
+			glog.Fatalf("Error parsing -metadataUri: %q", err)
+		}
+		switch uri.Scheme {
+		case "amqp", "amqps":
+			uriStr, exchange, keyNs := *metadataUri, *metadataAmqpExchange, n.NodeType.String()
+			server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uriStr, exchange, keyNs)
+			if err != nil {
+				glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
+			}
+		default:
+			glog.Fatalf("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
 

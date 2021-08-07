@@ -28,6 +28,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
 	"github.com/livepeer/livepeer-data/pkg/data"
+	"github.com/livepeer/livepeer-data/pkg/event"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -39,6 +40,9 @@ var maxDurationSec = common.MaxDuration.Seconds()
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
+
+var MetadataQueue event.Producer
+var MetadatPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = drivers.GetSegmentData
@@ -502,12 +506,19 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	}
 	if MetadataQueue != nil {
 		var (
-			key      = fmt.Sprintf("stream_health.transcode.%c.%s", mid[0], mid)
+			shardKey = string(mid[0])
+			key      = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, mid)
 			segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
 			success  = err == nil && len(urls) > 0
-			transEvt = data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
 		)
-		BackgroundPublish(MetadataQueue, key, transEvt)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), MetadatPublishTimeout)
+			defer cancel()
+			evt := data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
+			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {
+				glog.Errorf("Error publishing stream transcode event: err=%q, manifestId=%q, seqNo=%d, event=%+v", key, mid, segMeta.SeqNo, err, evt)
+			}
+		}()
 	}
 	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
