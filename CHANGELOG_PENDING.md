@@ -25,6 +25,7 @@
 - \#1950 Fix extremely long delay before uploaded segment gets transcoded (@darkdarkdragon)
 - \#1933 server: Return 0 video frame segments unchanged (@darkdarkdragon)
 - \#1932 Serialize writes of JSON playlist (@darkdarkdragon)
+- \#1985 Set default -maxTicketEV to 3000 gwei (@yondonfu)
 
 #### Orchestrator
 
