@@ -19,7 +19,7 @@ import (
 
 const MinWorkingSetSize = 8
 
-var getOrchestratorCutoffTime = 1 * time.Second
+var getOrchestratorCutoffTime = 250 * time.Millisecond
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
