@@ -122,7 +122,7 @@ func main() {
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	ticketEV := flag.String("ticketEV", "1000000000000", "The expected value for PM tickets")
 	// Broadcaster max acceptable ticket EV
-	maxTicketEV := flag.String("maxTicketEV", "100000000000000", "The maximum acceptable expected value for PM tickets")
+	maxTicketEV := flag.String("maxTicketEV", "3000000000000", "The maximum acceptable expected value for PM tickets")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	depositMultiplier := flag.Int("depositMultiplier", 1, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 	// Orchestrator base pricing info
