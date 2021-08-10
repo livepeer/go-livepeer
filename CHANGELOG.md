@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.5.19
+
+*August 10 2021*
+
+This release includes another gas price monitoring fix to address additional cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, automatic replacements for pending transactions that timeout, fixes for broadcaster stream recording, support for downloading stream recordings as mp4 files as well as variety of other bug fixes and enhancements.
+
+In addition to the gas price monitoring fix and support for automatic replacements for pending transactions that timeout, a few additional configuration options are introduced to give node operators more control over gas prices and transactions:
+
+- `-maxTransactionReplacements <INTEGER>` can be used to specify the max number of times to replace a pending transaction that times out. The default value is 1.
+- `-txTimeout <DURATION>` can be used to specify the timeout duration for a pending transaction after which a replacement transaction would be submitted. The default value is 5m.
+- `-minGasPrice <INTEGER>` can be used to specify the minimum gas price (in wei) to use for transactions. The default is 1 gwei on mainnet.
+
+More information about these new flags is accessible via `livepeer -help`.
+
+The default value for the `-maxTicketEV` flag for broadcasters has been updated to 3000 gwei based on the default value of 1000 gwei for the `-ticketEV` flag for orchestrators which is safer for broadcasters. For more information on these default values, refer to the [payment docs for video developers](https://livepeer.org/docs/video-developers/core-concepts/payments) and the [payment docs for video miners](https://livepeer.org/docs/video-miners/core-concepts/payments).
+
+An experimental version of a deep neural network (DNN) based scene classification capability is mentioned in the changelog, but please note that while this is the first step towards enabling this capability on the network for video miners, this feature is **NOT** yet usable on the network today and is undergoing rapid development.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Features ⚒
+
+#### General
+
+- [#1911](https://github.com/livepeer/go-livepeer/pull/1911) [Experimental] Enable scene classification for Adult/Soccer (@jailuthra, @yondonfu)
+- [#1915](https://github.com/livepeer/go-livepeer/pull/1915) Use gas price monitor for gas price suggestions for all Ethereum transactions (@kyriediculous)
+- [#1930](https://github.com/livepeer/go-livepeer/pull/1930) Support custom minimum gas price (@yondonfu)
+- [#1942](https://github.com/livepeer/go-livepeer/pull/1942) Log min and max gas price when monitoring is enabled (@kyriediculous)
+- [#1923](https://github.com/livepeer/go-livepeer/pull/1923) Use a transaction manager with better transaction handling and optional replacement transactions instead of the default JSON-RPC client (@kyriediculous)
+- [#1954](https://github.com/livepeer/go-livepeer/pull/1954) Add signer to Ethereum client config (@kyriediculous)
+
+#### Broadcaster
+
+- [#1877](https://github.com/livepeer/go-livepeer/pull/1877) Refresh TicketParams for the active session before expiry (@kyriediculous)
+- [#1879](https://github.com/livepeer/go-livepeer/pull/1879) Add mp4 download of recorded stream (@darkdarkdragon)
+- [#1899](https://github.com/livepeer/go-livepeer/pull/1899) Record million pixels processed metric (@yondonfu)
+- [#1888](https://github.com/livepeer/go-livepeer/pull/1888) Should not save (when recording) segments with zero video frames (@darkdarkdragon)
+- [#1908](https://github.com/livepeer/go-livepeer/pull/1908) Prevent Broadcaster from sending low face value PM tickets (@kyriediculous)
+- [#1934](https://github.com/livepeer/go-livepeer/pull/1934) http push: return 422 for non-retryable errors (@darkdarkdragon)
+- [#1943](https://github.com/livepeer/go-livepeer/pull/1943) log maximum transcoding price when monitoring is enabled (@kyriediculous)
+- [#1950](https://github.com/livepeer/go-livepeer/pull/1950) Fix extremely long delay before uploaded segment gets transcoded (@darkdarkdragon)
+- [#1933](https://github.com/livepeer/go-livepeer/pull/1933) server: Return 0 video frame segments unchanged (@darkdarkdragon)
+- [#1932](https://github.com/livepeer/go-livepeer/pull/1932) Serialize writes of JSON playlist (@darkdarkdragon)
+- [#1985](https://github.com/livepeer/go-livepeer/pull/1985) Set default -maxTicketEV to 3000 gwei (@yondonfu)
+
+#### Orchestrator
+
+- [#1931](https://github.com/livepeer/go-livepeer/pull/1931) Bump ticket redemption gas estimate to 350k to account for occasional higher gas usage (@yondonfu)
+
+#### Transcoder
+
+- [#1944](https://github.com/livepeer/go-livepeer/pull/1944) Enable B-frames in Nvidia encoder output (@jailuthra)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#1968](https://github.com/livepeer/go-livepeer/pull/1968) Fix nil pointer error in embedded transaction receipts returned from the TransactionManager (@kyriediculous)
+- [#1977](https://github.com/livepeer/go-livepeer/pull/1977) Fix error logging for failed replacement transaction (@yondonfu)
+
 ## v0.5.18
 
 *May 18 2021*
