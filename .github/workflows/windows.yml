@@ -25,11 +25,14 @@ jobs:
     - name: Build ffmpeg
       shell: msys2 {0}
       run: ./install_ffmpeg.sh
-    - name: Install protoc
-      uses: arduino/setup-protoc@v1
-    - name: Build Livepeer
+    # For some reason the next step sometimes cannot find protoc
+    # - name: Install protoc
+    #   uses: arduino/setup-protoc@v1
+    # We do not just run `make` because it would also require protoc
+    # Due to the issue described above with finding protoc, for now we just specify the individual binaries
+    - name: Build binaries
       shell: msys2 {0}
-      run: ./ci_env.sh make
+      run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
     - name: Upload build
       if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       shell: msys2 {0}
