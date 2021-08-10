@@ -143,7 +143,7 @@ func main() {
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-	metadataUri := flag.String("metadataUri", "", "URI for message broker to send operation metadata")
+	metadataQueueUri := flag.String("metadataQueueUri", "", "URI for message broker to send operation metadata")
 	metadataAmqpExchange := flag.String("metadataAmqpExchange", "lp_golivepeer_metadata", "Name of AMQP exchange to send operation metadata")
 	metadataPublishTimeout := flag.Duration("metadataPublishtimeout", 1*time.Second, "Max time to wait in background for publishing operation metadata events")
 
@@ -909,14 +909,14 @@ func main() {
 	if *metadataPublishTimeout > 0 {
 		server.MetadataPublishTimeout = *metadataPublishTimeout
 	}
-	if *metadataUri != "" {
-		uri, err := url.ParseRequestURI(*metadataUri)
+	if *metadataQueueUri != "" {
+		uri, err := url.ParseRequestURI(*metadataQueueUri)
 		if err != nil {
-			glog.Fatalf("Error parsing -metadataUri: %q", err)
+			glog.Fatalf("Error parsing -metadataQueueUri: %q", err)
 		}
 		switch uri.Scheme {
 		case "amqp", "amqps":
-			uriStr, exchange, keyNs := *metadataUri, *metadataAmqpExchange, n.NodeType.String()
+			uriStr, exchange, keyNs := *metadataQueueUri, *metadataAmqpExchange, n.NodeType.String()
 			server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uriStr, exchange, keyNs)
 			if err != nil {
 				glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
