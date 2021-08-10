@@ -385,7 +385,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mRealtimeRatio,
 			Description: "Ratio of source segment duration / transcode time as measured on broadcaster API",
 			TagKeys:     baseTags,
-			Aggregation: view.Distribution(0.5, 1, 2, 3, 5, 10),
+			Aggregation: view.Distribution(0.5, 1, 2, 3, 5, 10, 50, 100),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_3x",
