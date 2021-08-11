@@ -42,7 +42,7 @@ var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
 
 var MetadataQueue event.Producer
-var MetadatPublishTimeout = 1 * time.Second
+var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = drivers.GetSegmentData
@@ -512,7 +512,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 			success  = err == nil && len(urls) > 0
 		)
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), MetadatPublishTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), MetadataPublishTimeout)
 			defer cancel()
 			evt := data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
 			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {

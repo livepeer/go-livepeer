@@ -907,7 +907,7 @@ func main() {
 	}
 
 	if *metadataPublishTimeout > 0 {
-		server.MetadatPublishTimeout = *metadataPublishTimeout
+		server.MetadataPublishTimeout = *metadataPublishTimeout
 	}
 	if *metadataUri != "" {
 		uri, err := url.ParseRequestURI(*metadataUri)
