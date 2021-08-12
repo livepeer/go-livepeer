@@ -919,7 +919,7 @@ func main() {
 			uriStr, exchange, keyNs := *metadataQueueUri, *metadataAmqpExchange, n.NodeType.String()
 			server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uriStr, exchange, keyNs)
 			if err != nil {
-				glog.Fatalf("Error estabilishing AMQP connection: err=%q", err)
+				glog.Fatalf("Error establishing AMQP connection: err=%q", err)
 			}
 		default:
 			glog.Fatalf("Unsupported scheme in -metadataUri: %s", uri.Scheme)
