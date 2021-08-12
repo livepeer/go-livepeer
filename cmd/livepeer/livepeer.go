@@ -145,7 +145,7 @@ func main() {
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	metadataQueueUri := flag.String("metadataQueueUri", "", "URI for message broker to send operation metadata")
 	metadataAmqpExchange := flag.String("metadataAmqpExchange", "lp_golivepeer_metadata", "Name of AMQP exchange to send operation metadata")
-	metadataPublishTimeout := flag.Duration("metadataPublishtimeout", 1*time.Second, "Max time to wait in background for publishing operation metadata events")
+	metadataPublishTimeout := flag.Duration("metadataPublishTimeout", 1*time.Second, "Max time to wait in background for publishing operation metadata events")
 
 	// Storage:
 	datadir := flag.String("datadir", "", "Directory that data is stored in")
