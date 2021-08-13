@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/livepeer-data/pkg/data"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
@@ -70,6 +71,24 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 		sus:      newSuspender(),
 		numOrchs: 1,
 		poolSize: len(sessList),
+	}
+}
+
+func stubRtmpConnWithSessions(ctx context.Context, sessionCount int, handler http.HandlerFunc) *rtmpConnection {
+	sessions := []*BroadcastSession{}
+	for i := 0; i < sessionCount; i++ {
+		ts, mux := stubTLSServer()
+		go func() { <-ctx.Done(); ts.Close() }()
+		mux.HandleFunc("/segment", handler)
+		sess := StubBroadcastSession(ts.URL)
+		sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+		sessions = append(sessions, sess)
+	}
+	return &rtmpConnection{
+		mid:         "dummy1",
+		sessManager: bsmWithSessList(sessions),
+		profile:     &ffmpeg.VideoProfile{Name: "unused"},
+		pl:          &stubPlaylistManager{os: &stubOSSession{}},
 	}
 }
 
@@ -1112,6 +1131,134 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.sessMap, 0)
+}
+
+type queueEvent struct {
+	key  string
+	data interface{}
+}
+
+type ProducerChan chan queueEvent
+
+func (c ProducerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
+	select {
+	case c <- queueEvent{key, body}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c ProducerChan) receive(ctx context.Context) (queueEvent, bool) {
+	select {
+	case evt, ok := <-c:
+		return evt, ok
+	case <-ctx.Done():
+		return queueEvent{}, false
+	}
+}
+
+func TestProcessSegment_MetadataQueue(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Preliminaries and test setup
+	oldQueue := MetadataQueue
+	defer func() {
+		MetadataQueue = oldQueue
+	}()
+	queue := make(ProducerChan, 1)
+	MetadataQueue = queue
+
+	dummyRes := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{{Url: "test.flv", Pixels: 100}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	transcodeResps := make(chan *net.TranscodeResult, 10)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		var resp *net.TranscodeResult
+		select {
+		case resp = <-transcodeResps:
+		default:
+		}
+		if resp == nil {
+			// Cause UnknownResponse error
+			return
+		}
+		buf, err := proto.Marshal(resp)
+		require.Nil(err)
+		_, err = w.Write(buf)
+		require.Nil(err)
+	}
+	seg := &stream.HLSSegment{Data: []byte("dummy"), SeqNo: 123}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Calls producer once with transcode event
+	transcodeResps <- dummyRes
+	cxn := stubRtmpConnWithSessions(ctx, 2, handler)
+	_, err := processSegment(cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.sessMap, 2)
+	evt, ok := queue.receive(ctx)
+	assert.True(ok)
+	assert.Equal("stream_health.transcode.d.dummy1", evt.key)
+	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt := evt.data.(*data.TranscodeEvent)
+	assert.Equal(true, transEvt.Success)
+	assert.EqualValues(cxn.mid, transEvt.ManifestID())
+	assert.Equal(seg.SeqNo, transEvt.Segment.SeqNo)
+	assert.Equal(1, len(transEvt.Attempts))
+	assert.Nil(transEvt.Attempts[0].Error)
+
+	// One failed transcode attempt. Failed attempt should be in transcode event
+	transcodeResps <- nil
+	transcodeResps <- dummyRes
+	cxn = stubRtmpConnWithSessions(ctx, 2, handler)
+	_, err = processSegment(cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.sessMap, 1)
+	evt, ok = queue.receive(ctx)
+	assert.True(ok)
+	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(true, transEvt.Success)
+	assert.Equal(2, len(transEvt.Attempts))
+	assert.NotNil(transEvt.Attempts[0].Error)
+	assert.Equal("UnknownResponse", *transEvt.Attempts[0].Error)
+
+	// All failed transcode attempts. Transcode event should be sent with success=false
+	cxn = stubRtmpConnWithSessions(ctx, 3, handler)
+	_, err = processSegment(cxn, seg)
+	assert.NotNil(err)
+	assert.Len(cxn.sessManager.sessMap, 0)
+	evt, ok = queue.receive(ctx)
+	assert.True(ok)
+	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(false, transEvt.Success)
+	assert.Equal(3, len(transEvt.Attempts))
+	for _, attempt := range transEvt.Attempts {
+		assert.NotNil(attempt.Error)
+		assert.Equal("UnknownResponse", *attempt.Error)
+	}
+
+	// Empty session list. Transcode event should still have success=false
+	cxn = stubRtmpConnWithSessions(ctx, 0, handler)
+	_, err = processSegment(cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.sessMap, 0)
+	evt, ok = queue.receive(ctx)
+	assert.True(ok)
+	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(false, transEvt.Success)
+	assert.Equal(1, len(transEvt.Attempts))
+	assert.Nil(transEvt.Attempts[0].Error)
 }
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {

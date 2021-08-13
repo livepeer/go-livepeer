@@ -516,7 +516,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 			defer cancel()
 			evt := data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
 			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {
-				glog.Errorf("Error publishing stream transcode event: err=%q, manifestId=%q, seqNo=%d, event=%+v", key, mid, segMeta.SeqNo, err, evt)
+				glog.Errorf("Error publishing stream transcode event: err=%q, manifestId=%q, seqNo=%d, key=%q, event=%+v", err, mid, segMeta.SeqNo, key, evt)
 			}
 		}()
 	}
