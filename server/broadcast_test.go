@@ -785,8 +785,10 @@ func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
 	mem := &stubOSSession{err: errors.New("some error")}
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
-	sess := genBcastSess(t, baseURL, mem, mid)
+	sess := genBcastSess(ctx, t, baseURL, mem, mid)
 	sess.OrchestratorOS = mem
 
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
@@ -1643,11 +1645,13 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
 	bsm := bsmWithSessList([]*BroadcastSession{
-		genBcastSess(t, baseURL+"/resp1", mem, mid),
-		genBcastSess(t, baseURL+"/resp2", mem, mid),
-		genBcastSess(t, baseURL+"/resp3", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp1", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp2", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp3", mem, mid),
 	})
 	cxn := &rtmpConnection{
 		mid:         mid,
@@ -1691,8 +1695,10 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
-	sess := genBcastSess(t, baseURL, mem, mid)
+	sess := genBcastSess(ctx, t, baseURL, mem, mid)
 
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	cxn := &rtmpConnection{
@@ -1796,6 +1802,8 @@ func defaultTicketBatch() *pm.TicketBatch {
 func TestVerifier_SegDownload(t *testing.T) {
 	assert := assert.New(t)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	mid := core.ManifestID("foo")
 
 	externalOS := &stubOSSession{
@@ -1827,21 +1835,21 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	// When there is no broadcaster OS, segments should not be downloaded
 	url := "somewhere1"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, nil, mid)})
 	_, _, err := transcodeSegment(cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.False(downloaded[url])
 
 	// When segments are in the broadcaster's external OS, segments should not be downloaded
 	url = "https://livepeer.s3.amazonaws.com/resp1"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.False(downloaded[url])
 
 	// When segments are not in the broadcaster's external OS, segments should be downloaded
 	url = "somewhere2"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.True(downloaded[url])
@@ -1854,21 +1862,21 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	// When there is no broadcaster OS, segments should be downloaded
 	url = "somewhere3"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, nil, mid)})
 	_, _, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
 	// When segments are in the broadcaster's external OS, segments should be downloaded
 	url = "https://livepeer.s3.amazonaws.com/resp2"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
 	// When segments are not in the broadcaster's exernal OS, segments should be downloaded
 	url = "somewhere4"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
@@ -1878,9 +1886,11 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	// Test format from saving "transcoder" data into broadcaster/transcoder OS.
 	// For each rendition, check extension based on format (none, mp4, mpegts).
 	assert := assert.New(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	bcastOS := &stubOSSession{host: "test://broad.com"}
 	orchOS := &stubOSSession{host: "test://orch.com"}
-	sess := genBcastSess(t, "", bcastOS, "")
+	sess := genBcastSess(ctx, t, "", bcastOS, "")
 	sess.OrchestratorOS = orchOS
 	sess.Params.Profiles = append([]ffmpeg.VideoProfile{}, sess.Params.Profiles...)
 	sourceProfile := ffmpeg.P240p30fps16x9 // make copy bc we mutate the preset
@@ -1969,7 +1979,7 @@ func TestProcessSegment_CheckDuration(t *testing.T) {
 	assert.Equal("Invalid duration 300.01", err.Error())
 }
 
-func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
+func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
 	segData := []*net.TranscodedSegmentData{
 		{Url: url, Pixels: 100},
 	}
@@ -1981,21 +1991,11 @@ func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.Manif
 	})
 	require.Nil(t, err, fmt.Sprintf("Could not marshal results for %s", url))
 	ts, mux := stubTLSServer()
+	go func() { <-ctx.Done(); ts.Close() }()
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
-	defer func() {
-		// Work around a weird timing issue. Tests fail if the server closes
-		// in-scope (prob leads to something like the client being unable
-		// to read the response?), so we delay the close for a little bit
-		go func() {
-			// We assume this test doesn't take more than 1s
-			// But if it does (eg, we get a POST error), then bump this up
-			time.Sleep(1 * time.Second)
-			ts.Close()
-		}()
-	}()
 	return &BroadcastSession{
 		Broadcaster:      stubBroadcaster2(),
 		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
