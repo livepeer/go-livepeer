@@ -17,14 +17,13 @@ require (
 	github.com/edsrzf/mmap-go v1.0.0 // indirect
 	github.com/elastic/gosigar v0.10.5 // indirect
 	github.com/ethereum/go-ethereum v1.9.3
-	github.com/fatih/color v1.7.0 // indirect
+	github.com/fatih/color v1.12.0 // indirect
 	// replace example.com/some/dependency => example.com/some/dependency-fork v1.2.3
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/golang/mock v1.4.3
 	github.com/golang/protobuf v1.5.2
-	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/graph-gophers/graphql-go v0.0.0-20190917030536-38a077bc812d // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/howeyc/fsnotify v0.9.0 // indirect
@@ -33,9 +32,9 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.1 // indirect
 	github.com/jaypipes/ghw v0.7.0
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
+	github.com/livepeer/livepeer-data v0.1.0
 	github.com/livepeer/lpms v0.0.0-20210806125031-9fdbf80c8575
 	github.com/livepeer/m3u8 v0.11.1
-	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/olekukonko/tablewriter v0.0.1
@@ -60,7 +59,7 @@ require (
 	github.com/wsddn/go-ecdh v0.0.0-20161211032359-48726bab9208 // indirect
 	go.opencensus.io v0.22.3
 	go.uber.org/goleak v1.0.0
-	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e
+	golang.org/x/net v0.0.0-20201202161906-c7110b5ffcbb
 	google.golang.org/api v0.29.0
 	google.golang.org/grpc v1.28.0
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect

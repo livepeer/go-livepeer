@@ -17,6 +17,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -26,6 +27,8 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/livepeer-data/pkg/data"
+	"github.com/livepeer/livepeer-data/pkg/event"
 
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -37,6 +40,9 @@ var maxDurationSec = common.MaxDuration.Seconds()
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
+
+var MetadataQueue event.Producer
+var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = drivers.GetSegmentData
@@ -473,34 +479,57 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		sv = verification.NewSegmentVerifier(Policy)
 	}
 
-	for i := 0; i < MaxAttempts; i++ {
-		// if fails, retry; rudimentary
-		var urls []string
-		if urls, err = transcodeSegment(cxn, seg, name, sv); err == nil {
-			return urls, nil
+	var (
+		startTime = time.Now()
+		attempts  []data.TranscodeAttemptInfo
+		urls      []string
+	)
+	for len(attempts) < MaxAttempts {
+		// if transcodeSegment fails, retry; rudimentary
+		var info data.TranscodeAttemptInfo
+		urls, info, err = transcodeSegment(cxn, seg, name, sv)
+		attempts = append(attempts, info)
+		if err == nil {
+			break
 		}
 
 		if shouldStopStream(err) {
 			glog.Warningf("Stopping current stream due to err=%v", err)
 			rtmpStrm.Close()
-			return nil, err
+			break
 		}
-
 		if isNonRetryableError(err) {
 			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to non-retryable error err=%v", nonce, seg.SeqNo, err)
-			return nil, err
+			break
 		}
-
 		// recoverable error, retry
 	}
-	if err != nil {
+	if MetadataQueue != nil {
+		success := err == nil && len(urls) > 0
+		key, evt := newTranscodeEvent(mid, seg, startTime, success, attempts)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), MetadataPublishTimeout)
+			defer cancel()
+			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {
+				glog.Errorf("Error publishing stream transcode event: err=%q manifestID=%q seqNo=%d key=%q event=%+v", err, mid, seg.SeqNo, key, evt)
+			}
+		}()
+	}
+	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
 	}
-	return nil, err
+	return urls, err
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) ([]string, error) {
+	verifier *verification.SegmentVerifier) (urls []string, info data.TranscodeAttemptInfo, err error) {
+	defer func(startTime time.Time) {
+		info.LatencyMs = time.Since(startTime).Milliseconds()
+		if err != nil {
+			errStr := err.Error()
+			info.Error = &errStr
+		}
+	}(time.Now())
 
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -515,7 +544,11 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// We may want to introduce a "non-retryable" error type here
 		// would help error propagation for live ingest.
 		// similar to the orchestrator's RemoteTranscoderFatalError
-		return nil, nil
+		return nil, info, nil
+	}
+	info.Orchestrator = data.OrchestratorMetadata{
+		TranscoderUri: sess.OrchestratorInfo.Transcoder,
+		Address:       hexutil.Encode(sess.OrchestratorInfo.Address),
 	}
 
 	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d", cxn.mid, nonce, seg.SeqNo)
@@ -534,7 +567,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 			cxn.sessManager.suspendOrch(sess)
 			cxn.sessManager.removeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
@@ -544,7 +577,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
 		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
-		return nil, err
+		return nil, info, err
 	}
 
 	if refresh {
@@ -553,7 +586,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
 			cxn.sessManager.suspendOrch(sess)
 			cxn.sessManager.removeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		// if sess was lastSess, we need to update lastSess,
 		// or else content of SegsInFlight will be lost
@@ -566,14 +599,14 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	if err != nil || res == nil {
 		if isNonRetryableError(err) {
 			cxn.sessManager.completeSession(sess)
-			return nil, err
+			return nil, info, err
 		}
 		cxn.sessManager.suspendOrch(sess)
 		cxn.sessManager.removeSession(sess)
 		if res == nil && err == nil {
 			err = errors.New("empty response")
 		}
-		return nil, err
+		return nil, info, err
 	}
 
 	// download transcoded segments from the transcoder
@@ -627,7 +660,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 			resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
 			if err != nil {
-				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v, err=%v",
+				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v err=%v",
 					DetectionWebhookURL.Redacted(), mid, seqNo, err)
 			} else if resp.StatusCode != 200 {
 				rbody, rerr := ioutil.ReadAll(resp.Body)
@@ -762,7 +795,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 	cond.L.Unlock()
 	if dlErr != nil {
-		return nil, dlErr
+		return nil, info, dlErr
 	}
 
 	cxn.sessManager.completeSession(updateSession(sess, res))
@@ -777,7 +810,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-			return nil, err
+			return nil, info, err
 		}
 	}
 
@@ -800,7 +833,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-	return segURLs, nil
+	return segURLs, info, nil
 }
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
@@ -964,6 +997,16 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 	return false, nil
 }
 
+func newTranscodeEvent(mid core.ManifestID, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) (key string, event *data.TranscodeEvent) {
+	var (
+		shardKey = string(mid[0])
+		segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
+	)
+	key = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, mid)
+	event = data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
+	return key, event
+}
+
 func getSegDurMsString(seg *stream.HLSSegment) string {
 	return strconv.Itoa(int(seg.Duration * 1000))
 }
@@ -978,6 +1021,11 @@ func nonRetryableErrMapInit() map[string]bool {
 
 var NonRetryableErrMap = nonRetryableErrMapInit()
 
-func isNonRetryableError(e error) bool {
-	return NonRetryableErrMap[e.Error()]
+func isNonRetryableError(err error) bool {
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if NonRetryableErrMap[e.Error()] {
+			return true
+		}
+	}
+	return false
 }

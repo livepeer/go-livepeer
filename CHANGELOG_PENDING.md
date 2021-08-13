@@ -7,6 +7,7 @@
 #### General
 
 #### Broadcaster
+- \#1946 Send transcoding stream health events to a metadata queue (@victorges)
 
 #### Orchestrator
 
