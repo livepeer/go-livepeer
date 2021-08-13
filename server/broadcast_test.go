@@ -74,22 +74,14 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 	}
 }
 
-func stubRtmpConnWithSessions(ctx context.Context, sessionCount int, handler http.HandlerFunc) *rtmpConnection {
+func stubSessionList(ctx context.Context, sessionCount int, handler http.HandlerFunc) []*BroadcastSession {
 	sessions := []*BroadcastSession{}
 	for i := 0; i < sessionCount; i++ {
-		ts, mux := stubTLSServer()
-		go func() { <-ctx.Done(); ts.Close() }()
-		mux.HandleFunc("/segment", handler)
-		sess := StubBroadcastSession(ts.URL)
+		sess := StubBroadcastSession(stubTestTranscoder(ctx, handler))
 		sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 		sessions = append(sessions, sess)
 	}
-	return &rtmpConnection{
-		mid:         "dummy1",
-		sessManager: bsmWithSessList(sessions),
-		profile:     &ffmpeg.VideoProfile{Name: "unused"},
-		pl:          &stubPlaylistManager{os: &stubOSSession{}},
-	}
+	return sessions
 }
 
 type sessionsManagerLIFO struct {
@@ -1163,7 +1155,7 @@ func (p ProducerChan) receive(ctx context.Context) (queueEvent, bool) {
 	}
 }
 
-func TestProcessSegment_MetadataQueue(t *testing.T) {
+func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1185,27 +1177,31 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	}
 	transcodeResps := make(chan *net.TranscodeResult, 10)
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		var resp *net.TranscodeResult
 		select {
-		case resp = <-transcodeResps:
 		default:
+			require.FailNow("must setup all responses")
+		case resp := <-transcodeResps:
+			if resp == nil {
+				return // Cause UnknownResponse error
+			}
+			buf, err := proto.Marshal(resp)
+			require.Nil(err)
+			_, err = w.Write(buf)
+			require.Nil(err)
 		}
-		if resp == nil {
-			// Cause UnknownResponse error
-			return
-		}
-		buf, err := proto.Marshal(resp)
-		require.Nil(err)
-		_, err = w.Write(buf)
-		require.Nil(err)
+	}
+	cxn := &rtmpConnection{
+		mid:     "dummy1",
+		profile: &ffmpeg.VideoProfile{Name: "unused"},
+		pl:      &stubPlaylistManager{os: &stubOSSession{}},
 	}
 	seg := &stream.HLSSegment{Data: []byte("dummy"), SeqNo: 123}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Calls producer once with transcode event
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
 	transcodeResps <- dummyRes
-	cxn := stubRtmpConnWithSessions(ctx, 2, handler)
 	_, err := processSegment(cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 2)
@@ -1221,9 +1217,9 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.Nil(transEvt.Attempts[0].Error)
 
 	// One failed transcode attempt. Failed attempt should be in transcode event
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
 	transcodeResps <- nil
 	transcodeResps <- dummyRes
-	cxn = stubRtmpConnWithSessions(ctx, 2, handler)
 	_, err = processSegment(cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 1)
@@ -1237,7 +1233,10 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.Equal("UnknownResponse", *transEvt.Attempts[0].Error)
 
 	// All failed transcode attempts. Transcode event should be sent with success=false
-	cxn = stubRtmpConnWithSessions(ctx, 3, handler)
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 3, handler))
+	transcodeResps <- nil
+	transcodeResps <- nil
+	transcodeResps <- nil
 	_, err = processSegment(cxn, seg)
 	assert.NotNil(err)
 	assert.Len(cxn.sessManager.sessMap, 0)
@@ -1253,7 +1252,7 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	}
 
 	// Empty session list. Transcode event should still have success=false
-	cxn = stubRtmpConnWithSessions(ctx, 0, handler)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{})
 	_, err = processSegment(cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 0)
@@ -1267,8 +1266,8 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 
 	// Should not fail processing on queue error
 	queue.err = errors.New("publish failure")
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 1, handler))
 	transcodeResps <- dummyRes
-	cxn = stubRtmpConnWithSessions(ctx, 1, handler)
 	_, err = processSegment(cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 1)
@@ -1276,6 +1275,10 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	require.True(ok)
 	require.IsType(&data.TranscodeEvent{}, evt.data)
 	assert.Equal(true, evt.data.(*data.TranscodeEvent).Success)
+
+	// ensure no left-overs
+	assert.Zero(len(transcodeResps))
+	assert.Zero(len(queue.C))
 }
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {
@@ -1990,9 +1993,7 @@ func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSe
 		},
 	})
 	require.Nil(t, err, fmt.Sprintf("Could not marshal results for %s", url))
-	ts, mux := stubTLSServer()
-	go func() { <-ctx.Done(); ts.Close() }()
-	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+	transcoderURL := stubTestTranscoder(ctx, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
@@ -2000,6 +2001,13 @@ func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSe
 		Broadcaster:      stubBroadcaster2(),
 		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
 		BroadcasterOS:    os,
-		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL, AuthToken: stubAuthToken},
+		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken},
 	}
+}
+
+func stubTestTranscoder(ctx context.Context, handler http.HandlerFunc) string {
+	ts, mux := stubTLSServer()
+	go func() { <-ctx.Done(); ts.Close() }()
+	mux.HandleFunc("/segment", handler)
+	return ts.URL
 }
