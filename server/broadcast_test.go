@@ -1132,12 +1132,12 @@ type queueEvent struct {
 	data interface{}
 }
 
-type ProducerChan struct {
+type producerChan struct {
 	C   chan queueEvent
 	err error
 }
 
-func (p ProducerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
+func (p producerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
 	select {
 	case p.C <- queueEvent{key, body}:
 		return p.err
@@ -1146,7 +1146,7 @@ func (p ProducerChan) Publish(ctx context.Context, key string, body interface{},
 	}
 }
 
-func (p ProducerChan) receive(ctx context.Context) (queueEvent, bool) {
+func (p producerChan) receive(ctx context.Context) (queueEvent, bool) {
 	select {
 	case evt, ok := <-p.C:
 		return evt, ok
@@ -1164,7 +1164,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	defer func() {
 		MetadataQueue = oldQueue
 	}()
-	queue := ProducerChan{make(chan queueEvent, 1), nil}
+	queue := producerChan{make(chan queueEvent, 1), nil}
 	MetadataQueue = queue
 
 	dummyRes := &net.TranscodeResult{

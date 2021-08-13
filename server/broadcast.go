@@ -511,7 +511,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 			ctx, cancel := context.WithTimeout(context.Background(), MetadataPublishTimeout)
 			defer cancel()
 			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {
-				glog.Errorf("Error publishing stream transcode event: err=%q, manifestID=%q, seqNo=%d, key=%q, event=%+v", err, mid, seg.SeqNo, key, evt)
+				glog.Errorf("Error publishing stream transcode event: err=%q manifestID=%q seqNo=%d key=%q event=%+v", err, mid, seg.SeqNo, key, evt)
 			}
 		}()
 	}
@@ -660,7 +660,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			}
 			resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
 			if err != nil {
-				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v, err=%v",
+				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v err=%v",
 					DetectionWebhookURL.Redacted(), mid, seqNo, err)
 			} else if resp.StatusCode != 200 {
 				rbody, rerr := ioutil.ReadAll(resp.Body)

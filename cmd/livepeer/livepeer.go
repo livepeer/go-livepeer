@@ -912,7 +912,7 @@ func main() {
 	if *metadataQueueUri != "" {
 		uri, err := url.ParseRequestURI(*metadataQueueUri)
 		if err != nil {
-			glog.Fatalf("Error parsing -metadataQueueUri: %q", err)
+			glog.Fatalf("Error parsing -metadataQueueUri: err=%q", err)
 		}
 		switch uri.Scheme {
 		case "amqp", "amqps":
