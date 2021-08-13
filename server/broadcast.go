@@ -505,18 +505,13 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		// recoverable error, retry
 	}
 	if MetadataQueue != nil {
-		var (
-			shardKey = string(mid[0])
-			key      = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, mid)
-			segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
-			success  = err == nil && len(urls) > 0
-		)
+		success := err == nil && len(urls) > 0
+		key, evt := newTranscodeEvent(mid, seg, startTime, success, attempts)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), MetadataPublishTimeout)
 			defer cancel()
-			evt := data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
 			if err := MetadataQueue.Publish(ctx, key, evt, false); err != nil {
-				glog.Errorf("Error publishing stream transcode event: err=%q, manifestId=%q, seqNo=%d, key=%q, event=%+v", err, mid, segMeta.SeqNo, key, evt)
+				glog.Errorf("Error publishing stream transcode event: err=%q, manifestId=%q, seqNo=%d, key=%q, event=%+v", err, mid, seg.SeqNo, key, evt)
 			}
 		}()
 	}
@@ -1000,6 +995,16 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func newTranscodeEvent(mid core.ManifestID, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) (key string, event *data.TranscodeEvent) {
+	var (
+		shardKey = string(mid[0])
+		segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
+	)
+	key = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, mid)
+	event = data.NewTranscodeEvent(monitor.NodeID, string(mid), segMeta, startTime, success, attempts)
+	return key, event
 }
 
 func getSegDurMsString(seg *stream.HLSSegment) string {
