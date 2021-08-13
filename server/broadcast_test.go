@@ -1138,20 +1138,23 @@ type queueEvent struct {
 	data interface{}
 }
 
-type ProducerChan chan queueEvent
+type ProducerChan struct {
+	C   chan queueEvent
+	err error
+}
 
-func (c ProducerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
+func (p ProducerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
 	select {
-	case c <- queueEvent{key, body}:
-		return nil
+	case p.C <- queueEvent{key, body}:
+		return p.err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (c ProducerChan) receive(ctx context.Context) (queueEvent, bool) {
+func (p ProducerChan) receive(ctx context.Context) (queueEvent, bool) {
 	select {
-	case evt, ok := <-c:
+	case evt, ok := <-p.C:
 		return evt, ok
 	case <-ctx.Done():
 		return queueEvent{}, false
@@ -1167,7 +1170,7 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	defer func() {
 		MetadataQueue = oldQueue
 	}()
-	queue := make(ProducerChan, 1)
+	queue := ProducerChan{make(chan queueEvent, 1), nil}
 	MetadataQueue = queue
 
 	dummyRes := &net.TranscodeResult{
@@ -1205,9 +1208,9 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 2)
 	evt, ok := queue.receive(ctx)
-	assert.True(ok)
+	require.True(ok)
 	assert.Equal("stream_health.transcode.d.dummy1", evt.key)
-	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
 	transEvt := evt.data.(*data.TranscodeEvent)
 	assert.Equal(true, transEvt.Success)
 	assert.EqualValues(cxn.mid, transEvt.ManifestID())
@@ -1223,8 +1226,8 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 1)
 	evt, ok = queue.receive(ctx)
-	assert.True(ok)
-	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
 	transEvt = evt.data.(*data.TranscodeEvent)
 	assert.Equal(true, transEvt.Success)
 	assert.Equal(2, len(transEvt.Attempts))
@@ -1237,8 +1240,8 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.NotNil(err)
 	assert.Len(cxn.sessManager.sessMap, 0)
 	evt, ok = queue.receive(ctx)
-	assert.True(ok)
-	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
 	transEvt = evt.data.(*data.TranscodeEvent)
 	assert.Equal(false, transEvt.Success)
 	assert.Equal(3, len(transEvt.Attempts))
@@ -1253,12 +1256,24 @@ func TestProcessSegment_MetadataQueue(t *testing.T) {
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.sessMap, 0)
 	evt, ok = queue.receive(ctx)
-	assert.True(ok)
-	assert.IsType(&data.TranscodeEvent{}, evt.data)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
 	transEvt = evt.data.(*data.TranscodeEvent)
 	assert.Equal(false, transEvt.Success)
 	assert.Equal(1, len(transEvt.Attempts))
 	assert.Nil(transEvt.Attempts[0].Error)
+
+	// Should not fail processing on queue error
+	queue.err = errors.New("publish failure")
+	transcodeResps <- dummyRes
+	cxn = stubRtmpConnWithSessions(ctx, 1, handler)
+	_, err = processSegment(cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.sessMap, 1)
+	evt, ok = queue.receive(ctx)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	assert.Equal(true, evt.data.(*data.TranscodeEvent).Success)
 }
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {
