@@ -779,10 +779,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		mid = intmid
 	}
 	cxn, exists := s.rtmpConnections[mid]
-	if exists && cxn != nil {
-		cxn.lastUsed = now
-	}
 	s.connectionLock.RUnlock()
+	if exists && cxn != nil {
+		s.connectionLock.Lock()
+		cxn.lastUsed = now
+		s.connectionLock.Unlock()
+	}
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
@@ -1118,7 +1120,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		ow.Close()
 		<-done
 		glog.Infof("Completed mp4 request=%s manifestID=%s sourceBytes=%d destBytes=%d", r.URL.String(),
-			manifestID, sourceBytesSent, resultBytesSent)
+			manifestID, atomic.LoadInt64(&sourceBytesSent), resultBytesSent)
 	}()
 	oname := fmt.Sprintf("pipe:%d", ow.Fd())
 	out := []ffmpeg.TranscodeOptions{
@@ -1152,25 +1154,25 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		fname := fmt.Sprintf("pipe:%d", ir.Fd())
 
 		in := &ffmpeg.TranscodeOptionsIn{Fname: fname, Transmuxing: true}
-		go func() {
+		go func(segUri string, iw *os.File) {
 			defer iw.Close()
-			glog.V(common.VERBOSE).Infof("Adding manifestID=%s track=%s uri=%s to mp4", manifestID, track, seg.URI)
-			resp, err := http.Get(seg.URI)
+			glog.V(common.VERBOSE).Infof("Adding manifestID=%s track=%s uri=%s to mp4", manifestID, track, segUri)
+			resp, err := http.Get(segUri)
 			if err != nil {
-				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%v", seg.URI, manifestID, err)
+				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%v", segUri, manifestID, err)
 				return
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 {
-				glog.Errorf("Non-200 response for status=%v uri=%s manifestID=%s request=%s", resp.Status, seg.URI, manifestID, r.URL.String())
+				glog.Errorf("Non-200 response for status=%v uri=%s manifestID=%s request=%s", resp.Status, segUri, manifestID, r.URL.String())
 				return
 			}
 			wn, err := io.Copy(iw, resp.Body)
 			if err != nil {
-				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), seg.URI, manifestID, err)
+				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), segUri, manifestID, err)
 			}
-			sourceBytesSent += wn
-		}()
+			atomic.AddInt64(&sourceBytesSent, wn)
+		}(seg.URI, iw)
 
 		_, err = tc.Transcode(in, out)
 		ir.Close()
