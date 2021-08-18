@@ -17,6 +17,8 @@
 
 ### Bug Fixes 🐞
 
+- \#1992 Eliminate data races in mediaserver.go (@darkdarkdragon)
+
 #### General
 
 #### Broadcaster
