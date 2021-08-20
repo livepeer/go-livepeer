@@ -662,7 +662,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			if err != nil {
 				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v err=%v",
 					DetectionWebhookURL.Redacted(), mid, seqNo, err)
-			} else if resp.StatusCode != 200 {
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				rbody, rerr := ioutil.ReadAll(resp.Body)
 				resp.Body.Close()
 				if rerr != nil {
