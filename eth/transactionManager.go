@@ -166,7 +166,7 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 
 	// Bump gas price exceeds max gas price, return early
 	max := tm.gpm.MaxGasPrice()
-	if gasPrice.Cmp(max) > 0 {
+	if max != nil && gasPrice.Cmp(max) > 0 {
 		return nil, fmt.Errorf("replacement gas price exceeds max gas price suggested=%v max=%v", gasPrice, max)
 	}
 

@@ -22,6 +22,8 @@
 
 #### General
 
+- \#2001  fix max gas price nil pointer error in replace transaction (@kyriediculous)
+
 #### Broadcaster
 
 #### Orchestrator
