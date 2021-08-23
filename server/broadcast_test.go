@@ -1192,6 +1192,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	}
 	cxn := &rtmpConnection{
 		mid:     "dummy1",
+		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy"},
 		profile: &ffmpeg.VideoProfile{Name: "unused"},
 		pl:      &stubPlaylistManager{os: &stubOSSession{}},
 	}
@@ -1207,11 +1208,11 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	assert.Len(cxn.sessManager.sessMap, 2)
 	evt, ok := queue.receive(ctx)
 	require.True(ok)
-	assert.Equal("stream_health.transcode.d.dummy1", evt.key)
+	assert.Equal("stream_health.transcode.d.ext_dummy", evt.key)
 	require.IsType(&data.TranscodeEvent{}, evt.data)
 	transEvt := evt.data.(*data.TranscodeEvent)
 	assert.Equal(true, transEvt.Success)
-	assert.EqualValues(cxn.mid, transEvt.ManifestID())
+	assert.EqualValues(cxn.params.ExternalStreamID, transEvt.StreamID())
 	assert.Equal(seg.SeqNo, transEvt.Segment.SeqNo)
 	assert.Equal(1, len(transEvt.Attempts))
 	assert.Nil(transEvt.Attempts[0].Error)
@@ -1275,6 +1276,23 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	require.True(ok)
 	require.IsType(&data.TranscodeEvent{}, evt.data)
 	assert.Equal(true, evt.data.(*data.TranscodeEvent).Success)
+
+	// Uses manifest ID if external stream ID or params not present
+	testMissingStreamID := func() {
+		transcodeResps <- dummyRes
+		_, err = processSegment(cxn, seg)
+		assert.Nil(err)
+		evt, ok = queue.receive(ctx)
+		require.True(ok)
+		assert.Equal("stream_health.transcode.d.dummy1", evt.key)
+		require.IsType(&data.TranscodeEvent{}, evt.data)
+		assert.EqualValues(cxn.mid, evt.data.(*data.TranscodeEvent).StreamID())
+	}
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 1, handler))
+	cxn.params.ExternalStreamID = ""
+	testMissingStreamID()
+	cxn.params = nil
+	testMissingStreamID()
 
 	// ensure no left-overs
 	assert.Zero(len(transcodeResps))
