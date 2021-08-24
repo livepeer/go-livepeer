@@ -1001,13 +1001,18 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 	return false, nil
 }
 
-func newTranscodeEvent(mid core.ManifestID, streamID string, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) (key string, event *data.TranscodeEvent) {
+func newTranscodeEvent(mid core.ManifestID, streamID string, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) (string, *data.TranscodeEvent) {
 	var (
 		shardKey = string(mid[0])
-		segMeta  = data.SegmentMetadata{seg.Name, seg.SeqNo, seg.Duration, len(seg.Data)}
+		segMeta  = data.SegmentMetadata{
+			Name:     seg.Name,
+			SeqNo:    seg.SeqNo,
+			Duration: seg.Duration,
+			ByteSize: len(seg.Data),
+		}
+		key   = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, streamID)
+		event = data.NewTranscodeEvent(monitor.NodeID, streamID, segMeta, startTime, success, attempts)
 	)
-	key = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, streamID)
-	event = data.NewTranscodeEvent(monitor.NodeID, streamID, segMeta, startTime, success, attempts)
 	return key, event
 }
 
