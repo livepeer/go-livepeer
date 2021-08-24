@@ -45,17 +45,18 @@ func (s *StreamParameters) StreamID() string {
 }
 
 type SegTranscodingMetadata struct {
-	ManifestID       ManifestID
-	Fname            string
-	Seq              int64
-	Hash             ethcommon.Hash
-	Profiles         []ffmpeg.VideoProfile
-	OS               *net.OSInfo
-	Duration         time.Duration
-	Caps             *Capabilities
-	AuthToken        *net.AuthToken
-	DetectorEnabled  bool
-	DetectorProfiles []ffmpeg.DetectorProfile
+	ManifestID         ManifestID
+	Fname              string
+	Seq                int64
+	Hash               ethcommon.Hash
+	Profiles           []ffmpeg.VideoProfile
+	OS                 *net.OSInfo
+	Duration           time.Duration
+	Caps               *Capabilities
+	AuthToken          *net.AuthToken
+	DetectorEnabled    bool
+	DetectorProfiles   []ffmpeg.DetectorProfile
+	CalcPerceptualHash bool
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -107,15 +108,16 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 	}
 	// Generate serialized segment info
 	segData := &net.SegData{
-		ManifestId:       []byte(md.ManifestID),
-		Seq:              md.Seq,
-		Hash:             md.Hash.Bytes(),
-		Storage:          storage,
-		Duration:         int32(md.Duration / time.Millisecond),
-		Capabilities:     md.Caps.ToNetCapabilities(),
-		AuthToken:        md.AuthToken,
-		DetectorEnabled:  md.DetectorEnabled,
-		DetectorProfiles: detectorProfiles,
+		ManifestId:         []byte(md.ManifestID),
+		Seq:                md.Seq,
+		Hash:               md.Hash.Bytes(),
+		Storage:            storage,
+		Duration:           int32(md.Duration / time.Millisecond),
+		Capabilities:       md.Caps.ToNetCapabilities(),
+		AuthToken:          md.AuthToken,
+		DetectorEnabled:    md.DetectorEnabled,
+		DetectorProfiles:   detectorProfiles,
+		CalcPerceptualHash: md.CalcPerceptualHash,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
 	}
