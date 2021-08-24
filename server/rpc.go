@@ -470,15 +470,16 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 	}
 
 	return &core.SegTranscodingMetadata{
-		ManifestID:       core.ManifestID(segData.ManifestId),
-		Seq:              segData.Seq,
-		Hash:             ethcommon.BytesToHash(segData.Hash),
-		Profiles:         profiles,
-		OS:               os,
-		Duration:         dur,
-		Caps:             caps,
-		AuthToken:        segData.AuthToken,
-		DetectorEnabled:  segData.DetectorEnabled,
-		DetectorProfiles: detectorProfs,
+		ManifestID:         core.ManifestID(segData.ManifestId),
+		Seq:                segData.Seq,
+		Hash:               ethcommon.BytesToHash(segData.Hash),
+		Profiles:           profiles,
+		OS:                 os,
+		Duration:           dur,
+		Caps:               caps,
+		AuthToken:          segData.AuthToken,
+		DetectorEnabled:    segData.DetectorEnabled,
+		DetectorProfiles:   detectorProfs,
+		CalcPerceptualHash: segData.CalcPerceptualHash,
 	}, nil
 }
