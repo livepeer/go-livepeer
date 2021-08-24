@@ -396,7 +396,8 @@ type TranscodeData struct {
 // TranscodedSegmentData contains encoded data for a profile
 type TranscodedSegmentData struct {
 	Data   []byte
-	Pixels int64 // Encoded pixels
+	PHash  []byte // Perceptual hash data (maybe nil)
+	Pixels int64  // Encoded pixels
 }
 
 type SegChanData struct {
