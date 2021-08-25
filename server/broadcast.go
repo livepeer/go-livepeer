@@ -510,7 +510,8 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		if cxn.params != nil && cxn.params.ExternalStreamID != "" {
 			streamID = cxn.params.ExternalStreamID
 		}
-		key, evt := newTranscodeEvent(mid, streamID, seg, startTime, success, attempts)
+		key := newTranscodeEventKey(mid, streamID)
+		evt := newTranscodeEvent(streamID, seg, startTime, success, attempts)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), MetadataPublishTimeout)
 			defer cancel()
@@ -1001,19 +1002,19 @@ func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
 	return false, nil
 }
 
-func newTranscodeEvent(mid core.ManifestID, streamID string, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) (string, *data.TranscodeEvent) {
-	var (
-		shardKey = string(mid[0])
-		segMeta  = data.SegmentMetadata{
-			Name:     seg.Name,
-			SeqNo:    seg.SeqNo,
-			Duration: seg.Duration,
-			ByteSize: len(seg.Data),
-		}
-		key   = fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, streamID)
-		event = data.NewTranscodeEvent(monitor.NodeID, streamID, segMeta, startTime, success, attempts)
-	)
-	return key, event
+func newTranscodeEventKey(mid core.ManifestID, streamID string) string {
+	shardKey := string(mid[0])
+	return fmt.Sprintf("stream_health.transcode.%s.%s", shardKey, streamID)
+}
+
+func newTranscodeEvent(streamID string, seg *stream.HLSSegment, startTime time.Time, success bool, attempts []data.TranscodeAttemptInfo) *data.TranscodeEvent {
+	segMeta := data.SegmentMetadata{
+		Name:     seg.Name,
+		SeqNo:    seg.SeqNo,
+		Duration: seg.Duration,
+		ByteSize: len(seg.Data),
+	}
+	return data.NewTranscodeEvent(monitor.NodeID, streamID, segMeta, startTime, success, attempts)
 }
 
 func getSegDurMsString(seg *stream.HLSSegment) string {
