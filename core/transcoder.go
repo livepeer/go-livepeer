@@ -36,7 +36,7 @@ func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData
 		Accel: ffmpeg.Software,
 	}
 	profiles := md.Profiles
-	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles)
+	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash)
 	if md.DetectorEnabled {
 		opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
 	}
@@ -77,7 +77,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
 	}
@@ -189,7 +189,18 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 				glog.Error("Cannot read transcoded output for ", oname)
 				return nil, err
 			}
-			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels})
+			// Extract perceptual hash if calculated
+			var s []byte = nil
+			if opts[i].CalcSign {
+				sigfile := oname + ".bin"
+				s, err = ioutil.ReadFile(sigfile)
+				if err != nil {
+					glog.Error("Cannot read perceptual hash at ", sigfile)
+					return nil, err
+				}
+				os.Remove(sigfile)
+			}
+			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})
 			os.Remove(oname)
 		} else {
 			detections = append(detections, res.Encoded[i].DetectData)
@@ -203,7 +214,7 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 	}, nil
 }
 
-func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile) []ffmpeg.TranscodeOptions {
+func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPhash bool) []ffmpeg.TranscodeOptions {
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
@@ -211,6 +222,7 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 			Profile:      profiles[i],
 			Accel:        accel,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			CalcSign:     calcPhash,
 		}
 		opts[i] = o
 	}

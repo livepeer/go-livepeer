@@ -151,6 +151,23 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.Equal(int64(300), tData.Segments[1].Pixels)
 	assert.True(fileDNE(file1.Name()))
 	assert.True(fileDNE(file2.Name()))
+
+	// Test signature file
+	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
+	pHash := []byte{4, 2, 0, 6, 9}
+
+	file1, err = ioutil.TempFile(tempDir, "foo")
+	require.Nil(err)
+	ioutil.WriteFile(file1.Name()+".bin", pHash, 0664)
+
+	opts = make([]ffmpeg.TranscodeOptions, 1)
+	opts[0].Oname = file1.Name()
+	opts[0].CalcSign = true
+
+	tData, err = resToTranscodeData(res, opts)
+	assert.Nil(err)
+	assert.Equal(tData.Segments[0].PHash, pHash)
+	assert.True(fileDNE(file1.Name()))
 }
 
 func TestProfilesToTranscodeOptions(t *testing.T) {
@@ -166,12 +183,12 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	// Test 0 profiles
 	profiles := []ffmpeg.VideoProfile{}
-	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(0, len(opts))
 
 	// Test 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(1, len(opts))
 	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
@@ -180,7 +197,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	// Test > 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
@@ -191,8 +208,13 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	}
 
 	// Test different acceleration value
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, false)
 	assert.Equal(2, len(opts))
+
+	// Test signature calculation
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, true)
+	assert.True(opts[0].CalcSign)
+	assert.True(opts[1].CalcSign)
 
 	for i, p := range profiles {
 		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
