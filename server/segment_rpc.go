@@ -192,6 +192,16 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			Url:    uri,
 			Pixels: res.TranscodeData.Segments[i].Pixels,
 		}
+		// Save perceptual hash if generated
+		if res.TranscodeData.Segments[i].PHash != nil {
+			pHashFile := name + ".phash"
+			pHashUri, err := res.OS.SaveData(pHashFile, res.TranscodeData.Segments[i].PHash, nil, 0)
+			if err != nil {
+				glog.Error("Could not upload segment perceptual hash for ", segData.Seq)
+				break
+			}
+			d.PerceptualHashUrl = pHashUri
+		}
 		segments = append(segments, d)
 	}
 
