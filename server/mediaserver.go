@@ -103,6 +103,8 @@ type LivepeerServer struct {
 
 type authWebhookResponse struct {
 	ManifestID           string   `json:"manifestID"`
+	StreamID             string   `json:"streamID"`
+	SessionID            string   `json:"sessionID"`
 	StreamKey            string   `json:"streamKey"`
 	Presets              []string `json:"presets"`
 	ObjectStore          string   `json:"objectStore"`
@@ -226,6 +228,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		//Else create one
 		var resp *authWebhookResponse
 		var mid core.ManifestID
+		var extStreamID, sessionID string
 		var err error
 		var key string
 		var os, ros drivers.OSDriver
@@ -238,6 +241,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		}
 		if resp != nil {
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
+			extStreamID, sessionID = resp.StreamID, resp.SessionID
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				profiles = parsePresets(resp.Presets)
@@ -315,8 +319,10 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			return nil
 		}
 		return &core.StreamParameters{
-			ManifestID: mid,
-			RtmpKey:    key,
+			ManifestID:       mid,
+			ExternalStreamID: extStreamID,
+			SessionID:        sessionID,
+			RtmpKey:          key,
 			// HTTP push mutates `profiles` so make a copy of it
 			Profiles:  append([]ffmpeg.VideoProfile(nil), profiles...),
 			OS:        oss,
