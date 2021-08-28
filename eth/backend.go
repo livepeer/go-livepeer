@@ -45,6 +45,7 @@ type Backend interface {
 	ethereum.ChainReader
 	ChainID(ctx context.Context) (*big.Int, error)
 	GasPriceMonitor() *GasPriceMonitor
+	SuggestGasTipCap(context.Context) (*big.Int, error)
 }
 
 type backend struct {
@@ -80,11 +81,10 @@ func (b *backend) SendTransaction(ctx context.Context, tx *types.Transaction) er
 		return err
 	}
 
-	msg, err := tx.AsMessage(b.signer)
+	sender, err := types.Sender(b.signer, tx)
 	if err != nil {
 		return err
 	}
-	sender := msg.From()
 
 	// update local nonce
 	b.nonceManager.Lock(sender)
@@ -157,7 +157,7 @@ func makeABIMap() map[string]*abi.ABI {
 			return map[string]*abi.ABI{}
 		}
 		for _, m := range parsedAbi.Methods {
-			abiMap[string(m.ID())] = &parsedAbi
+			abiMap[string(m.ID)] = &parsedAbi
 		}
 	}
 
