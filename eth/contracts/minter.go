@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// MinterMetaData contains all meta data concerning the Minter contract.
+var MinterMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_inflationChange\",\"type\":\"uint256\"}],\"name\":\"setInflationChange\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"contractIMinter\",\"name\":\"_newMinter\",\"type\":\"address\"}],\"name\":\"migrateToNewMinter\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedWithdrawETH\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentMintedTokens\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getController\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"name\":\"setTargetBondingRate\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_fracNum\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_fracDenom\",\"type\":\"uint256\"}],\"name\":\"createReward\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetBondingRate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentMintableTokens\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflationChange\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflation\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedBurnTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedTransferTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRewardTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"depositETH\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_inflation\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_inflationChange\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"currentMintableTokens\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"currentInflation\",\"type\":\"uint256\"}],\"name\":\"SetCurrentRewardTokens\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]",
+}
+
 // MinterABI is the input ABI used to generate the binding from.
-const MinterABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"currentMintedTokens\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetBondingRate\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentMintableTokens\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflationChange\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"inflation\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_inflation\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_inflationChange\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"currentMintableTokens\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"currentInflation\",\"type\":\"uint256\"}],\"name\":\"SetCurrentRewardTokens\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_targetBondingRate\",\"type\":\"uint256\"}],\"name\":\"setTargetBondingRate\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_inflationChange\",\"type\":\"uint256\"}],\"name\":\"setInflationChange\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"contractIMinter\",\"name\":\"_newMinter\",\"type\":\"address\"}],\"name\":\"migrateToNewMinter\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_fracNum\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_fracDenom\",\"type\":\"uint256\"}],\"name\":\"createReward\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedTransferTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedBurnTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"trustedWithdrawETH\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"depositETH\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":true,\"stateMutability\":\"payable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRewardTokens\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getController\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+// Deprecated: Use MinterMetaData.ABI instead.
+var MinterABI = MinterMetaData.ABI
 
 // Minter is an auto generated Go binding around an Ethereum contract.
 type Minter struct {
@@ -138,7 +145,7 @@ func bindMinter(address common.Address, caller bind.ContractCaller, transactor b
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Minter *MinterRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Minter *MinterRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Minter.Contract.MinterCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_Minter *MinterRaw) Transact(opts *bind.TransactOpts, method string, param
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Minter *MinterCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Minter *MinterCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Minter.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,182 +181,217 @@ func (_Minter *MinterTransactorRaw) Transact(opts *bind.TransactOpts, method str
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_Minter *MinterCaller) Controller(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "controller")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "controller")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_Minter *MinterSession) Controller() (common.Address, error) {
 	return _Minter.Contract.Controller(&_Minter.CallOpts)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_Minter *MinterCallerSession) Controller() (common.Address, error) {
 	return _Minter.Contract.Controller(&_Minter.CallOpts)
 }
 
 // CurrentMintableTokens is a free data retrieval call binding the contract method 0x9ae6309a.
 //
-// Solidity: function currentMintableTokens() constant returns(uint256)
+// Solidity: function currentMintableTokens() view returns(uint256)
 func (_Minter *MinterCaller) CurrentMintableTokens(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "currentMintableTokens")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "currentMintableTokens")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // CurrentMintableTokens is a free data retrieval call binding the contract method 0x9ae6309a.
 //
-// Solidity: function currentMintableTokens() constant returns(uint256)
+// Solidity: function currentMintableTokens() view returns(uint256)
 func (_Minter *MinterSession) CurrentMintableTokens() (*big.Int, error) {
 	return _Minter.Contract.CurrentMintableTokens(&_Minter.CallOpts)
 }
 
 // CurrentMintableTokens is a free data retrieval call binding the contract method 0x9ae6309a.
 //
-// Solidity: function currentMintableTokens() constant returns(uint256)
+// Solidity: function currentMintableTokens() view returns(uint256)
 func (_Minter *MinterCallerSession) CurrentMintableTokens() (*big.Int, error) {
 	return _Minter.Contract.CurrentMintableTokens(&_Minter.CallOpts)
 }
 
 // CurrentMintedTokens is a free data retrieval call binding the contract method 0x2de22cdb.
 //
-// Solidity: function currentMintedTokens() constant returns(uint256)
+// Solidity: function currentMintedTokens() view returns(uint256)
 func (_Minter *MinterCaller) CurrentMintedTokens(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "currentMintedTokens")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "currentMintedTokens")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // CurrentMintedTokens is a free data retrieval call binding the contract method 0x2de22cdb.
 //
-// Solidity: function currentMintedTokens() constant returns(uint256)
+// Solidity: function currentMintedTokens() view returns(uint256)
 func (_Minter *MinterSession) CurrentMintedTokens() (*big.Int, error) {
 	return _Minter.Contract.CurrentMintedTokens(&_Minter.CallOpts)
 }
 
 // CurrentMintedTokens is a free data retrieval call binding the contract method 0x2de22cdb.
 //
-// Solidity: function currentMintedTokens() constant returns(uint256)
+// Solidity: function currentMintedTokens() view returns(uint256)
 func (_Minter *MinterCallerSession) CurrentMintedTokens() (*big.Int, error) {
 	return _Minter.Contract.CurrentMintedTokens(&_Minter.CallOpts)
 }
 
 // GetController is a free data retrieval call binding the contract method 0x3018205f.
 //
-// Solidity: function getController() constant returns(address)
+// Solidity: function getController() view returns(address)
 func (_Minter *MinterCaller) GetController(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "getController")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "getController")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // GetController is a free data retrieval call binding the contract method 0x3018205f.
 //
-// Solidity: function getController() constant returns(address)
+// Solidity: function getController() view returns(address)
 func (_Minter *MinterSession) GetController() (common.Address, error) {
 	return _Minter.Contract.GetController(&_Minter.CallOpts)
 }
 
 // GetController is a free data retrieval call binding the contract method 0x3018205f.
 //
-// Solidity: function getController() constant returns(address)
+// Solidity: function getController() view returns(address)
 func (_Minter *MinterCallerSession) GetController() (common.Address, error) {
 	return _Minter.Contract.GetController(&_Minter.CallOpts)
 }
 
 // Inflation is a free data retrieval call binding the contract method 0xbe0522e0.
 //
-// Solidity: function inflation() constant returns(uint256)
+// Solidity: function inflation() view returns(uint256)
 func (_Minter *MinterCaller) Inflation(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "inflation")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "inflation")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // Inflation is a free data retrieval call binding the contract method 0xbe0522e0.
 //
-// Solidity: function inflation() constant returns(uint256)
+// Solidity: function inflation() view returns(uint256)
 func (_Minter *MinterSession) Inflation() (*big.Int, error) {
 	return _Minter.Contract.Inflation(&_Minter.CallOpts)
 }
 
 // Inflation is a free data retrieval call binding the contract method 0xbe0522e0.
 //
-// Solidity: function inflation() constant returns(uint256)
+// Solidity: function inflation() view returns(uint256)
 func (_Minter *MinterCallerSession) Inflation() (*big.Int, error) {
 	return _Minter.Contract.Inflation(&_Minter.CallOpts)
 }
 
 // InflationChange is a free data retrieval call binding the contract method 0xa7c83514.
 //
-// Solidity: function inflationChange() constant returns(uint256)
+// Solidity: function inflationChange() view returns(uint256)
 func (_Minter *MinterCaller) InflationChange(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "inflationChange")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "inflationChange")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // InflationChange is a free data retrieval call binding the contract method 0xa7c83514.
 //
-// Solidity: function inflationChange() constant returns(uint256)
+// Solidity: function inflationChange() view returns(uint256)
 func (_Minter *MinterSession) InflationChange() (*big.Int, error) {
 	return _Minter.Contract.InflationChange(&_Minter.CallOpts)
 }
 
 // InflationChange is a free data retrieval call binding the contract method 0xa7c83514.
 //
-// Solidity: function inflationChange() constant returns(uint256)
+// Solidity: function inflationChange() view returns(uint256)
 func (_Minter *MinterCallerSession) InflationChange() (*big.Int, error) {
 	return _Minter.Contract.InflationChange(&_Minter.CallOpts)
 }
 
 // TargetBondingRate is a free data retrieval call binding the contract method 0x821b771f.
 //
-// Solidity: function targetBondingRate() constant returns(uint256)
+// Solidity: function targetBondingRate() view returns(uint256)
 func (_Minter *MinterCaller) TargetBondingRate(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Minter.contract.Call(opts, out, "targetBondingRate")
-	return *ret0, err
+	var out []interface{}
+	err := _Minter.contract.Call(opts, &out, "targetBondingRate")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // TargetBondingRate is a free data retrieval call binding the contract method 0x821b771f.
 //
-// Solidity: function targetBondingRate() constant returns(uint256)
+// Solidity: function targetBondingRate() view returns(uint256)
 func (_Minter *MinterSession) TargetBondingRate() (*big.Int, error) {
 	return _Minter.Contract.TargetBondingRate(&_Minter.CallOpts)
 }
 
 // TargetBondingRate is a free data retrieval call binding the contract method 0x821b771f.
 //
-// Solidity: function targetBondingRate() constant returns(uint256)
+// Solidity: function targetBondingRate() view returns(uint256)
 func (_Minter *MinterCallerSession) TargetBondingRate() (*big.Int, error) {
 	return _Minter.Contract.TargetBondingRate(&_Minter.CallOpts)
 }
@@ -377,21 +419,21 @@ func (_Minter *MinterTransactorSession) CreateReward(_fracNum *big.Int, _fracDen
 
 // DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
 //
-// Solidity: function depositETH() returns(bool)
+// Solidity: function depositETH() payable returns(bool)
 func (_Minter *MinterTransactor) DepositETH(opts *bind.TransactOpts) (*types.Transaction, error) {
 	return _Minter.contract.Transact(opts, "depositETH")
 }
 
 // DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
 //
-// Solidity: function depositETH() returns(bool)
+// Solidity: function depositETH() payable returns(bool)
 func (_Minter *MinterSession) DepositETH() (*types.Transaction, error) {
 	return _Minter.Contract.DepositETH(&_Minter.TransactOpts)
 }
 
 // DepositETH is a paid mutator transaction binding the contract method 0xf6326fb3.
 //
-// Solidity: function depositETH() returns(bool)
+// Solidity: function depositETH() payable returns(bool)
 func (_Minter *MinterTransactorSession) DepositETH() (*types.Transaction, error) {
 	return _Minter.Contract.DepositETH(&_Minter.TransactOpts)
 }
@@ -694,6 +736,7 @@ func (_Minter *MinterFilterer) ParseParameterUpdate(log types.Log) (*MinterParam
 	if err := _Minter.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -827,6 +870,7 @@ func (_Minter *MinterFilterer) ParseSetController(log types.Log) (*MinterSetCont
 	if err := _Minter.contract.UnpackLog(event, "SetController", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -961,5 +1005,6 @@ func (_Minter *MinterFilterer) ParseSetCurrentRewardTokens(log types.Log) (*Mint
 	if err := _Minter.contract.UnpackLog(event, "SetCurrentRewardTokens", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }

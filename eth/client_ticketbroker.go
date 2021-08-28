@@ -2,10 +2,7 @@ package eth
 
 import (
 	"math/big"
-	"strings"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth/contracts"
@@ -49,7 +46,7 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 	copy(recipientRandHash[:], ticket.RecipientRandHash.Bytes()[:32])
 
 	return c.TicketBrokerSession.RedeemWinningTicket(
-		contracts.Struct1{
+		contracts.MTicketBrokerCoreTicket{
 			Recipient:         ticket.Recipient,
 			Sender:            ticket.Sender,
 			FaceValue:         ticket.FaceValue,
@@ -65,21 +62,8 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 
 // GetSenderInfo returns the info for a sender
 func (c *client) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
-	info := new(struct {
-		Sender struct {
-			Deposit       *big.Int
-			WithdrawRound *big.Int
-		}
-		Reserve pm.ReserveInfo
-	})
-
-	abi, err := abi.JSON(strings.NewReader(contracts.TicketBrokerABI))
+	info, err := c.TicketBrokerSession.GetSenderInfo(addr)
 	if err != nil {
-		return nil, err
-	}
-
-	contract := bind.NewBoundContract(c.ticketBrokerAddr, abi, c.backend, c.backend, c.backend)
-	if err := contract.Call(&c.TicketBrokerSession.CallOpts, info, "getSenderInfo", addr); err != nil {
 		return nil, err
 	}
 
