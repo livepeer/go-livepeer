@@ -136,7 +136,7 @@ func TestDecodeTxParams(t *testing.T) {
 	assert.Equal(txParams["_recipientRand"], recipientRand)
 
 	// Batch redeem winning ticket (slice of tuples test)
-	ticketA := contracts.Struct1{
+	ticketA := contracts.MTicketBrokerCoreTicket{
 		Recipient:         pm.RandAddress(),
 		Sender:            pm.RandAddress(),
 		FaceValue:         big.NewInt(5000000000),
@@ -146,7 +146,7 @@ func TestDecodeTxParams(t *testing.T) {
 		AuxData:           pm.RandBytes(64),
 	}
 
-	ticketB := contracts.Struct1{
+	ticketB := contracts.MTicketBrokerCoreTicket{
 		Recipient:         pm.RandAddress(),
 		Sender:            pm.RandAddress(),
 		FaceValue:         big.NewInt(5000000000),
@@ -159,7 +159,7 @@ func TestDecodeTxParams(t *testing.T) {
 	sigs := [][]byte{pm.RandBytes(64), pm.RandBytes(64)}
 	recipientRands := []*big.Int{big.NewInt(111111), big.NewInt(222222)}
 
-	data, _ = ticketBroker.Pack("batchRedeemWinningTickets", []contracts.Struct1{ticketA, ticketB}, sigs, recipientRands)
+	data, _ = ticketBroker.Pack("batchRedeemWinningTickets", []contracts.MTicketBrokerCoreTicket{ticketA, ticketB}, sigs, recipientRands)
 	err = decodeTxParams(&ticketBroker, txParams, data)
 	assert.Nil(err)
 	ticketAS := fmt.Sprintf("{ Recipient: %v  Sender: %v  FaceValue: %v  WinProb: %v  SenderNonce: %v  RecipientRandHash: 0x%x  AuxData: 0x%v }", ticketA.Recipient.Hex(), ticketA.Sender.Hex(), ticketA.FaceValue.String(), ticketA.WinProb.String(), ticketA.SenderNonce.String(), ticketA.RecipientRandHash, ethcommon.Bytes2Hex(ticketA.AuxData))

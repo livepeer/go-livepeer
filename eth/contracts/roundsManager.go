@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// RoundsManagerMetaData contains all meta data concerning the RoundsManager contract.
+var RoundsManagerMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_roundLockAmount\",\"type\":\"uint256\"}],\"name\":\"setRoundLockAmount\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_lip\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"setLIPUpgradeRound\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"lipUpgradeRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"blockHashForRound\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateStartBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_roundLength\",\"type\":\"uint256\"}],\"name\":\"setRoundLength\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundLocked\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_block\",\"type\":\"uint256\"}],\"name\":\"blockHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockNum\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLockAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"round\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"blockHash\",\"type\":\"bytes32\"}],\"name\":\"NewRound\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]",
+}
+
 // RoundsManagerABI is the input ABI used to generate the binding from.
-const RoundsManagerABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastRoundLengthUpdateStartBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"lastInitializedRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLength\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"roundLockAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"round\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"blockHash\",\"type\":\"bytes32\"}],\"name\":\"NewRound\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_roundLength\",\"type\":\"uint256\"}],\"name\":\"setRoundLength\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_roundLockAmount\",\"type\":\"uint256\"}],\"name\":\"setRoundLockAmount\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"initializeRound\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"blockNum\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_block\",\"type\":\"uint256\"}],\"name\":\"blockHash\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"blockHashForRound\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundStartBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundInitialized\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundLocked\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+// Deprecated: Use RoundsManagerMetaData.ABI instead.
+var RoundsManagerABI = RoundsManagerMetaData.ABI
 
 // RoundsManager is an auto generated Go binding around an Ethereum contract.
 type RoundsManager struct {
@@ -138,7 +145,7 @@ func bindRoundsManager(address common.Address, caller bind.ContractCaller, trans
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_RoundsManager *RoundsManagerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_RoundsManager *RoundsManagerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _RoundsManager.Contract.RoundsManagerCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_RoundsManager *RoundsManagerRaw) Transact(opts *bind.TransactOpts, method
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_RoundsManager *RoundsManagerCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_RoundsManager *RoundsManagerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _RoundsManager.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,364 +181,465 @@ func (_RoundsManager *RoundsManagerTransactorRaw) Transact(opts *bind.TransactOp
 
 // BlockHash is a free data retrieval call binding the contract method 0x85df51fd.
 //
-// Solidity: function blockHash(uint256 _block) constant returns(bytes32)
+// Solidity: function blockHash(uint256 _block) view returns(bytes32)
 func (_RoundsManager *RoundsManagerCaller) BlockHash(opts *bind.CallOpts, _block *big.Int) ([32]byte, error) {
-	var (
-		ret0 = new([32]byte)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "blockHash", _block)
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "blockHash", _block)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
 }
 
 // BlockHash is a free data retrieval call binding the contract method 0x85df51fd.
 //
-// Solidity: function blockHash(uint256 _block) constant returns(bytes32)
+// Solidity: function blockHash(uint256 _block) view returns(bytes32)
 func (_RoundsManager *RoundsManagerSession) BlockHash(_block *big.Int) ([32]byte, error) {
 	return _RoundsManager.Contract.BlockHash(&_RoundsManager.CallOpts, _block)
 }
 
 // BlockHash is a free data retrieval call binding the contract method 0x85df51fd.
 //
-// Solidity: function blockHash(uint256 _block) constant returns(bytes32)
+// Solidity: function blockHash(uint256 _block) view returns(bytes32)
 func (_RoundsManager *RoundsManagerCallerSession) BlockHash(_block *big.Int) ([32]byte, error) {
 	return _RoundsManager.Contract.BlockHash(&_RoundsManager.CallOpts, _block)
 }
 
 // BlockHashForRound is a free data retrieval call binding the contract method 0x3aa4add4.
 //
-// Solidity: function blockHashForRound(uint256 _round) constant returns(bytes32)
+// Solidity: function blockHashForRound(uint256 _round) view returns(bytes32)
 func (_RoundsManager *RoundsManagerCaller) BlockHashForRound(opts *bind.CallOpts, _round *big.Int) ([32]byte, error) {
-	var (
-		ret0 = new([32]byte)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "blockHashForRound", _round)
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "blockHashForRound", _round)
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
 }
 
 // BlockHashForRound is a free data retrieval call binding the contract method 0x3aa4add4.
 //
-// Solidity: function blockHashForRound(uint256 _round) constant returns(bytes32)
+// Solidity: function blockHashForRound(uint256 _round) view returns(bytes32)
 func (_RoundsManager *RoundsManagerSession) BlockHashForRound(_round *big.Int) ([32]byte, error) {
 	return _RoundsManager.Contract.BlockHashForRound(&_RoundsManager.CallOpts, _round)
 }
 
 // BlockHashForRound is a free data retrieval call binding the contract method 0x3aa4add4.
 //
-// Solidity: function blockHashForRound(uint256 _round) constant returns(bytes32)
+// Solidity: function blockHashForRound(uint256 _round) view returns(bytes32)
 func (_RoundsManager *RoundsManagerCallerSession) BlockHashForRound(_round *big.Int) ([32]byte, error) {
 	return _RoundsManager.Contract.BlockHashForRound(&_RoundsManager.CallOpts, _round)
 }
 
 // BlockNum is a free data retrieval call binding the contract method 0x8ae63d6d.
 //
-// Solidity: function blockNum() constant returns(uint256)
+// Solidity: function blockNum() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) BlockNum(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "blockNum")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "blockNum")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // BlockNum is a free data retrieval call binding the contract method 0x8ae63d6d.
 //
-// Solidity: function blockNum() constant returns(uint256)
+// Solidity: function blockNum() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) BlockNum() (*big.Int, error) {
 	return _RoundsManager.Contract.BlockNum(&_RoundsManager.CallOpts)
 }
 
 // BlockNum is a free data retrieval call binding the contract method 0x8ae63d6d.
 //
-// Solidity: function blockNum() constant returns(uint256)
+// Solidity: function blockNum() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) BlockNum() (*big.Int, error) {
 	return _RoundsManager.Contract.BlockNum(&_RoundsManager.CallOpts)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_RoundsManager *RoundsManagerCaller) Controller(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "controller")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "controller")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_RoundsManager *RoundsManagerSession) Controller() (common.Address, error) {
 	return _RoundsManager.Contract.Controller(&_RoundsManager.CallOpts)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_RoundsManager *RoundsManagerCallerSession) Controller() (common.Address, error) {
 	return _RoundsManager.Contract.Controller(&_RoundsManager.CallOpts)
 }
 
 // CurrentRound is a free data retrieval call binding the contract method 0x8a19c8bc.
 //
-// Solidity: function currentRound() constant returns(uint256)
+// Solidity: function currentRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) CurrentRound(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "currentRound")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "currentRound")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // CurrentRound is a free data retrieval call binding the contract method 0x8a19c8bc.
 //
-// Solidity: function currentRound() constant returns(uint256)
+// Solidity: function currentRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) CurrentRound() (*big.Int, error) {
 	return _RoundsManager.Contract.CurrentRound(&_RoundsManager.CallOpts)
 }
 
 // CurrentRound is a free data retrieval call binding the contract method 0x8a19c8bc.
 //
-// Solidity: function currentRound() constant returns(uint256)
+// Solidity: function currentRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) CurrentRound() (*big.Int, error) {
 	return _RoundsManager.Contract.CurrentRound(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundInitialized is a free data retrieval call binding the contract method 0x219bc76c.
 //
-// Solidity: function currentRoundInitialized() constant returns(bool)
+// Solidity: function currentRoundInitialized() view returns(bool)
 func (_RoundsManager *RoundsManagerCaller) CurrentRoundInitialized(opts *bind.CallOpts) (bool, error) {
-	var (
-		ret0 = new(bool)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "currentRoundInitialized")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "currentRoundInitialized")
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
 }
 
 // CurrentRoundInitialized is a free data retrieval call binding the contract method 0x219bc76c.
 //
-// Solidity: function currentRoundInitialized() constant returns(bool)
+// Solidity: function currentRoundInitialized() view returns(bool)
 func (_RoundsManager *RoundsManagerSession) CurrentRoundInitialized() (bool, error) {
 	return _RoundsManager.Contract.CurrentRoundInitialized(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundInitialized is a free data retrieval call binding the contract method 0x219bc76c.
 //
-// Solidity: function currentRoundInitialized() constant returns(bool)
+// Solidity: function currentRoundInitialized() view returns(bool)
 func (_RoundsManager *RoundsManagerCallerSession) CurrentRoundInitialized() (bool, error) {
 	return _RoundsManager.Contract.CurrentRoundInitialized(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundLocked is a free data retrieval call binding the contract method 0x6841f253.
 //
-// Solidity: function currentRoundLocked() constant returns(bool)
+// Solidity: function currentRoundLocked() view returns(bool)
 func (_RoundsManager *RoundsManagerCaller) CurrentRoundLocked(opts *bind.CallOpts) (bool, error) {
-	var (
-		ret0 = new(bool)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "currentRoundLocked")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "currentRoundLocked")
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
 }
 
 // CurrentRoundLocked is a free data retrieval call binding the contract method 0x6841f253.
 //
-// Solidity: function currentRoundLocked() constant returns(bool)
+// Solidity: function currentRoundLocked() view returns(bool)
 func (_RoundsManager *RoundsManagerSession) CurrentRoundLocked() (bool, error) {
 	return _RoundsManager.Contract.CurrentRoundLocked(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundLocked is a free data retrieval call binding the contract method 0x6841f253.
 //
-// Solidity: function currentRoundLocked() constant returns(bool)
+// Solidity: function currentRoundLocked() view returns(bool)
 func (_RoundsManager *RoundsManagerCallerSession) CurrentRoundLocked() (bool, error) {
 	return _RoundsManager.Contract.CurrentRoundLocked(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundStartBlock is a free data retrieval call binding the contract method 0x8fa148f2.
 //
-// Solidity: function currentRoundStartBlock() constant returns(uint256)
+// Solidity: function currentRoundStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) CurrentRoundStartBlock(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "currentRoundStartBlock")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "currentRoundStartBlock")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // CurrentRoundStartBlock is a free data retrieval call binding the contract method 0x8fa148f2.
 //
-// Solidity: function currentRoundStartBlock() constant returns(uint256)
+// Solidity: function currentRoundStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) CurrentRoundStartBlock() (*big.Int, error) {
 	return _RoundsManager.Contract.CurrentRoundStartBlock(&_RoundsManager.CallOpts)
 }
 
 // CurrentRoundStartBlock is a free data retrieval call binding the contract method 0x8fa148f2.
 //
-// Solidity: function currentRoundStartBlock() constant returns(uint256)
+// Solidity: function currentRoundStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) CurrentRoundStartBlock() (*big.Int, error) {
 	return _RoundsManager.Contract.CurrentRoundStartBlock(&_RoundsManager.CallOpts)
 }
 
 // LastInitializedRound is a free data retrieval call binding the contract method 0x8807f36e.
 //
-// Solidity: function lastInitializedRound() constant returns(uint256)
+// Solidity: function lastInitializedRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) LastInitializedRound(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "lastInitializedRound")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "lastInitializedRound")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // LastInitializedRound is a free data retrieval call binding the contract method 0x8807f36e.
 //
-// Solidity: function lastInitializedRound() constant returns(uint256)
+// Solidity: function lastInitializedRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) LastInitializedRound() (*big.Int, error) {
 	return _RoundsManager.Contract.LastInitializedRound(&_RoundsManager.CallOpts)
 }
 
 // LastInitializedRound is a free data retrieval call binding the contract method 0x8807f36e.
 //
-// Solidity: function lastInitializedRound() constant returns(uint256)
+// Solidity: function lastInitializedRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) LastInitializedRound() (*big.Int, error) {
 	return _RoundsManager.Contract.LastInitializedRound(&_RoundsManager.CallOpts)
 }
 
 // LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
 //
-// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) LastRoundLengthUpdateRound(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "lastRoundLengthUpdateRound")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "lastRoundLengthUpdateRound")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
 //
-// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) LastRoundLengthUpdateRound() (*big.Int, error) {
 	return _RoundsManager.Contract.LastRoundLengthUpdateRound(&_RoundsManager.CallOpts)
 }
 
 // LastRoundLengthUpdateRound is a free data retrieval call binding the contract method 0x0fe1dfa8.
 //
-// Solidity: function lastRoundLengthUpdateRound() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateRound() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) LastRoundLengthUpdateRound() (*big.Int, error) {
 	return _RoundsManager.Contract.LastRoundLengthUpdateRound(&_RoundsManager.CallOpts)
 }
 
 // LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
 //
-// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) LastRoundLengthUpdateStartBlock(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "lastRoundLengthUpdateStartBlock")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "lastRoundLengthUpdateStartBlock")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
 //
-// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) LastRoundLengthUpdateStartBlock() (*big.Int, error) {
 	return _RoundsManager.Contract.LastRoundLengthUpdateStartBlock(&_RoundsManager.CallOpts)
 }
 
 // LastRoundLengthUpdateStartBlock is a free data retrieval call binding the contract method 0x668abff7.
 //
-// Solidity: function lastRoundLengthUpdateStartBlock() constant returns(uint256)
+// Solidity: function lastRoundLengthUpdateStartBlock() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) LastRoundLengthUpdateStartBlock() (*big.Int, error) {
 	return _RoundsManager.Contract.LastRoundLengthUpdateStartBlock(&_RoundsManager.CallOpts)
 }
 
-// RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
+// LipUpgradeRound is a free data retrieval call binding the contract method 0x1e6d4c22.
 //
-// Solidity: function roundLength() constant returns(uint256)
-func (_RoundsManager *RoundsManagerCaller) RoundLength(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "roundLength")
-	return *ret0, err
+// Solidity: function lipUpgradeRound(uint256 ) view returns(uint256)
+func (_RoundsManager *RoundsManagerCaller) LipUpgradeRound(opts *bind.CallOpts, arg0 *big.Int) (*big.Int, error) {
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "lipUpgradeRound", arg0)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// LipUpgradeRound is a free data retrieval call binding the contract method 0x1e6d4c22.
+//
+// Solidity: function lipUpgradeRound(uint256 ) view returns(uint256)
+func (_RoundsManager *RoundsManagerSession) LipUpgradeRound(arg0 *big.Int) (*big.Int, error) {
+	return _RoundsManager.Contract.LipUpgradeRound(&_RoundsManager.CallOpts, arg0)
+}
+
+// LipUpgradeRound is a free data retrieval call binding the contract method 0x1e6d4c22.
+//
+// Solidity: function lipUpgradeRound(uint256 ) view returns(uint256)
+func (_RoundsManager *RoundsManagerCallerSession) LipUpgradeRound(arg0 *big.Int) (*big.Int, error) {
+	return _RoundsManager.Contract.LipUpgradeRound(&_RoundsManager.CallOpts, arg0)
 }
 
 // RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
 //
-// Solidity: function roundLength() constant returns(uint256)
+// Solidity: function roundLength() view returns(uint256)
+func (_RoundsManager *RoundsManagerCaller) RoundLength(opts *bind.CallOpts) (*big.Int, error) {
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "roundLength")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
+//
+// Solidity: function roundLength() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) RoundLength() (*big.Int, error) {
 	return _RoundsManager.Contract.RoundLength(&_RoundsManager.CallOpts)
 }
 
 // RoundLength is a free data retrieval call binding the contract method 0x8b649b94.
 //
-// Solidity: function roundLength() constant returns(uint256)
+// Solidity: function roundLength() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) RoundLength() (*big.Int, error) {
 	return _RoundsManager.Contract.RoundLength(&_RoundsManager.CallOpts)
 }
 
 // RoundLockAmount is a free data retrieval call binding the contract method 0xf5b490d5.
 //
-// Solidity: function roundLockAmount() constant returns(uint256)
+// Solidity: function roundLockAmount() view returns(uint256)
 func (_RoundsManager *RoundsManagerCaller) RoundLockAmount(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "roundLockAmount")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "roundLockAmount")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // RoundLockAmount is a free data retrieval call binding the contract method 0xf5b490d5.
 //
-// Solidity: function roundLockAmount() constant returns(uint256)
+// Solidity: function roundLockAmount() view returns(uint256)
 func (_RoundsManager *RoundsManagerSession) RoundLockAmount() (*big.Int, error) {
 	return _RoundsManager.Contract.RoundLockAmount(&_RoundsManager.CallOpts)
 }
 
 // RoundLockAmount is a free data retrieval call binding the contract method 0xf5b490d5.
 //
-// Solidity: function roundLockAmount() constant returns(uint256)
+// Solidity: function roundLockAmount() view returns(uint256)
 func (_RoundsManager *RoundsManagerCallerSession) RoundLockAmount() (*big.Int, error) {
 	return _RoundsManager.Contract.RoundLockAmount(&_RoundsManager.CallOpts)
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_RoundsManager *RoundsManagerCaller) TargetContractId(opts *bind.CallOpts) ([32]byte, error) {
-	var (
-		ret0 = new([32]byte)
-	)
-	out := ret0
-	err := _RoundsManager.contract.Call(opts, out, "targetContractId")
-	return *ret0, err
+	var out []interface{}
+	err := _RoundsManager.contract.Call(opts, &out, "targetContractId")
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_RoundsManager *RoundsManagerSession) TargetContractId() ([32]byte, error) {
 	return _RoundsManager.Contract.TargetContractId(&_RoundsManager.CallOpts)
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_RoundsManager *RoundsManagerCallerSession) TargetContractId() ([32]byte, error) {
 	return _RoundsManager.Contract.TargetContractId(&_RoundsManager.CallOpts)
 }
@@ -576,6 +684,27 @@ func (_RoundsManager *RoundsManagerSession) SetController(_controller common.Add
 // Solidity: function setController(address _controller) returns()
 func (_RoundsManager *RoundsManagerTransactorSession) SetController(_controller common.Address) (*types.Transaction, error) {
 	return _RoundsManager.Contract.SetController(&_RoundsManager.TransactOpts, _controller)
+}
+
+// SetLIPUpgradeRound is a paid mutator transaction binding the contract method 0x13013e7a.
+//
+// Solidity: function setLIPUpgradeRound(uint256 _lip, uint256 _round) returns()
+func (_RoundsManager *RoundsManagerTransactor) SetLIPUpgradeRound(opts *bind.TransactOpts, _lip *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.contract.Transact(opts, "setLIPUpgradeRound", _lip, _round)
+}
+
+// SetLIPUpgradeRound is a paid mutator transaction binding the contract method 0x13013e7a.
+//
+// Solidity: function setLIPUpgradeRound(uint256 _lip, uint256 _round) returns()
+func (_RoundsManager *RoundsManagerSession) SetLIPUpgradeRound(_lip *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.Contract.SetLIPUpgradeRound(&_RoundsManager.TransactOpts, _lip, _round)
+}
+
+// SetLIPUpgradeRound is a paid mutator transaction binding the contract method 0x13013e7a.
+//
+// Solidity: function setLIPUpgradeRound(uint256 _lip, uint256 _round) returns()
+func (_RoundsManager *RoundsManagerTransactorSession) SetLIPUpgradeRound(_lip *big.Int, _round *big.Int) (*types.Transaction, error) {
+	return _RoundsManager.Contract.SetLIPUpgradeRound(&_RoundsManager.TransactOpts, _lip, _round)
 }
 
 // SetRoundLength is a paid mutator transaction binding the contract method 0x681312f5.
@@ -761,6 +890,7 @@ func (_RoundsManager *RoundsManagerFilterer) ParseNewRound(log types.Log) (*Roun
 	if err := _RoundsManager.contract.UnpackLog(event, "NewRound", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -894,6 +1024,7 @@ func (_RoundsManager *RoundsManagerFilterer) ParseParameterUpdate(log types.Log)
 	if err := _RoundsManager.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -1027,5 +1158,6 @@ func (_RoundsManager *RoundsManagerFilterer) ParseSetController(log types.Log) (
 	if err := _RoundsManager.contract.UnpackLog(event, "SetController", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }

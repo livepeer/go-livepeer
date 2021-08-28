@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// ServiceRegistryMetaData contains all meta data concerning the ServiceRegistry contract.
+var ServiceRegistryMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"string\",\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]",
+}
+
 // ServiceRegistryABI is the input ABI used to generate the binding from.
-const ServiceRegistryABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"serviceURI\",\"type\":\"string\"}],\"name\":\"ServiceURIUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"string\",\"name\":\"_serviceURI\",\"type\":\"string\"}],\"name\":\"setServiceURI\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"getServiceURI\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+// Deprecated: Use ServiceRegistryMetaData.ABI instead.
+var ServiceRegistryABI = ServiceRegistryMetaData.ABI
 
 // ServiceRegistry is an auto generated Go binding around an Ethereum contract.
 type ServiceRegistry struct {
@@ -138,7 +145,7 @@ func bindServiceRegistry(address common.Address, caller bind.ContractCaller, tra
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_ServiceRegistry *ServiceRegistryRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_ServiceRegistry *ServiceRegistryRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _ServiceRegistry.Contract.ServiceRegistryCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_ServiceRegistry *ServiceRegistryRaw) Transact(opts *bind.TransactOpts, me
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_ServiceRegistry *ServiceRegistryCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_ServiceRegistry *ServiceRegistryCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _ServiceRegistry.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,78 +181,93 @@ func (_ServiceRegistry *ServiceRegistryTransactorRaw) Transact(opts *bind.Transa
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_ServiceRegistry *ServiceRegistryCaller) Controller(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _ServiceRegistry.contract.Call(opts, out, "controller")
-	return *ret0, err
+	var out []interface{}
+	err := _ServiceRegistry.contract.Call(opts, &out, "controller")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_ServiceRegistry *ServiceRegistrySession) Controller() (common.Address, error) {
 	return _ServiceRegistry.Contract.Controller(&_ServiceRegistry.CallOpts)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
 //
-// Solidity: function controller() constant returns(address)
+// Solidity: function controller() view returns(address)
 func (_ServiceRegistry *ServiceRegistryCallerSession) Controller() (common.Address, error) {
 	return _ServiceRegistry.Contract.Controller(&_ServiceRegistry.CallOpts)
 }
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(address _addr) constant returns(string)
+// Solidity: function getServiceURI(address _addr) view returns(string)
 func (_ServiceRegistry *ServiceRegistryCaller) GetServiceURI(opts *bind.CallOpts, _addr common.Address) (string, error) {
-	var (
-		ret0 = new(string)
-	)
-	out := ret0
-	err := _ServiceRegistry.contract.Call(opts, out, "getServiceURI", _addr)
-	return *ret0, err
+	var out []interface{}
+	err := _ServiceRegistry.contract.Call(opts, &out, "getServiceURI", _addr)
+
+	if err != nil {
+		return *new(string), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(string)).(*string)
+
+	return out0, err
+
 }
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(address _addr) constant returns(string)
+// Solidity: function getServiceURI(address _addr) view returns(string)
 func (_ServiceRegistry *ServiceRegistrySession) GetServiceURI(_addr common.Address) (string, error) {
 	return _ServiceRegistry.Contract.GetServiceURI(&_ServiceRegistry.CallOpts, _addr)
 }
 
 // GetServiceURI is a free data retrieval call binding the contract method 0x214c2a4b.
 //
-// Solidity: function getServiceURI(address _addr) constant returns(string)
+// Solidity: function getServiceURI(address _addr) view returns(string)
 func (_ServiceRegistry *ServiceRegistryCallerSession) GetServiceURI(_addr common.Address) (string, error) {
 	return _ServiceRegistry.Contract.GetServiceURI(&_ServiceRegistry.CallOpts, _addr)
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_ServiceRegistry *ServiceRegistryCaller) TargetContractId(opts *bind.CallOpts) ([32]byte, error) {
-	var (
-		ret0 = new([32]byte)
-	)
-	out := ret0
-	err := _ServiceRegistry.contract.Call(opts, out, "targetContractId")
-	return *ret0, err
+	var out []interface{}
+	err := _ServiceRegistry.contract.Call(opts, &out, "targetContractId")
+
+	if err != nil {
+		return *new([32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([32]byte)).(*[32]byte)
+
+	return out0, err
+
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_ServiceRegistry *ServiceRegistrySession) TargetContractId() ([32]byte, error) {
 	return _ServiceRegistry.Contract.TargetContractId(&_ServiceRegistry.CallOpts)
 }
 
 // TargetContractId is a free data retrieval call binding the contract method 0x51720b41.
 //
-// Solidity: function targetContractId() constant returns(bytes32)
+// Solidity: function targetContractId() view returns(bytes32)
 func (_ServiceRegistry *ServiceRegistryCallerSession) TargetContractId() ([32]byte, error) {
 	return _ServiceRegistry.Contract.TargetContractId(&_ServiceRegistry.CallOpts)
 }
@@ -422,6 +444,7 @@ func (_ServiceRegistry *ServiceRegistryFilterer) ParseParameterUpdate(log types.
 	if err := _ServiceRegistry.contract.UnpackLog(event, "ParameterUpdate", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -566,6 +589,7 @@ func (_ServiceRegistry *ServiceRegistryFilterer) ParseServiceURIUpdate(log types
 	if err := _ServiceRegistry.contract.UnpackLog(event, "ServiceURIUpdate", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -699,5 +723,6 @@ func (_ServiceRegistry *ServiceRegistryFilterer) ParseSetController(log types.Lo
 	if err := _ServiceRegistry.contract.UnpackLog(event, "SetController", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }

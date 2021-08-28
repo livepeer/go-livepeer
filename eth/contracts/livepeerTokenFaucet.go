@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// LivepeerTokenFaucetMetaData contains all meta data concerning the LivepeerTokenFaucet contract.
+var LivepeerTokenFaucetMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":true,\"inputs\":[],\"name\":\"requestWait\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"nextValidRequest\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"request\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"isWhitelisted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"removeFromWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"addToWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"token\",\"outputs\":[{\"internalType\":\"contractILivepeerToken\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_requestAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_requestWait\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Request\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]",
+}
+
 // LivepeerTokenFaucetABI is the input ABI used to generate the binding from.
-const LivepeerTokenFaucetABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"requestWait\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"nextValidRequest\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"isWhitelisted\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"requestAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"token\",\"outputs\":[{\"internalType\":\"contractILivepeerToken\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_token\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_requestAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_requestWait\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Request\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"addToWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_addr\",\"type\":\"address\"}],\"name\":\"removeFromWhitelist\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"request\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+// Deprecated: Use LivepeerTokenFaucetMetaData.ABI instead.
+var LivepeerTokenFaucetABI = LivepeerTokenFaucetMetaData.ABI
 
 // LivepeerTokenFaucet is an auto generated Go binding around an Ethereum contract.
 type LivepeerTokenFaucet struct {
@@ -138,7 +145,7 @@ func bindLivepeerTokenFaucet(address common.Address, caller bind.ContractCaller,
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_LivepeerTokenFaucet *LivepeerTokenFaucetRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _LivepeerTokenFaucet.Contract.LivepeerTokenFaucetCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetRaw) Transact(opts *bind.Transact
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _LivepeerTokenFaucet.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,156 +181,186 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetTransactorRaw) Transact(opts *bin
 
 // IsWhitelisted is a free data retrieval call binding the contract method 0x3af32abf.
 //
-// Solidity: function isWhitelisted(address ) constant returns(bool)
+// Solidity: function isWhitelisted(address ) view returns(bool)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) IsWhitelisted(opts *bind.CallOpts, arg0 common.Address) (bool, error) {
-	var (
-		ret0 = new(bool)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "isWhitelisted", arg0)
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "isWhitelisted", arg0)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
 }
 
 // IsWhitelisted is a free data retrieval call binding the contract method 0x3af32abf.
 //
-// Solidity: function isWhitelisted(address ) constant returns(bool)
+// Solidity: function isWhitelisted(address ) view returns(bool)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) IsWhitelisted(arg0 common.Address) (bool, error) {
 	return _LivepeerTokenFaucet.Contract.IsWhitelisted(&_LivepeerTokenFaucet.CallOpts, arg0)
 }
 
 // IsWhitelisted is a free data retrieval call binding the contract method 0x3af32abf.
 //
-// Solidity: function isWhitelisted(address ) constant returns(bool)
+// Solidity: function isWhitelisted(address ) view returns(bool)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) IsWhitelisted(arg0 common.Address) (bool, error) {
 	return _LivepeerTokenFaucet.Contract.IsWhitelisted(&_LivepeerTokenFaucet.CallOpts, arg0)
 }
 
 // NextValidRequest is a free data retrieval call binding the contract method 0x207f5ce6.
 //
-// Solidity: function nextValidRequest(address ) constant returns(uint256)
+// Solidity: function nextValidRequest(address ) view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) NextValidRequest(opts *bind.CallOpts, arg0 common.Address) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "nextValidRequest", arg0)
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "nextValidRequest", arg0)
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // NextValidRequest is a free data retrieval call binding the contract method 0x207f5ce6.
 //
-// Solidity: function nextValidRequest(address ) constant returns(uint256)
+// Solidity: function nextValidRequest(address ) view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) NextValidRequest(arg0 common.Address) (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.NextValidRequest(&_LivepeerTokenFaucet.CallOpts, arg0)
 }
 
 // NextValidRequest is a free data retrieval call binding the contract method 0x207f5ce6.
 //
-// Solidity: function nextValidRequest(address ) constant returns(uint256)
+// Solidity: function nextValidRequest(address ) view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) NextValidRequest(arg0 common.Address) (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.NextValidRequest(&_LivepeerTokenFaucet.CallOpts, arg0)
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) Owner(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "owner")
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "owner")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) Owner() (common.Address, error) {
 	return _LivepeerTokenFaucet.Contract.Owner(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) Owner() (common.Address, error) {
 	return _LivepeerTokenFaucet.Contract.Owner(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // RequestAmount is a free data retrieval call binding the contract method 0xf52ec46c.
 //
-// Solidity: function requestAmount() constant returns(uint256)
+// Solidity: function requestAmount() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) RequestAmount(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "requestAmount")
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "requestAmount")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // RequestAmount is a free data retrieval call binding the contract method 0xf52ec46c.
 //
-// Solidity: function requestAmount() constant returns(uint256)
+// Solidity: function requestAmount() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) RequestAmount() (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.RequestAmount(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // RequestAmount is a free data retrieval call binding the contract method 0xf52ec46c.
 //
-// Solidity: function requestAmount() constant returns(uint256)
+// Solidity: function requestAmount() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) RequestAmount() (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.RequestAmount(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // RequestWait is a free data retrieval call binding the contract method 0x0d6c51b3.
 //
-// Solidity: function requestWait() constant returns(uint256)
+// Solidity: function requestWait() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) RequestWait(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "requestWait")
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "requestWait")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // RequestWait is a free data retrieval call binding the contract method 0x0d6c51b3.
 //
-// Solidity: function requestWait() constant returns(uint256)
+// Solidity: function requestWait() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) RequestWait() (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.RequestWait(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // RequestWait is a free data retrieval call binding the contract method 0x0d6c51b3.
 //
-// Solidity: function requestWait() constant returns(uint256)
+// Solidity: function requestWait() view returns(uint256)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) RequestWait() (*big.Int, error) {
 	return _LivepeerTokenFaucet.Contract.RequestWait(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // Token is a free data retrieval call binding the contract method 0xfc0c546a.
 //
-// Solidity: function token() constant returns(address)
+// Solidity: function token() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCaller) Token(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _LivepeerTokenFaucet.contract.Call(opts, out, "token")
-	return *ret0, err
+	var out []interface{}
+	err := _LivepeerTokenFaucet.contract.Call(opts, &out, "token")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Token is a free data retrieval call binding the contract method 0xfc0c546a.
 //
-// Solidity: function token() constant returns(address)
+// Solidity: function token() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetSession) Token() (common.Address, error) {
 	return _LivepeerTokenFaucet.Contract.Token(&_LivepeerTokenFaucet.CallOpts)
 }
 
 // Token is a free data retrieval call binding the contract method 0xfc0c546a.
 //
-// Solidity: function token() constant returns(address)
+// Solidity: function token() view returns(address)
 func (_LivepeerTokenFaucet *LivepeerTokenFaucetCallerSession) Token() (common.Address, error) {
 	return _LivepeerTokenFaucet.Contract.Token(&_LivepeerTokenFaucet.CallOpts)
 }
@@ -561,6 +598,7 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) ParseOwnershipTransferr
 	if err := _LivepeerTokenFaucet.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -705,5 +743,6 @@ func (_LivepeerTokenFaucet *LivepeerTokenFaucetFilterer) ParseRequest(log types.
 	if err := _LivepeerTokenFaucet.contract.UnpackLog(event, "Request", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
