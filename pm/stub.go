@@ -182,7 +182,7 @@ func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRa
 
 	b.usedTickets[ticket.Hash()] = true
 
-	return &types.Transaction{}, nil
+	return types.NewTx(&types.DynamicFeeTx{}), nil
 }
 
 func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/build"
@@ -400,9 +399,7 @@ func main() {
 		}
 		defer gpm.Stop()
 
-		signer := types.NewEIP155Signer(chainID)
-
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, signer)
+		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, chainID)
 		if err != nil {
 			glog.Errorf("Error creating Ethereum account manager: %v", err)
 			return
@@ -423,7 +420,6 @@ func main() {
 			EthClient:          backend,
 			GasPriceMonitor:    gpm,
 			TransactionManager: tm,
-			Signer:             signer,
 		}
 
 		client, err := eth.NewClient(ethCfg)

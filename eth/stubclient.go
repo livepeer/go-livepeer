@@ -383,5 +383,5 @@ func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return
 
 // Governance
 func (c *StubClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
-	return &types.Transaction{}, c.Err
+	return types.NewTx(&types.DynamicFeeTx{}), c.Err
 }
