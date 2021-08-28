@@ -177,9 +177,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 
-	signer := types.NewEIP155Signer(chainID)
-
-	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, signer)
+	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, chainID)
 	if err != nil {
 		glog.Errorf("Error creating Ethereum account manager: %v", err)
 		return
@@ -200,7 +198,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		EthClient:          backend,
 		GasPriceMonitor:    gpm,
 		TransactionManager: tm,
-		Signer:             signer,
+		Signer:             types.LatestSignerForChainID(chainID),
 	}
 
 	client, err := eth.NewClient(ethCfg)
@@ -436,10 +434,7 @@ func remoteConsole(destAccountAddr string) error {
 		console.log(logs[0][0].address);''
 	`
 		glog.Infof("Running eth script: %s", getEthControllerScript)
-		err = console.Evaluate(getEthControllerScript)
-		if err != nil {
-			glog.Error(err)
-		}
+		console.Evaluate(getEthControllerScript)
 		if printer.Len() == 0 {
 			glog.Fatal("Can't find deployed controller")
 		}
@@ -452,10 +447,7 @@ func remoteConsole(destAccountAddr string) error {
 		gethMiningAccount, broadcasterGeth)
 	glog.Infof("Running eth script: %s", script)
 
-	err = console.Evaluate(script)
-	if err != nil {
-		glog.Error(err)
-	}
+	console.Evaluate(script)
 
 	time.Sleep(3 * time.Second)
 

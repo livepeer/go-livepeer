@@ -799,7 +799,7 @@ func TestVoteHandler(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal((&types.Transaction{}).Hash().Bytes(), body)
+	assert.Equal((types.NewTx(&types.DynamicFeeTx{})).Hash().Bytes(), body)
 }
 
 func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {

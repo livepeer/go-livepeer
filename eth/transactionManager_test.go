@@ -244,7 +244,6 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(err)
 	expTx := types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, calcReplacementGasPrice(stubTx), stubTx.Data())
 	assert.Equal(tx.Hash(), expTx.Hash())
-	assert.Equal(tx, expTx)
 	assert.Equal(logsAfter-logsBefore, int64(1))
 
 	// Replacement gas price lower than suggest gas price
@@ -257,7 +256,6 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(err)
 	expTx = types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, gpm.gasPrice, stubTx.Data())
 	assert.Equal(tx.Hash(), expTx.Hash())
-	assert.Equal(tx, expTx)
 	assert.Equal(logsAfter-logsBefore, int64(1))
 }
 

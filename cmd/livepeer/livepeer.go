@@ -403,9 +403,7 @@ func main() {
 		}
 		defer gpm.Stop()
 
-		signer := types.NewEIP155Signer(chainID)
-
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, signer)
+		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*ethAcctAddr), keystoreDir, chainID)
 		if err != nil {
 			glog.Errorf("Error creating Ethereum account manager: %v", err)
 			return
@@ -426,7 +424,7 @@ func main() {
 			EthClient:          backend,
 			GasPriceMonitor:    gpm,
 			TransactionManager: tm,
-			Signer:             signer,
+			Signer:             types.LatestSignerForChainID(chainID),
 		}
 
 		client, err := eth.NewClient(ethCfg)

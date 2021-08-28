@@ -2,11 +2,11 @@ package eth
 
 import (
 	"io/ioutil"
+	"math/big"
 	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +21,7 @@ func TestAccountManager(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestEmptyPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSign(t *testing.T) {
 	a, err := ks.NewAccount("")
 	require.Nil(err)
 
-	am, err := NewAccountManager(a.Address, dir, types.EIP155Signer{})
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
 	require.Nil(err)
 
 	_, err = am.Sign([]byte("foo"))
