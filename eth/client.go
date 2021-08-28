@@ -3,15 +3,15 @@ Package eth client is the go client for the Livepeer Ethereum smart contract.  C
 */
 package eth
 
-//go:generate abigen --abi protocol/abi/Controller.abi --pkg contracts --type Controller --out contracts/controller.go
-//go:generate abigen --abi protocol/abi/LivepeerToken.abi --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
-//go:generate abigen --abi protocol/abi/ServiceRegistry.abi --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
-//go:generate abigen --abi protocol/abi/BondingManager.abi --pkg contracts --type BondingManager --out contracts/bondingManager.go
-//go:generate abigen --abi protocol/abi/TicketBroker.abi --pkg contracts --type TicketBroker --out contracts/ticketBroker.go
-//go:generate abigen --abi protocol/abi/RoundsManager.abi --pkg contracts --type RoundsManager --out contracts/roundsManager.go
-//go:generate abigen --abi protocol/abi/Minter.abi --pkg contracts --type Minter --out contracts/minter.go
-//go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.abi --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
-//go:generate abigen --abi protocol/abi/Poll.abi --pkg contracts --type Poll --out contracts/poll.go
+//go:generate abigen --abi protocol/abi/Controller.json --pkg contracts --type Controller --out contracts/controller.go
+//go:generate abigen --abi protocol/abi/LivepeerToken.json --pkg contracts --type LivepeerToken --out contracts/livepeerToken.go
+//go:generate abigen --abi protocol/abi/ServiceRegistry.json --pkg contracts --type ServiceRegistry --out contracts/serviceRegistry.go
+//go:generate abigen --abi protocol/abi/BondingManager.json --pkg contracts --type BondingManager --out contracts/bondingManager.go
+//go:generate abigen --abi protocol/abi/TicketBroker.json --pkg contracts --type TicketBroker --out contracts/ticketBroker.go
+//go:generate abigen --abi protocol/abi/RoundsManager.json --pkg contracts --type RoundsManager --out contracts/roundsManager.go
+//go:generate abigen --abi protocol/abi/Minter.json --pkg contracts --type Minter --out contracts/minter.go
+//go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.json --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
+//go:generate abigen --abi protocol/abi/Poll.json --pkg contracts --type Poll --out contracts/poll.go
 import (
 	"fmt"
 	"math/big"

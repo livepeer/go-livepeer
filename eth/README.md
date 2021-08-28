@@ -7,11 +7,10 @@ If the smart contracts are updated you can generate new Go bindings by doing the
 
 ```
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
-git clone https://github.com/livepeer/protocol.git $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
+git clone https://github.com/livepeer/protocol.git
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth/protocol
-npm install
-npm run compile
-node scripts/parseArtifacts.js
+yarn
+yarn compile
 cd $GOPATH/src/github.com/livepeer/go-livepeer/eth
 go generate client.go
 ```
