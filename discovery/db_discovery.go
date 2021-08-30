@@ -85,12 +85,33 @@ func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	return uris, nil
 }
 
-func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
+func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
 	uris, _ := dbo.getURLs()
-	return uris
+	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
+	for _, uri := range uris {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: common.Score_Untrusted})
+	}
+	return infos
 }
 
-func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
+func (dbo *DBOrchestratorPoolCache) GetInfo(uri string) common.OrchestratorLocalInfo {
+	uris, _ := dbo.getURLs()
+	res := common.OrchestratorLocalInfo{
+		Score: common.Score_Untrusted,
+	}
+
+	for _, uri_ := range uris {
+		if uri_.String() == uri {
+			res.URL = uri_
+			break
+		}
+	}
+	return res
+}
+
+func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+
 	uris, err := dbo.getURLs()
 	if err != nil || len(uris) <= 0 {
 		return nil, err
@@ -132,8 +153,8 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred)
-	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators, suspender, caps)
+	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted)
+	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
 	}
@@ -149,6 +170,13 @@ func (dbo *DBOrchestratorPoolCache) Size() int {
 		},
 	)
 	return count
+}
+
+func (dbo *DBOrchestratorPoolCache) SizeWithPred(scorePred common.ScorePred) int {
+	if scorePred(common.Score_Untrusted) {
+		return dbo.Size()
+	}
+	return 0
 }
 
 func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {

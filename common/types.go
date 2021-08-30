@@ -1,12 +1,42 @@
 package common
 
 import (
+	"encoding/json"
 	"math/big"
 	"net/url"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/m3u8"
 )
+
+type RemoteTranscoderInfo struct {
+	Address  string
+	Capacity int
+}
+
+type StreamInfo struct {
+	SourceBytes     uint64
+	TranscodedBytes uint64
+}
+
+type NodeStatus struct {
+	Manifests map[string]*m3u8.MasterPlaylist
+	// maps external manifest (provided in HTTP push URL to the internal one
+	// (returned from webhook))
+	InternalManifests           map[string]string
+	StreamInfo                  map[string]StreamInfo
+	OrchestratorPool            []string
+	OrchestratorPoolInfos       []OrchestratorLocalInfo
+	Version                     string
+	GolangRuntimeVersion        string
+	GOArch                      string
+	GOOS                        string
+	RegisteredTranscodersNumber int
+	RegisteredTranscoders       []RemoteTranscoderInfo
+	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
+	// xxx add transcoder's version here
+}
 
 type Broadcaster interface {
 	Address() ethcommon.Address
@@ -18,10 +48,47 @@ type CapabilityComparator interface {
 	LegacyOnly() bool
 }
 
+const (
+	Score_Untrusted = 0.0
+	Score_Trusted   = 1.0
+)
+
+type OrchestratorLocalInfo struct {
+	URL   *url.URL `json:"Url"`
+	Score float32
+}
+
+func (u *OrchestratorLocalInfo) MarshalJSON() ([]byte, error) {
+	type Alias OrchestratorLocalInfo
+	return json.Marshal(&struct {
+		URL string `json:"Url"`
+		*Alias
+	}{
+		URL:   u.URL.String(),
+		Alias: (*Alias)(u),
+	})
+}
+
+type ScorePred = func(float32) bool
 type OrchestratorPool interface {
-	GetURLs() []*url.URL
-	GetOrchestrators(int, Suspender, CapabilityComparator) ([]*net.OrchestratorInfo, error)
+	// GetInfo gets info for specific orchestrator
+	GetInfo(uri string) OrchestratorLocalInfo
+	GetInfos() []OrchestratorLocalInfo
+	GetOrchestrators(int, Suspender, CapabilityComparator, ScorePred) ([]*net.OrchestratorInfo, error)
 	Size() int
+	SizeWithPred(ScorePred) int
+}
+
+func SizePredAtLeast(minScore float32) ScorePred {
+	return func(score float32) bool {
+		return score >= minScore
+	}
+}
+
+func SizePredEqual(neededScore float32) ScorePred {
+	return func(score float32) bool {
+		return score == neededScore
+	}
 }
 
 type Suspender interface {

@@ -147,6 +147,16 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_AuthToken,
 	}), "failed with fractional framerates")
 
+	// check MPEG7VideoSignature
+	params.VerificationFreq = 1
+	assert.True(checkSuccess(params, []Capability{
+		Capability_H264,
+		Capability_MPEGTS,
+		Capability_FractionalFramerates,
+		Capability_AuthToken,
+		Capability_MPEG7VideoSignature,
+	}), "failed with fractional framerates")
+
 	// check error case with format
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}
 	_, err = JobCapabilities(params)

@@ -44,8 +44,9 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 
 func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	reader := strings.NewReader("InsteadOf.TS")
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/18.ts", reader)
@@ -124,8 +125,9 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	reader := strings.NewReader("InsteadOf.TS")
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
@@ -224,8 +226,9 @@ func TestPush_MultipartReturn(t *testing.T) {
 	assert.Equal(uint64(12), cxn.sourceBytes)
 	assert.Equal(uint64(0), cxn.transcodedBytes)
 
-	bsm.sel.Clear()
-	bsm.sel.Add([]*BroadcastSession{sess})
+	bsm.trustedPool.sel.Clear()
+	bsm.trustedPool.sel.Add([]*BroadcastSession{sess})
+
 	sess.BroadcasterOS = osSession
 	// Body should be empty if no Accept header specified
 	reader.Seek(0, 0)
@@ -240,8 +243,9 @@ func TestPush_MultipartReturn(t *testing.T) {
 	assert.Equal("", strings.TrimSpace(string(body)))
 
 	// Binary data should be returned
-	bsm.sel.Clear()
-	bsm.sel.Add([]*BroadcastSession{sess})
+	bsm.trustedPool.sel.Clear()
+	bsm.trustedPool.sel.Add([]*BroadcastSession{sess})
+
 	reader.Seek(0, 0)
 	reader = strings.NewReader("InsteadOf.TS")
 	req = httptest.NewRequest("POST", "/live/mani/12.ts", reader)
@@ -282,9 +286,10 @@ func TestPush_MultipartReturn(t *testing.T) {
 	assert.Equal(uint64(44), cxn.transcodedBytes)
 
 	// No sessions error
-	cxn.sessManager.sel.Clear()
-	cxn.sessManager.lastSess = nil
-	cxn.sessManager.sessMap = make(map[string]*BroadcastSession)
+	cxn.sessManager.trustedPool.sel.Clear()
+	cxn.sessManager.trustedPool.lastSess = nil
+	cxn.sessManager.trustedPool.sessMap = make(map[string]*BroadcastSession)
+
 	reader.Seek(0, 0)
 	req = httptest.NewRequest("POST", "/live/mani/13.ts", reader)
 	w = httptest.NewRecorder()
@@ -317,8 +322,9 @@ func TestPush_MultipartReturn(t *testing.T) {
 func TestPush_MemoryRequestError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	handler, _, w := requestSetup(s)
 	f, err := os.Open(`doesn't exist`)
 	require.NotNil(t, err)
@@ -337,8 +343,9 @@ func TestPush_MemoryRequestError(t *testing.T) {
 func TestPush_EmptyURLError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/.ts", nil)
 	s.HandlePush(w, req)
@@ -353,8 +360,9 @@ func TestPush_EmptyURLError(t *testing.T) {
 
 func TestPush_ShouldUpdateLastUsed(t *testing.T) {
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani1/1.ts", nil)
 	s.HandlePush(w, req)
@@ -408,8 +416,9 @@ func TestPush_HTTPIngest(t *testing.T) {
 func TestPush_MP4(t *testing.T) {
 	// Do a bunch of setup. Would be nice to simplify this one day...
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	s.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	defer func() { s.rtmpConnections = map[core.ManifestID]*rtmpConnection{} }()
 	segHandler := getHLSSegmentHandler(s)
@@ -535,11 +544,14 @@ func TestPush_MP4(t *testing.T) {
 
 func TestPush_SetVideoProfileFormats(t *testing.T) {
 	assert := assert.New(t)
-	s := setupServer()
+	// s := setupServer()
+	// s, cancel := setupServerWithCancelAndPorts()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	// sometimes LivepeerServer needs time  to start
 	// esp if this is the only test in the suite being run (eg, via `-run)
-	time.Sleep(10 * time.Millisecond)
+	// time.Sleep(10 * time.Millisecond)
 	s.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	defer func() { s.rtmpConnections = map[core.ManifestID]*rtmpConnection{} }()
 
@@ -646,6 +658,7 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	req = httptest.NewRequest("POST", "/live/web/1.mp4", r)
 	h.ServeHTTP(w, req)
 	resp = w.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	// webhook should not be called again
 	assert.Equal(1, hookCalled)
@@ -655,6 +668,7 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	assert.False(ok, "stream should not exist")
 	cxn, ok = s.rtmpConnections["intweb"]
 	assert.True(ok, "stream did not exist")
+	glog.Errorf("===> body: %s", body)
 	assert.Equal(503, resp.StatusCode)
 }
 
@@ -734,8 +748,9 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani2/1.ts", nil)
 	s.HandlePush(w, req)
@@ -761,8 +776,9 @@ func TestPush_ResetWatchdog(t *testing.T) {
 	// wait for any earlier tests to complete
 	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 
 	waitBarrier := func(ch chan struct{}) bool {
 		select {
@@ -882,9 +898,10 @@ func TestPush_ResetWatchdog(t *testing.T) {
 func TestPush_FileExtensionError(t *testing.T) {
 	// assert file extension error returned
 	assert := assert.New(t)
-	s := setupServer()
-	handler, reader, w := requestSetup(s)
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
+	handler, reader, w := requestSetup(s)
 	req := httptest.NewRequest("POST", "/live/seg.m3u8", reader)
 
 	handler.ServeHTTP(w, req)
@@ -900,8 +917,9 @@ func TestPush_FileExtensionError(t *testing.T) {
 func TestPush_StorageError(t *testing.T) {
 	// assert storage error
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	handler, reader, w := requestSetup(s)
 
 	tempStorage := drivers.NodeStorage
@@ -927,8 +945,9 @@ func TestPush_StorageError(t *testing.T) {
 func TestPush_ForAuthWebhookFailure(t *testing.T) {
 	// assert app data error
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	handler, reader, w := requestSetup(s)
 
 	oldURL := AuthWebhookURL
@@ -948,8 +967,9 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 
 func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
-	server := setupServer()
+	server, cancel := setupServerWithCancel()
 	defer serverCleanup(server)
+	defer cancel()
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	handler, reader, w := requestSetup(server)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
@@ -969,8 +989,9 @@ func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
 
 func TestPush_ResolutionWithContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
-	server := setupServer()
+	server, cancel := setupServerWithCancel()
 	defer serverCleanup(server)
+	defer cancel()
 	server.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	handler, reader, w := requestSetup(server)
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
@@ -991,8 +1012,9 @@ func TestPush_ResolutionWithContentResolutionHeader(t *testing.T) {
 
 func TestPush_WebhookRequestURL(t *testing.T) {
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
@@ -1303,4 +1325,140 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	assert.False(extEx)
 	assert.False(extEx2)
 	serverCleanup(s)
+}
+func TestPush_MultipartReturnMultiSession(t *testing.T) {
+	assert := assert.New(t)
+
+	goodHash, err := ioutil.ReadFile("../core/test.phash")
+	assert.NoError(err)
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	reader := strings.NewReader("InsteadOf.TS")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
+
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+					Sig:      []byte("bar"),
+				},
+			},
+		}
+	}
+
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	segPath := "/transcoded/segment.ts"
+	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100, PerceptualHashUrl: ts.URL + segPath + ".phash"}}
+	tr := dummyRes(tSegData)
+	buf, err := proto.Marshal(tr)
+	require.Nil(t, err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("trusted transcoded binary data"))
+	})
+	mux.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(goodHash)
+	})
+
+	ts2, mux2 := stubTLSServer()
+	defer ts2.Close()
+	tSegData2 := []*net.TranscodedSegmentData{{Url: ts2.URL + segPath, Pixels: 100, PerceptualHashUrl: ts2.URL + segPath + ".phash"}}
+	tr2 := dummyRes(tSegData2)
+	buf2, err := proto.Marshal(tr2)
+	require.Nil(t, err)
+	mux2.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf2)
+	})
+	mux2.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("UNtrusted transcoded binary data"))
+	})
+	mux2.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(goodHash)
+	})
+
+	sess1 := StubBroadcastSession(ts.URL)
+	sess1.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess1.Params.ManifestID = "mani"
+
+	sess2 := StubBroadcastSession(ts2.URL)
+	sess2.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess2.Params.ManifestID = "mani"
+	sess2.OrchestratorScore = common.Score_Untrusted
+
+	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess2}, false)
+	bsm.VerificationFreq = 1
+
+	url, _ := url.ParseRequestURI("test://some.host")
+	osd := drivers.NewMemoryDriver(url)
+	osSession := osd.NewSession("testPath")
+	sess1.BroadcasterOS = osSession
+	sess2.BroadcasterOS = osSession
+
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
+	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("mani"),
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}, VerificationFreq: 1},
+	}
+
+	s.rtmpConnections["mani"] = cxn
+
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	assert.Equal("multipart/mixed", mediaType)
+	assert.Nil(err)
+	mr := multipart.NewReader(resp.Body, params["boundary"])
+	var i int
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(err)
+		mediaType, params, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		assert.Nil(err)
+		assert.Contains(params, "name")
+		assert.Len(params, 1)
+		assert.Equal(params["name"], "P144p25fps16x9_17.ts")
+		assert.Equal(`attachment; filename="P144p25fps16x9_17.ts"`, p.Header.Get("Content-Disposition"))
+		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
+		bodyPart, err := ioutil.ReadAll(p)
+		assert.NoError(err)
+		assert.Equal("video/mp2t", strings.ToLower(mediaType))
+		assert.Equal("UNtrusted transcoded binary data", string(bodyPart))
+
+		i++
+	}
+	assert.Equal(1, i)
+	assert.Equal(uint64(12), cxn.sourceBytes)
+	assert.Equal(uint64(32), cxn.transcodedBytes)
 }

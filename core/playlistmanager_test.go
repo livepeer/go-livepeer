@@ -125,7 +125,7 @@ func TestJsonFlush(t *testing.T) {
 	assert.False(c.jsonList.hasTrack(vProfile.Name))
 	assert.Len(c.jsonList.Segments, 0)
 	assert.Len(c.jsonList.Segments[vProfile.Name], 0)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	fir, err := msess.ReadData(context.Background(), "sess1/"+plName)
 	assert.Nil(err)
 	assert.NotNil(fir)

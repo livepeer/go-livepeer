@@ -1,14 +1,12 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
+	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
@@ -73,61 +71,189 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
 	}
 }
 
-type BroadcastSessionsManager struct {
-	// Accessing or changing any of the below requires ownership of this mutex
-	sessLock *sync.Mutex
+type sessionsCreator func() ([]*BroadcastSession, error)
+type SessionPool struct {
+	mid core.ManifestID
 
-	mid      core.ManifestID
+	// Accessing or changing any of the below requires ownership of this mutex
+	lock sync.Mutex
+
 	sel      BroadcastSessionsSelector
+	lastSess []*BroadcastSession
 	sessMap  map[string]*BroadcastSession
-	lastSess *BroadcastSession
 	numOrchs int // how many orchs to request at once
 	poolSize int
 
 	refreshing bool // only allow one refresh in-flight
 	finished   bool // set at stream end
 
-	createSessions func() ([]*BroadcastSession, error)
+	createSessions sessionsCreator
 	sus            *suspender
 }
 
-func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
+func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator,
+	sel BroadcastSessionsSelector) *SessionPool {
 
-	checkSessions := func(m *BroadcastSessionsManager) bool {
+	return &SessionPool{
+		mid:            mid,
+		numOrchs:       numOrchs,
+		poolSize:       poolSize,
+		sessMap:        make(map[string]*BroadcastSession),
+		sel:            sel,
+		createSessions: createSession,
+		sus:            sus,
+	}
+}
+
+func (sp *SessionPool) suspend(orch string) {
+	sp.sus.suspend(orch, sp.poolSize/sp.numOrchs)
+}
+
+func (sp *SessionPool) refreshSessions() {
+	started := time.Now()
+	glog.V(common.DEBUG).Infof("Starting session refresh manifestID=%s", sp.mid)
+	defer func() {
+		sp.lock.Lock()
+		glog.V(common.DEBUG).Infof("Ending session refresh manifestID=%s dur=%s orchs=%d", sp.mid, time.Since(started),
+			sp.sel.Size())
+		sp.lock.Unlock()
+	}()
+	sp.lock.Lock()
+	if sp.finished || sp.refreshing {
+		sp.lock.Unlock()
+		return
+	}
+	sp.refreshing = true
+	sp.lock.Unlock()
+
+	sp.sus.signalRefresh()
+
+	newBroadcastSessions, err := sp.createSessions()
+	if err != nil {
+		sp.lock.Lock()
+		sp.refreshing = false
+		sp.lock.Unlock()
+		return
+	}
+
+	// if newBroadcastSessions is empty, exit without refreshing list
+	if len(newBroadcastSessions) <= 0 {
+		sp.lock.Lock()
+		sp.refreshing = false
+		sp.lock.Unlock()
+		return
+	}
+
+	uniqueSessions := make([]*BroadcastSession, 0, len(newBroadcastSessions))
+	sp.lock.Lock()
+	defer sp.lock.Unlock()
+
+	sp.refreshing = false
+	if sp.finished {
+		return
+	}
+
+	for _, sess := range newBroadcastSessions {
+		if _, ok := sp.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+			continue
+		}
+		uniqueSessions = append(uniqueSessions, sess)
+		sp.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+	}
+
+	sp.sel.Add(uniqueSessions)
+}
+
+func includesSession(sessions []*BroadcastSession, session *BroadcastSession) bool {
+	for _, sess := range sessions {
+		if sess == session {
+			return true
+		}
+	}
+	return false
+}
+
+func includesSessionByOrch(sessions []*BroadcastSession, session *BroadcastSession) bool {
+	for _, sess := range sessions {
+		if sess.OrchestratorInfo.Transcoder == session.OrchestratorInfo.Transcoder {
+			return true
+		}
+	}
+	return false
+}
+
+func getOrchs(sessions []*BroadcastSession) []string {
+	res := make([]string, len(sessions))
+	for i, sess := range sessions {
+		res[i] = sess.OrchestratorInfo.Transcoder
+	}
+	return res
+}
+
+func removeSessionFromList(sessions []*BroadcastSession, sess *BroadcastSession) []*BroadcastSession {
+	var res []*BroadcastSession
+	for _, ls := range sessions {
+		if ls != sess {
+			res = append(res, ls)
+		}
+	}
+	return res
+}
+
+func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
+	for _, session := range sessions {
+		if len(session.SegsInFlight) > 0 &&
+			time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur &&
+			!includesSession(exclude, session) {
+			// Re-use last session if oldest segment is in-flight for < segDur
+			return session
+		}
+	}
+	return nil
+}
+
+func (sp *SessionPool) selectSessions(sessionsNum int) []*BroadcastSession {
+	sp.lock.Lock()
+	defer sp.lock.Unlock()
+	if sp.poolSize == 0 {
+		return nil
+	}
+
+	checkSessions := func(m *SessionPool) bool {
 		numSess := m.sel.Size()
 		if numSess < int(math.Ceil(float64(m.numOrchs)/2.0)) {
 			go m.refreshSessions()
 		}
-		return (numSess > 0 || bsm.lastSess != nil)
+		return (numSess > 0 || len(sp.lastSess) > 0)
 	}
-	for checkSessions(bsm) {
+	var selectedSessions []*BroadcastSession
+
+	for checkSessions(sp) {
 		var sess *BroadcastSession
 
-		if bsm.lastSess != nil && len(bsm.lastSess.SegsInFlight) > 0 &&
-			time.Since(bsm.lastSess.SegsInFlight[0].startTime) < bsm.lastSess.SegsInFlight[0].segDur {
-			// Re-use last session if oldest segment is in-flight for < segDur
-			sess = bsm.lastSess
-		} else {
+		// Re-use last session if oldest segment is in-flight for < segDur
+		gotFromLast := false
+		sess = selectSession(sp.lastSess, selectedSessions, 1)
+		if sess == nil {
 			// Or try a new session from the available ones
-			sess = bsm.sel.Select()
+			sess = sp.sel.Select()
+		} else {
+			gotFromLast = true
 		}
 
-		// If no new sessions are available, re-use last session when oldest segment is in-flight for < 2 * segDur
-		if sess == nil && bsm.lastSess != nil && len(bsm.lastSess.SegsInFlight) > 0 &&
-			time.Since(bsm.lastSess.SegsInFlight[0].startTime) < 2*bsm.lastSess.SegsInFlight[0].segDur {
-			glog.V(common.DEBUG).Infof("No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time", bsm.mid, bsm.lastSess.OrchestratorInfo.Transcoder)
-			sess = bsm.lastSess
+		if sess == nil {
+			// If no new sessions are available, re-use last session when oldest segment is in-flight for < 2 * segDur
+			sess = selectSession(sp.lastSess, selectedSessions, 2)
+			if sess != nil {
+				gotFromLast = true
+				glog.V(common.DEBUG).Infof("No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time",
+					sp.mid, sess.OrchestratorInfo.Transcoder)
+			}
 		}
 
 		// No session found, return nil
 		if sess == nil {
-			if bsm.lastSess != nil {
-				bsm.lastSess.SegsInFlight = nil
-				bsm.lastSess = nil
-			}
-			return nil
+			break
 		}
 
 		/*
@@ -138,55 +264,82 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 		   To avoid a runtime search of the session list under lock, simply
 		   fixup the session list at selection time by retrying the selection.
 		*/
-		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-			if bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder != sess.OrchestratorInfo.Transcoder {
-				glog.V(common.DEBUG).Infof("Swapping from orch=%v to orch=%v for manifestID=%s", bsm.lastSess.OrchestratorInfo.Transcoder, sess.OrchestratorInfo.Transcoder, bsm.mid)
+		if _, ok := sp.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+			selectedSessions = append(selectedSessions, sess)
+
+			if len(selectedSessions) == sessionsNum {
+				break
+			}
+		} else {
+			if gotFromLast {
+				// Last session got removed from map (possibly due to a failure) so stop tracking its in-flight segments
+				sess.SegsInFlight = nil
+				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
+				glog.V(common.DEBUG).Infof("Removing orch=%v from manifestID=%s session list", sess.OrchestratorInfo.Transcoder, sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped()
 				}
 			}
-			bsm.lastSess = sess
-			return sess
 		}
-
-		// Last session got removed from map (possibly due to a failure) so stop tracking its in-flight segments
-		if bsm.lastSess != nil && sess.OrchestratorInfo.Transcoder == bsm.lastSess.OrchestratorInfo.Transcoder {
-			glog.V(common.DEBUG).Infof("Removing orch=%v from manifestID=%s session list", bsm.lastSess.OrchestratorInfo.Transcoder, bsm.mid)
-			if monitor.Enabled {
-				monitor.OrchestratorSwapped()
+	}
+	if len(selectedSessions) == 0 {
+		// No session found, return nil
+		sp.lastSess = nil
+	} else {
+		for _, ls := range sp.lastSess {
+			if !includesSessionByOrch(selectedSessions, ls) {
+				glog.V(common.DEBUG).Infof("Swapping from orch=%v to orch=%+v for manifestID=%s", ls.OrchestratorInfo.Transcoder,
+					getOrchs(selectedSessions), sp.mid)
+				if monitor.Enabled {
+					monitor.OrchestratorSwapped()
+				}
 			}
-			bsm.lastSess.SegsInFlight = nil
-			bsm.lastSess = nil
+		}
+		sp.lastSess = append([]*BroadcastSession{}, selectedSessions...)
+	}
+	return selectedSessions
+}
+
+func (sp *SessionPool) removeSession(session *BroadcastSession) {
+	sp.lock.Lock()
+	defer sp.lock.Unlock()
+
+	delete(sp.sessMap, session.OrchestratorInfo.Transcoder)
+}
+
+func (sp *SessionPool) updateLastSession(oldSess, newSess *BroadcastSession) {
+	for i, ls := range sp.lastSess {
+		if ls == oldSess {
+			sp.lastSess[i] = newSess
+			break
 		}
 	}
-	// No session found, return nil
-	if bsm.lastSess != nil {
-		bsm.lastSess.SegsInFlight = nil
-		bsm.lastSess = nil
-	}
-	return nil
 }
 
-func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
-	delete(bsm.sessMap, session.OrchestratorInfo.Transcoder)
+func (sp *SessionPool) cleanup() {
+	sp.lock.Lock()
+	defer sp.lock.Unlock()
+	sp.finished = true
+	sp.lastSess = nil
+	sp.sel.Clear()
+	sp.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
 }
 
-func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
-	if existingSess, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+func (sp *SessionPool) completeSession(sess *BroadcastSession) {
+	sp.lock.Lock()
+	defer sp.lock.Unlock()
+	if existingSess, ok := sp.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
 		// If the new session and the existing session share the same key in sessMap replace
 		// the existing session with the new session
 		if existingSess != sess {
-			bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+			sp.sessMap[sess.OrchestratorInfo.Transcoder] = sess
 		}
-		if bsm.lastSess != nil && bsm.lastSess.OrchestratorInfo.Transcoder == sess.OrchestratorInfo.Transcoder && sess != bsm.lastSess {
-			sess.SegsInFlight = bsm.lastSess.SegsInFlight
-			bsm.lastSess = sess
+		for i, ls := range sp.lastSess {
+			if ls != sess && ls.OrchestratorInfo.Transcoder == sess.OrchestratorInfo.Transcoder {
+				sess.SegsInFlight = ls.SegsInFlight
+				sp.lastSess[i] = sess
+				break
+			}
 		}
 		if len(sess.SegsInFlight) == 1 {
 			sess.SegsInFlight = nil
@@ -196,123 +349,221 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 			// we will return it later in transcodeSegment() once all in-flight segs downloaded
 			return
 		}
-		bsm.sel.Complete(sess)
+		sp.sel.Complete(sess)
 	}
 }
 
-func (bsm *BroadcastSessionsManager) refreshSessions() {
+type BroadcastSessionsManager struct {
+	mid              core.ManifestID
+	VerificationFreq uint
 
-	started := time.Now()
-	glog.V(common.DEBUG).Info("Starting session refresh manifestID=", bsm.mid)
-	defer glog.V(common.DEBUG).Infof("Ending session refresh manifestID=%s dur=%s", bsm.mid, time.Since(started))
-	bsm.sessLock.Lock()
-	if bsm.finished || bsm.refreshing {
-		bsm.sessLock.Unlock()
-		return
-	}
-	bsm.refreshing = true
-	bsm.sessLock.Unlock()
+	// Accessing or changing any of the below requires ownership of this mutex
+	sessLock sync.Mutex
 
-	bsm.sus.signalRefresh()
+	finished bool // set at stream end
 
-	newBroadcastSessions, err := bsm.createSessions()
-	if err != nil {
-		bsm.sessLock.Lock()
-		bsm.refreshing = false
-		bsm.sessLock.Unlock()
-		return
-	}
-
-	// if newBroadcastSessions is empty, exit without refreshing list
-	if len(newBroadcastSessions) <= 0 {
-		bsm.sessLock.Lock()
-		bsm.refreshing = false
-		bsm.sessLock.Unlock()
-		return
-	}
-
-	uniqueSessions := make([]*BroadcastSession, 0, len(newBroadcastSessions))
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
-	bsm.refreshing = false
-	if bsm.finished {
-		return
-	}
-
-	for _, sess := range newBroadcastSessions {
-		if _, ok := bsm.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-			continue
-		}
-		uniqueSessions = append(uniqueSessions, sess)
-		bsm.sessMap[sess.OrchestratorInfo.Transcoder] = sess
-	}
-
-	bsm.sel.Add(uniqueSessions)
+	trustedPool   *SessionPool
+	untrustedPool *SessionPool
 }
 
-func (bsm *BroadcastSessionsManager) pushSegInFlight(sess *BroadcastSession, seg *stream.HLSSegment) {
+func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
+	var trustedPoolSize, untrustedPoolSize float64
+	if node.OrchestratorPool != nil {
+		trustedPoolSize = float64(node.OrchestratorPool.SizeWithPred(common.SizePredAtLeast(common.Score_Trusted)))
+		untrustedPoolSize = float64(node.OrchestratorPool.SizeWithPred(common.SizePredEqual(common.Score_Untrusted)))
+	}
+	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
+	trustedNumOrchs := int(math.Min(trustedPoolSize, maxInflight*2))
+	untrustedNumOrchs := int(math.Min(untrustedPoolSize, maxInflight*2)) * 2
+	susTrusted := newSuspender()
+	susUntrusted := newSuspender()
+	createSessionsTrusted := func() ([]*BroadcastSession, error) {
+		return selectOrchestrator(node, params, trustedNumOrchs, susTrusted, common.SizePredAtLeast(common.Score_Trusted))
+	}
+	createSessionsUntrusted := func() ([]*BroadcastSession, error) {
+		return selectOrchestrator(node, params, untrustedNumOrchs, susUntrusted, common.SizePredEqual(common.Score_Untrusted))
+	}
+	bsm := &BroadcastSessionsManager{
+		mid:              params.ManifestID,
+		VerificationFreq: params.VerificationFreq,
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, sel()),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, sel()),
+	}
+	bsm.trustedPool.refreshSessions()
+	bsm.untrustedPool.refreshSessions()
+	return bsm
+}
+
+func (bsm *BroadcastSessionsManager) suspendAndRemoveOrch(sess *BroadcastSession) {
+	if sess.OrchestratorScore == common.Score_Untrusted {
+		bsm.untrustedPool.suspend(sess.OrchestratorInfo.GetTranscoder())
+		bsm.untrustedPool.removeSession(sess)
+	} else {
+		bsm.trustedPool.suspend(sess.OrchestratorInfo.GetTranscoder())
+		bsm.trustedPool.removeSession(sess)
+	}
+}
+
+func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
-	sess.SegsInFlight = append(sess.SegsInFlight,
+
+	if session.OrchestratorScore == common.Score_Untrusted {
+		bsm.untrustedPool.removeSession(session)
+	} else {
+		bsm.trustedPool.removeSession(session)
+	}
+}
+
+func (bsm *BroadcastSessionsManager) updateLastSession(oldSess, newSess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	bsm.trustedPool.updateLastSession(oldSess, newSess)
+	bsm.untrustedPool.updateLastSession(oldSess, newSess)
+}
+
+func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
+	bs.SegsInFlight = append(bs.SegsInFlight,
 		SegFlightMetadata{
 			startTime: time.Now(),
 			segDur:    time.Duration(seg.Duration * float64(time.Second)),
 		})
 }
 
-func (bsm *BroadcastSessionsManager) updateLastSession(oldSess, newSess *BroadcastSession) {
+func (bsm *BroadcastSessionsManager) pushSegInFlight(sess *BroadcastSession, seg *stream.HLSSegment) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
-	if bsm.lastSess == oldSess {
-		bsm.lastSess = newSess
+	sess.pushSegInFlight(seg)
+}
+
+// selects number of sessions to use according to current algorithm
+func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	if bsm.VerificationFreq > 0 {
+
+		sessions := bsm.trustedPool.selectSessions(1)
+		untrustedSesions := bsm.untrustedPool.selectSessions(2)
+		calcPerceptualHash := len(sessions) > 0 && len(untrustedSesions) > 0
+		return append(sessions, untrustedSesions...), calcPerceptualHash
 	}
+
+	sessions := bsm.trustedPool.selectSessions(1)
+	if len(sessions) == 0 {
+		sessions = bsm.untrustedPool.selectSessions(1)
+	}
+
+	return sessions, false
 }
 
 func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.finished = true
-	bsm.lastSess = nil
-	bsm.sel.Clear()
-	bsm.sessMap = make(map[string]*BroadcastSession) // prevent segfaults
+
+	bsm.trustedPool.cleanup()
+	bsm.untrustedPool.cleanup()
 }
 
-func (bsm *BroadcastSessionsManager) suspendOrch(sess *BroadcastSession) {
-	bsm.sus.suspend(sess.OrchestratorInfo.GetTranscoder(), bsm.poolSize/bsm.numOrchs)
-}
+func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitResult,
+	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
-func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelector) *BroadcastSessionsManager {
-	var poolSize float64
-	if node.OrchestratorPool != nil {
-		poolSize = float64(node.OrchestratorPool.Size())
+	submitResults := make([]*SubmitResult, submittedCount)
+
+	// can have different strategies - for example, just use first one
+	// and ignore everything else
+	// for now wait for all the results
+	for i := 0; i < submittedCount; i++ {
+		submitResults[i] = <-submitResultsCh
 	}
-	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
-	numOrchs := int(math.Min(poolSize, maxInflight*2))
-	sus := newSuspender()
-	bsm := &BroadcastSessionsManager{
-		mid:     params.ManifestID,
-		sel:     sel,
-		sessMap: make(map[string]*BroadcastSession),
-		createSessions: func() ([]*BroadcastSession, error) {
-			return selectOrchestrator(node, params, numOrchs, sus)
-		},
-		sessLock: &sync.Mutex{},
-		numOrchs: numOrchs,
-		poolSize: int(poolSize),
-		sus:      sus,
+	// we're here because we're doing verification
+	var trustedResults *SubmitResult
+	var untrustedResults []*SubmitResult
+	var err error
+	for _, res := range submitResults {
+		if res.Err == nil && res.TranscodeResult != nil {
+			if res.Session.OrchestratorScore == common.Score_Trusted {
+				trustedResults = res
+			} else {
+				untrustedResults = append(untrustedResults, res)
+			}
+		}
+		if res.Err != nil {
+			err = res.Err
+			if isNonRetryableError(err) {
+				bsm.completeSession(res.Session)
+			} else {
+				bsm.suspendAndRemoveOrch(res.Session)
+			}
+		}
 	}
-	bsm.refreshSessions()
-	return bsm
+	if trustedResults == nil {
+		// no results from trusted orch, using anything
+		if len(untrustedResults) == 0 {
+			// no results at all
+			return nil, nil, fmt.Errorf("error transcoding: no results at all err=%w", err)
+		}
+		return untrustedResults[0].Session, untrustedResults[0].TranscodeResult, untrustedResults[0].Err
+	}
+	if len(untrustedResults) == 0 {
+		// no results from untrusted orch, just using trusted ones
+		return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
+	}
+	segmToCheckIndex := rand.Intn(len(trustedResults.TranscodeResult.Segments))
+	// downloading hashes
+	trustedHash, err := drivers.GetSegmentData(trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	if err != nil {
+		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+		return nil, nil, err
+	}
+	for _, untrustedResult := range untrustedResults {
+		untrustedHash, err := drivers.GetSegmentData(untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+		if err != nil {
+			err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+			return nil, nil, err
+		}
+		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
+		if err != nil {
+			glog.Errorf("error comparing perceptual hashes from url=%s err=%v",
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+		}
+		glog.Infof("Hashes from url=%s and url=%s are equal=%v",
+			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
+			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
+		if equal {
+			// tell to use untrusted orch for all transcoding
+			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
+		}
+	}
+
+	return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
 }
 
-func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender) ([]*BroadcastSession, error) {
+func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+
+	if sess.OrchestratorScore == common.Score_Untrusted {
+		bsm.untrustedPool.completeSession(sess)
+	} else if sess.OrchestratorScore == common.Score_Trusted {
+		bsm.trustedPool.completeSession(sess)
+	} else {
+		panic("shouldn't happen")
+	}
+}
+
+func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender,
+	scorePred common.ScorePred) ([]*BroadcastSession, error) {
+
 	if n.OrchestratorPool == nil {
 		glog.Info("No orchestrators specified; not transcoding")
 		return nil, errDiscovery
 	}
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, sus, params.Capabilities)
+	tinfos, err := n.OrchestratorPool.GetOrchestrators(count, sus, params.Capabilities, scorePred)
 	if len(tinfos) <= 0 {
 		glog.Info("No orchestrators found; not transcoding. Error: ", err)
 		return nil, errNoOrchs
@@ -352,15 +603,16 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 		}
 
 		session := &BroadcastSession{
-			Broadcaster:      core.NewBroadcaster(n),
-			Params:           params,
-			OrchestratorInfo: tinfo,
-			OrchestratorOS:   orchOS,
-			BroadcasterOS:    bcastOS,
-			Sender:           n.Sender,
-			PMSessionID:      sessionID,
-			Balances:         n.Balances,
-			Balance:          balance,
+			Broadcaster:       core.NewBroadcaster(n),
+			Params:            params,
+			OrchestratorInfo:  tinfo,
+			OrchestratorOS:    orchOS,
+			BroadcasterOS:     bcastOS,
+			Sender:            n.Sender,
+			PMSessionID:       sessionID,
+			Balances:          n.Balances,
+			Balance:           balance,
+			OrchestratorScore: n.OrchestratorPool.GetInfo(tinfo.Transcoder).Score, // todo: use score from OrchestratorLocalInfo
 		}
 
 		sessions = append(sessions, session)
@@ -486,9 +738,9 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 	)
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
-		var info data.TranscodeAttemptInfo
+		var info *data.TranscodeAttemptInfo
 		urls, info, err = transcodeSegment(cxn, seg, name, sv)
-		attempts = append(attempts, info)
+		attempts = append(attempts, *info)
 		if err == nil {
 			break
 		}
@@ -527,7 +779,12 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 }
 
 func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) (urls []string, info data.TranscodeAttemptInfo, err error) {
+	verifier *verification.SegmentVerifier) ([]string, *data.TranscodeAttemptInfo, error) {
+
+	var urls []string
+	info := &data.TranscodeAttemptInfo{}
+	var err error
+
 	defer func(startTime time.Time) {
 		info.LatencyMs = time.Since(startTime).Milliseconds()
 		if err != nil {
@@ -537,11 +794,10 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}(time.Now())
 
 	nonce := cxn.nonce
-	cpl := cxn.pl
-	sess := cxn.sessManager.selectSession()
+	sessions, calcPerceptualHash := cxn.sessManager.selectSessions()
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or no sessions available
-	if sess == nil {
+	if len(sessions) == 0 {
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		}
@@ -552,68 +808,131 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		return nil, info, nil
 	}
 	info.Orchestrator = data.OrchestratorMetadata{
-		TranscoderUri: sess.OrchestratorInfo.Transcoder,
-		Address:       hexutil.Encode(sess.OrchestratorInfo.Address),
+		TranscoderUri: sessions[0].OrchestratorInfo.Transcoder,
+		Address:       hexutil.Encode(sessions[0].OrchestratorInfo.Address),
 	}
 
-	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d", cxn.mid, nonce, seg.SeqNo)
+	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d using sessions=%d", cxn.mid, nonce, seg.SeqNo, len(sessions))
 	if monitor.Enabled {
 		monitor.TranscodeTry(nonce, seg.SeqNo)
 	}
+	if len(sessions) == 1 {
+		// shortcut for most common path
+		sess := sessions[0]
+		if sess, seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
+			return nil, info, err
+		}
+		cxn.sessManager.pushSegInFlight(sess, seg)
+		var res *ReceivedTranscodeResult
+		res, err = SubmitSegment(sess, seg, nonce, false)
+		if err != nil || res == nil {
+			if isNonRetryableError(err) {
+				cxn.sessManager.completeSession(sess)
+				return nil, info, err
+			}
+			cxn.sessManager.suspendAndRemoveOrch(sess)
+			if res == nil && err == nil {
+				err = errors.New("empty response")
+			}
+			return nil, info, err
+		}
+		urls, err = downloadResults(cxn, seg, sess, res, verifier)
+		return urls, info, err
+	} else {
+		resc := make(chan *SubmitResult, len(sessions))
+		submittedCount := 0
+		for _, sess := range sessions {
+			// todo: run it in own goroutine (move to submitSegment?)
+			if sess, seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
+				continue
+			}
+			cxn.sessManager.pushSegInFlight(sess, seg)
+			go submitSegment(sess, seg, nonce, calcPerceptualHash, resc)
+			submittedCount++
+		}
+		if submittedCount == 0 {
+			return nil, info, fmt.Errorf("error: not submitted anything")
+		}
+
+		sess, results, err := cxn.sessManager.chooseResults(resc, submittedCount)
+		if err != nil {
+			glog.Errorf("Error choosing results: err=%v", err)
+			return nil, info, err
+		}
+		for _, usedSession := range sessions {
+			if usedSession.OrchestratorInfo.Transcoder != sess.OrchestratorInfo.Transcoder {
+				cxn.sessManager.completeSession(usedSession)
+			}
+		}
+
+		urls, err = downloadResults(cxn, seg, sess, results, verifier)
+		return urls, info, err
+	}
+}
+
+type SubmitResult struct {
+	Session         *BroadcastSession
+	TranscodeResult *ReceivedTranscodeResult
+	Err             error
+}
+
+func submitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
+	// todo: add timeout here or make sure SubmitSegment timeouts
+	res, err := SubmitSegment(sess, seg, nonce, calcPerceptualHash)
+	resc <- &SubmitResult{
+		Session:         sess,
+		TranscodeResult: res,
+		Err:             err,
+	}
+}
+
+func prepareForTranscoding(cxn *rtmpConnection, sess *BroadcastSession, seg *stream.HLSSegment,
+	name string) (*BroadcastSession, *stream.HLSSegment, error) {
 
 	// storage the orchestrator prefers
+	res := seg
 	if ios := sess.OrchestratorOS; ios != nil {
 		// XXX handle case when orch expects direct upload
 		uri, err := ios.SaveData(name, seg.Data, nil, 0)
 		if err != nil {
-			glog.Errorf("Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%v", cxn.mid, nonce, seg.SeqNo, err)
+			glog.Errorf("Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%v", cxn.mid, cxn.nonce, seg.SeqNo, err)
 			if monitor.Enabled {
-				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
+				monitor.SegmentUploadFailed(cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
 			}
-			cxn.sessManager.suspendOrch(sess)
-			cxn.sessManager.removeSession(sess)
-			return nil, info, err
+			cxn.sessManager.suspendAndRemoveOrch(sess)
+			return nil, nil, err
 		}
-		seg.Name = uri // hijack seg.Name to convey the uploaded URI
+		segCopy := *seg
+		res = &segCopy
+		res.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 
 	refresh, err := shouldRefreshSession(sess)
 	if err != nil {
 		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
-		cxn.sessManager.suspendOrch(sess)
-		cxn.sessManager.removeSession(sess)
-		return nil, info, err
+		cxn.sessManager.suspendAndRemoveOrch(sess)
+		return nil, nil, err
 	}
 
 	if refresh {
 		newSess, err := refreshSession(sess)
 		if err != nil {
 			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
-			cxn.sessManager.suspendOrch(sess)
-			cxn.sessManager.removeSession(sess)
-			return nil, info, err
+			cxn.sessManager.suspendAndRemoveOrch(sess)
+			return nil, nil, err
 		}
 		// if sess was lastSess, we need to update lastSess,
 		// or else content of SegsInFlight will be lost
 		cxn.sessManager.updateLastSession(sess, newSess)
 		sess = newSess
 	}
+	return sess, res, nil
+}
 
-	cxn.sessManager.pushSegInFlight(sess, seg)
-	res, err := SubmitSegment(sess, seg, nonce)
-	if err != nil || res == nil {
-		if isNonRetryableError(err) {
-			cxn.sessManager.completeSession(sess)
-			return nil, info, err
-		}
-		cxn.sessManager.suspendOrch(sess)
-		cxn.sessManager.removeSession(sess)
-		if res == nil && err == nil {
-			err = errors.New("empty response")
-		}
-		return nil, info, err
-	}
+func downloadResults(cxn *rtmpConnection, seg *stream.HLSSegment, sess *BroadcastSession, res *ReceivedTranscodeResult,
+	verifier *verification.SegmentVerifier) ([]string, error) {
 
+	nonce := cxn.nonce
 	// download transcoded segments from the transcoder
 	gotErr := false // only send one error msg per segment list
 	var errCode monitor.SegmentTranscodeError
@@ -625,61 +944,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			errCode = subType
 		}
 	}
-
-	// [EXPERIMENTAL] send content detection results to callback webhook
-	if DetectionWebhookURL != nil && len(res.Detections) > 0 {
-		glog.V(common.DEBUG).Infof("Got detection result %v", res.Detections)
-		go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
-			type SceneClassificationResult struct {
-				Name        string  `json:"name"`
-				Probability float64 `json:"probability"`
-			}
-			type DetectionWebhookRequest struct {
-				ManifestID          core.ManifestID             `json:"manifestID"`
-				SeqNo               uint64                      `json:"seqNo"`
-				SceneClassification []SceneClassificationResult `json:"sceneClassification"`
-			}
-			req := DetectionWebhookRequest{ManifestID: mid, SeqNo: seqNo}
-			for _, detection := range detections {
-				switch x := detection.Value.(type) {
-				case *net.DetectData_SceneClassification:
-					probs := x.SceneClassification.ClassProbs
-					// match returned probs (key: class id) with one of the user-selected class names
-					for _, name := range config.SelectedClassNames {
-						if id, ok := ffmpeg.DetectorClassIDLookup[name]; ok {
-							if prob, ok := probs[uint32(id)]; ok {
-								req.SceneClassification = append(req.SceneClassification,
-									SceneClassificationResult{
-										Name:        name,
-										Probability: prob,
-									})
-							}
-						}
-					}
-				}
-			}
-			jsonValue, err := json.Marshal(req)
-			if err != nil {
-				glog.Errorf("Unable to marshal detection result into JSON manifestID=%v seqNo=%v", mid, seqNo)
-				return
-			}
-			resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
-			if err != nil {
-				glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v err=%v",
-					DetectionWebhookURL.Redacted(), mid, seqNo, err)
-			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-				rbody, rerr := ioutil.ReadAll(resp.Body)
-				resp.Body.Close()
-				if rerr != nil {
-					glog.Errorf("Detection webhook returned error status=%v manifestID=%v seqNo=%v with unreadable body err=%v",
-						resp.StatusCode, mid, seqNo, rerr)
-				} else {
-					glog.Errorf("Detection webhook returned error status=%v err=%v manifestID=%v seqNo=%v",
-						resp.StatusCode, string(rbody), mid, seqNo)
-				}
-			}
-		}(cxn.mid, cxn.params.Detection, seg.SeqNo, res.Detections)
-	}
+	cpl := cxn.pl
 
 	var dlErr error
 	segData := make([][]byte, len(res.Segments))
@@ -714,8 +979,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				segLock.Lock()
 				dlErr = err
 				segLock.Unlock()
-				cxn.sessManager.suspendOrch(sess)
-				cxn.sessManager.removeSession(sess)
+				cxn.sessManager.suspendAndRemoveOrch(sess)
 				return
 			}
 
@@ -800,7 +1064,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 	cond.L.Unlock()
 	if dlErr != nil {
-		return nil, info, dlErr
+		return nil, dlErr
 	}
 
 	cxn.sessManager.completeSession(updateSession(sess, res))
@@ -815,7 +1079,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
 			glog.Errorf("Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
-			return nil, info, err
+			return nil, err
 		}
 	}
 
@@ -838,7 +1102,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}
 
 	glog.V(common.DEBUG).Infof("Successfully validated segment nonce=%d seqNo=%d", nonce, seg.SeqNo)
-	return segURLs, info, nil
+	return segURLs, nil
 }
 
 var sessionErrStrings = []string{"dial tcp", "unexpected EOF", core.ErrOrchBusy.Error(), core.ErrOrchCap.Error()}
