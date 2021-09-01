@@ -18,6 +18,7 @@
 ### Bug Fixes 🐞
 
 - \#1992 Eliminate data races in mediaserver.go (@darkdarkdragon)
+- \#2011 Configurable delay between sessions in livepeer_bench (@jailuthra)
 
 #### General
 
