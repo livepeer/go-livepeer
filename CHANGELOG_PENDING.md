@@ -22,7 +22,7 @@
 
 #### General
 
-- \#2001  fix max gas price nil pointer error in replace transaction (@kyriediculous)
+- \#2001 Fix max gas price nil pointer error in replace transaction (@kyriediculous)
 
 #### Broadcaster
 
