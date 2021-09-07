@@ -28,4 +28,6 @@
 
 #### Orchestrator
 
+- \#2018 Only mark tickets for failed transactions as redeemed when there is an error checking the transaction (@yondonfu)
+
 #### Transcoder
