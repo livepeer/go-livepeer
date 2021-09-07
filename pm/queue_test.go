@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -127,7 +128,7 @@ func TestTicketQueueLoop(t *testing.T) {
 	}
 }
 
-func TestTicketQueueLoop_IsUsedTicket_MarkAsRedeemed(t *testing.T) {
+func TestTicketQueueLoop_IsNonRetryableTicketErr_MarkAsRedeemed(t *testing.T) {
 	assert := assert.New(t)
 
 	sender := RandAddress()
@@ -142,23 +143,51 @@ func TestTicketQueueLoop_IsUsedTicket_MarkAsRedeemed(t *testing.T) {
 	q.Start()
 	defer q.Stop()
 
-	ticket := defaultSignedTicket(sender, 0)
-	q.Add(ticket)
+	addTicket := func(ticket *SignedTicket) {
+		q.Add(ticket)
 
-	qlen, err := q.Length()
-	assert.Nil(err)
-	assert.Equal(1, qlen)
+		qlen, err := q.Length()
+		assert.Nil(err)
+		assert.Equal(1, qlen)
+	}
+
+	consumeQueue := func(qc *queueConsumer) {
+		done := make(chan struct{})
+		go qc.Wait(1, q, done)
+		time.Sleep(20 * time.Millisecond)
+
+		tm.blockNumSink <- big.NewInt(1)
+		<-done
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Test that ticket is marked as redeemed if ticket is used
+	ticket := defaultSignedTicket(sender, 0)
+	addTicket(ticket)
 
 	qc := &queueConsumer{redemptionErr: errIsUsedTicket}
-	done := make(chan struct{})
-	go qc.Wait(1, q, done)
-	time.Sleep(20 * time.Millisecond)
-
-	tm.blockNumSink <- big.NewInt(1)
-	<-done
-	time.Sleep(100 * time.Millisecond)
-
+	consumeQueue(qc)
 	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
+
+	// Test that ticket is marked as redeemed if tx fails
+	ticket = defaultSignedTicket(sender, 1)
+	addTicket(ticket)
+
+	qc = &queueConsumer{
+		redemptionErr: errors.New("transaction failed txHash=abc"),
+	}
+	consumeQueue(qc)
+	assert.True(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
+
+	// Test that ticket is not marked as redeemed if there is an error checking the tx, but the tx did not fail
+	ticket = defaultSignedTicket(sender, 2)
+	addTicket(ticket)
+
+	qc = &queueConsumer{
+		redemptionErr: errors.New("some other error"),
+	}
+	consumeQueue(qc)
+	assert.False(ts.submitted[fmt.Sprintf("%x", ticket.Sig)])
 }
 
 func TestTicketQueueLoopConcurrent(t *testing.T) {
