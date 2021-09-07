@@ -25,8 +25,6 @@ var unixNow = func() int64 {
 	return time.Now().Unix()
 }
 
-type errCheckTx error
-
 // SenderMonitor is an interface that describes methods used to
 // monitor remote senders
 type SenderMonitor interface {
@@ -429,7 +427,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 			monitor.TicketRedemptionError()
 		}
 		// Return tx so caller can utilize the tx if it fails
-		return tx, errCheckTx(err)
+		return tx, err
 	}
 
 	if monitor.Enabled {
