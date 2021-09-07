@@ -794,7 +794,7 @@ func TestRedeemWinningTicket_SingleTicket_CheckTxError(t *testing.T) {
 	signedT := defaultSignedTicket(addr, uint32(0))
 
 	tx, err := sm.redeemWinningTicket(signedT)
-	assert.Nil(tx)
+	assert.NotNil(tx)
 	assert.IsType(expErr, err)
 }
 

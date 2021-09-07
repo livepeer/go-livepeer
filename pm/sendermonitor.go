@@ -291,17 +291,20 @@ func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, d
 		select {
 		case red := <-queue.Redeemable():
 			tx, err := sm.redeemWinningTicket(red.SignedTicket)
-			if err != nil {
-				red.resCh <- struct {
-					txHash ethcommon.Hash
-					err    error
-				}{ethcommon.Hash{}, err}
-			} else {
-				red.resCh <- struct {
-					txHash ethcommon.Hash
-					err    error
-				}{tx.Hash(), nil}
+			res := struct {
+				txHash ethcommon.Hash
+				err    error
+			}{
+				ethcommon.Hash{},
+				err,
 			}
+			// FIXME: If there are replacement txs then tx.Hash() could be different
+			// from the hash of the replacement tx that was mined
+			if tx != nil {
+				res.txHash = tx.Hash()
+			}
+
+			red.resCh <- res
 		case <-done:
 			// When the ticket consumer exits, tell the ticketQueue
 			// to exit as well
@@ -350,6 +353,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 	}
 }
 
+// Returns a non-nil tx if one is sent. Otherwise, returns a nil tx
 func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.Transaction, error) {
 	availableFunds, err := sm.availableFunds(ticket.Sender)
 	if err != nil {
@@ -424,7 +428,8 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 		if monitor.Enabled {
 			monitor.TicketRedemptionError()
 		}
-		return nil, errCheckTx(err)
+		// Return tx so caller can utilize the tx if it fails
+		return tx, errCheckTx(err)
 	}
 
 	if monitor.Enabled {
