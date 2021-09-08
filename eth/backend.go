@@ -110,6 +110,32 @@ func (b *backend) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	return gp, nil
 }
 
+func (b *backend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	tip, err := b.Client.SuggestGasTipCap(ctx)
+	if err != nil {
+		// SuggestGasTipCap() uses the eth_maxPriorityFeePerGas RPC call under the hood which
+		// is not a part of the ETH JSON-RPC spec.
+		// In the future, eth_maxPriorityFeePerGas can be replaced with an eth_feeHistory based algorithm (see https://github.com/ethereum/go-ethereum/issues/23479).
+		// For now, if the provider does not support eth_maxPriorityFeePerGas (i.e. not geth), then we calculate the priority fee as
+		// eth_gasPrice - baseFee.
+		gasPrice, err := b.SuggestGasPrice(ctx)
+		if err != nil {
+			return nil, err
+		}
+		head, err := b.HeaderByNumber(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		if head.BaseFee == nil {
+			return nil, errors.New("missing base fee")
+		}
+
+		tip = new(big.Int).Sub(gasPrice, head.BaseFee)
+	}
+
+	return tip, nil
+}
+
 func (b *backend) GasPriceMonitor() *GasPriceMonitor {
 	return b.gpm
 }
