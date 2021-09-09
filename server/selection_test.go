@@ -457,6 +457,53 @@ func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 	}
 }
 
+func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
+	assert := assert.New(t)
+
+	stakeRdr := newStubStakeReader()
+	sel := NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, 1.0)
+
+	sessions := make([]*BroadcastSession, 10)
+	stakes := make([]int64, 10)
+	stakeMap := make(map[ethcommon.Address]int64)
+
+	// Give one session a lot of stake
+	addr := ethcommon.BytesToAddress([]byte(strconv.Itoa(0)))
+	sessions[0] = &BroadcastSession{
+		OrchestratorInfo: &net.OrchestratorInfo{
+			TicketParams: &net.TicketParams{Recipient: addr.Bytes()},
+		},
+	}
+	stake := int64(10000000000000)
+	stakes[0] = stake
+	stakeMap[addr] = stake
+	// Give the other sessions very little stake
+	for i := 1; i < 10; i++ {
+		addr := ethcommon.BytesToAddress([]byte(strconv.Itoa(i)))
+		stake := int64(1)
+
+		sessions[i] = &BroadcastSession{
+			OrchestratorInfo: &net.OrchestratorInfo{
+				TicketParams: &net.TicketParams{Recipient: addr.Bytes()},
+			},
+		}
+		stakes[i] = stake
+		stakeMap[addr] = stake
+	}
+
+	stakeRdr.SetStakes(stakeMap)
+	sel.Add(sessions)
+
+	// When randFreq = 1.0 we should select randomly instead of selecting the session with the most stake
+	sess := sel.selectUnknownSession()
+	assert.NotEqual(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes())
+
+	// When randFreq = 0.0 we should select the session with the most stake
+	sel.randFreq = 0.0
+	sess = sel.selectUnknownSession()
+	assert.Equal(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes())
+}
+
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
