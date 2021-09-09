@@ -11,6 +11,8 @@
 
 #### Orchestrator
 
+- \#2025 Add -autoAdjustPrice flag to enable/disable automatic price adjustments (@yondonfu)
+
 #### Transcoder
 
 - \#1979 Upgrade to ffmpeg v4.4 and improved API for (experimental) AI tasks (@jailuthra)
