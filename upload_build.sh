@@ -44,12 +44,14 @@ NODE="./livepeer${EXT}"
 CLI="./livepeer_cli${EXT}"
 BENCH="./livepeer_bench${EXT}"
 ROUTER="./livepeer_router${EXT}"
+REDEEM="./ticket_redeem${EXT}"
 
 mkdir $BASE
 cp $NODE $BASE
 cp $CLI $BASE
 cp $BENCH $BASE
 cp $ROUTER $BASE
+cp $REDEEM $BASE
 
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $ARCH == "windows" ]]; then
