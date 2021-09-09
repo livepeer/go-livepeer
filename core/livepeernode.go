@@ -79,6 +79,7 @@ type LivepeerNode struct {
 	TranscoderManager *RemoteTranscoderManager
 	Balances          *AddressBalances
 	Capabilities      *Capabilities
+	AutoAdjustPrice   bool
 
 	// Broadcaster public fields
 	Sender pm.Sender
@@ -95,11 +96,12 @@ type LivepeerNode struct {
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:          e,
-		WorkDir:      wd,
-		Database:     dbh,
-		SegmentChans: make(map[ManifestID]SegmentChan),
-		segmentMutex: &sync.RWMutex{},
+		Eth:             e,
+		WorkDir:         wd,
+		Database:        dbh,
+		AutoAdjustPrice: true,
+		SegmentChans:    make(map[ManifestID]SegmentChan),
+		segmentMutex:    &sync.RWMutex{},
 	}, nil
 }
 
