@@ -26,6 +26,8 @@
 
 #### Broadcaster
 
+- \#2026 Run signature verification even without a verification policy specified (@yondonfu)
+
 #### Orchestrator
 
 - \#2018 Only mark tickets for failed transactions as redeemed when there is an error checking the transaction (@yondonfu)
