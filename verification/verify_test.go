@@ -214,6 +214,12 @@ func TestVerify(t *testing.T) {
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
+	// Check sig verifier runs and fails (due to missing sig) even when policy is nil
+	sv = NewSegmentVerifier(nil)
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	assert.Equal(errPMCheckFailed, err)
+	assert.Nil(res)
+
 	// Check retryable: 3 attempts
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 2}) // reset
 	verifier.err = Retryable{errors.New("Stub Verifier Retryable Error")}
