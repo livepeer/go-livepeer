@@ -126,7 +126,7 @@ fi
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout b94707426b64d1c4fe24ec4e711dd0ccf9b20b74
+  git checkout 16b8686687413ef99fa398ca63585ff438737378
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
@@ -138,7 +138,7 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,extract_extradata \
     --enable-parser=aac,aac_latm,h264 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
-    --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn \
+    --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
     --enable-encoder=aac,libx264 \
     --enable-decoder=aac,h264 \
     --extra-cflags="-I${ROOT}/compiled/include" \
