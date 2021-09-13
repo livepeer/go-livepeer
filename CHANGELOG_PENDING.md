@@ -33,5 +33,6 @@
 #### Orchestrator
 
 - \#2018 Only mark tickets for failed transactions as redeemed when there is an error checking the transaction (@yondonfu)
+- \#2029 Fix active total stake calculation when generating hints for rewardWithHint (@yondonfu)
 
 #### Transcoder
