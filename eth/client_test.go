@@ -114,6 +114,10 @@ func TestSimulateTranscoderPool(t *testing.T) {
 	assert.Equal(hints, lpTypes.TranscoderPoolHints{
 		PosPrev: ethcommon.HexToAddress("eee"),
 	})
+
+	// when new stake is 0 and transcoder pool is full return empty hints
+	hints = simulateTranscoderPoolUpdate(ethcommon.HexToAddress("aaa"), big.NewInt(0), copyTranscoders(transcoders), true)
+	assert.Equal(hints, lpTypes.TranscoderPoolHints{})
 }
 
 func TestFindTranscoderHints(t *testing.T) {
