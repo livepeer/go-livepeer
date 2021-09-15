@@ -96,7 +96,7 @@ if [ ! -e "$ROOT/gnutls-3.7.0" ]; then
   curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
   tar xf gnutls-3.7.0.tar.xz
   cd gnutls-3.7.0
-  LDFLAGS="-L${ROOT}/compiled/lib" CFLAGS="-I${ROOT}/compiled/include -O2" NETTLE_CFLAGS="-I${ROOT}/compiled/include" NETTLE_LIBS="-L${ROOT}/compiled/lib -lhogweed -lnettle -lgmp" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$ROOT/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
+  LDFLAGS="-L${ROOT}/compiled/lib" CFLAGS="-I${ROOT}/compiled/include -O2" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$ROOT/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
   make
   make install
   # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go

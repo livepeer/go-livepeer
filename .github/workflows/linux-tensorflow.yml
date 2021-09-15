@@ -6,7 +6,7 @@ on:
       - master
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-18.04
     steps:
     - name: Checkout
       uses: actions/checkout@v2 
@@ -31,9 +31,9 @@ jobs:
       uses: actions/cache@v2.1.5
       with:
         path: ~/compiled
-        key: ${{ runner.os }}-ffmpeg-tensorflow-v2-${{ hashFiles('**/install_ffmpeg.sh') }}
+        key: ${{ runner.os }}-ffmpeg-tensorflow-${{ hashFiles('**/install_ffmpeg.sh') }}
         restore-keys: |
-          ${{ runner.os }}-ffmpeg-tensorflow-v2
+          ${{ runner.os }}-ffmpeg-tensorflow
     - name: Cache binaries
       uses: actions/cache@v2.1.5
       with:
@@ -44,9 +44,12 @@ jobs:
         sudo apt-get update \
           && sudo apt-get install -y software-properties-common curl apt-transport-https \
           && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-          && sudo add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-13 main" \
+          && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
           && sudo apt-get update \
-          && sudo apt-get -y install clang-13 clang-tools-13 build-essential pkg-config autoconf gnutls-dev git python
+          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
+
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
+          && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
         LIBTENSORFLOW_VERSION=2.3.0 \
           && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
