@@ -44,12 +44,9 @@ jobs:
         sudo apt-get update \
           && sudo apt-get install -y software-properties-common curl apt-transport-https \
           && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-          && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
+          && sudo add-apt-repository "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-13 main" \
           && sudo apt-get update \
-          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
-
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
-          && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+          && sudo apt-get -y install clang-13 clang-tools-13 build-essential pkg-config autoconf gnutls-dev git python
     - name: Install go modules
       if: steps.cache-go-mod.outputs.cache-hit != 'true'
       run: go mod download
