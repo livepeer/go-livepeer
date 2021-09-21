@@ -35,6 +35,7 @@ const (
 	Capability_GOP
 	Capability_AuthToken
 	Capability_SceneClassification
+	Capability_MPEG7VideoSignature
 )
 
 var capFormatConv = errors.New("capability: unknown format")
@@ -57,6 +58,7 @@ func DefaultCapabilities() []Capability {
 		Capability_ProfileH264ConstrainedHigh,
 		Capability_GOP,
 		Capability_AuthToken,
+		Capability_MPEG7VideoSignature,
 	}
 }
 
