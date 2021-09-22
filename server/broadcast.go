@@ -785,6 +785,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		recordWG.Add(len(res.Segments))
 	}
 	for i, v := range res.Segments {
+		glog.Warningf("Segment Perceptual Hash URL: %v\n", v.PerceptualHashUrl)
 		go dlFunc(v.Url, v.Pixels, i)
 	}
 	if cpl.GetRecordOSSession() != nil && len(res.Segments) > 0 {
