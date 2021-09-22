@@ -603,16 +603,17 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
-		ManifestID:       params.ManifestID,
-		Seq:              int64(seg.SeqNo),
-		Hash:             ethcommon.BytesToHash(hash),
-		Profiles:         params.Profiles,
-		OS:               storage,
-		Duration:         time.Duration(seg.Duration * float64(time.Second)),
-		Caps:             params.Capabilities,
-		AuthToken:        sess.OrchestratorInfo.GetAuthToken(),
-		DetectorEnabled:  detectorEnabled,
-		DetectorProfiles: detectorProfiles,
+		ManifestID:         params.ManifestID,
+		Seq:                int64(seg.SeqNo),
+		Hash:               ethcommon.BytesToHash(hash),
+		Profiles:           params.Profiles,
+		OS:                 storage,
+		Duration:           time.Duration(seg.Duration * float64(time.Second)),
+		Caps:               params.Capabilities,
+		AuthToken:          sess.OrchestratorInfo.GetAuthToken(),
+		DetectorEnabled:    detectorEnabled,
+		DetectorProfiles:   detectorProfiles,
+		CalcPerceptualHash: true,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
