@@ -582,6 +582,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
+		if md.CalcPerceptualHash && tSegments[i].PHash == nil {
+			glog.Errorf("Could not find perceptual hash for manifestID=%s sesionID=%s seqNo=%d profile=%v",
+				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name)
+		}
 		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s sessionID=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
