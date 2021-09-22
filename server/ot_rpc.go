@@ -175,6 +175,19 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 				glog.Error("Could not create multipart part ", err)
 			}
 			io.Copy(fw, bytes.NewBuffer(v.Data))
+			// Add perceptual hash data as a part if generated
+			if md.CalcPerceptualHash {
+				w.SetBoundary(boundary)
+				hdrs := textproto.MIMEHeader{
+					"Content-Type":   {"application/octet-stream"},
+					"Content-Length": {strconv.Itoa(len(v.PHash))},
+				}
+				fw, err := w.CreatePart(hdrs)
+				if err != nil {
+					glog.Error("Could not create multipart part ", err)
+				}
+				io.Copy(fw, bytes.NewBuffer(v.PHash))
+			}
 		}
 		w.Close()
 		contentType = "multipart/mixed; boundary=" + boundary
@@ -304,14 +317,20 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 
-			encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
-			if err != nil {
-				glog.Error("Error getting pixels in header:", err)
-				res.Err = err
-				break
+			if len(p.Header.Values("Pixels")) > 0 {
+				encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+				if err != nil {
+					glog.Error("Error getting pixels in header:", err)
+					res.Err = err
+					break
+				}
+				segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
+			} else if p.Header.Get("Content-Type") == "application/octet-stream" {
+				// Perceptual hash data for last segment
+				seg := *segments[len(segments)-1]
+				seg.PHash = body
+				segments[len(segments)-1] = &seg
 			}
-
-			segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
 		}
 		res.TranscodeData = &core.TranscodeData{
 			Segments: segments,
