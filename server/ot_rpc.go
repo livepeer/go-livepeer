@@ -210,8 +210,15 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	if err != nil {
 		glog.Error("Error submitting results ", err)
 	} else {
-		ioutil.ReadAll(resp.Body)
+		rbody, rerr := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if rerr != nil {
+				glog.Errorf("Orchestrator returned HTTP %v with unreadable body error=%v", resp.StatusCode, rerr)
+			} else {
+				glog.Errorf("Orchestrator returned HTTP %v error=%v", resp.StatusCode, string(rbody))
+			}
+		}
 	}
 	uploadDur := time.Since(uploadStart)
 	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, uploadDur, err)
@@ -327,9 +334,14 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
 			} else if p.Header.Get("Content-Type") == "application/octet-stream" {
 				// Perceptual hash data for last segment
-				seg := *segments[len(segments)-1]
-				seg.PHash = body
-				segments[len(segments)-1] = &seg
+				if len(segments) > 0 {
+					segments[len(segments)-1].PHash = body
+				} else {
+					err := errors.New("Unknown perceptual hash")
+					glog.Error("No previous segment present to attach perceptual hash data to: ", err)
+					res.Err = err
+					break
+				}
 			}
 		}
 		res.TranscodeData = &core.TranscodeData{

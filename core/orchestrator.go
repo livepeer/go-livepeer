@@ -583,8 +583,10 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
 		if md.CalcPerceptualHash && tSegments[i].PHash == nil {
-			glog.Errorf("Could not find perceptual hash for manifestID=%s sesionID=%s seqNo=%d profile=%v",
+			glog.Errorf("Could not find perceptual hash for manifestID=%s sessionID=%s seqNo=%d profile=%v",
 				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name)
+			// FIXME: Return the error once everyone has upgraded their nodes
+			// return terr(fmt.Errorf("MissingPerceptualHash"))
 		}
 		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s sessionID=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
