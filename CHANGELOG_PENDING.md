@@ -9,6 +9,7 @@
 ### Features ⚒
 
 #### General
+- \#2041 Update help description for `{min,max}GasPrice` (@Strykar)
 
 #### Broadcaster
 
