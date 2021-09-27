@@ -2,6 +2,7 @@ package pm
 
 import (
 	"math/big"
+	"strings"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -128,16 +129,14 @@ ticketLoop:
 					case res := <-resCh:
 						// after receiving the response we can close the channel so it can be GC'd
 						close(resCh)
-						// If the ticket is used, we can mark it as redeemed
 						if res.err != nil {
 							glog.Errorf("Error redeeming err=%v", res.err)
-							_, checkTxErr := res.err.(errCheckTx)
-							if res.err != errIsUsedTicket && !checkTxErr {
+							// If the error is non-retryable then we mark the ticket as redeemed
+							if !isNonRetryableTicketErr(res.err) {
 								continue
 							}
 						}
-						err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash)
-						if err != nil {
+						if err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash); err != nil {
 							glog.Error(err)
 							continue
 						}
@@ -150,4 +149,9 @@ ticketLoop:
 			return
 		}
 	}
+}
+
+func isNonRetryableTicketErr(err error) bool {
+	// The latter check depends on logic in eth.client.CheckTx()
+	return err == errIsUsedTicket || strings.Contains(err.Error(), "transaction failed")
 }

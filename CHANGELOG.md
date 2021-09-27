@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.5.20
+
+*September 10 2021*
+
+This release includes a few important bug fixes including:
+
+- A fix for winning tickets incorrectly being marked as redeemed in the node's database even though they have not been redeemed yet
+- A fix for node crashes due to the submission of a replacement transaction when a max gas price configured
+- A fix for increased gas usage of reward transactions if an orchestrator did not receive stake updates in the previous round (via a reward call or delegation)
+
+Additionally, this release includes a new `-autoAdjustPrice` flag that allows orchestrators to enable/disable automatic price adjustments based on the overhead for ticket redemption (which is determined by the current ETH gas price). Orchestrators can disable automatic price adjustments by setting `-autoAdjustPrice=false` (default is true) to ensure that they advertise a constant price to broadcasters avoiding the scenario where they lose all jobs due to a gas price spike that causes their advertised price to exceed the max price set by broadcasters. If orchestrators disable automatic price adjustments then it is recommended to also use the `-maxGasPrice` flag to set a maximum gas price for transactions to wait to redeem tickets during lower gas prices periods.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#1946](https://github.com/livepeer/go-livepeer/pull/1946) Send transcoding stream health events to a metadata queue (@victorges)
+
+#### Orchestrator
+
+- [#2025](https://github.com/livepeer/go-livepeer/pull/2025) Add -autoAdjustPrice flag to enable/disable automatic price adjustments (@yondonfu)
+
+#### Transcoder
+
+- [#1979](https://github.com/livepeer/go-livepeer/pull/1979) Upgrade to ffmpeg v4.4 and improved API for (experimental) AI tasks (@jailuthra)
+
+### Bug Fixes 🐞
+
+- [#1992](https://github.com/livepeer/go-livepeer/pull/1992) Eliminate data races in mediaserver.go (@darkdarkdragon)
+- [#2011](https://github.com/livepeer/go-livepeer/pull/2011) Configurable delay between sessions in livepeer_bench (@jailuthra)
+
+#### General
+
+- [#2001](https://github.com/livepeer/go-livepeer/pull/2001) Fix max gas price nil pointer error in replace transaction (@kyriediculous)
+
+#### Broadcaster
+
+- [#2026](https://github.com/livepeer/go-livepeer/pull/2026) Run signature verification even without a verification policy specified (@yondonfu)
+
+#### Orchestrator
+
+- [#2018](https://github.com/livepeer/go-livepeer/pull/2018) Only mark tickets for failed transactions as redeemed when there is an error checking the transaction (@yondonfu)
+- [#2029](https://github.com/livepeer/go-livepeer/pull/2029) Fix active total stake calculation when generating hints for rewardWithHint (@yondonfu)
+
 ## v0.5.19
 
 *August 10 2021*

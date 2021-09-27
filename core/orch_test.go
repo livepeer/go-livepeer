@@ -1545,6 +1545,16 @@ func TestPriceInfo(t *testing.T) {
 	expPrice = common.FixedToPrice(fixedPrice)
 	assert.Equal(priceInfo.PricePerUnit, expPrice.Num().Int64())
 	assert.Equal(priceInfo.PixelsPerUnit, expPrice.Denom().Int64())
+
+	// Test when AutoAdjustPrice = false
+	// First make sure when AutoAdjustPrice = true we are not returning the base price
+	assert.NotEqual(basePrice, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
+
+	// Now make sure when AutoAdjustPrice = false we are returning the base price
+	n.AutoAdjustPrice = false
+	priceInfo, err = orch.PriceInfo(ethcommon.Address{})
+	assert.Nil(err)
+	assert.Equal(basePrice, big.NewRat(priceInfo.PricePerUnit, priceInfo.PixelsPerUnit))
 }
 
 func TestPriceInfo_GivenNilNode_ReturnsNilError(t *testing.T) {
