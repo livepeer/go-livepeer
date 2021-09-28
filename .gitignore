@@ -21,6 +21,7 @@ eth/protocol
 /livepeer_cli
 /livepeer_router
 /livepeer_bench
+/livepeer_cap
 
 /.git.describe
 /livepeer-windows-amd64.zip
