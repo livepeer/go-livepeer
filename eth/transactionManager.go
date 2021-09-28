@@ -17,6 +17,11 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 )
 
+// The default price bump required by geth is 10%
+// We add a little extra in addition to the 10% price bump just to be safe
+// priceBump is a % value from 0-100
+const priceBump uint64 = 11
+
 type transactionSenderReader interface {
 	ethereum.TransactionSender
 	ethereum.TransactionReader
@@ -150,28 +155,14 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 		return nil, ErrReplacingMinedTx
 	}
 
-	gasPrice := calcReplacementGasPrice(tx)
-
-	suggestedGasPrice := tm.gpm.GasPrice()
-
-	// If the suggested gas price is higher than the bumped gas price, use the suggested gas price
-	// This is to account for any wild market gas price increases between the time of the original tx submission and time
-	// of replacement tx submission
-	// Note: If the suggested gas price is lower than the bumped gas price because market gas prices have dropped
-	// since the time of the original tx submission we cannot use the lower suggested gas price and we still need to use
-	// the bumped gas price in order to properly replace a still pending tx
-	if suggestedGasPrice.Cmp(gasPrice) == 1 {
-		gasPrice = suggestedGasPrice
-	}
+	newRawTx := newReplacementTx(tx)
 
 	// Bump gas price exceeds max gas price, return early
 	max := tm.gpm.MaxGasPrice()
-	if max != nil && gasPrice.Cmp(max) > 0 {
-		return nil, fmt.Errorf("replacement gas price exceeds max gas price suggested=%v max=%v", gasPrice, max)
+	newGasPrice := calcGasPrice(newRawTx)
+	if max != nil && newGasPrice.Cmp(max) > 0 {
+		return nil, fmt.Errorf("replacement gas price exceeds max gas price suggested=%v max=%v", newGasPrice, max)
 	}
-
-	// Replacement raw tx uses same fields as old tx (reusing the same nonce is crucial) except the gas price is updated
-	newRawTx := types.NewTransaction(tx.Nonce(), *tx.To(), tx.Value(), tx.Gas(), gasPrice, tx.Data())
 
 	newSignedTx, err := tm.sig.SignTx(newRawTx)
 	if err != nil {
@@ -184,9 +175,9 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 		txLog.method = "unknown"
 	}
 	if sendErr != nil {
-		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Gas Price: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.GasPrice().String(), sendErr, strings.Repeat("*", 75))
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Priority Fee: %v Max Fee: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.GasTipCap().String(), newSignedTx.GasFeeCap().String(), sendErr, strings.Repeat("*", 75))
 	} else {
-		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\".  Gas Price: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.Hash().String(), newSignedTx.GasPrice().String(), strings.Repeat("*", 75))
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\".  Priority Fee: %v Max Fee: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.Hash().String(), newSignedTx.GasTipCap().String(), newSignedTx.GasFeeCap().String(), strings.Repeat("*", 75))
 	}
 
 	return newSignedTx, sendErr
@@ -243,19 +234,30 @@ func (tm *TransactionManager) checkTxLoop() {
 	}
 }
 
-// Updated gas price must be at least 10% greater than the gas price used for the original transaction in order
-// to submit a replacement transaction with the same nonce. 10% is not defined by the protocol, but is the default required price bump
-// used by many clients: https://github.com/ethereum/go-ethereum/blob/01a7e267dc6d7bbef94882542bbd01bd712f5548/core/tx_pool.go#L148
-// We add a little extra in addition to the 10% price bump just to be sure
-func calcReplacementGasPrice(tx *types.Transaction) *big.Int {
-	return new(big.Int).Add(
-		new(big.Int).Add(
-			tx.GasPrice(),
-			new(big.Int).Div(
-				tx.GasPrice(),
-				big.NewInt(10),
-			),
-		),
-		big.NewInt(10),
-	)
+func applyPriceBump(val *big.Int, priceBump uint64) *big.Int {
+	a := big.NewInt(100 + int64(priceBump))
+	b := new(big.Int).Mul(a, val)
+	return b.Div(b, big.NewInt(100))
+}
+
+// Calculate the gas price as gas tip cap + base fee
+func calcGasPrice(tx *types.Transaction) *big.Int {
+	// Assume that the gas fee cap is calculated as gas tip cap + (baseFee * 2)
+	baseFee := new(big.Int).Div(new(big.Int).Sub(tx.GasFeeCap(), tx.GasTipCap()), big.NewInt(2))
+	return new(big.Int).Add(baseFee, tx.GasTipCap())
+}
+
+func newReplacementTx(tx *types.Transaction) *types.Transaction {
+	baseTx := &types.DynamicFeeTx{
+		Nonce: tx.Nonce(),
+		// geth requires the price bump to be applied to both the gas tip cap and gas fee cap
+		GasFeeCap: applyPriceBump(tx.GasFeeCap(), priceBump),
+		GasTipCap: applyPriceBump(tx.GasTipCap(), priceBump),
+		Gas:       tx.Gas(),
+		Value:     tx.Value(),
+		Data:      tx.Data(),
+		To:        tx.To(),
+	}
+
+	return types.NewTx(baseTx)
 }
