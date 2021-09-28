@@ -15,7 +15,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type stubTransactionSenderReader struct {
@@ -150,13 +149,14 @@ func TestTransactionManager_Wait(t *testing.T) {
 
 func TestTransactionManager_Replace(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 
 	eth := &stubTransactionSenderReader{
 		err: make(map[string]error),
 	}
 	q := transactionQueue{}
-	gasPrice := big.NewInt(10)
+	baseFee := big.NewInt(9)
+	gasTipCap := big.NewInt(1)
+	gasFeeCap := new(big.Int).Add(gasTipCap, new(big.Int).Mul(baseFee, big.NewInt(2)))
 	gpm := &GasPriceMonitor{
 		minGasPrice: big.NewInt(0),
 		maxGasPrice: big.NewInt(0),
@@ -170,7 +170,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 		gpm:       gpm,
 	}
 
-	stubTx := types.NewTransaction(1, pm.RandAddress(), big.NewInt(100), 100000, gasPrice, pm.RandBytes(68))
+	stubTx := newStubDynamicFeeTx(gasFeeCap, gasTipCap)
 
 	// Test eth.TransactionByHash error
 	expErr := errors.New("TransactionByHash error")
@@ -195,7 +195,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(tx)
 	assert.EqualError(
 		err,
-		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
+		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", applyPriceBump(calcGasPrice(stubTx), priceBump), gpm.maxGasPrice),
 	)
 	eth.err["TransactionByHash"] = nil
 
@@ -205,7 +205,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	assert.Nil(tx)
 	assert.EqualError(
 		err,
-		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", calcReplacementGasPrice(stubTx), gpm.maxGasPrice),
+		fmt.Sprintf("replacement gas price exceeds max gas price suggested=%v max=%v", applyPriceBump(calcGasPrice(stubTx), priceBump), gpm.maxGasPrice),
 	)
 
 	// Error signing replacement tx
@@ -242,19 +242,7 @@ func TestTransactionManager_Replace(t *testing.T) {
 	tx, err = tm.replace(stubTx)
 	logsAfter = glog.Stats.Info.Lines()
 	assert.Nil(err)
-	expTx := types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, calcReplacementGasPrice(stubTx), stubTx.Data())
-	assert.Equal(tx.Hash(), expTx.Hash())
-	assert.Equal(logsAfter-logsBefore, int64(1))
-
-	// Replacement gas price lower than suggest gas price
-	// Use market gas price
-	gpm.gasPrice = big.NewInt(999)
-	require.True(gpm.GasPrice().Cmp(calcReplacementGasPrice(stubTx)) > 0)
-	logsBefore = glog.Stats.Info.Lines()
-	tx, err = tm.replace(stubTx)
-	logsAfter = glog.Stats.Info.Lines()
-	assert.Nil(err)
-	expTx = types.NewTransaction(1, *stubTx.To(), stubTx.Value(), 100000, gpm.gasPrice, stubTx.Data())
+	expTx := newReplacementTx(stubTx)
 	assert.Equal(tx.Hash(), expTx.Hash())
 	assert.Equal(logsAfter-logsBefore, int64(1))
 }
@@ -366,4 +354,75 @@ func TestTransactionManager_CheckTxLoop(t *testing.T) {
 	assert.EqualError(event.err, context.DeadlineExceeded.Error())
 	assert.Equal(eth.callsToTxByHash, tm.maxReplacements)
 	sub.Unsubscribe()
+}
+
+func TestApplyPriceBump(t *testing.T) {
+	assert := assert.New(t)
+
+	// priceBump = 0
+	// 500 * 1 = 500
+	res := applyPriceBump(big.NewInt(500), 0)
+	assert.Equal(big.NewInt(500), res)
+
+	// priceBump = 0.11
+	// 500 * 1.11 = 555
+	res = applyPriceBump(big.NewInt(500), 11)
+	assert.Equal(big.NewInt(555), res)
+
+	// priceBump = 0.17
+	// 500 * 1.17 = 585
+	res = applyPriceBump(big.NewInt(500), 17)
+	assert.Equal(big.NewInt(585), res)
+
+	// priceBump > 100
+	// 500 * 2.01 = 1005
+	res = applyPriceBump(big.NewInt(500), 101)
+	assert.Equal(big.NewInt(1005), res)
+
+	// Test round down when result is not a whole number
+	// 50 * 1.11 = 55.5 -> 55
+	res = applyPriceBump(big.NewInt(50), 11)
+	assert.Equal(big.NewInt(55), res)
+}
+
+func TestCalcGasPrice(t *testing.T) {
+	assert := assert.New(t)
+
+	baseFee := big.NewInt(1000)
+	gasTipCap := big.NewInt(100)
+	gasFeeCap := new(big.Int).Add(gasTipCap, new(big.Int).Mul(baseFee, big.NewInt(2)))
+	tx := newStubDynamicFeeTx(gasFeeCap, gasTipCap)
+
+	gasPrice := calcGasPrice(tx)
+	assert.Equal(new(big.Int).Add(baseFee, gasTipCap), gasPrice)
+}
+
+func TestNewReplacementTx(t *testing.T) {
+	assert := assert.New(t)
+
+	gasTipCap := big.NewInt(100)
+	gasFeeCap := big.NewInt(1000)
+
+	tx1 := newStubDynamicFeeTx(gasFeeCap, gasTipCap)
+	tx2 := newReplacementTx(tx1)
+	assert.NotEqual(tx1.Hash(), tx2.Hash())
+	assert.Equal(applyPriceBump(tx1.GasTipCap(), priceBump), tx2.GasTipCap())
+	assert.Equal(applyPriceBump(tx1.GasFeeCap(), priceBump), tx2.GasFeeCap())
+	assert.Equal(tx1.Nonce(), tx2.Nonce())
+	assert.Equal(tx1.Gas(), tx2.Gas())
+	assert.Equal(tx1.Value(), tx1.Value())
+	assert.Equal(tx1.To(), tx2.To())
+}
+
+func newStubDynamicFeeTx(gasFeeCap, gasTipCap *big.Int) *types.Transaction {
+	addr := pm.RandAddress()
+	return types.NewTx(&types.DynamicFeeTx{
+		Nonce:     1,
+		GasFeeCap: gasFeeCap,
+		GasTipCap: gasTipCap,
+		Gas:       1000000,
+		Value:     big.NewInt(100),
+		Data:      pm.RandBytes(68),
+		To:        &addr,
+	})
 }
