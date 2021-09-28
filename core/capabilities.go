@@ -38,6 +38,24 @@ const (
 	Capability_MPEG7VideoSignature
 )
 
+var NameToCapability = map[string]Capability{
+	"H264":                       Capability_H264,
+	"MPEGTS":                     Capability_MPEGTS,
+	"MP4":                        Capability_MP4,
+	"FractionalFramerates":       Capability_FractionalFramerates,
+	"StorageDirect":              Capability_StorageDirect,
+	"StorageS3":                  Capability_StorageS3,
+	"StorageGCS":                 Capability_StorageGCS,
+	"ProfileH264Baseline":        Capability_ProfileH264Baseline,
+	"ProfileH264Main":            Capability_ProfileH264Main,
+	"ProfileH264High":            Capability_ProfileH264High,
+	"ProfileH264ConstrainedHigh": Capability_ProfileH264ConstrainedHigh,
+	"GOP":                        Capability_GOP,
+	"AuthToken":                  Capability_AuthToken,
+	"SceneClassification":        Capability_SceneClassification,
+	"MPEG7VideoSignature":        Capability_MPEG7VideoSignature,
+}
+
 var capFormatConv = errors.New("capability: unknown format")
 var capStorageConv = errors.New("capability: unknown storage")
 var capProfileConv = errors.New("capability: unknown profile")
