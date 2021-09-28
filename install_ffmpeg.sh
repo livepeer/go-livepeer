@@ -114,7 +114,7 @@ else
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
 
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc"
 
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         echo "experimental tag detected, building with Tensorflow support"
@@ -126,7 +126,7 @@ fi
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout 16b8686687413ef99fa398ca63585ff438737378
+  git checkout daa98cba7a82d0f1612aa36d9a0cbd9ba1a603ff
   ./configure ${TARGET_OS:-} --fatal-warnings \
     --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
