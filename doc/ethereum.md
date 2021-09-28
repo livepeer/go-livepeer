@@ -14,6 +14,8 @@ The round initialization service is disabled by default and can be enabled by st
 
 ## Gas Prices
 
+After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priority fee + base fee.
+
 ### Max gas price
 
 The following options can be used to get the max gas price:
