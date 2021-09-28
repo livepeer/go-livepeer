@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -444,4 +446,38 @@ func ParseNvidiaDevices(nvidia string) ([]string, error) {
 		return detectNvidiaDevices()
 	}
 	return strings.Split(nvidia, ","), nil
+}
+
+// ReadFileOrString attempts to read a file for a string at the supplied location.
+// If it fails, then the original supplied string will be returned to the caller.
+// A valid string will always be returned, regardless of whether an error occurred.
+func ReadFileOrString(s string) (string, error) {
+	info, err := os.Stat(s)
+	if os.IsNotExist(err) {
+		// If the supplied string is not a path to a file,
+		// assume it is the string and return it
+		return s, nil
+	}
+	if info.IsDir() {
+		// If the supplied string is a directory,
+		// assume it is the string and return it
+		// along with an appropriate error.
+		return s, fmt.Errorf("supplied path is a directory")
+	}
+	file, err := os.Open(s)
+	if err != nil {
+		return s, err
+	}
+	scanner := bufio.NewScanner(file)
+	scanner.Split(bufio.ScanLines)
+
+	scanner.Scan()
+	txtline := scanner.Text()
+	file.Close()
+
+	if len(txtline) == 0 {
+		return s, fmt.Errorf("supplied file is empty")
+	}
+
+	return txtline, nil
 }
