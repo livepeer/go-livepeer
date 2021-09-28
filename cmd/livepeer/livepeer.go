@@ -132,6 +132,7 @@ func main() {
 	maxPricePerUnit := flag.Int("maxPricePerUnit", 0, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
 	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
 	pixelsPerUnit := flag.Int("pixelsPerUnit", 1, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
+	autoAdjustPrice := flag.Bool("autoAdjustPrice", true, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
 	// Interval to poll for blocks
 	blockPollingInterval := flag.Int("blockPollingInterval", 5, "Interval in seconds at which different blockchain event services poll for blocks")
 	// Redemption service
@@ -563,6 +564,8 @@ func main() {
 			}
 			n.SetBasePrice(big.NewRat(int64(*pricePerUnit), int64(*pixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *pricePerUnit, *pixelsPerUnit)
+
+			n.AutoAdjustPrice = *autoAdjustPrice
 
 			ev, _ := new(big.Int).SetString(*ticketEV, 10)
 			if ev == nil {

@@ -115,12 +115,12 @@ func NewSegmentVerifier(p *Policy) *SegmentVerifier {
 }
 
 func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
-	if sv.policy == nil {
-		return nil, nil
-	}
-
 	if err := sv.sigVerification(params); err != nil {
 		return nil, err
+	}
+
+	if sv.policy == nil {
+		return nil, nil
 	}
 
 	var err error

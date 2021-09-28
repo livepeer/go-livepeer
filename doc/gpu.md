@@ -41,6 +41,8 @@ CUDA | Nvidia
 Nvidia's 450.xx drivers can occassionally lead to stuck transcoding sessions.
 Refer to this [forum post](https://forum.livepeer.org/t/working-around-occasional-transcoding-issues-with-nvidia-driver-450/1219) on how to switch to a different driver version.
 
+All Nvidia chipsets from [the Maxwell series](https://developer.nvidia.com/maxwell-compute-architecture) and later, that have NVDEC/NVENC cores, should theoretically be supported by go-livepeer.
+
 * **Driver Limits** Retail GPU cards may impose a software limit on the number of concurrent transcode sessions allowed on the system in official drivers.
 
 * **Linux Only** We've only tested this on Linux. We haven't tried other platforms; if it works elsewhere, especially on Windows or OSX, let us know!

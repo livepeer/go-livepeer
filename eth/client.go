@@ -613,16 +613,17 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 	}
 
 	return &lpTypes.Transcoder{
-		Address:           addr,
-		ServiceURI:        serviceURI,
-		LastRewardRound:   tInfo.LastRewardRound,
-		RewardCut:         tInfo.RewardCut,
-		FeeShare:          tInfo.FeeShare,
-		DelegatedStake:    delegatedStake,
-		ActivationRound:   tInfo.ActivationRound,
-		DeactivationRound: tInfo.DeactivationRound,
-		Active:            active,
-		Status:            status,
+		Address:                    addr,
+		ServiceURI:                 serviceURI,
+		LastRewardRound:            tInfo.LastRewardRound,
+		RewardCut:                  tInfo.RewardCut,
+		FeeShare:                   tInfo.FeeShare,
+		DelegatedStake:             delegatedStake,
+		ActivationRound:            tInfo.ActivationRound,
+		DeactivationRound:          tInfo.DeactivationRound,
+		LastActiveStakeUpdateRound: tInfo.LastActiveStakeUpdateRound,
+		Active:                     active,
+		Status:                     status,
 	}, nil
 }
 
@@ -753,15 +754,16 @@ func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Tra
 func (c *client) Reward() (*types.Transaction, error) {
 	addr := c.accountManager.Account().Address
 
-	currentRound, err := c.CurrentRound()
+	tr, err := c.GetTranscoder(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	ep, err := c.GetTranscoderEarningsPoolForRound(c.accountManager.Account().Address, currentRound)
+	ep, err := c.GetTranscoderEarningsPoolForRound(addr, tr.LastActiveStakeUpdateRound)
 	if err != nil {
 		return nil, err
 	}
+	activeTotalStake := ep.TotalStake
 
 	mintable, err := c.CurrentMintableTokens()
 	if err != nil {
@@ -778,7 +780,7 @@ func (c *client) Reward() (*types.Transaction, error) {
 	}
 
 	// reward = (current mintable tokens for the round * active transcoder stake) / total active stake
-	reward := new(big.Int).Div(new(big.Int).Mul(mintable, ep.TotalStake), totalBonded)
+	reward := new(big.Int).Div(new(big.Int).Mul(mintable, activeTotalStake), totalBonded)
 
 	// get the transcoder pool
 	transcoders, err := c.TranscoderPool()
@@ -792,7 +794,7 @@ func (c *client) Reward() (*types.Transaction, error) {
 		return nil, errors.Wrapf(err, "unable to get transcoder pool max size")
 	}
 
-	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, ep.TotalStake), transcoders, len(transcoders) == int(maxSize.Int64()))
+	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64()))
 
 	return c.RewardWithHint(hints.PosPrev, hints.PosNext)
 }

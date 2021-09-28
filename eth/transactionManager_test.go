@@ -219,6 +219,12 @@ func TestTransactionManager_Replace(t *testing.T) {
 	tx, err = tm.replace(stubTx)
 	assert.Nil(tx)
 	assert.EqualError(err, expErr.Error())
+
+	// Test when max gas price is nil - should still return signing replacement tx error
+	gpm.maxGasPrice = nil
+	tx, err = tm.replace(stubTx)
+	assert.Nil(tx)
+	assert.EqualError(err, expErr.Error())
 	sig.err = nil
 
 	// Error sending replacement tx

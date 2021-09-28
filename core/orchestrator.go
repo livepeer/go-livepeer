@@ -278,6 +278,11 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) {
 	basePrice := orch.node.GetBasePrice()
+
+	if !orch.node.AutoAdjustPrice {
+		return basePrice, nil
+	}
+
 	// If price = 0, overhead is 1
 	// If price > 0, overhead = 1 + (1 / txCostMultiplier)
 	overhead := big.NewRat(1, 1)
