@@ -16,6 +16,8 @@
 
 #### Transcoder
 
+- \#2036 Generate mpeg7 perceptual hashes for fast verification (@jailuthra)
+
 ### Bug Fixes 🐞
 
 #### General
