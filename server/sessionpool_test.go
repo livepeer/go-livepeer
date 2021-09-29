@@ -185,16 +185,13 @@ func TestCompleteSessions(t *testing.T) {
 
 	sess1 = pool.selectSessions(1)[0]
 
-	copiedSess := &BroadcastSession{}
-	*copiedSess = *sess1
-	copiedSess.LatencyScore = 2.7
-	pool.completeSession(copiedSess)
+	sess1.LatencyScore = 2.7
+	pool.completeSession(sess1)
 
 	// assert that existing session with same key in sessMap is replaced
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
-	assert.NotEqual(sess1, pool.sessMap[copiedSess.OrchestratorInfo.Transcoder])
-	assert.Equal(copiedSess, pool.sessMap[copiedSess.OrchestratorInfo.Transcoder])
+	assert.Equal(2.7, pool.sessMap[sess1.OrchestratorInfo.Transcoder].LatencyScore)
 }
 
 func TestRefreshSessions(t *testing.T) {
@@ -318,7 +315,8 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 			LatencyScore: sess.LatencyScore,
 			Info:         sess.OrchestratorInfo,
 		}
-		pool.completeSession(updateSession(sess, res))
+		updateSession(sess, res)
+		pool.completeSession(sess)
 	}
 
 	// assert that initial lengths are as expected
@@ -462,7 +460,8 @@ func TestSelectSessionMoreThanOne(t *testing.T) {
 			LatencyScore: sess.LatencyScore,
 			Info:         sess.OrchestratorInfo,
 		}
-		pool.completeSession(updateSession(sess, res))
+		updateSession(sess, res)
+		pool.completeSession(sess)
 	}
 
 	completeSegStubs := func(sess []*BroadcastSession) {
@@ -516,9 +515,8 @@ func TestSelectSessionMoreThanOne(t *testing.T) {
 	assert.Len(sessions[0].SegsInFlight, 2)
 	completeSegStubs(sessions)
 	assert.Len(pool.sessList(), 0)
-	assert.Len(sessions2[0].SegsInFlight, 2)
-	assert.Len(sessions[0].SegsInFlight, 2)
+	assert.Len(sessions2[0].SegsInFlight, 1)
+	assert.Len(sessions[0].SegsInFlight, 1)
 	completeSegStubs(sessions2)
-	// todo: fix SegsInFlight management
-	// assert.Len(pool.sessList(), 3)
+	assert.Len(pool.sessList(), 3)
 }

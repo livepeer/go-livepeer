@@ -15,7 +15,6 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/glog"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -173,19 +172,10 @@ func includesSession(sessions []*BroadcastSession, session *BroadcastSession) bo
 	return false
 }
 
-func includesSessionByOrch(sessions []*BroadcastSession, session *BroadcastSession) bool {
-	for _, sess := range sessions {
-		if sess.OrchestratorInfo.Transcoder == session.OrchestratorInfo.Transcoder {
-			return true
-		}
-	}
-	return false
-}
-
 func getOrchs(sessions []*BroadcastSession) []string {
 	res := make([]string, len(sessions))
 	for i, sess := range sessions {
-		res[i] = sess.OrchestratorInfo.Transcoder
+		res[i] = sess.Transcoder()
 	}
 	return res
 }
@@ -247,7 +237,7 @@ func (sp *SessionPool) selectSessions(sessionsNum int) []*BroadcastSession {
 			if sess != nil {
 				gotFromLast = true
 				glog.V(common.DEBUG).Infof("No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time",
-					sp.mid, sess.OrchestratorInfo.Transcoder)
+					sp.mid, sess.Transcoder())
 			}
 		}
 
@@ -264,7 +254,7 @@ func (sp *SessionPool) selectSessions(sessionsNum int) []*BroadcastSession {
 		   To avoid a runtime search of the session list under lock, simply
 		   fixup the session list at selection time by retrying the selection.
 		*/
-		if _, ok := sp.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
+		if _, ok := sp.sessMap[sess.Transcoder()]; ok {
 			selectedSessions = append(selectedSessions, sess)
 
 			if len(selectedSessions) == sessionsNum {
@@ -275,7 +265,7 @@ func (sp *SessionPool) selectSessions(sessionsNum int) []*BroadcastSession {
 				// Last session got removed from map (possibly due to a failure) so stop tracking its in-flight segments
 				sess.SegsInFlight = nil
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
-				glog.V(common.DEBUG).Infof("Removing orch=%v from manifestID=%s session list", sess.OrchestratorInfo.Transcoder, sp.mid)
+				glog.V(common.DEBUG).Infof("Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped()
 				}
@@ -287,8 +277,8 @@ func (sp *SessionPool) selectSessions(sessionsNum int) []*BroadcastSession {
 		sp.lastSess = nil
 	} else {
 		for _, ls := range sp.lastSess {
-			if !includesSessionByOrch(selectedSessions, ls) {
-				glog.V(common.DEBUG).Infof("Swapping from orch=%v to orch=%+v for manifestID=%s", ls.OrchestratorInfo.Transcoder,
+			if !includesSession(selectedSessions, ls) {
+				glog.V(common.DEBUG).Infof("Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped()
@@ -304,16 +294,7 @@ func (sp *SessionPool) removeSession(session *BroadcastSession) {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
 
-	delete(sp.sessMap, session.OrchestratorInfo.Transcoder)
-}
-
-func (sp *SessionPool) updateLastSession(oldSess, newSess *BroadcastSession) {
-	for i, ls := range sp.lastSess {
-		if ls == oldSess {
-			sp.lastSess[i] = newSess
-			break
-		}
-	}
+	delete(sp.sessMap, session.Transcoder())
 }
 
 func (sp *SessionPool) cleanup() {
@@ -328,19 +309,14 @@ func (sp *SessionPool) cleanup() {
 func (sp *SessionPool) completeSession(sess *BroadcastSession) {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
-	if existingSess, ok := sp.sessMap[sess.OrchestratorInfo.Transcoder]; ok {
-		// If the new session and the existing session share the same key in sessMap replace
-		// the existing session with the new session
+	if existingSess, ok := sp.sessMap[sess.Transcoder()]; ok {
 		if existingSess != sess {
-			sp.sessMap[sess.OrchestratorInfo.Transcoder] = sess
+			// that means that sess object was removed from pool and then same
+			// Orchestrator was added to the pool again
+			return
 		}
-		for i, ls := range sp.lastSess {
-			if ls != sess && ls.OrchestratorInfo.Transcoder == sess.OrchestratorInfo.Transcoder {
-				sess.SegsInFlight = ls.SegsInFlight
-				sp.lastSess[i] = sess
-				break
-			}
-		}
+		sess.lock.Lock()
+		defer sess.lock.Unlock()
 		if len(sess.SegsInFlight) == 1 {
 			sess.SegsInFlight = nil
 		} else if len(sess.SegsInFlight) > 1 {
@@ -415,25 +391,14 @@ func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 	}
 }
 
-func (bsm *BroadcastSessionsManager) updateLastSession(oldSess, newSess *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-	bsm.trustedPool.updateLastSession(oldSess, newSess)
-	bsm.untrustedPool.updateLastSession(oldSess, newSess)
-}
-
 func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
+	bs.lock.Lock()
 	bs.SegsInFlight = append(bs.SegsInFlight,
 		SegFlightMetadata{
 			startTime: time.Now(),
 			segDur:    time.Duration(seg.Duration * float64(time.Second)),
 		})
-}
-
-func (bsm *BroadcastSessionsManager) pushSegInFlight(sess *BroadcastSession, seg *stream.HLSSegment) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-	sess.pushSegInFlight(seg)
+	bs.lock.Unlock()
 }
 
 // selects number of sessions to use according to current algorithm
@@ -612,6 +577,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 			PMSessionID:       sessionID,
 			Balances:          n.Balances,
 			Balance:           balance,
+			lock:              &sync.RWMutex{},
 			OrchestratorScore: n.OrchestratorPool.GetInfo(tinfo.Transcoder).Score, // todo: use score from OrchestratorLocalInfo
 		}
 
@@ -808,8 +774,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		return nil, info, nil
 	}
 	info.Orchestrator = data.OrchestratorMetadata{
-		TranscoderUri: sessions[0].OrchestratorInfo.Transcoder,
-		Address:       hexutil.Encode(sessions[0].OrchestratorInfo.Address),
+		TranscoderUri: sessions[0].Transcoder(),
+		Address:       sessions[0].Address(),
 	}
 
 	glog.Infof("Trying to transcode segment manifestID=%v nonce=%d seqNo=%d using sessions=%d", cxn.mid, nonce, seg.SeqNo, len(sessions))
@@ -819,12 +785,13 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
-		if sess, seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
+		if seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
 			return nil, info, err
 		}
-		cxn.sessManager.pushSegInFlight(sess, seg)
+		// cxn.sessManager.pushSegInFlight(sess, seg)
+		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
-		res, err = SubmitSegment(sess, seg, nonce, false)
+		res, err = SubmitSegment(sess.Clone(), seg, nonce, false)
 		if err != nil || res == nil {
 			if isNonRetryableError(err) {
 				cxn.sessManager.completeSession(sess)
@@ -843,10 +810,11 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		submittedCount := 0
 		for _, sess := range sessions {
 			// todo: run it in own goroutine (move to submitSegment?)
-			if sess, seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
+			if seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
 				continue
 			}
-			cxn.sessManager.pushSegInFlight(sess, seg)
+			// cxn.sessManager.pushSegInFlight(sess, seg)
+			sess.pushSegInFlight(seg)
 			go submitSegment(sess, seg, nonce, calcPerceptualHash, resc)
 			submittedCount++
 		}
@@ -860,7 +828,8 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 			return nil, info, err
 		}
 		for _, usedSession := range sessions {
-			if usedSession.OrchestratorInfo.Transcoder != sess.OrchestratorInfo.Transcoder {
+			if usedSession != sess {
+				// return session that we're not using
 				cxn.sessManager.completeSession(usedSession)
 			}
 		}
@@ -877,8 +846,7 @@ type SubmitResult struct {
 }
 
 func submitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
-	// todo: add timeout here or make sure SubmitSegment timeouts
-	res, err := SubmitSegment(sess, seg, nonce, calcPerceptualHash)
+	res, err := SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash)
 	resc <- &SubmitResult{
 		Session:         sess,
 		TranscodeResult: res,
@@ -887,11 +855,14 @@ func submitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 }
 
 func prepareForTranscoding(cxn *rtmpConnection, sess *BroadcastSession, seg *stream.HLSSegment,
-	name string) (*BroadcastSession, *stream.HLSSegment, error) {
+	name string) (*stream.HLSSegment, error) {
 
 	// storage the orchestrator prefers
 	res := seg
-	if ios := sess.OrchestratorOS; ios != nil {
+	sess.lock.RLock()
+	ios := sess.OrchestratorOS
+	sess.lock.RUnlock()
+	if ios != nil {
 		// XXX handle case when orch expects direct upload
 		uri, err := ios.SaveData(name, seg.Data, nil, 0)
 		if err != nil {
@@ -900,7 +871,7 @@ func prepareForTranscoding(cxn *rtmpConnection, sess *BroadcastSession, seg *str
 				monitor.SegmentUploadFailed(cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
 			}
 			cxn.sessManager.suspendAndRemoveOrch(sess)
-			return nil, nil, err
+			return nil, err
 		}
 		segCopy := *seg
 		res = &segCopy
@@ -909,24 +880,20 @@ func prepareForTranscoding(cxn *rtmpConnection, sess *BroadcastSession, seg *str
 
 	refresh, err := shouldRefreshSession(sess)
 	if err != nil {
-		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
+		glog.Errorf("Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.Transcoder(), err)
 		cxn.sessManager.suspendAndRemoveOrch(sess)
-		return nil, nil, err
+		return nil, err
 	}
 
 	if refresh {
-		newSess, err := refreshSession(sess)
+		err := refreshSession(sess)
 		if err != nil {
-			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.OrchestratorInfo.Transcoder, err)
+			glog.Errorf("Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.Transcoder(), err)
 			cxn.sessManager.suspendAndRemoveOrch(sess)
-			return nil, nil, err
+			return nil, err
 		}
-		// if sess was lastSess, we need to update lastSess,
-		// or else content of SegsInFlight will be lost
-		cxn.sessManager.updateLastSession(sess, newSess)
-		sess = newSess
 	}
-	return sess, res, nil
+	return res, nil
 }
 
 func downloadResults(cxn *rtmpConnection, seg *stream.HLSSegment, sess *BroadcastSession, res *ReceivedTranscodeResult,
@@ -1066,8 +1033,8 @@ func downloadResults(cxn *rtmpConnection, seg *stream.HLSSegment, sess *Broadcas
 	if dlErr != nil {
 		return nil, dlErr
 	}
-
-	cxn.sessManager.completeSession(updateSession(sess, res))
+	updateSession(sess, res)
+	cxn.sessManager.completeSession(sess)
 
 	downloadDur := time.Since(dlStart)
 	if monitor.Enabled {
@@ -1117,6 +1084,9 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess *BroadcastSession, source *stream.HLSSegment,
 	res *net.TranscodeData, URIs []string, segData [][]byte) error {
 
+	sess.lock.RLock()
+	OrchestratorInfo := sess.OrchestratorInfo
+	sess.lock.RUnlock()
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
 	// the the segments' OS location will be overwritten.
@@ -1125,7 +1095,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 		ManifestID:   sess.Params.ManifestID,
 		Source:       source,
 		Profiles:     sess.Params.Profiles,
-		Orchestrator: sess.OrchestratorInfo,
+		Orchestrator: OrchestratorInfo,
 		Results:      res,
 		URIs:         URIs,
 		Renditions:   segData,
@@ -1180,52 +1150,51 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 }
 
 // Return an updated copy of the given session using the received transcode result
-func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) *BroadcastSession {
-	// Instead of mutating the existing session we copy it and return an updated copy
-	newSess := &BroadcastSession{}
-	*newSess = *sess
-	newSess.LatencyScore = res.LatencyScore
+func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
+	sess.lock.Lock()
+	defer sess.lock.Unlock()
+	sess.LatencyScore = res.LatencyScore
 
 	if res.Info == nil {
-		// Return newSess early if we do not need to update OrchestratorInfo
-		return newSess
+		// Return early if we do not need to update OrchestratorInfo
+		return
 	}
 
 	oInfo := res.Info
-	newSess.OrchestratorInfo = oInfo
+	oldInfo := sess.OrchestratorInfo
+	sess.OrchestratorInfo = oInfo
 
 	if len(oInfo.Storage) > 0 {
-		newSess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
+		sess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
 	}
 
-	if newSess.Sender != nil && oInfo.TicketParams != nil {
+	if sess.Sender != nil && oInfo.TicketParams != nil {
 		// Note: We do not validate the ticket params included in the OrchestratorInfo
 		// message here. Instead, we store the ticket params with the current BroadcastSession
 		// and the next time this BroadcastSession is used, the ticket params will be validated
 		// during ticket creation in genPayment(). If ticket params validation during ticket
 		// creation fails, then this BroadcastSession will be removed
-		newSess.PMSessionID = newSess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+		sess.PMSessionID = sess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
 
 		// Session ID changed so we need to make sure the balance tracks the new session ID
-		if sess.OrchestratorInfo.AuthToken.SessionId != oInfo.AuthToken.SessionId {
-			newSess.Balance = core.NewBalance(ethcommon.BytesToAddress(newSess.OrchestratorInfo.TicketParams.Recipient), core.ManifestID(newSess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
+		if oldInfo.AuthToken.SessionId != oInfo.AuthToken.SessionId {
+			sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient),
+				core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 		}
 	}
-
-	return newSess
 }
 
-func refreshSession(sess *BroadcastSession) (*BroadcastSession, error) {
-	uri, err := url.Parse(sess.OrchestratorInfo.Transcoder)
+func refreshSession(sess *BroadcastSession) error {
+	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
-		return nil, err
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
 	defer cancel()
 
 	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Create dummy result
@@ -1234,30 +1203,34 @@ func refreshSession(sess *BroadcastSession) (*BroadcastSession, error) {
 		Info:         oInfo,
 	}
 
-	return updateSession(sess, res), nil
+	updateSession(sess, res)
+	return nil
 }
 
 func shouldRefreshSession(sess *BroadcastSession) (bool, error) {
-	if sess.OrchestratorInfo.AuthToken == nil {
+	sess.lock.RLock()
+	OrchestratorInfo := sess.OrchestratorInfo
+	sess.lock.RUnlock()
+	if OrchestratorInfo.AuthToken == nil {
 		return false, errors.New("missing auth token")
 	}
 
 	// Refresh auth token if we are within the last 10% of the token's valid period
 	authTokenExpireBuffer := 0.1
-	refreshPoint := sess.OrchestratorInfo.AuthToken.Expiration - int64(authTokenValidPeriod.Seconds()*authTokenExpireBuffer)
+	refreshPoint := OrchestratorInfo.AuthToken.Expiration - int64(authTokenValidPeriod.Seconds()*authTokenExpireBuffer)
 	if time.Now().After(time.Unix(refreshPoint, 0)) {
-		glog.V(common.VERBOSE).Infof("Auth token expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
+		glog.V(common.VERBOSE).Infof("Auth token expired, refreshing for orch=%v", OrchestratorInfo.Transcoder)
 
 		return true, nil
 	}
 
 	if sess.Sender != nil {
-		if err := sess.Sender.ValidateTicketParams(pmTicketParams(sess.OrchestratorInfo.TicketParams)); err != nil {
+		if err := sess.Sender.ValidateTicketParams(pmTicketParams(OrchestratorInfo.TicketParams)); err != nil {
 			if err != pm.ErrTicketParamsExpired {
 				return false, err
 			}
 
-			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", sess.OrchestratorInfo.Transcoder)
+			glog.V(common.VERBOSE).Infof("Ticket params expired, refreshing for orch=%v", OrchestratorInfo.Transcoder)
 
 			return true, nil
 		}

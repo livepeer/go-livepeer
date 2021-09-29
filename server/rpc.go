@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -25,6 +26,7 @@ import (
 	"github.com/patrickmn/go-cache"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
@@ -102,17 +104,39 @@ type BalanceUpdate struct {
 type BroadcastSession struct {
 	Broadcaster              common.Broadcaster
 	Params                   *core.StreamParameters
-	OrchestratorInfo         *net.OrchestratorInfo
-	OrchestratorOS           drivers.OSSession
 	BroadcasterOS            drivers.OSSession
 	Sender                   pm.Sender
-	PMSessionID              string
 	Balances                 *core.AddressBalances
-	Balance                  Balance
-	LatencyScore             float64
-	SegsInFlight             []SegFlightMetadata
 	OrchestratorScore        float32
 	VerifiedByPerceptualHash bool
+	lock                     *sync.RWMutex
+	// access these fields under the lock
+	SegsInFlight     []SegFlightMetadata
+	LatencyScore     float64
+	OrchestratorInfo *net.OrchestratorInfo
+	OrchestratorOS   drivers.OSSession
+	PMSessionID      string
+	Balance          Balance
+}
+
+func (bs *BroadcastSession) Transcoder() string {
+	bs.lock.RLock()
+	defer bs.lock.RUnlock()
+	return bs.OrchestratorInfo.Transcoder
+}
+
+func (bs *BroadcastSession) Address() string {
+	bs.lock.RLock()
+	defer bs.lock.RUnlock()
+	return hexutil.Encode(bs.OrchestratorInfo.Address)
+}
+
+func (bs *BroadcastSession) Clone() *BroadcastSession {
+	bs.lock.RLock()
+	newSess := *bs
+	newSess.lock = &sync.RWMutex{}
+	bs.lock.RUnlock()
+	return &newSess
 }
 
 // ReceivedTranscodeResult contains received transcode result data and related metadata

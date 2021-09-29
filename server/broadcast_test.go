@@ -58,6 +58,7 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 			AuthToken: stubAuthToken,
 		},
 		OrchestratorScore: common.Score_Trusted,
+		lock:              &sync.RWMutex{},
 	}
 }
 
@@ -591,7 +592,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	assert.Nil(err)
 
 	completedSess := cxn.sessManager.trustedPool.sessMap[ts.URL]
-	assert.NotEqual(completedSess, sess)
+	assert.Equal(completedSess, sess)
 	assert.NotZero(completedSess.LatencyScore)
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
@@ -712,16 +713,8 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	assert.Nil(err)
 
 	completedSess := bsm.trustedPool.sessMap[ts.URL]
-	assert.NotEqual(completedSess.LatencyScore, sess.LatencyScore)
+	assert.Equal(sess, completedSess)
 	assert.NotZero(completedSess.LatencyScore)
-
-	// Check that the completed session is just the original session with a different LatencyScore
-	copiedSess := &BroadcastSession{}
-	*copiedSess = *completedSess
-	copiedSess.LatencyScore = 0.0
-	assert.Equal(copiedSess.Broadcaster, sess.Broadcaster)
-	assert.Equal(copiedSess.LatencyScore, sess.LatencyScore)
-	assert.Equal(copiedSess.OrchestratorInfo, sess.OrchestratorInfo)
 
 	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
 	buf, err = proto.Marshal(tr)
@@ -1058,16 +1051,14 @@ func TestUpdateSession(t *testing.T) {
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances}
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}
-	newSess := updateSession(sess, res)
-	assert.Equal(res.LatencyScore, newSess.LatencyScore)
-	// Check that LatencyScore of old session is not mutated
-	assert.Equal(1.1, sess.LatencyScore)
+	updateSession(sess, res)
+	assert.Equal(res.LatencyScore, sess.LatencyScore)
 
-	info := &net.OrchestratorInfo{
+	info := net.OrchestratorInfo{
 		Storage: []*net.OSInfo{
 			{
 				StorageType: 1,
@@ -1075,16 +1066,15 @@ func TestUpdateSession(t *testing.T) {
 			},
 		},
 	}
-	res.Info = info
+	res.Info = &info
 
-	newSess = updateSession(sess, res)
-	assert.Equal(info, newSess.OrchestratorInfo)
+	updateSession(sess, res)
+	assert.Equal(info, *sess.OrchestratorInfo)
 	// Check that BroadcastSession.OrchestratorOS is updated when len(info.Storage) > 0
-	assert.Equal(info.Storage[0], newSess.OrchestratorOS.GetInfo())
+	assert.Equal(info.Storage[0], sess.OrchestratorOS.GetInfo())
 	// Check that a new PM session is not created because BroadcastSession.Sender = nil
-	assert.Equal("foo", newSess.PMSessionID)
-	// Check that OrchestratorInfo of old session is not mutated
-	assert.Nil(sess.OrchestratorInfo)
+	assert.Equal("foo", sess.PMSessionID)
+	assert.Equal(info.Transcoder, sess.Transcoder())
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
@@ -1095,26 +1085,22 @@ func TestUpdateSession(t *testing.T) {
 		AuthToken:    stubAuthToken,
 	}
 	sender.On("StartSession", mock.Anything).Return("foo").Once()
-	newSess = updateSession(sess, res)
+	updateSession(sess, res)
 	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
-	assert.Equal("foo", newSess.PMSessionID)
+	assert.Equal("foo", sess.PMSessionID)
 
 	sender.On("StartSession", mock.Anything).Return("bar")
-	newSess = updateSession(sess, res)
+	updateSession(sess, res)
 	// Check that a new PM session is created
-	assert.Equal("bar", newSess.PMSessionID)
-	// Check that PMSessionID of old session is not mutated
-	assert.Equal("foo", sess.PMSessionID)
-	// Check that Balance of new session is not different because auth token sessionID did not change
-	assert.Equal(newSess.Balance, sess.Balance)
+	assert.Equal("bar", sess.PMSessionID)
 
+	info2 := *res.Info
+	res.Info = &info2
 	res.Info.AuthToken = &net.AuthToken{SessionId: "diffdiff"}
-	newSess = updateSession(sess, res)
-	// Check that Balance of new session is different because auth token sessionID did change
-	assert.NotEqual(newSess.Balance, sess.Balance)
+	updateSession(sess, res)
 	// Check that new Balance initialized with new auth token sessionID
 	assert.Nil(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")))
-	newSess.Balance.Credit(big.NewRat(5, 1))
+	sess.Balance.Credit(big.NewRat(5, 1))
 	assert.Equal(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")), big.NewRat(5, 1))
 }
 
@@ -1243,7 +1229,7 @@ func TestVerifier_Verify(t *testing.T) {
 	cxn := &rtmpConnection{
 		pl: c,
 	}
-	sess := &BroadcastSession{Params: &core.StreamParameters{}, OrchestratorScore: common.Score_Trusted}
+	sess := &BroadcastSession{Params: &core.StreamParameters{}, OrchestratorScore: common.Score_Trusted, lock: &sync.RWMutex{}}
 	source := &stream.HLSSegment{}
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
@@ -1434,8 +1420,7 @@ func TestRefreshSession(t *testing.T) {
 
 	// trigger parse URL error
 	sess := StubBroadcastSession(string(rune(0x7f)))
-	newSess, err := refreshSession(sess)
-	assert.Nil(newSess)
+	err := refreshSession(sess)
 	assert.Error(err)
 	assert.Contains(err.Error(), "invalid control character in URL")
 
@@ -1444,17 +1429,16 @@ func TestRefreshSession(t *testing.T) {
 		return nil, errors.New("some error")
 	}
 	sess = StubBroadcastSession("foo")
-	newSess, err = refreshSession(sess)
-	assert.Nil(newSess)
+	err = refreshSession(sess)
 	assert.EqualError(err, "some error")
 
 	// trigger update
 	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
-	newSess, err = refreshSession(sess)
-	assert.Equal(newSess.OrchestratorInfo, successOrchInfoUpdate)
+	err = refreshSession(sess)
 	assert.Nil(err)
+	assert.Equal(sess.OrchestratorInfo, successOrchInfoUpdate)
 
 	// trigger timeout
 	oldRefreshTimeout := refreshTimeout
@@ -1470,8 +1454,7 @@ func TestRefreshSession(t *testing.T) {
 
 		return nil, errors.New("context timeout")
 	}
-	newSess, err = refreshSession(sess)
-	assert.Nil(newSess)
+	err = refreshSession(sess)
 	assert.EqualError(err, "context timeout")
 }
 
@@ -1676,6 +1659,7 @@ func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSe
 		BroadcasterOS:     os,
 		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken},
 		OrchestratorScore: common.Score_Trusted,
+		lock:              &sync.RWMutex{},
 	}
 }
 
