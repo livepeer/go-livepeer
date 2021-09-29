@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.5.21
+
+*September 29 2021*
+
+This release includes a new orchestrator/transcoder MPEG-7 video signature capability which is required for broadcasters to run transcoding verification. The MPEG-7 video signatures are used as perceptual hashes in a "fast verification" algorithm that is described in the [Fast and Full Transcoding Verification design](https://forum.livepeer.org/t/transcoding-verification-improvements-fast-full-verification/1499). If a CPU is used for transcoding, the video signature computation will occur on the CPU. If a GPU is used for transcoding (i.e. the `-nvidia` flag is used), the video signature computation will occur on the GPU. Orchestrators and transcoders should upgrade to this release as soon as possible to ensure that they will be able to continue serving broadcasters that run fast verification (the complete broadcaster implementation will be shipped at a later date).
+
+Orchestrators and transcoders should also make note of the breaking change in this release that drops support for Nvidia GPUs from the Kepler series.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Breaking Changes 🚨🚨
+
+- [#2027](https://github.com/livepeer/go-livepeer/pull/2027) Nvidia GPUs belonging to the Kepler series (GeForce 600, 700 series) and older, are no longer supported by go-livepeer. Cuda 11 is needed for newer GPUs, which [only supports the Maxwell series](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/) or newer.
+
+### Features ⚒
+
+#### General
+
+- [#2041](https://github.com/livepeer/go-livepeer/pull/2041) Update help description for `{min,max}GasPrice` (@Strykar)
+
+#### Transcoder
+
+- [#2036](https://github.com/livepeer/go-livepeer/pull/2036) Generate mpeg7 perceptual hashes for fast verification (@jailuthra)
+
+### Bug Fixes 🐞
+
+#### Transcoder
+
+- [#2027](https://github.com/livepeer/go-livepeer/pull/2027) Fix a memleak in the (experimental) AI content detection filter (@cyberj0g)
+
 ## v0.5.20
 
 *September 10 2021*
