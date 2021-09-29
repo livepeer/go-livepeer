@@ -218,7 +218,7 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 }
 
 func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool) []ffmpeg.TranscodeOptions {
-	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
+	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
 			Oname:        fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName()),
@@ -233,7 +233,7 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 }
 
 func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.DetectorProfile) []ffmpeg.TranscodeOptions {
-	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
+	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		var o ffmpeg.TranscodeOptions
 		switch profiles[i].Type() {
