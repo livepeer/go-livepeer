@@ -4,20 +4,15 @@
 
 ### Breaking Changes 🚨🚨
 
-- \#2027 Nvidia GPUs belonging to the Kepler series (GeForce 600, 700 series) and older, are no longer supported by go-livepeer. Cuda 11 is needed for newer GPUs, which [only supports the Maxwell series](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/) or newer.
-
 ### Features ⚒
 
 #### General
-- \#2041 Update help description for `{min,max}GasPrice` (@Strykar)
 
 #### Broadcaster
 
 #### Orchestrator
 
 #### Transcoder
-
-- \#2036 Generate mpeg7 perceptual hashes for fast verification (@jailuthra)
 
 ### Bug Fixes 🐞
 
@@ -28,5 +23,3 @@
 #### Orchestrator
 
 #### Transcoder
-
-- \#2027 Fix a memleak in the (experimental) AI content detection filter (@cyberj0g)
