@@ -39,3 +39,5 @@ require (
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	pgregory.net/rapid v0.4.0
 )
+
+replace github.com/ethereum/go-ethereum => github.com/livepeer/go-ethereum v1.10.9-0.20210930013949-80e3965c7b18
