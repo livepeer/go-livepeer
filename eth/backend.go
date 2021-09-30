@@ -111,6 +111,13 @@ func (b *backend) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 }
 
 func (b *backend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	// This runs the max gas price check against the value returned by eth_gasPrice which should be priority fee + base fee.
+	// We may use the returned value later on to derive the priority fee if the eth_maxPriorityFeePerGas method is not supported.
+	gasPrice, err := b.SuggestGasPrice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	tip, err := b.Client.SuggestGasTipCap(ctx)
 	if err != nil {
 		// SuggestGasTipCap() uses the eth_maxPriorityFeePerGas RPC call under the hood which
@@ -118,10 +125,6 @@ func (b *backend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
 		// In the future, eth_maxPriorityFeePerGas can be replaced with an eth_feeHistory based algorithm (see https://github.com/ethereum/go-ethereum/issues/23479).
 		// For now, if the provider does not support eth_maxPriorityFeePerGas (i.e. not geth), then we calculate the priority fee as
 		// eth_gasPrice - baseFee.
-		gasPrice, err := b.SuggestGasPrice(ctx)
-		if err != nil {
-			return nil, err
-		}
 		head, err := b.HeaderByNumber(ctx, nil)
 		if err != nil {
 			return nil, err
