@@ -414,6 +414,10 @@ func TestPush_HTTPIngest(t *testing.T) {
 }
 
 func TestPush_MP4(t *testing.T) {
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
+
 	// Do a bunch of setup. Would be nice to simplify this one day...
 	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
@@ -428,10 +432,6 @@ func TestPush_MP4(t *testing.T) {
 	// sometimes LivepeerServer needs time  to start
 	// esp if this is the only test in the suite being run (eg, via `-run)
 	time.Sleep(10 * time.Millisecond)
-
-	oldProfs := BroadcastJobVideoProfiles
-	defer func() { BroadcastJobVideoProfiles = oldProfs }()
-	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
 
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken}}
@@ -543,6 +543,10 @@ func TestPush_MP4(t *testing.T) {
 }
 
 func TestPush_SetVideoProfileFormats(t *testing.T) {
+	oldProfs := BroadcastJobVideoProfiles
+	defer func() { BroadcastJobVideoProfiles = oldProfs }()
+	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9, ffmpeg.P720p60fps16x9}
+
 	assert := assert.New(t)
 	// s := setupServer()
 	// s, cancel := setupServerWithCancelAndPorts()
@@ -554,10 +558,6 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	// time.Sleep(10 * time.Millisecond)
 	s.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	defer func() { s.rtmpConnections = map[core.ManifestID]*rtmpConnection{} }()
-
-	oldProfs := BroadcastJobVideoProfiles
-	defer func() { BroadcastJobVideoProfiles = oldProfs }()
-	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9, ffmpeg.P720p60fps16x9}
 
 	// Base case, mpegts
 	h, r, w := requestSetup(s)

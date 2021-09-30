@@ -311,10 +311,12 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 
 	completeSegStub := func(sess *BroadcastSession) {
 		// Create dummy result
+		sess.lock.RLock()
 		res := &ReceivedTranscodeResult{
 			LatencyScore: sess.LatencyScore,
 			Info:         sess.OrchestratorInfo,
 		}
+		sess.lock.RUnlock()
 		updateSession(sess, res)
 		pool.completeSession(sess)
 	}

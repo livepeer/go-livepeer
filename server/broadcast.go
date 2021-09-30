@@ -1198,10 +1198,12 @@ func refreshSession(sess *BroadcastSession) error {
 	}
 
 	// Create dummy result
+	sess.lock.RLock()
 	res := &ReceivedTranscodeResult{
 		LatencyScore: sess.LatencyScore,
 		Info:         oInfo,
 	}
+	sess.lock.RUnlock()
 
 	updateSession(sess, res)
 	return nil

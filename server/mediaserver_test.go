@@ -74,6 +74,8 @@ func waitForTCP(waitForTarget time.Duration, uri string) error {
 }
 
 func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
+	// wait for any earlier tests to complete
+	wgWait(&pushResetWg)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	var S *LivepeerServer

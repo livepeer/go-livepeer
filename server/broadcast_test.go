@@ -77,6 +77,14 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 	return bsmWithSessListExt(sessList, nil, false)
 }
 
+func cloneSessions(sessions []*BroadcastSession) []*BroadcastSession {
+	res := make([]*BroadcastSession, len(sessions))
+	for i, sess := range sessions {
+		res[i] = sess.Clone()
+	}
+	return res
+}
+
 func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefresh bool) *BroadcastSessionsManager {
 	sessMap := make(map[string]*BroadcastSession)
 	for _, sess := range sessList {
@@ -87,7 +95,8 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 	sel.Add(sessList)
 
 	var createSessions = func() ([]*BroadcastSession, error) {
-		return sessList, nil
+		// should return new sessions
+		return cloneSessions(sessList), nil
 	}
 
 	untrustedSessMap := make(map[string]*BroadcastSession)
@@ -97,7 +106,8 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 	unsel := &LIFOSelector{}
 	unsel.Add(untrustedSessList)
 	var createSessionsUntrusted = func() ([]*BroadcastSession, error) {
-		return untrustedSessList, nil
+		// should return new sessions
+		return cloneSessions(untrustedSessList), nil
 	}
 
 	var createSessionsEmpty = func() ([]*BroadcastSession, error) {
