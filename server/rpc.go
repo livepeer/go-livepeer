@@ -237,7 +237,7 @@ func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.Client
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "Did not connect to orch=%v", uri)
+		return nil, nil, fmt.Errorf("Did not connect to orch=%v: %w", uri, err)
 
 	}
 	c := net.NewOrchestratorClient(conn)
