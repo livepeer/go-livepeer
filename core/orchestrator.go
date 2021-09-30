@@ -396,7 +396,8 @@ type TranscodeData struct {
 // TranscodedSegmentData contains encoded data for a profile
 type TranscodedSegmentData struct {
 	Data   []byte
-	Pixels int64 // Encoded pixels
+	PHash  []byte // Perceptual hash data (maybe nil)
+	Pixels int64  // Encoded pixels
 }
 
 type SegChanData struct {
@@ -580,6 +581,12 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 			glog.Errorf("Cannot find transcoded segment for manifestID=%s sessionID=%s seqNo=%d len=%d",
 				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
+		}
+		if md.CalcPerceptualHash && tSegments[i].PHash == nil {
+			glog.Errorf("Could not find perceptual hash for manifestID=%s sessionID=%s seqNo=%d profile=%v",
+				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name)
+			// FIXME: Return the error once everyone has upgraded their nodes
+			// return terr(fmt.Errorf("MissingPerceptualHash"))
 		}
 		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s sessionID=%s seqNo=%d profile=%s len=%d",
 			string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))

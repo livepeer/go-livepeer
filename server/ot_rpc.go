@@ -175,6 +175,19 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 				glog.Error("Could not create multipart part ", err)
 			}
 			io.Copy(fw, bytes.NewBuffer(v.Data))
+			// Add perceptual hash data as a part if generated
+			if md.CalcPerceptualHash {
+				w.SetBoundary(boundary)
+				hdrs := textproto.MIMEHeader{
+					"Content-Type":   {"application/octet-stream"},
+					"Content-Length": {strconv.Itoa(len(v.PHash))},
+				}
+				fw, err := w.CreatePart(hdrs)
+				if err != nil {
+					glog.Error("Could not create multipart part ", err)
+				}
+				io.Copy(fw, bytes.NewBuffer(v.PHash))
+			}
 		}
 		w.Close()
 		contentType = "multipart/mixed; boundary=" + boundary
@@ -197,8 +210,15 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	if err != nil {
 		glog.Error("Error submitting results ", err)
 	} else {
-		ioutil.ReadAll(resp.Body)
+		rbody, rerr := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if rerr != nil {
+				glog.Errorf("Orchestrator returned HTTP %v with unreadable body error=%v", resp.StatusCode, rerr)
+			} else {
+				glog.Errorf("Orchestrator returned HTTP %v error=%v", resp.StatusCode, string(rbody))
+			}
+		}
 	}
 	uploadDur := time.Since(uploadStart)
 	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, uploadDur, err)
@@ -304,14 +324,25 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 
-			encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
-			if err != nil {
-				glog.Error("Error getting pixels in header:", err)
-				res.Err = err
-				break
+			if len(p.Header.Values("Pixels")) > 0 {
+				encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+				if err != nil {
+					glog.Error("Error getting pixels in header:", err)
+					res.Err = err
+					break
+				}
+				segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
+			} else if p.Header.Get("Content-Type") == "application/octet-stream" {
+				// Perceptual hash data for last segment
+				if len(segments) > 0 {
+					segments[len(segments)-1].PHash = body
+				} else {
+					err := errors.New("Unknown perceptual hash")
+					glog.Error("No previous segment present to attach perceptual hash data to: ", err)
+					res.Err = err
+					break
+				}
 			}
-
-			segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
 		}
 		res.TranscodeData = &core.TranscodeData{
 			Segments: segments,
