@@ -278,16 +278,18 @@ func main() {
 					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
 				}
 			}
-			// FIXME: Short-term hack to pre-load the detection model for the whole node
+			// FIXME: Short-term hack to pre-load the detection models on every device
 			if *sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *sceneClassificationModelPath
 				core.DetectorProfile = &detectorProfile
-				tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, "0")
-				if err != nil {
-					glog.Fatalf("Could not initialize detector")
+				for _, d := range devices {
+					tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
+					if err != nil {
+						glog.Fatalf("Could not initialize detector")
+					}
+					defer tc.Stop()
 				}
-				defer tc.Stop()
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder, core.NewNvidiaTranscoderWithDetector)

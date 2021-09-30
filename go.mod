@@ -33,7 +33,7 @@ require (
 	github.com/jaypipes/ghw v0.7.0
 	github.com/karalabe/usb v0.0.0-20190919080040-51dc0efba356 // indirect
 	github.com/livepeer/livepeer-data v0.2.0
-	github.com/livepeer/lpms v0.0.0-20210924125113-6ccecaaad72c
+	github.com/livepeer/lpms v0.0.0-20210927142229-7ddb93534740
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect

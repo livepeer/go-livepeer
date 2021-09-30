@@ -148,7 +148,7 @@ func NewNvidiaTranscoder(gpu string) TranscoderSession {
 func NewNvidiaTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error) {
 	// Hardcode detection to device 0 for now
 	// Transcoding can still run on a separate GPU as we copy frames to CPU before detection
-	session, err := ffmpeg.NewTranscoderWithDetector(detector, "0")
+	session, err := ffmpeg.NewTranscoderWithDetector(detector, gpu)
 	return &NvidiaTranscoder{
 		device:  gpu,
 		session: session,

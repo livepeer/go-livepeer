@@ -112,16 +112,17 @@ func main() {
 	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogWarning)
 	var detectorTc *ffmpeg.Transcoder
 	if *detectionFreq > 0 {
-		t := time.Now()
-		// We don't actually use this transcoder session, but initialize it to save time for model loading
-		detectorTc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, *nvidia)
-		end := time.Now()
-		if err != nil {
-			glog.Fatalf("Could not initialize detector profiles")
+		for _, d := range devices {
+			t := time.Now()
+			// We don't actually use this transcoder session, but initialize it to save time for model loading
+			detectorTc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, d)
+			end := time.Now()
+			if err != nil {
+				glog.Fatalf("Could not initialize detector profiles")
+			}
+			fmt.Printf("InitDetectorSession time %0.4v\n", end.Sub(t).Seconds())
+			defer detectorTc.StopTranscoder()
 		}
-
-		fmt.Printf("InitDetectorSession time %0.4v\n", end.Sub(t).Seconds())
-		defer detectorTc.StopTranscoder()
 		fmt.Println("timestamp,session,segment,seg_dur,transcode_time,detect_data")
 	} else {
 		fmt.Println("timestamp,session,segment,seg_dur,transcode_time")
@@ -138,7 +139,7 @@ func main() {
 			var tc *ffmpeg.Transcoder
 			if *detectionFreq > 0 {
 				t := time.Now()
-				tc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, *nvidia)
+				tc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, devices[k%len(devices)])
 				end := time.Now()
 				fmt.Printf("InitDetectorSession time %0.4v for session %v\n", end.Sub(t).Seconds(), i)
 				if err != nil {
