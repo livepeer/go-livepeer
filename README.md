@@ -18,6 +18,8 @@ network built on the Ethereum blockchain.
 
 Follow the [installation guide](https://livepeer.org/docs/installation/install-livepeer).
 
+Packages for Arch Linux can be found on the [AUR](https://aur.archlinux.org/packages/go-livepeer-bin/).
+
 ## Run Livepeer
 
 If you are interested in participating using the network as a video developer, check out the [video developer docs](https://livepeer.org/docs/video-developers/overview).
