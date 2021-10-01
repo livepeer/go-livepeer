@@ -86,12 +86,6 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 			infoCh <- info
 			return
 		}
-		if err != nil && !errors.Is(err, context.Canceled) {
-			glog.Error(err)
-			if monitor.Enabled {
-				monitor.LogDiscoveryError(err.Error())
-			}
-		}
 		errCh <- err
 	}
 
@@ -118,8 +112,21 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 				heap.Push(suspendedInfos, &suspension{info, penalty})
 			}
 			nbResp++
-		case <-errCh:
-			nbResp++
+		case err := <-errCh:
+			if err == nil || (err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)) {
+				// Only count the response if:
+				// - There was no error (the orchestrator might have been incompatible though)
+				// - The request did not fail with context cancellation or a timeout
+				nbResp++
+			}
+
+			if err != nil && !errors.Is(err, context.Canceled) {
+				// Log as discovery error as long as the problem was with the orchestrator
+				glog.Error(err)
+				if monitor.Enabled {
+					monitor.LogDiscoveryError(err.Error())
+				}
+			}
 		case <-ctx.Done():
 			timeout = true
 		}
