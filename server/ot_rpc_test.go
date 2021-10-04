@@ -58,10 +58,20 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	assert := assert.New(t)
 	segData, err := core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
 	assert.Nil(err)
+
+	var segmentRead int
+	segmentTs := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := ioutil.ReadAll(r.Body)
+		assert.NoError(err)
+		w.Write([]byte("segment's binary data"))
+		segmentRead++
+	}))
+	defer segmentTs.Close()
+
 	notify := &net.NotifySegment{
 		TaskId:  742,
 		SegData: segData,
-		Url:     "linktomanifest",
+		Url:     segmentTs.URL,
 	}
 	tr := &stubTranscoder{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
@@ -69,6 +79,7 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	node.Transcoder = tr
 
 	runTranscode(node, "badaddress", httpc, notify)
+	assert.Equal(1, segmentRead)
 	assert.Equal(1, tr.called)
 	// reset some things that are different when using profiles
 	profiles[0].Bitrate = "6000000" // presets use "k" abbrev; conversions don't
@@ -78,7 +89,7 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	profiles[0].Format = ffmpeg.FormatMPEGTS // default is ffmpeg.FormatNone
 	profiles[1].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, tr.profiles)
-	assert.Equal("linktomanifest", tr.fname)
+	assert.True(strings.HasSuffix(tr.fname, ".tempfile"))
 
 	var headers http.Header
 	var body []byte
@@ -93,11 +104,12 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	parsedURL, _ := url.Parse(ts.URL)
 	rand.Seed(123)
 	runTranscode(node, parsedURL.Host, httpc, notify)
+	assert.Equal(2, segmentRead)
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal("999", headers.Get("Pixels"))
-	assert.Equal("multipart/mixed; boundary=17b336b6e6ae071e928f", headers.Get("Content-Type"))
+	assert.Equal("multipart/mixed; boundary=57bddd1eb02b9ffae8dc", headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerLPT, headers.Get("Authorization"))
 	mediaType, params, err := mime.ParseMediaType(headers.Get("Content-Type"))
@@ -148,9 +160,18 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	segData, err := core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
 	assert.Nil(err)
 
+	var segmentRead int
+	segmentTs := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := ioutil.ReadAll(r.Body)
+		assert.NoError(err)
+		w.Write([]byte("segment's binary data"))
+		segmentRead++
+	}))
+	defer segmentTs.Close()
+
 	notify := &net.NotifySegment{
 		TaskId:  742,
-		Url:     "linktomanifest",
+		Url:     segmentTs.URL,
 		SegData: segData,
 	}
 	tr := &stubTranscoder{}
@@ -163,16 +184,18 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Empty(tr.fname)
 	runTranscode(node, "badaddress", httpc, notify)
 	assert.Equal(1, tr.called)
+	assert.Equal(1, segmentRead)
 	profiles[0].Bitrate = "432000"
 	profiles[1].Bitrate = "765000"
 	profiles[0].Format = ffmpeg.FormatMPEGTS
 	assert.Equal(profiles, tr.profiles)
-	assert.Equal("linktomanifest", tr.fname)
+	assert.True(strings.HasSuffix(tr.fname, ".tempfile"))
 
 	// Test deserialization failure from invalid full profile format
 	notify.SegData.FullProfiles2[1].Format = -1
 	runTranscode(node, "", httpc, notify)
-	assert.Equal(2, tr.called)
+	assert.Equal(1, segmentRead)
+	assert.Equal(1, tr.called)
 	assert.Nil(nil, tr.profiles)
 }
 
@@ -182,10 +205,18 @@ func TestRemoteTranscoder_Error(t *testing.T) {
 
 	assert := assert.New(t)
 	assert.Nil(nil)
+	var segmentRead int
+	segmentTs := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := ioutil.ReadAll(r.Body)
+		assert.NoError(err)
+		w.Write([]byte("segment's binary data"))
+		segmentRead++
+	}))
+	defer segmentTs.Close()
 	notify := &net.NotifySegment{
 		TaskId:   742,
 		Profiles: common.ProfilesToTranscodeOpts(profiles),
-		Url:      "linktomanifest",
+		Url:      segmentTs.URL,
 	}
 	tr := &stubTranscoder{}
 	errText := "Some error"
@@ -206,6 +237,19 @@ func TestRemoteTranscoder_Error(t *testing.T) {
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
 	runTranscode(node, parsedURL.Host, httpc, notify)
+	assert.Equal(0, tr.called)
+	assert.NotNil(body)
+	assert.Equal("742", headers.Get("TaskId"))
+	assert.Equal(transcodingErrorMimeType, headers.Get("Content-Type"))
+	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
+	assert.Equal(protoVerLPT, headers.Get("Authorization"))
+	assert.Equal("empty seg data", string(body))
+
+	segData, err := core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
+	assert.Nil(err)
+	notify.SegData = segData
+
+	runTranscode(node, parsedURL.Host, httpc, notify)
 	assert.Equal(1, tr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
@@ -219,7 +263,9 @@ func TestRemoteTranscoder_Error(t *testing.T) {
 	tr.err = nil
 	assert.Len(profiles, 2) // sanity
 	profiles = []ffmpeg.VideoProfile{profiles[0]}
-	notify.Profiles = common.ProfilesToTranscodeOpts(profiles)
+	segData, err = core.NetSegData(&core.SegTranscodingMetadata{Profiles: profiles})
+	assert.Nil(err)
+	notify.SegData = segData
 	runTranscode(node, parsedURL.Host, httpc, notify)
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
