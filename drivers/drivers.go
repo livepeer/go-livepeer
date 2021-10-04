@@ -224,6 +224,6 @@ func getSegmentDataHTTP(uri string) ([]byte, error) {
 		return nil, err
 	}
 	took := time.Since(started)
-	glog.V(common.VERBOSE).Infof("Downloaded uri=%s dur=%s", uri, took)
+	glog.V(common.VERBOSE).Infof("Downloaded uri=%s took=%s bytes=%d", uri, took, len(body))
 	return body, nil
 }
