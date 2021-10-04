@@ -46,7 +46,7 @@ jobs:
           && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
           && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
           && sudo apt-get update \
-          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
+          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
 
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
           && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30

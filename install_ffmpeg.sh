@@ -3,6 +3,13 @@
 set -ex
 
 ROOT="${1:-$HOME}"
+ARCH="$(uname -m)"
+
+if [[ $ARCH == "arm64" ]] && [[ $(uname) == "Darwin" ]]; then
+  # Detect Apple Silicon
+  IS_M1=1
+fi
+echo "Arch $ARCH Apple Silicon $IS_M1"
 
 # Windows (MSYS2) needs a few tweaks
 if [[ $(uname) == *"MSYS"* ]]; then
@@ -37,8 +44,7 @@ if [ $(uname) != "Darwin" ]; then
   fi
 fi
 
-# Static linking of gnutls on Linux/Mac
-if [[ $(uname) != *"MSYS"* ]]; then
+if [[ $(uname) != *"MSYS"* ]] && [[ ! $IS_M1 ]]; then
   if [ ! -e "$ROOT/nasm-2.14.02" ]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
@@ -52,56 +58,21 @@ if [[ $(uname) != *"MSYS"* ]]; then
     make
     make install || echo "Installing docs fails but should be OK otherwise"
   fi
-
-  # rm -rf "$ROOT/gmp-6.1.2"
-  if [ ! -e "$ROOT/gmp-6.1.2" ]; then
-    cd "$ROOT"
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
-    tar xf gmp-6.1.2.tar.xz
-    cd "$ROOT/gmp-6.1.2"
-    ./configure --prefix="$ROOT/compiled" --disable-shared  --with-pic --enable-fat
-    make
-    make install
-  fi
-
-  # rm -rf "$ROOT/nettle-3.7"
-  if [ ! -e "$ROOT/nettle-3.7" ]; then
-    cd $ROOT
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
-    tar xf nettle-3.7.tar.gz
-    cd nettle-3.7
-    LDFLAGS="-L${ROOT}/compiled/lib" CFLAGS="-I${ROOT}/compiled/include" ./configure --prefix="$ROOT/compiled" --disable-shared --enable-pic
-    make
-    make install
-  fi
-
 fi
 
 if [ ! -e "$ROOT/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
-  # git master as of this writing
-  git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
+  if [[ ! $IS_M1 ]]; then
+    # newer git master, compiles on Apple Silicon
+    git checkout 66a5bc1bd1563d8227d5d18440b525a09bcf17ca
+  else
+    # git master as of this writing
+    git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
+  fi
   ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install-lib-static
-fi
-
-if [ ! -e "$ROOT/gnutls-3.7.0" ]; then
-  EXTRA_GNUTLS_LIBS=""
-  if [[ $(uname) == *"MSYS"* ]]; then
-    EXTRA_GNUTLS_LIBS="-lncrypt -lcrypt32 -lwsock32 -lws2_32 -lwinpthread"
-  fi
-  cd $ROOT
-  curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
-  tar xf gnutls-3.7.0.tar.xz
-  cd gnutls-3.7.0
-  LDFLAGS="-L${ROOT}/compiled/lib" CFLAGS="-I${ROOT}/compiled/include -O2" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$ROOT/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
-  make
-  make install
-  # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
-  # don't know that they need gmp, nettle, and hogweed
-  sed -i'' -e "s/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS/g" $ROOT/compiled/lib/pkgconfig/gnutls.pc
 fi
 
 EXTRA_FFMPEG_FLAGS=""
@@ -132,8 +103,8 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl \
-    --enable-protocol=https,http,rtmp,file,pipe \
+    --enable-libx264 --enable-gpl \
+    --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,extract_extradata \
     --enable-parser=aac,aac_latm,h264 \
