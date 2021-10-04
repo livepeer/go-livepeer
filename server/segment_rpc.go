@@ -133,7 +133,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		data, err = drivers.GetSegmentData(uri)
 		took := time.Since(start)
-		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+		glog.V(common.DEBUG).Infof("Getting segment from url=%s took=%s bytes=%d", uri, took, len(data))
 		if err != nil {
 			glog.Errorf("Error getting input segment from input OS - segment=%v err=%v", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
