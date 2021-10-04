@@ -13,7 +13,7 @@ RUN apt-get update \
   && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
   && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
   && apt-get update \
-  && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev sudo git python docker-ce-cli
+  && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf sudo git python docker-ce-cli
 
 RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
   && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30

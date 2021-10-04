@@ -92,5 +92,7 @@ curl -X PUT -T "${FILE}" \
   -H "Authorization: AWS ${GCLOUD_KEY}:${signature}" \
   $fullUrl
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL 2>/dev/null
+echo "upload done"
+
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL 
 echo "done"
