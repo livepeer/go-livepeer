@@ -195,7 +195,7 @@ func (d *stubDiscovery) Size() int {
 	return len(d.infos)
 }
 
-func (d *stubDiscovery) SizeWithPred(scorePred common.ScorePred) int {
+func (d *stubDiscovery) SizeWith(scorePred common.ScorePred) int {
 	return len(d.infos)
 }
 
@@ -241,14 +241,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
-	if _, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.SizePredAtLeast(0)); err != errDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.SizePredAtLeast(0)); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -259,7 +259,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.SizePredAtLeast(0))
+	sess, _ := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -294,7 +294,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
-	sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.SizePredAtLeast(0))
+	sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	assert.Nil(err)
 
 	// B should initialize new OS session using auth token sessionID
@@ -380,7 +380,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.SizePredAtLeast(0))
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	require.Nil(err)
 
 	assert.Len(sess, 2)

@@ -169,7 +169,7 @@ func (o *orchestratorPool) Size() int {
 	return len(o.infos)
 }
 
-func (o *orchestratorPool) SizeWithPred(scorePred common.ScorePred) int {
+func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 	var size int
 	for _, info := range o.infos {
 		if scorePred(info.Score) {

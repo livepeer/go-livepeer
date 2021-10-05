@@ -98,9 +98,9 @@ func (w *webhookPool) Size() int {
 	return len(w.GetInfos())
 }
 
-func (w *webhookPool) SizeWithPred(scorePred common.ScorePred) int {
+func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
 	w.mu.RLock()
-	size := w.pool.SizeWithPred(scorePred)
+	size := w.pool.SizeWith(scorePred)
 	w.mu.RUnlock()
 	return size
 }

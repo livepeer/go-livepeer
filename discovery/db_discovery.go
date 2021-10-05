@@ -172,7 +172,7 @@ func (dbo *DBOrchestratorPoolCache) Size() int {
 	return count
 }
 
-func (dbo *DBOrchestratorPoolCache) SizeWithPred(scorePred common.ScorePred) int {
+func (dbo *DBOrchestratorPoolCache) SizeWith(scorePred common.ScorePred) int {
 	if scorePred(common.Score_Untrusted) {
 		return dbo.Size()
 	}

@@ -345,8 +345,8 @@ type BroadcastSessionsManager struct {
 func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
-		trustedPoolSize = float64(node.OrchestratorPool.SizeWithPred(common.SizePredAtLeast(common.Score_Trusted)))
-		untrustedPoolSize = float64(node.OrchestratorPool.SizeWithPred(common.SizePredEqual(common.Score_Untrusted)))
+		trustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreAtLeast(common.Score_Trusted)))
+		untrustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreEqualTo(common.Score_Untrusted)))
 	}
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	trustedNumOrchs := int(math.Min(trustedPoolSize, maxInflight*2))
@@ -354,10 +354,10 @@ func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, s
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(node, params, trustedNumOrchs, susTrusted, common.SizePredAtLeast(common.Score_Trusted))
+		return selectOrchestrator(node, params, trustedNumOrchs, susTrusted, common.ScoreAtLeast(common.Score_Trusted))
 	}
 	createSessionsUntrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(node, params, untrustedNumOrchs, susUntrusted, common.SizePredEqual(common.Score_Untrusted))
+		return selectOrchestrator(node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted))
 	}
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,

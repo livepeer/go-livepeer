@@ -76,16 +76,16 @@ type OrchestratorPool interface {
 	GetInfos() []OrchestratorLocalInfo
 	GetOrchestrators(int, Suspender, CapabilityComparator, ScorePred) ([]*net.OrchestratorInfo, error)
 	Size() int
-	SizeWithPred(ScorePred) int
+	SizeWith(ScorePred) int
 }
 
-func SizePredAtLeast(minScore float32) ScorePred {
+func ScoreAtLeast(minScore float32) ScorePred {
 	return func(score float32) bool {
 		return score >= minScore
 	}
 }
 
-func SizePredEqual(neededScore float32) ScorePred {
+func ScoreEqualTo(neededScore float32) ScorePred {
 	return func(score float32) bool {
 		return score == neededScore
 	}
