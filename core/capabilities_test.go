@@ -155,7 +155,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_FractionalFramerates,
 		Capability_AuthToken,
 		Capability_MPEG7VideoSignature,
-	}), "failed with fractional framerates")
+	}), "failed with fast verification enabled")
 
 	// check error case with format
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}

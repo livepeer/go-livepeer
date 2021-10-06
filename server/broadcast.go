@@ -198,7 +198,7 @@ func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, du
 		if len(session.SegsInFlight) > 0 &&
 			time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur &&
 			!includesSession(exclude, session) {
-			// Re-use last session if oldest segment is in-flight for < segDur
+			// Re-use last session if oldest segment is in-flight for < durMult * segDur
 			return session
 		}
 	}
