@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"math/big"
 	"math/rand"
@@ -802,6 +805,52 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 				err = errors.New("empty response")
 			}
 			return nil, info, err
+		}
+		// [EXPERIMENTAL] send content detection results to callback webhook
+		// for now use detection only in common path
+		if DetectionWebhookURL != nil && len(res.Detections) > 0 {
+			glog.V(common.DEBUG).Infof("Got detection result %v", res.Detections)
+			go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
+				req := common.DetectionWebhookRequest{ManifestID: string(mid), SeqNo: seqNo}
+				for _, detection := range detections {
+					switch x := detection.Value.(type) {
+					case *net.DetectData_SceneClassification:
+						probs := x.SceneClassification.ClassProbs
+						// match returned probs (key: class id) with one of the user-selected class names
+						for _, name := range config.SelectedClassNames {
+							if id, ok := ffmpeg.DetectorClassIDLookup[name]; ok {
+								if prob, ok := probs[uint32(id)]; ok {
+									req.SceneClassification = append(req.SceneClassification,
+										common.SceneClassificationResult{
+											Name:        name,
+											Probability: prob,
+										})
+								}
+							}
+						}
+					}
+				}
+				jsonValue, err := json.Marshal(req)
+				if err != nil {
+					glog.Errorf("Unable to marshal detection result into JSON manifestID=%v seqNo=%v", mid, seqNo)
+					return
+				}
+				resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+				if err != nil {
+					glog.Errorf("Unable to POST detection result on webhook url=%v manifestID=%v seqNo=%v err=%v",
+						DetectionWebhookURL.Redacted(), mid, seqNo, err)
+				} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					rbody, rerr := ioutil.ReadAll(resp.Body)
+					resp.Body.Close()
+					if rerr != nil {
+						glog.Errorf("Detection webhook returned error status=%v manifestID=%v seqNo=%v with unreadable body err=%v",
+							resp.StatusCode, mid, seqNo, rerr)
+					} else {
+						glog.Errorf("Detection webhook returned error status=%v err=%v manifestID=%v seqNo=%v",
+							resp.StatusCode, string(rbody), mid, seqNo)
+					}
+				}
+			}(cxn.mid, cxn.params.Detection, seg.SeqNo, res.Detections)
 		}
 		urls, err = downloadResults(cxn, seg, sess, res, verifier)
 		return urls, info, err
