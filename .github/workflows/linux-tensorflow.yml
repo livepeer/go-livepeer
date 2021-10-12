@@ -51,7 +51,7 @@ jobs:
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
           && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
-        LIBTENSORFLOW_VERSION=2.3.0 \
+        LIBTENSORFLOW_VERSION=2.6.0 \
           && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
           && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
           && sudo ldconfig
@@ -81,7 +81,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Install libtensorflow
         run: |
-          LIBTENSORFLOW_VERSION=2.3.0 \
+          LIBTENSORFLOW_VERSION=2.6.0 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo ldconfig
