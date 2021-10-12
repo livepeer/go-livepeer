@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.1-cudnn7-runtime
+FROM nvidia/cuda:11.2.2-cudnn8-runtime-ubuntu18.04
 
 ENTRYPOINT ["/usr/bin/livepeer"]
 
