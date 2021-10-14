@@ -44,6 +44,10 @@ func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.R
 
 func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -125,6 +129,8 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 func TestPush_SceneDetection(t *testing.T) {
 	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -244,6 +250,8 @@ func TestPush_SceneDetection(t *testing.T) {
 
 func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -441,6 +449,8 @@ func TestPush_MultipartReturn(t *testing.T) {
 func TestPush_MemoryRequestError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -462,6 +472,8 @@ func TestPush_MemoryRequestError(t *testing.T) {
 func TestPush_EmptyURLError(t *testing.T) {
 	// assert http request body error returned
 	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -479,6 +491,8 @@ func TestPush_EmptyURLError(t *testing.T) {
 
 func TestPush_ShouldUpdateLastUsed(t *testing.T) {
 	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -537,8 +551,12 @@ func TestPush_MP4(t *testing.T) {
 	defer func() { BroadcastJobVideoProfiles = oldProfs }()
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
 
-	// Do a bunch of setup. Would be nice to simplify this one day...
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
+	// Do a bunch of setup. Would be nice to simplify this one day...
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -667,6 +685,10 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9, ffmpeg.P720p60fps16x9}
 
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	// s := setupServer()
 	// s, cancel := setupServerWithCancelAndPorts()
 	s, cancel := setupServerWithCancel()
@@ -798,6 +820,10 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 
 	hookCalled := 0
@@ -844,6 +870,10 @@ func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani3/1.ts", nil)
@@ -867,6 +897,10 @@ func TestPush_ShouldNotPanicIfSessionAlreadyRemoved(t *testing.T) {
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -1017,6 +1051,10 @@ func TestPush_ResetWatchdog(t *testing.T) {
 func TestPush_FileExtensionError(t *testing.T) {
 	// assert file extension error returned
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -1036,6 +1074,10 @@ func TestPush_FileExtensionError(t *testing.T) {
 func TestPush_StorageError(t *testing.T) {
 	// assert storage error
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -1064,6 +1106,10 @@ func TestPush_StorageError(t *testing.T) {
 func TestPush_ForAuthWebhookFailure(t *testing.T) {
 	// assert app data error
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -1086,6 +1132,10 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 
 func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	server, cancel := setupServerWithCancel()
 	defer serverCleanup(server)
 	defer cancel()
@@ -1108,6 +1158,10 @@ func TestPush_ResolutionWithoutContentResolutionHeader(t *testing.T) {
 
 func TestPush_ResolutionWithContentResolutionHeader(t *testing.T) {
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	server, cancel := setupServerWithCancel()
 	defer serverCleanup(server)
 	defer cancel()
@@ -1131,6 +1185,10 @@ func TestPush_ResolutionWithContentResolutionHeader(t *testing.T) {
 
 func TestPush_WebhookRequestURL(t *testing.T) {
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -1385,6 +1443,10 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	httpPushTimeout = 100 * time.Millisecond
 	defer func() { httpPushTimeout = oldRI }()
 	assert := assert.New(t)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 
 	hookCalled := 0
@@ -1450,6 +1512,10 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 
 	goodHash, err := ioutil.ReadFile("../core/test.phash")
 	assert.NoError(err)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
