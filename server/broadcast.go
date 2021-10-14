@@ -416,7 +416,7 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 
 		sessions := bsm.trustedPool.selectSessions(1)
 		untrustedSesions := bsm.untrustedPool.selectSessions(2)
-		calcPerceptualHash := len(sessions) > 0 && len(untrustedSesions) > 0
+		calcPerceptualHash := true
 		return append(sessions, untrustedSesions...), calcPerceptualHash
 	}
 
@@ -807,7 +807,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// cxn.sessManager.pushSegInFlight(sess, seg)
 		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
-		res, err = SubmitSegment(sess.Clone(), seg, nonce, false)
+		res, err = SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash)
 		if err != nil || res == nil {
 			if isNonRetryableError(err) {
 				cxn.sessManager.completeSession(sess)
@@ -864,6 +864,16 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 					}
 				}
 			}(cxn.mid, cxn.params.Detection, seg.SeqNo, res.Detections)
+		}
+		// Ensure perceptual hash is generated if we ask for it
+		if calcPerceptualHash {
+			segmToCheckIndex := rand.Intn(len(res.Segments))
+			segHash, err := drivers.GetSegmentData(res.Segments[segmToCheckIndex].PerceptualHashUrl)
+			if err != nil || len(segHash) <= 0 {
+				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+					res.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+				return nil, info, err
+			}
 		}
 		urls, err = downloadResults(cxn, seg, sess, res, verifier)
 		return urls, info, err
