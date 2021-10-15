@@ -40,43 +40,44 @@ func TestLocalTranscoder(t *testing.T) {
 }
 
 func TestNvidia_Transcoder(t *testing.T) {
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	WorkDir = tmp
-	defer func() { WorkDir = "" }()
-	tc := NewNvidiaTranscoder("123")
-	ffmpeg.InitFFmpeg()
-
-	// test.ts sample isn't in a supported pixel format, so use this instead
-	fname := "test2.ts"
-
-	// transcoding should fail due to invalid devices
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	md := stubMetadata("", profiles...)
-	md.Fname = fname
-	_, err := tc.Transcode(md)
-	if err == nil ||
-		(err.Error() != "Unknown error occurred" &&
-			err.Error() != "Cannot allocate memory") {
-		t.Error(err)
-	}
-
 	dev := os.Getenv("NV_DEVICE")
 	if dev == "" {
 		t.Skip("No device specified; skipping remainder of Nvidia tests")
 		return
 	}
-	tc = NewNvidiaTranscoder(dev)
+
+	tmp, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmp)
+	WorkDir = tmp
+	defer func() { WorkDir = "" }()
+	// test.ts sample isn't in a supported pixel format, so use this instead
+	fname := "test2.ts"
+
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	md := stubMetadata("", profiles...)
+	md.Fname = fname
+
+	ffmpeg.InitFFmpeg()
+	tc := NewNvidiaTranscoder(dev)
 	res, err := tc.Transcode(md)
 	if err != nil {
 		t.Error(err)
 	}
-	if Over1Pct(len(res.Segments[0].Data), 485416) {
+	if Over1Pct(len(res.Segments[0].Data), 659692) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 771740) {
+	if Over1Pct(len(res.Segments[1].Data), 874012) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
+
+	// transcoding should panic due to invalid device 123
+	tc = NewNvidiaTranscoder("123")
+	defer func() {
+		if err := recover(); err == nil {
+			t.Error("Expected error with invalid device")
+		}
+	}()
+	_, err = tc.Transcode(md)
 }
 
 func TestResToTranscodeData(t *testing.T) {
