@@ -25,3 +25,5 @@
 #### Orchestrator
 
 #### Transcoder
+
+- \#2057 Prevent stuck sessions by crashing on unrecoverable CUDA errors (@jailuthra)
