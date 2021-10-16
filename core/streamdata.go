@@ -40,6 +40,7 @@ type StreamParameters struct {
 	RecordOS         drivers.OSSession
 	Capabilities     *Capabilities
 	Detection        DetectionConfig
+	VerificationFreq uint
 }
 
 func (s *StreamParameters) StreamID() string {

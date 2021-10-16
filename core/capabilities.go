@@ -112,6 +112,9 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	// Define any default capabilities (especially ones that may be mandatory)
 	caps[Capability_H264] = true
 	caps[Capability_AuthToken] = true
+	if params.VerificationFreq > 0 {
+		caps[Capability_MPEG7VideoSignature] = true
+	}
 
 	// capabilities based on requested output
 	for _, v := range params.Profiles {
@@ -209,10 +212,10 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
 	c := &Capabilities{}
-	if caps != nil && len(caps) > 0 {
+	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 	}
-	if m != nil && len(m) > 0 {
+	if len(m) > 0 {
 		c.mandatories = NewCapabilityString(m)
 	}
 	return c

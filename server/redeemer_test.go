@@ -168,7 +168,7 @@ func TestRedeemerServer_MonitorMaxFloat_Success(t *testing.T) {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
 	}()
-	time.Sleep(20 * time.Millisecond)
+	<-sm.subscribed
 	sm.sink <- struct{}{}
 	select {
 	case <-errC:
@@ -204,13 +204,14 @@ func TestRedeemerServer_MonitorMaxFloat_MaxFloatErr(t *testing.T) {
 		quit:      make(chan struct{}),
 	}
 	errLogsBefore := glog.Stats.Error.Lines()
-	go r.MonitorMaxFloat(req, stream)
-	time.Sleep(20 * time.Millisecond)
+	go func() {
+		r.MonitorMaxFloat(req, stream)
+	}()
+	<-sm.subscribed
 	sm.sink <- struct{}{}
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	errLogsAfter := glog.Stats.Error.Lines()
-	assert.Equal(errLogsAfter-errLogsBefore, int64(1))
-
+	assert.Equal(int64(1), errLogsAfter-errLogsBefore)
 }
 
 func TestRedeemerServer_MonitorMaxFloat_SendErr(t *testing.T) {
@@ -247,7 +248,7 @@ func TestRedeemerServer_MonitorMaxFloat_SendErr(t *testing.T) {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
 	}()
-	time.Sleep(20 * time.Millisecond)
+	<-sm.subscribed
 	sm.sink <- struct{}{}
 	err := <-errC
 	assert.EqualError(err, "rpc error: code = Internal desc = error")
@@ -286,7 +287,7 @@ func TestRedeemerServer_MonitorMaxFloat_SubErr(t *testing.T) {
 	go func() {
 		errC <- r.MonitorMaxFloat(req, stream)
 	}()
-	time.Sleep(time.Second)
+	<-sm.subscribed
 	sm.sub.errCh <- nil
 	time.Sleep(time.Second)
 	err := <-errC
@@ -329,7 +330,7 @@ func TestRedeemerServer_MonitorMaxFloat_ContextCancelled(t *testing.T) {
 		err := r.MonitorMaxFloat(req, stream)
 		errC <- err
 	}()
-	time.Sleep(20 * time.Millisecond)
+	<-sm.subscribed
 	sm.sink <- struct{}{}
 	select {
 	case err := <-errC:
@@ -539,11 +540,13 @@ func TestRedeemerClient_MaxFloat_NoLocalCache_MaxFloatSuccess_MonitorMaxFloatSuc
 	assert.Equal(mf, expFloat)
 	assert.Nil(err)
 	// check that local cache is updated
+	rc.mu.RLock()
 	rs, ok := rc.senders[sender]
 	assert.True(ok)
 	assert.Equal(rs.stream, stream)
 	assert.Equal(rs.maxFloat, expFloat)
 	assert.NotZero(rs.lastAccess)
+	rc.mu.RUnlock()
 }
 
 func TestRedeemerClient_MonitorMaxFloat_NoCache_Returns(t *testing.T) {
@@ -688,7 +691,7 @@ func TestRedeemerClient_CleanupLoop(t *testing.T) {
 	sender0 := ethcommon.HexToAddress("foo")
 	sender1 := ethcommon.HexToAddress("bar")
 
-	r.senders[sender0] = &remoteSender{maxFloat: big.NewInt(1), lastAccess: time.Now().Add(cleanupLoopTime), done: make(chan struct{})}
+	r.senders[sender0] = &remoteSender{maxFloat: big.NewInt(1), lastAccess: time.Now().Add(2 * cleanupLoopTime), done: make(chan struct{})}
 
 	r.senders[sender1] = &remoteSender{maxFloat: big.NewInt(1), lastAccess: time.Now().Add(-cleanupLoopTime), done: make(chan struct{})}
 
@@ -698,9 +701,13 @@ func TestRedeemerClient_CleanupLoop(t *testing.T) {
 	go r.startCleanupLoop()
 	time.Sleep(cleanupLoopTime)
 	time.Sleep(10 * time.Millisecond)
+	r.mu.RLock()
 	_, ok := r.senders[sender0]
+	r.mu.RUnlock()
 	assert.True(ok)
+	r.mu.RLock()
 	_, ok = r.senders[sender1]
+	r.mu.RUnlock()
 	assert.False(ok)
 
 	close(r.quit)
@@ -734,11 +741,13 @@ type stubSenderMonitor struct {
 	shouldFail error
 	sink       chan<- struct{}
 	sub        *stubSubscription
+	subscribed chan struct{}
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
 	return &stubSenderMonitor{
-		maxFloat: big.NewInt(0),
+		maxFloat:   big.NewInt(0),
+		subscribed: make(chan struct{}, 8),
 	}
 }
 
@@ -767,6 +776,7 @@ func (s *stubSenderMonitor) ValidateSender(addr ethcommon.Address) error { retur
 func (s *stubSenderMonitor) SubscribeMaxFloatChange(sender ethcommon.Address, sink chan<- struct{}) event.Subscription {
 	s.sink = sink
 	s.sub = &stubSubscription{errCh: make(chan error)}
+	s.subscribed <- struct{}{}
 	return s.sub
 }
 
