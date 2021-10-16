@@ -254,7 +254,7 @@ func TestRPCSeg(t *testing.T) {
 
 	segData := &stream.HLSSegment{}
 
-	creds, err := genSegCreds(s, segData)
+	creds, err := genSegCreds(s, segData, false)
 	if err != nil {
 		t.Error("Unable to generate seg creds ", err)
 		return
@@ -266,7 +266,7 @@ func TestRPCSeg(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("SignErr")
-	if _, err := genSegCreds(s, segData); err != b.signErr {
+	if _, err := genSegCreds(s, segData, false); err != b.signErr {
 		t.Error("Generating seg creds ", err)
 	}
 	b.signErr = nil
@@ -287,28 +287,28 @@ func TestRPCSeg(t *testing.T) {
 
 	// missing auth token
 	s.OrchestratorInfo.AuthToken = nil
-	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	require.Nil(t, err)
 	_, err = verifySegCreds(o, creds, baddr)
 	assert.Equal(t, "missing auth token", err.Error())
 
 	// invalid auth token
 	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("notfoo")}
-	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	require.Nil(t, err)
 	_, err = verifySegCreds(o, creds, baddr)
 	assert.Equal(t, "invalid auth token", err.Error())
 
 	// expired auth token
 	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
-	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	assert.Nil(t, err)
 	_, err = verifySegCreds(o, creds, baddr)
 	assert.Equal(t, "expired auth token", err.Error())
 	s.OrchestratorInfo.AuthToken = authToken
 
 	// check duration
-	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5})
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	if err != nil {
 		t.Error("Could not generate creds ", err)
 	}
@@ -1165,7 +1165,7 @@ func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
 		}
 		orch.authToken = authToken
 
-		creds, err := genSegCreds(sess, &stream.HLSSegment{})
+		creds, err := genSegCreds(sess, &stream.HLSSegment{}, false)
 		assert.Nil(err)
 		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 		assert.Nil(err)
@@ -1194,7 +1194,7 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 			OrchestratorInfo: &net.OrchestratorInfo{AuthToken: orch.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())},
 		}
 		orch.caps = sess.Params.Capabilities
-		creds, err := genSegCreds(sess, &stream.HLSSegment{})
+		creds, err := genSegCreds(sess, &stream.HLSSegment{}, false)
 		assert.Nil(err)
 		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
 		assert.Equal(sess.Params.Capabilities, md.Caps)
@@ -1215,7 +1215,7 @@ func TestGenVerify_RoundTrip_Duration(t *testing.T) {
 		randDur := rapid.IntRange(1, int(common.MaxDuration.Milliseconds())).Draw(t, "dur").(int)
 		dur := time.Duration(randDur * int(time.Millisecond))
 		seg := &stream.HLSSegment{Duration: dur.Seconds()}
-		creds, err := genSegCreds(sess, seg)
+		creds, err := genSegCreds(sess, seg, false)
 		assert.Nil(err)
 
 		md, err := verifySegCreds(orch, creds, ethcommon.Address{})

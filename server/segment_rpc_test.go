@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,7 +94,7 @@ func TestServeSegment_MismatchHashError(t *testing.T) {
 		},
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
-	creds, err := genSegCreds(s, &stream.HLSSegment{})
+	creds, err := genSegCreds(s, &stream.HLSSegment{}, false)
 	require.Nil(t, err)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -137,7 +138,7 @@ func TestServeSegment_TranscodeSegError(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -268,7 +269,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 
-	data, err := genSegCreds(s, seg)
+	data, err := genSegCreds(s, seg, false)
 	assert.Nil(err)
 
 	buf, err := base64.StdEncoding.DecodeString(data)
@@ -289,7 +290,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert.Equal(ffmpeg.FormatMPEGTS, s.Params.Profiles[0].Format)
 	assert.Equal(ffmpeg.FormatMP4, s.Params.Profiles[1].Format)
 	assert.Equal(ffmpeg.FormatNone, s.Params.Profiles[2].Format)
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
 	assert.Nil(err)
@@ -302,7 +303,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	// Check that FullProfiles field is used for none/mpegts (not FullProfiles2)
 	s.Params.Profiles[1].Format = ffmpeg.FormatMPEGTS
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
 	assert.Nil(err)
@@ -315,7 +316,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	// Check that FullProfiles3 field is used if any profile has FPS denominator
 	s.Params.Profiles[1].FramerateDen = uint(12)
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
 	assert.Nil(err)
@@ -331,7 +332,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	// Check that FullProfiles3 field is used if any profile has non-empty encoder profile
 	s.Params.Profiles[1].FramerateDen = uint(0) // unset FramerateDen as that also triggers FullProfile3
 	s.Params.Profiles[0].Profile = ffmpeg.ProfileH264High
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
 	assert.Nil(err)
@@ -347,7 +348,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 	// Check that FullProfiles3 is used if any profile has a GOP set
 	s.Params.Profiles[0].Profile = ffmpeg.ProfileNone // unset Profile as that also triggers FullProfile3
 	s.Params.Profiles[1].GOP = time.Duration(123) * time.Millisecond
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Nil(err)
 	buf, err = base64.StdEncoding.DecodeString(data)
 	assert.Nil(err)
@@ -361,7 +362,7 @@ func TestGenSegCreds_FullProfiles(t *testing.T) {
 
 	// Check that profile format errors propagate
 	s.Params.Profiles[1].Format = -1
-	data, err = genSegCreds(s, seg)
+	data, err = genSegCreds(s, seg, false)
 	assert.Empty(data)
 	assert.Equal(common.ErrFormatProto, err)
 }
@@ -379,7 +380,7 @@ func TestGenSegCreds_Profiles(t *testing.T) {
 
 	seg := &stream.HLSSegment{Data: []byte("foo")}
 
-	data, err := genSegCreds(s, seg)
+	data, err := genSegCreds(s, seg, false)
 	assert.Nil(err)
 
 	buf, err := base64.StdEncoding.DecodeString(data)
@@ -428,7 +429,7 @@ func TestGenSegCreds_Detection(t *testing.T) {
 	seg := &stream.HLSSegment{SeqNo: 24, Data: []byte("foo")}
 
 	getSegData := func(s *BroadcastSession, seg *stream.HLSSegment) *net.SegData {
-		data, err := genSegCreds(s, seg)
+		data, err := genSegCreds(s, seg, false)
 		assert.Nil(err)
 
 		buf, err := base64.StdEncoding.DecodeString(data)
@@ -661,7 +662,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 		BroadcasterOS:    os,
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
-	creds, err := genSegCreds(sess, &stream.HLSSegment{})
+	creds, err := genSegCreds(sess, &stream.HLSSegment{}, false)
 	assert.Nil(err)
 	headers := map[string]string{segmentHeader: creds}
 
@@ -680,7 +681,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	}
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p30fps16x9.Format) // sanity
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P720p60fps16x9.Format) // sanity
-	creds, err = genSegCreds(sess, &stream.HLSSegment{})
+	creds, err = genSegCreds(sess, &stream.HLSSegment{}, false)
 	os = &stubOSSession{} // reset for simplicity
 	tRes.OS = os
 	headers = map[string]string{segmentHeader: creds}
@@ -692,7 +693,7 @@ func TestServeSegment_SaveDataFormat(t *testing.T) {
 	for i := range sess.Params.Profiles {
 		sess.Params.Profiles[i].Format = ffmpeg.FormatMPEGTS
 	}
-	creds, _ = genSegCreds(sess, &stream.HLSSegment{})
+	creds, _ = genSegCreds(sess, &stream.HLSSegment{}, false)
 	os = &stubOSSession{} // reset for simplicity
 	tRes.OS = os
 	headers = map[string]string{segmentHeader: creds}
@@ -747,7 +748,7 @@ func TestServeSegment_OSSaveDataError(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -818,7 +819,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -886,7 +887,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -953,7 +954,7 @@ func TestServeSegment_TooBigSegment(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1011,7 +1012,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1072,7 +1073,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: oldAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1204,7 +1205,7 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 	}
 
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1316,7 +1317,7 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	_, err = verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1381,7 +1382,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1451,7 +1452,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1530,7 +1531,7 @@ func TestServeSegment_DebitFees_OSSaveDataError_BreakLoop(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1611,7 +1612,7 @@ func TestServeSegment_DebitFees_TranscodeSegError_ZeroPixelsBilled(t *testing.T)
 		OrchestratorInfo: &net.OrchestratorInfo{AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Data: []byte("foo")}
-	creds, err := genSegCreds(s, seg)
+	creds, err := genSegCreds(s, seg, false)
 	require.Nil(err)
 
 	md, err := verifySegCreds(orch, creds, ethcommon.Address{})
@@ -1659,7 +1660,7 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 		Params:      &core.StreamParameters{ManifestID: core.RandomManifestID()},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Equal(t, "Sign error", err.Error())
 }
@@ -1675,7 +1676,7 @@ func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.EqualError(t, err, "pixels per unit is 0")
 }
@@ -1695,7 +1696,7 @@ func TestSubmitSegment_EstimateFeeError(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Error(t, err)
 }
@@ -1716,7 +1717,7 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.EqualError(t, err, expErr.Error())
 }
@@ -1748,7 +1749,7 @@ func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
 		OrchestratorInfo: oInfo,
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.EqualError(t, err, expErr.Error())
 	// Check that completeBalanceUpdate() adds back the existing credit when the update status is Staged
@@ -1783,7 +1784,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
 	defer BroadcastCfg.SetMaxPrice(nil)
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.EqualErrorf(t, err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
 	balance.AssertCalled(t, "Credit", existingCredit)
@@ -1803,7 +1804,7 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Contains(t, err.Error(), "connection refused")
 
@@ -1817,7 +1818,7 @@ func TestSubmitSegment_HttpPostError(t *testing.T) {
 	s.Balance = balance
 	s.Sender = sender
 
-	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Contains(t, err.Error(), "connection refused")
 	balance.AssertCalled(t, "Credit", existingCredit)
@@ -1843,7 +1844,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Equal(t, "Server error", err.Error())
 
@@ -1857,7 +1858,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 	s.Balance = balance
 	s.Sender = sender
 
-	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Equal(t, "Server error", err.Error())
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
@@ -1884,7 +1885,7 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 		},
 	}
 
-	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err := SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Contains(t, err.Error(), "proto")
 
@@ -1898,7 +1899,7 @@ func TestSubmitSegment_ProtoUnmarshalError(t *testing.T) {
 	s.Balance = balance
 	s.Sender = sender
 
-	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Contains(t, err.Error(), "proto")
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
@@ -1931,7 +1932,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 		},
 	}
 
-	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Equal(t, "TranscodeResult error", err.Error())
 
@@ -1945,7 +1946,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 	s.Balance = balance
 	s.Sender = sender
 
-	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0)
+	_, err = SubmitSegment(s, &stream.HLSSegment{}, 0, false)
 
 	assert.Equal(t, "TranscodeResult error", err.Error())
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
@@ -1964,12 +1965,19 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	headerTimeout := 0 * time.Millisecond
 	bodyTimeout := 0 * time.Millisecond
 	ts, mux := stubTLSServer()
+	var lock sync.Mutex
 	defer ts.Close()
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(headerTimeout)
+		lock.Lock()
+		ht := headerTimeout
+		lock.Unlock()
+		time.Sleep(ht)
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		time.Sleep(bodyTimeout)
+		lock.Lock()
+		bt := bodyTimeout
+		lock.Unlock()
+		time.Sleep(bt)
 		w.Write(buf)
 	})
 
@@ -1980,7 +1988,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL, AuthToken: stubAuthToken},
 	}
 	seg := &stream.HLSSegment{Duration: 0.01}
-	_, err = SubmitSegment(sess, seg, 0)
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Nil(err)
 
 	oldTimeout := common.HTTPTimeout
@@ -1988,43 +1996,53 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	common.HTTPTimeout = 0
 
 	// time out header
+	lock.Lock()
 	headerTimeout = 100 * time.Millisecond
-	_, err = SubmitSegment(sess, seg, 0)
+	lock.Unlock()
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Contains(err.Error(), "header timeout")
 	assert.Contains(err.Error(), "context deadline exceeded")
 
 	// time out body
+	lock.Lock()
 	headerTimeout = 0
 	bodyTimeout = 100 * time.Millisecond
-	_, err = SubmitSegment(sess, seg, 0)
+	lock.Unlock()
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.NotNil(err)
 	assert.Equal("body timeout: context deadline exceeded", err.Error())
 
 	// sanity check, again
+	lock.Lock()
 	bodyTimeout = 0
-	_, err = SubmitSegment(sess, seg, 0)
+	lock.Unlock()
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Nil(err)
 
 	// sanity check default timeouts with a bodyTimeout > seg.Duration
 	common.HTTPTimeout = 1 * time.Second
+	lock.Lock()
 	bodyTimeout = 100 * time.Millisecond
 	assert.Greater(common.HTTPTimeout.Milliseconds(), bodyTimeout.Milliseconds())
+	lock.Unlock()
 	seg.Duration = 0.0 // missing duration
-	_, err = SubmitSegment(sess, seg, 0)
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Nil(err)
 
 	seg.Duration = -0.01 // negative duration
-	_, err = SubmitSegment(sess, seg, 0)
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Nil(err)
 
 	seg.Duration = 0.01 // 10ms; less than default timeout. should set default
-	_, err = SubmitSegment(sess, seg, 0)
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Nil(err)
 
 	// ensure default timeout triggers
 	common.HTTPTimeout = 10 * time.Millisecond
+	lock.Lock()
 	assert.Greater(bodyTimeout.Milliseconds(), common.HTTPTimeout.Milliseconds())
-	_, err = SubmitSegment(sess, seg, 0)
+	lock.Unlock()
+	_, err = SubmitSegment(sess, seg, 0, false)
 	assert.Equal("body timeout: context deadline exceeded", err.Error())
 }
 
@@ -2101,7 +2119,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	}
 
 	noNameSeg := &stream.HLSSegment{Data: segData}
-	tdata, err := SubmitSegment(s, noNameSeg, 0)
+	tdata, err := SubmitSegment(s, noNameSeg, 0, false)
 
 	assert.Nil(err)
 	assert.Equal(1, len(tdata.Segments))
@@ -2113,32 +2131,32 @@ func TestSubmitSegment_Success(t *testing.T) {
 	assert.Equal(tdata.Info.GetTicketParams().GetExpirationBlock(), info.GetTicketParams().GetExpirationBlock())
 
 	// Check that latency score calculation is different for different segment durations
-	// The round trip duration calculated in SubmitSegment should be about the same across all calls
+	// The round trip duration calculated in SubmitSegment should be about the same across all call, falses
 	noNameSeg.Duration = 5.0
-	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	tdata, err = SubmitSegment(s, noNameSeg, 0, false)
 	assert.Nil(err)
 	latencyScore1 := tdata.LatencyScore
 
 	noNameSeg.Duration = 10.0
-	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	tdata, err = SubmitSegment(s, noNameSeg, 0, false)
 	assert.Nil(err)
 	latencyScore2 := tdata.LatencyScore
 
 	noNameSeg.Duration = .5
-	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	tdata, err = SubmitSegment(s, noNameSeg, 0, false)
 	assert.Nil(err)
 	latencyScore3 := tdata.LatencyScore
 
 	assert.Less(latencyScore1, latencyScore3)
 	assert.Less(latencyScore2, latencyScore1)
 
-	// Check that a new OrchestratorInfo is returned from SubmitSegment()
+	// Check that a new OrchestratorInfo is returned from SubmitSegment(, false)
 	tr.Info = info
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 	assert.Equal(tr.Info, info)
 
-	tdata, err = SubmitSegment(s, noNameSeg, 0)
+	tdata, err = SubmitSegment(s, noNameSeg, 0, false)
 	assert.Nil(err)
 	assert.NotEqual(tdata.Info, s.OrchestratorInfo)
 	assert.Equal(tdata.Info.Transcoder, info.Transcoder)
@@ -2157,7 +2175,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	}
 
 	seg := &stream.HLSSegment{Name: "foo", Data: []byte("dummy")}
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	// Test completeBalanceUpdate() adds back change when the update status is ReceivedChange
 
@@ -2177,7 +2195,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	s.Balance = balance
 	s.Sender = sender
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(newCredit))
 
@@ -2186,7 +2204,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, big.NewRat(0, 1), existingCredit).Once()
 	balance.On("Credit", ratMatcher(existingCredit)).Once()
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(existingCredit))
 
@@ -2195,7 +2213,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
 	balance.On("Credit", ratMatcher(totalCredit)).Once()
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(totalCredit))
 
@@ -2210,7 +2228,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
 	balance.On("Credit", ratMatcher(change)).Once()
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(change))
 
@@ -2224,7 +2242,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
 	balance.On("Credit", ratMatcher(change)).Once()
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(change))
 
@@ -2238,7 +2256,7 @@ func TestSubmitSegment_Success(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(0, newCredit, existingCredit).Once()
 	balance.On("Credit", ratMatcher(change))
 
-	SubmitSegment(s, seg, 0)
+	SubmitSegment(s, seg, 0, false)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(change))
 }
