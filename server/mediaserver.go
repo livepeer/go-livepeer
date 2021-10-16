@@ -28,7 +28,6 @@ import (
 
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/golang/glog"
@@ -129,6 +128,7 @@ type authWebhookResponse struct {
 			Name string `json:"name"`
 		} `json:"sceneClassification"`
 	} `json:"detection"`
+	VerificationFreq uint `json:"verificationFreq"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -235,6 +235,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		detectionConfig := core.DetectionConfig{}
+		var VerificationFreq uint
 		if resp, err = authenticateStream(url.String()); err != nil {
 			glog.Errorf("Authentication denied for streamID url=%s err=%v", url.String(), err)
 			return nil
@@ -284,6 +285,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 					return nil
 				}
 			}
+			VerificationFreq = resp.VerificationFreq
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
@@ -324,10 +326,11 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			SessionID:        sessionID,
 			RtmpKey:          key,
 			// HTTP push mutates `profiles` so make a copy of it
-			Profiles:  append([]ffmpeg.VideoProfile(nil), profiles...),
-			OS:        oss,
-			RecordOS:  ross,
-			Detection: detectionConfig,
+			Profiles:         append([]ffmpeg.VideoProfile(nil), profiles...),
+			OS:               oss,
+			RecordOS:         ross,
+			Detection:        detectionConfig,
+			VerificationFreq: VerificationFreq,
 		}
 	}
 }
@@ -570,14 +573,18 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	if s.LivepeerNode.Eth != nil {
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
+	selFactory := func() BroadcastSessionsSelector {
+		return NewMinLSSelector(stakeRdr, 1.0)
+	}
 	cxn := &rtmpConnection{
-		mid:         mid,
-		nonce:       nonce,
-		stream:      rtmpStrm,
-		pl:          playlist,
-		profile:     &vProfile,
-		params:      params,
-		sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
+		mid:     mid,
+		nonce:   nonce,
+		stream:  rtmpStrm,
+		pl:      playlist,
+		profile: &vProfile,
+		params:  params,
+		// sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
+		sessManager: NewSessionManager(s.LivepeerNode, params, selFactory),
 		lastUsed:    time.Now(),
 	}
 
@@ -944,6 +951,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(urls) == 0 {
 		glog.Infof("No sessions available for manifestID=%s seqNo=%d name=%s url=%s", mid, seq, fname, r.URL)
+		glog.Errorf("No sessions available for manifestID=%s seqNo=%d name=%s url=%s", mid, seq, fname, r.URL)
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
@@ -1492,13 +1500,13 @@ func (s *LivepeerServer) LastHLSStreamID() core.StreamID {
 	return s.lastHLSStreamID
 }
 
-func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
+func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 	// not threadsafe; need to deep copy the playlist
 	m := make(map[string]*m3u8.MasterPlaylist)
 
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
-	streamInfo := make(map[string]net.StreamInfo)
+	streamInfo := make(map[string]common.StreamInfo)
 	for _, cxn := range s.rtmpConnections {
 		if cxn.pl == nil {
 			continue
@@ -1507,12 +1515,12 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 		m[string(cpl.ManifestID())] = cpl.GetHLSMasterPlaylist()
 		sb := atomic.LoadUint64(&cxn.sourceBytes)
 		tb := atomic.LoadUint64(&cxn.transcodedBytes)
-		streamInfo[string(cpl.ManifestID())] = net.StreamInfo{
+		streamInfo[string(cpl.ManifestID())] = common.StreamInfo{
 			SourceBytes:     sb,
 			TranscodedBytes: tb,
 		}
 	}
-	res := &net.NodeStatus{
+	res := &common.NodeStatus{
 		Manifests:             m,
 		InternalManifests:     make(map[string]string),
 		StreamInfo:            streamInfo,
@@ -1521,7 +1529,7 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 		GOArch:                runtime.GOARCH,
 		GOOS:                  runtime.GOOS,
 		OrchestratorPool:      []string{},
-		RegisteredTranscoders: []net.RemoteTranscoderInfo{},
+		RegisteredTranscoders: []common.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,
 	}
 	for k, v := range s.internalManifests {
@@ -1532,9 +1540,10 @@ func (s *LivepeerServer) GetNodeStatus() *net.NodeStatus {
 		res.RegisteredTranscoders = s.LivepeerNode.TranscoderManager.RegisteredTranscodersInfo()
 	}
 	if s.LivepeerNode.OrchestratorPool != nil {
-		urls := s.LivepeerNode.OrchestratorPool.GetURLs()
-		for _, url := range urls {
-			res.OrchestratorPool = append(res.OrchestratorPool, url.String())
+		infos := s.LivepeerNode.OrchestratorPool.GetInfos()
+		res.OrchestratorPoolInfos = infos
+		for _, info := range infos {
+			res.OrchestratorPool = append(res.OrchestratorPool, info.URL.String())
 		}
 	}
 	return res

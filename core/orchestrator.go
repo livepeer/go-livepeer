@@ -825,11 +825,11 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
 }
 
 // RegisteredTranscodersInfo returns list of restered transcoder's information
-func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTranscoderInfo {
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteTranscoderInfo {
 	rtm.RTmutex.Lock()
-	res := make([]net.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
+	res := make([]common.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
 	for _, transcoder := range rtm.liveTranscoders {
-		res = append(res, net.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
+		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
 	}
 	rtm.RTmutex.Unlock()
 	return res
