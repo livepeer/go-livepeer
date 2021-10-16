@@ -13,14 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
+	lcommon "github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/olekukonko/tablewriter"
 )
 
-func (w *wizard) status() *net.NodeStatus {
-	status := &net.NodeStatus{}
+func (w *wizard) status() *lcommon.NodeStatus {
+	status := &lcommon.NodeStatus{}
 	statusJSON := httpGet(w.endpoint)
 	if len(statusJSON) > 0 {
 		err := json.Unmarshal([]byte(statusJSON), status)
