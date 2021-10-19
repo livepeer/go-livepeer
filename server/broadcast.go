@@ -343,6 +343,8 @@ type BroadcastSessionsManager struct {
 
 	trustedPool   *SessionPool
 	untrustedPool *SessionPool
+
+	verifiedSession *BroadcastSession
 }
 
 func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
@@ -410,11 +412,25 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 	defer bsm.sessLock.Unlock()
 
 	if bsm.VerificationFreq > 0 {
-
+		// Select 1 trusted O and 2 untrusted Os
 		sessions := bsm.trustedPool.selectSessions(1)
-		untrustedSesions := bsm.untrustedPool.selectSessions(2)
-		calcPerceptualHash := true
-		return append(sessions, untrustedSesions...), calcPerceptualHash
+		untrustedSessions := bsm.untrustedPool.selectSessions(2)
+		sessions = append(sessions, untrustedSessions...)
+
+		// Only return the last verified session if:
+		// - It is present in the 3 sessions returned by the selector
+		if bsm.verifiedSession != nil && includesSession(sessions, bsm.verifiedSession) {
+			glog.V(common.DEBUG).Infof("Reusing verified orch=%v", bsm.verifiedSession.OrchestratorInfo.Transcoder)
+			// Mark remaining unused sessions returned by selector as complete
+			remaining := removeSessionFromList(sessions, bsm.verifiedSession)
+			for _, sess := range remaining {
+				bsm.completeSessionUnsafe(sess)
+			}
+			sessions = []*BroadcastSession{bsm.verifiedSession}
+		}
+
+		// Return selected sessions
+		return sessions, true
 	}
 
 	sessions := bsm.trustedPool.selectSessions(1)
@@ -502,7 +518,10 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
 			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
 		if equal {
-			// tell to use untrusted orch for all transcoding
+			// stick to this verified orchestrator for further segments.
+			if untrustedResult.Err == nil {
+				bsm.sessionVerified(untrustedResult.Session)
+			}
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
 		}
 	}
@@ -510,10 +529,8 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 	return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
 }
 
-func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
-	bsm.sessLock.Lock()
-	defer bsm.sessLock.Unlock()
-
+// the caller needs to ensure bsm.sessLock is acquired before calling this.
+func (bsm *BroadcastSessionsManager) completeSessionUnsafe(sess *BroadcastSession) {
 	if sess.OrchestratorScore == common.Score_Untrusted {
 		bsm.untrustedPool.completeSession(sess)
 	} else if sess.OrchestratorScore == common.Score_Trusted {
@@ -521,6 +538,18 @@ func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
 	} else {
 		panic("shouldn't happen")
 	}
+}
+
+func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	bsm.completeSessionUnsafe(sess)
+}
+
+func (bsm *BroadcastSessionsManager) sessionVerified(sess *BroadcastSession) {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	bsm.verifiedSession = sess
 }
 
 func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender,
