@@ -419,7 +419,9 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 
 		// Only return the last verified session if:
 		// - It is present in the 3 sessions returned by the selector
-		if bsm.verifiedSession != nil && includesSession(sessions, bsm.verifiedSession) {
+		// - With probability 1 - 1/VerificationFrequency
+		if bsm.verifiedSession != nil && includesSession(sessions, bsm.verifiedSession) &&
+			common.RandomUintUnder(bsm.VerificationFreq) > 0 {
 			glog.V(common.DEBUG).Infof("Reusing verified orch=%v", bsm.verifiedSession.OrchestratorInfo.Transcoder)
 			// Mark remaining unused sessions returned by selector as complete
 			remaining := removeSessionFromList(sessions, bsm.verifiedSession)
