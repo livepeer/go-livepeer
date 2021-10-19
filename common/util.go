@@ -372,6 +372,10 @@ func RandName() string {
 	return RandomIDGenerator(10)
 }
 
+var RandomUintUnder = func(max uint) uint {
+	return uint(rand.Uint32()) % max
+}
+
 func ToInt64(val *big.Int) int64 {
 	if val.Cmp(big.NewInt(maxInt64)) > 0 {
 		return maxInt64
