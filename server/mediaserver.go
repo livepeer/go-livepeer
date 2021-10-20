@@ -602,13 +602,28 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
+	fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 	s.connectionLock.Unlock()
 
 	if monitor.Enabled {
 		monitor.CurrentSessions(sessionsNumber)
+		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
 	}
 
 	return cxn, nil
+}
+
+func countStreamsWithFastVerificationEnabled(rtmpConnections map[core.ManifestID]*rtmpConnection) (int, int) {
+	var enabled, using int
+	for _, cxn := range rtmpConnections {
+		if cxn.params.VerificationFreq > 0 {
+			enabled++
+			if cxn.sessManager.usingVerified() {
+				using++
+			}
+		}
+	}
+	return enabled, using
 }
 
 func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
@@ -635,6 +650,7 @@ func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
 	if monitor.Enabled {
 		monitor.StreamEnded(cxn.nonce)
 		monitor.CurrentSessions(len(s.rtmpConnections))
+		monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
 	}
 
 	return nil
@@ -792,6 +808,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		mid = intmid
 	}
 	cxn, exists := s.rtmpConnections[mid]
+	if monitor.Enabled {
+		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
+		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
+	}
 	s.connectionLock.RUnlock()
 	if exists && cxn != nil {
 		s.connectionLock.Lock()
