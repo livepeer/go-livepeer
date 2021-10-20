@@ -435,9 +435,10 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 		return sessions, true
 	}
 
-	sessions := bsm.trustedPool.selectSessions(1)
+	// Default to selecting from untrusted pool
+	sessions := bsm.untrustedPool.selectSessions(1)
 	if len(sessions) == 0 {
-		sessions = bsm.untrustedPool.selectSessions(1)
+		sessions = bsm.trustedPool.selectSessions(1)
 	}
 
 	return sessions, false
