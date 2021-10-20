@@ -139,6 +139,10 @@ func (bs *BroadcastSession) Clone() *BroadcastSession {
 	return &newSess
 }
 
+func (bs *BroadcastSession) IsTrusted() bool {
+	return bs.OrchestratorScore == common.Score_Trusted
+}
+
 // ReceivedTranscodeResult contains received transcode result data and related metadata
 type ReceivedTranscodeResult struct {
 	*net.TranscodeData

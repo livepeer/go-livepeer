@@ -90,6 +90,8 @@ type (
 		kRecipient                    tag.Key
 		kManifestID                   tag.Key
 		kSegmentType                  tag.Key
+		kTrusted                      tag.Key
+		kVerified                     tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -156,6 +158,12 @@ type (
 		// Metrics for pixel accounting
 		mMilPixelsProcessed *stats.Float64Measure
 
+		// Metrics for fast verification
+		mFastVerificationDone                   *stats.Int64Measure
+		mFastVerificationFailed                 *stats.Int64Measure
+		mFastVerificationEnabledCurrentSessions *stats.Int64Measure
+		mFastVerificationUsingCurrentSessions   *stats.Int64Measure
+
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
 		success     map[uint64]*segmentsAverager
@@ -212,6 +220,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kRecipient = tag.MustNewKey("recipient")
 	census.kManifestID = tag.MustNewKey("manifestID")
 	census.kSegmentType = tag.MustNewKey("seg_type")
+	census.kTrusted = tag.MustNewKey("trusted")
+	census.kVerified = tag.MustNewKey("verified")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -240,7 +250,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mStreamStarted = stats.Int64("stream_started_total", "StreamStarted", "tot")
 	census.mStreamEnded = stats.Int64("stream_ended_total", "StreamEnded", "tot")
 	census.mMaxSessions = stats.Int64("max_sessions_total", "MaxSessions", "tot")
-	census.mCurrentSessions = stats.Int64("current_sessions_total", "Number of currently transcded streams", "tot")
+	census.mCurrentSessions = stats.Int64("current_sessions_total", "Number of currently transcoded streams", "tot")
 	census.mDiscoveryError = stats.Int64("discovery_errors_total", "Number of discover errors", "tot")
 	census.mTranscodeRetried = stats.Int64("transcode_retried", "Number of times segment transcode was retried", "tot")
 	census.mTranscodersNumber = stats.Int64("transcoders_number", "Number of transcoders currently connected to orchestrator", "tot")
@@ -285,6 +295,14 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// Metrics for pixel accounting
 	census.mMilPixelsProcessed = stats.Float64("mil_pixels_processed", "MilPixelsProcessed", "mil pixels")
+
+	// Metrics for fast verification
+	census.mFastVerificationDone = stats.Int64("fast_verification_done", "FastVerificationDone", "tot")
+	census.mFastVerificationFailed = stats.Int64("fast_verification_failed", "FastVerificationFailed", "tot")
+	census.mFastVerificationEnabledCurrentSessions = stats.Int64("fast_verification_enabled_current_sessions_total",
+		"Number of currently transcoded streams that have fast verification enabled", "tot")
+	census.mFastVerificationUsingCurrentSessions = stats.Int64("fast_verification_using_current_sessions_total",
+		"Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -440,7 +458,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_transcoded_total",
 			Measure:     census.mSegmentTranscoded,
 			Description: "SegmentTranscoded",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kProfiles, census.kTrusted, census.kVerified}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -482,7 +500,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "transcode_time_seconds",
 			Measure:     census.mTranscodeTime,
 			Description: "TranscodeTime, seconds",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kProfiles, census.kTrusted, census.kVerified}, baseTags...),
 			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
 		{
@@ -503,7 +521,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "transcode_score",
 			Measure:     census.mTranscodeScore,
 			Description: "Ratio of source segment duration vs. transcode time",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kProfiles, census.kTrusted, census.kVerified}, baseTags...),
 			Aggregation: view.Distribution(0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 15, 20, 40),
 		},
 		{
@@ -736,6 +754,36 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     append([]tag.Key{census.kSender}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
+
+		// Metrics for fast verification
+		{
+			Name:        "fast_verification_done",
+			Measure:     census.mFastVerificationDone,
+			Description: "Number of fast verifications done",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "fast_verification_failed",
+			Measure:     census.mFastVerificationFailed,
+			Description: "Number of fast verifications failed",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "fast_verification_enabled_current_sessions_total",
+			Measure:     census.mFastVerificationEnabledCurrentSessions,
+			Description: "Number of currently transcoded streams that have fast verification enabled",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "fast_verification_using_current_sessions_total",
+			Measure:     census.mFastVerificationUsingCurrentSessions,
+			Description: "Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
 	}
 
 	// Register the views
@@ -952,6 +1000,10 @@ func CurrentSessions(currentSessions int) {
 	stats.Record(census.ctx, census.mCurrentSessions.M(int64(currentSessions)))
 }
 
+func FastVerificationEnabledAndUsingCurrentSessions(enabled, using int) {
+	stats.Record(census.ctx, census.mFastVerificationEnabledCurrentSessions.M(int64(enabled)), census.mFastVerificationUsingCurrentSessions.M(int64(using)))
+}
+
 func TranscodeTry(nonce, seqNo uint64) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
@@ -1128,16 +1180,27 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
-func SegmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string) {
-	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s", nonce, seqNo, transcodeDur)
-	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles)
+func SegmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string,
+	trusted, verified bool) {
+
+	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s trusted=%v verified=%v", nonce, seqNo, transcodeDur, trusted, verified)
+	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles, trusted, verified)
 }
 
 func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration,
-	profiles string) {
+	profiles string, trusted, verified bool) {
+
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kProfiles, profiles))
+	verifiedStr := "verified"
+	if !verified {
+		verifiedStr = "unverified"
+	}
+	trustedStr := "trusted"
+	if !trusted {
+		trustedStr = "untrusted"
+	}
+	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kProfiles, profiles), tag.Insert(cen.kVerified, verifiedStr), tag.Insert(cen.kTrusted, trustedStr))
 	if err != nil {
 		glog.Error("Error creating context", err)
 		return
@@ -1508,4 +1571,12 @@ func wei2gwei(wei *big.Int) float64 {
 func fracwei2gwei(wei *big.Rat) float64 {
 	floatWei, _ := wei.Float64()
 	return floatWei / gweiConversionFactor
+}
+
+func FastVerificationDone() {
+	stats.Record(census.ctx, census.mFastVerificationDone.M(1))
+}
+
+func FastVerificationFailed() {
+	stats.Record(census.ctx, census.mFastVerificationFailed.M(1))
 }

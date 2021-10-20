@@ -379,7 +379,7 @@ func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Ad
 	return md, nil
 }
 
-func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash bool) (*ReceivedTranscodeResult, error) {
+func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash, verified bool) (*ReceivedTranscodeResult, error) {
 	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
 
 	segCreds, err := genSegCreds(sess, seg, calcPerceptualHash)
@@ -569,7 +569,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
-		monitor.SegmentTranscoded(nonce, seg.SeqNo, time.Duration(seg.Duration*float64(time.Second)), transcodeDur, common.ProfilesNames(params.Profiles))
+		monitor.SegmentTranscoded(nonce, seg.SeqNo, time.Duration(seg.Duration*float64(time.Second)), transcodeDur,
+			common.ProfilesNames(params.Profiles), sess.IsTrusted(), verified)
 	}
 
 	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s sessionID=%s segName=%s seqNo=%d orch=%s dur=%s", nonce,

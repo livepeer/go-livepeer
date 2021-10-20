@@ -410,9 +410,10 @@ func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 }
 
 // selects number of sessions to use according to current algorithm
-func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool) {
+func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool, bool) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
+	var verified bool
 
 	if bsm.VerificationFreq > 0 {
 		// Select 1 trusted O and 2 untrusted Os
@@ -426,6 +427,7 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 		if bsm.verifiedSession != nil && includesSession(sessions, bsm.verifiedSession) &&
 			common.RandomUintUnder(bsm.VerificationFreq) > 0 {
 			glog.V(common.DEBUG).Infof("Reusing verified orch=%v", bsm.verifiedSession.OrchestratorInfo.Transcoder)
+			verified = true
 			// Mark remaining unused sessions returned by selector as complete
 			remaining := removeSessionFromList(sessions, bsm.verifiedSession)
 			for _, sess := range remaining {
@@ -435,7 +437,7 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 		}
 
 		// Return selected sessions
-		return sessions, true
+		return sessions, true, verified
 	}
 
 	// Default to selecting from untrusted pool
@@ -444,7 +446,7 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 		sessions = bsm.trustedPool.selectSessions(1)
 	}
 
-	return sessions, false
+	return sessions, false, verified
 }
 
 func (bsm *BroadcastSessionsManager) cleanup() {
@@ -516,6 +518,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 			return nil, nil, err
 		}
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
+		if monitor.Enabled {
+			monitor.FastVerificationDone()
+		}
 		if err != nil {
 			glog.Errorf("error comparing perceptual hashes from url=%s err=%v",
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -529,6 +534,8 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 				bsm.sessionVerified(untrustedResult.Session)
 			}
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
+		} else if monitor.Enabled {
+			monitor.FastVerificationFailed()
 		}
 	}
 
@@ -556,6 +563,12 @@ func (bsm *BroadcastSessionsManager) sessionVerified(sess *BroadcastSession) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.verifiedSession = sess
+}
+
+func (bsm *BroadcastSessionsManager) usingVerified() bool {
+	bsm.sessLock.Lock()
+	defer bsm.sessLock.Unlock()
+	return bsm.verifiedSession != nil
 }
 
 func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender,
@@ -808,7 +821,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 	}(time.Now())
 
 	nonce := cxn.nonce
-	sessions, calcPerceptualHash := cxn.sessManager.selectSessions()
+	sessions, calcPerceptualHash, verified := cxn.sessManager.selectSessions()
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or no sessions available
 	if len(sessions) == 0 {
@@ -839,7 +852,7 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		// cxn.sessManager.pushSegInFlight(sess, seg)
 		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
-		res, err = SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash)
+		res, err = SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash, verified)
 		if err != nil || res == nil {
 			if isNonRetryableError(err) {
 				cxn.sessManager.completeSession(sess)
@@ -950,7 +963,7 @@ type SubmitResult struct {
 }
 
 func submitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
-	res, err := SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash)
+	res, err := SubmitSegment(sess.Clone(), seg, nonce, calcPerceptualHash, false)
 	resc <- &SubmitResult{
 		Session:         sess,
 		TranscodeResult: res,
