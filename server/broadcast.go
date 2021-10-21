@@ -914,12 +914,13 @@ func transcodeSegment(cxn *rtmpConnection, seg *stream.HLSSegment, name string,
 		submittedCount := 0
 		for _, sess := range sessions {
 			// todo: run it in own goroutine (move to submitSegment?)
-			if seg, err = prepareForTranscoding(cxn, sess, seg, name); err != nil {
+			seg2, err := prepareForTranscoding(cxn, sess, seg, name)
+			if err != nil || seg2 == nil {
 				continue
 			}
 			// cxn.sessManager.pushSegInFlight(sess, seg)
-			sess.pushSegInFlight(seg)
-			go submitSegment(sess, seg, nonce, calcPerceptualHash, resc)
+			sess.pushSegInFlight(seg2)
+			go submitSegment(sess, seg2, nonce, calcPerceptualHash, resc)
 			submittedCount++
 		}
 		if submittedCount == 0 {
