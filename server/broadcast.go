@@ -431,6 +431,8 @@ func (bsm *BroadcastSessionsManager) selectSessions() ([]*BroadcastSession, bool
 				bsm.completeSessionUnsafe(sess)
 			}
 			sessions = []*BroadcastSession{bsm.verifiedSession}
+		} else if bsm.verifiedSession != nil && !includesSession(sessions, bsm.verifiedSession) {
+			bsm.verifiedSession = nil
 		}
 
 		// Return selected sessions
