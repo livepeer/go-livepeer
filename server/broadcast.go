@@ -111,7 +111,10 @@ func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender,
 }
 
 func (sp *SessionPool) suspend(orch string) {
-	sp.sus.suspend(orch, sp.poolSize/sp.numOrchs)
+	poolSize := math.Max(1, float64(sp.poolSize))
+	numOrchs := math.Max(1, float64(sp.numOrchs))
+	penalty := int(math.Ceil(poolSize / numOrchs))
+	sp.sus.suspend(orch, penalty)
 }
 
 func (sp *SessionPool) refreshSessions() {
@@ -358,7 +361,7 @@ func NewSessionManager(node *core.LivepeerNode, params *core.StreamParameters, s
 	}
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	trustedNumOrchs := int(math.Min(trustedPoolSize, maxInflight*2))
-	untrustedNumOrchs := int(math.Min(untrustedPoolSize, maxInflight*2)) * 2
+	untrustedNumOrchs := int(untrustedPoolSize)
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
