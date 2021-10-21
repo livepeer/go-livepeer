@@ -775,14 +775,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mFastVerificationEnabledCurrentSessions,
 			Description: "Number of currently transcoded streams that have fast verification enabled",
 			TagKeys:     baseTags,
-			Aggregation: view.Count(),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "fast_verification_using_current_sessions_total",
 			Measure:     census.mFastVerificationUsingCurrentSessions,
 			Description: "Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator",
 			TagKeys:     baseTags,
-			Aggregation: view.Count(),
+			Aggregation: view.LastValue(),
 		},
 	}
 
