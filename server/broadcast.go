@@ -330,13 +330,23 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 			ticketParams *pm.TicketParams
 		)
 
-		if n.Sender != nil && tinfo.TicketParams != nil {
-			ticketParams = pmTicketParams(tinfo.TicketParams)
-			sessionID = n.Sender.StartSession(*ticketParams)
+		if tinfo.AuthToken == nil {
+			glog.Errorf("Missing auth token orch=%v", tinfo.Transcoder)
+			continue
 		}
 
-		if n.Balances != nil {
-			balance = core.NewBalance(ticketParams.Recipient, core.ManifestID(tinfo.AuthToken.SessionId), n.Balances)
+		if n.Sender != nil {
+			if tinfo.TicketParams == nil {
+				glog.Errorf("Missing ticket params orch=%v", tinfo.Transcoder)
+				continue
+			}
+
+			ticketParams = pmTicketParams(tinfo.TicketParams)
+			sessionID = n.Sender.StartSession(*ticketParams)
+
+			if n.Balances != nil {
+				balance = core.NewBalance(ticketParams.Recipient, core.ManifestID(tinfo.AuthToken.SessionId), n.Balances)
+			}
 		}
 
 		var orchOS drivers.OSSession

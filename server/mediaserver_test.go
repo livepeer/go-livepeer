@@ -268,6 +268,7 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	sd.infos = []*net.OrchestratorInfo{
 		{
+			AuthToken:    &net.AuthToken{},
 			TicketParams: protoParams,
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  params.PricePerPixel.Num().Int64(),
@@ -275,6 +276,7 @@ func TestSelectOrchestrator(t *testing.T) {
 			},
 		},
 		{
+			AuthToken:    &net.AuthToken{},
 			TicketParams: protoParams2,
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  params2.PricePerPixel.Num().Int64(),
@@ -297,6 +299,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	assert.Equal(expSessionID, sess[0].PMSessionID)
 	assert.Equal(expSessionID2, sess[1].PMSessionID)
 	assert.Equal(sess[0].OrchestratorInfo, &net.OrchestratorInfo{
+		AuthToken:    &net.AuthToken{},
 		TicketParams: protoParams,
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  params.PricePerPixel.Num().Int64(),
@@ -304,12 +307,34 @@ func TestSelectOrchestrator(t *testing.T) {
 		},
 	})
 	assert.Equal(sess[1].OrchestratorInfo, &net.OrchestratorInfo{
+		AuthToken:    &net.AuthToken{},
 		TicketParams: protoParams2,
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  params2.PricePerPixel.Num().Int64(),
 			PixelsPerUnit: params2.PricePerPixel.Denom().Int64(),
 		},
 	})
+
+	sender.On("StartSession", mock.Anything).Return("anything")
+
+	// Skip orchestrator if missing auth token
+	sd.infos[0].AuthToken = nil
+
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
+	require.Nil(err)
+
+	assert.Len(sess, 1)
+	assert.Equal(protoParams2.Recipient, sess[0].OrchestratorInfo.TicketParams.Recipient)
+
+	// Skip orchestrator if missing ticket params
+	sd.infos[0].AuthToken = &net.AuthToken{}
+	sd.infos[0].TicketParams = nil
+
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
+	require.Nil(err)
+
+	assert.Len(sess, 1)
+	assert.Equal(protoParams2.Recipient, sess[0].OrchestratorInfo.TicketParams.Recipient)
 }
 
 func newStreamParams(mid core.ManifestID, rtmpKey string) *core.StreamParameters {
@@ -947,8 +972,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	// populate stub discovery
 	sd := &stubDiscovery{}
 	sd.infos = []*net.OrchestratorInfo{
-		{Transcoder: "transcoder1", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
-		{Transcoder: "transcoder2", TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
+		{Transcoder: "transcoder1", AuthToken: &net.AuthToken{}, TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
+		{Transcoder: "transcoder2", AuthToken: &net.AuthToken{}, TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
 	}
 	s.LivepeerNode.OrchestratorPool = sd
 
