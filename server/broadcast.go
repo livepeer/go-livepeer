@@ -1037,5 +1037,8 @@ func isNonRetryableError(err error) bool {
 			return true
 		}
 	}
+	if strings.Contains(err.Error(), "Generic error") {
+		return true
+	}
 	return false
 }
