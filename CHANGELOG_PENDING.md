@@ -27,3 +27,4 @@
 #### Transcoder
 
 - \#2057 Prevent stuck sessions by crashing on unrecoverable CUDA errors (@jailuthra)
+- \#2066 Fix filename parsing errors for signature_cuda filter on Windows (@jailuthra)
