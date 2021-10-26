@@ -26,6 +26,10 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
+// Hardcode to 200 gwei
+// TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
+var avgGasPrice = new(big.Int).Mul(big.NewInt(200), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+
 // Recipient is an interface which describes an object capable
 // of receiving tickets
 type Recipient interface {
@@ -223,13 +227,18 @@ func (r *recipient) txCost() *big.Int {
 	if gp := r.gpm.GasPrice(); gp != nil {
 		gasPrice = gp
 	}
+	return r.txCostWithGasPrice(gasPrice)
+}
+
+func (r *recipient) txCostWithGasPrice(gasPrice *big.Int) *big.Int {
 	// Return txCost = redeemGas * gasPrice
 	return new(big.Int).Mul(big.NewInt(int64(r.cfg.RedeemGas)), gasPrice)
 }
 
 func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
+	txCost := r.txCost()
 	// faceValue = txCost * txCostMultiplier
-	faceValue := new(big.Int).Mul(r.txCost(), big.NewInt(int64(r.cfg.TxCostMultiplier)))
+	faceValue := new(big.Int).Mul(txCost, big.NewInt(int64(r.cfg.TxCostMultiplier)))
 
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		faceValue = new(big.Int).Mul(r.cfg.EV, evMultiplier)
@@ -242,15 +251,30 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 
 	if faceValue.Cmp(maxFloat) > 0 {
-		if maxFloat.Cmp(r.cfg.EV) < 0 || maxFloat.Cmp(r.txCost()) <= 0 {
-			// If maxFloat < EV or <= tx cost, then there is no
-			// acceptable faceValue
-			return nil, errInsufficientSenderReserve
-		}
-
 		// If faceValue > maxFloat
 		// Set faceValue = maxFloat
 		faceValue = maxFloat
+	}
+
+	if faceValue.Cmp(r.cfg.EV) < 0 {
+		return nil, errInsufficientSenderReserve
+	}
+
+	// faceValue must be >= txCostWithGasPrice(current gasPrice) OR >= txCostWithGasPrice(avg gasPrice)
+	// where avg gasPrice is for some period of time (i.e. past few hours, past day, etc.).
+	// The rationale behind the above is that as long as faceValue >= txCostWithGasPrice(current gasPrice) then
+	// the check passes even if faceValue < txCostWithGasPrice(avg gasPrice).
+	// This could happen with small sender max floats and when the current gasPrice < avg gasPrice.
+	// If the gas price spikes such that faceValue < txCostWithGasPrice(current gasPrice), then the check can still pass
+	// if faceValue >= txCostWithGasPrice(avg gasPrice).
+	// This could happen with larger sender max floats and when the current gasPrice > avgGasPrice.
+	// The expectation is that if the avg gasPrice check runs and passes then it is reasonable to advertise ticket params
+	// because there is a good chance that the current gasPrice will come back down by the time a winning ticket is received
+	// and needs to be redeemed.
+	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
+	// Use || here for lazy evaluation. If the first clause is true we ignore the second clause.
+	if !(faceValue.Cmp(txCost) >= 0 || faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) >= 0) {
+		return nil, errInsufficientSenderReserve
 	}
 
 	return faceValue, nil
