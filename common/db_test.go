@@ -536,6 +536,32 @@ func TestDBFilterOrchs(t *testing.T) {
 	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: filterAddrs})
 	assert.Nil(err)
 	assert.Len(orchsFiltered, 0)
+
+	// Select all orchs if filter.UpdatedLastDay = false
+	orchsFiltered, err = dbh.SelectOrchs(nil)
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 10)
+
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{Addresses: []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[0])}})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 1)
+
+	// Select orchs that have been updated in the last day if filter.UpdatedLastDay = true
+	stmt := fmt.Sprintf("UPDATE orchestrators SET updatedAt=datetime('now','-2 day') WHERE ethereumAddr='%v'", orchAddrList[0])
+	_, err = dbraw.Exec(stmt)
+	require.Nil(err)
+
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{UpdatedLastDay: true})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 9)
+
+	orchsFiltered, err = dbh.SelectOrchs(&DBOrchFilter{UpdatedLastDay: true, Addresses: []ethcommon.Address{ethcommon.HexToAddress(orchAddrList[0])}})
+	assert.Nil(err)
+	assert.Len(orchsFiltered, 0)
 }
 
 func TestDBUnbondingLocks(t *testing.T) {

@@ -63,9 +63,10 @@ type DBUnbondingLock struct {
 
 // DBOrchFilter is an object used to attach a filter to a selectOrch query
 type DBOrchFilter struct {
-	MaxPrice     *big.Rat
-	CurrentRound *big.Int
-	Addresses    []ethcommon.Address
+	MaxPrice       *big.Rat
+	CurrentRound   *big.Int
+	Addresses      []ethcommon.Address
+	UpdatedLastDay bool
 }
 
 var LivepeerDBVersion = 1
@@ -822,19 +823,25 @@ func buildOrchCountQuery(filter *DBOrchFilter) (string, error) {
 }
 
 func buildFilterOrchsQuery(filter *DBOrchFilter) (string, error) {
-	qry := "WHERE updatedAt >= datetime('now','-1 day')"
+	qry := ""
+	var filters []string
+
 	if filter != nil {
+		if filter.UpdatedLastDay {
+			filters = append(filters, "updatedAt >= datetime('now','-1 day')")
+		}
+
 		if filter.MaxPrice != nil {
 			fixedPrice, err := PriceToFixed(filter.MaxPrice)
 			if err != nil {
 				return "", err
 			}
-			qry += " AND pricePerPixel <= " + strconv.FormatInt(fixedPrice, 10)
+			filters = append(filters, "pricePerPixel <= "+strconv.FormatInt(fixedPrice, 10))
 		}
 
 		if filter.CurrentRound != nil {
 			currentRound := filter.CurrentRound.Int64()
-			qry += fmt.Sprintf(" AND activationRound <= %v AND %v < deactivationRound", currentRound, currentRound)
+			filters = append(filters, fmt.Sprintf("activationRound <= %v AND %v < deactivationRound", currentRound, currentRound))
 		}
 
 		if len(filter.Addresses) > 0 {
@@ -842,9 +849,14 @@ func buildFilterOrchsQuery(filter *DBOrchFilter) (string, error) {
 			for i, addr := range filter.Addresses {
 				hexAddrs[i] = fmt.Sprintf("'%v'", addr.Hex())
 			}
-			qry += fmt.Sprintf(" AND ethereumAddr IN (%v)", strings.Join(hexAddrs, ", "))
+			filters = append(filters, fmt.Sprintf("ethereumAddr IN (%v)", strings.Join(hexAddrs, ", ")))
 		}
 	}
+
+	if len(filters) > 0 {
+		qry = "WHERE " + strings.Join(filters, " AND ")
+	}
+
 	return qry, nil
 }
 
