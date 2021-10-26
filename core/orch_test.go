@@ -798,7 +798,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 
 	// orchestrator inactive -> error
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
-	expErr := fmt.Sprintf("orchestrator is inactive, cannot process payments")
+	expErr := fmt.Sprintf("orchestrator %v is inactive in round %v, cannot process payments", addr.Hex(), 10)
 	assert.EqualError(err, expErr)
 
 	// orchestrator is active -> no error

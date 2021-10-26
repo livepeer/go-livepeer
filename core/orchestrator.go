@@ -122,13 +122,14 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	sender := ethcommon.BytesToAddress(payment.Sender)
 
-	ok, err := orch.isActive(ethcommon.BytesToAddress(payment.TicketParams.Recipient))
+	recipientAddr := ethcommon.BytesToAddress(payment.TicketParams.Recipient)
+	ok, err := orch.isActive(recipientAddr)
 	if err != nil {
 		return err
 	}
 
 	if !ok {
-		return fmt.Errorf("orchestrator is inactive, cannot process payments")
+		return fmt.Errorf("orchestrator %v is inactive in round %v, cannot process payments", recipientAddr.Hex(), orch.rm.LastInitializedRound())
 	}
 
 	priceInfo := payment.GetExpectedPrice()
