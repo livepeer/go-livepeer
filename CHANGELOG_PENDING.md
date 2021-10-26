@@ -9,6 +9,7 @@
 #### General
 
 - \#2013 Add support for EIP-1559 transactions (@yondonfu)
+- \#2073 Make filtering orchestrators in the DB that haven't been updated in last day optional (@yondonfu)
 
 #### Broadcaster
 
