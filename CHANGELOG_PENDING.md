@@ -24,6 +24,8 @@
 
 #### Orchestrator
 
+- \#2071 Update tx cost check when generating ticket params to be more resistant to gas price spikes (@yondonfu)
+
 #### Transcoder
 
 - \#2057 Prevent stuck sessions by crashing on unrecoverable CUDA errors (@jailuthra)
