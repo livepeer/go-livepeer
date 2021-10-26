@@ -68,8 +68,9 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			MaxPrice:     server.BroadcastCfg.MaxPrice(),
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
+			CurrentRound:   dbo.rm.LastInitializedRound(),
+			UpdatedLastDay: true,
 		},
 	)
 	if err != nil || len(orchs) <= 0 {
@@ -144,8 +145,9 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
-			MaxPrice:     server.BroadcastCfg.MaxPrice(),
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
+			CurrentRound:   dbo.rm.LastInitializedRound(),
+			UpdatedLastDay: true,
 		},
 	)
 	return count
