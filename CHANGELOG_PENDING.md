@@ -13,6 +13,8 @@
 
 #### Broadcaster
 
+- \#2075 Check if track is found in when serving recordings request (@darkdarkdragon)
+
 #### Orchestrator
 
 #### Transcoder
