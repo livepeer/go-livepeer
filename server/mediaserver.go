@@ -1419,14 +1419,16 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		}
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
-		mainJspl.AddSegmentsToMPL(manifests, track, mpl, resp.RecordObjectStoreURL)
-		// check (debug code)
-		startSeq := mpl.Segments[0].SeqId
-		for _, seg := range mpl.Segments[1:] {
-			if seg.SeqId != startSeq+1 {
-				glog.Infof("prev seq is %d but next is %d", startSeq, seg.SeqId)
+		if mpl != nil {
+			mainJspl.AddSegmentsToMPL(manifests, track, mpl, resp.RecordObjectStoreURL)
+			// check (debug code)
+			startSeq := mpl.Segments[0].SeqId
+			for _, seg := range mpl.Segments[1:] {
+				if seg.SeqId != startSeq+1 {
+					glog.Infof("prev seq is %d but next is %d", startSeq, seg.SeqId)
+				}
+				startSeq = seg.SeqId
 			}
-			startSeq = seg.SeqId
 		}
 	}
 	w.Header().Set("Access-Control-Allow-Origin", "*")
