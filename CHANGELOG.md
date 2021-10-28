@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.5.22
+
+*October 28 2021*
+
+This release includes an important MPEG-7 video signature capability fix, which is used for [fast verification](https://forum.livepeer.org/t/transcoding-verification-improvements-fast-full-verification/1499), for orchestrators/transcoders running on Windows. **If you are running an orchestrator or transcoder on Windows you should upgrade to this release as soon as possible.**
+
+Additional highlights of this release:
+
+- Support for EIP-1559 (otherwise known as type 2) Ethereum transactions which results in more predictable transaction confirmation times, reduces the chance of stuck pending transactions and avoids overpaying in gas fees. If you are interested in additional details on the implications of EIP-1559 transactions refer to this [resource](https://hackmd.io/@timbeiko/1559-resources).
+- An improvement in ticket parameter generation for orchestrators to prevent short lived gas price spikes on the Ethereum network from disrupting streams.
+- The node will automatically detect if the GPU enters an unrecoverable state and crash. The reason for crashing upon detecting an unrecoverable GPU state is that no transcoding will
+be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Features ⚒
+
+#### General
+
+- [#2013](https://github.com/livepeer/go-livepeer/pull/2013) Add support for EIP-1559 transactions (@yondonfu)
+- [#2073](https://github.com/livepeer/go-livepeer/pull/2073) Make filtering orchestrators in the DB that haven't been updated in last day optional (@yondonfu)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#2075](https://github.com/livepeer/go-livepeer/pull/2075) Check if track is found in when serving recordings request (@darkdarkdragon)
+
+#### Orchestrator
+
+- [#2071](https://github.com/livepeer/go-livepeer/pull/2071) Update tx cost check when generating ticket params to be more resistant to gas price spikes (@yondonfu)
+
+#### Transcoder
+
+- [#2057](https://github.com/livepeer/go-livepeer/pull/2057) Prevent stuck sessions by crashing on unrecoverable CUDA errors (@jailuthra)
+- [#2066](https://github.com/livepeer/go-livepeer/pull/2066) Fix filename parsing errors for signature_cuda filter on Windows (@jailuthra)
+
 ## v0.5.21
 
 *September 29 2021*
