@@ -1403,5 +1403,8 @@ func isNonRetryableError(err error) bool {
 			return true
 		}
 	}
+	if strings.HasPrefix(err.Error(), "Hit max transcode attempts:") {
+		return true
+	}
 	return false
 }
