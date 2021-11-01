@@ -39,16 +39,6 @@ jobs:
         path: /tmp/docker-cache
         key: ${{ runner.os }}-docker-cache
 
-    # https://seankhliao.com/blog/12021-01-23-docker-buildx-caching/
-    - name: Build base container
-      run: |
-        ./ci_env.sh docker buildx build \
-          --platform=linux/amd64,linux/arm64 \
-          --cache-from type=local,src=/tmp/docker-cache \
-          --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
-          --build-arg BUILD_TAGS -t livepeerci/build:latest \
-          -f docker/Dockerfile.build .
-
     - name: Build minimal livepeer distributable 
       run: |
         # We publish two tags for each build:
@@ -57,7 +47,14 @@ jobs:
         # Our Docker tag name should be our branch name with just alphanums
         BRANCH_TAG=$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
         VERSION_TAG=$(./print_version.sh)
-        docker buildx build --platform=linux/amd64,linux/arm64 -t livepeer/go-livepeer:${BRANCH_TAG} -t livepeer/go-livepeer:${VERSION_TAG} --push -f docker/Dockerfile.release-linux .
+        docker buildx build \
+          --platform=linux/amd64,linux/arm64 \
+          -t livepeer/go-livepeer:${BRANCH_TAG} \
+          -t livepeer/go-livepeer:${VERSION_TAG} \
+          --push \
+          --cache-from type=local,src=/tmp/docker-cache \
+          --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
+          -f docker/Dockerfile.build .
 
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}

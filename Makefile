@@ -49,3 +49,6 @@ localdocker:
 	tar ch --exclude=.git . | docker build --build-arg BUILD_TAGS=$(BUILD_TAGS) -t livepeerbinary:debian -f docker/Dockerfile.debian -
 	rm .git.describe
 
+.PHONY: docker
+docker:
+	docker buildx build -f docker/Dockerfile.build -t livepeer/go-livepeer:latest --load .

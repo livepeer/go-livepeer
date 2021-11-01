@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:18.04 as builder
 
 ENV PATH "/usr/local/go/bin:/go/bin:${PATH}"
 ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
@@ -58,3 +58,22 @@ COPY . .
 RUN make livepeer livepeer_cli livepeer_bench livepeer_router
 
 CMD ./upload_build.sh
+
+FROM nvidia/cuda:11.2.2-cudnn8-runtime-ubuntu18.04
+
+ENTRYPOINT ["/usr/bin/livepeer"]
+
+# this is needed to access GPU inside Docker Swarm
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+COPY --from=builder /build/livepeer /usr/bin/livepeer
+COPY --from=builder /build/livepeer_cli /usr/bin/livepeer_cli
+COPY --from=builder /build/livepeer_router /usr/bin/livepeer_router
+COPY --from=builder /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
+
+COPY --from=builder /build/tasmodel.pb /tasmodel.pb
+
+# libtensorflow shared libraries are in /usr/local
+COPY --from=builder /usr/local /usr/local
+# Configure linker
+RUN ldconfig
