@@ -44,7 +44,7 @@ jobs:
       run: |
         ./ci_env.sh docker buildx build \
           --platform=linux/amd64,linux/arm64 \
-          --cache-from type=local,dest=/tmp/docker-cache \
+          --cache-from type=local,src=/tmp/docker-cache \
           --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
           --build-arg BUILD_TAGS -t livepeerci/build:latest \
           -f docker/Dockerfile.build .
