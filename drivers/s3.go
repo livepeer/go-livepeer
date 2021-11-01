@@ -316,6 +316,7 @@ func (os *s3Session) SaveData(name string, data []byte, meta map[string]string, 
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
 	glog.V(common.VERBOSE).Infof("Saving to S3 %s", tentativeURL)
+	started := time.Now()
 	path, err := os.postData(name, data, meta, timeout)
 	if err != nil {
 		// handle error
@@ -324,7 +325,7 @@ func (os *s3Session) SaveData(name string, data []byte, meta map[string]string, 
 	}
 	url := os.getAbsURL(path)
 
-	glog.V(common.VERBOSE).Infof("Saved to S3 %s", tentativeURL)
+	glog.V(common.VERBOSE).Infof("Saved to S3 url=%s bytes=%d took=%s", tentativeURL, len(data), time.Since(started))
 
 	return url, err
 }
