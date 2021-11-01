@@ -15,25 +15,40 @@ jobs:
         # Needed for commands that depend on git tags
         fetch-depth: 0
         ref: ${{ github.event.pull_request.head.sha }}
+
+    - name: Set up Docker Buildx      
+      uses: crazy-max/ghaction-docker-buildx@v1      
+      with:        
+        version: latest  
+
     - name: Set global environment variables
       run: |
         echo "PKG_CONFIG_PATH=/root/compiled/lib/pkgconfig" >> $GITHUB_ENV
         echo "GOPATH=/go" >> $GITHUB_ENV
+
     - name: DockerHub login
       uses: docker/login-action@v1
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASS }}
-    - name: Build Linux specific builder container
+
+    - name: Docker cache
+      id: docker-cache
+      uses: actions/cache@v2
+      with:
+        path: /tmp/docker-cache
+        key: ${{ runner.os }}-docker-cache
+
+    # https://seankhliao.com/blog/12021-01-23-docker-buildx-caching/
+    - name: Build base container
       run: |
-        docker pull livepeerci/build-platform:latest || echo 'no pre-existing cache found'
-        docker build -t livepeerci/build-platform:latest --cache-from=livepeerci/build-platform:latest -f docker/Dockerfile.build-linux .
-        docker push livepeerci/build-platform:latest
-    - name: Build livepeer in a container shared between Linux and Windows
-      run: |
-        docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
-        ./ci_env.sh docker build --build-arg BUILD_TAGS -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
-        docker push livepeerci/build:latest
+        ./ci_env.sh docker buildx build \
+          --platform=linux/amd64,linux/arm64 \
+          --cache-from type=local,dest=/tmp/docker-cache \
+          --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
+          --build-arg BUILD_TAGS -t livepeerci/build:latest \
+          -f docker/Dockerfile.build .
+
     - name: Build minimal livepeer distributable 
       run: |
         # We publish two tags for each build:
@@ -42,13 +57,7 @@ jobs:
         # Our Docker tag name should be our branch name with just alphanums
         BRANCH_TAG=$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
         VERSION_TAG=$(./print_version.sh)
-        docker build -t current-build -f docker/Dockerfile.release-linux .
-        for TAG in $BRANCH_TAG $VERSION_TAG; do
-          docker tag current-build livepeer/go-livepeer:${TAG}-linux
-          docker push livepeer/go-livepeer:${TAG}-linux
-          # Manifest step is optional in case the Windows build hasn't finished yet
-          docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
-          docker manifest push livepeer/go-livepeer:${TAG} || true
-        done
+        docker buildx build --platform=linux/amd64,linux/arm64 -t livepeer/go-livepeer:${BRANCH_TAG} -t livepeer/go-livepeer:${VERSION_TAG} --push -f docker/Dockerfile.release-linux .
+
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}

@@ -1,9 +1,43 @@
-# This script is downstream of build-platform and works for both Windows and Linux.
+FROM ubuntu:18.04
 
-# Don't mess with WORKDIR if you can avoid it, as it's different on Windows/Linux. Use relative
-# paths instead.
+ENV PATH "/usr/local/go/bin:/go/bin:${PATH}"
+ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
+ENV CPATH /usr/local/cuda/include
+ENV LIBRARY_PATH /usr/local/cuda/lib64
 
-FROM livepeerci/build-platform:latest
+ARG TARGETPLATFORM
+RUN echo $TARGETPLATFORM | sed 's/^.*\///' > /platform
+
+RUN apt-get update \
+  && apt-get install -y software-properties-common curl apt-transport-https \
+  && curl https://dl.google.com/go/go1.15.5.linux-$(cat /platform).tar.gz | tar -C /usr/local -xz \
+  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
+  && add-apt-repository "deb [arch=$(cat /platform)] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
+  && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+  && add-apt-repository "deb [arch=$(cat /platform)] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
+  && apt-get update \
+  && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf sudo git python docker-ce-cli
+
+RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
+  && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+
+RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
+    curl -L https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-$(cat /platform) -o /usr/bin/grpc_health_probe && \
+    chmod +x /usr/bin/grpc_health_probe
+
+# No tensorflow for ARM yet...
+ENV LIBTENSORFLOW_VERSION 2.6.0
+RUN \
+  if [[ "$(cat /platform)" == "amd64" ]]; then \
+    curl -v --fail -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+      && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz; \
+  fi
+
+ENV GOPATH /go
+RUN mkdir -p /go
+WORKDIR /build
+
+RUN curl -LO https://storage.googleapis.com/lp_testharness_assets/tasmodel.pb
 
 ARG BUILD_TAGS
 ENV BUILD_TAGS ${BUILD_TAGS}
