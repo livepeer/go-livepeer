@@ -55,12 +55,6 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/18.ts", reader)
 
-	oldAttempts := MaxAttempts
-	defer func() {
-		MaxAttempts = oldAttempts
-	}()
-	MaxAttempts = 1
-
 	dummyRes := func(err string) *net.TranscodeResult {
 		return &net.TranscodeResult{
 			Result: &net.TranscodeResult_Error{Error: err},
@@ -100,15 +94,40 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 	s.rtmpConnections["mani"] = cxn
 
-	req.Header.Set("Accept", "multipart/mixed")
+	// Should return 503 if got a retryable error with no sessions to use
 	s.HandlePush(w, req)
 	resp := w.Result()
 	defer resp.Body.Close()
-	assert.Equal(500, resp.StatusCode)
+	assert.Equal(503, resp.StatusCode)
 	body, err := ioutil.ReadAll(resp.Body)
+	assert.NoError(err)
+	assert.Contains(string(body), "No sessions available")
+
+	// Should return 422 if max attempts reached with unknown error
+	oldAttempts := MaxAttempts
+	defer func() {
+		MaxAttempts = oldAttempts
+	}()
+	MaxAttempts = 1
+
+	sess = StubBroadcastSession(ts.URL)
+	bsm = bsmWithSessList([]*BroadcastSession{sess})
+	cxn.sessManager = bsm
+	tr = dummyRes("unknown error (test)")
+	buf, err = proto.Marshal(tr)
+	require.Nil(t, err)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	assert.Equal(422, resp.StatusCode)
+	body, err = ioutil.ReadAll(resp.Body)
 	assert.NoError(err)
 	assert.Contains(string(body), "unknown error (test)")
 
+	// Should return 422 if error is non-retryable due to bad input
 	sess = StubBroadcastSession(ts.URL)
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
