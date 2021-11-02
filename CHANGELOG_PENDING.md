@@ -10,6 +10,8 @@
 
 #### Broadcaster
 
+- \#2085 Set max refresh sessions threshold to 8 (@yondonfu)
+
 #### Orchestrator
 
 #### Transcoder
