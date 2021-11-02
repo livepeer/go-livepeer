@@ -411,7 +411,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	// Skip orchestrator if missing auth token
 	sd.infos[0].AuthToken = nil
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -421,7 +421,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	sd.infos[0].AuthToken = &net.AuthToken{}
 	sd.infos[0].TicketParams = nil
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender())
+	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
