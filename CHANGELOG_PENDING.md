@@ -11,6 +11,7 @@
 #### Broadcaster
 
 - \#2085 Set max refresh sessions threshold to 8 (@yondonfu)
+- \#2083 Return 422 to the push client after max retry attempts for a segment (@jailuthra)
 
 #### Orchestrator
 
