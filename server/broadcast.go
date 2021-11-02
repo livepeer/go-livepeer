@@ -37,6 +37,9 @@ import (
 var refreshTimeout = 2500 * time.Millisecond
 var maxDurationSec = common.MaxDuration.Seconds()
 
+// Max threshold for # of broadcast sessions under which we will refresh the session list
+var maxRefreshSessionsThreshold = 8.0
+
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
@@ -97,7 +100,7 @@ func (bsm *BroadcastSessionsManager) selectSession() *BroadcastSession {
 
 	checkSessions := func(m *BroadcastSessionsManager) bool {
 		numSess := m.sel.Size()
-		if numSess < int(math.Ceil(float64(m.numOrchs)/2.0)) {
+		if numSess < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0))) {
 			go m.refreshSessions()
 		}
 		return (numSess > 0 || bsm.lastSess != nil)
