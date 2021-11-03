@@ -39,6 +39,7 @@ func main() {
 	detectionFreq := flag.Int("detectionFreq", 0, "Run content-detection on every nth segment. No detection occurs for default frequency of 0.")
 	detectionSampleRate := flag.Uint("detectionSampleRate", 1, "Run content-detection on every nth frame of a particular segment, if detectionFreq > 0.")
 	concurrentSessionDelay := flag.Duration("concurrentSessionDelay", 300*time.Millisecond, "Delay before starting a new concurrent session")
+	sign := flag.Bool("sign", false, "Calculate binary signature while transcoding")
 
 	flag.Parse()
 
@@ -82,6 +83,7 @@ func main() {
 		{"Transcoding Options", *transcodingOptions},
 		{"Concurrent Sessions", fmt.Sprintf("%v", *concurrentSessions)},
 		{"Live Mode", fmt.Sprintf("%v", *live)},
+		{"Sign Mode", fmt.Sprintf("%v", *sign)},
 	}
 
 	if accel == ffmpeg.Nvidia && len(devices) > 0 {
@@ -182,6 +184,7 @@ func main() {
 							Accel:        accel,
 							AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 							Muxer:        ffmpeg.ComponentOptions{Name: muxer},
+							CalcSign:     *sign,
 						}
 						opts = append(opts, o)
 					}
