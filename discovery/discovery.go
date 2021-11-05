@@ -18,7 +18,6 @@ import (
 )
 
 var getOrchestratorsTimeoutLoop = 3 * time.Second
-var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
@@ -76,7 +75,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 
 	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsCutoffTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 
 	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
