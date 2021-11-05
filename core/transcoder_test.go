@@ -313,5 +313,5 @@ func TestRecoverFromPanic_WithError(t *testing.T) {
 
 	err := f()
 
-	assert.Equal(sampleErr, err)
+	assert.Equal(NewUnrecoverableError(sampleErr), err)
 }

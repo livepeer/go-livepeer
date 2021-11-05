@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -175,7 +176,7 @@ func TestRemoteTranscoder_FullProfiles(t *testing.T) {
 	assert.Nil(nil, tr.profiles)
 }
 
-func TestRemoteTranscoderError(t *testing.T) {
+func TestRemoteTranscoder_Error(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 
@@ -223,4 +224,19 @@ func TestRemoteTranscoderError(t *testing.T) {
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
 	assert.Equal("segment / profile mismatch", string(body))
+
+	// unrecoverable error
+	// send the response and panic
+	tr.err = core.NewUnrecoverableError(errors.New("some error"))
+	panicked := false
+	defer func() {
+		if r := recover(); r != nil {
+			panicked = true
+		}
+	}()
+	runTranscode(node, parsedURL.Host, httpc, notify)
+	assert.Equal(3, tr.called)
+	assert.NotNil(body)
+	assert.Equal("some error", string(body))
+	assert.True(panicked)
 }
