@@ -16,6 +16,7 @@
 #### Orchestrator
 
 #### Transcoder
+- \#2088 Gracefully notify orchestrator in case of panic in transcoding (@leszko)
 
 ### Bug Fixes 🐞
 
