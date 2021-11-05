@@ -134,6 +134,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 
 	timeout := false
 	infos := []*net.OrchestratorInfo{}
+	respUris := []string{}
 	suspendedInfos := newSuspensionQueue()
 	nbResp := 0
 	for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timeout; i++ {
@@ -141,6 +142,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 		case info := <-infoCh:
 			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
 				infos = append(infos, info)
+				respUris = append(respUris, info.Transcoder)
 			} else {
 				heap.Push(suspendedInfos, &suspension{info, penalty})
 			}
@@ -158,11 +160,15 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {
 			info := heap.Pop(suspendedInfos).(*suspension).orch
 			infos = append(infos, info)
+			respUris = append(respUris, info.Transcoder)
 		}
 	}
 
 	glog.Infof("Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
 		len(infos), nbResp, len(uris), timeout)
+
+	glog.V(common.DEBUG).Infof("Responses: %v", respUris)
+
 	return infos, nil
 }
 
