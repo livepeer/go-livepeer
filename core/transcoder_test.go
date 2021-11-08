@@ -300,6 +300,7 @@ func TestRecoverFromPanic(t *testing.T) {
 
 	assert.NotNil(err)
 	assert.Equal("unrecoverable transcoding failure", err.Error())
+	assert.IsType(UnrecoverableError{}, err)
 }
 
 func TestRecoverFromPanic_WithError(t *testing.T) {
