@@ -27,9 +27,20 @@ type LocalTranscoder struct {
 	workDir string
 }
 
+type UnrecoverableError struct {
+	error
+}
+
+func NewUnrecoverableError(err error) UnrecoverableError {
+	return UnrecoverableError{err}
+}
+
 var WorkDir string
 
-func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
+
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname: md.Fname,
@@ -69,7 +80,9 @@ type NvidiaTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
-func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
 
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  md.Fname,
@@ -250,4 +263,14 @@ func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, prof
 		opts[i] = o
 	}
 	return opts
+}
+
+func recoverFromPanic(retErr *error) {
+	if r := recover(); r != nil {
+		err, ok := r.(error)
+		if !ok {
+			err = errors.New("unrecoverable transcoding failure")
+		}
+		*retErr = NewUnrecoverableError(err)
+	}
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -38,7 +39,6 @@ func TestLocalTranscoder(t *testing.T) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
-
 func TestNvidia_Transcoder(t *testing.T) {
 	dev := os.Getenv("NV_DEVICE")
 	if dev == "" {
@@ -286,4 +286,33 @@ func TestTranscoder_Formats(t *testing.T) {
 	}
 	// sanity check the base format wasn't overwritten (has happened before!)
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P144p30fps16x9.Format)
+}
+
+func TestRecoverFromPanic(t *testing.T) {
+	assert := assert.New(t)
+
+	f := func() (err error) {
+		defer recoverFromPanic(&err)
+		panic(struct{}{})
+	}
+
+	err := f()
+
+	assert.NotNil(err)
+	assert.Equal("unrecoverable transcoding failure", err.Error())
+	assert.IsType(UnrecoverableError{}, err)
+}
+
+func TestRecoverFromPanic_WithError(t *testing.T) {
+	assert := assert.New(t)
+	sampleErr := errors.New("sample error")
+
+	f := func() (err error) {
+		defer recoverFromPanic(&err)
+		panic(sampleErr)
+	}
+
+	err := f()
+
+	assert.Equal(NewUnrecoverableError(sampleErr), err)
 }

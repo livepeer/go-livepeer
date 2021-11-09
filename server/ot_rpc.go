@@ -152,6 +152,9 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		err = errors.New("segment / profile mismatch")
 	}
 	if err != nil {
+		if _, ok := err.(core.UnrecoverableError); ok {
+			defer panic(err)
+		}
 		glog.Error("Unable to transcode ", err)
 		body.Write([]byte(err.Error()))
 		contentType = transcodingErrorMimeType
