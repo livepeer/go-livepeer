@@ -470,6 +470,64 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitResult,
 	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
+	trustedResult, untrustedResults, err := bsm.collectResults(submitResultsCh, submittedCount)
+
+	if trustedResult == nil {
+		// no results from trusted orch, using anything
+		if len(untrustedResults) == 0 {
+			// no results at all
+			return nil, nil, fmt.Errorf("error transcoding: no results at all err=%w", err)
+		}
+		return untrustedResults[0].Session, untrustedResults[0].TranscodeResult, untrustedResults[0].Err
+	}
+	if len(untrustedResults) == 0 {
+		// no results from untrusted orch, just using trusted ones
+		return trustedResult.Session, trustedResult.TranscodeResult, trustedResult.Err
+	}
+	segmToCheckIndex := rand.Intn(len(trustedResult.TranscodeResult.Segments))
+
+	// download trusted hashes
+	trustedHash, err := drivers.GetSegmentData(trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	if err != nil {
+		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+		return nil, nil, err
+	}
+
+	// verify untrusted hashes
+	for _, untrustedResult := range untrustedResults {
+		untrustedHash, err := drivers.GetSegmentData(untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+		if err != nil {
+			err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+			return nil, nil, err
+		}
+		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
+		if monitor.Enabled {
+			monitor.FastVerificationDone()
+		}
+		if err != nil {
+			glog.Errorf("error comparing perceptual hashes from url=%s err=%v",
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+		}
+		glog.Infof("Hashes from url=%s and url=%s are equal=%v",
+			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
+			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
+		if equal {
+			// stick to this verified orchestrator for further segments.
+			if untrustedResult.Err == nil {
+				bsm.sessionVerified(untrustedResult.Session)
+			}
+			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
+		} else if monitor.Enabled {
+			monitor.FastVerificationFailed()
+		}
+	}
+
+	return trustedResult.Session, trustedResult.TranscodeResult, trustedResult.Err
+}
+
+func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *SubmitResult, submittedCount int) (*SubmitResult, []*SubmitResult, error) {
 	submitResults := make([]*SubmitResult, submittedCount)
 
 	// can have different strategies - for example, just use first one
@@ -499,56 +557,8 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 			}
 		}
 	}
-	if trustedResults == nil {
-		// no results from trusted orch, using anything
-		if len(untrustedResults) == 0 {
-			// no results at all
-			return nil, nil, fmt.Errorf("error transcoding: no results at all err=%w", err)
-		}
-		return untrustedResults[0].Session, untrustedResults[0].TranscodeResult, untrustedResults[0].Err
-	}
-	if len(untrustedResults) == 0 {
-		// no results from untrusted orch, just using trusted ones
-		return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
-	}
-	segmToCheckIndex := rand.Intn(len(trustedResults.TranscodeResult.Segments))
-	// downloading hashes
-	trustedHash, err := drivers.GetSegmentData(trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
-	if err != nil {
-		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
-			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
-		return nil, nil, err
-	}
-	for _, untrustedResult := range untrustedResults {
-		untrustedHash, err := drivers.GetSegmentData(untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
-		if err != nil {
-			err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
-			return nil, nil, err
-		}
-		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
-		if monitor.Enabled {
-			monitor.FastVerificationDone()
-		}
-		if err != nil {
-			glog.Errorf("error comparing perceptual hashes from url=%s err=%v",
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
-		}
-		glog.Infof("Hashes from url=%s and url=%s are equal=%v",
-			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
-			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
-		if equal {
-			// stick to this verified orchestrator for further segments.
-			if untrustedResult.Err == nil {
-				bsm.sessionVerified(untrustedResult.Session)
-			}
-			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
-		} else if monitor.Enabled {
-			monitor.FastVerificationFailed()
-		}
-	}
 
-	return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
+	return trustedResults, untrustedResults, err
 }
 
 // the caller needs to ensure bsm.sessLock is acquired before calling this.
