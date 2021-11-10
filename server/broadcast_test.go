@@ -1689,16 +1689,22 @@ func TestCollectResults(t *testing.T) {
 	untrustedSess1.OrchestratorScore = common.Score_Untrusted
 	untrustedSess2 := StubBroadcastSession("untrustedTranscoder2")
 	untrustedSess2.OrchestratorScore = common.Score_Untrusted
-	bsm := bsmWithSessList([]*BroadcastSession{trustedSess, untrustedSess1, untrustedSess2})
+	untrustedSessVerified := StubBroadcastSession("untrustedTranscoderVerified")
+	untrustedSessVerified.OrchestratorScore = common.Score_Untrusted
+	bsm := bsmWithSessList([]*BroadcastSession{trustedSess, untrustedSess1, untrustedSess2, untrustedSessVerified})
+	bsm.sessionVerified(untrustedSessVerified)
 
-	resChan := make(chan *SubmitResult, 3)
+	resChan := make(chan *SubmitResult, 4)
 	resChan <- &SubmitResult{Session: untrustedSess1, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: untrustedSessVerified, TranscodeResult: &ReceivedTranscodeResult{}}
 	resChan <- &SubmitResult{Session: untrustedSess2, TranscodeResult: &ReceivedTranscodeResult{}}
 	resChan <- &SubmitResult{Session: trustedSess, TranscodeResult: &ReceivedTranscodeResult{}}
 
-	trustedResult, untrustedResults, err := bsm.collectResults(resChan, 3)
+	trustedResult, untrustedResults, err := bsm.collectResults(resChan, 4)
 
 	assert.NoError(err)
 	assert.Equal(trustedSess, trustedResult.Session)
-	assert.Len(untrustedResults, 2)
+	assert.Len(untrustedResults, 3)
+	// the first result should always come from the verified session
+	assert.Equal(untrustedSessVerified, untrustedResults[0].Session)
 }

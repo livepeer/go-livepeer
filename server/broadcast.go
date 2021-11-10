@@ -544,6 +544,9 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 		if res.Err == nil && res.TranscodeResult != nil {
 			if res.Session.OrchestratorScore == common.Score_Trusted {
 				trustedResults = res
+			} else if res.Session == bsm.verifiedSession {
+				// verified result should always come first and therefore take the priority
+				untrustedResults = append([]*SubmitResult{res}, untrustedResults...)
 			} else {
 				untrustedResults = append(untrustedResults, res)
 			}
