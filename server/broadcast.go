@@ -519,6 +519,8 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		return nil, nil, err
 	}
+
+	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
 		untrustedHash, err := drivers.GetSegmentData(untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
@@ -542,9 +544,16 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 			if untrustedResult.Err == nil {
 				bsm.sessionVerified(untrustedResult.Session)
 			}
+			// suspend sessions which returned incorrect results
+			for _, s := range sessionsToSuspend {
+				bsm.suspendAndRemoveOrch(s)
+			}
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
-		} else if monitor.Enabled {
-			monitor.FastVerificationFailed()
+		} else {
+			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
+			if monitor.Enabled {
+				monitor.FastVerificationFailed()
+			}
 		}
 	}
 
