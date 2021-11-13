@@ -79,8 +79,16 @@ func main() {
 		glog.Fatalf("Cannot find current user: %v", err)
 	}
 	vFlag := flag.Lookup("v")
-	//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
+	vToStderr := flag.Lookup("logtostderr")
+	vAlsoToStderr := flag.Lookup("alsologtostderr")
+	vLogDir := flag.Lookup("log_dir")
+	//We preserve these flags before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	toStderr := flag.Bool("logtostderr", true, "log to standard error instead of files (enabled by default)")
+	alsoToStderr := flag.Bool("alsologtostderr", false, "log to standard error as well as files (logtostderr should be set to false)")
+	logDir := flag.String("log_dir", "", "If non-empty, write log files in this directory (should exist)")
+	flag.Uint64Var(&glog.MaxSize, "log_max_size", glog.MaxSize, "If non-empty, write log files in this directory (should exist)")
 
 	// Network & Addresses:
 	network := flag.String("network", "offchain", "Network to connect to")
@@ -161,6 +169,10 @@ func main() {
 
 	flag.Parse()
 	vFlag.Value.Set(*verbosity)
+
+	vToStderr.Value.Set(fmt.Sprintf("%v", *toStderr))
+	vAlsoToStderr.Value.Set(fmt.Sprintf("%v", *alsoToStderr))
+	vLogDir.Value.Set(*logDir)
 
 	isFlagSet := make(map[string]bool)
 	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
