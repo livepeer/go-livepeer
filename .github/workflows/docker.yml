@@ -39,7 +39,7 @@ jobs:
         path: /tmp/docker-cache
         key: ${{ runner.os }}-docker-cache
 
-    - name: Build minimal livepeer distributable 
+    - name: Build minimal livepeer distributable
       run: |
         # We publish two tags for each build:
         # livepeer/go-livepeer:BRANCH_NAME and livepeer/go-livepeer:VERSION_STRING. Both are useful
@@ -52,9 +52,8 @@ jobs:
           -t livepeer/go-livepeer:${BRANCH_TAG} \
           -t livepeer/go-livepeer:${VERSION_TAG} \
           --push \
-          --cache-from type=local,src=/tmp/docker-cache \
-          --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
+          --cache-from type=registry,ref=livepeerci/go-livepeer-build-cache \
+          --cache-to   type=registry,mode=max,ref=livepeerci/go-livepeer-build-cache \
           -f docker/Dockerfile.build .
-
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
