@@ -32,6 +32,13 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASS }}
 
+    - name: Azure build cache login
+      uses: docker/login-action@v1
+      with:
+        registry: lpcache.azurecr.io
+        username: lpcache
+        password: ${{ secrets.AZURE_BUILD_CACHE_PASSWORD }}
+
     - name: Build minimal livepeer distributable 
       run: |
         # We publish two tags for each build:
@@ -45,8 +52,8 @@ jobs:
           -t livepeer/go-livepeer:${BRANCH_TAG} \
           -t livepeer/go-livepeer:${VERSION_TAG} \
           --push \
-          --cache-from type=registry,ref=livepeerci/go-livepeer-build-cache \
-          --cache-to   type=registry,ref=livepeerci/go-livepeer-build-cache,mode=max \
+          --cache-from type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache \
+          --cache-to   type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache,mode=max \
           -f docker/Dockerfile.build .
 
       env:
