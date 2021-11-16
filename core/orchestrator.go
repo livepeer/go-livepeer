@@ -570,7 +570,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	took := time.Since(start)
 	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s sessionID=%s seqNo=%d took=%v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, took)
 	if monitor.Enabled {
-		monitor.SegmentTranscoded(0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles))
+		monitor.SegmentTranscoded(0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
 
 	// Prepare the result object
@@ -826,11 +826,11 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
 }
 
 // RegisteredTranscodersInfo returns list of restered transcoder's information
-func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []net.RemoteTranscoderInfo {
+func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteTranscoderInfo {
 	rtm.RTmutex.Lock()
-	res := make([]net.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
+	res := make([]common.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
 	for _, transcoder := range rtm.liveTranscoders {
-		res = append(res, net.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
+		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
 	}
 	rtm.RTmutex.Unlock()
 	return res

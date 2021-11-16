@@ -20,8 +20,9 @@ func TestRecordingHandler(t *testing.T) {
 	drivers.Testing = true
 	lpmon.NodeID = "testNode"
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
 		var req authWebhookReq
@@ -88,8 +89,9 @@ func TestRecording(t *testing.T) {
 	drivers.Testing = true
 	lpmon.NodeID = "testNode"
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)

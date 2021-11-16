@@ -27,9 +27,20 @@ type LocalTranscoder struct {
 	workDir string
 }
 
+type UnrecoverableError struct {
+	error
+}
+
+func NewUnrecoverableError(err error) UnrecoverableError {
+	return UnrecoverableError{err}
+}
+
 var WorkDir string
 
-func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
+
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname: md.Fname,
@@ -54,7 +65,7 @@ func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
 		// be called in orchestrator.go
-		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles))
+		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
 	return resToTranscodeData(res, opts)
@@ -69,7 +80,9 @@ type NvidiaTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
-func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
 
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:  md.Fname,
@@ -95,7 +108,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
 		// be called in orchestrator.go
-		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles))
+		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
 	return resToTranscodeData(res, out)
@@ -218,7 +231,7 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 }
 
 func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool) []ffmpeg.TranscodeOptions {
-	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
+	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
 			Oname:        fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName()),
@@ -233,7 +246,7 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 }
 
 func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.DetectorProfile) []ffmpeg.TranscodeOptions {
-	opts := make([]ffmpeg.TranscodeOptions, len(profiles), len(profiles))
+	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		var o ffmpeg.TranscodeOptions
 		switch profiles[i].Type() {
@@ -250,4 +263,14 @@ func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, prof
 		opts[i] = o
 	}
 	return opts
+}
+
+func recoverFromPanic(retErr *error) {
+	if r := recover(); r != nil {
+		err, ok := r.(error)
+		if !ok {
+			err = errors.New("unrecoverable transcoding failure")
+		}
+		*retErr = NewUnrecoverableError(err)
+	}
 }

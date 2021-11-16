@@ -18,6 +18,8 @@ type BroadcastSessionsSelector interface {
 	Clear()
 }
 
+type BroadcastSessionsSelectorFactory func() BroadcastSessionsSelector
+
 type sessHeap []*BroadcastSession
 
 func (h sessHeap) Len() int {
@@ -94,6 +96,8 @@ type MinLSSelector struct {
 	stakeRdr stakeReader
 
 	minLS float64
+	// Frequency to randomly select unknown sessions
+	randFreq float64
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
@@ -106,6 +110,12 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64) *MinLSSelector {
 		stakeRdr:      stakeRdr,
 		minLS:         minLS,
 	}
+}
+
+func NewMinLSSelectorWithRandFreq(stakeRdr stakeReader, minLS float64, randFreq float64) *MinLSSelector {
+	sel := NewMinLSSelector(stakeRdr, minLS)
+	sel.randFreq = randFreq
+	return sel
 }
 
 // Add adds the sessions to the selector's list of sessions without a latency score
@@ -156,6 +166,14 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 		// Sessions are selected based on the order of unknownSessions in off-chain mode
 		sess := s.unknownSessions[0]
 		s.unknownSessions = s.unknownSessions[1:]
+		return sess
+	}
+
+	// Select an unknown session randomly based on randFreq frequency
+	if rand.Float64() < s.randFreq {
+		i := rand.Intn(len(s.unknownSessions))
+		sess := s.unknownSessions[i]
+		s.removeUnknownSession(i)
 		return sess
 	}
 
@@ -224,6 +242,7 @@ func (s *MinLSSelector) removeUnknownSession(i int) {
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
+// now used only in tests
 type LIFOSelector []*BroadcastSession
 
 // Add adds the sessions to the front of the selector's list
