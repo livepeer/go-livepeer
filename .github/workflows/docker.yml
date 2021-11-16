@@ -32,13 +32,6 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASS }}
 
-    - name: Docker cache
-      id: docker-cache
-      uses: actions/cache@v2
-      with:
-        path: /tmp/docker-cache
-        key: ${{ runner.os }}-arm-docker-cache
-
     - name: Build minimal livepeer distributable 
       run: |
         # We publish two tags for each build:
@@ -52,8 +45,8 @@ jobs:
           -t livepeer/go-livepeer:${BRANCH_TAG} \
           -t livepeer/go-livepeer:${VERSION_TAG} \
           --push \
-          --cache-from type=local,src=/tmp/docker-cache \
-          --cache-to   type=local,dest=/tmp/docker-cache,mode=max \
+          --cache-from type=registry,ref=livepeerci/go-livepeer-build-cache \
+          --cache-to   type=registry,ref=livepeerci/go-livepeer-build-cache,mode=max \
           -f docker/Dockerfile.build .
 
       env:
