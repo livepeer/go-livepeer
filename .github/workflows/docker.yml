@@ -53,12 +53,12 @@ jobs:
         BRANCH_TAG=$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
         VERSION_TAG=$(./print_version.sh)
         docker buildx build \
-          --platform=linux/${{ matrix.node }} \
+          --platform=linux/${{ matrix.platform }} \
           -t livepeer/go-livepeer:${BRANCH_TAG} \
           -t livepeer/go-livepeer:${VERSION_TAG} \
           --push \
-          --cache-from type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.node }} \
-          --cache-to   type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.node }},mode=max \
+          --cache-from type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.platform }} \
+          --cache-to   type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.platform }},mode=max \
           -f docker/Dockerfile.build .
 
       env:
