@@ -8,6 +8,11 @@ jobs:
   build:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        platform:
+          - amd64
+          - arm64
     steps:
     - name: Checkout
       uses: actions/checkout@v2
@@ -48,12 +53,12 @@ jobs:
         BRANCH_TAG=$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')
         VERSION_TAG=$(./print_version.sh)
         docker buildx build \
-          --platform=linux/arm64,linux/amd64 \
+          --platform=linux/${{ matrix.node }} \
           -t livepeer/go-livepeer:${BRANCH_TAG} \
           -t livepeer/go-livepeer:${VERSION_TAG} \
           --push \
-          --cache-from type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache \
-          --cache-to   type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache,mode=max \
+          --cache-from type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.node }} \
+          --cache-to   type=registry,ref=lpcache.azurecr.io/go-livepeer-build-cache-${{ matrix.node }},mode=max \
           -f docker/Dockerfile.build .
 
       env:
