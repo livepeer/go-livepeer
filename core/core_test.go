@@ -21,7 +21,7 @@ import (
 )
 
 func Over1Pct(val int, cmp int) bool {
-	return float32(val) > float32(cmp)*1.01 || float32(val) < float32(cmp)*0.99
+	return float32(val) > float32(cmp)*1.02 || float32(val) < float32(cmp)*0.98
 }
 
 func StubSegment() *stream.HLSSegment {
