@@ -22,7 +22,6 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
-	"golang.org/x/net/http2"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -44,15 +43,18 @@ var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
 
+var dialTimeout = 2 * time.Second
+
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
-	Transport: &http2.Transport{
+	Transport: &http.Transport{
 		TLSClientConfig: tlsConfig,
-		DialTLS: func(network, addr string, cfg *tls.Config) (gonet.Conn, error) {
-			netDialer := &gonet.Dialer{
-				Timeout: 2 * time.Second,
-			}
-			return tls.DialWithDialer(netDialer, network, addr, cfg)
+		DialTLSContext: func(ctx context.Context, network, addr string) (gonet.Conn, error) {
+			cctx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+
+			tlsDialer := &tls.Dialer{Config: tlsConfig}
+			return tlsDialer.DialContext(cctx, network, addr)
 		},
 	},
 	// Don't set a timeout here; pass a context to the request
