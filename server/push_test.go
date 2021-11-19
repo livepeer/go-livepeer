@@ -1630,7 +1630,6 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	sess2.OrchestratorScore = common.Score_Untrusted
 
 	sess3 := StubBroadcastSession(ts3.URL)
-	glog.Errorf("====> ts 3 url %s ", ts3.URL)
 	sess3.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	sess3.Params.ManifestID = "mani"
 	sess3.OrchestratorScore = common.Score_Untrusted
