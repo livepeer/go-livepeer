@@ -56,6 +56,11 @@ var httpClient = &http.Client{
 			tlsDialer := &tls.Dialer{Config: tlsConfig}
 			return tlsDialer.DialContext(cctx, network, addr)
 		},
+		// Required for the transport to try to upgrade to HTTP/2 if TLSClientConfig is non-nil or
+		// if custom dialers (i.e. via DialTLSContext) are used. This allows us to by default
+		// transparently support HTTP/2 while maintaining the flexibility to use HTTP/1 by running
+		// with GODEBUG=http2client=0
+		ForceAttemptHTTP2: true,
 	},
 	// Don't set a timeout here; pass a context to the request
 }
