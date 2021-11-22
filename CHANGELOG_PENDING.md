@@ -8,6 +8,8 @@
 
 #### General
 
+- \#2114 Add option to repeat the benchmarking process (@jailuthra)
+
 #### Broadcaster
 
 - \#2086 Add support for fast verification (@jailuthra @darkdragon)
