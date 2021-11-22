@@ -1526,6 +1526,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	assert.False(extEx2)
 	serverCleanup(s)
 }
+
 func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1590,7 +1591,31 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("UNtrusted transcoded binary data"))
 	})
+	unverifiedHash := goodHash
+	unverifiedHashCalled := 0
 	mux2.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(unverifiedHash)
+		unverifiedHashCalled++
+	})
+
+	ts3, mux3 := stubTLSServer()
+	defer ts3.Close()
+	tSegData3 := []*net.TranscodedSegmentData{{Url: ts3.URL + segPath, Pixels: 100, PerceptualHashUrl: ts3.URL + segPath + ".phash"}}
+	tr3 := dummyRes(tSegData3)
+	buf3, err := proto.Marshal(tr3)
+	require.Nil(t, err)
+	mux3.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		// delay so it will be chosen second
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf3)
+	})
+	mux3.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("second UNtrusted transcoded binary data"))
+	})
+	mux3.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(goodHash)
 	})
@@ -1604,14 +1629,23 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	sess2.Params.ManifestID = "mani"
 	sess2.OrchestratorScore = common.Score_Untrusted
 
-	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess2}, false)
+	sess3 := StubBroadcastSession(ts3.URL)
+	sess3.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess3.Params.ManifestID = "mani"
+	sess3.OrchestratorScore = common.Score_Untrusted
+
+	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess3, sess2}, false)
 	bsm.VerificationFreq = 1
+	assert.Equal(0, bsm.untrustedPool.sus.count)
+	// hack: stop pool from refreshing
+	bsm.untrustedPool.refreshing = true
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
 	sess1.BroadcasterOS = osSession
 	sess2.BroadcasterOS = osSession
+	sess3.BroadcasterOS = osSession
 
 	oldjpqt := core.JsonPlaylistQuitTimeout
 	defer func() {
@@ -1652,7 +1686,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		assert.Nil(err)
 		assert.Contains(params, "name")
 		assert.Len(params, 1)
-		assert.Equal(params["name"], "P144p25fps16x9_17.ts")
+		assert.Equal("P144p25fps16x9_17.ts", params["name"])
 		assert.Equal(`attachment; filename="P144p25fps16x9_17.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		bodyPart, err := ioutil.ReadAll(p)
@@ -1665,4 +1699,48 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	assert.Equal(1, i)
 	assert.Equal(uint64(12), cxn.sourceBytes)
 	assert.Equal(uint64(32), cxn.transcodedBytes)
+
+	// now make unverified to respond with bad hash
+	unverifiedHash = []byte{0}
+	reader = strings.NewReader("InsteadOf.TS")
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+
+	req.Header.Set("Accept", "multipart/mixed")
+	s.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	assert.Equal(200, resp.StatusCode)
+
+	mediaType, params, err = mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	assert.Equal("multipart/mixed", mediaType)
+	assert.Nil(err)
+	mr = multipart.NewReader(resp.Body, params["boundary"])
+	i = 0
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		assert.NoError(err)
+		mediaType, params, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
+		assert.Nil(err)
+		assert.Contains(params, "name")
+		assert.Len(params, 1)
+		assert.Equal("P144p25fps16x9_18.ts", params["name"])
+		assert.Equal(`attachment; filename="P144p25fps16x9_18.ts"`, p.Header.Get("Content-Disposition"))
+		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
+		bodyPart, err := ioutil.ReadAll(p)
+		assert.NoError(err)
+		assert.Equal("video/mp2t", strings.ToLower(mediaType))
+		assert.Equal("second UNtrusted transcoded binary data", string(bodyPart))
+
+		i++
+	}
+	assert.Equal(1, i)
+	assert.Equal(uint64(12*2), cxn.sourceBytes)
+	assert.Equal(uint64(71), cxn.transcodedBytes)
+	assert.Equal(2, unverifiedHashCalled)
+	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
+	assert.Equal(0, bsm.untrustedPool.sus.count)
 }
