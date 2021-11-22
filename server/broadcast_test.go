@@ -1679,3 +1679,32 @@ func stubTestTranscoder(ctx context.Context, handler http.HandlerFunc) string {
 	mux.HandleFunc("/segment", handler)
 	return ts.URL
 }
+
+func TestCollectResults(t *testing.T) {
+	assert := assert.New(t)
+
+	trustedSess := StubBroadcastSession("trustedTranscoder")
+	trustedSess.OrchestratorScore = common.Score_Trusted
+	untrustedSess1 := StubBroadcastSession("untrustedTranscoder1")
+	untrustedSess1.OrchestratorScore = common.Score_Untrusted
+	untrustedSess2 := StubBroadcastSession("untrustedTranscoder2")
+	untrustedSess2.OrchestratorScore = common.Score_Untrusted
+	untrustedSessVerified := StubBroadcastSession("untrustedTranscoderVerified")
+	untrustedSessVerified.OrchestratorScore = common.Score_Untrusted
+	bsm := bsmWithSessList([]*BroadcastSession{trustedSess, untrustedSess1, untrustedSess2, untrustedSessVerified})
+	bsm.sessionVerified(untrustedSessVerified)
+
+	resChan := make(chan *SubmitResult, 4)
+	resChan <- &SubmitResult{Session: untrustedSess1, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: untrustedSessVerified, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: untrustedSess2, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: trustedSess, TranscodeResult: &ReceivedTranscodeResult{}}
+
+	trustedResult, untrustedResults, err := bsm.collectResults(resChan, 4)
+
+	assert.NoError(err)
+	assert.Equal(trustedSess, trustedResult.Session)
+	assert.Len(untrustedResults, 3)
+	// the first result should always come from the verified session
+	assert.Equal(untrustedSessVerified, untrustedResults[0].Session)
+}

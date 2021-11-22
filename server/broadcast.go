@@ -470,36 +470,9 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitResult,
 	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
-	submitResults := make([]*SubmitResult, submittedCount)
+	trustedResult, untrustedResults, err := bsm.collectResults(submitResultsCh, submittedCount)
 
-	// can have different strategies - for example, just use first one
-	// and ignore everything else
-	// for now wait for all the results
-	for i := 0; i < submittedCount; i++ {
-		submitResults[i] = <-submitResultsCh
-	}
-	// we're here because we're doing verification
-	var trustedResults *SubmitResult
-	var untrustedResults []*SubmitResult
-	var err error
-	for _, res := range submitResults {
-		if res.Err == nil && res.TranscodeResult != nil {
-			if res.Session.OrchestratorScore == common.Score_Trusted {
-				trustedResults = res
-			} else {
-				untrustedResults = append(untrustedResults, res)
-			}
-		}
-		if res.Err != nil {
-			err = res.Err
-			if isNonRetryableError(err) {
-				bsm.completeSession(res.Session)
-			} else {
-				bsm.suspendAndRemoveOrch(res.Session)
-			}
-		}
-	}
-	if trustedResults == nil {
+	if trustedResult == nil {
 		// no results from trusted orch, using anything
 		if len(untrustedResults) == 0 {
 			// no results at all
@@ -509,17 +482,19 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 	}
 	if len(untrustedResults) == 0 {
 		// no results from untrusted orch, just using trusted ones
-		return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
+		return trustedResult.Session, trustedResult.TranscodeResult, trustedResult.Err
 	}
-	segmToCheckIndex := rand.Intn(len(trustedResults.TranscodeResult.Segments))
-	// downloading hashes
-	trustedHash, err := drivers.GetSegmentData(trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	segmToCheckIndex := rand.Intn(len(trustedResult.TranscodeResult.Segments))
+
+	// download trusted hashes
+	trustedHash, err := drivers.GetSegmentData(trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 	if err != nil {
 		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
-			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
+			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		return nil, nil, err
 	}
 
+	// verify untrusted hashes
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
 		untrustedHash, err := drivers.GetSegmentData(untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
@@ -537,7 +512,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		}
 		glog.Infof("Hashes from url=%s and url=%s are equal=%v",
-			trustedResults.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
+			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
 			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
 		if equal {
 			// stick to this verified orchestrator for further segments.
@@ -557,7 +532,44 @@ func (bsm *BroadcastSessionsManager) chooseResults(submitResultsCh chan *SubmitR
 		}
 	}
 
-	return trustedResults.Session, trustedResults.TranscodeResult, trustedResults.Err
+	return trustedResult.Session, trustedResult.TranscodeResult, trustedResult.Err
+}
+
+func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *SubmitResult, submittedCount int) (*SubmitResult, []*SubmitResult, error) {
+	submitResults := make([]*SubmitResult, submittedCount)
+
+	// can have different strategies - for example, just use first one
+	// and ignore everything else
+	// for now wait for all the results
+	for i := 0; i < submittedCount; i++ {
+		submitResults[i] = <-submitResultsCh
+	}
+	// we're here because we're doing verification
+	var trustedResults *SubmitResult
+	var untrustedResults []*SubmitResult
+	var err error
+	for _, res := range submitResults {
+		if res.Err == nil && res.TranscodeResult != nil {
+			if res.Session.OrchestratorScore == common.Score_Trusted {
+				trustedResults = res
+			} else if res.Session == bsm.verifiedSession {
+				// verified result should always come first and therefore take the priority
+				untrustedResults = append([]*SubmitResult{res}, untrustedResults...)
+			} else {
+				untrustedResults = append(untrustedResults, res)
+			}
+		}
+		if res.Err != nil {
+			err = res.Err
+			if isNonRetryableError(err) {
+				bsm.completeSession(res.Session)
+			} else {
+				bsm.suspendAndRemoveOrch(res.Session)
+			}
+		}
+	}
+
+	return trustedResults, untrustedResults, err
 }
 
 // the caller needs to ensure bsm.sessLock is acquired before calling this.
