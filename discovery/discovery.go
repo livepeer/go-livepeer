@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
@@ -64,7 +65,7 @@ func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
 	return res
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+func (o *orchestratorPool) GetOrchestrators(logCtx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
 	linfos := make([]common.OrchestratorLocalInfo, 0, len(o.infos))
@@ -114,7 +115,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
-			glog.Error(err)
+			clog.Errorf(logCtx, "err=%v", err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(err.Error())
 			}

@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -12,15 +13,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/lpms/ffmpeg"
-
-	"github.com/golang/glog"
 )
 
 type Transcoder interface {
-	Transcode(md *SegTranscodingMetadata) (*TranscodeData, error)
+	Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error)
 }
 
 type LocalTranscoder struct {
@@ -37,7 +37,7 @@ func NewUnrecoverableError(err error) UnrecoverableError {
 
 var WorkDir string
 
-func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
@@ -68,7 +68,7 @@ func (lt *LocalTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeD
 		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(res, opts)
+	return resToTranscodeData(ctx, res, opts)
 }
 
 func NewLocalTranscoder(workDir string) Transcoder {
@@ -80,7 +80,7 @@ type NvidiaTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
-func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
@@ -111,7 +111,7 @@ func (nv *NvidiaTranscoder) Transcode(md *SegTranscodingMetadata) (td *Transcode
 		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(res, out)
+	return resToTranscodeData(ctx, res, out)
 }
 
 // TestNvidiaTranscoder tries to transcode test segment on all the devices
@@ -137,7 +137,7 @@ func TestNvidiaTranscoder(devices []string) error {
 		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
 		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
 		md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
-		td, err := t1.Transcode(md)
+		td, err := t1.Transcode(context.Background(), md)
 
 		t1.Stop()
 		if err != nil {
@@ -185,7 +185,7 @@ func parseURI(uri string) (string, uint64, error) {
 	return mid, seqNo, err
 }
 
-func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
+func resToTranscodeData(logCtx context.Context, res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
 	if len(res.Encoded) != len(opts) {
 		return nil, errors.New("lengths of results and options different")
 	}
@@ -199,7 +199,7 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 			oname := opts[i].Oname
 			o, err := ioutil.ReadFile(oname)
 			if err != nil {
-				glog.Error("Cannot read transcoded output for ", oname)
+				clog.Errorf(logCtx, "Cannot read transcoded output for name=%s", oname)
 				return nil, err
 			}
 			// Extract perceptual hash if calculated
@@ -208,12 +208,12 @@ func resToTranscodeData(res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOpt
 				sigfile := oname + ".bin"
 				s, err = ioutil.ReadFile(sigfile)
 				if err != nil {
-					glog.Error("Cannot read perceptual hash at ", sigfile)
+					clog.Errorf(logCtx, "Cannot read perceptual hash at name=%s", sigfile)
 					return nil, err
 				}
 				err = os.Remove(sigfile)
 				if err != nil {
-					glog.Error("Cannot delete perceptual hash after reading: ", sigfile)
+					clog.Errorf(logCtx, "Cannot delete perceptual hash after reading name=%s", sigfile)
 				}
 			}
 			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})

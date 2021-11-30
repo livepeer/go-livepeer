@@ -41,6 +41,7 @@ type StreamParameters struct {
 	Capabilities     *Capabilities
 	Detection        DetectionConfig
 	VerificationFreq uint
+	Nonce            uint64
 }
 
 func (s *StreamParameters) StreamID() string {

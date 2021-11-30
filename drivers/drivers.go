@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -33,7 +33,7 @@ var testMemoryStoragesLock = &sync.Mutex{}
 
 // OSDriver common interface for Object Storage
 type OSDriver interface {
-	NewSession(path string) OSSession
+	NewSession(logCtx context.Context, path string) OSSession
 }
 
 // ErrNoNextPage indicates that there is no next page in ListFiles
@@ -94,8 +94,8 @@ func NewSession(info *net.OSInfo) OSSession {
 	return nil
 }
 
-func GetSegmentData(uri string) ([]byte, error) {
-	return getSegmentDataHTTP(uri)
+func GetSegmentData(logCtx context.Context, uri string) ([]byte, error) {
+	return getSegmentDataHTTP(logCtx, uri)
 }
 
 // PrepareOSURL used for resolving files when necessary and turning into a URL. Don't use
@@ -205,25 +205,25 @@ var httpc = &http.Client{
 	Timeout:   common.HTTPTimeout / 2,
 }
 
-func getSegmentDataHTTP(uri string) ([]byte, error) {
-	glog.V(common.VERBOSE).Infof("Downloading uri=%s", uri)
+func getSegmentDataHTTP(logCtx context.Context, uri string) ([]byte, error) {
+	clog.V(common.VERBOSE).Infof(logCtx, "Downloading uri=%s", uri)
 	started := time.Now()
 	resp, err := httpc.Get(uri)
 	if err != nil {
-		glog.Errorf("Error getting HTTP uri=%s err=%v", uri, err)
+		clog.Errorf(logCtx, "Error getting HTTP uri=%s err=%v", uri, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		glog.Errorf("Non-200 response for status=%v uri=%s", resp.Status, uri)
+		clog.Errorf(logCtx, "Non-200 response for status=%v uri=%s", resp.Status, uri)
 		return nil, fmt.Errorf(resp.Status)
 	}
 	body, err := common.ReadAtMost(resp.Body, common.MaxSegSize)
 	if err != nil {
-		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
+		clog.Errorf(logCtx, "Error reading body uri=%s err=%v", uri, err)
 		return nil, err
 	}
 	took := time.Since(started)
-	glog.V(common.VERBOSE).Infof("Downloaded uri=%s took=%s bytes=%d", uri, took, len(body))
+	clog.V(common.VERBOSE).Infof(logCtx, "Downloaded uri=%s dur=%s bytes=%d", uri, took, len(body))
 	return body, nil
 }

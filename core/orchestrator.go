@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
@@ -95,8 +96,8 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	return nil
 }
 
-func (orch *orchestrator) TranscodeSeg(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	return orch.node.sendToTranscodeLoop(md, seg)
+func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
 
 func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
@@ -402,6 +403,7 @@ type TranscodedSegmentData struct {
 }
 
 type SegChanData struct {
+	ctx context.Context
 	seg *stream.HLSSegment
 	md  *SegTranscodingMetadata
 	res chan *TranscodeResult
@@ -453,7 +455,7 @@ func (rtm *RemoteTranscoderManager) removeTaskChan(taskID int64) {
 	delete(rtm.taskChans, taskID)
 }
 
-func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, error) {
+func (n *LivepeerNode) getSegmentChan(ctx context.Context, md *SegTranscodingMetadata) (SegmentChan, error) {
 	// concurrency concerns here? what if a chan is added mid-call?
 	n.segmentMutex.Lock()
 	defer n.segmentMutex.Unlock()
@@ -464,8 +466,8 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 		return nil, ErrOrchCap
 	}
 	sc := make(SegmentChan, maxSegmentChannels)
-	glog.V(common.DEBUG).Infof("Creating new segment chan for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
-	if err := n.transcodeSegmentLoop(md, sc); err != nil {
+	clog.V(common.DEBUG).Infof(ctx, "Creating new segment chan")
+	if err := n.transcodeSegmentLoop(clog.Clone(context.Background(), ctx), md, sc); err != nil {
 		return nil, err
 	}
 	n.SegmentChans[ManifestID(md.AuthToken.SessionId)] = sc
@@ -475,27 +477,27 @@ func (n *LivepeerNode) getSegmentChan(md *SegTranscodingMetadata) (SegmentChan, 
 	return sc, nil
 }
 
-func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
-	glog.V(common.DEBUG).Infof("Starting to transcode segment manifestID=%s sessionID=%s seqNo=%d", string(md.ManifestID), md.AuthToken.SessionId, md.Seq)
-	ch, err := n.getSegmentChan(md)
+func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
+	clog.V(common.DEBUG).Infof(ctx, "Starting to transcode segment")
+	ch, err := n.getSegmentChan(ctx, md)
 	if err != nil {
-		glog.Error("Could not find segment chan ", err)
+		clog.Errorf(ctx, "Could not find segment chan err=%v", err)
 		return nil, err
 	}
-	segChanData := &SegChanData{seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
+	segChanData := &SegChanData{ctx: ctx, seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
 	select {
 	case ch <- segChanData:
-		glog.V(common.DEBUG).Infof("Submitted segment to transcode loop manifestID=%s sessionID=%s seqNo=%d", md.ManifestID, md.AuthToken.SessionId, md.Seq)
+		clog.V(common.DEBUG).Infof(ctx, "Submitted segment to transcode loop ")
 	default:
 		// sending segChan should not block; if it does, the channel is busy
-		glog.Errorf("Transcoder was busy with a previous segment manifestID=%s sessionID=%s seqNo=%d", md.ManifestID, md.AuthToken.SessionId, md.Seq)
+		clog.Errorf(ctx, "Transcoder was busy with a previous segment")
 		return nil, ErrOrchBusy
 	}
 	res := <-segChanData.res
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
+func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
 		if fnamep != nil {
@@ -513,7 +515,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
-			glog.Errorf("Transcoder cannot create workdir: %v", err)
+			clog.Errorf(ctx, "Transcoder cannot create workdir err=%v", err)
 			return terr(err)
 		}
 	}
@@ -521,7 +523,7 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	fname := path.Join(n.WorkDir, inName)
 	fnamep = &fname
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
-		glog.Errorf("Transcoder cannot write file: %v", err)
+		clog.Errorf(ctx, "Transcoder cannot write file err=%v", err)
 		return terr(err)
 	}
 
@@ -554,21 +556,21 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	//Do the transcoding
 	start := time.Now()
-	tData, err := transcoder.Transcode(md)
+	tData, err := transcoder.Transcode(ctx, md)
 	if err != nil {
-		glog.Errorf("Error transcoding manifestID=%s sessionID=%s segNo=%d segName=%s err=%v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, seg.Name, err)
+		clog.Errorf(ctx, "Error transcoding segName=%s err=%v", seg.Name, err)
 		return terr(err)
 	}
 
 	tSegments := tData.Segments
 	if len(tSegments) != len(md.Profiles) {
-		glog.Errorf("Did not receive the correct number of transcoded segments; got %v expected %v manifestID=%s sessionID=%s seqNo=%d", len(tSegments),
-			len(md.Profiles), string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo)
+		clog.Errorf(ctx, "Did not receive the correct number of transcoded segments; got %v expected %v", len(tSegments),
+			len(md.Profiles))
 		return terr(fmt.Errorf("MismatchedSegments"))
 	}
 
 	took := time.Since(start)
-	glog.V(common.DEBUG).Infof("Transcoding of segment manifestID=%s sessionID=%s seqNo=%d took=%v", string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, took)
+	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
 	if monitor.Enabled {
 		monitor.SegmentTranscoded(0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
@@ -579,18 +581,16 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 
 	for i := range md.Profiles {
 		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			glog.Errorf("Cannot find transcoded segment for manifestID=%s sessionID=%s seqNo=%d len=%d",
-				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, len(tSegments[i].Data))
+			clog.Errorf(ctx, "Cannot find transcoded segment for len=%d", len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
 		if md.CalcPerceptualHash && tSegments[i].PHash == nil {
-			glog.Errorf("Could not find perceptual hash for manifestID=%s sessionID=%s seqNo=%d profile=%v",
-				string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name)
+			clog.Errorf(ctx, "Could not find perceptual hash for profile=%v", md.Profiles[i].Name)
 			// FIXME: Return the error once everyone has upgraded their nodes
 			// return terr(fmt.Errorf("MissingPerceptualHash"))
 		}
-		glog.V(common.DEBUG).Infof("Transcoded segment manifestID=%s sessionID=%s seqNo=%d profile=%s len=%d",
-			string(md.ManifestID), md.AuthToken.SessionId, seg.SeqNo, md.Profiles[i].Name, len(tSegments[i].Data))
+		clog.V(common.DEBUG).Infof(ctx, "Transcoded segment profile=%s len=%d",
+			md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
@@ -605,20 +605,20 @@ func (n *LivepeerNode) transcodeSeg(config transcodeConfig, seg *stream.HLSSegme
 	segHash := crypto.Keccak256(segHashes...)
 	tr.Sig, tr.Err = n.Eth.Sign(segHash)
 	if tr.Err != nil {
-		glog.Error("Unable to sign hash of transcoded segment hashes: ", tr.Err)
+		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%v", tr.Err)
 	}
 	return &tr
 }
 
-func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan SegmentChan) error {
-	glog.V(common.DEBUG).Infof("Starting transcode segment loop for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
+func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTranscodingMetadata, segChan SegmentChan) error {
+	clog.V(common.DEBUG).Infof(logCtx, "Starting transcode segment loop for manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
 
 	// Set up local OS for any remote transcoders to use if necessary
 	if drivers.NodeStorage == nil {
 		return fmt.Errorf("Missing local storage")
 	}
 
-	los := drivers.NodeStorage.NewSession(md.AuthToken.SessionId)
+	los := drivers.NodeStorage.NewSession(logCtx, md.AuthToken.SessionId)
 
 	// determine appropriate OS to use
 	os := drivers.NewSession(md.OS)
@@ -646,7 +646,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 					n.TranscoderManager.completeStreamSession(md.AuthToken.SessionId)
 					n.TranscoderManager.RTmutex.Unlock()
 				}
-				glog.V(common.DEBUG).Infof("Segment loop timed out; closing manifestID=%s sessionID=%s", md.ManifestID, md.AuthToken.SessionId)
+				clog.V(common.DEBUG).Infof(logCtx, "Segment loop timed out; closing ")
 				n.segmentMutex.Lock()
 				mid := ManifestID(md.AuthToken.SessionId)
 				if _, ok := n.SegmentChans[mid]; ok {
@@ -659,7 +659,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(md *SegTranscodingMetadata, segChan 
 				n.segmentMutex.Unlock()
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeSeg(config, chanData.seg, chanData.md)
+				chanData.res <- n.transcodeSeg(chanData.ctx, config, chanData.seg, chanData.md)
 			}
 			cancel()
 		}
@@ -713,13 +713,13 @@ func (rt *RemoteTranscoder) done() {
 }
 
 // Transcode do actual transcoding by sending work to remote transcoder and waiting for the result
-func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	taskID, taskChan := rt.manager.addTaskChan()
 	defer rt.manager.removeTaskChan(taskID)
 	fname := md.Fname
 	signalEOF := func(err error) (*TranscodeData, error) {
 		rt.done()
-		glog.Errorf("Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
+		clog.Errorf(logCtx, "Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
 		return nil, RemoteTranscoderFatalError{err}
 	}
 
@@ -764,7 +764,7 @@ func (rt *RemoteTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeDat
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
 		}
-		glog.Infof("Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%v",
+		clog.Infof(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%v",
 			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
@@ -814,7 +814,7 @@ type RemoteTranscoderManager struct {
 	taskChans map[int64]TranscoderChan
 	taskCount int64
 
-	//Map for keeping track of sessions and their respective transcoders
+	// Map for keeping track of sessions and their respective transcoders
 	streamSessions map[string]*RemoteTranscoder
 }
 
@@ -965,12 +965,12 @@ func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
 }
 
 // Transcode does actual transcoding using remote transcoder from the pool
-func (rtm *RemoteTranscoderManager) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (rtm *RemoteTranscoderManager) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	currentTranscoder, err := rtm.selectTranscoder(md.AuthToken.SessionId)
 	if err != nil {
 		return nil, err
 	}
-	res, err := currentTranscoder.Transcode(md)
+	res, err := currentTranscoder.Transcode(ctx, md)
 	if err != nil {
 		rtm.RTmutex.Lock()
 		rtm.completeStreamSession(md.AuthToken.SessionId)
@@ -983,7 +983,7 @@ func (rtm *RemoteTranscoderManager) Transcode(md *SegTranscodingMetadata) (*Tran
 		if err.(RemoteTranscoderFatalError).error == ErrRemoteTranscoderTimeout {
 			return res, err
 		}
-		return rtm.Transcode(md)
+		return rtm.Transcode(ctx, md)
 	}
 	return res, err
 }

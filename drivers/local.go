@@ -39,7 +39,7 @@ func NewMemoryDriver(baseURI *url.URL) *MemoryOS {
 	}
 }
 
-func (ostore *MemoryOS) NewSession(path string) OSSession {
+func (ostore *MemoryOS) NewSession(logCtx context.Context, path string) OSSession {
 	ostore.lock.Lock()
 	defer ostore.lock.Unlock()
 	if session, ok := ostore.sessions[path]; ok {

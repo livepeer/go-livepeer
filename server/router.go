@@ -59,7 +59,7 @@ func (r *Router) Start(uri *url.URL, serviceURI *url.URL, workDir string) error 
 
 	time.Sleep(1 * time.Second)
 
-	if err := checkAvailability(serviceURI); err != nil {
+	if err := checkAvailability(context.Background(), serviceURI); err != nil {
 		s.Stop()
 		return err
 	}
@@ -81,8 +81,8 @@ func (r *Router) Ping(ctx context.Context, req *net.PingPong) (*net.PingPong, er
 	return &net.PingPong{Value: []byte{}}, nil
 }
 
-func checkAvailability(uri *url.URL) error {
-	client, conn, err := startOrchestratorClient(uri)
+func checkAvailability(logCtx context.Context, uri *url.URL) error {
+	client, conn, err := startOrchestratorClient(logCtx, uri)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func getOrchestratorInfo(ctx context.Context, uris []*url.URL, req *net.Orchestr
 
 	for _, uri := range uris {
 		go func(uri *url.URL) {
-			client, conn, err := startOrchestratorClient(uri)
+			client, conn, err := startOrchestratorClient(ctx, uri)
 			if err != nil {
 				errCh <- fmt.Errorf("%v err=%v", uri, err)
 				return

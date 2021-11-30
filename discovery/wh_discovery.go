@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -108,7 +109,7 @@ func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
 	return size
 }
 
-func (w *webhookPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+func (w *webhookPool) GetOrchestrators(logCtx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
 	_, err := w.getInfos()
@@ -119,7 +120,7 @@ func (w *webhookPool) GetOrchestrators(numOrchestrators int, suspender common.Su
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	return w.pool.GetOrchestrators(numOrchestrators, suspender, caps, scorePred)
+	return w.pool.GetOrchestrators(logCtx, numOrchestrators, suspender, caps, scorePred)
 }
 
 var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
