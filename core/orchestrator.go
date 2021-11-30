@@ -139,10 +139,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 	priceInfoRat, err := common.RatPriceInfo(priceInfo)
 	if err != nil {
-		return fmt.Errorf("invalid expected price sent with payment err=%v", err)
+		return fmt.Errorf("invalid expected price sent with payment err=%q", err)
 	}
 	if priceInfoRat == nil {
-		return fmt.Errorf("invalid expected price sent with payment err=%v", "expected price is nil")
+		return fmt.Errorf("invalid expected price sent with payment err=%q", "expected price is nil")
 	}
 
 	ticketParams := &pm.TicketParams{
@@ -209,7 +209,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
-					glog.Errorf("error redeeming ticket sessionID=%v recipientRandHash=%x senderNonce=%v err=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+					glog.Errorf("error redeeming ticket sessionID=%v recipientRandHash=%x senderNonce=%v err=%q", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}
@@ -481,7 +481,7 @@ func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodi
 	clog.V(common.DEBUG).Infof(ctx, "Starting to transcode segment")
 	ch, err := n.getSegmentChan(ctx, md)
 	if err != nil {
-		clog.Errorf(ctx, "Could not find segment chan err=%v", err)
+		clog.Errorf(ctx, "Could not find segment chan err=%q", err)
 		return nil, err
 	}
 	segChanData := &SegChanData{ctx: ctx, seg: seg, md: md, res: make(chan *TranscodeResult, 1)}
@@ -515,7 +515,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
-			clog.Errorf(ctx, "Transcoder cannot create workdir err=%v", err)
+			clog.Errorf(ctx, "Transcoder cannot create workdir err=%q", err)
 			return terr(err)
 		}
 	}
@@ -523,7 +523,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	fname := path.Join(n.WorkDir, inName)
 	fnamep = &fname
 	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
-		clog.Errorf(ctx, "Transcoder cannot write file err=%v", err)
+		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		return terr(err)
 	}
 
@@ -558,7 +558,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	start := time.Now()
 	tData, err := transcoder.Transcode(ctx, md)
 	if err != nil {
-		clog.Errorf(ctx, "Error transcoding segName=%s err=%v", seg.Name, err)
+		clog.Errorf(ctx, "Error transcoding segName=%s err=%q", seg.Name, err)
 		return terr(err)
 	}
 
@@ -605,7 +605,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	segHash := crypto.Keccak256(segHashes...)
 	tr.Sig, tr.Err = n.Eth.Sign(segHash)
 	if tr.Err != nil {
-		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%v", tr.Err)
+		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%q", tr.Err)
 	}
 	return &tr
 }
@@ -719,7 +719,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	fname := md.Fname
 	signalEOF := func(err error) (*TranscodeData, error) {
 		rt.done()
-		clog.Errorf(logCtx, "Fatal error with remote transcoder=%s taskId=%d fname=%s err=%v", rt.addr, taskID, fname, err)
+		clog.Errorf(logCtx, "Fatal error with remote transcoder=%s taskId=%d fname=%s err=%q", rt.addr, taskID, fname, err)
 		return nil, RemoteTranscoderFatalError{err}
 	}
 
@@ -764,7 +764,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
 		}
-		clog.Infof(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%v",
+		clog.Infof(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%q",
 			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
@@ -844,7 +844,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 		ctx := stream.Context()
 		<-ctx.Done()
 		err := ctx.Err()
-		glog.Errorf("Stream closed for transcoder=%s, err=%v", from, err)
+		glog.Errorf("Stream closed for transcoder=%s, err=%q", from, err)
 		transcoder.done()
 	}()
 

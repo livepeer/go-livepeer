@@ -179,7 +179,7 @@ func NewRedeemerClient(uri string, sm pm.SenderManager, tm pm.TimeManager) (*Red
 
 	// TODO: PROVIDE KEEPALIVE SETTINGS
 	if err != nil {
-		return nil, fmt.Errorf("Did not connect to redeemer=%v err=%v", uri, err)
+		return nil, fmt.Errorf("Did not connect to redeemer=%v err=%q", uri, err)
 	}
 	return &RedeemerClient{
 		conn:    conn,

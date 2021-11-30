@@ -141,7 +141,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 	md, err := coreSegMetadata(notify.SegData)
 	if err != nil {
-		glog.Errorf("Unable to parse segData taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
+		glog.Errorf("Unable to parse segData taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 		sendTranscodeResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 		// TODO short-circuit error handling
@@ -200,7 +200,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	for i, v := range tData.Segments {
 		ctyp, err := common.ProfileFormatMimeType(profiles[i].Format)
 		if err != nil {
-			clog.Errorf(ctx, "Could not find mime type err=%v", err)
+			clog.Errorf(ctx, "Could not find mime type err=%q", err)
 			continue
 		}
 		w.SetBoundary(boundary)
@@ -211,7 +211,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		}
 		fw, err := w.CreatePart(hdrs)
 		if err != nil {
-			clog.Errorf(ctx, "Could not create multipart part err=%v", err)
+			clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 		}
 		io.Copy(fw, bytes.NewBuffer(v.Data))
 		// Add perceptual hash data as a part if generated
@@ -223,7 +223,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 			}
 			fw, err := w.CreatePart(hdrs)
 			if err != nil {
-				clog.Errorf(ctx, "Could not create multipart part err=%v", err)
+				clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 			}
 			io.Copy(fw, bytes.NewBuffer(v.PHash))
 		}
@@ -237,7 +237,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	contentType string, body *bytes.Buffer, tData *core.TranscodeData, err error,
 ) {
 	if err != nil {
-		clog.Errorf(ctx, "Unable to transcode err=%v", err)
+		clog.Errorf(ctx, "Unable to transcode err=%q", err)
 		body.Write([]byte(err.Error()))
 		contentType = transcodingErrorMimeType
 	}
@@ -259,20 +259,20 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
-		clog.Errorf(ctx, "Error submitting results err=%v", err)
+		clog.Errorf(ctx, "Error submitting results err=%q", err)
 	} else {
 		rbody, rerr := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			if rerr != nil {
-				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v with unreadable body err=%v", resp.StatusCode, rerr)
+				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v with unreadable body err=%q", resp.StatusCode, rerr)
 			} else {
-				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v err=%v", resp.StatusCode, string(rbody))
+				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v err=%q", resp.StatusCode, string(rbody))
 			}
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	clog.V(common.VERBOSE).Infof(ctx, "Transcoding done results sent for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).Infof(ctx, "Transcoding done results sent for taskId=%d url=%s dur=%v err=%q", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
 		monitor.SegmentUploaded(0, uint64(notify.TaskId), uploadDur)
@@ -337,12 +337,12 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			glog.Errorf("Unable to read transcoding error body taskID=%v err=%v", tid, err)
+			glog.Errorf("Unable to read transcoding error body taskID=%v err=%q", tid, err)
 			res.Err = err
 		} else {
 			res.Err = fmt.Errorf(string(body))
 		}
-		glog.Errorf("Trascoding error for taskID=%v err=%v", tid, res.Err)
+		glog.Errorf("Trascoding error for taskID=%v err=%q", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
 		return
 	}

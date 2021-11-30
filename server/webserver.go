@@ -979,7 +979,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 					Addresses: []common.Address{o.Address},
 				})
 				if err != nil {
-					glog.Errorf("unable to get orchestrators from DB err=%v", err)
+					glog.Errorf("unable to get orchestrators from DB err=%q", err)
 					continue
 				}
 				if len(dbO) == 0 {
@@ -1111,7 +1111,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 		chainID, err := s.LivepeerNode.Database.ChainID()
 		if err != nil {
-			glog.Errorf("Error getting eth network ID err=%v", err)
+			glog.Errorf("Error getting eth network ID err=%q", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

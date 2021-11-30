@@ -126,7 +126,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, num
 		}
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
-			clog.V(common.DEBUG).Infof(logCtx, "invalid ticket params orch=%v err=%v",
+			clog.V(common.DEBUG).Infof(logCtx, "invalid ticket params orch=%v err=%q",
 				info.GetTranscoder(),
 				err,
 			)
@@ -137,7 +137,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, num
 		maxPrice := server.BroadcastCfg.MaxPrice()
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
-			clog.V(common.DEBUG).Infof(logCtx, "invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			clog.V(common.DEBUG).Infof(logCtx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
 			return false
 		}
 		if price == nil {
@@ -308,7 +308,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
-			errc <- fmt.Errorf("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			errc <- fmt.Errorf("invalid price info orch=%v err=%q", info.GetTranscoder(), err)
 			return
 		}
 

@@ -115,7 +115,7 @@ func (o *orchestratorPool) GetOrchestrators(logCtx context.Context, numOrchestra
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
-			clog.Errorf(logCtx, "err=%v", err)
+			clog.Errorf(logCtx, "err=%q", err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(err.Error())
 			}

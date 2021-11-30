@@ -510,7 +510,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(logCtx context.Context, submi
 			monitor.FastVerificationDone()
 		}
 		if err != nil {
-			clog.Errorf(logCtx, "error comparing perceptual hashes from url=%s err=%v",
+			clog.Errorf(logCtx, "error comparing perceptual hashes from url=%s err=%q",
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		}
 		clog.Infof(logCtx, "Hashes from url=%s and url=%s are equal=%v",
@@ -613,7 +613,7 @@ func selectOrchestrator(logCtx context.Context, n *core.LivepeerNode, params *co
 
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(logCtx, count, sus, params.Capabilities, scorePred)
 	if len(tinfos) <= 0 {
-		clog.Infof(logCtx, "No orchestrators found; not transcoding err=%v", err)
+		clog.Infof(logCtx, "No orchestrators found; not transcoding err=%q", err)
 		return nil, errNoOrchs
 	}
 	if err != nil {
@@ -711,7 +711,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	now := time.Now()
 	hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(seg.Data)
 	if err != nil {
-		clog.Warningf(ctx, "Error checking for zero video frame name=%s bytes=%d took=%s err=%v",
+		clog.Warningf(ctx, "Error checking for zero video frame name=%s bytes=%d took=%s err=%q",
 			seg.Name, len(seg.Data), time.Since(now), err)
 	}
 	if ros != nil && !hasZeroVideoFrame {
@@ -720,7 +720,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			uri, err := drivers.SaveRetried(ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
 			took := time.Since(now)
 			if err != nil {
-				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%v",
+				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%q",
 					name, len(seg.Data), err)
 			} else {
 				cpl.InsertHLSSegmentJSON(vProfile, seg.SeqNo, uri, seg.Duration)
@@ -735,7 +735,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 	uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil, 0)
 	if err != nil {
-		clog.Errorf(ctx, "Error saving segment err=%v", err)
+		clog.Errorf(ctx, "Error saving segment err=%q", err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
 		}
@@ -749,7 +749,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
 	}
 	if err != nil {
-		clog.Errorf(ctx, "Error inserting segment err=%v", err)
+		clog.Errorf(ctx, "Error inserting segment err=%q", err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 		}
@@ -760,14 +760,14 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		for _, profile := range cxn.params.Profiles {
 			ext, err := common.ProfileFormatExtension(profile.Format)
 			if err != nil {
-				clog.Errorf(ctx, "Error getting extension for profile=%v with segment err=%v",
+				clog.Errorf(ctx, "Error getting extension for profile=%v with segment err=%q",
 					profile.Format, err)
 				return nil, err
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 			uri, err := cpl.GetOSSession().SaveData(name, seg.Data, nil, 0)
 			if err != nil {
-				clog.Errorf(ctx, "Error saving segment err=%v", err)
+				clog.Errorf(ctx, "Error saving segment err=%q", err)
 				if monitor.Enabled {
 					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
 				}
@@ -776,7 +776,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			urls = append(urls, uri)
 			err = cpl.InsertHLSSegment(&profile, seg.SeqNo, uri, seg.Duration)
 			if err != nil {
-				clog.Errorf(ctx, "Error inserting segment err=%v", err)
+				clog.Errorf(ctx, "Error inserting segment err=%q", err)
 				if monitor.Enabled {
 					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 				}
@@ -805,12 +805,12 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 
 		if shouldStopStream(err) {
-			clog.Warningf(ctx, "Stopping current stream due to err=%v", err)
+			clog.Warningf(ctx, "Stopping current stream due to err=%q", err)
 			rtmpStrm.Close()
 			break
 		}
 		if isNonRetryableError(err) {
-			clog.Warningf(ctx, "Not retrying current segment due to non-retryable error err=%v", err)
+			clog.Warningf(ctx, "Not retrying current segment due to non-retryable error err=%q", err)
 			break
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -932,16 +932,16 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 				}
 				resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
 				if err != nil {
-					clog.Errorf(ctx, "Unable to POST detection result on webhook url=%v err=%v",
+					clog.Errorf(ctx, "Unable to POST detection result on webhook url=%v err=%q",
 						DetectionWebhookURL.Redacted(), err)
 				} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 					rbody, rerr := ioutil.ReadAll(resp.Body)
 					resp.Body.Close()
 					if rerr != nil {
-						clog.Errorf(ctx, "Detection webhook returned error status=%v with unreadable body err=%v",
+						clog.Errorf(ctx, "Detection webhook returned error status=%v with unreadable body err=%q",
 							resp.StatusCode, rerr)
 					} else {
-						clog.Errorf(ctx, "Detection webhook returned error status=%v err=%v",
+						clog.Errorf(ctx, "Detection webhook returned error status=%v err=%q",
 							resp.StatusCode, string(rbody))
 					}
 				}
@@ -979,7 +979,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 
 		sess, results, err := cxn.sessManager.chooseResults(ctx, resc, submittedCount)
 		if err != nil {
-			clog.Errorf(ctx, "Error choosing results: err=%v", err)
+			clog.Errorf(ctx, "Error choosing results: err=%q", err)
 			return nil, info, err
 		}
 		for _, usedSession := range sessions {
@@ -1021,7 +1021,7 @@ func prepareForTranscoding(logCtx context.Context, cxn *rtmpConnection, sess *Br
 		// XXX handle case when orch expects direct upload
 		uri, err := ios.SaveData(name, seg.Data, nil, 0)
 		if err != nil {
-			clog.Errorf(logCtx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%v", cxn.mid, cxn.nonce, seg.SeqNo, err)
+			clog.Errorf(logCtx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%q", cxn.mid, cxn.nonce, seg.SeqNo, err)
 			if monitor.Enabled {
 				monitor.SegmentUploadFailed(cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
 			}
@@ -1035,7 +1035,7 @@ func prepareForTranscoding(logCtx context.Context, cxn *rtmpConnection, sess *Br
 
 	refresh, err := shouldRefreshSession(logCtx, sess)
 	if err != nil {
-		clog.Errorf(logCtx, "Error checking whether to refresh session manifestID=%s orch=%v err=%v", cxn.mid, sess.Transcoder(), err)
+		clog.Errorf(logCtx, "Error checking whether to refresh session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
 		cxn.sessManager.suspendAndRemoveOrch(sess)
 		return nil, err
 	}
@@ -1043,7 +1043,7 @@ func prepareForTranscoding(logCtx context.Context, cxn *rtmpConnection, sess *Br
 	if refresh {
 		err := refreshSession(logCtx, sess)
 		if err != nil {
-			clog.Errorf(logCtx, "Error refreshing session manifestID=%s orch=%v err=%v", cxn.mid, sess.Transcoder(), err)
+			clog.Errorf(logCtx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
 			cxn.sessManager.suspendAndRemoveOrch(sess)
 			return nil, err
 		}
@@ -1118,7 +1118,7 @@ func downloadResults(logCtx context.Context, cxn *rtmpConnection, seg *stream.HL
 				uri, err := drivers.SaveRetried(bros, name, data, map[string]string{"duration": segDurMs}, 2)
 				took := time.Since(now)
 				if err != nil {
-					clog.Errorf(logCtx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%v", nonce, cxn.mid, name, err)
+					clog.Errorf(logCtx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%q", nonce, cxn.mid, name, err)
 				} else {
 					cpl.InsertHLSSegmentJSON(&profile, seg.SeqNo, uri, seg.Duration)
 					clog.Infof(logCtx, "Successfully saved nonce=%d manifestID=%s name=%s size=%d bytes to record store took=%s",

@@ -81,7 +81,7 @@ func (oq *OverwriteQueue) workerLoop() {
 				}
 			}
 			if err != nil {
-				glog.Errorf("Error saving %s name=%s bytes=%d took=%s try=%d err=%v", oq.desc, oq.name,
+				glog.Errorf("Error saving %s name=%s bytes=%d took=%s try=%d err=%q", oq.desc, oq.name,
 					len(data), took, oq.maxRetries, err)
 			}
 
