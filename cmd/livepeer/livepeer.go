@@ -276,7 +276,7 @@ func main() {
 			if *testTranscoder {
 				err := core.TestNvidiaTranscoder(devices)
 				if err != nil {
-					glog.Fatalf("Unable to transcode using Nvidia gpu=%s err=%v", strings.Join(devices, ","), err)
+					glog.Fatalf("Unable to transcode using Nvidia gpu=%q err=%q", strings.Join(devices, ","), err)
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
@@ -1079,19 +1079,19 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// TODO probably should put this (along w wizard GETs) into common code
 	resp, err := http.Get("https://api.ipify.org?format=text")
 	if err != nil {
-		glog.Errorf("Could not look up public IP err=%v", err)
+		glog.Errorf("Could not look up public IP err=%q", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Errorf("Could not look up public IP err=%v", err)
+		glog.Errorf("Could not look up public IP err=%q", err)
 		return nil, err
 	}
 	addr := "https://" + strings.TrimSpace(string(body)) + ":" + RpcPort
 	inferredUri, err := url.ParseRequestURI(addr)
 	if err != nil {
-		glog.Errorf("Could not look up public IP err=%v", err)
+		glog.Errorf("Could not look up public IP err=%q", err)
 		return nil, err
 	}
 	if n.Eth == nil {
@@ -1102,12 +1102,12 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// On-chain lookup and matching with inferred public address
 	addr, err = n.Eth.GetServiceURI(n.Eth.Account().Address)
 	if err != nil {
-		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%v", err)
+		glog.Errorf("Could not get service URI; orchestrator may be unreachable err=%q", err)
 		return nil, err
 	}
 	ethUri, err := url.ParseRequestURI(addr)
 	if err != nil {
-		glog.Errorf("Could not parse service URI; orchestrator may be unreachable err=%v", err)
+		glog.Errorf("Could not parse service URI; orchestrator may be unreachable err=%q", err)
 		ethUri, _ = url.ParseRequestURI("http://127.0.0.1:" + RpcPort)
 	}
 	if ethUri.Hostname() != inferredUri.Hostname() || ethUri.Port() != inferredUri.Port() {

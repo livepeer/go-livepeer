@@ -198,7 +198,7 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	// If we fail to read stake weights of unknownSessions we should not continue with selection
 	if err != nil {
-		clog.Errorf(s.logCtx, "failed to read stake weights for selection err=%v", err)
+		clog.Errorf(s.logCtx, "failed to read stake weights for selection err=%q", err)
 		return nil
 	}
 

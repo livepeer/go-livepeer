@@ -837,13 +837,13 @@ func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 	pay.ExpectedPrice = &net.PriceInfo{PricePerUnit: 500, PixelsPerUnit: 0}
 	err := orch.ProcessPayment(pay, ManifestID("some manifest"))
 	assert.Error(err)
-	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "pixels per unit is 0"))
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "pixels per unit is 0"))
 
 	// test ExpectedPrice = nil
 	pay.ExpectedPrice = nil
 	err = orch.ProcessPayment(pay, ManifestID("some manifest"))
 	assert.Error(err)
-	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "expected price is nil"))
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "expected price is nil"))
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {

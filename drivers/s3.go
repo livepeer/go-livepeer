@@ -323,7 +323,7 @@ func (os *s3Session) SaveData(name string, data []byte, meta map[string]string, 
 	path, err := os.postData(name, data, meta, timeout)
 	if err != nil {
 		// handle error
-		clog.Errorf(os.logCtx, "Save S3 error err=%v", err)
+		clog.Errorf(os.logCtx, "Save S3 error err=%q", err)
 		return "", err
 	}
 	url := os.getAbsURL(path)
@@ -384,20 +384,20 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	}
 	req, cancel, err := newfileUploadRequest(os.logCtx, postURL, fields, fileBytes, fileName, timeout)
 	if err != nil {
-		clog.Errorf(os.logCtx, "err=%v", err)
+		clog.Errorf(os.logCtx, "err=%q", err)
 		return "", err
 	}
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		clog.Errorf(os.logCtx, "Error saving data to S3 err=%v", err)
+		clog.Errorf(os.logCtx, "Error saving data to S3 err=%q", err)
 		return "", err
 	}
 	cancel()
 	body := &bytes.Buffer{}
 	sz, err := body.ReadFrom(resp.Body)
 	if err != nil {
-		clog.Errorf(os.logCtx, "err=%v", err)
+		clog.Errorf(os.logCtx, "err=%q", err)
 		return "", err
 	}
 	resp.Body.Close()
@@ -460,7 +460,7 @@ func newfileUploadRequest(logCtx context.Context, uri string, params map[string]
 	for key, val := range params {
 		err := writer.WriteField(key, val)
 		if err != nil {
-			clog.Errorf(logCtx, "err=%v", err)
+			clog.Errorf(logCtx, "err=%q", err)
 		}
 	}
 	part, err := writer.CreateFormFile("file", fileName)

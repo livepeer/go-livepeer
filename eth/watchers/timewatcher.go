@@ -63,21 +63,21 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 
 	lr, err := tw.lpEth.LastInitializedRound()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching initial lastInitializedRound value err=%v", err)
+		return nil, fmt.Errorf("error fetching initial lastInitializedRound value err=%q", err)
 	}
 	bh, err := tw.lpEth.BlockHashForRound(lr)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%v", err)
+		return nil, fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%q", err)
 	}
 	num, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching current round start block err=%v", err)
+		return nil, fmt.Errorf("error fetching current round start block err=%q", err)
 	}
 	tw.setLastInitializedRound(lr, bh, num)
 
 	lastSeenBlock, err := tw.watcher.GetLatestBlock()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching last seen block err=%v", err)
+		return nil, fmt.Errorf("error fetching last seen block err=%q", err)
 	}
 	blockNum := big.NewInt(0)
 	if lastSeenBlock != nil {
@@ -87,7 +87,7 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 
 	size, err := tw.lpEth.GetTranscoderPoolSize()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching initial transcoderPoolSize err=%v", err)
+		return nil, fmt.Errorf("error fetching initial transcoderPoolSize err=%q", err)
 	}
 	tw.setTranscoderPoolSize(size)
 

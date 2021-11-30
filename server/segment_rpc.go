@@ -86,7 +86,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	segData, ctx, err := verifySegCreds(r.Context(), orch, seg, sender)
 	if err != nil {
-		clog.Errorf(ctx, "Could not verify segment creds err=%v", err)
+		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -115,7 +115,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
 	if err != nil {
-		clog.Errorf(ctx, "Error updating orchestrator info - err=%v", err)
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -126,7 +126,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	dlStart := time.Now()
 	data, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 	if err != nil {
-		clog.Errorf(ctx, "Could not read request body - err=%v", err)
+		clog.Errorf(ctx, "Could not read request body - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -147,7 +147,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		took := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Getting segment from url=%s took=%s bytes=%d", uri, took, len(data))
 		if err != nil {
-			clog.Errorf(ctx, "Error getting input segment from input OS - segment=%v err=%v", uri, err)
+			clog.Errorf(ctx, "Error getting input segment from input OS - segment=%v err=%q", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
@@ -223,7 +223,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// construct the response
 	var result net.TranscodeResult
 	if err != nil {
-		clog.Errorf(ctx, "Could not transcode err=%v", err)
+		clog.Errorf(ctx, "Could not transcode err=%q", err)
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
@@ -242,7 +242,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	buf, err := proto.Marshal(tr)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to marshal transcode result err=%v", err)
+		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
 		return
 	}
 	w.Write(buf)
@@ -386,7 +386,7 @@ func verifySegCreds(ctx context.Context, orch Orchestrator, segCreds string, bro
 	}
 
 	if err := orch.CheckCapacity(core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		clog.Errorf(ctx, "Cannot process manifest err=%v", err)
+		clog.Errorf(ctx, "Cannot process manifest err=%q", err)
 		return nil, ctx, err
 	}
 
@@ -435,7 +435,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 
 	payment, err := genPayment(ctx, sess, balUpdate.NumTickets)
 	if err != nil {
-		clog.Errorf(ctx, "Could not create payment bytes=%v err=%v", len(data), err)
+		clog.Errorf(ctx, "Could not create payment bytes=%v err=%q", len(data), err)
 
 		if monitor.Enabled {
 			monitor.PaymentCreateError()
@@ -486,7 +486,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to submit segment orch=%v orch=%s err=%v", ti.Transcoder, ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to submit segment orch=%v orch=%s err=%q", ti.Transcoder, ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, false)
 		}
@@ -505,7 +505,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		clog.Errorf(ctx, "Error submitting segment code=%d orch=%s err=%v", resp.StatusCode, ti.Transcoder, string(data))
+		clog.Errorf(ctx, "Error submitting segment code=%d orch=%s err=%q", resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			if resp.StatusCode == 403 && strings.Contains(errorString, "OrchestratorCapped") {
 				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errors.New(errorString), false)
@@ -525,7 +525,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	tookAllDur := time.Since(start)
 
 	if err != nil {
-		clog.Errorf(ctx, "Unable to read response body for segment orch=%s err=%v", ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to read response body for segment orch=%s err=%q", ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
@@ -536,7 +536,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	var tr net.TranscodeResult
 	err = proto.Unmarshal(data, &tr)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to parse response for segment orch=%s err=%v", ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to parse response for segment orch=%s err=%q", ti.Transcoder, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
@@ -548,7 +548,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		clog.Errorf(ctx, "Transcode failed for segment orch=%s err=%v", ti.Transcoder, err)
+		clog.Errorf(ctx, "Transcode failed for segment orch=%s err=%q", ti.Transcoder, err)
 		if err.Error() == "MediaStats Failure" {
 			clog.Infof(ctx, "Ensure the keyframe interval is 4 seconds or less")
 		}

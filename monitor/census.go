@@ -1209,7 +1209,7 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDu
 }
 
 func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
-	glog.Errorf("Logging SegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d error='%s'", subType, nonce, seqNo, err.Error())
+	glog.Errorf("Logging SegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d err=%q", subType, nonce, seqNo, err.Error())
 	census.segmentTranscodeFailed(nonce, seqNo, subType, permanent)
 }
 

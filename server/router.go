@@ -114,14 +114,14 @@ func getOrchestratorInfo(ctx context.Context, uris []*url.URL, req *net.Orchestr
 		go func(uri *url.URL) {
 			client, conn, err := startOrchestratorClient(ctx, uri)
 			if err != nil {
-				errCh <- fmt.Errorf("%v err=%v", uri, err)
+				errCh <- fmt.Errorf("%v err=%q", uri, err)
 				return
 			}
 			defer conn.Close()
 
 			info, err := client.GetOrchestrator(cctx, req)
 			if err != nil {
-				errCh <- fmt.Errorf("%v err=%v", uri, err)
+				errCh <- fmt.Errorf("%v err=%q", uri, err)
 				return
 			}
 

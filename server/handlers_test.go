@@ -670,7 +670,7 @@ func TestSignMessageHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("could not sign message - err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("could not sign message - err=%q", err), strings.TrimSpace(string(body)))
 
 	// Test signing success
 	client.Err = nil
@@ -774,7 +774,7 @@ func TestVoteHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%q", err), strings.TrimSpace(string(body)))
 	client.Err = nil
 
 	// Test CheckTx() error
@@ -786,7 +786,7 @@ func TestVoteHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%q", err), strings.TrimSpace(string(body)))
 	client.CheckTxErr = nil
 
 	// Test Vote() success

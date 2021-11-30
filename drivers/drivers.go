@@ -210,7 +210,7 @@ func getSegmentDataHTTP(logCtx context.Context, uri string) ([]byte, error) {
 	started := time.Now()
 	resp, err := httpc.Get(uri)
 	if err != nil {
-		clog.Errorf(logCtx, "Error getting HTTP uri=%s err=%v", uri, err)
+		clog.Errorf(logCtx, "Error getting HTTP uri=%s err=%q", uri, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -220,7 +220,7 @@ func getSegmentDataHTTP(logCtx context.Context, uri string) ([]byte, error) {
 	}
 	body, err := common.ReadAtMost(resp.Body, common.MaxSegSize)
 	if err != nil {
-		clog.Errorf(logCtx, "Error reading body uri=%s err=%v", uri, err)
+		clog.Errorf(logCtx, "Error reading body uri=%s err=%q", uri, err)
 		return nil, err
 	}
 	took := time.Since(started)

@@ -303,7 +303,7 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 		message := r.FormValue("message")
 		signed, err := client.Sign([]byte(message))
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not sign message - err=%v", err))
+			respondWith500(w, fmt.Sprintf("could not sign message - err=%q", err))
 			return
 		}
 
@@ -351,12 +351,12 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 			choiceID,
 		)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("unable to submit vote transaction err=%v", err))
+			respondWith500(w, fmt.Sprintf("unable to submit vote transaction err=%q", err))
 			return
 		}
 
 		if err := client.CheckTx(tx); err != nil {
-			respondWith500(w, fmt.Sprintf("unable to mine vote transaction err=%v", err))
+			respondWith500(w, fmt.Sprintf("unable to mine vote transaction err=%q", err))
 			return
 		}
 
