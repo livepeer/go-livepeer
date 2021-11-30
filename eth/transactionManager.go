@@ -101,7 +101,6 @@ func (tm *TransactionManager) SendTransaction(ctx context.Context, tx *types.Tra
 	adjustedRawTx := tm.newAdjustedTx(tx)
 	adjustedTx, err := tm.sig.SignTx(adjustedRawTx)
 	if err != nil {
-		glog.Infof("%s\n", err.Error())
 		return err
 	}
 
