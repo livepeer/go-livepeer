@@ -20,7 +20,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -106,9 +106,10 @@ func NewGoogleDriver(bucket, keyData string, useFullAPI bool) (OSDriver, error) 
 	return os, nil
 }
 
-func (os *gsOS) NewSession(path string) OSSession {
+func (os *gsOS) NewSession(logCtx context.Context, path string) OSSession {
 	var policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
 	sess := &s3Session{
+		logCtx:      logCtx,
 		host:        gsHost(os.bucket),
 		bucket:      os.bucket,
 		key:         path,
@@ -162,7 +163,7 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, 
 		}
 		keyname := os.key + "/" + name
 		objh := os.client.Bucket(os.bucket).Object(keyname)
-		glog.V(common.VERBOSE).Infof("Saving to GS %s/%s", os.bucket, keyname)
+		clog.V(common.VERBOSE).Infof(os.logCtx, "Saving to GS %s/%s", os.bucket, keyname)
 		if timeout == 0 {
 			timeout = saveTimeout
 		}
@@ -185,7 +186,7 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, 
 			return "", err2
 		}
 		uri := os.getAbsURL(keyname)
-		glog.V(common.VERBOSE).Infof("Saved to GS %s", uri)
+		clog.V(common.VERBOSE).Infof(os.logCtx, "Saved to GS %s", uri)
 		return uri, err
 	}
 	return os.s3Session.SaveData(name, data, meta, timeout)

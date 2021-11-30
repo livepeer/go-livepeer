@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -49,7 +50,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CurrentBlock() *big.Int
 	CheckCapacity(core.ManifestID) error
-	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
+	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
@@ -215,7 +216,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 
 	ping := crypto.Keccak256(tsSignature)
 
-	orchClient, conn, err := startOrchestratorClient(orch.ServiceURI())
+	orchClient, conn, err := startOrchestratorClient(context.Background(), orch.ServiceURI())
 	if err != nil {
 		return false
 	}
@@ -245,7 +246,7 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
 func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
-	c, conn, err := startOrchestratorClient(orchestratorServer)
+	c, conn, err := startOrchestratorClient(ctx, orchestratorServer)
 	if err != nil {
 		return nil, err
 	}
@@ -260,8 +261,8 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	return r, nil
 }
 
-func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
-	glog.V(common.DEBUG).Infof("Connecting RPC to %v", uri)
+func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
+	clog.V(common.DEBUG).Infof(ctx, "Connecting RPC to uri=%v", uri)
 	conn, err := grpc.Dial(uri.Host,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithBlock(),
@@ -332,7 +333,8 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		AuthToken:    authToken,
 	}
 
-	os := drivers.NodeStorage.NewSession(authToken.SessionId)
+	// todo fixme
+	os := drivers.NodeStorage.NewSession(context.Background(), authToken.SessionId)
 
 	if os != nil {
 		if os.IsExternal() {

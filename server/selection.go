@@ -2,10 +2,11 @@ package server
 
 import (
 	"container/heap"
+	"context"
 	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 )
 
@@ -90,6 +91,7 @@ func (r *storeStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Addr
 // Otherwise, it selects a session that does not have a latency score yet
 // MinLSSelector is not concurrency safe so the caller is responsible for ensuring safety for concurrent method calls
 type MinLSSelector struct {
+	logCtx          context.Context
 	unknownSessions []*BroadcastSession
 	knownSessions   *sessHeap
 
@@ -101,7 +103,7 @@ type MinLSSelector struct {
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
-func NewMinLSSelector(stakeRdr stakeReader, minLS float64) *MinLSSelector {
+func NewMinLSSelector(logCtx context.Context, stakeRdr stakeReader, minLS float64) *MinLSSelector {
 	knownSessions := &sessHeap{}
 	heap.Init(knownSessions)
 
@@ -109,11 +111,12 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64) *MinLSSelector {
 		knownSessions: knownSessions,
 		stakeRdr:      stakeRdr,
 		minLS:         minLS,
+		logCtx:        logCtx,
 	}
 }
 
-func NewMinLSSelectorWithRandFreq(stakeRdr stakeReader, minLS float64, randFreq float64) *MinLSSelector {
-	sel := NewMinLSSelector(stakeRdr, minLS)
+func NewMinLSSelectorWithRandFreq(logCtx context.Context, stakeRdr stakeReader, minLS float64, randFreq float64) *MinLSSelector {
+	sel := NewMinLSSelector(logCtx, stakeRdr, minLS)
 	sel.randFreq = randFreq
 	return sel
 }
@@ -195,7 +198,7 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	// If we fail to read stake weights of unknownSessions we should not continue with selection
 	if err != nil {
-		glog.Errorf("failed to read stake weights for selection: %v", err)
+		clog.Errorf(s.logCtx, "failed to read stake weights for selection err=%v", err)
 		return nil
 	}
 
