@@ -2001,8 +2001,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	headerTimeout = 100 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(sess, seg, 0, false, true)
-	assert.Contains(err.Error(), "header timeout")
-	assert.Contains(err.Error(), "context deadline exceeded")
+	assert.Contains(err.Error(), "header timeout: timeout")
 
 	// time out body
 	lock.Lock()
