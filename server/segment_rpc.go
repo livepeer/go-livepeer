@@ -435,13 +435,20 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 		return nil, err
 	}
 
+	// timeout for the whole HTTP call: segment upload, transcoding, reading response
+	httpTimeout := common.HTTPTimeout
 	// set a minimum timeout to accommodate transport / processing overhead
-	dur := common.HTTPTimeout
 	paddedDur := 4.0 * seg.Duration // use a multiplier of 4 for now
-	if paddedDur > dur.Seconds() {
-		dur = time.Duration(paddedDur * float64(time.Second))
+	if paddedDur > httpTimeout.Seconds() {
+		httpTimeout = time.Duration(paddedDur * float64(time.Second))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dur)
+	// timeout fot the segment upload, until HTTP returns OK 200
+	uploadTimeout := time.Duration(0.5 * seg.Duration * float64(time.Second)) // use 0.5 multiplier
+	if uploadTimeout <= 0 {
+		uploadTimeout = httpTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 	defer cancel()
 
 	ti := sess.OrchestratorInfo
@@ -465,9 +472,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
+	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, httpTimeout)
 	start := time.Now()
-	uploadTimeout := time.Duration(0.5 * seg.Duration * float64(time.Second))
 	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
