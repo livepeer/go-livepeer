@@ -42,6 +42,7 @@ var errFormat = errors.New("unrecognized profile output format")
 var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
+var errTimeout = errors.New("timeout")
 
 var dialTimeout = 2 * time.Second
 
@@ -444,6 +445,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 	defer cancel()
 
 	ti := sess.OrchestratorInfo
+
 	req, err := http.NewRequestWithContext(ctx, "POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
 		glog.Errorf("Could not generate transcode request to orch=%s", ti.Transcoder)
@@ -465,7 +467,8 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 
 	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
 	start := time.Now()
-	resp, err := httpClient.Do(req)
+	uploadTimeout := time.Duration(0.5 * seg.Duration * float64(time.Second))
+	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
 		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
@@ -815,4 +818,24 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
+}
+
+func sendReqWithTimeout(req *http.Request, timeout time.Duration) (*http.Response, error) {
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	resCh := make(chan result)
+
+	go func() {
+		resp, err := httpClient.Do(req)
+		resCh <- result{resp, err}
+	}()
+
+	select {
+	case res := <-resCh:
+		return res.resp, res.err
+	case <-time.After(timeout):
+		return nil, errTimeout
+	}
 }

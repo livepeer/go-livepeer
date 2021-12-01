@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
@@ -2259,6 +2260,30 @@ func TestSubmitSegment_Success(t *testing.T) {
 	SubmitSegment(s, seg, 0, false, true)
 
 	balance.AssertCalled(t, "Credit", ratMatcher(change))
+}
+
+func TestSendReqWithTimeout(t *testing.T) {
+	assert := assert.New(t)
+
+	var wg sync.WaitGroup
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wg.Wait()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", server.URL, nil)
+
+	// no timeout
+	resp, err := sendReqWithTimeout(req, 5*time.Second)
+	assert.NoError(err)
+	assert.Equal(200, resp.StatusCode)
+
+	// timeout
+	wg.Add(1)
+	resp, err = sendReqWithTimeout(req, time.Millisecond)
+	wg.Done()
+	assert.Nil(resp)
+	assert.ErrorIs(err, errTimeout)
 }
 
 func stubTLSServer() (*httptest.Server, *http.ServeMux) {
