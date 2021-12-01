@@ -276,6 +276,7 @@ func main() {
 		if *nvidia != "" {
 			// Get a list of device ids
 			devices, err := common.ParseNvidiaDevices(*nvidia)
+		        glog.Infof("Nvidia devices: %v", devices)
 			if err != nil {
 				glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
 			}

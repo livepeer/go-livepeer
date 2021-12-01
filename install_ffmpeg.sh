@@ -61,16 +61,16 @@ if [[ $(uname) != *"MSYS"* ]]; then
     make install
   fi
 
-  # rm -rf "$HOME/nettle-3.7"
-  if [ ! -e "$HOME/nettle-3.7" ]; then
-    cd $HOME
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
-    tar xf nettle-3.7.tar.gz
-    cd nettle-3.7
-    LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
-    make
-    make install
-  fi
+  ## rm -rf "$HOME/nettle-3.7"
+  #if [ ! -e "$HOME/nettle-3.7" ]; then
+  #  cd $HOME
+  #  curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
+  #  tar xf nettle-3.7.tar.gz
+  #  cd nettle-3.7
+  #  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
+  #  make
+  #  make install
+  #fi
 
 fi
 
@@ -123,7 +123,7 @@ if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl \
+    --enable-gnutls --enable-libx264 --enable-gpl --enable-ffmpeg --enable-ffplay \
     --enable-protocol=https,http,rtmp,file \
     --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \

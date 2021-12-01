@@ -34,7 +34,7 @@ livepeer_cli:
 
 .PHONY: livepeer_bench
 livepeer_bench:
-	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -ldflags="$(ldflags)" cmd/livepeer_bench/*.go
+	GO111MODULE=on CGO_LDFLAGS="$(cgo_ldflags)" go build -a -ldflags="$(ldflags)" cmd/livepeer_bench/*.go
 
 .PHONY: livepeer_router
 livepeer_router:
