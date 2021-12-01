@@ -14,7 +14,10 @@ The round initialization service is disabled by default and can be enabled by st
 
 ## Gas Prices
 
-After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priority fee + base fee.
+After the EIP-1559 upgrade on Ethereum, the node uses `maxFeePerGas` parameter to limit the maximum fee paid for the transaction execution:
+
+- If max gas price is specified, then use its value as `maxFeePerGas`
+- If max gas price is not specified, then use the default `maxFeePerGas` and gradually increase it with the replacement transactions
 
 ### Max gas price
 
@@ -23,7 +26,7 @@ The following options can be used to get the max gas price:
 - `curl localhost:7935/maxGasPrice`
 - Run `livepeer_cli` and observe the max gas price in the node stats
 
-The following options can be used to set the m gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
+The following options can be used to set the max gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
 
 - Start the node with `-maxGasPrice <MAX_GAS_PRICE>`
 - `curl localhost:7935/setMaxGasPrice?maxGasPrice=<MAX_GAS_PRICE>`
