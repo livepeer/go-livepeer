@@ -482,7 +482,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.StreamStarted(nonce)
 					}
 				}
-				go processSegment(cxn, seg)
+				go processSegment(context.Background(), cxn, seg)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -951,7 +951,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Do the transcoding!
-	urls, err := processSegment(cxn, seg)
+	urls, err := processSegment(r.Context(), cxn, seg)
 	if err != nil {
 		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%v", r.URL, mid, err)
 		glog.Error(httpErr)
