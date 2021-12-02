@@ -784,12 +784,15 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 1)
 
-	// Drain the swamp! Empty out the session list
-	_, err = processSegment(context.Background(), cxn, seg)
+	// Context canceled. Execute once and not retry
+	MaxAttempts = 10
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = processSegment(ctx, cxn, seg)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
+	assert.Contains("context canceled", err.Error())
 	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
-	assert.Len(bsm.trustedPool.sessMap, 0) // Now empty
+	assert.Len(bsm.trustedPool.sessMap, 0)
 
 	// The session list is empty. TODO Should return an error indicating such
 	// (This test should fail and be corrected once this is actually implemented)
