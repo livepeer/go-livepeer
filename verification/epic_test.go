@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -146,7 +147,7 @@ func TestEpic_WriteSegments(t *testing.T) {
 	// Set an external OS
 	storageURI := "s3://K:S@eu-central-1/livepeer"
 	os, err := drivers.ParseOSURL(storageURI, false)
-	p.OS = os.NewSession("path")
+	p.OS = os.NewSession(context.TODO(), "path")
 	assert.Nil(err)
 	drivers.NodeStorage = os
 	srcPath, rPaths, err = writeSegments(p, dir)
@@ -189,7 +190,7 @@ func TestEpic_Verify(t *testing.T) {
 		Source:       &stream.HLSSegment{SeqNo: 73},
 		Results:      &net.TranscodeData{},
 		Orchestrator: &net.OrchestratorInfo{Transcoder: "pretend"},
-		OS:           os.NewSession("path"),
+		OS:           os.NewSession(context.TODO(), "path"),
 	}
 	_, err = ec.Verify(params)
 	assert.Equal(ErrTampered, err)

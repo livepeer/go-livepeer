@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ var testRemoteTranscoderResults = &core.TranscodeData{
 	Pixels: 999,
 }
 
-func (st *stubTranscoder) Transcode(md *core.SegTranscodingMetadata) (*core.TranscodeData, error) {
+func (st *stubTranscoder) Transcode(ctx context.Context, md *core.SegTranscodingMetadata) (*core.TranscodeData, error) {
 	st.called++
 	st.fname = md.Fname
 	st.profiles = md.Profiles

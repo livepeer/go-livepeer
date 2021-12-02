@@ -107,7 +107,7 @@ func TestJSONListJoin(t *testing.T) {
 func TestJsonFlush(t *testing.T) {
 	assert := assert.New(t)
 	os := drivers.NewMemoryDriver(nil)
-	msess := os.NewSession("sess1")
+	msess := os.NewSession(context.TODO(), "sess1")
 	vProfile := ffmpeg.P144p30fps16x9
 	vProfile.Name = "source"
 	hlsStrmID := MakeStreamID(RandomManifestID(), &vProfile)
@@ -284,7 +284,7 @@ func TestCleanup(t *testing.T) {
 	mid := hlsStrmID.ManifestID
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
+	osSession := osd.NewSession(context.TODO(), "testPath")
 	memoryOS := osSession.(*drivers.MemorySession)
 	testData := []byte{1, 2, 3, 4}
 

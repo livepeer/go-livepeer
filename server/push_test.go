@@ -79,7 +79,7 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
+	osSession := osd.NewSession(context.TODO(), "testPath")
 
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
@@ -231,7 +231,7 @@ func TestPush_SceneDetection(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
+	osSession := osd.NewSession(context.TODO(), "testPath")
 
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
@@ -315,7 +315,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
+	osSession := osd.NewSession(context.TODO(), "testPath")
 
 	oldjpqt := core.JsonPlaylistQuitTimeout
 	defer func() {
@@ -1106,7 +1106,7 @@ func TestPush_StorageError(t *testing.T) {
 	drivers.NodeStorage = nil
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 	mid := parseManifestID(req.URL.Path)
-	err := removeRTMPStream(s, mid)
+	err := removeRTMPStream(context.TODO(), s, mid)
 	assert.Equal(errUnknownStream, err)
 
 	handler.ServeHTTP(w, req)
@@ -1642,7 +1642,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
+	osSession := osd.NewSession(context.TODO(), "testPath")
 	sess1.BroadcasterOS = osSession
 	sess2.BroadcasterOS = osSession
 	sess3.BroadcasterOS = osSession

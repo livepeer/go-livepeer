@@ -222,7 +222,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(ctx context.Context, s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
 	return func(url *url.URL) (strmID stream.AppData) {
 		//Check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
@@ -241,7 +241,7 @@ func createRTMPStreamIDHandler(ctx context.Context, s *LivepeerServer) func(url 
 		var VerificationFreq uint
 		nonce := rand.Uint64()
 
-		ctx = clog.AddNonce(ctx, nonce)
+		ctx := clog.AddNonce(_ctx, nonce)
 		if resp, err = authenticateStream(url.String()); err != nil {
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil

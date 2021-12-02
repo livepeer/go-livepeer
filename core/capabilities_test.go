@@ -122,7 +122,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	storageURI := "s3+http://K:P@localhost:9000/bucket"
 	os, err := drivers.ParseOSURL(storageURI, false)
 	assert.Nil(err)
-	params := &StreamParameters{Profiles: profs, OS: os.NewSession(""), Detection: detector}
+	params := &StreamParameters{Profiles: profs, OS: os.NewSession(context.TODO(), ""), Detection: detector}
 	assert.True(checkSuccess(params, []Capability{
 		Capability_H264,
 		Capability_MP4,

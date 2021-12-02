@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -50,7 +51,7 @@ func poolWithSessList(sessList []*BroadcastSession) *sessionPoolLIFO {
 		// return sessList, nil
 		return nil, nil
 	}
-	pool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
+	pool := NewSessionPool(context.TODO(), "test", len(sessList), 1, newSuspender(), createSessions, sel)
 	pool.sessMap = sessMap
 	return newSessionPoolLIFO(pool)
 }
@@ -66,18 +67,18 @@ func TestSelectSession(t *testing.T) {
 	expectedSess2 := pool.sessList()[0]
 
 	// assert last session selected and sessList is correct length
-	sess := pool.selectSessions(1)[0]
+	sess := pool.selectSessions(context.TODO(), 1)[0]
 	assert.Equal(expectedSess1, sess)
 	assert.Equal(sess, pool.lastSess[0])
 	assert.Len(pool.sessList(), 1)
 
-	sess = pool.selectSessions(1)[0]
+	sess = pool.selectSessions(context.TODO(), 1)[0]
 	assert.Equal(expectedSess2, sess)
 	assert.Equal(sess, pool.lastSess[0])
 	assert.Len(pool.sessList(), 0)
 
 	// assert no session is selected from empty list
-	sesss := pool.selectSessions(1)
+	sesss := pool.selectSessions(context.TODO(), 1)
 	assert.Nil(sesss)
 	assert.Nil(pool.lastSess)
 	assert.Len(pool.sessList(), 0)
@@ -90,7 +91,7 @@ func TestSelectSession(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	pool.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
-	pool.selectSessions(1)
+	pool.selectSessions(context.TODO(), 1)
 	assert.True(wgWait(&wg), "Session refresh timed out")
 
 	// assert the selection retries if session in list doesn't exist in map
@@ -99,8 +100,8 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
 	// sanity checks then rebuild in order
-	firstSess := pool.selectSessions(1)
-	expectedSess := pool.selectSessions(1)[0]
+	firstSess := pool.selectSessions(context.TODO(), 1)
+	expectedSess := pool.selectSessions(context.TODO(), 1)[0]
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 2)
 	pool.completeSession(expectedSess)
@@ -111,7 +112,7 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(pool.sessMap, 1)
 	assert.Equal(firstSess[0], pool.sessList()[1]) // ensure removed sess still in list
 	// now ensure next selectSession call fixes up sessList as expected
-	sess = pool.selectSessions(1)[0]
+	sess = pool.selectSessions(context.TODO(), 1)[0]
 	assert.Equal(sess, expectedSess)
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 1)
@@ -124,7 +125,7 @@ func TestSelectSession_NilSession(t *testing.T) {
 	// Replace selector with stubSelector that will return nil for Select(), but 1 for Size()
 	pool.sel = &stubSelector{size: 1}
 
-	assert.Nil(t, pool.selectSessions(1))
+	assert.Nil(t, pool.selectSessions(context.TODO(), 1))
 }
 
 func TestRemoveSession(t *testing.T) {
@@ -158,7 +159,7 @@ func TestRemoveSession(t *testing.T) {
 func TestCompleteSessions(t *testing.T) {
 	pool := stubPool()
 
-	sess1 := pool.selectSessions(1)[0]
+	sess1 := pool.selectSessions(context.TODO(), 1)[0]
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
@@ -173,7 +174,7 @@ func TestCompleteSessions(t *testing.T) {
 	assert.Equal(sess1, pool.sessMap[sess1.OrchestratorInfo.Transcoder])
 
 	// assert that we get the same session back next time we call select
-	newSess := pool.selectSessions(1)[0]
+	newSess := pool.selectSessions(context.TODO(), 1)[0]
 	assert.Equal(sess1, newSess)
 	pool.completeSession(newSess)
 
@@ -183,7 +184,7 @@ func TestCompleteSessions(t *testing.T) {
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
 
-	sess1 = pool.selectSessions(1)[0]
+	sess1 = pool.selectSessions(context.TODO(), 1)[0]
 
 	sess1.LatencyScore = 2.7
 	pool.completeSession(sess1)
@@ -208,7 +209,7 @@ func TestRefreshSessions(t *testing.T) {
 	}
 
 	// asserting that pre-existing sessions are not added to sessList or sessMap
-	pool.refreshSessions()
+	pool.refreshSessions(context.TODO())
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
 
@@ -220,7 +221,7 @@ func TestRefreshSessions(t *testing.T) {
 	}
 
 	// asserting that new sessions are added to beginning of sessList and sessMap
-	pool.refreshSessions()
+	pool.refreshSessions(context.TODO())
 	assert.Len(pool.sessList(), 4)
 	assert.Len(pool.sessMap, 4)
 	assert.Equal(pool.sessList()[0], sess3)
@@ -231,7 +232,7 @@ func TestRefreshSessions(t *testing.T) {
 		return []*BroadcastSession{StubBroadcastSession("5"), StubBroadcastSession("6")}, nil
 	}
 	pool.refreshing = true
-	pool.refreshSessions()
+	pool.refreshSessions(context.TODO())
 	assert.Len(pool.sessList(), 4)
 	assert.Len(pool.sessMap, 4)
 	assert.Equal(pool.sessList()[0], sess3)
@@ -242,7 +243,7 @@ func TestRefreshSessions(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 200; i++ {
 		wg.Add(1)
-		go func() { pool.refreshSessions(); wg.Done() }()
+		go func() { pool.refreshSessions(context.TODO()); wg.Done() }()
 	}
 	assert.True(wgWait(&wg), "Session refresh timed out")
 
@@ -250,7 +251,7 @@ func TestRefreshSessions(t *testing.T) {
 	pool.cleanup()
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 0)
-	pool.refreshSessions()
+	pool.refreshSessions(context.TODO())
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 0)
 
@@ -263,7 +264,7 @@ func TestRefreshSessions(t *testing.T) {
 	}
 	for i := 0; i < 200; i++ {
 		wg.Add(1)
-		go func() { pool.refreshSessions(); wg.Done() }()
+		go func() { pool.refreshSessions(context.TODO()); wg.Done() }()
 	}
 	assert.True(wgWait(&wg), "Session refresh timed out")
 
@@ -274,7 +275,7 @@ func TestRefreshSessions(t *testing.T) {
 	}
 	for i := 0; i < 200; i++ {
 		wg.Add(1)
-		go func() { pool.refreshSessions(); wg.Done() }()
+		go func() { pool.refreshSessions(context.TODO()); wg.Done() }()
 	}
 	assert.True(wgWait(&wg), "Session refresh timed out")
 }
@@ -297,7 +298,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	pool := stubPool()
 
 	sendSegStub := func() *BroadcastSession {
-		sesss := pool.selectSessions(1)
+		sesss := pool.selectSessions(context.TODO(), 1)
 		pool.lock.Lock()
 		if sesss == nil {
 			pool.lock.Unlock()
@@ -442,7 +443,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 func TestSelectSessionMoreThanOne(t *testing.T) {
 	pool := stubPoolExt(3)
 	sendSegStub := func(num int) []*BroadcastSession {
-		sesss := pool.selectSessions(num)
+		sesss := pool.selectSessions(context.TODO(), num)
 		pool.lock.Lock()
 		if sesss == nil {
 			pool.lock.Unlock()
