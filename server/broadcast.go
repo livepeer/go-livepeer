@@ -811,7 +811,8 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to non-retryable error err=%v", nonce, seg.SeqNo, err)
 			break
 		}
-		if err = ctx.Err(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
 			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to error err=%v", nonce, seg.SeqNo, err)
 			break
 		}
