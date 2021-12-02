@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -25,7 +26,7 @@ func TestLocalTranscoder(t *testing.T) {
 
 	md := stubMetadata("", videoProfiles...)
 	md.Fname = "test.ts"
-	res, err := tc.Transcode(md)
+	res, err := tc.Transcode(context.TODO(), md)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
@@ -59,7 +60,7 @@ func TestNvidia_Transcoder(t *testing.T) {
 
 	ffmpeg.InitFFmpeg()
 	tc := NewNvidiaTranscoder(dev)
-	res, err := tc.Transcode(md)
+	res, err := tc.Transcode(context.TODO(), md)
 	if err != nil {
 		t.Error(err)
 	}
@@ -77,7 +78,7 @@ func TestNvidia_Transcoder(t *testing.T) {
 			t.Error("Expected error with invalid device")
 		}
 	}()
-	_, err = tc.Transcode(md)
+	_, err = tc.Transcode(context.TODO(), md)
 }
 
 func TestResToTranscodeData(t *testing.T) {
@@ -91,12 +92,12 @@ func TestResToTranscodeData(t *testing.T) {
 
 	// Test lengths of results and options different error
 	res := &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
-	_, err := resToTranscodeData(res, []ffmpeg.TranscodeOptions{})
+	_, err := resToTranscodeData(context.TODO(), res, []ffmpeg.TranscodeOptions{})
 	assert.EqualError(err, "lengths of results and options different")
 
 	// Test immediate read error
 	opts := []ffmpeg.TranscodeOptions{{Oname: "badfile"}}
-	_, err = resToTranscodeData(res, opts)
+	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
 	// Test error after a successful read
@@ -115,7 +116,7 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[1].Oname = "badfile"
 	opts[2].Oname = file2.Name()
 
-	_, err = resToTranscodeData(res, opts)
+	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
@@ -125,7 +126,7 @@ func TestResToTranscodeData(t *testing.T) {
 	res.Encoded[0].Pixels = 100
 
 	opts = []ffmpeg.TranscodeOptions{{Oname: file2.Name()}}
-	tData, err := resToTranscodeData(res, opts)
+	tData, err := resToTranscodeData(context.TODO(), res, opts)
 	assert.Nil(err)
 	assert.Equal(1, len(tData.Segments))
 	assert.Equal(int64(100), tData.Segments[0].Pixels)
@@ -145,7 +146,7 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[0].Oname = file1.Name()
 	opts[1].Oname = file2.Name()
 
-	tData, err = resToTranscodeData(res, opts)
+	tData, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.Nil(err)
 	assert.Equal(2, len(tData.Segments))
 	assert.Equal(int64(200), tData.Segments[0].Pixels)
@@ -165,7 +166,7 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[0].Oname = file1.Name()
 	opts[0].CalcSign = true
 
-	tData, err = resToTranscodeData(res, opts)
+	tData, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.Nil(err)
 	assert.Equal(tData.Segments[0].PHash, pHash)
 	assert.True(fileDNE(file1.Name()))
@@ -247,7 +248,7 @@ func TestAudioCopy(t *testing.T) {
 
 	md := stubMetadata("", videoProfiles...)
 	md.Fname = audioSample
-	res, err := tc.Transcode(md)
+	res, err := tc.Transcode(context.TODO(), md)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)

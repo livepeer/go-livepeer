@@ -126,7 +126,7 @@ func (r *stubOrchestrator) Address() ethcommon.Address {
 	}
 	return ethcrypto.PubkeyToAddress(r.priv.PublicKey)
 }
-func (r *stubOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
+func (r *stubOrchestrator) TranscodeSeg(ctx context.Context, md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	return r.res, nil
 }
 func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
@@ -259,7 +259,7 @@ func TestRPCSeg(t *testing.T) {
 		t.Error("Unable to generate seg creds ", err)
 		return
 	}
-	if _, err := verifySegCreds(o, creds, baddr); err != nil {
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
 		t.Error("Unable to verify seg creds", err)
 		return
 	}
@@ -275,13 +275,13 @@ func TestRPCSeg(t *testing.T) {
 	oldAddr := baddr
 	key, _ := ethcrypto.GenerateKey()
 	baddr = ethcrypto.PubkeyToAddress(key.PublicKey)
-	if _, err := verifySegCreds(o, creds, baddr); err != errSegSig {
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != errSegSig {
 		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
 	}
 	baddr = oldAddr
 
 	// sanity check
-	if _, err := verifySegCreds(o, creds, baddr); err != nil {
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
 		t.Error("Sanity check failed", err)
 	}
 
@@ -289,21 +289,21 @@ func TestRPCSeg(t *testing.T) {
 	s.OrchestratorInfo.AuthToken = nil
 	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	require.Nil(t, err)
-	_, err = verifySegCreds(o, creds, baddr)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
 	assert.Equal(t, "missing auth token", err.Error())
 
 	// invalid auth token
 	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("notfoo")}
 	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	require.Nil(t, err)
-	_, err = verifySegCreds(o, creds, baddr)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
 	assert.Equal(t, "invalid auth token", err.Error())
 
 	// expired auth token
 	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
 	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, false)
 	assert.Nil(t, err)
-	_, err = verifySegCreds(o, creds, baddr)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
 	assert.Equal(t, "expired auth token", err.Error())
 	s.OrchestratorInfo.AuthToken = authToken
 
@@ -328,14 +328,14 @@ func TestRPCSeg(t *testing.T) {
 	// test corrupt creds
 	idx := len(creds) / 2
 	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-	if _, err := verifySegCreds(o, kreds, baddr); err != errSegEncoding {
+	if _, _, err := verifySegCreds(context.TODO(), o, kreds, baddr); err != errSegEncoding {
 		t.Error("Unexpectedly verified bad creds", err)
 	}
 
 	corruptSegData := func(segData *net.SegData, expectedErr error) {
 		data, _ := proto.Marshal(segData)
 		creds = base64.StdEncoding.EncodeToString(data)
-		if _, err := verifySegCreds(o, creds, baddr); err != expectedErr {
+		if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != expectedErr {
 			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
 		}
 	}
@@ -546,7 +546,7 @@ func TestGenPayment(t *testing.T) {
 	require := require.New(t)
 
 	// Test missing sender
-	payment, err := genPayment(s, 1)
+	payment, err := genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
 	assert.Nil(err)
 
@@ -555,7 +555,7 @@ func TestGenPayment(t *testing.T) {
 
 	// Test invalid price
 	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
-	payment, err = genPayment(s, 1)
+	payment, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
 	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
 
@@ -564,7 +564,7 @@ func TestGenPayment(t *testing.T) {
 	// Test CreateTicketBatch error
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, errors.New("CreateTicketBatch error")).Once()
 
-	_, err = genPayment(s, 1)
+	_, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("CreateTicketBatch error", err.Error())
 
 	decodePayment := func(payment string) net.Payment {
@@ -596,7 +596,7 @@ func TestGenPayment(t *testing.T) {
 
 	sender.On("CreateTicketBatch", s.PMSessionID, 1).Return(batch, nil).Once()
 
-	payment, err = genPayment(s, 1)
+	payment, err = genPayment(context.TODO(), s, 1)
 	require.Nil(err)
 
 	protoPayment := decodePayment(payment)
@@ -623,7 +623,7 @@ func TestGenPayment(t *testing.T) {
 
 	sender.On("CreateTicketBatch", s.PMSessionID, 3).Return(batch, nil).Once()
 
-	payment, err = genPayment(s, 3)
+	payment, err = genPayment(context.TODO(), s, 3)
 	require.Nil(err)
 
 	protoPayment = decodePayment(payment)
@@ -637,7 +637,7 @@ func TestGenPayment(t *testing.T) {
 
 	// Test payment creation with 0 tickets
 
-	payment, err = genPayment(s, 0)
+	payment, err = genPayment(context.TODO(), s, 0)
 	assert.Nil(err)
 
 	protoPayment = decodePayment(payment)
@@ -1167,7 +1167,7 @@ func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
 
 		creds, err := genSegCreds(sess, &stream.HLSSegment{}, false)
 		assert.Nil(err)
-		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		md, _, err := verifySegCreds(context.TODO(), orch, creds, ethcommon.Address{})
 		assert.Nil(err)
 		assert.True(proto.Equal(sess.OrchestratorInfo.AuthToken, md.AuthToken))
 	})
@@ -1196,7 +1196,7 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 		orch.caps = sess.Params.Capabilities
 		creds, err := genSegCreds(sess, &stream.HLSSegment{}, false)
 		assert.Nil(err)
-		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		md, _, err := verifySegCreds(context.TODO(), orch, creds, ethcommon.Address{})
 		assert.Equal(sess.Params.Capabilities, md.Caps)
 	})
 }
@@ -1218,7 +1218,7 @@ func TestGenVerify_RoundTrip_Duration(t *testing.T) {
 		creds, err := genSegCreds(sess, seg, false)
 		assert.Nil(err)
 
-		md, err := verifySegCreds(orch, creds, ethcommon.Address{})
+		md, _, err := verifySegCreds(context.TODO(), orch, creds, ethcommon.Address{})
 		assert.Nil(err)
 		// allow up to 1ms of difference due to rounding
 		maxDelta := float64(time.Millisecond.Nanoseconds())
@@ -1286,7 +1286,7 @@ func (o *mockOrchestrator) CurrentBlock() *big.Int {
 	o.Called()
 	return nil
 }
-func (o *mockOrchestrator) TranscodeSeg(md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
+func (o *mockOrchestrator) TranscodeSeg(ctx context.Context, md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	args := o.Called(md, seg)
 
 	var res *core.TranscodeResult

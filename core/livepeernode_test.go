@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -36,7 +37,7 @@ func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder 
 	return &StubTranscoder{Profiles: profiles}
 }
 
-func (t *StubTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (t *StubTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}
@@ -64,7 +65,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 	p := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	tr := stubTranscoderWithProfiles(p)
-	storage := drivers.NewMemoryDriver(nil).NewSession("")
+	storage := drivers.NewMemoryDriver(nil).NewSession(context.TODO(), "")
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
 	tmpdir, _ := ioutil.TempDir("", "")
@@ -77,7 +78,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
 	ss := StubSegment()
-	res := n.transcodeSeg(config, ss, md)
+	res := n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err != nil {
 		t.Errorf("Error: %v", res.Err)
 	}
@@ -107,7 +108,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when transcoder fails
 	tr.FailTranscode = true
-	res = n.transcodeSeg(config, ss, md)
+	res = n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err == nil {
 		t.Error("Expecting a transcode error")
 	}
@@ -115,7 +116,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when the number of results mismatchches expectations
 	tr.Profiles = []ffmpeg.VideoProfile{p[0]}
-	res = n.transcodeSeg(config, ss, md)
+	res = n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err == nil || res.Err.Error() != "MismatchedSegments" {
 		t.Error("Did not get mismatched segments as expected")
 	}
@@ -134,7 +135,7 @@ func TestServiceURIChange(t *testing.T) {
 	n.SetServiceURI(sUrl)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
-	sesh := drivers.NodeStorage.NewSession("testpath")
+	sesh := drivers.NodeStorage.NewSession(context.TODO(), "testpath")
 	savedUrl, err := sesh.SaveData("testdata1", []byte{0, 0, 0}, nil, 0)
 	require.Nil(err)
 	assert.Equal("test://testurl.com/stream/testpath/testdata1", savedUrl)

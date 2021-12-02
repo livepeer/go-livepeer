@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"testing"
@@ -29,7 +30,7 @@ func TestLocalOS(t *testing.T) {
 	u, err := url.Parse("fake.com/url")
 	assert.NoError((err))
 	os := NewMemoryDriver(u)
-	sess := os.NewSession(("sesspath")).(*MemorySession)
+	sess := os.NewSession(context.TODO(), ("sesspath")).(*MemorySession)
 	path, err := sess.SaveData("name1/1.ts", copyBytes(tempData1), nil, 0)
 	glog.Info(path)
 	fmt.Println(path)
@@ -54,7 +55,7 @@ func TestLocalOS(t *testing.T) {
 
 	// Test trim prefix when baseURI = nil
 	os = NewMemoryDriver(nil)
-	sess = os.NewSession("sesspath").(*MemorySession)
+	sess = os.NewSession(context.TODO(), "sesspath").(*MemorySession)
 	path, err = sess.SaveData("name1/1.ts", copyBytes(tempData1), nil, 0)
 	assert.Nil(err)
 	assert.Equal("/stream/sesspath/name1/1.ts", path)

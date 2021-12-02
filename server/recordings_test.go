@@ -54,9 +54,9 @@ func TestRecordingHandler(t *testing.T) {
 	assert.Equal(404, resp.StatusCode)
 
 	mos := drivers.TestMemoryStorages["recstore5"]
-	msess1 := mos.NewSession("sess1")
-	msess2 := mos.NewSession("sess2")
-	msess3 := mos.NewSession("sess3")
+	msess1 := mos.NewSession(context.TODO(), "sess1")
+	msess2 := mos.NewSession(context.TODO(), "sess2")
+	msess3 := mos.NewSession(context.TODO(), "sess3")
 
 	jpl := core.NewJSONPlaylist()
 	profile := ffmpeg.P144p25fps16x9
@@ -122,7 +122,7 @@ func TestRecording(t *testing.T) {
 	assert.Equal(404, resp.StatusCode)
 
 	mos := drivers.TestMemoryStorages["recstore4"]
-	msess := mos.NewSession("sess1")
+	msess := mos.NewSession(context.TODO(), "sess1")
 	msess.SaveData("testNode/source/1.ts", []byte("segmentdata"), nil, 0)
 
 	resp = makeReq("GET", "/live/sess1/testNode/source/1.ts")
@@ -167,7 +167,7 @@ func TestRecording(t *testing.T) {
 	fir.Body.Close()
 	assert.Equal("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-TARGETDURATION:2100\n#EXTINF:2100.000,\ntestNode/P144p25fps16x9/1.ts\n#EXTINF:2100.000,\ntestNode/P144p25fps16x9/2.ts\n#EXT-X-ENDLIST\n", string(body))
 
-	msess = mos.NewSession("sess2")
+	msess = mos.NewSession(context.TODO(), "sess2")
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 3, "testNode/P144p25fps16x9/3.ts", 2100)
 	bjpl, err = json.Marshal(jpl)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"container/heap"
+	"context"
 	"errors"
 	"math"
 	"math/big"
@@ -123,7 +124,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0)
+	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -200,7 +201,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0)
+	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 
 	sel.Add(
 		[]*BroadcastSession{
@@ -222,7 +223,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 
 func TestMinLSSelector_SelectUnknownSession_UniqueWeights(t *testing.T) {
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0)
+	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakes := make([]int64, 10)
@@ -284,7 +285,7 @@ func TestMinLSSelector_SelectUnknownSession_UniqueWeights(t *testing.T) {
 
 func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0)
+	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakeMap := make(map[ethcommon.Address]int64)
@@ -347,7 +348,7 @@ func TestMinLSSelector_SelectUnknownSession_SameAddress(t *testing.T) {
 		// Record # of times a session is selected
 		sessCount := make(map[*BroadcastSession]int)
 		for i := 0; i < selections; i++ {
-			sel := NewMinLSSelector(stakeRdr, 1.0)
+			sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 			sel.Add(sessions)
 			sess := sel.selectUnknownSession()
 			sessCount[sess]++
@@ -396,7 +397,7 @@ func TestMinLSSelector_SelectUnknownSession_AllMissingStake(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0)
+	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 
 	// Initialize stake reader with empty stake map so all sessions are missing stake
 	stakeRdr.SetStakes(make(map[ethcommon.Address]int64))
@@ -417,7 +418,7 @@ func TestMinLSSelector_SelectUnknownSession_SomeMissingStake(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0)
+	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
 
 	sess1 := StubBroadcastSession("")
 	sess1.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: []byte("foo")}
@@ -438,7 +439,7 @@ func TestMinLSSelector_SelectUnknownSession_SomeMissingStake(t *testing.T) {
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(nil, 1.0)
+	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {
@@ -461,7 +462,7 @@ func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, 1.0)
+	sel := NewMinLSSelectorWithRandFreq(context.TODO(), stakeRdr, 1.0, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakes := make([]int64, 10)
@@ -507,7 +508,7 @@ func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0)
+	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
