@@ -36,6 +36,9 @@ const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
 
+const segUploadTimeoutMultiplier = 0.5
+const segHttpPushTimeoutMultiplier = 4.0
+
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
@@ -438,12 +441,12 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 	// timeout for the whole HTTP call: segment upload, transcoding, reading response
 	httpTimeout := common.HTTPTimeout
 	// set a minimum timeout to accommodate transport / processing overhead
-	paddedDur := 4.0 * seg.Duration // use a multiplier of 4 for now
+	paddedDur := segHttpPushTimeoutMultiplier * seg.Duration
 	if paddedDur > httpTimeout.Seconds() {
 		httpTimeout = time.Duration(paddedDur * float64(time.Second))
 	}
-	// timeout fot the segment upload, until HTTP returns OK 200
-	uploadTimeout := time.Duration(0.5 * seg.Duration * float64(time.Second)) // use 0.5 multiplier
+	// timeout for the segment upload, until HTTP returns OK 200
+	uploadTimeout := time.Duration(segUploadTimeoutMultiplier * seg.Duration * float64(time.Second))
 	if uploadTimeout <= 0 {
 		uploadTimeout = httpTimeout
 	}
