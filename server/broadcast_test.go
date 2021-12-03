@@ -778,6 +778,7 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 
 	// One failed transcode attempt. Should leave another in the map
 	MaxAttempts = 1
+	transcodeCalls = 0
 	_, err = processSegment(context.Background(), cxn, seg)
 	assert.NotNil(err)
 	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
@@ -786,19 +787,21 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 
 	// Context canceled. Execute once and not retry
 	MaxAttempts = 10
+	transcodeCalls = 0
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = processSegment(ctx, cxn, seg)
 	assert.NotNil(err)
 	assert.Contains("context canceled", err.Error())
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
+	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 0)
 
 	// The session list is empty. TODO Should return an error indicating such
 	// (This test should fail and be corrected once this is actually implemented)
+	transcodeCalls = 0
 	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
+	assert.Equal(0, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 0)
 }
 
