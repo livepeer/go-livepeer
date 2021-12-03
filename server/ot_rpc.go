@@ -272,10 +272,10 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	clog.V(common.VERBOSE).Infof(ctx, "Transcoding done results sent for taskId=%d url=%s dur=%v err=%q", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done results sent for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
-		monitor.SegmentUploaded(0, uint64(notify.TaskId), uploadDur)
+		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur)
 	}
 }
 
@@ -403,7 +403,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%v", r.RemoteAddr, tid, dlDur)
 
 		if monitor.Enabled {
-			monitor.SegmentDownloaded(0, uint64(tid), dlDur)
+			monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
 		}
 
 		orch.TranscoderResults(tid, &res)

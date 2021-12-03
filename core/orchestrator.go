@@ -572,7 +572,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
 	if monitor.Enabled {
-		monitor.SegmentTranscoded(0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
+		monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
 
 	// Prepare the result object

@@ -611,7 +611,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(ctx, count, sus, params.Capabilities, scorePred)
 	if len(tinfos) <= 0 {
-		clog.Infof(ctx, "No orchestrators found; not transcoding err=%q", err)
+		clog.Infofe(ctx, "No orchestrators found; not transcoding", err)
 		return nil, errNoOrchs
 	}
 	if err != nil {
@@ -692,7 +692,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 
 	clog.V(common.DEBUG).Infof(ctx, "Processing segment dur=%v bytes=%v", seg.Duration, len(seg.Data))
 	if monitor.Enabled {
-		monitor.SegmentEmerged(nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
+		monitor.SegmentEmerged(ctx, nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	}
 	atomic.AddUint64(&cxn.sourceBytes, uint64(len(seg.Data)))
 
@@ -735,7 +735,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	if err != nil {
 		clog.Errorf(ctx, "Error saving segment err=%q", err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
 		}
 		return nil, err
 	}
@@ -744,12 +744,12 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 	err = cpl.InsertHLSSegment(vProfile, seg.SeqNo, uri, seg.Duration)
 	if monitor.Enabled {
-		monitor.SourceSegmentAppeared(nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
+		monitor.SourceSegmentAppeared(ctx, nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
 	}
 	if err != nil {
 		clog.Errorf(ctx, "Error inserting segment err=%q", err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 		}
 	}
 
@@ -767,7 +767,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			if err != nil {
 				clog.Errorf(ctx, "Error saving segment err=%q", err)
 				if monitor.Enabled {
-					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
+					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
 				}
 				return nil, err
 			}
@@ -776,7 +776,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			if err != nil {
 				clog.Errorf(ctx, "Error inserting segment err=%q", err)
 				if monitor.Enabled {
-					monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
+					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
 				}
 			}
 		}
@@ -861,7 +861,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	// View-only (non-transcoded) streams or no sessions available
 	if len(sessions) == 0 {
 		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		}
 		clog.Infof(ctx, "No sessions available for segment")
 		// We may want to introduce a "non-retryable" error type here
@@ -876,7 +876,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 
 	clog.Infof(ctx, "Trying to transcode segment using sessions=%d", len(sessions))
 	if monitor.Enabled {
-		monitor.TranscodeTry(nonce, seg.SeqNo)
+		monitor.TranscodeTry(ctx, nonce, seg.SeqNo)
 	}
 	if len(sessions) == 1 {
 		// shortcut for most common path
@@ -1021,7 +1021,7 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		if err != nil {
 			clog.Errorf(ctx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%q", cxn.mid, cxn.nonce, seg.SeqNo, err)
 			if monitor.Enabled {
-				monitor.SegmentUploadFailed(cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
+				monitor.SegmentUploadFailed(ctx, cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
 			}
 			cxn.sessManager.suspendAndRemoveOrch(sess)
 			return nil, err
@@ -1059,7 +1059,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
 		clog.Errorf(ctx, "%v error with segment nonce=%d seqNo=%d: %v (URL: %v)", subType, nonce, seg.SeqNo, err, url)
 		if monitor.Enabled && !gotErr {
-			monitor.SegmentTranscodeFailed(subType, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(ctx, subType, nonce, seg.SeqNo, err, false)
 			gotErr = true
 			errCode = subType
 		}
@@ -1160,7 +1160,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		segLock.Unlock()
 
 		if monitor.Enabled {
-			monitor.TranscodedSegmentAppeared(nonce, seg.SeqNo, profile.Name, bros != nil)
+			monitor.TranscodedSegmentAppeared(ctx, nonce, seg.SeqNo, profile.Name, bros != nil)
 		}
 	}
 
@@ -1191,7 +1191,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 
 	downloadDur := time.Since(dlStart)
 	if monitor.Enabled {
-		monitor.SegmentDownloaded(nonce, seg.SeqNo, downloadDur)
+		monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
 	}
 
 	if verifier != nil {
@@ -1212,7 +1212,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
 			clog.Errorf(ctx, "Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
 			if monitor.Enabled {
-				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
 			}
 		}
 	}
