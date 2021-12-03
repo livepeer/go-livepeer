@@ -654,7 +654,7 @@ func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.Manife
 	delete(s.internalManifests, extmid)
 
 	if monitor.Enabled {
-		monitor.StreamEnded(cxn.nonce)
+		monitor.StreamEnded(ctx, cxn.nonce)
 		monitor.CurrentSessions(len(s.rtmpConnections))
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
 	}

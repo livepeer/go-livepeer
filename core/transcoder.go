@@ -65,7 +65,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
 		// be called in orchestrator.go
-		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
+		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
 	return resToTranscodeData(ctx, res, opts)
@@ -108,7 +108,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
 		// be called in orchestrator.go
-		monitor.SegmentTranscoded(0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
+		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
 	return resToTranscodeData(ctx, res, out)

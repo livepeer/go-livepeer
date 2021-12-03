@@ -71,6 +71,16 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 	return context.WithValue(parentCtx, clogContextKey, newCmap)
 }
 
+// Same creates new context with parentCtx as parent and
+// same logging data as in logCtx
+func Same(parentCtx, logCtx context.Context) context.Context {
+	cmap, _ := logCtx.Value(clogContextKey).(*values)
+	if cmap == nil {
+		cmap = newValues()
+	}
+	return context.WithValue(parentCtx, clogContextKey, cmap)
+}
+
 func AddManifestID(ctx context.Context, val string) context.Context {
 	return AddVal(ctx, manifestID, val)
 }
@@ -104,48 +114,59 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 }
 
 func Warningf(ctx context.Context, format string, args ...interface{}) {
-	glog.WarningDepth(1, formatMessage(ctx, format, args...))
+	glog.WarningDepth(1, formatMessage(ctx, false, format, args...))
 }
 
 func Errorf(ctx context.Context, format string, args ...interface{}) {
-	glog.ErrorDepth(1, formatMessage(ctx, format, args...))
+	glog.ErrorDepth(1, formatMessage(ctx, false, format, args...))
 }
 
 func Fatalf(ctx context.Context, format string, args ...interface{}) {
-	glog.FatalDepth(1, formatMessage(ctx, format, args...))
+	glog.FatalDepth(1, formatMessage(ctx, false, format, args...))
 }
 
 func Infof(ctx context.Context, format string, args ...interface{}) {
-	infof(ctx, format, args...)
+	infof(ctx, false, format, args...)
 }
 
-func infof(ctx context.Context, format string, args ...interface{}) {
-	glog.InfoDepth(2, formatMessage(ctx, format, args...))
+// Infofe if last argument is not nil it will be printed as " err=%q"
+func Infofe(ctx context.Context, format string, args ...interface{}) {
+	infof(ctx, true, format, args...)
+}
+
+func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
+	glog.InfoDepth(2, formatMessage(ctx, lastErr, format, args...))
 }
 
 // Infof is equivalent to the global Infof function, guarded by the value of v.
 // See the documentation of V for usage.
 func (v Verbose) Infof(ctx context.Context, format string, args ...interface{}) {
 	if v {
-		infof(ctx, format, args...)
+		infof(ctx, false, format, args...)
 	}
 }
 
-func messageFromContext(ctx context.Context) string {
+func (v Verbose) Infofe(ctx context.Context, format string, args ...interface{}) {
+	if v {
+		infof(ctx, true, format, args...)
+	}
+}
+
+func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	if ctx == nil {
-		return ""
+		return
 	}
 	cmap, _ := ctx.Value(clogContextKey).(*values)
 	if cmap == nil {
-		return ""
+		return
 	}
 	cmap.mu.RLock()
-	var sb strings.Builder
 	for _, key := range stdKeysOrder {
 		if val, ok := cmap.vals[key]; ok {
 			sb.WriteString(key)
 			sb.WriteString("=")
 			sb.WriteString(val)
+			sb.WriteString(" ")
 		}
 	}
 	for key, val := range cmap.vals {
@@ -153,17 +174,23 @@ func messageFromContext(ctx context.Context) string {
 			sb.WriteString(key)
 			sb.WriteString("=")
 			sb.WriteString(val)
+			sb.WriteString(" ")
 		}
 	}
 	cmap.mu.RUnlock()
-	return sb.String()
 }
 
-func formatMessage(ctx context.Context, format string, args ...interface{}) string {
-	msg := fmt.Sprintf(format, args...)
-	mfc := messageFromContext(ctx)
-	if mfc != "" {
-		msg = mfc + " " + msg
+func formatMessage(ctx context.Context, lastErr bool, format string, args ...interface{}) string {
+	var sb strings.Builder
+	messageFromContext(ctx, &sb)
+	var err interface{}
+	if lastErr && len(args) > 0 {
+		err = args[len(args)-1]
+		args = args[:len(args)-1]
 	}
-	return msg
+	sb.WriteString(fmt.Sprintf(format, args...))
+	if err != nil {
+		sb.WriteString(fmt.Sprintf(" err=%q", err))
+	}
+	return sb.String()
 }
