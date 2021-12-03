@@ -122,7 +122,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	storageURI := "s3+http://K:P@localhost:9000/bucket"
 	os, err := drivers.ParseOSURL(storageURI, false)
 	assert.Nil(err)
-	params := &StreamParameters{Profiles: profs, OS: os.NewSession(context.TODO(), ""), Detection: detector}
+	params := &StreamParameters{Profiles: profs, OS: os.NewSession(""), Detection: detector}
 	assert.True(checkSuccess(params, []Capability{
 		Capability_H264,
 		Capability_MP4,
@@ -282,7 +282,7 @@ func (os *stubOS) GetInfo() *net.OSInfo {
 	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
 }
 func (os *stubOS) EndSession() {}
-func (os *stubOS) SaveData(string, []byte, map[string]string, time.Duration) (string, error) {
+func (os *stubOS) SaveData(context.Context, string, []byte, map[string]string, time.Duration) (string, error) {
 	return "", nil
 }
 func (os *stubOS) IsExternal() bool      { return false }

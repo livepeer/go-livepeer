@@ -111,7 +111,7 @@ func (dbo *DBOrchestratorPoolCache) GetInfo(uri string) common.OrchestratorLocal
 	return res
 }
 
-func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
 	uris, err := dbo.getURLs()
@@ -126,7 +126,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, num
 		}
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
-			clog.V(common.DEBUG).Infof(logCtx, "invalid ticket params orch=%v err=%q",
+			clog.V(common.DEBUG).Infof(ctx, "invalid ticket params orch=%v err=%q",
 				info.GetTranscoder(),
 				err,
 			)
@@ -137,15 +137,15 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, num
 		maxPrice := server.BroadcastCfg.MaxPrice()
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
-			clog.V(common.DEBUG).Infof(logCtx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
+			clog.V(common.DEBUG).Infof(ctx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
 			return false
 		}
 		if price == nil {
-			clog.V(common.DEBUG).Infof(logCtx, "no price info received for orch=%v", info.GetTranscoder())
+			clog.V(common.DEBUG).Infof(ctx, "no price info received for orch=%v", info.GetTranscoder())
 			return false
 		}
 		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
-			clog.V(common.DEBUG).Infof(logCtx, "orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
+			clog.V(common.DEBUG).Infof(ctx, "orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
 				info.GetTranscoder(),
 				price.FloatString(3),
 				maxPrice.FloatString(3),
@@ -156,7 +156,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(logCtx context.Context, num
 	}
 
 	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted)
-	orchInfos, err := orchPool.GetOrchestrators(logCtx, numOrchestrators, suspender, caps, scorePred)
+	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
 	}

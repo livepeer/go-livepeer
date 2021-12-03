@@ -47,7 +47,6 @@ type s3OS struct {
 }
 
 type s3Session struct {
-	logCtx      context.Context
 	os          *s3OS
 	host        string
 	bucket      string
@@ -121,11 +120,10 @@ func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, 
 	return os
 }
 
-func (os *s3OS) NewSession(logCtx context.Context, path string) OSSession {
+func (os *s3OS) NewSession(path string) OSSession {
 	policy, signature, credential, xAmzDate := createPolicy(os.awsAccessKeyID,
 		os.bucket, os.region, os.awsSecretAccessKey, path)
 	sess := &s3Session{
-		logCtx:      logCtx,
 		os:          os,
 		host:        os.host,
 		bucket:      os.bucket,
@@ -276,7 +274,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	return res, nil
 }
 
-func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	now := time.Now()
 	bucket := aws.String(os.bucket)
 	keyname := aws.String(os.key + "/" + name)
@@ -300,35 +298,35 @@ func (os *s3Session) saveDataPut(name string, data []byte, meta map[string]strin
 	if timeout == 0 {
 		timeout = saveTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 	resp, err := os.s3svc.PutObjectWithContext(ctx, params, request.WithLogLevel(aws.LogDebug))
 	cancel()
 	if err != nil {
 		return "", err
 	}
-	clog.Infof(os.logCtx, "resp: %s", resp.String())
+	clog.Infof(ctx, "resp: %s", resp.String())
 	uri := os.getAbsURL(*keyname)
-	clog.V(common.VERBOSE).Infof(os.logCtx, "Saved to S3 %s bytes=%v dur=%s", uri, len(data), time.Since(now))
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 %s bytes=%v dur=%s", uri, len(data), time.Since(now))
 	return uri, err
 }
 
-func (os *s3Session) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.s3svc != nil {
-		return os.saveDataPut(name, data, meta, timeout)
+		return os.saveDataPut(ctx, name, data, meta, timeout)
 	}
 	// tentativeUrl just used for logging
 	tentativeURL := path.Join(os.host, os.key, name)
+	clog.V(common.VERBOSE).Infof(ctx, "Saving to S3 url=%s", tentativeURL)
 	started := time.Now()
-	clog.V(common.VERBOSE).Infof(os.logCtx, "Saving to S3 url=%s", tentativeURL)
-	path, err := os.postData(name, data, meta, timeout)
+	path, err := os.postData(ctx, name, data, meta, timeout)
 	if err != nil {
 		// handle error
-		clog.Errorf(os.logCtx, "Save S3 error err=%q", err)
+		clog.Errorf(ctx, "Save S3 error err=%q", err)
 		return "", err
 	}
 	url := os.getAbsURL(path)
 
-	clog.V(common.VERBOSE).Infof(os.logCtx, "Saved to S3 url=%s bytes=%d took=%s", tentativeURL, len(data), time.Since(started))
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s bytes=%d took=%s", tentativeURL, len(data), time.Since(started))
 
 	return url, err
 }
@@ -365,7 +363,7 @@ func (os *s3Session) getContentType(fileName string, buffer []byte) string {
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) postData(ctx context.Context, fileName string, buffer []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	fileBytes := bytes.NewReader(buffer)
 	fileType := os.getContentType(fileName, buffer)
 	path, fileName := path.Split(path.Join(os.key, fileName))
@@ -382,28 +380,28 @@ func (os *s3Session) postData(fileName string, buffer []byte, meta map[string]st
 	if !strings.Contains(postURL, os.bucket) {
 		postURL += "/" + os.bucket
 	}
-	req, cancel, err := newfileUploadRequest(os.logCtx, postURL, fields, fileBytes, fileName, timeout)
+	req, cancel, err := newfileUploadRequest(ctx, postURL, fields, fileBytes, fileName, timeout)
 	if err != nil {
-		clog.Errorf(os.logCtx, "err=%q", err)
+		clog.Errorf(ctx, "err=%q", err)
 		return "", err
 	}
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		clog.Errorf(os.logCtx, "Error saving data to S3 err=%q", err)
+		clog.Errorf(ctx, "Error saving data to S3 err=%q", err)
 		return "", err
 	}
 	cancel()
 	body := &bytes.Buffer{}
 	sz, err := body.ReadFrom(resp.Body)
 	if err != nil {
-		clog.Errorf(os.logCtx, "err=%q", err)
+		clog.Errorf(ctx, "err=%q", err)
 		return "", err
 	}
 	resp.Body.Close()
 	if sz > 0 {
 		// usually there's an error at this point, so log
-		clog.Errorf(os.logCtx, "Got response from from S3 err=%s", body)
+		clog.Errorf(ctx, "Got response from from S3 err=%s", body)
 		return "", fmt.Errorf(body.String()) // sorta bad
 	}
 	return path + fileName, err
@@ -453,14 +451,14 @@ func createPolicy(key, bucket, region, secret, path string) (string, string, str
 	return policy, signString(policy, region, xAmzDate, secret), xAmzCredential, xAmzDate + "T000000Z"
 }
 
-func newfileUploadRequest(logCtx context.Context, uri string, params map[string]string, fData io.Reader, fileName string, timeout time.Duration) (*http.Request, context.CancelFunc, error) {
-	clog.Infof(logCtx, "Posting data to %s (params %+v)", uri, params)
+func newfileUploadRequest(ctx context.Context, uri string, params map[string]string, fData io.Reader, fileName string, timeout time.Duration) (*http.Request, context.CancelFunc, error) {
+	clog.Infof(ctx, "Posting data to %s (params %+v)", uri, params)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	for key, val := range params {
 		err := writer.WriteField(key, val)
 		if err != nil {
-			clog.Errorf(logCtx, "err=%q", err)
+			clog.Errorf(ctx, "err=%q", err)
 		}
 	}
 	part, err := writer.CreateFormFile("file", fileName)

@@ -65,7 +65,7 @@ func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
 	return res
 }
 
-func (o *orchestratorPool) GetOrchestrators(logCtx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
 	linfos := make([]common.OrchestratorLocalInfo, 0, len(o.infos))
@@ -77,7 +77,7 @@ func (o *orchestratorPool) GetOrchestrators(logCtx context.Context, numOrchestra
 
 	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsCutoffTimeout)
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), getOrchestratorsCutoffTimeout)
 
 	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
@@ -115,7 +115,7 @@ func (o *orchestratorPool) GetOrchestrators(logCtx context.Context, numOrchestra
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
-			clog.Errorf(logCtx, "err=%q", err)
+			clog.Errorf(ctx, "err=%q", err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(err.Error())
 			}

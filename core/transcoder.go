@@ -185,7 +185,7 @@ func parseURI(uri string) (string, uint64, error) {
 	return mid, seqNo, err
 }
 
-func resToTranscodeData(logCtx context.Context, res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
+func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
 	if len(res.Encoded) != len(opts) {
 		return nil, errors.New("lengths of results and options different")
 	}
@@ -199,7 +199,7 @@ func resToTranscodeData(logCtx context.Context, res *ffmpeg.TranscodeResults, op
 			oname := opts[i].Oname
 			o, err := ioutil.ReadFile(oname)
 			if err != nil {
-				clog.Errorf(logCtx, "Cannot read transcoded output for name=%s", oname)
+				clog.Errorf(ctx, "Cannot read transcoded output for name=%s", oname)
 				return nil, err
 			}
 			// Extract perceptual hash if calculated
@@ -208,12 +208,12 @@ func resToTranscodeData(logCtx context.Context, res *ffmpeg.TranscodeResults, op
 				sigfile := oname + ".bin"
 				s, err = ioutil.ReadFile(sigfile)
 				if err != nil {
-					clog.Errorf(logCtx, "Cannot read perceptual hash at name=%s", sigfile)
+					clog.Errorf(ctx, "Cannot read perceptual hash at name=%s", sigfile)
 					return nil, err
 				}
 				err = os.Remove(sigfile)
 				if err != nil {
-					clog.Errorf(logCtx, "Cannot delete perceptual hash after reading name=%s", sigfile)
+					clog.Errorf(ctx, "Cannot delete perceptual hash after reading name=%s", sigfile)
 				}
 			}
 			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})

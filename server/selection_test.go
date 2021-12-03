@@ -124,7 +124,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
+	sel := NewMinLSSelector(nil, 1.0)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -134,7 +134,7 @@ func TestMinLSSelector(t *testing.T) {
 	}
 
 	// Return nil when there are no sessions
-	assert.Nil(sel.Select())
+	assert.Nil(sel.Select(context.TODO()))
 
 	sel.Add(sessions)
 	assert.Equal(sel.Size(), 3)
@@ -143,7 +143,7 @@ func TestMinLSSelector(t *testing.T) {
 	}
 
 	// Select from unknownSessions
-	sess1 := sel.Select()
+	sess1 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 2)
 
@@ -155,7 +155,7 @@ func TestMinLSSelector(t *testing.T) {
 	assert.Equal(sel.knownSessions.Len(), 1)
 
 	// Select from unknownSessions
-	sess2 := sel.Select()
+	sess2 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
@@ -168,7 +168,7 @@ func TestMinLSSelector(t *testing.T) {
 	assert.Equal(sel.knownSessions.Len(), 2)
 
 	// Select from knownSessions
-	knownSess := sel.Select()
+	knownSess := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
@@ -178,14 +178,14 @@ func TestMinLSSelector(t *testing.T) {
 	knownSess.LatencyScore = 1.1
 	sel.Complete(knownSess)
 	// Clear unknownSessions
-	sess := sel.Select()
+	sess := sel.Select(context.TODO())
 	sess.LatencyScore = 2.1
 	sel.Complete(sess)
 	assert.Equal(len(sel.unknownSessions), 0)
 	assert.Equal(sel.knownSessions.Len(), 3)
 
 	// Select from knownSessions
-	knownSess = sel.Select()
+	knownSess = sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 0)
 	assert.Equal(sel.knownSessions.Len(), 2)
@@ -201,7 +201,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+	sel := NewMinLSSelector(stakeRdr, 1.0)
 
 	sel.Add(
 		[]*BroadcastSession{
@@ -216,14 +216,14 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 	// Test error when reading stake
 	stakeRdr.err = errors.New("Stakes error")
 	errorLogsBefore := glog.Stats.Error.Lines()
-	assert.Nil(sel.selectUnknownSession())
+	assert.Nil(sel.selectUnknownSession(context.TODO()))
 	errorLogsAfter := glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 }
 
 func TestMinLSSelector_SelectUnknownSession_UniqueWeights(t *testing.T) {
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+	sel := NewMinLSSelector(stakeRdr, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakes := make([]int64, 10)
@@ -250,7 +250,7 @@ func TestMinLSSelector_SelectUnknownSession_UniqueWeights(t *testing.T) {
 	// Each session has a unique stake weight so we will record the # of selections per stake weight
 	stakeCount := make(map[int64]int)
 	for i := 0; i < 100000; i++ {
-		sess := sel.selectUnknownSession()
+		sess := sel.selectUnknownSession(context.TODO())
 		addr := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient)
 		stake := stakeMap[addr]
 		stakeCount[stake]++
@@ -285,7 +285,7 @@ func TestMinLSSelector_SelectUnknownSession_UniqueWeights(t *testing.T) {
 
 func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+	sel := NewMinLSSelector(stakeRdr, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakeMap := make(map[ethcommon.Address]int64)
@@ -309,7 +309,7 @@ func TestMinLSSelector_SelectUnknownSession_UniformWeights(t *testing.T) {
 	// Run selectUnknownSession() x1000000 and record # of times a session is selected
 	sessCount := make(map[*BroadcastSession]int)
 	for i := 0; i < 1000000; i++ {
-		sess := sel.selectUnknownSession()
+		sess := sel.selectUnknownSession(context.TODO())
 		sessCount[sess]++
 
 		// Call Add() to add the session back to unknownSessions
@@ -348,9 +348,9 @@ func TestMinLSSelector_SelectUnknownSession_SameAddress(t *testing.T) {
 		// Record # of times a session is selected
 		sessCount := make(map[*BroadcastSession]int)
 		for i := 0; i < selections; i++ {
-			sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+			sel := NewMinLSSelector(stakeRdr, 1.0)
 			sel.Add(sessions)
-			sess := sel.selectUnknownSession()
+			sess := sel.selectUnknownSession(context.TODO())
 			sessCount[sess]++
 		}
 		return sessCount
@@ -397,7 +397,7 @@ func TestMinLSSelector_SelectUnknownSession_AllMissingStake(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+	sel := NewMinLSSelector(stakeRdr, 1.0)
 
 	// Initialize stake reader with empty stake map so all sessions are missing stake
 	stakeRdr.SetStakes(make(map[ethcommon.Address]int64))
@@ -410,15 +410,15 @@ func TestMinLSSelector_SelectUnknownSession_AllMissingStake(t *testing.T) {
 	sel.Add([]*BroadcastSession{sess1, sess2})
 
 	// The stake weight of both sessions defaults to 0 so they should be selected in the order that they were added
-	assert.Same(sess1, sel.Select())
-	assert.Same(sess2, sel.Select())
+	assert.Same(sess1, sel.Select(context.TODO()))
+	assert.Same(sess2, sel.Select(context.TODO()))
 }
 
 func TestMinLSSelector_SelectUnknownSession_SomeMissingStake(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(context.TODO(), stakeRdr, 1.0)
+	sel := NewMinLSSelector(stakeRdr, 1.0)
 
 	sess1 := StubBroadcastSession("")
 	sess1.OrchestratorInfo.TicketParams = &net.TicketParams{Recipient: []byte("foo")}
@@ -433,13 +433,13 @@ func TestMinLSSelector_SelectUnknownSession_SomeMissingStake(t *testing.T) {
 	// The stake weight of sess1 defaults to 0 so sess2 should always be selected first
 	for i := 0; i < 1000; i++ {
 		sel.Add([]*BroadcastSession{sess1, sess2})
-		assert.Same(sess2, sel.Select())
-		assert.Same(sess1, sel.Select())
+		assert.Same(sess2, sel.Select(context.TODO()))
+		assert.Same(sess1, sel.Select(context.TODO()))
 	}
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
+	sel := NewMinLSSelector(nil, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {
@@ -452,7 +452,7 @@ func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 	// Check that we select sessions based on the order of unknownSessions and that the size of
 	// unknownSessions decreases with each selection
 	for sel.Size() > 0 {
-		sess := sel.selectUnknownSession()
+		sess := sel.selectUnknownSession(context.TODO())
 		assert.Same(t, sess, sessions[i])
 		i++
 	}
@@ -462,7 +462,7 @@ func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelectorWithRandFreq(context.TODO(), stakeRdr, 1.0, 1.0)
+	sel := NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, 1.0)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakes := make([]int64, 10)
@@ -496,19 +496,19 @@ func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
 	sel.Add(sessions)
 
 	// When randFreq = 1.0 we should select randomly instead of selecting the session with the most stake
-	sess := sel.selectUnknownSession()
+	sess := sel.selectUnknownSession(context.TODO())
 	assert.NotEqual(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes())
 
 	// When randFreq = 0.0 we should select the session with the most stake
 	sel.randFreq = 0.0
-	sess = sel.selectUnknownSession()
+	sess = sel.selectUnknownSession(context.TODO())
 	assert.Equal(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes())
 }
 
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(context.TODO(), nil, 1.0)
+	sel := NewMinLSSelector(nil, 1.0)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{

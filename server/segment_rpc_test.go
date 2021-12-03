@@ -839,7 +839,7 @@ func TestServeSegment_ReturnSingleTranscodedSegmentData(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -907,7 +907,7 @@ func TestServeSegment_ReturnMultipleTranscodedSegmentData(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: &core.TranscodeData{Segments: []*core.TranscodedSegmentData{tData, tData}},
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -974,7 +974,7 @@ func TestServeSegment_TooBigSegment(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -1119,7 +1119,7 @@ func TestServeSegment_UpdateOrchestratorInfo(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -1258,7 +1258,7 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -1402,7 +1402,7 @@ func TestServeSegment_DebitFees_SingleRendition(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: tData,
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId), mock.Anything, tData.Segments[0].Pixels)
@@ -1478,7 +1478,7 @@ func TestServeSegment_DebitFees_MultipleRenditions(t *testing.T) {
 	tRes := &core.TranscodeResult{
 		TranscodeData: &core.TranscodeData{Segments: []*core.TranscodedSegmentData{tData720, tData240}},
 		Sig:           []byte("foo"),
-		OS:            drivers.NewMemoryDriver(nil).NewSession(context.TODO(), ""),
+		OS:            drivers.NewMemoryDriver(nil).NewSession(""),
 	}
 	orch.On("TranscodeSeg", md, seg).Return(tRes, nil)
 	orch.On("DebitFees", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId), mock.Anything, tData720.Pixels+tData240.Pixels)

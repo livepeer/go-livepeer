@@ -546,7 +546,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		// Need to store segment in our local OS
 		var err error
 		name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
-		url, err = config.LocalOS.SaveData(name, seg.Data, nil, 0)
+		url, err = config.LocalOS.SaveData(ctx, name, seg.Data, nil, 0)
 		if err != nil {
 			return terr(err)
 		}
@@ -618,7 +618,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 		return fmt.Errorf("Missing local storage")
 	}
 
-	los := drivers.NodeStorage.NewSession(logCtx, md.AuthToken.SessionId)
+	los := drivers.NodeStorage.NewSession(md.AuthToken.SessionId)
 
 	// determine appropriate OS to use
 	os := drivers.NewSession(md.OS)

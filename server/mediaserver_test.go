@@ -239,7 +239,7 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// Empty discovery
 	mid := core.RandomManifestID()
-	storage := drivers.NodeStorage.NewSession(context.TODO(), string(mid))
+	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
 	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
 		t.Error("Expected error with discovery")
@@ -291,7 +291,7 @@ func TestSelectOrchestrator(t *testing.T) {
 
 	// Check broadcaster OS session initialization when OS is external
 	drivers.NodeStorage, _ = drivers.ParseOSURL("s3://key:secret@us/livepeer", false)
-	externalStorage := drivers.NodeStorage.NewSession(context.TODO(), string(mid))
+	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
 	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
@@ -1032,7 +1032,7 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
-	storage := drivers.NewS3Driver("", "", "", "", false).NewSession(context.TODO(), "")
+	storage := drivers.NewS3Driver("", "", "", "", false).NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
 	cxn, err = s.registerConnection(context.TODO(), strm)
 	assert.Nil(err)

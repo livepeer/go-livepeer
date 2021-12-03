@@ -22,7 +22,7 @@ func NewMockOSSession() *MockOSSession {
 	}
 }
 
-func (s *MockOSSession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *MockOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	args := s.Called(name, data, meta, timeout)
 	if s.waitForCh {
 		s.back <- struct{}{}

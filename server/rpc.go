@@ -333,7 +333,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 		AuthToken:    authToken,
 	}
 
-	os := drivers.NodeStorage.NewSession(context.Background(), authToken.SessionId)
+	os := drivers.NodeStorage.NewSession(authToken.SessionId)
 
 	if os != nil {
 		if os.IsExternal() {

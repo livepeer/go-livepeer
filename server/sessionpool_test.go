@@ -51,7 +51,7 @@ func poolWithSessList(sessList []*BroadcastSession) *sessionPoolLIFO {
 		// return sessList, nil
 		return nil, nil
 	}
-	pool := NewSessionPool(context.TODO(), "test", len(sessList), 1, newSuspender(), createSessions, sel)
+	pool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
 	pool.sessMap = sessMap
 	return newSessionPoolLIFO(pool)
 }

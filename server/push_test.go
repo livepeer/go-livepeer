@@ -79,7 +79,7 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession(context.TODO(), "testPath")
+	osSession := osd.NewSession("testPath")
 
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
@@ -231,7 +231,7 @@ func TestPush_SceneDetection(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession(context.TODO(), "testPath")
+	osSession := osd.NewSession("testPath")
 
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
@@ -315,7 +315,7 @@ func TestPush_MultipartReturn(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession(context.TODO(), "testPath")
+	osSession := osd.NewSession("testPath")
 
 	oldjpqt := core.JsonPlaylistQuitTimeout
 	defer func() {
@@ -1642,7 +1642,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession(context.TODO(), "testPath")
+	osSession := osd.NewSession("testPath")
 	sess1.BroadcasterOS = osSession
 	sess2.BroadcasterOS = osSession
 	sess3.BroadcasterOS = osSession

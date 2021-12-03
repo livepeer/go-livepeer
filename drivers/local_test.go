@@ -30,18 +30,18 @@ func TestLocalOS(t *testing.T) {
 	u, err := url.Parse("fake.com/url")
 	assert.NoError((err))
 	os := NewMemoryDriver(u)
-	sess := os.NewSession(context.TODO(), ("sesspath")).(*MemorySession)
-	path, err := sess.SaveData("name1/1.ts", copyBytes(tempData1), nil, 0)
+	sess := os.NewSession(("sesspath")).(*MemorySession)
+	path, err := sess.SaveData(context.TODO(), "name1/1.ts", copyBytes(tempData1), nil, 0)
 	glog.Info(path)
 	fmt.Println(path)
 	assert.Equal("fake.com/url/stream/sesspath/name1/1.ts", path)
 	data := sess.GetData("sesspath/name1/1.ts")
 	fmt.Printf("got Data: '%s'\n", data)
 	assert.Equal(tempData1, string(data))
-	path, err = sess.SaveData("name1/1.ts", copyBytes(tempData2), nil, 0)
+	path, err = sess.SaveData(context.TODO(), "name1/1.ts", copyBytes(tempData2), nil, 0)
 	data = sess.GetData("sesspath/name1/1.ts")
 	assert.Equal(tempData2, string(data))
-	path, err = sess.SaveData("name1/2.ts", copyBytes(tempData3), nil, 0)
+	path, err = sess.SaveData(context.TODO(), "name1/2.ts", copyBytes(tempData3), nil, 0)
 	data = sess.GetData("sesspath/name1/2.ts")
 	assert.Equal(tempData3, string(data))
 	// Test trim prefix when baseURI != nil
@@ -55,8 +55,8 @@ func TestLocalOS(t *testing.T) {
 
 	// Test trim prefix when baseURI = nil
 	os = NewMemoryDriver(nil)
-	sess = os.NewSession(context.TODO(), "sesspath").(*MemorySession)
-	path, err = sess.SaveData("name1/1.ts", copyBytes(tempData1), nil, 0)
+	sess = os.NewSession("sesspath").(*MemorySession)
+	path, err = sess.SaveData(context.TODO(), "name1/1.ts", copyBytes(tempData1), nil, 0)
 	assert.Nil(err)
 	assert.Equal("/stream/sesspath/name1/1.ts", path)
 

@@ -71,18 +71,18 @@ func (lb *LoadBalancingTranscoder) Transcode(ctx context.Context, md *SegTransco
 	return session.Transcode(ctx, md)
 }
 
-func (lb *LoadBalancingTranscoder) createSession(logCtx context.Context, md *SegTranscodingMetadata) (*transcoderSession, error) {
+func (lb *LoadBalancingTranscoder) createSession(ctx context.Context, md *SegTranscodingMetadata) (*transcoderSession, error) {
 
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
 	job := string(md.AuthToken.SessionId)
 	if session, exists := lb.sessions[job]; exists {
-		clog.V(common.DEBUG).Infof(logCtx, "Attempted to create session but already exists key=%s", session.key)
+		clog.V(common.DEBUG).Infof(ctx, "Attempted to create session but already exists key=%s", session.key)
 		return session, nil
 	}
 
-	clog.V(common.DEBUG).Infof(logCtx, "LB: Creating transcode session for job=%s", job)
+	clog.V(common.DEBUG).Infof(ctx, "LB: Creating transcode session for job=%s", job)
 	transcoder := lb.leastLoaded()
 
 	// Acquire transcode session. Map to job id + assigned transcoder
@@ -119,15 +119,15 @@ func (lb *LoadBalancingTranscoder) createSession(logCtx context.Context, md *Seg
 		}
 		delete(lb.sessions, job)
 		lb.load[transcoder] -= costEstimate
-		clog.V(common.DEBUG).Infof(logCtx, "LB: Deleted transcode session for key=%s", session.key)
+		clog.V(common.DEBUG).Infof(ctx, "LB: Deleted transcode session for key=%s", session.key)
 	}
 
 	go func() {
-		session.loop(logCtx)
+		session.loop(ctx)
 		cleanupSession()
 	}()
 
-	clog.V(common.DEBUG).Infof(logCtx, "LB: Created transcode session for key=%s", session.key)
+	clog.V(common.DEBUG).Infof(ctx, "LB: Created transcode session for key=%s", session.key)
 	return session, nil
 }
 
@@ -146,9 +146,9 @@ func (lb *LoadBalancingTranscoder) leastLoaded() string {
 }
 
 type transcoderParams struct {
-	logCtx context.Context
-	md     *SegTranscodingMetadata
-	res    chan struct {
+	ctx context.Context
+	md  *SegTranscodingMetadata
+	res chan struct {
 		*TranscodeData
 		error
 	}
@@ -183,7 +183,7 @@ func (sess *transcoderSession) loop(logCtx context.Context) {
 		case params := <-sess.sender:
 			cancel()
 			res, err :=
-				sess.transcoder.Transcode(params.logCtx, params.md)
+				sess.transcoder.Transcode(params.ctx, params.md)
 			params.res <- struct {
 				*TranscodeData
 				error
@@ -196,19 +196,19 @@ func (sess *transcoderSession) loop(logCtx context.Context) {
 	}
 }
 
-func (sess *transcoderSession) Transcode(logCtx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (sess *transcoderSession) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	params := &transcoderParams{
-		md:     md,
-		logCtx: logCtx,
+		md:  md,
+		ctx: ctx,
 		res: make(chan struct {
 			*TranscodeData
 			error
 		})}
 	select {
 	case sess.sender <- params:
-		clog.V(common.DEBUG).Infof(logCtx, "LB: Transcode submitted for key=%s", sess.key)
+		clog.V(common.DEBUG).Infof(ctx, "LB: Transcode submitted for key=%s", sess.key)
 	default:
-		clog.V(common.DEBUG).Infof(logCtx, "LB: Transcoder was busy; exiting key=%s", sess.key)
+		clog.V(common.DEBUG).Infof(ctx, "LB: Transcoder was busy; exiting key=%s", sess.key)
 		return nil, ErrTranscoderBusy
 	}
 	select {
