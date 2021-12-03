@@ -121,18 +121,22 @@ func messageFromContext(ctx context.Context) string {
 	if cmap == nil {
 		return ""
 	}
-	var parts []string
+	var sb strings.Builder
 	for _, key := range stdKeysOrder {
 		if val, ok := cmap[key]; ok {
-			parts = append(parts, key+"="+val)
+			sb.WriteString(key)
+			sb.WriteString("=")
+			sb.WriteString(val)
 		}
 	}
 	for key, val := range cmap {
 		if _, ok := stdKeys[key]; !ok {
-			parts = append(parts, key+"="+val)
+			sb.WriteString(key)
+			sb.WriteString("=")
+			sb.WriteString(val)
 		}
 	}
-	return strings.Join(parts, " ")
+	return sb.String()
 }
 
 func formatMessage(ctx context.Context, format string, args ...interface{}) string {
