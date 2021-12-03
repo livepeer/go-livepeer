@@ -14,12 +14,13 @@ The round initialization service is disabled by default and can be enabled by st
 
 ## Gas Prices
 
-After the EIP-1559 upgrade on Ethereum, the node uses `maxFeePerGas` parameter to limit the maximum fee paid for the transaction execution:
-
-- If max gas price is specified, then use its value as `maxFeePerGas`
-- If max gas price is not specified, then use the default `maxFeePerGas` and gradually increase it with the replacement transactions
+After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priority fee + base fee.
 
 ### Max gas price
+
+The `maxGasPrice` parameter makes sure the transaction fee never exceeds the specified limit.
+- If the current network gas price is higher than `maxGasPrice`, the transaction is not sent
+- The transaction parameter `maxFeePerGas` is set to `maxGasPrice`
 
 The following options can be used to get the max gas price:
 
