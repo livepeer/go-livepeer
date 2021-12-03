@@ -106,10 +106,9 @@ func NewGoogleDriver(bucket, keyData string, useFullAPI bool) (OSDriver, error) 
 	return os, nil
 }
 
-func (os *gsOS) NewSession(logCtx context.Context, path string) OSSession {
+func (os *gsOS) NewSession(path string) OSSession {
 	var policy, signature = gsCreatePolicy(os.gsSigner, os.bucket, os.region, path)
 	sess := &s3Session{
-		logCtx:      logCtx,
 		host:        gsHost(os.bucket),
 		bucket:      os.bucket,
 		key:         path,
@@ -154,7 +153,7 @@ func (os *gsSession) createClient() error {
 	return nil
 }
 
-func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.useFullAPI {
 		if os.client == nil {
 			if err := os.createClient(); err != nil {
@@ -163,11 +162,11 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, 
 		}
 		keyname := os.key + "/" + name
 		objh := os.client.Bucket(os.bucket).Object(keyname)
-		clog.V(common.VERBOSE).Infof(os.logCtx, "Saving to GS %s/%s", os.bucket, keyname)
+		clog.V(common.VERBOSE).Infof(ctx, "Saving to GS %s/%s", os.bucket, keyname)
 		if timeout == 0 {
 			timeout = saveTimeout
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 		defer cancel()
 		wr := objh.NewWriter(ctx)
 		if len(meta) > 0 && wr.Metadata == nil {
@@ -186,10 +185,10 @@ func (os *gsSession) SaveData(name string, data []byte, meta map[string]string, 
 			return "", err2
 		}
 		uri := os.getAbsURL(keyname)
-		clog.V(common.VERBOSE).Infof(os.logCtx, "Saved to GS %s", uri)
+		clog.V(common.VERBOSE).Infof(ctx, "Saved to GS url=%s", uri)
 		return uri, err
 	}
-	return os.s3Session.SaveData(name, data, meta, timeout)
+	return os.s3Session.SaveData(ctx, name, data, meta, timeout)
 }
 
 type gsPageInfo struct {

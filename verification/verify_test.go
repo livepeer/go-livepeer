@@ -337,10 +337,10 @@ func TestVerifyPixels(t *testing.T) {
 	assert := assert.New(t)
 
 	// Create memory session and save a test file
-	bos := drivers.NewMemoryDriver(nil).NewSession(context.TODO(), "foo")
+	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
 	data, err := ioutil.ReadFile("../server/test.flv")
 	require.Nil(err)
-	fname, err := bos.SaveData("test.ts", data, nil, 0)
+	fname, err := bos.SaveData(context.TODO(), "test.ts", data, nil, 0)
 	require.Nil(err)
 	memOS, ok := bos.(*drivers.MemorySession)
 	require.True(ok)

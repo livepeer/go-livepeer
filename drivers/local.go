@@ -39,7 +39,7 @@ func NewMemoryDriver(baseURI *url.URL) *MemoryOS {
 	}
 }
 
-func (ostore *MemoryOS) NewSession(logCtx context.Context, path string) OSSession {
+func (ostore *MemoryOS) NewSession(path string) OSSession {
 	ostore.lock.Lock()
 	defer ostore.lock.Unlock()
 	if session, ok := ostore.sessions[path]; ok {
@@ -195,7 +195,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }
 
-func (ostore *MemorySession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (ostore *MemorySession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()

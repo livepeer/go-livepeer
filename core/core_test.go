@@ -97,7 +97,7 @@ func TestTranscodeSeg(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, tmp, nil)
 	n.Transcoder = stubTranscoderWithProfiles(profiles)
 
-	conf := transcodeConfig{LocalOS: (drivers.NewMemoryDriver(nil)).NewSession(context.TODO(), "")}
+	conf := transcodeConfig{LocalOS: (drivers.NewMemoryDriver(nil)).NewSession("")}
 	md := &SegTranscodingMetadata{Profiles: profiles, AuthToken: stubAuthToken()}
 	seg := StubSegment()
 

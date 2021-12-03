@@ -118,9 +118,9 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 		createSessionsUntrusted = createSessionsEmpty
 
 	}
-	trustedPool := NewSessionPool(context.TODO(), "test", len(sessList), 1, newSuspender(), createSessions, sel)
+	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
 	trustedPool.sessMap = sessMap
-	untrustedPool := NewSessionPool(context.TODO(), "test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
+	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
 	untrustedPool.sessMap = untrustedSessMap
 
 	return &BroadcastSessionsManager{
@@ -180,7 +180,7 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *stubOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -252,12 +252,12 @@ type stubSelector struct {
 	size int
 }
 
-func (s *stubSelector) Add(sessions []*BroadcastSession)      {}
-func (s *stubSelector) Complete(sess *BroadcastSession)       {}
-func (s *stubSelector) Select() *BroadcastSession             { return s.sess }
-func (s *stubSelector) Size() int                             { return s.size }
-func (s *stubSelector) Clear()                                {}
-func (s *stubSelector) Remove(session *BroadcastSession) bool { return false }
+func (s *stubSelector) Add(sessions []*BroadcastSession)         {}
+func (s *stubSelector) Complete(sess *BroadcastSession)          {}
+func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
+func (s *stubSelector) Size() int                                { return s.size }
+func (s *stubSelector) Clear()                                   {}
+func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -297,7 +297,7 @@ func TestNewSessionManager(t *testing.T) {
 	assert := assert.New(t)
 
 	mid := core.RandomManifestID()
-	storage := drivers.NewMemoryDriver(nil).NewSession(context.TODO(), string(mid))
+	storage := drivers.NewMemoryDriver(nil).NewSession(string(mid))
 	params := &core.StreamParameters{OS: storage}
 
 	// Check empty pool produces expected numOrchs
@@ -1235,7 +1235,7 @@ func TestVerifier_Invocation(t *testing.T) {
 
 func TestVerifier_Verify(t *testing.T) {
 	assert := assert.New(t)
-	os := drivers.NewMemoryDriver(nil).NewSession(context.TODO(), "")
+	os := drivers.NewMemoryDriver(nil).NewSession("")
 	oldjpqt := core.JsonPlaylistQuitTimeout
 	defer func() {
 		core.JsonPlaylistQuitTimeout = oldjpqt
@@ -1296,9 +1296,9 @@ func TestVerifier_Verify(t *testing.T) {
 			{Score: 1},
 		},
 	}
-	mem, ok := drivers.NewMemoryDriver(nil).NewSession(context.TODO(), "streamName").(*drivers.MemorySession)
+	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
 	assert.True(ok)
-	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"), nil, 0)
+	name, err := mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt1"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 	sess.BroadcasterOS = mem
@@ -1310,7 +1310,7 @@ func TestVerifier_Verify(t *testing.T) {
 
 	// Now "insert" 2nd attempt into OS
 	// and ensure 1st attempt is what remains after verification
-	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"), nil, 0)
+	_, err = mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt2"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}
@@ -1335,7 +1335,7 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	pl := &stubPlaylistManager{manifestID: mid}
 	// drivers.S3BUCKET = "livepeer"
 	S3BUCKET := "livepeer"
-	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(context.TODO(), string(mid))
+	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1385,7 +1385,7 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
 	S3BUCKET := "livepeer"
-	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(context.TODO(), string(mid))
+	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
 	ctx, cancel := context.WithCancel(context.Background())

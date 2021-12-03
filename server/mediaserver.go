@@ -309,17 +309,16 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
 		ctx = clog.AddManifestID(ctx, string(mid))
-		logCtx := clog.Clone(context.Background(), ctx)
 
 		if os != nil {
-			oss = os.NewSession(logCtx, string(mid))
+			oss = os.NewSession(string(mid))
 		}
 
 		recordPath := fmt.Sprintf("%s/%s", extmid, monitor.NodeID)
 		if ros != nil {
-			ross = ros.NewSession(logCtx, recordPath)
+			ross = ros.NewSession(recordPath)
 		} else if drivers.RecordStorage != nil {
-			ross = drivers.RecordStorage.NewSession(logCtx, recordPath)
+			ross = drivers.RecordStorage.NewSession(recordPath)
 		}
 		// Ensure there's no concurrent StreamID with the same name
 		s.connectionLock.RLock()
@@ -532,7 +531,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 }
 
 func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
-	logCtx := clog.Clone(context.Background(), ctx)
+	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
 	if params == nil {
@@ -548,7 +547,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		params.Resolution = fmt.Sprintf("%vx%v", rtmpStrm.Width(), rtmpStrm.Height())
 	}
 	if params.OS == nil {
-		params.OS = drivers.NodeStorage.NewSession(logCtx, string(mid))
+		params.OS = drivers.NodeStorage.NewSession(string(mid))
 	}
 	storage := params.OS
 
@@ -582,17 +581,16 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
 	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelectorWithRandFreq(logCtx, stakeRdr, 1.0, SelectRandFreq)
+		return NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)
 	}
 	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   params.Nonce,
-		stream:  rtmpStrm,
-		pl:      playlist,
-		profile: &vProfile,
-		params:  params,
-		// sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
-		sessManager: NewSessionManager(logCtx, s.LivepeerNode, params, selFactory),
+		mid:         mid,
+		nonce:       params.Nonce,
+		stream:      rtmpStrm,
+		pl:          playlist,
+		profile:     &vProfile,
+		params:      params,
+		sessManager: NewSessionManager(ctx, s.LivepeerNode, params, selFactory),
 		lastUsed:    time.Now(),
 	}
 
@@ -1300,9 +1298,9 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		sess = os.NewSession(ctx, manifestID)
+		sess = os.NewSession(manifestID)
 	} else if drivers.RecordStorage != nil {
-		sess = drivers.RecordStorage.NewSession(ctx, manifestID)
+		sess = drivers.RecordStorage.NewSession(manifestID)
 	} else {
 		clog.Errorf(ctx, "No record object store defined for request url=%s", r.URL)
 		w.WriteHeader(http.StatusBadRequest)
@@ -1446,7 +1444,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
-			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil, 0)
+			_, err = sess.SaveData(ctx, fileName, mpl.Encode().Bytes(), nil, 0)
 			clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", fileName, time.Since(nows))
 			if err != nil {
 				clog.Errorf(ctx, "Error saving finalized json playlist to store err=%q", err)
@@ -1455,7 +1453,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			}
 		}
 		nows := time.Now()
-		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil, 0)
+		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode().Bytes(), nil, 0)
 		clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", "index.m3u8", time.Since(nows))
 		if err != nil {
 			clog.Errorf(ctx, "Error saving playlist to store err=%q", err)
