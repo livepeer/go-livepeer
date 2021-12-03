@@ -830,21 +830,18 @@ func validatePrice(sess *BroadcastSession) error {
 }
 
 func sendReqWithTimeout(req *http.Request, timeout time.Duration) (*http.Response, error) {
-	type result struct {
-		resp *http.Response
-		err  error
-	}
-	resCh := make(chan result)
+	ctx, cancel := context.WithCancel(req.Context())
+	timeouter := time.AfterFunc(timeout, cancel)
 
-	go func() {
-		resp, err := httpClient.Do(req)
-		resCh <- result{resp, err}
-	}()
-
-	select {
-	case res := <-resCh:
-		return res.resp, res.err
-	case <-time.After(timeout):
-		return nil, errTimeout
+	req = req.WithContext(ctx)
+	resp, err := httpClient.Do(req)
+	if timeouter.Stop() {
+		return resp, err
 	}
+	// timeout has already fired and cancelled the request
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return nil, context.DeadlineExceeded
 }
