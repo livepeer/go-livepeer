@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/golang/glog"
 )
@@ -44,13 +45,28 @@ func V(level glog.Level) Verbose {
 	return Verbose(bool(glog.V(level)))
 }
 
+type values struct {
+	mu   sync.RWMutex
+	vals map[string]string
+}
+
+func newValues() *values {
+	return &values{
+		vals: make(map[string]string),
+	}
+}
+
 // Clone creates new context with parentCtx as parent and
 // logging details from logCtx
 func Clone(parentCtx, logCtx context.Context) context.Context {
-	cmap, _ := logCtx.Value(clogContextKey).(map[string]string)
-	newCmap := make(map[string]string)
-	for k, v := range cmap {
-		newCmap[k] = v
+	cmap, _ := logCtx.Value(clogContextKey).(*values)
+	newCmap := newValues()
+	if cmap != nil {
+		cmap.mu.RLock()
+		for k, v := range cmap.vals {
+			newCmap.vals[k] = v
+		}
+		cmap.mu.RUnlock()
 	}
 	return context.WithValue(parentCtx, clogContextKey, newCmap)
 }
@@ -76,12 +92,14 @@ func AddSeqNo(ctx context.Context, val uint64) context.Context {
 }
 
 func AddVal(ctx context.Context, key, val string) context.Context {
-	cmap, _ := ctx.Value(clogContextKey).(map[string]string)
+	cmap, _ := ctx.Value(clogContextKey).(*values)
 	if cmap == nil {
-		cmap = make(map[string]string)
+		cmap = newValues()
 		ctx = context.WithValue(ctx, clogContextKey, cmap)
 	}
-	cmap[key] = val
+	cmap.mu.Lock()
+	cmap.vals[key] = val
+	cmap.mu.Unlock()
 	return ctx
 }
 
@@ -117,25 +135,27 @@ func messageFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	cmap, _ := ctx.Value(clogContextKey).(map[string]string)
+	cmap, _ := ctx.Value(clogContextKey).(*values)
 	if cmap == nil {
 		return ""
 	}
+	cmap.mu.RLock()
 	var sb strings.Builder
 	for _, key := range stdKeysOrder {
-		if val, ok := cmap[key]; ok {
+		if val, ok := cmap.vals[key]; ok {
 			sb.WriteString(key)
 			sb.WriteString("=")
 			sb.WriteString(val)
 		}
 	}
-	for key, val := range cmap {
+	for key, val := range cmap.vals {
 		if _, ok := stdKeys[key]; !ok {
 			sb.WriteString(key)
 			sb.WriteString("=")
 			sb.WriteString(val)
 		}
 	}
+	cmap.mu.RUnlock()
 	return sb.String()
 }
 
