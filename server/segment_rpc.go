@@ -45,7 +45,6 @@ var errFormat = errors.New("unrecognized profile output format")
 var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
-var errTimeout = errors.New("timeout")
 
 var dialTimeout = 2 * time.Second
 

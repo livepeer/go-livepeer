@@ -2001,7 +2001,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	headerTimeout = 100 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(sess, seg, 0, false, true)
-	assert.Contains(err.Error(), "header timeout: timeout")
+	assert.Contains(err.Error(), "context canceled")
 
 	// time out body
 	lock.Lock()
@@ -2282,7 +2282,7 @@ func TestSendReqWithTimeout(t *testing.T) {
 	resp, err = sendReqWithTimeout(req, time.Millisecond)
 	wg.Done()
 	assert.Nil(resp)
-	assert.ErrorIs(err, errTimeout)
+	assert.ErrorIs(err, context.Canceled)
 }
 
 func stubTLSServer() (*httptest.Server, *http.ServeMux) {
