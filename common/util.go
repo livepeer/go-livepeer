@@ -29,6 +29,9 @@ import (
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
+// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment
+var SegmentUploadTimeout = 2 * time.Second
+
 // Max Segment Duration
 var MaxDuration = (5 * time.Minute)
 

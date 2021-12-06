@@ -36,6 +36,9 @@ const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
 
+const segUploadTimeoutMultiplier = 0.5
+const segHttpPushTimeoutMultiplier = 4.0
+
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
@@ -434,16 +437,24 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 		return nil, err
 	}
 
+	// timeout for the whole HTTP call: segment upload, transcoding, reading response
+	httpTimeout := common.HTTPTimeout
 	// set a minimum timeout to accommodate transport / processing overhead
-	dur := common.HTTPTimeout
-	paddedDur := 4.0 * seg.Duration // use a multiplier of 4 for now
-	if paddedDur > dur.Seconds() {
-		dur = time.Duration(paddedDur * float64(time.Second))
+	paddedDur := segHttpPushTimeoutMultiplier * seg.Duration
+	if paddedDur > httpTimeout.Seconds() {
+		httpTimeout = time.Duration(paddedDur * float64(time.Second))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dur)
+	// timeout for the segment upload, until HTTP returns OK 200
+	uploadTimeout := time.Duration(segUploadTimeoutMultiplier * seg.Duration * float64(time.Second))
+	if uploadTimeout <= 0 {
+		uploadTimeout = common.SegmentUploadTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
 	defer cancel()
 
 	ti := sess.OrchestratorInfo
+
 	req, err := http.NewRequestWithContext(ctx, "POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
 		glog.Errorf("Could not generate transcode request to orch=%s", ti.Transcoder)
@@ -463,9 +474,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64,
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
+	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, httpTimeout)
 	start := time.Now()
-	resp, err := httpClient.Do(req)
+	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
 		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
@@ -815,4 +826,21 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
+}
+
+func sendReqWithTimeout(req *http.Request, timeout time.Duration) (*http.Response, error) {
+	ctx, cancel := context.WithCancel(req.Context())
+	timeouter := time.AfterFunc(timeout, cancel)
+
+	req = req.WithContext(ctx)
+	resp, err := httpClient.Do(req)
+	if timeouter.Stop() {
+		return resp, err
+	}
+	// timeout has already fired and cancelled the request
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return nil, context.DeadlineExceeded
 }
