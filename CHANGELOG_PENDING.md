@@ -19,6 +19,7 @@
 - \#2100 Check verified session first while choosing the result from multiple untrusted sessions (@leszko)
 - \#2103 Suspend sessions that did not pass p-hash verification (@leszko)
 - \#2110 Transparently support HTTP/2 for segment requests while allowing HTTP/1 via GODEBUG runtime flags (@yondonfu)
+- \#2124 Do not retry transcoding if HTTP client closed/canceled the connection (@leszko)
 
 #### Orchestrator
 

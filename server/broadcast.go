@@ -677,7 +677,7 @@ func selectOrchestrator(n *core.LivepeerNode, params *core.StreamParameters, cou
 	return sessions, nil
 }
 
-func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
+func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
 
 	rtmpStrm := cxn.stream
 	nonce := cxn.nonce
@@ -809,6 +809,11 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, erro
 		}
 		if isNonRetryableError(err) {
 			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to non-retryable error err=%v", nonce, seg.SeqNo, err)
+			break
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+			glog.Warningf("Not retrying current segment nonce=%d seqNo=%d due to context cancellation err=%v", nonce, seg.SeqNo, err)
 			break
 		}
 		// recoverable error, retry

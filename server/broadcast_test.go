@@ -771,31 +771,37 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 
 	// Sanity check: zero attempts should not transcode
 	MaxAttempts = 0
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Equal(0, transcodeCalls, "Unexpectedly submitted segment")
 	assert.Len(bsm.trustedPool.sessMap, 2)
 
 	// One failed transcode attempt. Should leave another in the map
 	MaxAttempts = 1
-	_, err = processSegment(cxn, seg)
+	transcodeCalls = 0
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.NotNil(err)
 	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 1)
 
-	// Drain the swamp! Empty out the session list
-	_, err = processSegment(cxn, seg)
+	// Context canceled. Execute once and not retry
+	MaxAttempts = 10
+	transcodeCalls = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = processSegment(ctx, cxn, seg)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
-	assert.Len(bsm.trustedPool.sessMap, 0) // Now empty
+	assert.Contains("context canceled", err.Error())
+	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.trustedPool.sessMap, 0)
 
 	// The session list is empty. TODO Should return an error indicating such
 	// (This test should fail and be corrected once this is actually implemented)
-	_, err = processSegment(cxn, seg)
+	transcodeCalls = 0
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
+	assert.Equal(0, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 0)
 }
 
@@ -875,7 +881,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	// Calls producer once with transcode event
 	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
 	transcodeResps <- dummyRes
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.trustedPool.sessMap, 2)
 	evt, ok := queue.receive(ctx)
@@ -894,7 +900,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
 	transcodeResps <- nil
 	transcodeResps <- dummyRes
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.trustedPool.sessMap, 1)
 	evt, ok = queue.receive(ctx)
@@ -911,7 +917,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	transcodeResps <- nil
 	transcodeResps <- nil
 	transcodeResps <- nil
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.NotNil(err)
 	assert.Len(cxn.sessManager.trustedPool.sessMap, 0)
 	evt, ok = queue.receive(ctx)
@@ -927,7 +933,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 
 	// Empty session list. Transcode event should still have success=false
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{})
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.trustedPool.sessMap, 0)
 	evt, ok = queue.receive(ctx)
@@ -942,7 +948,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	queue.err = errors.New("publish failure")
 	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 1, handler))
 	transcodeResps <- dummyRes
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Len(cxn.sessManager.trustedPool.sessMap, 1)
 	evt, ok = queue.receive(ctx)
@@ -953,7 +959,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	// Uses manifest ID if external stream ID or params not present
 	testMissingStreamID := func() {
 		transcodeResps <- dummyRes
-		_, err = processSegment(cxn, seg)
+		_, err = processSegment(context.Background(), cxn, seg)
 		assert.Nil(err)
 		evt, ok = queue.receive(ctx)
 		require.True(ok)
@@ -1575,7 +1581,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	downloadSeg = func(url string) ([]byte, error) { return []byte(url), nil }
 
 	// processSegment will also call transcodeSegment; also check that behavior
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	assert.Equal(ffmpeg.FormatNone, cxn.profile.Format)
@@ -1598,7 +1604,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	for _, p := range sess.Params.Profiles {
@@ -1621,7 +1627,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	for _, p := range sess.Params.Profiles {
@@ -1639,12 +1645,12 @@ func TestProcessSegment_CheckDuration(t *testing.T) {
 	cxn := &rtmpConnection{}
 
 	// Check less-than-zero
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 	assert.Equal("Invalid duration -1", err.Error())
 
 	// CHeck greater than max duration
 	seg.Duration = maxDurationSec + 0.01
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Equal("Invalid duration 300.01", err.Error())
 }
 

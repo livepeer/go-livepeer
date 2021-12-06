@@ -43,7 +43,7 @@ var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
 // }
 var port = 10000
 
-// waitForTCP trries to establish TCP connectin for a specified time
+// waitForTCP tries to establish TCP connection for a specified time
 func waitForTCP(waitForTarget time.Duration, uri string) error {
 	var u *url.URL
 	var err error
