@@ -1646,12 +1646,12 @@ func TestProcessSegment_CheckDuration(t *testing.T) {
 
 	// Check less-than-zero
 	_, err := processSegment(context.Background(), cxn, seg)
-	assert.Equal("Invalid duration -1", err.Error())
+	assert.Equal("invalid duration -1", err.Error())
 
 	// CHeck greater than max duration
 	seg.Duration = maxDurationSec + 0.01
 	_, err = processSegment(context.Background(), cxn, seg)
-	assert.Equal("Invalid duration 300.01", err.Error())
+	assert.Equal("invalid duration 300.01", err.Error())
 }
 
 func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {

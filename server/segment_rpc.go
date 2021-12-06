@@ -457,7 +457,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		uploadTimeout = common.SegmentUploadTimeout
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, httpTimeout)
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), httpTimeout)
 	defer cancel()
 
 	ti := sess.OrchestratorInfo
