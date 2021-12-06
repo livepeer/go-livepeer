@@ -1,5 +1,5 @@
 /*
-Package clog provides Conext with logging information.
+Package clog provides Context with logging information.
 */
 package clog
 
@@ -28,11 +28,10 @@ const (
 )
 
 // Verbose is a boolean type that implements Infof (like Printf) etc.
-// See the documentation of V for more information.
 type Verbose bool
 
 var stdKeys map[string]bool
-var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo}
+var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID}
 
 func init() {
 	stdKeys = make(map[string]bool)
@@ -42,7 +41,7 @@ func init() {
 }
 
 func V(level glog.Level) Verbose {
-	return Verbose(bool(glog.V(level)))
+	return Verbose(glog.V(level))
 }
 
 type values struct {
@@ -69,16 +68,6 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RUnlock()
 	}
 	return context.WithValue(parentCtx, clogContextKey, newCmap)
-}
-
-// Same creates new context with parentCtx as parent and
-// same logging data as in logCtx
-func Same(parentCtx, logCtx context.Context) context.Context {
-	cmap, _ := logCtx.Value(clogContextKey).(*values)
-	if cmap == nil {
-		cmap = newValues()
-	}
-	return context.WithValue(parentCtx, clogContextKey, cmap)
 }
 
 func AddManifestID(ctx context.Context, val string) context.Context {

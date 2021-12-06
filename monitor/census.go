@@ -1298,7 +1298,7 @@ func TranscodedSegmentAppeared(ctx context.Context, nonce, seqNo uint64, profile
 func (cen *censusMetricsCounter) segmentTranscodedAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	ctx, err := tag.New(clog.Same(cen.ctx, ctx), tag.Insert(cen.kProfile, profile))
+	ctx, err := tag.New(clog.Clone(cen.ctx, ctx), tag.Insert(cen.kProfile, profile))
 	if err != nil {
 		glog.Error("Error creating context", err)
 		return
