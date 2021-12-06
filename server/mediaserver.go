@@ -249,6 +249,9 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 		if resp != nil {
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			extStreamID, sessionID = resp.StreamID, resp.SessionID
+			if sessionID != "" && extStreamID != "" && sessionID != extStreamID {
+				ctx = clog.AddSessionID(ctx, sessionID)
+			}
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				profiles = parsePresets(resp.Presets)
