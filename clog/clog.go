@@ -40,10 +40,6 @@ func init() {
 	}
 }
 
-func V(level glog.Level) Verbose {
-	return Verbose(glog.V(level))
-}
-
 type values struct {
 	mu   sync.RWMutex
 	vals map[string]string
@@ -74,10 +70,6 @@ func AddManifestID(ctx context.Context, val string) context.Context {
 	return AddVal(ctx, manifestID, val)
 }
 
-func AddOrchSessionID(ctx context.Context, val string) context.Context {
-	return AddVal(ctx, orchSessionID, val)
-}
-
 func AddSessionID(ctx context.Context, val string) context.Context {
 	return AddVal(ctx, sessionID, val)
 }
@@ -88,6 +80,10 @@ func AddNonce(ctx context.Context, val uint64) context.Context {
 
 func AddSeqNo(ctx context.Context, val uint64) context.Context {
 	return AddVal(ctx, seqNo, strconv.FormatUint(val, 10))
+}
+
+func AddOrchSessionID(ctx context.Context, val string) context.Context {
+	return AddVal(ctx, orchSessionID, val)
 }
 
 func AddVal(ctx context.Context, key, val string) context.Context {
@@ -123,8 +119,8 @@ func Infofe(ctx context.Context, format string, args ...interface{}) {
 	infof(ctx, true, format, args...)
 }
 
-func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
-	glog.InfoDepth(2, formatMessage(ctx, lastErr, format, args...))
+func V(level glog.Level) Verbose {
+	return Verbose(glog.V(level))
 }
 
 // Infof is equivalent to the global Infof function, guarded by the value of v.
@@ -139,6 +135,10 @@ func (v Verbose) Infofe(ctx context.Context, format string, args ...interface{})
 	if v {
 		infof(ctx, true, format, args...)
 	}
+}
+
+func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
+	glog.InfoDepth(2, formatMessage(ctx, lastErr, format, args...))
 }
 
 func messageFromContext(ctx context.Context, sb *strings.Builder) {
