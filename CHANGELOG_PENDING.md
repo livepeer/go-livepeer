@@ -10,6 +10,7 @@
 
 - \#2114 Add option to repeat the benchmarking process (@jailuthra)
 - \#2111 Ensure `maxFeePerGas` in all transactions never exceed `-masGasPrice` defined by the user (@leszko)
+- \#2126 Round up bumped gas price for the replacement transactions (@leszko)
 
 #### Broadcaster
 

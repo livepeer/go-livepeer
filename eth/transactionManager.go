@@ -252,7 +252,8 @@ func (tm *TransactionManager) newAdjustedTx(tx *types.Transaction) *types.Transa
 func applyPriceBump(val *big.Int, priceBump uint64) *big.Int {
 	a := big.NewInt(100 + int64(priceBump))
 	b := new(big.Int).Mul(a, val)
-	return b.Div(b, big.NewInt(100))
+	// div round up
+	return b.Div(new(big.Int).Add(b, big.NewInt(99)), big.NewInt(100))
 }
 
 func newReplacementTx(tx *types.Transaction) *types.Transaction {

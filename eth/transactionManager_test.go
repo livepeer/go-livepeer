@@ -380,10 +380,16 @@ func TestApplyPriceBump(t *testing.T) {
 	res = applyPriceBump(big.NewInt(500), 101)
 	assert.Equal(big.NewInt(1005), res)
 
-	// Test round down when result is not a whole number
-	// 50 * 1.11 = 55.5 -> 55
+	// Tests round up when result is not a whole number
+	// 50 * 1.11 = 55.5 -> 56
 	res = applyPriceBump(big.NewInt(50), 11)
-	assert.Equal(big.NewInt(55), res)
+	assert.Equal(big.NewInt(56), res)
+	// 501 * 1.11 = 556.11 -> 557
+	res = applyPriceBump(big.NewInt(501), 11)
+	assert.Equal(big.NewInt(557), res)
+	// 9 * 1.11 = 9.99 -> 10
+	res = applyPriceBump(big.NewInt(9), 11)
+	assert.Equal(big.NewInt(10), res)
 }
 
 func TestNewReplacementTx(t *testing.T) {
