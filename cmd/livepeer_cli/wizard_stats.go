@@ -31,7 +31,7 @@ func (w *wizard) status() *lcommon.NodeStatus {
 	return status
 }
 
-func (w *wizard) stats(showOrchestrator bool) {
+func (w *wizard) stats(isOrchestrator bool) {
 	addrMap, err := w.getContractAddresses()
 	if err != nil {
 		glog.Errorf("Error getting contract addresses: %v", err)
@@ -58,16 +58,17 @@ func (w *wizard) stats(showOrchestrator bool) {
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
+	table.SetAutoWrapText(false)
 	data := [][]string{
 		{"Node's version", status.Version},
 		{"Node's GO runtime version", status.GolangRuntimeVersion},
 		{"Node's architecture", status.GOArch},
 		{"Node's operating system", status.GOOS},
 		{"HTTP Port", w.httpPort},
-		{"Controller Address", addrMap["Controller"].Hex()},
-		{"LivepeerToken Address", addrMap["LivepeerToken"].Hex()},
-		{"LivepeerTokenFaucet Address", addrMap["LivepeerTokenFaucet"].Hex()},
-		{"ETH Account", w.getEthAddr()},
+		{"Controller Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["Controller"].Hex()},
+		{"LivepeerToken Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["LivepeerToken"].Hex()},
+		{"LivepeerTokenFaucet Address\nFOR REFERENCE - DO NOT SEND TOKENS", addrMap["LivepeerTokenFaucet"].Hex()},
+		{account(isOrchestrator) + " Account\nYOUR WALLET FOR ETH & LPT", w.getEthAddr()},
 		{"LPT Balance", eth.FormatUnits(lptBal, "LPT")},
 		{"ETH Balance", eth.FormatUnits(ethBal, "ETH")},
 		{"Max Gas Price", maxGasPriceStr},
@@ -84,7 +85,7 @@ func (w *wizard) stats(showOrchestrator bool) {
 	table.SetColumnSeparator("|")
 	table.Render()
 
-	if showOrchestrator {
+	if isOrchestrator {
 		w.orchestratorStats()
 		w.delegatorStats()
 	} else {
@@ -99,6 +100,13 @@ func (w *wizard) stats(showOrchestrator bool) {
 	}
 
 	fmt.Printf("CURRENT ROUND: %v\n", currentRound)
+}
+
+func account(isOrchestrator bool) string {
+	if isOrchestrator {
+		return "Orchestrator"
+	}
+	return "Broadcaster"
 }
 
 func (w *wizard) protocolStats() {
