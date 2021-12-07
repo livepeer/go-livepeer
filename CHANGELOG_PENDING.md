@@ -22,6 +22,7 @@
 - \#2110 Transparently support HTTP/2 for segment requests while allowing HTTP/1 via GODEBUG runtime flags (@yondonfu)
 - \#2124 Do not retry transcoding if HTTP client closed/canceled the connection (@leszko)
 - \#2122 Add the upload segment timeout to improve failing fast (@leszko)
+- \#2126 Round up bumped gas price for the replacement transactions (@leszko)
 
 #### Orchestrator
 
