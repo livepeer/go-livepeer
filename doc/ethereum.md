@@ -18,12 +18,16 @@ After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priorit
 
 ### Max gas price
 
+The `maxGasPrice` parameter makes sure the transaction fee never exceeds the specified limit.
+- If the current network gas price is higher than `maxGasPrice`, the transaction is not sent
+- The transaction parameter `maxFeePerGas` is set to `maxGasPrice`
+
 The following options can be used to get the max gas price:
 
 - `curl localhost:7935/maxGasPrice`
 - Run `livepeer_cli` and observe the max gas price in the node stats
 
-The following options can be used to set the m gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
+The following options can be used to set the max gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
 
 - Start the node with `-maxGasPrice <MAX_GAS_PRICE>`
 - `curl localhost:7935/setMaxGasPrice?maxGasPrice=<MAX_GAS_PRICE>`
