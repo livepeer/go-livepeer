@@ -921,7 +921,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = clog.AddManifestID(ctx, string(mid))
 	defer func(now time.Time) {
-		clog.Infof(ctx, "Finished push request at url=%s ua=%s addr=%s len=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+		clog.Infof(ctx, "Finished push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
 			r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), time.Since(now))
 	}(now)
 

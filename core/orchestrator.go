@@ -581,7 +581,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 
 	for i := range md.Profiles {
 		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			clog.Errorf(ctx, "Cannot find transcoded segment for len=%d", len(tSegments[i].Data))
+			clog.Errorf(ctx, "Cannot find transcoded segment for bytes=%d", len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
 		if md.CalcPerceptualHash && tSegments[i].PHash == nil {
@@ -589,7 +589,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 			// FIXME: Return the error once everyone has upgraded their nodes
 			// return terr(fmt.Errorf("MissingPerceptualHash"))
 		}
-		clog.V(common.DEBUG).Infof(ctx, "Transcoded segment profile=%s len=%d",
+		clog.V(common.DEBUG).Infof(ctx, "Transcoded segment profile=%s bytes=%d",
 			md.Profiles[i].Name, len(tSegments[i].Data))
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
@@ -727,7 +727,6 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	mdCopy := *md
 	mdCopy.OS = nil // remote transcoders currently upload directly back to O
 	mdCopy.Hash = ethcommon.Hash{}
-	mdCopy.Seq = 0
 	segData, err := NetSegData(&mdCopy)
 	if err != nil {
 		return nil, err
@@ -764,7 +763,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
 		}
-		clog.Infof(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v err=%q",
+		clog.Infofe(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v",
 			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
