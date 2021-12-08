@@ -1198,7 +1198,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		// verify potentially can change content of segURLs
 		err := verify(verifier, cxn, sess, seg, res.TranscodeData, segURLs, segData)
 		if err != nil {
-			clog.Errorf(ctx, "Error verifying nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+			clog.Errorf(ctx, "Error verifying nonce=%d manifestID=%s seqNo=%d err=%q", nonce, cxn.mid, seg.SeqNo, err)
 			return nil, err
 		}
 	}
@@ -1210,7 +1210,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
 			// all the transcoded segments or none, so we shouldn't hit this error
 			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
-			clog.Errorf(ctx, "Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%s", nonce, cxn.mid, seg.SeqNo, err)
+			clog.Errorf(ctx, "Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%q", nonce, cxn.mid, seg.SeqNo, err)
 			if monitor.Enabled {
 				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
 			}

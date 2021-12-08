@@ -39,8 +39,9 @@ import (
 const protoVerLPT = "Livepeer-Transcoder-1.0"
 const transcodingErrorMimeType = "livepeer/transcoding-error"
 
-var errSecret = errors.New("Invalid secret")
-var errZeroCapacity = errors.New("Zero capacity")
+var errSecret = errors.New("invalid secret")
+var errZeroCapacity = errors.New("zero capacity")
+var errInterrupted = errors.New("execution interrupted")
 
 // Standalone Transcoder
 
@@ -74,7 +75,7 @@ func checkTranscoderError(err error) error {
 			return core.NewRemoteTranscoderFatalError(errZeroCapacity)
 		}
 		if status.Code(err) == codes.Canceled {
-			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
+			return core.NewRemoteTranscoderFatalError(errInterrupted)
 		}
 	}
 	return err
@@ -120,7 +121,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	for {
 		notify, err := r.Recv()
 		if err := checkTranscoderError(err); err != nil {
-			glog.Infof(`End of stream receive cycle because of err="%v", waiting for running transcode jobs to complete`, err)
+			glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
 			wg.Wait()
 			return err
 		}
@@ -153,6 +154,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		ctx = clog.AddOrchSessionID(ctx, md.AuthToken.SessionId)
 	}
 	ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
+	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
 
 	data, err := drivers.GetSegmentData(ctx, notify.Url)
 	if err != nil {
@@ -182,7 +184,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 	start := time.Now()
 	tData, err = n.Transcoder.Transcode(ctx, md)
-	clog.V(common.VERBOSE).Infof(ctx, "Transcoding done for taskId=%d url=%s dur=%v err=%q", notify.TaskId, notify.Url, time.Since(start), err)
+	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, time.Since(start), err)
 	if err != nil {
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
@@ -272,7 +274,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done results sent for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
 		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur)
@@ -286,11 +288,11 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
-		glog.Info(errSecret.Error())
+		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
 	if req.Capacity <= 0 {
-		glog.Info(errZeroCapacity.Error())
+		glog.Errorf("err=%q", errZeroCapacity.Error())
 		return errZeroCapacity
 	}
 
@@ -337,12 +339,12 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			glog.Errorf("Unable to read transcoding error body taskID=%v err=%q", tid, err)
+			glog.Errorf("Unable to read transcoding error body taskId=%v err=%q", tid, err)
 			res.Err = err
 		} else {
 			res.Err = fmt.Errorf(string(body))
 		}
-		glog.Errorf("Trascoding error for taskID=%v err=%q", tid, res.Err)
+		glog.Errorf("Trascoding error for taskId=%v err=%q", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
 		return
 	}
@@ -400,7 +402,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			Pixels:   decodedPixels,
 		}
 		dlDur := time.Since(start)
-		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%v", r.RemoteAddr, tid, dlDur)
+		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
 
 		if monitor.Enabled {
 			monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)

@@ -481,12 +481,13 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	clog.Infof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s", len(data), ti.Transcoder, httpTimeout)
+	clog.Infof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s uploadTimeout=%s segDur=%v",
+		len(data), ti.Transcoder, httpTimeout, uploadTimeout, seg.Duration)
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
-		clog.Errorf(ctx, "Unable to submit segment orch=%v orch=%s err=%q", ti.Transcoder, ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to submit segment orch=%v orch=%s uploadDur=%s err=%q", ti.Transcoder, ti.Transcoder, uploadDur, err)
 		if monitor.Enabled {
 			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, false)
 		}
