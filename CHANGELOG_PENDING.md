@@ -12,6 +12,7 @@
 - \#2111 Ensure `maxFeePerGas` in all transactions never exceed `-masGasPrice` defined by the user (@leszko)
 - \#2126 Round up bumped gas price for the replacement transactions (@leszko)
 - \#2051 Removes HTTP and HTTPS protocols from FFmpeg build (@darkdarkdragon)
+- \#2127 Add warnings to ETH/LPT accounts in Livepeer CLI (@leszko)
 
 #### Broadcaster
 
