@@ -77,6 +77,7 @@ if [[ $(uname) != *"MSYS"* ]]; then
 
 fi
 
+# H.264 support
 if [ ! -e "$ROOT/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
@@ -85,6 +86,32 @@ if [ ! -e "$ROOT/x264" ]; then
   ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install-lib-static
+fi
+
+# H.265/HEVC support
+if [ $(uname) == "Linux" ]; then
+  if [ ! -e "$ROOT/x265_git" ]; then
+    sudo apt-get install -y libnuma-dev
+    git clone https://bitbucket.org/multicoreware/x265_git.git
+    cd "$ROOT/x265_git"
+    git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
+    cd build/linux/
+    cmake -G -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -DENABLE_SHARED=off "Unix Makefiles" ../../source
+    make
+    make install
+  fi
+fi
+
+# VP8/9 support
+if [ $(uname) == "Linux" ]; then
+  if [ ! -e "$ROOT/libvpx" ]; then
+    git clone --depth 1 https://chromium.googlesource.com/webm/libvpx.git
+    cd "$ROOT/libvpx"
+    git checkout ab35ee100a38347433af24df05a5e1578172a2ae
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --as=nasm
+    make
+    make install
+  fi
 fi
 
 if [ ! -e "$ROOT/gnutls-3.7.0" ]; then
@@ -114,7 +141,7 @@ else
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
 
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc,h265_nvenc"
 
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         echo "experimental tag detected, building with Tensorflow support"
@@ -132,15 +159,15 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl \
+    --enable-gnutls --enable-libx264 --enable-libx265 --enable-libvpx --enable-gpl \
     --enable-protocol=https,http,rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,extract_extradata \
     --enable-parser=aac,aac_latm,h264 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,libx264 \
-    --enable-decoder=aac,h264 \
+    --enable-encoder=aac,libx264,libx265 \
+    --enable-decoder=aac,h264,h265 \
     --extra-cflags="-I${ROOT}/compiled/include" \
     --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
