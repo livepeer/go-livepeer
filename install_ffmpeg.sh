@@ -90,7 +90,7 @@ fi
 
 if [ ! -e "$ROOT/x265" ]; then
   if [ $(uname) == "Linux" ]; then
-    sudo apt-get install -y libnuma-dev
+    sudo apt-get install -y libnuma-dev cmake
   fi
   git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
   cd "$ROOT/x265"
@@ -138,12 +138,15 @@ if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
 else
   # If we have clang, we can compile with CUDA support!
-  if which clang > /dev/null; then
-    echo "clang detected, building with GPU support"
-
+  if which nvidia-smi > /dev/null; then
+    echo "CUDA detected, building with GPU support"
+    sudo apt install -y clang
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
-
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
+        LIBTENSORFLOW_VERSION=2.3.0 \
+        && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+        && sudo tar -C /usr/local -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+        && sudo ldconfig
         echo "experimental tag detected, building with Tensorflow support"
         EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
     fi
