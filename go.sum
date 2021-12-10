@@ -365,6 +365,12 @@ github.com/livepeer/livepeer-data v0.2.0 h1:8ELEri/sWd6fAHT3anAgoKe9Z+XgbW0oLg5q
 github.com/livepeer/livepeer-data v0.2.0/go.mod h1:vkW1PJ24gOJgx1hHUo07cXkR1b409n+dGpyWJsHKI3s=
 github.com/livepeer/lpms v0.0.0-20211118135113-46f7030c62d9 h1:lIb6ktT7+GSR1RyjT1tovTJCETa/lf/G+SmHe3Hlk5I=
 github.com/livepeer/lpms v0.0.0-20211118135113-46f7030c62d9/go.mod h1:iIvqFRRSIcouTWFheH2/TeDAq7xTVOJNR0eAS84o754=
+github.com/livepeer/lpms v0.0.0-20211130214948-1d4f0f20d7c2 h1:6gjoS8yIs0K+iY6FHy+2QyRH0VLRPytUs5Ij0GO/c+A=
+github.com/livepeer/lpms v0.0.0-20211130214948-1d4f0f20d7c2/go.mod h1:iIvqFRRSIcouTWFheH2/TeDAq7xTVOJNR0eAS84o754=
+github.com/livepeer/lpms v0.0.0-20211130215529-4035626057aa h1:rkGIy4EOdgqDm6WhyONtfWhrYsTLnJXY8irpexhwWTE=
+github.com/livepeer/lpms v0.0.0-20211130215529-4035626057aa/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/livepeer/lpms v0.0.0-20211208221036-644122186d24 h1:nna6NFrFuDz0xFYsOrZnDaaRUxHuA1tmwnl0oJb6BL4=
+github.com/livepeer/lpms v0.0.0-20211208221036-644122186d24/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
 github.com/livepeer/m3u8 v0.11.1/go.mod h1:IUqAtwWPAG2CblfQa4SVzTQoDcEMPyfNOaBSxqHMS04=
 github.com/magiconair/properties v1.8.1/go.mod h1:PppfXfuXeibc/6YijjN8zIbojt8czPbwD3XqdrwzmxQ=
