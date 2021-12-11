@@ -113,10 +113,13 @@ else
     sudo apt install -y clang
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
-        LIBTENSORFLOW_VERSION=2.3.0 \
-        && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-        && sudo tar -C /usr/local -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-        && sudo ldconfig
+        if [ ! -e "$ROOT/compiled/lib/libtensorflow_framework.so" ]; then
+          LIBTENSORFLOW_VERSION=2.3.0 \
+          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo tar -C $ROOT/compiled -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo ldconfig \
+          && rm libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+        fi
         echo "experimental tag detected, building with Tensorflow support"
         EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
     fi
@@ -124,8 +127,8 @@ else
 fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
-    echo "video debug mode, building ffmpeg with tools and debug info"
-    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations"
+    echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
+    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-muxer=matroska,opus,webm,webm_chunk,webm_dash_manifest --enable-demuxer=matroska,webm_dash_manifest"
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
@@ -140,7 +143,7 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-postproc --disable-lzma \
     --enable-libx264 --enable-libx265 --enable-libvpx --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
-    --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,opus,webm,webm_chunk,webm_dash_manifest,null --enable-demuxer=flv,mpegts,mp4,mov,matroska,webm_dash_manifest \
+    --enable-muxer=mpegts,hls,segment,mp4,hevc,null --enable-demuxer=flv,mpegts,mp4,mov \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
