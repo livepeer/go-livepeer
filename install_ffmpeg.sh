@@ -75,27 +75,26 @@ if [ ! -e "$ROOT/x264" ]; then
   make install-lib-static
 fi
 
-if [ ! -e "$ROOT/x265" ]; then
-  if [ $(uname) == "Linux" ]; then
+if [ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"*]; then
+  if [ ! -e "$ROOT/x265" ]; then
     sudo apt-get install -y libnuma-dev cmake
+    git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
+    cd "$ROOT/x265"
+    git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
+    cd build/linux/
+    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
+    make
+    make install
   fi
-  git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
-  cd "$ROOT/x265"
-  git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
-  cd build/linux/
-  cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
-  make
-  make install
-fi
-
-# VP8/9 support
-if [ ! -e "$ROOT/libvpx" ]; then
-  git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
-  cd "$ROOT/libvpx"
-  git checkout ab35ee100a38347433af24df05a5e1578172a2ae
-  ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
-  make
-  make install
+  # VP8/9 support
+  if [ ! -e "$ROOT/libvpx" ]; then
+    git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
+    cd "$ROOT/libvpx"
+    git checkout ab35ee100a38347433af24df05a5e1578172a2ae
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    make
+    make install
+  fi
 fi
 
 EXTRA_FFMPEG_FLAGS=""
@@ -128,7 +127,7 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le,opus --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-muxer=matroska,webm"
+    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le,opus --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-muxer=matroska,webm --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
@@ -141,15 +140,15 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
-    --enable-libx264 --enable-libx265 --enable-libvpx --enable-gpl \
+    --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,null --enable-demuxer=flv,mpegts,mp4,mov,matroska \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,libx264,libx265,libvpx_vp8,libvpx_vp9 \
-    --enable-decoder=aac,opus,h264,hevc,libvpx_vp8,libvpx_vp9 \
+    --enable-encoder=aac,libx264 \
+    --enable-decoder=aac,opus,h264 \
     --extra-cflags="-I${ROOT}/compiled/include" \
     --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
