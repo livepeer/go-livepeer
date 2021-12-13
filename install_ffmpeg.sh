@@ -128,7 +128,7 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-muxer=matroska,opus,webm,webm_chunk,webm_dash_manifest --enable-demuxer=matroska,webm_dash_manifest"
+    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le,opus --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-muxer=matroska,webm"
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
@@ -143,13 +143,13 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --disable-postproc --disable-lzma \
     --enable-libx264 --enable-libx265 --enable-libvpx --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
-    --enable-muxer=mpegts,hls,segment,mp4,hevc,null --enable-demuxer=flv,mpegts,mp4,mov \
+    --enable-muxer=mpegts,hls,segment,mp4,hevc,null --enable-demuxer=flv,mpegts,mp4,mov,matroska \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
     --enable-encoder=aac,libx264,libx265,libvpx_vp8,libvpx_vp9 \
-    --enable-decoder=aac,h264,hevc,libvpx_vp8,libvpx_vp9 \
+    --enable-decoder=aac,opus,h264,hevc,libvpx_vp8,libvpx_vp9 \
     --extra-cflags="-I${ROOT}/compiled/include" \
     --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
