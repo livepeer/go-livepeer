@@ -241,6 +241,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 		var VerificationFreq uint
 		nonce := rand.Uint64()
 
+		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
 		if resp, err = authenticateStream(url.String()); err != nil {
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
