@@ -763,7 +763,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
 		}
-		clog.Infofe(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v",
+		clog.InfofErr(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v",
 			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}

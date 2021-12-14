@@ -184,7 +184,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 	start := time.Now()
 	tData, err = n.Transcoder.Transcode(ctx, md)
-	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, time.Since(start), err)
+	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, time.Since(start), err)
 	if err != nil {
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
@@ -274,7 +274,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	clog.V(common.VERBOSE).Infofe(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
 		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur)
