@@ -13,6 +13,7 @@
 - \#2126 Round up bumped gas price for the replacement transactions (@leszko)
 - \#2051 Removes HTTP and HTTPS protocols from FFmpeg build (@darkdarkdragon)
 - \#2127 Add warnings to ETH/LPT accounts in Livepeer CLI (@leszko)
+- \#2121 Add contextual logging (@darkdarkdragon)
 
 #### Broadcaster
 
