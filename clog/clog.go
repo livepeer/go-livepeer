@@ -99,23 +99,26 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 }
 
 func Warningf(ctx context.Context, format string, args ...interface{}) {
-	glog.WarningDepth(1, formatMessage(ctx, false, format, args...))
+	msg, _ := formatMessage(ctx, false, format, args...)
+	glog.WarningDepth(1, msg)
 }
 
 func Errorf(ctx context.Context, format string, args ...interface{}) {
-	glog.ErrorDepth(1, formatMessage(ctx, false, format, args...))
+	msg, _ := formatMessage(ctx, false, format, args...)
+	glog.ErrorDepth(1, msg)
 }
 
 func Fatalf(ctx context.Context, format string, args ...interface{}) {
-	glog.FatalDepth(1, formatMessage(ctx, false, format, args...))
+	msg, _ := formatMessage(ctx, false, format, args...)
+	glog.FatalDepth(1, msg)
 }
 
 func Infof(ctx context.Context, format string, args ...interface{}) {
 	infof(ctx, false, format, args...)
 }
 
-// Infofe if last argument is not nil it will be printed as " err=%q"
-func Infofe(ctx context.Context, format string, args ...interface{}) {
+// InfofErr if last argument is not nil it will be printed as " err=%q"
+func InfofErr(ctx context.Context, format string, args ...interface{}) {
 	infof(ctx, true, format, args...)
 }
 
@@ -131,14 +134,23 @@ func (v Verbose) Infof(ctx context.Context, format string, args ...interface{}) 
 	}
 }
 
-func (v Verbose) Infofe(ctx context.Context, format string, args ...interface{}) {
-	if v {
+func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{}) {
+	var err interface{}
+	if len(args) > 0 {
+		err = args[len(args)-1]
+	}
+	if v || err != nil {
 		infof(ctx, true, format, args...)
 	}
 }
 
 func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
-	glog.InfoDepth(2, formatMessage(ctx, lastErr, format, args...))
+	msg, isErr := formatMessage(ctx, lastErr, format, args...)
+	if isErr {
+		glog.ErrorDepth(2, msg)
+	} else {
+		glog.InfoDepth(2, msg)
+	}
 }
 
 func messageFromContext(ctx context.Context, sb *strings.Builder) {
@@ -169,7 +181,7 @@ func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	cmap.mu.RUnlock()
 }
 
-func formatMessage(ctx context.Context, lastErr bool, format string, args ...interface{}) string {
+func formatMessage(ctx context.Context, lastErr bool, format string, args ...interface{}) (string, bool) {
 	var sb strings.Builder
 	messageFromContext(ctx, &sb)
 	var err interface{}
@@ -181,5 +193,5 @@ func formatMessage(ctx context.Context, lastErr bool, format string, args ...int
 	if err != nil {
 		sb.WriteString(fmt.Sprintf(" err=%q", err))
 	}
-	return sb.String()
+	return sb.String(), err != nil
 }

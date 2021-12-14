@@ -611,7 +611,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(ctx, count, sus, params.Capabilities, scorePred)
 	if len(tinfos) <= 0 {
-		clog.Infofe(ctx, "No orchestrators found; not transcoding", err)
+		clog.InfofErr(ctx, "No orchestrators found; not transcoding", err)
 		return nil, errNoOrchs
 	}
 	if err != nil {
