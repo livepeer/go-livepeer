@@ -16,6 +16,9 @@ type Capabilities struct {
 	mandatories CapabilityString
 	constraints Constraints
 }
+type CapabilityTest struct {
+	inVideoData []byte
+}
 
 // Do not rearrange these values! Only append.
 const (
@@ -36,7 +39,30 @@ const (
 	Capability_AuthToken
 	Capability_SceneClassification
 	Capability_MPEG7VideoSignature
+	Capability_HEVC_Decode
+	Capability_HEVC_Encode
+	Capability_VP8_Decode
+	Capability_VP9_Decode
 )
+
+
+var CapabilityTestLookup = map[Capability]CapabilityTest{
+	Capability_H264: {
+		inVideoData: testSegment_H264,
+	},
+	Capability_HEVC_Decode: {
+		inVideoData: testSegment_HEVC,
+	},
+	Capability_HEVC_Encode: {
+		inVideoData: testSegment_H264,
+	},
+	Capability_VP8_Decode: {
+		inVideoData: testSegment_VP8,
+	},
+	Capability_VP9_Decode: {
+		inVideoData: testSegment_VP9,
+	},
+}
 
 var capFormatConv = errors.New("capability: unknown format")
 var capStorageConv = errors.New("capability: unknown storage")
@@ -59,6 +85,19 @@ func DefaultCapabilities() []Capability {
 		Capability_GOP,
 		Capability_AuthToken,
 		Capability_MPEG7VideoSignature,
+		Capability_HEVC_Decode,
+		Capability_HEVC_Encode,
+		Capability_VP8_Decode,
+		Capability_VP9_Decode,
+	}
+}
+
+func OptionalCapabilities() []Capability {
+	return []Capability{
+		Capability_HEVC_Decode,
+		Capability_HEVC_Encode,
+		Capability_VP8_Decode,
+		Capability_VP9_Decode,
 	}
 }
 
@@ -67,7 +106,7 @@ func ExperimentalCapabilities() []Capability {
 	return experimentalCapabilities
 }
 
-func MandatoryCapabilities() []Capability {
+func MandatoryOCapabilities() []Capability {
 	// Add to this list as certain features become mandatory.
 	// Use sparingly, as adding to this is a hard break with older nodes
 	return []Capability{

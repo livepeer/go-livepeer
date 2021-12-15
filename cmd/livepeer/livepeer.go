@@ -282,9 +282,9 @@ func main() {
 			glog.Infof("Transcoding on these Nvidia GPUs: %v", devices)
 			// Test transcoding with nvidia
 			if *testTranscoder {
-				err := core.TestNvidiaTranscoder(devices)
+				_, err := core.TestTranscoderCapabilities(devices)
 				if err != nil {
-					glog.Fatalf("Unable to transcode using Nvidia gpu=%q err=%q", strings.Join(devices, ","), err)
+					glog.Fatal(err)
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
@@ -906,7 +906,7 @@ func main() {
 			// Only enable experimental capabilities if scene classification model is actually loaded
 			caps = append(caps, core.ExperimentalCapabilities()...)
 		}
-		n.Capabilities = core.NewCapabilities(caps, core.MandatoryCapabilities())
+		n.Capabilities = core.NewCapabilities(caps, core.MandatoryOCapabilities())
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")

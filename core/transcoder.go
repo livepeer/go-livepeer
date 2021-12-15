@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/golang/glog"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -114,41 +115,66 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	return resToTranscodeData(ctx, res, out)
 }
 
-// TestNvidiaTranscoder tries to transcode test segment on all the devices
-func TestNvidiaTranscoder(devices []string) error {
-	b := bytes.NewReader(testSegment)
-	z, err := gzip.NewReader(b)
-	if err != nil {
-		return err
-	}
-	mp4testSeg, err := ioutil.ReadAll(z)
-	z.Close()
-	if err != nil {
-		return err
-	}
-	fname := filepath.Join(WorkDir, "testseg.tempfile")
-	err = ioutil.WriteFile(fname, mp4testSeg, 0644)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(fname)
-	for _, device := range devices {
-		t1 := NewNvidiaTranscoder(device)
-		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
-		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
-		md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
-		td, err := t1.Transcode(context.Background(), md)
+// Test which capabilities transcoder supports
+func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError error) {
+	// default capabilities
+	allCaps := append(DefaultCapabilities(), OptionalCapabilities()...)
+	// iterate all capabilities and test ones which has test data
+	for _, c := range allCaps {
+		capTest, hasTest := CapabilityTestLookup[c]
+		if hasTest {
+			b := bytes.NewReader(capTest.inVideoData)
+			z, err := gzip.NewReader(b)
+			if err != nil {
+				continue
+			}
+			mp4testSeg, err := ioutil.ReadAll(z)
+			z.Close()
+			if err != nil {
+				glog.Errorf("Error reading test segment for capability %s: %s", c, err)
+				continue
+			}
+			fname := filepath.Join(WorkDir, "testseg.tempfile")
+			err = ioutil.WriteFile(fname, mp4testSeg, 0644)
+			if err != nil {
+				glog.Errorf("Error writing test segment for capability %s: %s", c, err)
+				continue
+			}
+			defer os.Remove(fname)
+			for _, device := range devices {
+				t1 := NewNvidiaTranscoder(device)
+				// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
+				p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
+				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
+				td, err := t1.Transcode(context.Background(), md)
 
-		t1.Stop()
-		if err != nil {
-			return err
+				t1.Stop()
+				if err != nil {
+					// likely means capability is not supported
+					continue
+				}
+				if len(td.Segments) == 0 || td.Pixels == 0 {
+					// abnormal behavior
+					glog.Errorf("Empty result segment when testing for capability %s", c)
+					continue
+				}
+			}
 		}
-		if len(td.Segments) == 0 || td.Pixels == 0 {
-			return errors.New("Empty transcoded segment")
+		caps = append(caps, c)
+	}
+	for _, defCap := range DefaultCapabilities() {
+		found := false
+		for _, supportedCap := range caps {
+			if defCap == supportedCap {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return caps, fmt.Errorf("Default capability %s is not supported", defCap)
 		}
 	}
-
-	return nil
+	return caps, nil
 }
 
 func NewNvidiaTranscoder(gpu string) TranscoderSession {
