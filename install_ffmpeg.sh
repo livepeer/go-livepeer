@@ -107,9 +107,8 @@ if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
 else
   # If we have clang, we can compile with CUDA support!
-  if which nvidia-smi > /dev/null; then
-    echo "CUDA detected, building with GPU support"
-    sudo apt install -y clang
+  if which clang > /dev/null; then
+    echo "clang detected, building with GPU support"
     EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         if [ ! -e "$ROOT/compiled/lib/libtensorflow_framework.so" ]; then
