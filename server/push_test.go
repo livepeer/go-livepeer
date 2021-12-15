@@ -51,7 +51,9 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
-	reader := strings.NewReader("InsteadOf.TS")
+
+	d, _ := ioutil.ReadFile("./test.flv")
+	reader := bytes.NewReader(d)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/live/mani/18.ts", reader)
 
@@ -117,6 +119,7 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(t, err)
 	w = httptest.NewRecorder()
+	reader = bytes.NewReader(d)
 	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
 	req.Header.Set("Accept", "multipart/mixed")
 	s.HandlePush(w, req)
@@ -135,6 +138,7 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	buf, err = proto.Marshal(tr)
 	require.Nil(t, err)
 	w = httptest.NewRecorder()
+	reader = bytes.NewReader(d)
 	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
 	req.Header.Set("Accept", "multipart/mixed")
 	s.HandlePush(w, req)
