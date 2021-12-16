@@ -363,12 +363,6 @@ github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cO
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
 github.com/livepeer/livepeer-data v0.2.0 h1:8ELEri/sWd6fAHT3anAgoKe9Z+XgbW0oLg5qODdhvm8=
 github.com/livepeer/livepeer-data v0.2.0/go.mod h1:vkW1PJ24gOJgx1hHUo07cXkR1b409n+dGpyWJsHKI3s=
-github.com/livepeer/lpms v0.0.0-20211118135113-46f7030c62d9 h1:lIb6ktT7+GSR1RyjT1tovTJCETa/lf/G+SmHe3Hlk5I=
-github.com/livepeer/lpms v0.0.0-20211118135113-46f7030c62d9/go.mod h1:iIvqFRRSIcouTWFheH2/TeDAq7xTVOJNR0eAS84o754=
-github.com/livepeer/lpms v0.0.0-20211130214948-1d4f0f20d7c2 h1:6gjoS8yIs0K+iY6FHy+2QyRH0VLRPytUs5Ij0GO/c+A=
-github.com/livepeer/lpms v0.0.0-20211130214948-1d4f0f20d7c2/go.mod h1:iIvqFRRSIcouTWFheH2/TeDAq7xTVOJNR0eAS84o754=
-github.com/livepeer/lpms v0.0.0-20211130215529-4035626057aa h1:rkGIy4EOdgqDm6WhyONtfWhrYsTLnJXY8irpexhwWTE=
-github.com/livepeer/lpms v0.0.0-20211130215529-4035626057aa/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/lpms v0.0.0-20211208221036-644122186d24 h1:nna6NFrFuDz0xFYsOrZnDaaRUxHuA1tmwnl0oJb6BL4=
 github.com/livepeer/lpms v0.0.0-20211208221036-644122186d24/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
@@ -447,7 +441,10 @@ github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTK
 github.com/paulbellamy/ratecounter v0.2.0/go.mod h1:Hfx1hDpSGoqxkVVpBi/IlYD7kChlfo5C6hzIHwPqfFE=
 github.com/pelletier/go-toml v1.2.0/go.mod h1:5z9KED0ma1S8pY6P1sdut58dfprrGBbd/94hg7ilaic=
 github.com/pelletier/go-toml v1.6.0/go.mod h1:5N711Q9dKgbdkxHL+MEfF31hpT7l0S0s/t2kKREewys=
+github.com/peterbourgon/ff v1.7.0 h1:hknvTgsh90jNBIjPq7xeq32Y9AmSbpXvjrFW4sJwW+A=
 github.com/peterbourgon/ff v1.7.0/go.mod h1:/KKxnU5cBj4w21jEMj4Rway/kslRP6XAOHh7CH8AyAM=
+github.com/peterbourgon/ff/v3 v3.1.2 h1:0GNhbRhO9yHA4CC27ymskOsuRpmX0YQxwxM9UPiP6JM=
+github.com/peterbourgon/ff/v3 v3.1.2/go.mod h1:XNJLY8EIl6MjMVjBS4F0+G0LYoAqs0DTa4rmHHukKDE=
 github.com/peterh/liner v1.0.1-0.20180619022028-8c1271fcf47f/go.mod h1:xIteQHvHuaLYG9IFj6mSxM0fCKrs34IrEQUhOYuGPHc=
 github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7 h1:oYW+YCJ1pachXTQmzR3rNLYGGz4g/UgFcjb28p/viDM=
 github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7/go.mod h1:CRroGNssyjTd/qIG2FyxByd2S8JEAZXBl4qUrZf8GS0=
