@@ -89,7 +89,7 @@ if [ ! -e "$ROOT/libvpx" ]; then
   git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
   cd "$ROOT/libvpx"
   git checkout ab35ee100a38347433af24df05a5e1578172a2ae
-  ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+  ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --as=nasm
   make
   make install
 fi
