@@ -126,7 +126,7 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
+    DEV_FFMPEG_FLAGS="--enable-demuxer=hls --enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
