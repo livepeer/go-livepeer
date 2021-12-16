@@ -75,7 +75,7 @@ if [ ! -e "$ROOT/x264" ]; then
   make install-lib-static
 fi
 
-if [ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"*]; then
+if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
   if [ ! -e "$ROOT/x265" ]; then
     sudo apt-get install -y libnuma-dev cmake
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
