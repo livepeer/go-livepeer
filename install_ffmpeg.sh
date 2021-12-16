@@ -80,7 +80,7 @@ if [ ! -e "$ROOT/x265" ]; then
   cd "$ROOT/x265"
   git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
   cd build/linux/
-  cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -DENABLE_SHARED=false -G "Unix Makefiles" ../../source
+  cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -DENABLE_SHARED=false -DENABLE_CLI=OFF -G "Unix Makefiles" ../../source
   make
   make install
 fi
