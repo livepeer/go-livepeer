@@ -150,7 +150,7 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
     --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
     $EXTRA_FFMPEG_FLAGS \
-    $DEV_FFMPEG_FLAGS
+    $DEV_FFMPEG_FLAGS || cat ffbuild/config.log && exit 1
 fi
 
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" || $BUILD_TAGS == *"debug-video"* ]]; then
