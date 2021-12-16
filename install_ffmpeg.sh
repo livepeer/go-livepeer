@@ -75,14 +75,14 @@ if [ ! -e "$ROOT/x264" ]; then
   make install-lib-static
 fi
 
-if [ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"*]; then
+if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
   if [ ! -e "$ROOT/x265" ]; then
     sudo apt-get install -y libnuma-dev cmake
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
     cd "$ROOT/x265"
-    git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
+    git checkout 3.5
     cd build/linux/
-    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
+    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -DENABLE_SHARED=off -DENABLE_CLI=OFF -G "Unix Makefiles" ../../source
     make
     make install
   fi
@@ -91,7 +91,7 @@ if [ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"*]; then
     git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
     cd "$ROOT/libvpx"
     git checkout ab35ee100a38347433af24df05a5e1578172a2ae
-    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-pic --as=nasm
     make
     make install
   fi
@@ -126,7 +126,7 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
+    DEV_FFMPEG_FLAGS="--enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-debug=3 --disable-stripping --disable-optimizations --extra-libs=-lnuma --extra-libs=-pthread --extra-libs=-ldl --extra-libs=-lm --extra-libs=-lstdc++ --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
