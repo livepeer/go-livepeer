@@ -160,7 +160,7 @@ func main() {
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
 	detectionWebhookURL := flag.String("detectionWebhookUrl", "", "(Experimental) Detection results callback URL")
 
-	// Config file (used instead of flags)
+	// Config file
 	_ = flag.String("config", "", "Config file in the format 'key value', flags take precedence over the config file")
 	ff.Parse(flag.CommandLine, os.Args[1:],
 		ff.WithConfigFileFlag("config"),
