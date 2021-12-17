@@ -161,7 +161,7 @@ func main() {
 	detectionWebhookURL := flag.String("detectionWebhookUrl", "", "(Experimental) Detection results callback URL")
 
 	// Config file
-	_ = flag.String("config", "", "Config file in the format 'key value', flags take precedence over the config file")
+	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
 	ff.Parse(flag.CommandLine, os.Args[1:],
 		ff.WithConfigFileFlag("config"),
 		ff.WithEnvVarPrefix("LP"),
