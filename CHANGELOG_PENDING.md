@@ -14,6 +14,7 @@
 - \#2051 Removes HTTP and HTTPS protocols from FFmpeg build (@darkdarkdragon)
 - \#2127 Add warnings to ETH/LPT accounts in Livepeer CLI (@leszko)
 - \#2121 Add contextual logging (@darkdarkdragon)
+- \#2137 Support config file (@leszko)
 
 #### Broadcaster
 

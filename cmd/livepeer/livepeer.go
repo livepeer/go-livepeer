@@ -29,6 +29,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/livepeer-data/pkg/event"
+	"github.com/peterbourgon/ff/v3"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -159,7 +160,14 @@ func main() {
 	orchWebhookURL := flag.String("orchWebhookUrl", "", "Orchestrator discovery callback URL")
 	detectionWebhookURL := flag.String("detectionWebhookUrl", "", "(Experimental) Detection results callback URL")
 
-	flag.Parse()
+	// Config file
+	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
+	ff.Parse(flag.CommandLine, os.Args[1:],
+		ff.WithConfigFileFlag("config"),
+		ff.WithEnvVarPrefix("LP"),
+		ff.WithConfigFileParser(ff.PlainParser),
+	)
+
 	vFlag.Value.Set(*verbosity)
 
 	isFlagSet := make(map[string]bool)
