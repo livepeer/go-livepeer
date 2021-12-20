@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.5.23
+
+*December 20th 2021*
+
+This release includes an important fix for a memory leak that can be triggered when using the CUDA MPEG-7 video signature capability (when using a Nvidia GPU), which is used for [fast verification](https://forum.livepeer.org/t/transcoding-verification-improvements-fast-full-verification/1499), for orchestrators/transcoders. **If you are running an orchestrator or transcoder you should upgrade to this release as soon as possible.**
+
+Additional highlights of this release:
+
+- Support for running fast verification on broadcasters
+- Support for configuring `livepeer` using a file. See [the docs](https://livepeer.org/docs/installation/configuring-livepeer) for instructions on using a configuration file
+- An improvement to the failover behavior in split orchestrator + transcoder setups in the scenario where a transcoder crashes
+- Ensure that the the fee per gas for a transaction never exceeds the value set for `-maxGasPrice` 
+
+Thanks to everyone that submitted bug reports and assisted in testing!
+
+### Features ⚒
+
+#### General
+
+- [#2114](https://github.com/livepeer/go-livepeer/pull/2114) Add option to repeat the benchmarking process with `livepeer_bench` (@jailuthra)
+- [#2111](https://github.com/livepeer/go-livepeer/pull/2111) Ensure `maxFeePerGas` in all transactions never exceed `-masGasPrice` defined by the user (@leszko)
+- [#2126](https://github.com/livepeer/go-livepeer/pull/2126) Round up bumped gas price for the replacement transactions (@leszko)
+- [#2051](https://github.com/livepeer/go-livepeer/pull/2051) Removes HTTP and HTTPS protocols from FFmpeg build (@darkdarkdragon)
+- [#2127](https://github.com/livepeer/go-livepeer/pull/2127) Add warnings to ETH/LPT accounts in Livepeer CLI (@leszko)
+- [#2121](https://github.com/livepeer/go-livepeer/pull/2121) Add contextual logging (@darkdarkdragon)
+- [#2137](https://github.com/livepeer/go-livepeer/pull/2137) Support config file (@leszko)
+
+#### Broadcaster
+
+- [#2086](https://github.com/livepeer/go-livepeer/pull/2086) Add support for fast verification (@jailuthra @darkdragon)
+- [#2085](https://github.com/livepeer/go-livepeer/pull/2085) Set max refresh sessions threshold to 8 (@yondonfu)
+- [#2083](https://github.com/livepeer/go-livepeer/pull/2083) Return 422 to the push client after max retry attempts for a segment (@jailuthra)
+- [#2022](https://github.com/livepeer/go-livepeer/pull/2022) Randomize selection of orchestrators in untrusted pool at a random frequency (@yondonfu)
+- [#2100](https://github.com/livepeer/go-livepeer/pull/2100) Check verified session first while choosing the result from multiple untrusted sessions (@leszko)
+- [#2103](https://github.com/livepeer/go-livepeer/pull/2103) Suspend sessions that did not pass p-hash verification (@leszko)
+- [#2110](https://github.com/livepeer/go-livepeer/pull/2110) Transparently support HTTP/2 for segment requests while allowing HTTP/1 via GODEBUG runtime flags (@yondonfu)
+- [#2124](https://github.com/livepeer/go-livepeer/pull/2124) Do not retry transcoding if HTTP client closed/canceled the connection (@leszko)
+- [#2122](https://github.com/livepeer/go-livepeer/pull/2122) Add the upload segment timeout to improve failing fast (@leszko)
+
+#### Transcoder
+
+- [#2094](https://github.com/livepeer/go-livepeer/pull/2094) Gracefully notify orchestrator in case of a panic in transcoder (@leszko)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#2067](https://github.com/livepeer/go-livepeer/pull/2067) Add safety checks in selectOrchestrator for auth token and ticket params in OrchestratorInfo (@yondonfu)
+
+#### Transcoder
+
+- [#2108](https://github.com/livepeer/go-livepeer/pull/2108) Fix memory leak in CUDA MPEG-7 video signature filter (@oscar-davids)
+
 ## v0.5.22
 
 *October 28 2021*
