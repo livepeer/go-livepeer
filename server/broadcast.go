@@ -707,7 +707,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	segDurMs := getSegDurMsString(seg)
 
 	now := time.Now()
-	hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(seg.Data)
+	hasZeroVideoFrame, err := ffmpeg.HasZeroVideoFrameBytes(clog.GetContextMessage(ctx), seg.Data)
 	if err != nil {
 		clog.Warningf(ctx, "Error checking for zero video frame name=%s bytes=%d took=%s err=%q",
 			seg.Name, len(seg.Data), time.Since(now), err)

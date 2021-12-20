@@ -1205,7 +1205,7 @@ func (s *LivepeerServer) streamMP4(ctx context.Context, w http.ResponseWriter, r
 		}
 		fname := fmt.Sprintf("pipe:%d", ir.Fd())
 
-		in := &ffmpeg.TranscodeOptionsIn{Fname: fname, Transmuxing: true}
+		in := &ffmpeg.TranscodeOptionsIn{Fname: fname, Transmuxing: true, LogCtx: clog.GetContextMessage(ctx)}
 		go func(segUri string, iw *os.File) {
 			defer iw.Close()
 			clog.V(common.VERBOSE).Infof(ctx, "Adding track=%s uri=%s to mp4", track, segUri)

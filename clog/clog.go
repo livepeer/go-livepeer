@@ -144,6 +144,12 @@ func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{
 	}
 }
 
+func GetContextMessage(ctx context.Context) string {
+	var sb strings.Builder
+	messageFromContext(ctx, &sb)
+	return sb.String()
+}
+
 func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
 	msg, isErr := formatMessage(ctx, lastErr, format, args...)
 	if isErr {

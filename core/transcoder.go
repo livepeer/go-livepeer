@@ -43,8 +43,9 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname: md.Fname,
-		Accel: ffmpeg.Software,
+		Fname:  md.Fname,
+		Accel:  ffmpeg.Software,
+		LogCtx: clog.GetContextMessage(ctx),
 	}
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash)
@@ -88,6 +89,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Fname:  md.Fname,
 		Accel:  ffmpeg.Nvidia,
 		Device: nv.device,
+		LogCtx: clog.GetContextMessage(ctx),
 	}
 	profiles := md.Profiles
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash)
