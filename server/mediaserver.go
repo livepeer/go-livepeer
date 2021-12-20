@@ -1142,7 +1142,7 @@ func getPlaylistsFromStore(ctx context.Context, sess drivers.OSSession, manifest
 	return filesMap, jsonFiles, latestPlaylistTime, nil
 }
 
-func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *core.JsonPlaylist, manifestID, track, fileName string) {
+func (s *LivepeerServer) streamMP4(ctx context.Context, w http.ResponseWriter, r *http.Request, jpl *core.JsonPlaylist, manifestID, track, fileName string) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	contentType, _ := common.TypeByExtension(".mp4")
 	w.Header().Set("Content-Type", contentType)
@@ -1152,7 +1152,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 
 	or, ow, err := os.Pipe()
 	if err != nil {
-		glog.Errorf("Error creating pipe manifestID=%s err=%q", manifestID, err)
+		clog.Errorf(ctx, "Error creating pipe err=%q", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -1162,7 +1162,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		var err2 error
 		resultBytesSent, err2 = io.Copy(w, or)
 		if err2 != nil {
-			glog.Errorf("Error transmuxing to mp4 request=%s manifestID=%s err=%q", r.URL.String(), manifestID, err2)
+			clog.Errorf(ctx, "Error transmuxing to mp4 request=%s err=%q", r.URL.String(), err2)
 		}
 		or.Close()
 		done <- struct{}{}
@@ -1171,8 +1171,8 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		tc.StopTranscoder()
 		ow.Close()
 		<-done
-		glog.Infof("Completed mp4 request=%s manifestID=%s sourceBytes=%d destBytes=%d", r.URL.String(),
-			manifestID, atomic.LoadInt64(&sourceBytesSent), resultBytesSent)
+		clog.Infof(ctx, "Completed mp4 request=%s sourceBytes=%d destBytes=%d", r.URL.String(),
+			atomic.LoadInt64(&sourceBytesSent), resultBytesSent)
 	}()
 	oname := fmt.Sprintf("pipe:%d", ow.Fd())
 	out := []ffmpeg.TranscodeOptions{
@@ -1200,7 +1200,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 
 		ir, iw, err := os.Pipe()
 		if err != nil {
-			glog.Errorf("Error creating pipe manifestID=%s err=%q", manifestID, err)
+			clog.Errorf(ctx, "Error creating pipe err=%q", err)
 			return
 		}
 		fname := fmt.Sprintf("pipe:%d", ir.Fd())
@@ -1208,20 +1208,20 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		in := &ffmpeg.TranscodeOptionsIn{Fname: fname, Transmuxing: true}
 		go func(segUri string, iw *os.File) {
 			defer iw.Close()
-			glog.V(common.VERBOSE).Infof("Adding manifestID=%s track=%s uri=%s to mp4", manifestID, track, segUri)
+			clog.V(common.VERBOSE).Infof(ctx, "Adding track=%s uri=%s to mp4", track, segUri)
 			resp, err := http.Get(segUri)
 			if err != nil {
-				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%q", segUri, manifestID, err)
+				clog.Errorf(ctx, "Error getting HTTP uri=%s err=%q", segUri, err)
 				return
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 {
-				glog.Errorf("Non-200 response for status=%v uri=%s manifestID=%s request=%s", resp.Status, segUri, manifestID, r.URL.String())
+				clog.Errorf(ctx, "Non-200 response for status=%v uri=%s request=%s", resp.Status, segUri, r.URL.String())
 				return
 			}
 			wn, err := io.Copy(iw, resp.Body)
 			if err != nil {
-				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%q", r.URL.String(), segUri, manifestID, err)
+				clog.Errorf(ctx, "Error transmuxing to mp4 request=%s uri=%s err=%q", r.URL.String(), segUri, err)
 			}
 			atomic.AddInt64(&sourceBytesSent, wn)
 		}(seg.URI, iw)
@@ -1229,7 +1229,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		_, err = tc.Transcode(in, out)
 		ir.Close()
 		if err != nil {
-			glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%q", r.URL.String(), seg.URI, manifestID, err)
+			clog.Errorf(ctx, "Error transmuxing to mp4 request=%s uri=%s err=%q", r.URL.String(), seg.URI, err)
 			return
 		}
 	}
@@ -1414,7 +1414,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		s.streamMP4(w, r, mainJspl, manifestID, track, pp[len(pp)-1])
+		s.streamMP4(ctx, w, r, mainJspl, manifestID, track, pp[len(pp)-1])
 		return
 	}
 
