@@ -14,6 +14,8 @@
 
 #### Orchestrator
 
+- \#2146 Allows Os receive payments while pending activation (@leszko)
+
 #### Transcoder
 
 ### Bug Fixes 🐞
