@@ -13,6 +13,8 @@
 #### Orchestrator
 
 #### Transcoder
+* H.265/HEVC encoding and decoding
+* VP8/VP9 decoding
 
 ### Bug Fixes 🐞
 

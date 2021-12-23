@@ -304,6 +304,8 @@ func main() {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder, core.NewNvidiaTranscoderWithDetector)
 		} else {
+			// for local software mode, enable all capabilities
+			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
 		}
 	}
