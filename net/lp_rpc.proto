@@ -326,6 +326,9 @@ message RegisterRequest {
 
     // Transcoder capacity
     int64 capacity = 2;
+
+    // Transcoder capabilities
+    Capabilities capabilities = 3;
 }
 
 // Sent by the orchestrator to the transcoder

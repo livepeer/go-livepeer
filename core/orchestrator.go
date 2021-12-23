@@ -100,8 +100,8 @@ func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMe
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
 
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
-	orch.node.serveTranscoder(stream, capacity)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
+	orch.node.serveTranscoder(stream, capacity, capabilities)
 }
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
@@ -669,9 +669,9 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 	return nil
 }
 
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
-	n.TranscoderManager.Manage(stream, capacity)
+	n.TranscoderManager.Manage(stream, capacity, capabilities)
 	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 }
 
@@ -684,12 +684,13 @@ func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTra
 }
 
 type RemoteTranscoder struct {
-	manager  *RemoteTranscoderManager
-	stream   net.Transcoder_RegisterTranscoderServer
-	eof      chan struct{}
-	addr     string
-	capacity int
-	load     int
+	manager      *RemoteTranscoderManager
+	stream       net.Transcoder_RegisterTranscoderServer
+	capabilities *Capabilities
+	eof          chan struct{}
+	addr         string
+	capacity     int
+	load         int
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -705,6 +706,7 @@ func NewRemoteTranscoderFatalError(err error) error {
 
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 var ErrNoTranscodersAvailable = errors.New("no transcoders available")
+var ErrNoCompatibleTranscodersAvailable = errors.New("no transcoders can provide requested capabilities")
 
 func (rt *RemoteTranscoder) done() {
 	// select so we don't block indefinitely if there's no listener
@@ -770,13 +772,14 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		return chanData.TranscodeData, chanData.Err
 	}
 }
-func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities) *RemoteTranscoder {
 	return &RemoteTranscoder{
-		manager:  m,
-		stream:   stream,
-		eof:      make(chan struct{}, 1),
-		capacity: capacity,
-		addr:     common.GetConnectionAddr(stream.Context()),
+		manager:      m,
+		stream:       stream,
+		eof:          make(chan struct{}, 1),
+		capacity:     capacity,
+		addr:         common.GetConnectionAddr(stream.Context()),
+		capabilities: caps,
 	}
 }
 
@@ -837,10 +840,10 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 	return res
 }
 
-// Manage adds transcoder to list of live transcoders. Doesn't return untill transcoder disconnects
-func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int) {
+// Manage adds transcoder to list of live transcoders. Doesn't return until transcoder disconnects
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
-	transcoder := NewRemoteTranscoder(rtm, stream, capacity)
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities))
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -902,7 +905,7 @@ func removeFromRemoteTranscoders(rt *RemoteTranscoder, remoteTranscoders []*Remo
 	return newRemoteTs
 }
 
-func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string) (*RemoteTranscoder, error) {
+func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Capabilities) (*RemoteTranscoder, error) {
 	rtm.RTmutex.Lock()
 	defer rtm.RTmutex.Unlock()
 
@@ -910,11 +913,24 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string) (*RemoteT
 		return len(rtm.remoteTranscoders) > 0
 	}
 
+	findCompatibleTranscoder := func(rtm *RemoteTranscoderManager) int {
+		for i := len(rtm.remoteTranscoders) - 1; i >= 0; i-- {
+			// no capabilities = default capabilities, all transcoders must support them
+			if caps == nil || caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) {
+				return i
+			}
+		}
+		return -1
+	}
+
 	for checkTranscoders(rtm) {
 		currentTranscoder, sessionExists := rtm.streamSessions[sessionId]
-		last := len(rtm.remoteTranscoders) - 1
+		lastCompatibleTranscoder := findCompatibleTranscoder(rtm)
+		if lastCompatibleTranscoder == -1 {
+			return nil, ErrNoCompatibleTranscodersAvailable
+		}
 		if !sessionExists {
-			currentTranscoder = rtm.remoteTranscoders[last]
+			currentTranscoder = rtm.remoteTranscoders[lastCompatibleTranscoder]
 		}
 
 		if _, ok := rtm.liveTranscoders[currentTranscoder.stream]; !ok {
@@ -967,7 +983,7 @@ func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
 
 // Transcode does actual transcoding using remote transcoder from the pool
 func (rtm *RemoteTranscoderManager) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
-	currentTranscoder, err := rtm.selectTranscoder(md.AuthToken.SessionId)
+	currentTranscoder, err := rtm.selectTranscoder(md.AuthToken.SessionId, md.Caps)
 	if err != nil {
 		return nil, err
 	}

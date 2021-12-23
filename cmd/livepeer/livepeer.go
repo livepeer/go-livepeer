@@ -271,6 +271,7 @@ func main() {
 		n.OrchSecret, _ = common.GetPass(*orchSecret)
 	}
 
+	transcoderCaps := core.DefaultCapabilities()
 	if *transcoder {
 		core.WorkDir = *datadir
 		if *nvidia != "" {
@@ -282,7 +283,7 @@ func main() {
 			glog.Infof("Transcoding on these Nvidia GPUs: %v", devices)
 			// Test transcoding with nvidia
 			if *testTranscoder {
-				_, err := core.TestTranscoderCapabilities(devices)
+				transcoderCaps, err = core.TestTranscoderCapabilities(devices)
 				if err != nil {
 					glog.Fatal(err)
 				}
@@ -901,12 +902,11 @@ func main() {
 		// take the port to listen to from the service URI
 		*httpAddr = defaultAddr(*httpAddr, "", n.GetServiceURI().Port())
 
-		caps := core.DefaultCapabilities()
 		if *sceneClassificationModelPath != "" {
 			// Only enable experimental capabilities if scene classification model is actually loaded
-			caps = append(caps, core.ExperimentalCapabilities()...)
+			transcoderCaps = append(transcoderCaps, core.ExperimentalCapabilities()...)
 		}
-		n.Capabilities = core.NewCapabilities(caps, core.MandatoryOCapabilities())
+		n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
 
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
@@ -999,7 +999,7 @@ func main() {
 			glog.Fatal("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, *maxSessions)
+		go server.RunTranscoder(n, orchURLs[0].Host, *maxSessions, transcoderCaps)
 	}
 
 	switch n.NodeType {

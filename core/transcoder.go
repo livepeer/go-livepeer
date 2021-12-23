@@ -131,36 +131,36 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 			mp4testSeg, err := ioutil.ReadAll(z)
 			z.Close()
 			if err != nil {
-				glog.Errorf("Error reading test segment for capability %s: %s", c, err)
+				glog.Errorf("Error reading test segment for capability %d: %s", c, err)
 				continue
 			}
 			fname := filepath.Join(WorkDir, "testseg.tempfile")
 			err = ioutil.WriteFile(fname, mp4testSeg, 0644)
 			if err != nil {
-				glog.Errorf("Error writing test segment for capability %s: %s", c, err)
+				glog.Errorf("Error writing test segment for capability %d: %s", c, err)
 				continue
 			}
 			defer os.Remove(fname)
+			// check that capability is supported on all devices
 			for _, device := range devices {
 				t1 := NewNvidiaTranscoder(device)
-				// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
-				p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
-				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
+				// transcode in 3 sessions which is a maximum on consumer Nvidia GPU with official driver
+				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile}}
 				td, err := t1.Transcode(context.Background(), md)
-
 				t1.Stop()
 				if err != nil {
 					// likely means capability is not supported
-					continue
+					goto test_fail
 				}
 				if len(td.Segments) == 0 || td.Pixels == 0 {
 					// abnormal behavior
-					glog.Errorf("Empty result segment when testing for capability %s", c)
-					continue
+					glog.Errorf("Empty result segment when testing for capability %d", c)
+					goto test_fail
 				}
 			}
 		}
 		caps = append(caps, c)
+		test_fail:
 	}
 	for _, defCap := range DefaultCapabilities() {
 		found := false
@@ -171,7 +171,7 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 			}
 		}
 		if !found {
-			return caps, fmt.Errorf("Default capability %s is not supported", defCap)
+			return caps, fmt.Errorf("Default capability %d is not supported", defCap)
 		}
 	}
 	return caps, nil
