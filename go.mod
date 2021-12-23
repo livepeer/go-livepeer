@@ -7,10 +7,11 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/aws/aws-sdk-go v1.33.11
+	github.com/btcsuite/btcd v0.22.0-beta // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cespare/cp v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.7.1 // indirect
-	github.com/ethereum/go-ethereum v1.10.8
+	github.com/ethereum/go-ethereum v1.10.14
 	github.com/fatih/color v1.12.0 // indirect
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/golang/mock v1.4.3
@@ -34,11 +35,10 @@ require (
 	github.com/urfave/cli v1.20.0
 	go.opencensus.io v0.22.3
 	go.uber.org/goleak v1.0.0
-	golang.org/x/net v0.0.0-20210805182204-aaa1db679c0d
+	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
 	google.golang.org/api v0.29.0
 	google.golang.org/grpc v1.28.0
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	pgregory.net/rapid v0.4.0
 )
-
-replace github.com/ethereum/go-ethereum => github.com/livepeer/go-ethereum v1.10.9-0.20210930013949-80e3965c7b18
