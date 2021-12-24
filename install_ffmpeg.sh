@@ -63,11 +63,11 @@ fi
 if [ ! -e "$ROOT/x264" ]; then
   git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
-  if [[ ! $IS_M1 ]]; then
+  if [[ $IS_M1 ]]; then
     # newer git master, compiles on Apple Silicon
     git checkout 66a5bc1bd1563d8227d5d18440b525a09bcf17ca
   else
-    # git master as of this writing
+    # older git master, does not compile on Apple Silicon
     git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
   fi
   ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
