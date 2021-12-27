@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth/contracts"
@@ -111,6 +112,7 @@ type LivepeerEthClient interface {
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
 	Sign([]byte) ([]byte, error)
+	SignTypedData(apitypes.TypedData) ([]byte, error)
 	SetGasInfo(uint64) error
 }
 
@@ -892,4 +894,8 @@ func (c *client) CheckTx(tx *types.Transaction) error {
 
 func (c *client) Sign(msg []byte) ([]byte, error) {
 	return c.accountManager.Sign(msg)
+}
+
+func (c *client) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
+	return c.accountManager.SignTypedData(typedData)
 }
