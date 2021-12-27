@@ -6,6 +6,8 @@
 
 ### Features ⚒
 
+- \#2157 Add support for EIP-712 typed data signing in `livepeer_cli` (@yondonfu)
+
 #### General
 
 #### Broadcaster
