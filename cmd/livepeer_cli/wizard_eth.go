@@ -38,6 +38,7 @@ func (w *wizard) signMessage() {
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val)
 	if !ok {
 		fmt.Printf("Error signing message: %v\n", result)
+		return
 	}
 	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
 }
@@ -54,6 +55,7 @@ func (w *wizard) signTypedData() {
 	result, ok := httpPostWithParamsHeaders(fmt.Sprintf("http://%v:%v/signMessage", w.host, w.httpPort), val, headers)
 	if !ok {
 		fmt.Printf("Error signing typed data: %v\n", result)
+		return
 	}
 	fmt.Println(fmt.Sprintf("\n\nSignature:\n0x%x", result))
 }
