@@ -1,7 +1,7 @@
 /*
 Livepeer is a peer-to-peer global video live streaming network.  The Golp project is a go implementation of the Livepeer protocol.  For more information, visit the project wiki.
 */
-package main
+package livepeer
 
 import (
 	"context"
@@ -70,7 +70,7 @@ const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
 
-func main() {
+func Run() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
 	// package being linked)
