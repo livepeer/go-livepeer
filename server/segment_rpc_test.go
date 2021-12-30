@@ -1988,7 +1988,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 		Params:           &core.StreamParameters{ManifestID: core.RandomManifestID()},
 		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL, AuthToken: stubAuthToken},
 	}
-	seg := &stream.HLSSegment{Duration: 0.01}
+	seg := &stream.HLSSegment{Duration: 0.05}
 	_, err = SubmitSegment(context.TODO(), sess, seg, 0, false, true)
 	assert.Nil(err)
 
@@ -1998,7 +1998,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 
 	// time out header
 	lock.Lock()
-	headerTimeout = 100 * time.Millisecond
+	headerTimeout = 500 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(context.Background(), sess, seg, 0, false, true)
 	assert.Contains(err.Error(), "context canceled")
@@ -2006,7 +2006,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	// time out body
 	lock.Lock()
 	headerTimeout = 0
-	bodyTimeout = 100 * time.Millisecond
+	bodyTimeout = 500 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, 0, false, true)
 	assert.NotNil(err)
@@ -2022,7 +2022,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	// sanity check default timeouts with a bodyTimeout > seg.Duration
 	common.HTTPTimeout = 1 * time.Second
 	lock.Lock()
-	bodyTimeout = 100 * time.Millisecond
+	bodyTimeout = 500 * time.Millisecond
 	assert.Greater(common.HTTPTimeout.Milliseconds(), bodyTimeout.Milliseconds())
 	lock.Unlock()
 	seg.Duration = 0.0 // missing duration
