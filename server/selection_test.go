@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"github.com/google/go-cmp/cmp"
 	"math"
 	"math/big"
 	"sort"
@@ -496,7 +497,13 @@ func TestMinLSSelector_SelectUnknownSession_RandFreq(t *testing.T) {
 	sel.Add(sessions)
 
 	// When randFreq = 1.0 we should select randomly instead of selecting the session with the most stake
-	sess := sel.selectUnknownSession(context.TODO())
+	var sess *BroadcastSession
+	for i:=0; i<10; i++ {
+		sess = sel.selectUnknownSession(context.TODO())
+		if !cmp.Equal(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes()) {
+			break
+		}
+	}
 	assert.NotEqual(sess.OrchestratorInfo.TicketParams.Recipient, addr.Bytes())
 
 	// When randFreq = 0.0 we should select the session with the most stake
