@@ -153,7 +153,7 @@ func main() {
 	// Storage:
 	datadir := flag.String("datadir", "", "Directory that data is stored in")
 	objectstore := flag.String("objectStore", "", "url of primary object store")
-	recordstore := flag.String("recordStore", "", "url of object store for recodings")
+	recordstore := flag.String("recordStore", "", "url of object store for recordings")
 
 	// API
 	authWebhookURL := flag.String("authWebhookUrl", "", "RTMP authentication webhook URL")
