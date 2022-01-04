@@ -24,6 +24,8 @@
 
 #### Broadcaster
 
+- \#1989 Record realtime ratio metric as a histogram (@victorges)
+
 #### Orchestrator
 
 #### Transcoder
