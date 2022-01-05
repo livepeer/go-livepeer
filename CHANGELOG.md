@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.5.24
+
+*January 5th 2021*
+
+This is a fast follow patch release for v0.5.24 to fix a bug that caused orchestrators to return errors right after a transaction is submitted resulting in the previously active streams to be re-routed from the orchestrators. **If you are running an orchestrator you should upgrade to this release as soon as possible.**
+
+In order to fix this bug, the feature from v0.5.24 that set the `maxFeePerGas` of transactions to `-maxGasPrice` is temporarily disabled and will be re-enabled in the next release. The node will continue not submitting transactions if the current expected gas price for a transaction exceeds `-maxGasPrice`, but due to the disabling of the aforementioned feature, it is possible for a transaction to be mined at a gas price higher than `-maxGasPrice` if the gas price increases quickly after the node performs its `-maxGasPrice` check. The next release will ensure that a transaction cannot be mined at a gas price higher than `-maxGasPrice`.
+
+### Features ⚒
+
+#### General
+
+- [#2157](https://github.com/livepeer/go-livepeer/pull/2157) Add support for EIP-712 typed data signing in `livepeer_cli` (@yondonfu)
+
+#### Broadcaster
+
+- [#1989](https://github.com/livepeer/go-livepeer/pull/1989) Record realtime ratio metric as a histogram (@victorges)
+
+#### Orchestrator
+
+- [#2146](https://github.com/livepeer/go-livepeer/pull/2146) Allows Os receive payments while pending activation (@leszko)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#2163](https://github.com/livepeer/go-livepeer/pull/2163) Fix Session crashes right after the O sends a tx, revert #2111 Ensure `maxFeePerGas` in all transactions never exceed `-masGasPrice` (@leszko)
+
 ## v0.5.23
 
 *December 20th 2021*
