@@ -98,15 +98,9 @@ func NewTransactionManager(eth transactionSenderReader, gpm *GasPriceMonitor, si
 }
 
 func (tm *TransactionManager) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	adjustedRawTx := tm.newAdjustedTx(tx)
-	adjustedTx, err := tm.sig.SignTx(adjustedRawTx)
-	if err != nil {
-		return err
-	}
+	sendErr := tm.eth.SendTransaction(ctx, tx)
 
-	sendErr := tm.eth.SendTransaction(ctx, adjustedTx)
-
-	txLog, err := newTxLog(adjustedTx)
+	txLog, err := newTxLog(tx)
 	if err != nil {
 		txLog.method = "unknown"
 	}
@@ -118,11 +112,11 @@ func (tm *TransactionManager) SendTransaction(ctx context.Context, tx *types.Tra
 
 	// Add transaction to queue
 	tm.cond.L.Lock()
-	tm.queue.add(adjustedTx)
+	tm.queue.add(tx)
 	tm.cond.L.Unlock()
 	tm.cond.Signal()
 
-	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, adjustedTx.Hash().String(), strings.Repeat("*", 75))
+	glog.Infof("\n%vEth Transaction%v\n\nInvoking transaction: \"%v\". Inputs: \"%v\"  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, txLog.inputs, tx.Hash().String(), strings.Repeat("*", 75))
 
 	return nil
 }
@@ -165,7 +159,7 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 
 	// Bump gas price exceeds max gas price, return early
 	max := tm.gpm.MaxGasPrice()
-	newGasPrice := newRawTx.GasFeeCap()
+	newGasPrice := calcGasPrice(newRawTx)
 	if max != nil && newGasPrice.Cmp(max) > 0 {
 		return nil, fmt.Errorf("replacement gas price exceeds max gas price suggested=%v max=%v", newGasPrice, max)
 	}
@@ -240,15 +234,6 @@ func (tm *TransactionManager) checkTxLoop() {
 	}
 }
 
-func (tm *TransactionManager) newAdjustedTx(tx *types.Transaction) *types.Transaction {
-	baseTx := newDynamicFeeTx(tx)
-	if tm.gpm.MaxGasPrice() != nil {
-		baseTx.GasFeeCap = tm.gpm.MaxGasPrice()
-	}
-
-	return types.NewTx(baseTx)
-}
-
 func applyPriceBump(val *big.Int, priceBump uint64) *big.Int {
 	a := big.NewInt(100 + int64(priceBump))
 	b := new(big.Int).Mul(a, val)
@@ -256,22 +241,24 @@ func applyPriceBump(val *big.Int, priceBump uint64) *big.Int {
 	return b.Div(new(big.Int).Add(b, big.NewInt(99)), big.NewInt(100))
 }
 
-func newReplacementTx(tx *types.Transaction) *types.Transaction {
-	baseTx := newDynamicFeeTx(tx)
-	baseTx.GasFeeCap = applyPriceBump(tx.GasFeeCap(), priceBump)
-	baseTx.GasTipCap = applyPriceBump(tx.GasTipCap(), priceBump)
-
-	return types.NewTx(baseTx)
+// Calculate the gas price as gas tip cap + base fee
+func calcGasPrice(tx *types.Transaction) *big.Int {
+	// Assume that the gas fee cap is calculated as gas tip cap + (baseFee * 2)
+	baseFee := new(big.Int).Div(new(big.Int).Sub(tx.GasFeeCap(), tx.GasTipCap()), big.NewInt(2))
+	return new(big.Int).Add(baseFee, tx.GasTipCap())
 }
 
-func newDynamicFeeTx(tx *types.Transaction) *types.DynamicFeeTx {
-	return &types.DynamicFeeTx{
-		To:        tx.To(),
-		Nonce:     tx.Nonce(),
-		GasFeeCap: tx.GasFeeCap(),
-		GasTipCap: tx.GasTipCap(),
+func newReplacementTx(tx *types.Transaction) *types.Transaction {
+	baseTx := &types.DynamicFeeTx{
+		Nonce: tx.Nonce(),
+		// geth requires the price bump to be applied to both the gas tip cap and gas fee cap
+		GasFeeCap: applyPriceBump(tx.GasFeeCap(), priceBump),
+		GasTipCap: applyPriceBump(tx.GasTipCap(), priceBump),
 		Gas:       tx.Gas(),
 		Value:     tx.Value(),
 		Data:      tx.Data(),
+		To:        tx.To(),
 	}
+
+	return types.NewTx(baseTx)
 }
