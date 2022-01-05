@@ -113,10 +113,9 @@ else
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
         if [ ! -e "$ROOT/compiled/lib/libtensorflow_framework.so" ]; then
           LIBTENSORFLOW_VERSION=2.3.0 \
-          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-          && sudo tar -C $ROOT/compiled -xzf libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-          && sudo ldconfig \
-          && rm libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && tar -C $ROOT/compiled -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
         fi
         echo "experimental tag detected, building with Tensorflow support"
         EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
