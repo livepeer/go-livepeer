@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -300,11 +301,42 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
+		// Use EIP-191 (https://github.com/ethereum/EIPs/blob/master/EIPS/eip-191.md) signature versioning
+		// The SigFormat terminology is taken from:
+		// https://github.com/ethereum/go-ethereum/blob/dddf73abbddb297e61cee6a7e6aebfee87125e49/signer/core/apitypes/types.go#L171
+		sigFormat := r.Header.Get("SigFormat")
+		if sigFormat == "" {
+			sigFormat = "text/plain"
+		}
+
 		message := r.FormValue("message")
-		signed, err := client.Sign([]byte(message))
-		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not sign message - err=%v", err))
-			return
+
+		var signed []byte
+		var err error
+
+		// Only support text/plain and data/typed
+		// By default use text/plain
+		switch sigFormat {
+		case "data/typed":
+			var d apitypes.TypedData
+			err = json.Unmarshal([]byte(message), &d)
+			if err != nil {
+				respondWith400(w, fmt.Sprintf("could not unmarshal typed data - err=%q", err))
+				return
+			}
+
+			signed, err = client.SignTypedData(d)
+			if err != nil {
+				respondWith500(w, fmt.Sprintf("could not sign typed data - err=%q", err))
+				return
+			}
+		default:
+			// text/plain
+			signed, err = client.Sign([]byte(message))
+			if err != nil {
+				respondWith500(w, fmt.Sprintf("could not sign message - err=%q", err))
+				return
+			}
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -351,12 +383,12 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 			choiceID,
 		)
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("unable to submit vote transaction err=%v", err))
+			respondWith500(w, fmt.Sprintf("unable to submit vote transaction err=%q", err))
 			return
 		}
 
 		if err := client.CheckTx(tx); err != nil {
-			respondWith500(w, fmt.Sprintf("unable to mine vote transaction err=%v", err))
+			respondWith500(w, fmt.Sprintf("unable to mine vote transaction err=%q", err))
 			return
 		}
 

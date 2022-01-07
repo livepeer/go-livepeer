@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -107,7 +108,7 @@ func TestRemoteTranscoder(t *testing.T) {
 
 	// happy path
 	tc, strm := initTranscoder()
-	res, err := tc.Transcode(&SegTranscodingMetadata{})
+	res, err := tc.Transcode(context.TODO(), &SegTranscodingMetadata{})
 	if err != nil || string(res.Segments[0].Data) != "asdf" {
 		t.Error("Error transcoding ", err)
 	}
@@ -115,7 +116,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	// error on remote while transcoding
 	tc, strm = initTranscoder()
 	strm.TranscodeError = fmt.Errorf("TranscodeError")
-	res, err = tc.Transcode(&SegTranscodingMetadata{})
+	res, err = tc.Transcode(context.TODO(), &SegTranscodingMetadata{})
 	if err != strm.TranscodeError {
 		t.Error("Unexpected error ", err, res)
 	}
@@ -124,7 +125,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	tc, strm = initTranscoder()
 
 	strm.SendError = fmt.Errorf("SendError")
-	_, err = tc.Transcode(&SegTranscodingMetadata{})
+	_, err = tc.Transcode(context.TODO(), &SegTranscodingMetadata{})
 	if _, fatal := err.(RemoteTranscoderFatalError); !fatal ||
 		err.Error() != strm.SendError.Error() {
 		t.Error("Unexpected error ", err, fatal)
@@ -161,7 +162,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		_, err = tc.Transcode(&SegTranscodingMetadata{ManifestID: ManifestID("fileName")})
+		_, err = tc.Transcode(context.TODO(), &SegTranscodingMetadata{ManifestID: ManifestID("fileName")})
 		assert.Equal("Remote transcoder took too long", err.Error())
 		wg.Done()
 	}()
@@ -182,7 +183,7 @@ func TestRemoteTranscoder(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		dur := 25 * time.Millisecond
-		_, err = tc.Transcode(&SegTranscodingMetadata{Duration: dur})
+		_, err = tc.Transcode(context.TODO(), &SegTranscodingMetadata{Duration: dur})
 		assert.Equal("Remote transcoder took too long", err.Error())
 		wg.Done()
 	}()
@@ -355,7 +356,7 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Len(m.remoteTranscoders, 1)
 
 	// assert transcoder gets added back to remoteTranscoders if no transcoding error
-	transcodedData, err := m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	transcodedData, err := m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.NotNil(transcodedData)
 	assert.Nil(err)
 	assert.Len(m.remoteTranscoders, 1)
@@ -441,7 +442,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.Empty(m.remoteTranscoders)
 
 	// Attempt to transcode when no transcoders in the set
-	transcodedData, err := m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	transcodedData, err := m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.Nil(transcodedData)
 	assert.NotNil(err)
 	assert.Equal(err, ErrNoTranscodersAvailable)
@@ -455,14 +456,14 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	assert.NotNil(m.liveTranscoders[s])
 
 	// happy path
-	res, err := m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	res, err := m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.Nil(err)
 	assert.Len(res.Segments, 1)
 	assert.Equal(string(res.Segments[0].Data), "asdf")
 
 	// non-fatal error should not remove from list
 	s.TranscodeError = fmt.Errorf("TranscodeError")
-	transcodedData, err = m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	transcodedData, err = m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.NotNil(transcodedData)
 	assert.Equal(s.TranscodeError, err)
 	assert.Len(m.remoteTranscoders, 1)           // sanity
@@ -473,12 +474,12 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 
 	// fatal error should retry and remove from list
 	s.SendError = fmt.Errorf("SendError")
-	transcodedData, err = m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	transcodedData, err = m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.True(wgWait(wg)) // should disconnect manager
 	assert.Nil(transcodedData)
 	assert.NotNil(err)
 	assert.Equal(err, ErrNoTranscodersAvailable)
-	transcodedData, err = m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}}) // need second try to remove from remoteTranscoders
+	transcodedData, err = m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}}) // need second try to remove from remoteTranscoders
 	assert.Nil(transcodedData)
 	assert.NotNil(err)
 	assert.Equal(err, ErrNoTranscodersAvailable)
@@ -497,7 +498,7 @@ func TestTranscoderManagerTranscoding(t *testing.T) {
 	oldTimeout := common.HTTPTimeout
 	common.HTTPTimeout = 1 * time.Millisecond
 	defer func() { common.HTTPTimeout = oldTimeout }()
-	transcodedData, err = m.Transcode(&SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
+	transcodedData, err = m.Transcode(context.TODO(), &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: testSessionId}})
 	assert.Nil(transcodedData)
 	_, fatal := err.(RemoteTranscoderFatalError)
 	wg.Wait()
@@ -616,7 +617,7 @@ func TestGetSegmentChan(t *testing.T) {
 	segData := StubSegTranscodingMetadata()
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	sc, err := n.getSegmentChan(segData)
+	sc, err := n.getSegmentChan(context.TODO(), segData)
 	if err != nil {
 		t.Error("error with getSegmentChan", err)
 	}
@@ -632,12 +633,12 @@ func TestGetSegmentChan(t *testing.T) {
 	// Test max sessions
 	oldTranscodeSessions := MaxSessions
 	MaxSessions = 0
-	if _, err := n.getSegmentChan(segData); err != nil {
+	if _, err := n.getSegmentChan(context.TODO(), segData); err != nil {
 		t.Error("Existing mid should continue processing even when O is at capacity: ", err)
 	}
 	segData.AuthToken = stubAuthToken()
 	segData.AuthToken.SessionId = t.Name()
-	if _, err := n.getSegmentChan(segData); err != ErrOrchCap {
+	if _, err := n.getSegmentChan(context.TODO(), segData); err != ErrOrchCap {
 		t.Error("Didn't fail when orch cap hit: ", err)
 	}
 	MaxSessions = oldTranscodeSessions
@@ -646,7 +647,7 @@ func TestGetSegmentChan(t *testing.T) {
 	drivers.NodeStorage = nil // will make the transcode loop fail
 	node, _ := NewLivepeerNode(nil, "", nil)
 
-	sc, storageError := node.getSegmentChan(segData)
+	sc, storageError := node.getSegmentChan(context.TODO(), segData)
 	if storageError.Error() != "Missing local storage" {
 		t.Error("transcodingLoop did not fail when expected to", storageError)
 	}
@@ -658,7 +659,7 @@ func TestGetSegmentChan(t *testing.T) {
 	// The following tests may seem identical to the two cases above
 	// however, calling `getSegmentChan` used to hang on the invocation after an
 	// error. Reproducing the scenario here but should not hang.
-	sc, storageErr := node.getSegmentChan(segData)
+	sc, storageErr := node.getSegmentChan(context.TODO(), segData)
 	if storageErr.Error() != "Missing local storage" {
 		t.Error("transcodingLoop did not fail when expected to", storageErr)
 	}
@@ -688,7 +689,7 @@ func TestOrchCheckCapacity(t *testing.T) {
 
 	// ensure existing segment chans pass while cap is active
 	MaxSessions = cap
-	_, err := n.getSegmentChan(md) // store md into segment chans
+	_, err := n.getSegmentChan(context.TODO(), md) // store md into segment chans
 	assert.Nil(err)
 	MaxSessions = 0
 	assert.Nil(o.CheckCapacity(mid))
@@ -837,13 +838,13 @@ func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 	pay.ExpectedPrice = &net.PriceInfo{PricePerUnit: 500, PixelsPerUnit: 0}
 	err := orch.ProcessPayment(pay, ManifestID("some manifest"))
 	assert.Error(err)
-	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "pixels per unit is 0"))
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "pixels per unit is 0"))
 
 	// test ExpectedPrice = nil
 	pay.ExpectedPrice = nil
 	err = orch.ProcessPayment(pay, ManifestID("some manifest"))
 	assert.Error(err)
-	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%v", "expected price is nil"))
+	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "expected price is nil"))
 }
 
 func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {

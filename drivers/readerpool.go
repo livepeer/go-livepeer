@@ -34,14 +34,14 @@ func readWorker(ctx context.Context, tasks chan *task, resCh chan *readResult) {
 			now := time.Now()
 			fi, err := task.sess.ReadData(ctx, task.fileName)
 			if err != nil {
-				glog.V(common.VERBOSE).Infof("Reading file=%s err=%v", task.fileName, err)
+				glog.V(common.VERBOSE).Infof("Reading file=%s err=%q", task.fileName, err)
 				res.err = err
 				resCh <- res
 				continue
 			}
 			fb, err := ioutil.ReadAll(fi.Body)
 			if err != nil {
-				glog.V(common.VERBOSE).Infof("Reading file=%s err=%v", task.fileName, err)
+				glog.V(common.VERBOSE).Infof("Reading file=%s err=%q", task.fileName, err)
 				res.err = err
 				resCh <- res
 				continue

@@ -121,7 +121,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			if err := w.syncToLatestBlock(); err != nil {
-				glog.Errorf("blockwatch.Watcher error encountered - trying again on next polling interval err=%v", err)
+				glog.Errorf("blockwatch.Watcher error encountered - trying again on next polling interval err=%q", err)
 			}
 		}
 	}

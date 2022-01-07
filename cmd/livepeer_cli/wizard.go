@@ -284,9 +284,23 @@ func httpGet(url string) string {
 }
 
 func httpPostWithParams(url string, val url.Values) (string, bool) {
-	body := bytes.NewBufferString(val.Encode())
+	return httpPostWithParamsHeaders(url, val, map[string]string{})
+}
 
-	resp, err := http.Post(url, "application/x-www-form-urlencoded", body)
+func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]string) (string, bool) {
+	body := bytes.NewBufferString(val.Encode())
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		log.Error("Error creating HTTP POST", "url", url, "err", err)
+		return "", false
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Error("Error sending HTTP POST", "url", url, "err", err)
 		return "", false

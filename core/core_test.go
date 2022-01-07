@@ -57,14 +57,14 @@ func TestTranscode(t *testing.T) {
 	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
 
 	// Check nil transcoder.
-	tr, err := n.sendToTranscodeLoop(md, ss)
+	tr, err := n.sendToTranscodeLoop(context.TODO(), md, ss)
 	if err != ErrTranscoderAvail {
 		t.Error("Error transcoding ", err)
 	}
 
 	// Sanity check full flow.
 	n.Transcoder = NewLocalTranscoder(tmp)
-	tr, err = n.sendToTranscodeLoop(md, ss)
+	tr, err = n.sendToTranscodeLoop(context.TODO(), md, ss)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
@@ -106,18 +106,18 @@ func TestTranscodeSeg(t *testing.T) {
 
 	// Test offchain mode
 	require.Nil(n.Eth) // sanity check the offchain precondition of a nil eth
-	res := n.transcodeSeg(conf, seg, md)
+	res := n.transcodeSeg(context.TODO(), conf, seg, md)
 	assert.Nil(res.Err)
 	assert.Nil(res.Sig)
 	// sanity check results
-	resBytes, _ := n.Transcoder.Transcode(md)
+	resBytes, _ := n.Transcoder.Transcode(context.TODO(), md)
 	for i, trData := range res.TranscodeData.Segments {
 		assert.Equal(resBytes.Segments[i].Data, trData.Data)
 	}
 
 	// Test onchain mode
 	n.Eth = &eth.StubClient{}
-	res = n.transcodeSeg(conf, seg, md)
+	res = n.transcodeSeg(context.TODO(), conf, seg, md)
 	assert.Nil(res.Err)
 	assert.NotNil(res.Sig)
 	// check sig
@@ -147,7 +147,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 
 	mid := ManifestID(md.AuthToken.SessionId)
 
-	_, err := n.sendToTranscodeLoop(md, ss)
+	_, err := n.sendToTranscodeLoop(context.TODO(), md, ss)
 	require.Nil(err)
 	segChan := getSegChan(n, mid)
 	require.NotNil(segChan)

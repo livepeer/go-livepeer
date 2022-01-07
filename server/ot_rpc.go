@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -38,8 +39,9 @@ import (
 const protoVerLPT = "Livepeer-Transcoder-1.0"
 const transcodingErrorMimeType = "livepeer/transcoding-error"
 
-var errSecret = errors.New("Invalid secret")
-var errZeroCapacity = errors.New("Zero capacity")
+var errSecret = errors.New("invalid secret")
+var errZeroCapacity = errors.New("zero capacity")
+var errInterrupted = errors.New("execution interrupted")
 
 // Standalone Transcoder
 
@@ -73,7 +75,7 @@ func checkTranscoderError(err error) error {
 			return core.NewRemoteTranscoderFatalError(errZeroCapacity)
 		}
 		if status.Code(err) == codes.Canceled {
-			return core.NewRemoteTranscoderFatalError(fmt.Errorf("Execution interrupted"))
+			return core.NewRemoteTranscoderFatalError(errInterrupted)
 		}
 	}
 	return err
@@ -119,7 +121,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	for {
 		notify, err := r.Recv()
 		if err := checkTranscoderError(err); err != nil {
-			glog.Infof(`End of stream receive cycle because of err="%v", waiting for running transcode jobs to complete`, err)
+			glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
 			wg.Wait()
 			return err
 		}
@@ -140,53 +142,59 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 
 	md, err := coreSegMetadata(notify.SegData)
 	if err != nil {
-		glog.Errorf("Unable to parse segData taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
-		sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		glog.Errorf("Unable to parse segData taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
+		sendTranscodeResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 		// TODO short-circuit error handling
 		// See https://github.com/livepeer/go-livepeer/issues/1518
 	}
 	profiles := md.Profiles
+	ctx := clog.AddManifestID(context.Background(), string(md.ManifestID))
+	if md.AuthToken != nil {
+		ctx = clog.AddOrchSessionID(ctx, md.AuthToken.SessionId)
+	}
+	ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
+	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
 
-	data, err := drivers.GetSegmentData(notify.Url)
+	data, err := drivers.GetSegmentData(ctx, notify.Url)
 	if err != nil {
-		glog.Errorf("Transcoder cannot get segment from taskId=%d url=%s err=%v", notify.TaskId, notify.Url, err)
-		sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		clog.Errorf(ctx, "Transcoder cannot get segment from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
 	// Write it to disk
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err = os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
-			glog.Errorf("Transcoder cannot create workdir err=%v", err)
-			sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+			clog.Errorf(ctx, "Transcoder cannot create workdir err=%q", err)
+			sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 			return
 		}
 	}
 	// Create input file from segment. Removed after transcoding done
 	fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
 	if err = ioutil.WriteFile(fname, data, 0600); err != nil {
-		glog.Errorf("Transcoder cannot write file err=%v", err)
-		sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
 	defer os.Remove(fname)
 	md.Fname = fname
-	glog.V(common.DEBUG).Infof("Segment from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
+	clog.V(common.DEBUG).Infof(ctx, "Segment from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
 
 	start := time.Now()
-	tData, err = n.Transcoder.Transcode(md)
-	glog.V(common.VERBOSE).Infof("Transcoding done for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, time.Since(start), err)
+	tData, err = n.Transcoder.Transcode(ctx, md)
+	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done for taskId=%d url=%s dur=%v", notify.TaskId, notify.Url, time.Since(start), err)
 	if err != nil {
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
 		}
-		sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
 	if err == nil && len(tData.Segments) != len(profiles) {
 		err = errors.New("segment / profile mismatch")
-		sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
 	boundary := common.RandName()
@@ -194,7 +202,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	for i, v := range tData.Segments {
 		ctyp, err := common.ProfileFormatMimeType(profiles[i].Format)
 		if err != nil {
-			glog.Errorf("Could not find mime type err=%v", err)
+			clog.Errorf(ctx, "Could not find mime type err=%q", err)
 			continue
 		}
 		w.SetBoundary(boundary)
@@ -205,7 +213,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		}
 		fw, err := w.CreatePart(hdrs)
 		if err != nil {
-			glog.Errorf("Could not create multipart part err=%v", err)
+			clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 		}
 		io.Copy(fw, bytes.NewBuffer(v.Data))
 		// Add perceptual hash data as a part if generated
@@ -217,27 +225,27 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 			}
 			fw, err := w.CreatePart(hdrs)
 			if err != nil {
-				glog.Errorf("Could not create multipart part err=%v", err)
+				clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 			}
 			io.Copy(fw, bytes.NewBuffer(v.PHash))
 		}
 	}
 	w.Close()
 	contentType = "multipart/mixed; boundary=" + boundary
-	sendTranscodeResult(n, orchAddr, httpc, notify, contentType, &body, tData, err)
+	sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 }
 
-func sendTranscodeResult(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment,
+func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment,
 	contentType string, body *bytes.Buffer, tData *core.TranscodeData, err error,
 ) {
 	if err != nil {
-		glog.Errorf("Unable to transcode err=%v", err)
+		clog.Errorf(ctx, "Unable to transcode err=%q", err)
 		body.Write([]byte(err.Error()))
 		contentType = transcodingErrorMimeType
 	}
 	req, err := http.NewRequest("POST", "https://"+orchAddr+"/transcodeResults", body)
 	if err != nil {
-		glog.Errorf("Error posting results to orch=%s staskId=%d url=%s err=%v", orchAddr,
+		clog.Errorf(ctx, "Error posting results to orch=%s staskId=%d url=%s err=%q", orchAddr,
 			notify.TaskId, notify.Url, err)
 		return
 	}
@@ -253,23 +261,23 @@ func sendTranscodeResult(n *core.LivepeerNode, orchAddr string, httpc *http.Clie
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
-		glog.Errorf("Error submitting results err=%v", err)
+		clog.Errorf(ctx, "Error submitting results err=%q", err)
 	} else {
 		rbody, rerr := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			if rerr != nil {
-				glog.Errorf("Orchestrator returned HTTP %v with unreadable body error=%v", resp.StatusCode, rerr)
+				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v with unreadable body err=%q", resp.StatusCode, rerr)
 			} else {
-				glog.Errorf("Orchestrator returned HTTP %v error=%v", resp.StatusCode, string(rbody))
+				clog.Errorf(ctx, "Orchestrator returned HTTP statusCode=%v err=%q", resp.StatusCode, string(rbody))
 			}
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	glog.V(common.VERBOSE).Infof("Transcoding done results sent for taskId=%d url=%s dur=%v err=%v", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
-		monitor.SegmentUploaded(0, uint64(notify.TaskId), uploadDur)
+		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur)
 	}
 }
 
@@ -280,11 +288,11 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
-		glog.Info(errSecret.Error())
+		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
 	if req.Capacity <= 0 {
-		glog.Info(errZeroCapacity.Error())
+		glog.Errorf("err=%q", errZeroCapacity.Error())
 		return errZeroCapacity
 	}
 
@@ -331,12 +339,12 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			glog.Errorf("Unable to read transcoding error body taskID=%v err=%v", tid, err)
+			glog.Errorf("Unable to read transcoding error body taskId=%v err=%q", tid, err)
 			res.Err = err
 		} else {
 			res.Err = fmt.Errorf(string(body))
 		}
-		glog.Errorf("Trascoding error for taskID=%v err=%v", tid, res.Err)
+		glog.Errorf("Trascoding error for taskId=%v err=%q", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
 		return
 	}
@@ -394,10 +402,10 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			Pixels:   decodedPixels,
 		}
 		dlDur := time.Since(start)
-		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%v", r.RemoteAddr, tid, dlDur)
+		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
 
 		if monitor.Enabled {
-			monitor.SegmentDownloaded(0, uint64(tid), dlDur)
+			monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
 		}
 
 		orch.TranscoderResults(tid, &res)

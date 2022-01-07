@@ -100,18 +100,18 @@ ticketLoop:
 		select {
 		case err := <-sub.Err():
 			if err != nil {
-				glog.Errorf("Block subscription error err=%v", err)
+				glog.Errorf("Block subscription error err=%q", err)
 			}
 		case latestBlock := <-blockNums:
 			numTickets, err := q.Length()
 			if err != nil {
-				glog.Errorf("Error getting queue length err=%v", err)
+				glog.Errorf("Error getting queue length err=%q", err)
 				continue
 			}
 			for i := 0; i < int(numTickets); i++ {
 				nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
 				if err != nil {
-					glog.Errorf("Unable select earliest winning ticket err=%v", err)
+					glog.Errorf("Unable select earliest winning ticket err=%q", err)
 					continue ticketLoop
 				}
 				if nextTicket == nil {
@@ -130,7 +130,7 @@ ticketLoop:
 						// after receiving the response we can close the channel so it can be GC'd
 						close(resCh)
 						if res.err != nil {
-							glog.Errorf("Error redeeming err=%v", res.err)
+							glog.Errorf("Error redeeming err=%q", res.err)
 							// If the error is non-retryable then we mark the ticket as redeemed
 							if !isNonRetryableTicketErr(res.err) {
 								continue

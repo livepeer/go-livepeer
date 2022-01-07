@@ -1106,7 +1106,7 @@ func TestPush_StorageError(t *testing.T) {
 	drivers.NodeStorage = nil
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 	mid := parseManifestID(req.URL.Path)
-	err := removeRTMPStream(s, mid)
+	err := removeRTMPStream(context.TODO(), s, mid)
 	assert.Equal(errUnknownStream, err)
 
 	handler.ServeHTTP(w, req)

@@ -175,7 +175,7 @@ func (d *stubDiscovery) GetInfo(uri string) common.OrchestratorLocalInfo {
 	return res
 }
 
-func (d *stubDiscovery) GetOrchestrators(num int, sus common.Suspender, caps common.CapabilityComparator,
+func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
 	if d.waitGetOrch != nil {
@@ -241,14 +241,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
-	if _, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
+	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -259,7 +259,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
-	sess, _ := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -294,7 +294,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
-	sess, err := selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	assert.Nil(err)
 
 	// B should initialize new OS session using auth token sessionID
@@ -382,7 +382,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	require.Nil(err)
 
 	assert.Len(sess, 2)
@@ -411,7 +411,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	// Skip orchestrator if missing auth token
 	sd.infos[0].AuthToken = nil
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -421,7 +421,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	sd.infos[0].AuthToken = &net.AuthToken{}
 	sd.infos[0].TicketParams = nil
 
-	sess, err = selectOrchestrator(s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -437,7 +437,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 		connectionLock:  &sync.RWMutex{},
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
-	createSid := createRTMPStreamIDHandler(s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 	u := mustParseUrl(t, "http://hot/id1/secret")
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
@@ -469,7 +469,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
@@ -707,12 +707,17 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	createSid := createRTMPStreamIDHandler(s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 	endHandler := endRTMPStreamHandler(s)
-
 	// Test default path structure
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
+
+	rand.Seed(123)
+	sid := createSid(u)
+	sap := sid.(*core.StreamParameters)
+	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
+
 	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
@@ -775,7 +780,7 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
@@ -886,8 +891,8 @@ func TestMultiStream(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	createSid := createRTMPStreamIDHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 
 	handleStream := func(i int) {
 		st := stream.NewBasicRTMPVideoStream(createSid(u))
@@ -997,24 +1002,24 @@ func TestRegisterConnection(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	mid := core.SplitStreamIDString(t.Name()).ManifestID
-	strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: mid})
+	strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: mid, Nonce: 1})
 
 	// Should return an error if missing node storage
 	drivers.NodeStorage = nil
-	_, err := s.registerConnection(strm)
+	_, err := s.registerConnection(context.TODO(), strm)
 	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
 	rand.Seed(123)
-	cxn, err := s.registerConnection(strm)
+	cxn, err := s.registerConnection(context.TODO(), strm)
 	assert.NotNil(cxn)
 	assert.Nil(err)
 
 	// Check some properties of the cxn / server
 	assert.Equal(mid, cxn.mid)
 	assert.Equal("source", cxn.profile.Name)
-	assert.Equal(uint64(0x4a68998bed5c40f1), cxn.nonce)
+	assert.Equal(uint64(1), cxn.nonce)
 
 	assert.Equal(mid, s.LastManifestID())
 	assert.Equal(string(mid)+"/source", s.LastHLSStreamID().String())
@@ -1023,13 +1028,13 @@ func TestRegisterConnection(t *testing.T) {
 	assert.NotNil(cxn.params.Capabilities)
 
 	// Should return an error if creating another cxn with the same mid
-	_, err = s.registerConnection(strm)
+	_, err = s.registerConnection(context.TODO(), strm)
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
 	storage := drivers.NewS3Driver("", "", "", "", false).NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
-	cxn, err = s.registerConnection(strm)
+	cxn, err = s.registerConnection(context.TODO(), strm)
 	assert.Nil(err)
 	assert.Equal(storage, cxn.params.OS)
 	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
@@ -1038,7 +1043,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(strm)
+	cxn, err = s.registerConnection(context.TODO(), strm)
 	assert.Nil(err)
 	job, err := core.JobCapabilities(streamParams(strm.AppData()))
 	assert.Nil(err)
@@ -1046,7 +1051,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities: exit with an invalid cap
 	profiles[0].Format = -1
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(strm)
+	cxn, err = s.registerConnection(context.TODO(), strm)
 	assert.Nil(cxn)
 	assert.Equal("capability: unknown format", err.Error())
 	// TODO test with non-legacy capabilities once we have some
@@ -1061,7 +1066,7 @@ func TestRegisterConnection(t *testing.T) {
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
 			strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: mid})
-			cxn, err := s.registerConnection(strm)
+			cxn, err := s.registerConnection(context.TODO(), strm)
 
 			assert.Nil(err)
 			assert.NotNil(cxn)
@@ -1092,7 +1097,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 
 	// create RTMPStream handler methods
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 

@@ -195,7 +195,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }
 
-func (ostore *MemorySession) SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (ostore *MemorySession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()

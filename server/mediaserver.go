@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
@@ -185,7 +186,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
-	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
+	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
@@ -221,7 +222,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
 	return func(url *url.URL) (strmID stream.AppData) {
 		//Check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
@@ -238,13 +239,20 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		profiles := []ffmpeg.VideoProfile{}
 		detectionConfig := core.DetectionConfig{}
 		var VerificationFreq uint
+		nonce := rand.Uint64()
+
+		// do not replace captured _ctx variable
+		ctx := clog.AddNonce(_ctx, nonce)
 		if resp, err = authenticateStream(url.String()); err != nil {
-			glog.Errorf("Authentication denied for streamID url=%s err=%v", url.String(), err)
+			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
 		if resp != nil {
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			extStreamID, sessionID = resp.StreamID, resp.SessionID
+			if sessionID != "" && extStreamID != "" && sessionID != extStreamID {
+				ctx = clog.AddSessionID(ctx, sessionID)
+			}
 			// Process transcoding options presets
 			if len(resp.Presets) > 0 {
 				profiles = parsePresets(resp.Presets)
@@ -252,7 +260,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 			parsedProfiles, err := jsonProfileToVideoProfile(resp)
 			if err != nil {
-				glog.Errorf("Failed to parse JSON video profile for streamID url=%s err=%v", url.String(), err)
+				clog.Errorf(ctx, "Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
 				return nil
 			}
 			profiles = append(profiles, parsedProfiles...)
@@ -266,7 +274,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if resp.ObjectStore != "" {
 				os, err = drivers.ParseOSURL(resp.ObjectStore, false)
 				if err != nil {
-					glog.Errorf("Failed to parse object store url for streamID url=%s err=%v", url.String(), err)
+					clog.Errorf(ctx, "Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
 					return nil
 				}
 			}
@@ -274,16 +282,16 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			if resp.RecordObjectStore != "" {
 				ros, err = drivers.ParseOSURL(resp.RecordObjectStore, true)
 				if err != nil {
-					glog.Errorf("Failed to parse recording object store url for streamID url=%s err=%v", url.String(), err)
+					clog.Errorf(ctx, "Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
 					return nil
 				}
 			}
 
 			// set Detection profile if provided
 			if resp.Detection.Freq != 0 {
-				detectionConfig, err = jsonDetectionToDetectionConfig(resp)
+				detectionConfig, err = jsonDetectionToDetectionConfig(ctx, resp)
 				if err != nil {
-					glog.Errorf("Failed to parse detection config from JSON for streamID url=%s err=%v", url.String(), err)
+					clog.Errorf(ctx, "Failed to parse detection config from JSON for streamID url=%s err=%q", url.String(), err)
 					return nil
 				}
 			}
@@ -304,6 +312,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		if key == "" {
 			key = common.RandomIDGenerator(StreamKeyBytes)
 		}
+		ctx = clog.AddManifestID(ctx, string(mid))
 
 		if os != nil {
 			oss = os.NewSession(string(mid))
@@ -319,7 +328,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 		s.connectionLock.RLock()
 		defer s.connectionLock.RUnlock()
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
-			glog.Errorf("Too many connections for streamID url=%s err=%v", url.String(), err)
+			clog.Errorf(ctx, "Too many connections for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
 		return &core.StreamParameters{
@@ -333,6 +342,7 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 			RecordOS:         ross,
 			Detection:        detectionConfig,
 			VerificationFreq: VerificationFreq,
+			Nonce:            nonce,
 		}
 	}
 }
@@ -366,7 +376,7 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 		return nil, err
 	}
 	if authResp.ManifestID == "" {
-		return nil, errors.New("Empty manifest id not allowed")
+		return nil, errors.New("empty manifest id not allowed")
 	}
 	took := time.Since(started)
 	glog.Infof("Stream authentication for url=%s dur=%s", url, took)
@@ -419,7 +429,7 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 	return profiles, nil
 }
 
-func jsonDetectionToDetectionConfig(resp *authWebhookResponse) (core.DetectionConfig, error) {
+func jsonDetectionToDetectionConfig(ctx context.Context, resp *authWebhookResponse) (core.DetectionConfig, error) {
 	detection := core.DetectionConfig{
 		Freq:               resp.Detection.Freq,
 		SelectedClassNames: []string{},
@@ -440,7 +450,7 @@ func jsonDetectionToDetectionConfig(resp *authWebhookResponse) (core.DetectionCo
 		c.SampleRate = resp.Detection.SampleRate
 		detection.Profiles = append(detection.Profiles, &c)
 	}
-	glog.V(common.DEBUG).Infof("Configuring detection for classes=%v with segment freq=%v and frame sampleRate=%v",
+	clog.V(common.DEBUG).Infof(ctx, "Configuring detection for classes=%v with segment freq=%v and frame sampleRate=%v",
 		detection.SelectedClassNames, detection.Freq, resp.Detection.SampleRate)
 	return detection, nil
 }
@@ -457,7 +467,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(rtmpStrm)
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm)
 		if err != nil {
 			return err
 		}
@@ -516,7 +526,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		}
 
 		//Remove RTMP stream
-		err := removeRTMPStream(s, params.ManifestID)
+		err := removeRTMPStream(context.Background(), s, params.ManifestID)
 		if err != nil {
 			return err
 		}
@@ -524,9 +534,8 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
-	nonce := rand.Uint64()
-
+func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream) (*rtmpConnection, error) {
+	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
 	if params == nil {
@@ -534,7 +543,7 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 	}
 	mid := params.ManifestID
 	if drivers.NodeStorage == nil {
-		glog.Error("Missing node storage")
+		clog.Errorf(ctx, "Missing node storage")
 		return nil, errStorage
 	}
 	// Build the source video profile from the RTMP stream.
@@ -579,14 +588,13 @@ func (s *LivepeerServer) registerConnection(rtmpStrm stream.RTMPVideoStream) (*r
 		return NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)
 	}
 	cxn := &rtmpConnection{
-		mid:     mid,
-		nonce:   nonce,
-		stream:  rtmpStrm,
-		pl:      playlist,
-		profile: &vProfile,
-		params:  params,
-		// sessManager: NewSessionManager(s.LivepeerNode, params, NewMinLSSelector(stakeRdr, 1.0)),
-		sessManager: NewSessionManager(s.LivepeerNode, params, selFactory),
+		mid:         mid,
+		nonce:       params.Nonce,
+		stream:      rtmpStrm,
+		pl:          playlist,
+		profile:     &vProfile,
+		params:      params,
+		sessManager: NewSessionManager(ctx, s.LivepeerNode, params, selFactory),
 		lastUsed:    time.Now(),
 	}
 
@@ -628,7 +636,7 @@ func countStreamsWithFastVerificationEnabled(rtmpConnections map[core.ManifestID
 	return enabled, using
 }
 
-func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
+func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.ManifestID) error {
 	s.connectionLock.Lock()
 	defer s.connectionLock.Unlock()
 	intmid := extmid
@@ -639,18 +647,18 @@ func removeRTMPStream(s *LivepeerServer, extmid core.ManifestID) error {
 	}
 	cxn, ok := s.rtmpConnections[intmid]
 	if !ok || cxn.pl == nil {
-		glog.Warningf("Attempted to end unknown stream with manifestID=%s", extmid)
+		clog.Warningf(ctx, "Attempted to end unknown stream with manifestID=%s", extmid)
 		return errUnknownStream
 	}
 	cxn.stream.Close()
 	cxn.sessManager.cleanup()
 	cxn.pl.Cleanup()
-	glog.Infof("Ended stream with manifestID=%s external manifestID=%s", intmid, extmid)
+	clog.Infof(ctx, "Ended stream with manifestID=%s external manifestID=%s", intmid, extmid)
 	delete(s.rtmpConnections, intmid)
 	delete(s.internalManifests, extmid)
 
 	if monitor.Enabled {
-		monitor.StreamEnded(cxn.nonce)
+		monitor.StreamEnded(ctx, cxn.nonce)
 		monitor.CurrentSessions(len(s.rtmpConnections))
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
 	}
@@ -794,11 +802,16 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, httpErr, http.StatusBadRequest)
 		return
 	}
-	glog.Infof("Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+	ctx := r.Context()
+	mid := parseManifestID(r.URL.Path)
+	if mid != "" {
+		ctx = clog.AddManifestID(ctx, string(mid))
+	}
+
+	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
 		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
 
 	now := time.Now()
-	mid := parseManifestID(r.URL.Path)
 	if mid == "" {
 		httpErr := fmt.Sprintf("Bad URL url=%s", r.URL)
 		glog.Error(httpErr)
@@ -815,18 +828,20 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
 	}
 	s.connectionLock.RUnlock()
+	ctx = clog.AddManifestID(ctx, string(mid))
 	if exists && cxn != nil {
 		s.connectionLock.Lock()
 		cxn.lastUsed = now
 		s.connectionLock.Unlock()
+		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
-		appData := (createRTMPStreamIDHandler(s))(r.URL)
+		appData := (createRTMPStreamIDHandler(ctx, s))(r.URL)
 		if appData == nil {
 			httpErr := fmt.Sprintf("Could not create stream ID: url=%s", r.URL)
-			glog.Error(httpErr)
+			clog.Errorf(ctx, httpErr)
 			http.Error(w, httpErr, http.StatusInternalServerError)
 			return
 		}
@@ -847,9 +862,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			if oldStreamID != "" && mid != oldStreamID {
 				// Close the old connection, and open a new one
 				// TODO try to re-use old HLS playlist?
-				glog.Warningf("Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
+				clog.Warningf(ctx, "Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
 					oldStreamID, mid, params.ManifestID)
-				removeRTMPStream(s, oldStreamID)
+				removeRTMPStream(ctx, s, oldStreamID)
 			}
 		} else {
 			s.connectionLock.RUnlock()
@@ -862,12 +877,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(st)
+		cxn, err = s.registerConnection(ctx, st)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
-				httpErr := fmt.Sprintf("http push error url=%s err=%v", r.URL, err)
-				glog.Error(httpErr)
+				httpErr := fmt.Sprintf("http push error url=%s err=%q", r.URL, err)
+				clog.Errorf(ctx, httpErr)
 				http.Error(w, httpErr, http.StatusInternalServerError)
 				return
 			} // else we continue with the old cxn
@@ -884,12 +899,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					}
 					if _, exists := s.internalManifests[extmid]; !exists && intmid != extmid {
 						s.connectionLock.RUnlock()
-						glog.Warningf("Watchdog tried closing session for streamID=%s, which was already closed", extmid)
+						clog.Warningf(ctx, "Watchdog tried closing session for streamID=%s, which was already closed", extmid)
 						return
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {
-						_ = removeRTMPStream(s, extmid)
+						_ = removeRTMPStream(ctx, s, extmid)
 						return
 					}
 				}
@@ -905,8 +920,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			mid = cxn.mid
 		}
 	}
+	ctx = clog.AddManifestID(ctx, string(mid))
 	defer func(now time.Time) {
-		glog.Infof("Finished push request at url=%s ua=%s addr=%s len=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+		clog.Infof(ctx, "Finished push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
 			r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), time.Since(now))
 	}(now)
 
@@ -915,6 +931,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		seq = 0
 	}
+	ctx = clog.AddSeqNo(ctx, seq)
 
 	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
 	if err != nil {
@@ -940,7 +957,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				cancel()
 				return
 			case <-tick.Done():
-				glog.V(common.VERBOSE).Infof("watchdog reset manifestID=%s seq=%d dur=%v started=%v", mid, seq, duration, now)
+				clog.V(common.VERBOSE).Infof(ctx, "watchdog reset seq=%d dur=%v started=%v", seq, duration, now)
 				s.connectionLock.RLock()
 				if cxn, exists := s.rtmpConnections[mid]; exists {
 					cxn.lastUsed = time.Now()
@@ -951,10 +968,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Do the transcoding!
-	urls, err := processSegment(r.Context(), cxn, seg)
+	urls, err := processSegment(ctx, cxn, seg)
 	if err != nil {
-		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%v", r.URL, mid, err)
-		glog.Error(httpErr)
+		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
+		clog.Errorf(ctx, httpErr)
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
 			status = http.StatusUnprocessableEntity
@@ -972,8 +989,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
-		glog.Infof("No sessions available for manifestID=%s seqNo=%d name=%s url=%s", mid, seq, fname, r.URL)
-		glog.Errorf("No sessions available for manifestID=%s seqNo=%d name=%s url=%s", mid, seq, fname, r.URL)
+		clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
@@ -988,7 +1004,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	glog.Infof("Finished transcoding push request at url=%s manifestID=%s seqNo=%d took=%s", r.URL.String(), mid, seq, time.Since(now))
+	clog.Infof(ctx, "Finished transcoding push request at url=%s took=%s", r.URL.String(), time.Since(now))
 
 	boundary := common.RandName()
 	accept := r.Header.Get("Accept")
@@ -1015,12 +1031,12 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			format := cxn.params.Profiles[i].Format
 			ext, err = common.ProfileFormatExtension(format)
 			if err != nil {
-				glog.Error("Unknown extension for format: ", err)
+				clog.Errorf(ctx, "Unknown extension for format err=%q", err)
 				break
 			}
 			typ, err = common.ProfileFormatMimeType(format)
 			if err != nil {
-				glog.Errorf("Unknown mime type for format url=%s manifestID=%s err=%v ", r.URL, mid, err)
+				clog.Errorf(ctx, "Unknown mime type for format url=%s err=%q ", r.URL, err)
 			}
 		}
 		profile := cxn.params.Profiles[i].Name
@@ -1033,7 +1049,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 		fw, err = mw.CreatePart(hdrs)
 		if err != nil {
-			glog.Error("Could not create multipart part ", err)
+			clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 			break
 		}
 		if len(renditionData[i]) > 0 {
@@ -1052,7 +1068,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		err = mw.Close()
 	}
 	if err != nil {
-		glog.Errorf("Error sending transcoded response url=%s err=%v", r.URL.String(), err)
+		clog.Errorf(ctx, "Error sending transcoded response url=%s err=%q", r.URL.String(), err)
 		if monitor.Enabled {
 			monitor.HTTPClientTimedOut2()
 		}
@@ -1136,7 +1152,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 
 	or, ow, err := os.Pipe()
 	if err != nil {
-		glog.Errorf("Error creating pipe manifestID=%s err=%v", manifestID, err)
+		glog.Errorf("Error creating pipe manifestID=%s err=%q", manifestID, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -1146,7 +1162,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		var err2 error
 		resultBytesSent, err2 = io.Copy(w, or)
 		if err2 != nil {
-			glog.Errorf("Error transmuxing to mp4 request=%s manifestID=%s err=%v", r.URL.String(), manifestID, err2)
+			glog.Errorf("Error transmuxing to mp4 request=%s manifestID=%s err=%q", r.URL.String(), manifestID, err2)
 		}
 		or.Close()
 		done <- struct{}{}
@@ -1184,7 +1200,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 
 		ir, iw, err := os.Pipe()
 		if err != nil {
-			glog.Errorf("Error creating pipe manifestID=%s err=%v", manifestID, err)
+			glog.Errorf("Error creating pipe manifestID=%s err=%q", manifestID, err)
 			return
 		}
 		fname := fmt.Sprintf("pipe:%d", ir.Fd())
@@ -1195,7 +1211,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			glog.V(common.VERBOSE).Infof("Adding manifestID=%s track=%s uri=%s to mp4", manifestID, track, segUri)
 			resp, err := http.Get(segUri)
 			if err != nil {
-				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%v", segUri, manifestID, err)
+				glog.Errorf("Error getting HTTP uri=%s manifestID=%s err=%q", segUri, manifestID, err)
 				return
 			}
 			defer resp.Body.Close()
@@ -1205,7 +1221,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			}
 			wn, err := io.Copy(iw, resp.Body)
 			if err != nil {
-				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), segUri, manifestID, err)
+				glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%q", r.URL.String(), segUri, manifestID, err)
 			}
 			atomic.AddInt64(&sourceBytesSent, wn)
 		}(seg.URI, iw)
@@ -1213,7 +1229,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 		_, err = tc.Transcode(in, out)
 		ir.Close()
 		if err != nil {
-			glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%v", r.URL.String(), seg.URI, manifestID, err)
+			glog.Errorf("Error transmuxing to mp4 request=%s uri=%s manifestID=%s err=%q", r.URL.String(), seg.URI, manifestID, err)
 			return
 		}
 	}
@@ -1264,7 +1280,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		resp = cresp.(*authWebhookResponse)
 		fromCache = true
 	} else if resp, err = authenticateStream(r.URL.String()); err != nil {
-		glog.Errorf("Authentication denied for url=%s err=%v", r.URL.String(), err)
+		glog.Errorf("Authentication denied for url=%s err=%q", r.URL.String(), err)
 		if strings.Contains(err.Error(), "not found") {
 			w.WriteHeader(http.StatusNotFound)
 		} else {
@@ -1277,11 +1293,12 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if resp != nil && !fromCache {
 		s.recordingsAuthResponses.SetDefault(manifestID, resp)
 	}
+	ctx = clog.AddManifestID(ctx, manifestID)
 
 	if resp != nil && resp.RecordObjectStore != "" {
 		os, err := drivers.ParseOSURL(resp.RecordObjectStore, true)
 		if err != nil {
-			glog.Errorf("Error parsing OS URL err=%v request url=%s", err, r.URL)
+			clog.Errorf(ctx, "Error parsing OS URL err=%q request url=%s", err, r.URL)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -1289,7 +1306,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	} else if drivers.RecordStorage != nil {
 		sess = drivers.RecordStorage.NewSession(manifestID)
 	} else {
-		glog.Errorf("No record object store defined for request url=%s", r.URL)
+		clog.Errorf(ctx, "No record object store defined for request url=%s", r.URL)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -1315,7 +1332,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		startWrite := time.Now()
 		io.Copy(w, fi.Body)
 		fi.Body.Close()
-		glog.V(common.VERBOSE).Infof("request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(startWrite), time.Since(startRead))
+		clog.V(common.VERBOSE).Infof(ctx, "request url=%s streaming filename=%s took=%s from_read_took=%s", r.URL.String(), requestFileName, time.Since(startWrite), time.Since(startRead))
 		return
 	}
 	var manifests []string
@@ -1326,11 +1343,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	}
 	jsonFilesMap, jsonFiles, latestPlaylistTime, err := getPlaylistsFromStore(ctx, sess, manifests)
 	if err != nil {
-		glog.Error(err)
+		clog.Errorf(ctx, "Error getting playlist from store err=%q", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	glog.V(common.VERBOSE).Infof("request url=%s found json files: %+v", r.URL, jsonFiles)
+	clog.V(common.VERBOSE).Infof(ctx, "request url=%s found json files: %+v", r.URL, jsonFiles)
 
 	if len(jsonFiles) == 0 {
 		w.WriteHeader(http.StatusNotFound)
@@ -1343,11 +1360,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	now1 := time.Now()
 	_, datas, err := drivers.ParallelReadFiles(ctx, sess, jsonFiles, 16)
 	if err != nil {
-		glog.Error(err)
+		clog.Errorf(ctx, "Error reading files from store err=%q", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	glog.V(common.VERBOSE).Infof("Finished reading num=%d playlist files for manifestID=%s took=%s", len(jsonFiles), manifestID, time.Since(now1))
+	clog.V(common.VERBOSE).Infof(ctx, "Finished reading num=%d playlist files for took=%s", len(jsonFiles), time.Since(now1))
 
 	var jsonPlaylists []*core.JsonPlaylist
 	for _, manifestID := range manifests {
@@ -1361,7 +1378,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			jspl := &core.JsonPlaylist{}
 			err = json.Unmarshal(datas[i], jspl)
 			if err != nil {
-				glog.Error(err)
+				clog.Errorf(ctx, "Error unmarshalling json playlist err=%q", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
@@ -1408,7 +1425,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		segments := mainJspl.Segments[track.Name]
 		mpl, err := m3u8.NewMediaPlaylist(uint(len(segments)), uint(len(segments)))
 		if err != nil {
-			glog.Error(err)
+			clog.Errorf(ctx, "err=%q", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -1424,26 +1441,26 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	default:
 	}
-	glog.V(common.VERBOSE).Infof("Playlist generation for manifestID=%s took=%s", manifestID, time.Since(now1))
+	clog.V(common.VERBOSE).Infof(ctx, "Playlist generation for took=%s", time.Since(now1))
 	if finalize {
 		for trackName := range mainJspl.Segments {
 			mpl := mediaLists[trackName]
 			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
-			_, err = sess.SaveData(fileName, mpl.Encode().Bytes(), nil, 0)
-			glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", fileName, manifestID, time.Since(nows))
+			_, err = sess.SaveData(ctx, fileName, mpl.Encode().Bytes(), nil, 0)
+			clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", fileName, time.Since(nows))
 			if err != nil {
-				glog.Error(err)
+				clog.Errorf(ctx, "Error saving finalized json playlist to store err=%q", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 		}
 		nows := time.Now()
-		_, err = sess.SaveData("index.m3u8", masterPList.Encode().Bytes(), nil, 0)
-		glog.V(common.VERBOSE).Infof("Saving playlist fileName=%s for manifestID=%s took=%s", "index.m3u8", manifestID, time.Since(nows))
+		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode().Bytes(), nil, 0)
+		clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", "index.m3u8", time.Since(nows))
 		if err != nil {
-			glog.Error(err)
+			clog.Errorf(ctx, "Error saving playlist to store err=%q", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -1455,7 +1472,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			startSeq := mpl.Segments[0].SeqId
 			for _, seg := range mpl.Segments[1:] {
 				if seg.SeqId != startSeq+1 {
-					glog.Infof("prev seq is %d but next is %d", startSeq, seg.SeqId)
+					clog.Infof(ctx, "prev seq is %d but next is %d", startSeq, seg.SeqId)
 				}
 				startSeq = seg.SeqId
 			}

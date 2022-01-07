@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 
 	"contrib.go.opencensus.io/exporter/prometheus"
 	rprom "github.com/prometheus/client_golang/prometheus"
@@ -1004,7 +1005,7 @@ func FastVerificationEnabledAndUsingCurrentSessions(enabled, using int) {
 	stats.Record(census.ctx, census.mFastVerificationEnabledCurrentSessions.M(int64(enabled)), census.mFastVerificationUsingCurrentSessions.M(int64(using)))
 }
 
-func TranscodeTry(nonce, seqNo uint64) {
+func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	if av, ok := census.success[nonce]; ok {
@@ -1029,7 +1030,7 @@ func TranscodeTry(nonce, seqNo uint64) {
 		} else {
 			av.tries[seqNo] = tryData{tries: 1, first: time.Now()}
 		}
-		glog.V(logLevel).Infof("Trying to transcode segment nonce=%d seqNo=%d try=%d", nonce, seqNo, try)
+		clog.V(logLevel).Infof(ctx, "Trying to transcode segment nonce=%d seqNo=%d try=%d", nonce, seqNo, try)
 	}
 }
 
@@ -1041,8 +1042,8 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 	stats.Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
 }
 
-func SegmentEmerged(nonce, seqNo uint64, profilesNum int, dur float64) {
-	glog.V(logLevel).Infof("Logging SegmentEmerged... nonce=%d seqNo=%d duration=%v", nonce, seqNo, dur)
+func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, dur float64) {
+	clog.V(logLevel).Infof(ctx, "Logging SegmentEmerged... duration=%v", dur)
 	if census.nodeType == Broadcaster {
 		census.segmentEmerged(nonce, seqNo, profilesNum)
 	}
@@ -1062,9 +1063,8 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 	stats.Record(cen.ctx, cen.mSegmentEmergedUnprocessed.M(1))
 }
 
-func SourceSegmentAppeared(nonce, seqNo uint64, manifestID, profile string, recordingEnabled bool) {
-	glog.V(logLevel).Infof("Logging SourceSegmentAppeared... nonce=%d manifestID=%s seqNo=%d profile=%s", nonce,
-		manifestID, seqNo, profile)
+func SourceSegmentAppeared(ctx context.Context, nonce, seqNo uint64, manifestID, profile string, recordingEnabled bool) {
+	clog.V(logLevel).Infof(ctx, "Logging SourceSegmentAppeared... profile=%s", profile)
 	census.segmentSourceAppeared(nonce, seqNo, profile, recordingEnabled)
 }
 
@@ -1088,8 +1088,8 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(nonce, seqNo uint64, prof
 	stats.Record(ctx, cen.mSegmentSourceAppeared.M(1))
 }
 
-func SegmentUploaded(nonce, seqNo uint64, uploadDur time.Duration) {
-	glog.V(logLevel).Infof("Logging SegmentUploaded... nonce=%d seqNo=%d dur=%s", nonce, seqNo, uploadDur)
+func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Duration) {
+	clog.V(logLevel).Infof(ctx, "Logging SegmentUploaded... dur=%s", uploadDur)
 	census.segmentUploaded(nonce, seqNo, uploadDur)
 }
 
@@ -1097,8 +1097,8 @@ func (cen *censusMetricsCounter) segmentUploaded(nonce, seqNo uint64, uploadDur 
 	stats.Record(cen.ctx, cen.mSegmentUploaded.M(1), cen.mUploadTime.M(uploadDur.Seconds()))
 }
 
-func SegmentDownloaded(nonce, seqNo uint64, downloadDur time.Duration) {
-	glog.V(logLevel).Infof("Logging SegmentDownloaded... nonce=%d seqNo=%d dur=%s", nonce, seqNo, downloadDur)
+func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur time.Duration) {
+	clog.V(logLevel).Infof(ctx, "Logging SegmentDownloaded... dur=%s", downloadDur)
 	census.segmentDownloaded(nonce, seqNo, downloadDur)
 }
 
@@ -1141,7 +1141,7 @@ func (cen *censusMetricsCounter) authWebhookFinished(dur time.Duration) {
 	stats.Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
 }
 
-func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, err error, permanent bool) {
+func SegmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentUploadError, err error, permanent bool) {
 	if code == SegmentUploadErrorUnknown {
 		reason := err.Error()
 		var timedout bool
@@ -1156,7 +1156,7 @@ func SegmentUploadFailed(nonce, seqNo uint64, code SegmentUploadError, err error
 			code = SegmentUploadErrorSessionEnded
 		}
 	}
-	glog.Errorf("Logging SegmentUploadFailed... code=%v reason='%s'", code, err.Error())
+	clog.Errorf(ctx, "Logging SegmentUploadFailed... code=%v reason='%s'", code, err.Error())
 
 	census.segmentUploadFailed(nonce, seqNo, code, permanent)
 }
@@ -1180,10 +1180,10 @@ func (cen *censusMetricsCounter) segmentUploadFailed(nonce, seqNo uint64, code S
 	}
 }
 
-func SegmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string,
+func SegmentTranscoded(ctx context.Context, nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string,
 	trusted, verified bool) {
 
-	glog.V(logLevel).Infof("Logging SegmentTranscode nonce=%d seqNo=%d dur=%s trusted=%v verified=%v", nonce, seqNo, transcodeDur, trusted, verified)
+	clog.V(logLevel).Infof(ctx, "Logging SegmentTranscode nonce=%d seqNo=%d dur=%s trusted=%v verified=%v", nonce, seqNo, transcodeDur, trusted, verified)
 	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles, trusted, verified)
 }
 
@@ -1208,8 +1208,8 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDu
 	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()), cen.mTranscodeScore.M(sourceDur.Seconds()/transcodeDur.Seconds()))
 }
 
-func SegmentTranscodeFailed(subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
-	glog.Errorf("Logging SegmentTranscodeFailed subtype=%v nonce=%d seqNo=%d error='%s'", subType, nonce, seqNo, err.Error())
+func SegmentTranscodeFailed(ctx context.Context, subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
+	clog.Errorf(ctx, "Logging SegmentTranscodeFailed subtype=%v err=%q", subType, err.Error())
 	census.segmentTranscodeFailed(nonce, seqNo, subType, permanent)
 }
 
@@ -1290,15 +1290,15 @@ func RecordingSegmentSaved(dur time.Duration, err error) {
 	}
 }
 
-func TranscodedSegmentAppeared(nonce, seqNo uint64, profile string, recordingEnabled bool) {
-	glog.V(logLevel).Infof("Logging LogTranscodedSegmentAppeared... nonce=%d seqNo=%d profile=%s", nonce, seqNo, profile)
-	census.segmentTranscodedAppeared(nonce, seqNo, profile, recordingEnabled)
+func TranscodedSegmentAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
+	clog.V(logLevel).Infof(ctx, "Logging LogTranscodedSegmentAppeared... profile=%s", profile)
+	census.segmentTranscodedAppeared(ctx, nonce, seqNo, profile, recordingEnabled)
 }
 
-func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, profile string, recordingEnabled bool) {
+func (cen *censusMetricsCounter) segmentTranscodedAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kProfile, profile))
+	ctx, err := tag.New(clog.Clone(cen.ctx, ctx), tag.Insert(cen.kProfile, profile))
 	if err != nil {
 		glog.Error("Error creating context", err)
 		return
@@ -1307,7 +1307,7 @@ func (cen *censusMetricsCounter) segmentTranscodedAppeared(nonce, seqNo uint64, 
 	// cen.transcodedSegments[nonce] = cen.transcodedSegments[nonce] + 1
 	if st, ok := cen.emergeTimes[nonce][seqNo]; ok {
 		latency := time.Since(st)
-		glog.V(logLevel).Infof("Recording latency for segment nonce=%d seqNo=%d profile=%s latency=%s", nonce, seqNo, profile, latency)
+		clog.V(logLevel).Infof(ctx, "Recording latency for segment profile=%s latency=%s", profile, latency)
 		stats.Record(ctx, cen.mTranscodeLatency.M(latency.Seconds()))
 	}
 
@@ -1364,8 +1364,8 @@ func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
 	stats.Record(cen.ctx, cen.mStreamStarted.M(1))
 }
 
-func StreamEnded(nonce uint64) {
-	glog.V(logLevel).Infof("Logging StreamEnded... nonce=%d", nonce)
+func StreamEnded(ctx context.Context, nonce uint64) {
+	clog.V(logLevel).Infof(ctx, "Logging StreamEnded... nonce=%d", nonce)
 	census.streamEnded(nonce)
 }
 

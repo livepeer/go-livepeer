@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
 	"math/big"
 	"net/url"
@@ -74,7 +75,7 @@ type OrchestratorPool interface {
 	// GetInfo gets info for specific orchestrator
 	GetInfo(uri string) OrchestratorLocalInfo
 	GetInfos() []OrchestratorLocalInfo
-	GetOrchestrators(int, Suspender, CapabilityComparator, ScorePred) ([]*net.OrchestratorInfo, error)
+	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) ([]*net.OrchestratorInfo, error)
 	Size() int
 	SizeWith(ScorePred) int
 }

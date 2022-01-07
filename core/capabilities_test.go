@@ -282,7 +282,7 @@ func (os *stubOS) GetInfo() *net.OSInfo {
 	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
 }
 func (os *stubOS) EndSession() {}
-func (os *stubOS) SaveData(string, []byte, map[string]string, time.Duration) (string, error) {
+func (os *stubOS) SaveData(context.Context, string, []byte, map[string]string, time.Duration) (string, error) {
 	return "", nil
 }
 func (os *stubOS) IsExternal() bool      { return false }

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -62,7 +62,7 @@ type PageInfo interface {
 type OSSession interface {
 	OS() OSDriver
 
-	SaveData(name string, data []byte, meta map[string]string, timeout time.Duration) (string, error)
+	SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC
@@ -94,8 +94,8 @@ func NewSession(info *net.OSInfo) OSSession {
 	return nil
 }
 
-func GetSegmentData(uri string) ([]byte, error) {
-	return getSegmentDataHTTP(uri)
+func GetSegmentData(ctx context.Context, uri string) ([]byte, error) {
+	return getSegmentDataHTTP(ctx, uri)
 }
 
 // PrepareOSURL used for resolving files when necessary and turning into a URL. Don't use
@@ -185,14 +185,14 @@ func ParseOSURL(input string, useFullAPI bool) (OSDriver, error) {
 }
 
 // SaveRetried tries to SaveData specified number of times
-func SaveRetried(sess OSSession, name string, data []byte, meta map[string]string, retryCount int) (string, error) {
+func SaveRetried(ctx context.Context, sess OSSession, name string, data []byte, meta map[string]string, retryCount int) (string, error) {
 	if retryCount < 1 {
 		return "", fmt.Errorf("invalid retry count %d", retryCount)
 	}
 	var uri string
 	var err error
 	for i := 0; i < retryCount; i++ {
-		uri, err = sess.SaveData(name, data, meta, 0)
+		uri, err = sess.SaveData(ctx, name, data, meta, 0)
 		if err == nil {
 			return uri, err
 		}
@@ -205,25 +205,25 @@ var httpc = &http.Client{
 	Timeout:   common.HTTPTimeout / 2,
 }
 
-func getSegmentDataHTTP(uri string) ([]byte, error) {
-	glog.V(common.VERBOSE).Infof("Downloading uri=%s", uri)
+func getSegmentDataHTTP(ctx context.Context, uri string) ([]byte, error) {
+	clog.V(common.VERBOSE).Infof(ctx, "Downloading uri=%s", uri)
 	started := time.Now()
 	resp, err := httpc.Get(uri)
 	if err != nil {
-		glog.Errorf("Error getting HTTP uri=%s err=%v", uri, err)
+		clog.Errorf(ctx, "Error getting HTTP uri=%s err=%q", uri, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		glog.Errorf("Non-200 response for status=%v uri=%s", resp.Status, uri)
+		clog.Errorf(ctx, "Non-200 response for status=%v uri=%s", resp.Status, uri)
 		return nil, fmt.Errorf(resp.Status)
 	}
 	body, err := common.ReadAtMost(resp.Body, common.MaxSegSize)
 	if err != nil {
-		glog.Errorf("Error reading body uri=%s err=%v", uri, err)
+		clog.Errorf(ctx, "Error reading body uri=%s err=%q", uri, err)
 		return nil, err
 	}
 	took := time.Since(started)
-	glog.V(common.VERBOSE).Infof("Downloaded uri=%s took=%s bytes=%d", uri, took, len(body))
+	clog.V(common.VERBOSE).Infof(ctx, "Downloaded uri=%s dur=%s bytes=%d", uri, took, len(body))
 	return body, nil
 }

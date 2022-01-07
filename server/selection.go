@@ -2,10 +2,11 @@ package server
 
 import (
 	"container/heap"
+	"context"
 	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 )
 
@@ -13,7 +14,7 @@ import (
 type BroadcastSessionsSelector interface {
 	Add(sessions []*BroadcastSession)
 	Complete(sess *BroadcastSession)
-	Select() *BroadcastSession
+	Select(ctx context.Context) *BroadcastSession
 	Size() int
 	Clear()
 }
@@ -130,15 +131,15 @@ func (s *MinLSSelector) Complete(sess *BroadcastSession) {
 
 // Select returns the session with the lowest latency score if it is good enough.
 // Otherwise, a session without a latency score yet is returned
-func (s *MinLSSelector) Select() *BroadcastSession {
+func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 	sess := s.knownSessions.Peek()
 	if sess == nil {
-		return s.selectUnknownSession()
+		return s.selectUnknownSession(ctx)
 	}
 
 	minSess := sess.(*BroadcastSession)
 	if minSess.LatencyScore > s.minLS && len(s.unknownSessions) > 0 {
-		return s.selectUnknownSession()
+		return s.selectUnknownSession(ctx)
 	}
 
 	return heap.Pop(s.knownSessions).(*BroadcastSession)
@@ -157,7 +158,7 @@ func (s *MinLSSelector) Clear() {
 }
 
 // Use stake weighted random selection to select from unknownSessions
-func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
+func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 	if len(s.unknownSessions) == 0 {
 		return nil
 	}
@@ -195,7 +196,7 @@ func (s *MinLSSelector) selectUnknownSession() *BroadcastSession {
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	// If we fail to read stake weights of unknownSessions we should not continue with selection
 	if err != nil {
-		glog.Errorf("failed to read stake weights for selection: %v", err)
+		clog.Errorf(ctx, "failed to read stake weights for selection err=%q", err)
 		return nil
 	}
 
@@ -256,7 +257,7 @@ func (s *LIFOSelector) Complete(sess *BroadcastSession) {
 }
 
 // Select returns the last session in the selector's list
-func (s *LIFOSelector) Select() *BroadcastSession {
+func (s *LIFOSelector) Select(ctx context.Context) *BroadcastSession {
 	sessList := *s
 	last := len(sessList) - 1
 	if last < 0 {

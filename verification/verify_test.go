@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"testing"
@@ -339,7 +340,7 @@ func TestVerifyPixels(t *testing.T) {
 	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
 	data, err := ioutil.ReadFile("../server/test.flv")
 	require.Nil(err)
-	fname, err := bos.SaveData("test.ts", data, nil, 0)
+	fname, err := bos.SaveData(context.TODO(), "test.ts", data, nil, 0)
 	require.Nil(err)
 	memOS, ok := bos.(*drivers.MemorySession)
 	require.True(ok)

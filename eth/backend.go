@@ -182,7 +182,7 @@ func makeABIMap() map[string]*abi.ABI {
 	for _, ABI := range abis {
 		parsedAbi, err := abi.JSON(strings.NewReader(ABI))
 		if err != nil {
-			glog.Errorf("Error creating ABI map err=%v", err)
+			glog.Errorf("Error creating ABI map err=%q", err)
 			return map[string]*abi.ABI{}
 		}
 		for _, m := range parsedAbi.Methods {

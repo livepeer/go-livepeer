@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"context"
 	"time"
 
 	"github.com/golang/glog"
@@ -68,7 +69,7 @@ func (oq *OverwriteQueue) workerLoop() {
 				data = oq.getLastMessage(data)
 				glog.V(common.VERBOSE).Infof("Start saving %s name=%s bytes=%d try=%d", oq.desc, oq.name, len(data), try)
 				now := time.Now()
-				_, err = oq.session.SaveData(oq.name, data, nil, timeout)
+				_, err = oq.session.SaveData(context.Background(), oq.name, data, nil, timeout)
 				took := time.Since(now)
 				if err == nil {
 					glog.V(common.VERBOSE).Infof("Saving %s name=%s bytes=%d took=%s try=%d", oq.desc, oq.name,
@@ -81,7 +82,7 @@ func (oq *OverwriteQueue) workerLoop() {
 				}
 			}
 			if err != nil {
-				glog.Errorf("Error saving %s name=%s bytes=%d took=%s try=%d err=%v", oq.desc, oq.name,
+				glog.Errorf("Error saving %s name=%s bytes=%d took=%s try=%d err=%q", oq.desc, oq.name,
 					len(data), took, oq.maxRetries, err)
 			}
 

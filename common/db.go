@@ -766,7 +766,7 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationR
 	)
 	if err := row.Scan(&senderString, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
 		if err.Error() != "sql: no rows in result set" {
-			return nil, fmt.Errorf("could not retrieve earliest ticket err=%v", err)
+			return nil, fmt.Errorf("could not retrieve earliest ticket err=%q", err)
 		}
 		// If there is no result return no error, just nil value
 		return nil, nil
