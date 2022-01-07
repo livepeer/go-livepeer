@@ -1160,6 +1160,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			gprice = nil
 		}
 		s.LivepeerNode.Eth.Backend().GasPriceMonitor().SetMaxGasPrice(gprice)
+		s.LivepeerNode.Eth.SetMaxGasPrice(gprice)
 	})
 
 	mux.Handle("/minGasPrice", minGasPriceHandler(s.LivepeerNode.Eth))
