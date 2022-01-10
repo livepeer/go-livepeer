@@ -75,8 +75,33 @@ if [ ! -e "$ROOT/x264" ]; then
   make install-lib-static
 fi
 
+if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
+  if [ ! -e "$ROOT/x265" ]; then
+    sudo apt-get install -y libnuma-dev cmake
+    git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
+    cd "$ROOT/x265"
+    git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
+    cd build/linux/
+    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
+    make
+    make install
+  fi
+  # VP8/9 support
+  if [ ! -e "$ROOT/libvpx" ]; then
+    git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
+    cd "$ROOT/libvpx"
+    git checkout ab35ee100a38347433af24df05a5e1578172a2ae
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    make
+    make install
+  fi
+fi
+
 EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
+# all flags which should present for production build, but should be replaced/removed for debug build
+DEV_FFMPEG_FLAGS="--disable-programs"
+FFMPEG_MAKE_EXTRA_ARGS=""
 
 if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
@@ -84,14 +109,24 @@ else
   # If we have clang, we can compile with CUDA support!
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
-
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda,signature_cuda --enable-encoder=h264_nvenc"
-
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
     if [[ $BUILD_TAGS == *"experimental"* ]]; then
+        if [ ! -e "/usr/local/lib/libtensorflow_framework.so" ]; then
+          LIBTENSORFLOW_VERSION=2.3.0 \
+          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+        fi
         echo "experimental tag detected, building with Tensorflow support"
         EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
     fi
   fi
+fi
+
+if [[ $BUILD_TAGS == *"debug-video"* ]]; then
+    echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
+    DEV_FFMPEG_FLAGS="--enable-demuxer=hls --enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
+    FFMPEG_MAKE_EXTRA_ARGS="-j4"
 fi
 
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
@@ -99,23 +134,28 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   cd "$ROOT/ffmpeg"
   git checkout 682c4189d8364867bcc49f9749e04b27dc37cded
   ./configure ${TARGET_OS:-} --fatal-warnings \
-    --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
+    --disable-doc --disable-sdl2 --disable-iconv \
     --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
     --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
     --disable-postproc --disable-lzma \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
-    --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
-    --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,extract_extradata \
-    --enable-parser=aac,aac_latm,h264 \
+    --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
+    --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
+    --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,libx264 \
-    --enable-decoder=aac,h264 \
+    --enable-encoder=aac,opus,libx264 \
+    --enable-decoder=aac,opus,h264 \
     --extra-cflags="-I${ROOT}/compiled/include" \
     --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
-    $EXTRA_FFMPEG_FLAGS
-  make
+    $EXTRA_FFMPEG_FLAGS \
+    $DEV_FFMPEG_FLAGS
+fi
+
+if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" || $BUILD_TAGS == *"debug-video"* ]]; then
+  cd "$ROOT/ffmpeg"
+  make $FFMPEG_MAKE_EXTRA_ARGS
   make install
 fi
