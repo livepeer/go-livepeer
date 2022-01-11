@@ -98,6 +98,7 @@ if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
 fi
 
 EXTRA_FFMPEG_FLAGS=""
+DISABLE_FFMPEG_COMPONENTS=""
 EXTRA_LDFLAGS=""
 # all flags which should be present for production build, but should be replaced/removed for debug build
 DEV_FFMPEG_FLAGS="--disable-programs"
@@ -131,15 +132,15 @@ if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
 else
     # disable all unnecessary features for production build
-    EXTRA_FFMPEG_FLAGS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
-    EXTRA_FFMPEG_FLAGS+=" --disable-encoders --disable-decoders --disable-filters --disable-bsfs --disable-postproc --disable-lzma "
+    DISABLE_FFMPEG_COMPONENTS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
+    DISABLE_FFMPEG_COMPONENTS+=" --disable-encoders --disable-decoders --disable-filters --disable-bsfs --disable-postproc --disable-lzma "
 fi
 
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
   git checkout e0eebeeeddf863f72da0232f9dddc05200340560
-  ./configure ${TARGET_OS:-} --fatal-warnings \
+  ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
