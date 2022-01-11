@@ -126,6 +126,7 @@ type (
 		mSourceSegmentDuration        *stats.Float64Measure
 		mHTTPClientTimeout1           *stats.Int64Measure
 		mHTTPClientTimeout2           *stats.Int64Measure
+		mRealtimeRatio                *stats.Float64Measure
 		mRealtime3x                   *stats.Int64Measure
 		mRealtime2x                   *stats.Int64Measure
 		mRealtime1x                   *stats.Int64Measure
@@ -229,6 +230,7 @@ func InitCensus(nodeType NodeType, version string) {
 	}
 	census.mHTTPClientTimeout1 = stats.Int64("http_client_timeout_1", "Number of times HTTP connection was dropped before transcoding complete", "tot")
 	census.mHTTPClientTimeout2 = stats.Int64("http_client_timeout_2", "Number of times HTTP connection was dropped before transcoded segments was sent back to client", "tot")
+	census.mRealtimeRatio = stats.Float64("http_client_segment_transcoded_realtime_ratio", "Ratio of source segment duration / transcode time as measured on HTTP client", "rat")
 	census.mRealtime3x = stats.Int64("http_client_segment_transcoded_realtime_3x", "Number of segment transcoded 3x faster than realtime", "tot")
 	census.mRealtime2x = stats.Int64("http_client_segment_transcoded_realtime_2x", "Number of segment transcoded 2x faster than realtime", "tot")
 	census.mRealtime1x = stats.Int64("http_client_segment_transcoded_realtime_1x", "Number of segment transcoded 1x faster than realtime", "tot")
@@ -377,6 +379,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Number of times HTTP connection was dropped before transcoded segments was sent back to client",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
+		},
+		{
+			Name:        "http_client_segment_transcoded_realtime_ratio",
+			Measure:     census.mRealtimeRatio,
+			Description: "Ratio of source segment duration / transcode time as measured on HTTP client",
+			TagKeys:     baseTags,
+			Aggregation: view.Distribution(0.5, 1, 2, 3, 5, 10, 50, 100),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_3x",
@@ -1118,19 +1127,21 @@ func SegmentFullyProcessed(segDur, processDur float64) {
 	if processDur == 0 {
 		return
 	}
-	xRealtime := processDur / segDur
+	ratio := segDur / processDur
+	var bucketM stats.Measurement
 	switch {
-	case xRealtime < 1.0/3.0:
-		stats.Record(census.ctx, census.mRealtime3x.M(1))
-	case xRealtime < 1.0/2.0:
-		stats.Record(census.ctx, census.mRealtime2x.M(1))
-	case xRealtime < 1.0:
-		stats.Record(census.ctx, census.mRealtime1x.M(1))
-	case xRealtime < 2.0:
-		stats.Record(census.ctx, census.mRealtimeHalf.M(1))
+	case ratio > 3:
+		bucketM = census.mRealtime3x.M(1)
+	case ratio > 2:
+		bucketM = census.mRealtime2x.M(1)
+	case ratio > 1:
+		bucketM = census.mRealtime1x.M(1)
+	case ratio > 0.5:
+		bucketM = census.mRealtimeHalf.M(1)
 	default:
-		stats.Record(census.ctx, census.mRealtimeSlow.M(1))
+		bucketM = census.mRealtimeSlow.M(1)
 	}
+	stats.Record(census.ctx, bucketM, census.mRealtimeRatio.M(ratio))
 }
 
 func AuthWebhookFinished(dur time.Duration) {

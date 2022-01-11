@@ -79,7 +79,7 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	}, 1*time.Second, big.NewInt(0), nil)
 	gpm.gasPrice = big.NewInt(1)
 
-	tm := NewTransactionManager(client, gpm, &stubTransactionSigner{}, 3*time.Second, 0)
+	tm := NewTransactionManager(client, gpm, &accountManager{}, 3*time.Second, 0)
 
 	bi := NewBackend(client, signer, gpm, tm)
 

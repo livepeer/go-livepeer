@@ -799,7 +799,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 
 	// orchestrator inactive -> error
 	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
-	expErr := fmt.Sprintf("orchestrator %v is inactive in round %v, cannot process payments", addr.Hex(), 10)
+	expErr := fmt.Sprintf("orchestrator %v is not eligible for payments in round %v, cannot process payments", addr.Hex(), 10)
 	assert.EqualError(err, expErr)
 
 	// orchestrator is active -> no error
@@ -1190,30 +1190,43 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 	assert.Nil(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
-func TestIsActive(t *testing.T) {
+func TestIsPaymentEligible(t *testing.T) {
 	assert := assert.New(t)
 	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
-		ActivationRound:   1,
+		ActivationRound:   2,
 		DeactivationRound: 999,
 	})
 	defer dbh.Close()
 	defer dbraw.Close()
 
+	// not active yet
 	n, _ := NewLivepeerNode(nil, "", dbh)
 	rm := &stubRoundsManager{
-		round: big.NewInt(10),
+		round: big.NewInt(0),
 	}
 	orch := NewOrchestrator(n, rm)
 
-	ok, err := orch.isActive(addr)
+	ok, err := orch.isPaymentEligible(addr)
+	assert.False(ok)
+	assert.NoError(err)
+
+	// pending activation
+	rm.round = big.NewInt(1)
+	ok, err = orch.isPaymentEligible(addr)
+	assert.True(ok)
+	assert.NoError(err)
+
+	// active
+	rm.round = big.NewInt(10)
+	ok, err = orch.isPaymentEligible(addr)
 	assert.True(ok)
 	assert.NoError(err)
 
 	// inactive
 	rm.round = big.NewInt(1000)
-	ok, err = orch.isActive(addr)
+	ok, err = orch.isPaymentEligible(addr)
 	assert.False(ok)
 	assert.NoError(err)
 }
