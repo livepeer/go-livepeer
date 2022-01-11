@@ -125,8 +125,14 @@ fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
-    DEV_FFMPEG_FLAGS="--enable-demuxer=hls --enable-filter=ssim --enable-encoder=wrapped_avframe,pcm_s16le --enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 --enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx"
+    DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
+    DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
+    DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
     FFMPEG_MAKE_EXTRA_ARGS="-j4"
+else
+    # disable all unnecessary features for production build
+    EXTRA_FFMPEG_FLAGS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
+    EXTRA_FFMPEG_FLAGS+=" --disable-encoders --disable-decoders --disable-filters --disable-bsfs --disable-postproc --disable-lzma "
 fi
 
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
@@ -134,10 +140,6 @@ if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   cd "$ROOT/ffmpeg"
   git checkout 682c4189d8364867bcc49f9749e04b27dc37cded
   ./configure ${TARGET_OS:-} --fatal-warnings \
-    --disable-doc --disable-sdl2 --disable-iconv \
-    --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
-    --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
-    --disable-postproc --disable-lzma \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
