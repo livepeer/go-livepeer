@@ -99,7 +99,7 @@ fi
 
 EXTRA_FFMPEG_FLAGS=""
 EXTRA_LDFLAGS=""
-# all flags which should present for production build, but should be replaced/removed for debug build
+# all flags which should be present for production build, but should be replaced/removed for debug build
 DEV_FFMPEG_FLAGS="--disable-programs"
 FFMPEG_MAKE_EXTRA_ARGS=""
 
