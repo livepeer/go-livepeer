@@ -279,7 +279,9 @@ func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, 
 func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
 func (e *StubClient) ClaimEarnings(endRound *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
