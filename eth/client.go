@@ -71,7 +71,7 @@ type LivepeerEthClient interface {
 	RebondFromUnbonded(toAddr ethcommon.Address, unbondingLockID *big.Int) (*types.Transaction, error)
 	Unbond(amount *big.Int) (*types.Transaction, error)
 	WithdrawStake(unbondingLockID *big.Int) (*types.Transaction, error)
-	WithdrawFees() (*types.Transaction, error)
+	WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
 	ClaimEarnings(endRound *big.Int) (*types.Transaction, error)
 	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
@@ -636,10 +636,11 @@ func (c *client) GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round
 	}
 
 	return &lpTypes.TokenPools{
-		RewardPool:     tp.RewardPool,
-		FeePool:        tp.FeePool,
-		TotalStake:     tp.TotalStake,
-		ClaimableStake: tp.ClaimableStake,
+		TotalStake:             tp.TotalStake,
+		TranscoderRewardCut:    tp.TranscoderRewardCut,
+		TranscoderFeeShare:     tp.TranscoderFeeShare,
+		CumulativeRewardFactor: tp.CumulativeRewardFactor,
+		CumulativeFeeFactor:    tp.CumulativeFeeFactor,
 	}, nil
 }
 

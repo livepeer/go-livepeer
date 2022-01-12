@@ -329,5 +329,15 @@ func (w *wizard) withdrawStake() {
 }
 
 func (w *wizard) withdrawFees() {
-	httpPost(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort))
+	dInfo, err := w.getDelegatorInfo()
+	if err != nil {
+		glog.Errorf("Error getting delegator info: %v", err)
+		return
+	}
+
+	val := url.Values{
+		"amount": {fmt.Sprintf("%v", dInfo.PendingFees.String())},
+	}
+
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort), val)
 }
