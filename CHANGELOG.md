@@ -1,8 +1,22 @@
 # Changelog
 
+## v0.5.25
+
+*January 12th 2022*
+
+This release adds support for a new L1 Rinkeby contract deployment used for the [Confluence](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md) testnet. **If you are planning on participating in the testnet you should upgrade to this release.** This release does not contain any updates for mainnet.
+
+### Breaking Changes 🚨🚨
+
+- The node will no longer connect with the old L1 Rinkeby contract deployment when the `-network rinkeby` flag is used. Instead the node will connect to the new L1 Rinkeby contract deployment when the `-network rinkeby` flag is used using a new hardcoded Controller contract address at [0x9a9827455911a858E55f07911904fACC0D66027E](https://rinkeby.etherscan.io/address/0x9a9827455911a858E55f07911904fACC0D66027E).
+
+#### General
+
+- [#2177](https://github.com/livepeer/go-livepeer/pull/2177) Update hardcoded Rinkeby Eth Controller Address (@leszko)
+
 ## v0.5.24
 
-*January 5th 2021*
+*January 5th 2022*
 
 This is a fast follow patch release for v0.5.24 to fix a bug that caused orchestrators to return errors right after a transaction is submitted resulting in the previously active streams to be re-routed from the orchestrators. **If you are running an orchestrator you should upgrade to this release as soon as possible.**
 
