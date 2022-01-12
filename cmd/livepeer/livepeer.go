@@ -197,7 +197,7 @@ func main() {
 
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
-			ethController: "0xA268AEa9D048F8d3A592dD7f1821297972D4C8Ea",
+			ethController: "0x9a9827455911a858E55f07911904fACC0D66027E",
 		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
