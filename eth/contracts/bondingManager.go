@@ -30,7 +30,7 @@ var (
 
 // BondingManagerMetaData contains all meta data concerning the BondingManager contract.
 var BondingManagerMetaData = &bind.MetaData{
-	ABI: "[{\"constant\":true,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"name\":\"activeTranscoderSetDEPRECATED\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"totalStake\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"maxEarningsClaimsRounds\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rebondFromUnbondedWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"isActiveTranscoder\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"isValidUnbondingLock\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStatus\",\"outputs\":[{\"internalType\":\"enumBondingManager.DelegatorStatus\",\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"reward\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_finder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_slashAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_finderFee\",\"type\":\"uint256\"}],\"name\":\"slashTranscoder\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getNextTranscoderInPool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"getTranscoderEarningsPoolForRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"rewardPool\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"feePool\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"totalStake\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"claimableStake\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderRewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderFeeShare\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderRewardPool\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderFeePool\",\"type\":\"uint256\"},{\"internalType\":\"bool\",\"name\":\"hasTranscoderRewardFeePool\",\"type\":\"bool\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeRewardFactor\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeFeeFactor\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"claimEarnings\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"withdrawStake\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"unbond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTranscoderPoolSize\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_bondedAmount\",\"type\":\"uint256\"}],\"name\":\"executeLIP77\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_feeShare\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"transcoderWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"rebondFromUnbonded\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_fees\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"updateTranscoderWithFees\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"numActiveTranscodersDEPRECATED\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"getDelegatorUnbondingLock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundTotalActiveStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_feeShare\",\"type\":\"uint256\"}],\"name\":\"transcoder\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"nextRoundTotalActiveStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"withdrawFees\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTranscoderPoolMaxSize\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTotalBonded\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoder\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"lastRewardRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"feeShare\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastActiveStakeUpdateRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"activationRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"deactivationRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"activeCumulativeRewards\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeRewards\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeFees\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastFeeRound\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_numActiveTranscoders\",\"type\":\"uint256\"}],\"name\":\"setNumActiveTranscoders\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"isRegisteredTranscoder\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosNext\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosNext\",\"type\":\"address\"}],\"name\":\"bondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unbondingPeriod\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRoundTotalActiveStake\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_maxEarningsClaimsRounds\",\"type\":\"uint256\"}],\"name\":\"setMaxEarningsClaimsRounds\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rebondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rewardWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getFirstTranscoderInPool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderStatus\",\"outputs\":[{\"internalType\":\"enumBondingManager.TranscoderStatus\",\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"unbondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"pendingStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderTotalStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"bondedAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"fees\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"delegateAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"delegatedAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"startRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastClaimRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"nextUnbondingLockId\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"bond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_pendingStake\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_pendingFees\",\"type\":\"uint256\"},{\"internalType\":\"bytes32[]\",\"name\":\"_earningsProof\",\"type\":\"bytes32[]\"},{\"internalType\":\"bytes\",\"name\":\"_data\",\"type\":\"bytes\"}],\"name\":\"claimSnapshotEarnings\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"rebond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"_unbondingPeriod\",\"type\":\"uint64\"}],\"name\":\"setUnbondingPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"pendingFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"rewardCut\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"feeShare\",\"type\":\"uint256\"}],\"name\":\"TranscoderUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"activationRound\",\"type\":\"uint256\"}],\"name\":\"TranscoderActivated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"deactivationRound\",\"type\":\"uint256\"}],\"name\":\"TranscoderDeactivated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"finder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"penalty\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"finderReward\",\"type\":\"uint256\"}],\"name\":\"TranscoderSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Reward\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newDelegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldDelegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"additionalAmount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"bondedAmount\",\"type\":\"uint256\"}],\"name\":\"Bond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"name\":\"Unbond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Rebond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"name\":\"WithdrawStake\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"}],\"name\":\"WithdrawFees\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"rewards\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"fees\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"startRound\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"endRound\",\"type\":\"uint256\"}],\"name\":\"EarningsClaimed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]",
+	ABI: "[{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rebondFromUnbondedWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosNext\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newDelegateNewPosNext\",\"type\":\"address\"}],\"name\":\"transferBond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"isActiveTranscoder\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"isValidUnbondingLock\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"delegatorStatus\",\"outputs\":[{\"internalType\":\"enumBondingManager.DelegatorStatus\",\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"reward\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_finder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_slashAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_finderFee\",\"type\":\"uint256\"}],\"name\":\"slashTranscoder\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getNextTranscoderInPool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"getTranscoderEarningsPoolForRound\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"totalStake\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderRewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"transcoderFeeShare\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeRewardFactor\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeFeeFactor\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"claimEarnings\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"withdrawStake\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"unbond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTranscoderPoolSize\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_feeShare\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"transcoderWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"rebondFromUnbonded\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_fees\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_round\",\"type\":\"uint256\"}],\"name\":\"updateTranscoderWithFees\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"getDelegatorUnbondingLock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"currentRoundTotalActiveStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_feeShare\",\"type\":\"uint256\"}],\"name\":\"transcoder\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"nextRoundTotalActiveStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"targetContractId\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTranscoderPoolMaxSize\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getTotalBonded\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"getTranscoder\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"lastRewardRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"rewardCut\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"feeShare\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastActiveStakeUpdateRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"activationRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"deactivationRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"activeCumulativeRewards\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeRewards\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"cumulativeFees\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastFeeRound\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_numActiveTranscoders\",\"type\":\"uint256\"}],\"name\":\"setNumActiveTranscoders\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"isRegisteredTranscoder\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosNext\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosNext\",\"type\":\"address\"}],\"name\":\"bondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"unbondingPeriod\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"setCurrentRoundTotalActiveStake\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rebondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"rewardWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"getFirstTranscoderInPool\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderStatus\",\"outputs\":[{\"internalType\":\"enumBondingManager.TranscoderStatus\",\"name\":\"\",\"type\":\"uint8\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"setController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_newPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_newPosNext\",\"type\":\"address\"}],\"name\":\"unbondWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"pendingStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_transcoder\",\"type\":\"address\"}],\"name\":\"transcoderTotalStake\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"}],\"name\":\"getDelegator\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"bondedAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"fees\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"delegateAddress\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"delegatedAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"startRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lastClaimRound\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"nextUnbondingLockId\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"addresspayable\",\"name\":\"_recipient\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"}],\"name\":\"withdrawFees\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"}],\"name\":\"bond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_unbondingLockId\",\"type\":\"uint256\"}],\"name\":\"rebond\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_amount\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"_owner\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_to\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_oldDelegateNewPosNext\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosPrev\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"_currDelegateNewPosNext\",\"type\":\"address\"}],\"name\":\"bondForWithHint\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"_unbondingPeriod\",\"type\":\"uint64\"}],\"name\":\"setUnbondingPeriod\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"address\",\"name\":\"_delegator\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"_endRound\",\"type\":\"uint256\"}],\"name\":\"pendingFees\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"controller\",\"outputs\":[{\"internalType\":\"contractIController\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"rewardCut\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"feeShare\",\"type\":\"uint256\"}],\"name\":\"TranscoderUpdate\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"activationRound\",\"type\":\"uint256\"}],\"name\":\"TranscoderActivated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"deactivationRound\",\"type\":\"uint256\"}],\"name\":\"TranscoderDeactivated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"finder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"penalty\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"finderReward\",\"type\":\"uint256\"}],\"name\":\"TranscoderSlashed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"transcoder\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Reward\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newDelegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"oldDelegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"additionalAmount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"bondedAmount\",\"type\":\"uint256\"}],\"name\":\"Bond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"name\":\"Unbond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"Rebond\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"unbondingLockId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"withdrawRound\",\"type\":\"uint256\"}],\"name\":\"WithdrawStake\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"}],\"name\":\"WithdrawFees\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegate\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"delegator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"rewards\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"fees\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"startRound\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"endRound\",\"type\":\"uint256\"}],\"name\":\"EarningsClaimed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"controller\",\"type\":\"address\"}],\"name\":\"SetController\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"string\",\"name\":\"param\",\"type\":\"string\"}],\"name\":\"ParameterUpdate\",\"type\":\"event\"}]",
 }
 
 // BondingManagerABI is the input ABI used to generate the binding from.
@@ -177,37 +177,6 @@ func (_BondingManager *BondingManagerTransactorRaw) Transfer(opts *bind.Transact
 // Transact invokes the (paid) contract method with params as input values.
 func (_BondingManager *BondingManagerTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _BondingManager.Contract.contract.Transact(opts, method, params...)
-}
-
-// ActiveTranscoderSetDEPRECATED is a free data retrieval call binding the contract method 0x014ee259.
-//
-// Solidity: function activeTranscoderSetDEPRECATED(uint256 ) view returns(uint256 totalStake)
-func (_BondingManager *BondingManagerCaller) ActiveTranscoderSetDEPRECATED(opts *bind.CallOpts, arg0 *big.Int) (*big.Int, error) {
-	var out []interface{}
-	err := _BondingManager.contract.Call(opts, &out, "activeTranscoderSetDEPRECATED", arg0)
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// ActiveTranscoderSetDEPRECATED is a free data retrieval call binding the contract method 0x014ee259.
-//
-// Solidity: function activeTranscoderSetDEPRECATED(uint256 ) view returns(uint256 totalStake)
-func (_BondingManager *BondingManagerSession) ActiveTranscoderSetDEPRECATED(arg0 *big.Int) (*big.Int, error) {
-	return _BondingManager.Contract.ActiveTranscoderSetDEPRECATED(&_BondingManager.CallOpts, arg0)
-}
-
-// ActiveTranscoderSetDEPRECATED is a free data retrieval call binding the contract method 0x014ee259.
-//
-// Solidity: function activeTranscoderSetDEPRECATED(uint256 ) view returns(uint256 totalStake)
-func (_BondingManager *BondingManagerCallerSession) ActiveTranscoderSetDEPRECATED(arg0 *big.Int) (*big.Int, error) {
-	return _BondingManager.Contract.ActiveTranscoderSetDEPRECATED(&_BondingManager.CallOpts, arg0)
 }
 
 // Controller is a free data retrieval call binding the contract method 0xf77c4791.
@@ -598,51 +567,33 @@ func (_BondingManager *BondingManagerCallerSession) GetTranscoder(_transcoder co
 
 // GetTranscoderEarningsPoolForRound is a free data retrieval call binding the contract method 0x24454fc4.
 //
-// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 rewardPool, uint256 feePool, uint256 totalStake, uint256 claimableStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 transcoderRewardPool, uint256 transcoderFeePool, bool hasTranscoderRewardFeePool, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
+// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 totalStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
 func (_BondingManager *BondingManagerCaller) GetTranscoderEarningsPoolForRound(opts *bind.CallOpts, _transcoder common.Address, _round *big.Int) (struct {
-	RewardPool                 *big.Int
-	FeePool                    *big.Int
-	TotalStake                 *big.Int
-	ClaimableStake             *big.Int
-	TranscoderRewardCut        *big.Int
-	TranscoderFeeShare         *big.Int
-	TranscoderRewardPool       *big.Int
-	TranscoderFeePool          *big.Int
-	HasTranscoderRewardFeePool bool
-	CumulativeRewardFactor     *big.Int
-	CumulativeFeeFactor        *big.Int
+	TotalStake             *big.Int
+	TranscoderRewardCut    *big.Int
+	TranscoderFeeShare     *big.Int
+	CumulativeRewardFactor *big.Int
+	CumulativeFeeFactor    *big.Int
 }, error) {
 	var out []interface{}
 	err := _BondingManager.contract.Call(opts, &out, "getTranscoderEarningsPoolForRound", _transcoder, _round)
 
 	outstruct := new(struct {
-		RewardPool                 *big.Int
-		FeePool                    *big.Int
-		TotalStake                 *big.Int
-		ClaimableStake             *big.Int
-		TranscoderRewardCut        *big.Int
-		TranscoderFeeShare         *big.Int
-		TranscoderRewardPool       *big.Int
-		TranscoderFeePool          *big.Int
-		HasTranscoderRewardFeePool bool
-		CumulativeRewardFactor     *big.Int
-		CumulativeFeeFactor        *big.Int
+		TotalStake             *big.Int
+		TranscoderRewardCut    *big.Int
+		TranscoderFeeShare     *big.Int
+		CumulativeRewardFactor *big.Int
+		CumulativeFeeFactor    *big.Int
 	})
 	if err != nil {
 		return *outstruct, err
 	}
 
-	outstruct.RewardPool = *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-	outstruct.FeePool = *abi.ConvertType(out[1], new(*big.Int)).(**big.Int)
-	outstruct.TotalStake = *abi.ConvertType(out[2], new(*big.Int)).(**big.Int)
-	outstruct.ClaimableStake = *abi.ConvertType(out[3], new(*big.Int)).(**big.Int)
-	outstruct.TranscoderRewardCut = *abi.ConvertType(out[4], new(*big.Int)).(**big.Int)
-	outstruct.TranscoderFeeShare = *abi.ConvertType(out[5], new(*big.Int)).(**big.Int)
-	outstruct.TranscoderRewardPool = *abi.ConvertType(out[6], new(*big.Int)).(**big.Int)
-	outstruct.TranscoderFeePool = *abi.ConvertType(out[7], new(*big.Int)).(**big.Int)
-	outstruct.HasTranscoderRewardFeePool = *abi.ConvertType(out[8], new(bool)).(*bool)
-	outstruct.CumulativeRewardFactor = *abi.ConvertType(out[9], new(*big.Int)).(**big.Int)
-	outstruct.CumulativeFeeFactor = *abi.ConvertType(out[10], new(*big.Int)).(**big.Int)
+	outstruct.TotalStake = *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+	outstruct.TranscoderRewardCut = *abi.ConvertType(out[1], new(*big.Int)).(**big.Int)
+	outstruct.TranscoderFeeShare = *abi.ConvertType(out[2], new(*big.Int)).(**big.Int)
+	outstruct.CumulativeRewardFactor = *abi.ConvertType(out[3], new(*big.Int)).(**big.Int)
+	outstruct.CumulativeFeeFactor = *abi.ConvertType(out[4], new(*big.Int)).(**big.Int)
 
 	return *outstruct, err
 
@@ -650,38 +601,26 @@ func (_BondingManager *BondingManagerCaller) GetTranscoderEarningsPoolForRound(o
 
 // GetTranscoderEarningsPoolForRound is a free data retrieval call binding the contract method 0x24454fc4.
 //
-// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 rewardPool, uint256 feePool, uint256 totalStake, uint256 claimableStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 transcoderRewardPool, uint256 transcoderFeePool, bool hasTranscoderRewardFeePool, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
+// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 totalStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
 func (_BondingManager *BondingManagerSession) GetTranscoderEarningsPoolForRound(_transcoder common.Address, _round *big.Int) (struct {
-	RewardPool                 *big.Int
-	FeePool                    *big.Int
-	TotalStake                 *big.Int
-	ClaimableStake             *big.Int
-	TranscoderRewardCut        *big.Int
-	TranscoderFeeShare         *big.Int
-	TranscoderRewardPool       *big.Int
-	TranscoderFeePool          *big.Int
-	HasTranscoderRewardFeePool bool
-	CumulativeRewardFactor     *big.Int
-	CumulativeFeeFactor        *big.Int
+	TotalStake             *big.Int
+	TranscoderRewardCut    *big.Int
+	TranscoderFeeShare     *big.Int
+	CumulativeRewardFactor *big.Int
+	CumulativeFeeFactor    *big.Int
 }, error) {
 	return _BondingManager.Contract.GetTranscoderEarningsPoolForRound(&_BondingManager.CallOpts, _transcoder, _round)
 }
 
 // GetTranscoderEarningsPoolForRound is a free data retrieval call binding the contract method 0x24454fc4.
 //
-// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 rewardPool, uint256 feePool, uint256 totalStake, uint256 claimableStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 transcoderRewardPool, uint256 transcoderFeePool, bool hasTranscoderRewardFeePool, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
+// Solidity: function getTranscoderEarningsPoolForRound(address _transcoder, uint256 _round) view returns(uint256 totalStake, uint256 transcoderRewardCut, uint256 transcoderFeeShare, uint256 cumulativeRewardFactor, uint256 cumulativeFeeFactor)
 func (_BondingManager *BondingManagerCallerSession) GetTranscoderEarningsPoolForRound(_transcoder common.Address, _round *big.Int) (struct {
-	RewardPool                 *big.Int
-	FeePool                    *big.Int
-	TotalStake                 *big.Int
-	ClaimableStake             *big.Int
-	TranscoderRewardCut        *big.Int
-	TranscoderFeeShare         *big.Int
-	TranscoderRewardPool       *big.Int
-	TranscoderFeePool          *big.Int
-	HasTranscoderRewardFeePool bool
-	CumulativeRewardFactor     *big.Int
-	CumulativeFeeFactor        *big.Int
+	TotalStake             *big.Int
+	TranscoderRewardCut    *big.Int
+	TranscoderFeeShare     *big.Int
+	CumulativeRewardFactor *big.Int
+	CumulativeFeeFactor    *big.Int
 }, error) {
 	return _BondingManager.Contract.GetTranscoderEarningsPoolForRound(&_BondingManager.CallOpts, _transcoder, _round)
 }
@@ -841,37 +780,6 @@ func (_BondingManager *BondingManagerCallerSession) IsValidUnbondingLock(_delega
 	return _BondingManager.Contract.IsValidUnbondingLock(&_BondingManager.CallOpts, _delegator, _unbondingLockId)
 }
 
-// MaxEarningsClaimsRounds is a free data retrieval call binding the contract method 0x038424c3.
-//
-// Solidity: function maxEarningsClaimsRounds() view returns(uint256)
-func (_BondingManager *BondingManagerCaller) MaxEarningsClaimsRounds(opts *bind.CallOpts) (*big.Int, error) {
-	var out []interface{}
-	err := _BondingManager.contract.Call(opts, &out, "maxEarningsClaimsRounds")
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// MaxEarningsClaimsRounds is a free data retrieval call binding the contract method 0x038424c3.
-//
-// Solidity: function maxEarningsClaimsRounds() view returns(uint256)
-func (_BondingManager *BondingManagerSession) MaxEarningsClaimsRounds() (*big.Int, error) {
-	return _BondingManager.Contract.MaxEarningsClaimsRounds(&_BondingManager.CallOpts)
-}
-
-// MaxEarningsClaimsRounds is a free data retrieval call binding the contract method 0x038424c3.
-//
-// Solidity: function maxEarningsClaimsRounds() view returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) MaxEarningsClaimsRounds() (*big.Int, error) {
-	return _BondingManager.Contract.MaxEarningsClaimsRounds(&_BondingManager.CallOpts)
-}
-
 // NextRoundTotalActiveStake is a free data retrieval call binding the contract method 0x465501d3.
 //
 // Solidity: function nextRoundTotalActiveStake() view returns(uint256)
@@ -901,37 +809,6 @@ func (_BondingManager *BondingManagerSession) NextRoundTotalActiveStake() (*big.
 // Solidity: function nextRoundTotalActiveStake() view returns(uint256)
 func (_BondingManager *BondingManagerCallerSession) NextRoundTotalActiveStake() (*big.Int, error) {
 	return _BondingManager.Contract.NextRoundTotalActiveStake(&_BondingManager.CallOpts)
-}
-
-// NumActiveTranscodersDEPRECATED is a free data retrieval call binding the contract method 0x3c725cbb.
-//
-// Solidity: function numActiveTranscodersDEPRECATED() view returns(uint256)
-func (_BondingManager *BondingManagerCaller) NumActiveTranscodersDEPRECATED(opts *bind.CallOpts) (*big.Int, error) {
-	var out []interface{}
-	err := _BondingManager.contract.Call(opts, &out, "numActiveTranscodersDEPRECATED")
-
-	if err != nil {
-		return *new(*big.Int), err
-	}
-
-	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
-
-	return out0, err
-
-}
-
-// NumActiveTranscodersDEPRECATED is a free data retrieval call binding the contract method 0x3c725cbb.
-//
-// Solidity: function numActiveTranscodersDEPRECATED() view returns(uint256)
-func (_BondingManager *BondingManagerSession) NumActiveTranscodersDEPRECATED() (*big.Int, error) {
-	return _BondingManager.Contract.NumActiveTranscodersDEPRECATED(&_BondingManager.CallOpts)
-}
-
-// NumActiveTranscodersDEPRECATED is a free data retrieval call binding the contract method 0x3c725cbb.
-//
-// Solidity: function numActiveTranscodersDEPRECATED() view returns(uint256)
-func (_BondingManager *BondingManagerCallerSession) NumActiveTranscodersDEPRECATED() (*big.Int, error) {
-	return _BondingManager.Contract.NumActiveTranscodersDEPRECATED(&_BondingManager.CallOpts)
 }
 
 // PendingFees is a free data retrieval call binding the contract method 0xf595f1cc.
@@ -1141,6 +1018,27 @@ func (_BondingManager *BondingManagerTransactorSession) Bond(_amount *big.Int, _
 	return _BondingManager.Contract.Bond(&_BondingManager.TransactOpts, _amount, _to)
 }
 
+// BondForWithHint is a paid mutator transaction binding the contract method 0xee4e804a.
+//
+// Solidity: function bondForWithHint(uint256 _amount, address _owner, address _to, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _currDelegateNewPosPrev, address _currDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerTransactor) BondForWithHint(opts *bind.TransactOpts, _amount *big.Int, _owner common.Address, _to common.Address, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _currDelegateNewPosPrev common.Address, _currDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "bondForWithHint", _amount, _owner, _to, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _currDelegateNewPosPrev, _currDelegateNewPosNext)
+}
+
+// BondForWithHint is a paid mutator transaction binding the contract method 0xee4e804a.
+//
+// Solidity: function bondForWithHint(uint256 _amount, address _owner, address _to, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _currDelegateNewPosPrev, address _currDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerSession) BondForWithHint(_amount *big.Int, _owner common.Address, _to common.Address, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _currDelegateNewPosPrev common.Address, _currDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.Contract.BondForWithHint(&_BondingManager.TransactOpts, _amount, _owner, _to, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _currDelegateNewPosPrev, _currDelegateNewPosNext)
+}
+
+// BondForWithHint is a paid mutator transaction binding the contract method 0xee4e804a.
+//
+// Solidity: function bondForWithHint(uint256 _amount, address _owner, address _to, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _currDelegateNewPosPrev, address _currDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerTransactorSession) BondForWithHint(_amount *big.Int, _owner common.Address, _to common.Address, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _currDelegateNewPosPrev common.Address, _currDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.Contract.BondForWithHint(&_BondingManager.TransactOpts, _amount, _owner, _to, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _currDelegateNewPosPrev, _currDelegateNewPosNext)
+}
+
 // BondWithHint is a paid mutator transaction binding the contract method 0x6bd9add4.
 //
 // Solidity: function bondWithHint(uint256 _amount, address _to, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _currDelegateNewPosPrev, address _currDelegateNewPosNext) returns()
@@ -1181,48 +1079,6 @@ func (_BondingManager *BondingManagerSession) ClaimEarnings(_endRound *big.Int) 
 // Solidity: function claimEarnings(uint256 _endRound) returns()
 func (_BondingManager *BondingManagerTransactorSession) ClaimEarnings(_endRound *big.Int) (*types.Transaction, error) {
 	return _BondingManager.Contract.ClaimEarnings(&_BondingManager.TransactOpts, _endRound)
-}
-
-// ClaimSnapshotEarnings is a paid mutator transaction binding the contract method 0xc6d63d8c.
-//
-// Solidity: function claimSnapshotEarnings(uint256 _pendingStake, uint256 _pendingFees, bytes32[] _earningsProof, bytes _data) returns()
-func (_BondingManager *BondingManagerTransactor) ClaimSnapshotEarnings(opts *bind.TransactOpts, _pendingStake *big.Int, _pendingFees *big.Int, _earningsProof [][32]byte, _data []byte) (*types.Transaction, error) {
-	return _BondingManager.contract.Transact(opts, "claimSnapshotEarnings", _pendingStake, _pendingFees, _earningsProof, _data)
-}
-
-// ClaimSnapshotEarnings is a paid mutator transaction binding the contract method 0xc6d63d8c.
-//
-// Solidity: function claimSnapshotEarnings(uint256 _pendingStake, uint256 _pendingFees, bytes32[] _earningsProof, bytes _data) returns()
-func (_BondingManager *BondingManagerSession) ClaimSnapshotEarnings(_pendingStake *big.Int, _pendingFees *big.Int, _earningsProof [][32]byte, _data []byte) (*types.Transaction, error) {
-	return _BondingManager.Contract.ClaimSnapshotEarnings(&_BondingManager.TransactOpts, _pendingStake, _pendingFees, _earningsProof, _data)
-}
-
-// ClaimSnapshotEarnings is a paid mutator transaction binding the contract method 0xc6d63d8c.
-//
-// Solidity: function claimSnapshotEarnings(uint256 _pendingStake, uint256 _pendingFees, bytes32[] _earningsProof, bytes _data) returns()
-func (_BondingManager *BondingManagerTransactorSession) ClaimSnapshotEarnings(_pendingStake *big.Int, _pendingFees *big.Int, _earningsProof [][32]byte, _data []byte) (*types.Transaction, error) {
-	return _BondingManager.Contract.ClaimSnapshotEarnings(&_BondingManager.TransactOpts, _pendingStake, _pendingFees, _earningsProof, _data)
-}
-
-// ExecuteLIP77 is a paid mutator transaction binding the contract method 0x34aba214.
-//
-// Solidity: function executeLIP77(uint256 _bondedAmount) returns()
-func (_BondingManager *BondingManagerTransactor) ExecuteLIP77(opts *bind.TransactOpts, _bondedAmount *big.Int) (*types.Transaction, error) {
-	return _BondingManager.contract.Transact(opts, "executeLIP77", _bondedAmount)
-}
-
-// ExecuteLIP77 is a paid mutator transaction binding the contract method 0x34aba214.
-//
-// Solidity: function executeLIP77(uint256 _bondedAmount) returns()
-func (_BondingManager *BondingManagerSession) ExecuteLIP77(_bondedAmount *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.ExecuteLIP77(&_BondingManager.TransactOpts, _bondedAmount)
-}
-
-// ExecuteLIP77 is a paid mutator transaction binding the contract method 0x34aba214.
-//
-// Solidity: function executeLIP77(uint256 _bondedAmount) returns()
-func (_BondingManager *BondingManagerTransactorSession) ExecuteLIP77(_bondedAmount *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.ExecuteLIP77(&_BondingManager.TransactOpts, _bondedAmount)
 }
 
 // Rebond is a paid mutator transaction binding the contract method 0xeaffb3f9.
@@ -1393,27 +1249,6 @@ func (_BondingManager *BondingManagerTransactorSession) SetCurrentRoundTotalActi
 	return _BondingManager.Contract.SetCurrentRoundTotalActiveStake(&_BondingManager.TransactOpts)
 }
 
-// SetMaxEarningsClaimsRounds is a paid mutator transaction binding the contract method 0x72d9f13d.
-//
-// Solidity: function setMaxEarningsClaimsRounds(uint256 _maxEarningsClaimsRounds) returns()
-func (_BondingManager *BondingManagerTransactor) SetMaxEarningsClaimsRounds(opts *bind.TransactOpts, _maxEarningsClaimsRounds *big.Int) (*types.Transaction, error) {
-	return _BondingManager.contract.Transact(opts, "setMaxEarningsClaimsRounds", _maxEarningsClaimsRounds)
-}
-
-// SetMaxEarningsClaimsRounds is a paid mutator transaction binding the contract method 0x72d9f13d.
-//
-// Solidity: function setMaxEarningsClaimsRounds(uint256 _maxEarningsClaimsRounds) returns()
-func (_BondingManager *BondingManagerSession) SetMaxEarningsClaimsRounds(_maxEarningsClaimsRounds *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.SetMaxEarningsClaimsRounds(&_BondingManager.TransactOpts, _maxEarningsClaimsRounds)
-}
-
-// SetMaxEarningsClaimsRounds is a paid mutator transaction binding the contract method 0x72d9f13d.
-//
-// Solidity: function setMaxEarningsClaimsRounds(uint256 _maxEarningsClaimsRounds) returns()
-func (_BondingManager *BondingManagerTransactorSession) SetMaxEarningsClaimsRounds(_maxEarningsClaimsRounds *big.Int) (*types.Transaction, error) {
-	return _BondingManager.Contract.SetMaxEarningsClaimsRounds(&_BondingManager.TransactOpts, _maxEarningsClaimsRounds)
-}
-
 // SetNumActiveTranscoders is a paid mutator transaction binding the contract method 0x673a456b.
 //
 // Solidity: function setNumActiveTranscoders(uint256 _numActiveTranscoders) returns()
@@ -1519,6 +1354,27 @@ func (_BondingManager *BondingManagerTransactorSession) TranscoderWithHint(_rewa
 	return _BondingManager.Contract.TranscoderWithHint(&_BondingManager.TransactOpts, _rewardCut, _feeShare, _newPosPrev, _newPosNext)
 }
 
+// TransferBond is a paid mutator transaction binding the contract method 0x062e98b8.
+//
+// Solidity: function transferBond(address _delegator, uint256 _amount, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _newDelegateNewPosPrev, address _newDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerTransactor) TransferBond(opts *bind.TransactOpts, _delegator common.Address, _amount *big.Int, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _newDelegateNewPosPrev common.Address, _newDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "transferBond", _delegator, _amount, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _newDelegateNewPosPrev, _newDelegateNewPosNext)
+}
+
+// TransferBond is a paid mutator transaction binding the contract method 0x062e98b8.
+//
+// Solidity: function transferBond(address _delegator, uint256 _amount, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _newDelegateNewPosPrev, address _newDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerSession) TransferBond(_delegator common.Address, _amount *big.Int, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _newDelegateNewPosPrev common.Address, _newDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.Contract.TransferBond(&_BondingManager.TransactOpts, _delegator, _amount, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _newDelegateNewPosPrev, _newDelegateNewPosNext)
+}
+
+// TransferBond is a paid mutator transaction binding the contract method 0x062e98b8.
+//
+// Solidity: function transferBond(address _delegator, uint256 _amount, address _oldDelegateNewPosPrev, address _oldDelegateNewPosNext, address _newDelegateNewPosPrev, address _newDelegateNewPosNext) returns()
+func (_BondingManager *BondingManagerTransactorSession) TransferBond(_delegator common.Address, _amount *big.Int, _oldDelegateNewPosPrev common.Address, _oldDelegateNewPosNext common.Address, _newDelegateNewPosPrev common.Address, _newDelegateNewPosNext common.Address) (*types.Transaction, error) {
+	return _BondingManager.Contract.TransferBond(&_BondingManager.TransactOpts, _delegator, _amount, _oldDelegateNewPosPrev, _oldDelegateNewPosNext, _newDelegateNewPosPrev, _newDelegateNewPosNext)
+}
+
 // Unbond is a paid mutator transaction binding the contract method 0x27de9e32.
 //
 // Solidity: function unbond(uint256 _amount) returns()
@@ -1582,25 +1438,25 @@ func (_BondingManager *BondingManagerTransactorSession) UpdateTranscoderWithFees
 	return _BondingManager.Contract.UpdateTranscoderWithFees(&_BondingManager.TransactOpts, _transcoder, _fees, _round)
 }
 
-// WithdrawFees is a paid mutator transaction binding the contract method 0x476343ee.
+// WithdrawFees is a paid mutator transaction binding the contract method 0xad3b1b47.
 //
-// Solidity: function withdrawFees() returns()
-func (_BondingManager *BondingManagerTransactor) WithdrawFees(opts *bind.TransactOpts) (*types.Transaction, error) {
-	return _BondingManager.contract.Transact(opts, "withdrawFees")
+// Solidity: function withdrawFees(address _recipient, uint256 _amount) returns()
+func (_BondingManager *BondingManagerTransactor) WithdrawFees(opts *bind.TransactOpts, _recipient common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _BondingManager.contract.Transact(opts, "withdrawFees", _recipient, _amount)
 }
 
-// WithdrawFees is a paid mutator transaction binding the contract method 0x476343ee.
+// WithdrawFees is a paid mutator transaction binding the contract method 0xad3b1b47.
 //
-// Solidity: function withdrawFees() returns()
-func (_BondingManager *BondingManagerSession) WithdrawFees() (*types.Transaction, error) {
-	return _BondingManager.Contract.WithdrawFees(&_BondingManager.TransactOpts)
+// Solidity: function withdrawFees(address _recipient, uint256 _amount) returns()
+func (_BondingManager *BondingManagerSession) WithdrawFees(_recipient common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.WithdrawFees(&_BondingManager.TransactOpts, _recipient, _amount)
 }
 
-// WithdrawFees is a paid mutator transaction binding the contract method 0x476343ee.
+// WithdrawFees is a paid mutator transaction binding the contract method 0xad3b1b47.
 //
-// Solidity: function withdrawFees() returns()
-func (_BondingManager *BondingManagerTransactorSession) WithdrawFees() (*types.Transaction, error) {
-	return _BondingManager.Contract.WithdrawFees(&_BondingManager.TransactOpts)
+// Solidity: function withdrawFees(address _recipient, uint256 _amount) returns()
+func (_BondingManager *BondingManagerTransactorSession) WithdrawFees(_recipient common.Address, _amount *big.Int) (*types.Transaction, error) {
+	return _BondingManager.Contract.WithdrawFees(&_BondingManager.TransactOpts, _recipient, _amount)
 }
 
 // WithdrawStake is a paid mutator transaction binding the contract method 0x25d5971f.
@@ -3322,12 +3178,14 @@ func (it *BondingManagerWithdrawFeesIterator) Close() error {
 // BondingManagerWithdrawFees represents a WithdrawFees event raised by the BondingManager contract.
 type BondingManagerWithdrawFees struct {
 	Delegator common.Address
+	Recipient common.Address
+	Amount    *big.Int
 	Raw       types.Log // Blockchain specific contextual infos
 }
 
-// FilterWithdrawFees is a free log retrieval operation binding the contract event 0xd3719f04262b628e1d01a6ed24707f542cda51f144b5271149c7d0419436d00c.
+// FilterWithdrawFees is a free log retrieval operation binding the contract event 0x4f1b51dd7a2fcb861aa2670f668be66835c4ee12b4bbbf037e4d0018f39819e4.
 //
-// Solidity: event WithdrawFees(address indexed delegator)
+// Solidity: event WithdrawFees(address indexed delegator, address recipient, uint256 amount)
 func (_BondingManager *BondingManagerFilterer) FilterWithdrawFees(opts *bind.FilterOpts, delegator []common.Address) (*BondingManagerWithdrawFeesIterator, error) {
 
 	var delegatorRule []interface{}
@@ -3342,9 +3200,9 @@ func (_BondingManager *BondingManagerFilterer) FilterWithdrawFees(opts *bind.Fil
 	return &BondingManagerWithdrawFeesIterator{contract: _BondingManager.contract, event: "WithdrawFees", logs: logs, sub: sub}, nil
 }
 
-// WatchWithdrawFees is a free log subscription operation binding the contract event 0xd3719f04262b628e1d01a6ed24707f542cda51f144b5271149c7d0419436d00c.
+// WatchWithdrawFees is a free log subscription operation binding the contract event 0x4f1b51dd7a2fcb861aa2670f668be66835c4ee12b4bbbf037e4d0018f39819e4.
 //
-// Solidity: event WithdrawFees(address indexed delegator)
+// Solidity: event WithdrawFees(address indexed delegator, address recipient, uint256 amount)
 func (_BondingManager *BondingManagerFilterer) WatchWithdrawFees(opts *bind.WatchOpts, sink chan<- *BondingManagerWithdrawFees, delegator []common.Address) (event.Subscription, error) {
 
 	var delegatorRule []interface{}
@@ -3384,9 +3242,9 @@ func (_BondingManager *BondingManagerFilterer) WatchWithdrawFees(opts *bind.Watc
 	}), nil
 }
 
-// ParseWithdrawFees is a log parse operation binding the contract event 0xd3719f04262b628e1d01a6ed24707f542cda51f144b5271149c7d0419436d00c.
+// ParseWithdrawFees is a log parse operation binding the contract event 0x4f1b51dd7a2fcb861aa2670f668be66835c4ee12b4bbbf037e4d0018f39819e4.
 //
-// Solidity: event WithdrawFees(address indexed delegator)
+// Solidity: event WithdrawFees(address indexed delegator, address recipient, uint256 amount)
 func (_BondingManager *BondingManagerFilterer) ParseWithdrawFees(log types.Log) (*BondingManagerWithdrawFees, error) {
 	event := new(BondingManagerWithdrawFees)
 	if err := _BondingManager.contract.UnpackLog(event, "WithdrawFees", log); err != nil {

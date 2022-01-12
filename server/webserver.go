@@ -677,7 +677,23 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.WithdrawFees()
+			if err := r.ParseForm(); err != nil {
+				glog.Errorf("Parse Form Error: %v", err)
+				return
+			}
+
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				glog.Errorf("Need to provide amount")
+				return
+			}
+			amount, err := lpcommon.ParseBigInt(amountStr)
+			if err != nil {
+				glog.Errorf("Cannot convert amount: %v", err)
+				return
+			}
+
+			tx, err := s.LivepeerNode.Eth.WithdrawFees(s.LivepeerNode.Eth.Account().Address, amount)
 			if err != nil {
 				glog.Error(err)
 				return
