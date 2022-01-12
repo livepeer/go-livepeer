@@ -11,6 +11,7 @@
 #### General
 
 - \#2163 Fix Session crashes right after the O sends a tx, revert #2111 Ensure `maxFeePerGas` in all transactions never exceed `-masGasPrice` (@leszko)
+- \#2177 Update hardcoded Rinkeby Eth Controller Address (@leszko)
 
 #### Broadcaster
 
