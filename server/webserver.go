@@ -677,7 +677,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.WithdrawFees()
+			// TODO
+			tx, err := s.LivepeerNode.Eth.WithdrawFees(s.LivepeerNode.Eth.Account().Address, big.NewInt(123))
 			if err != nil {
 				glog.Error(err)
 				return
