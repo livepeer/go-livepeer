@@ -697,7 +697,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 			claim := func() error {
 				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 				if err != nil {
-					glog.Errorf("Trying to claim but round not initalized.")
+					glog.Errorf("Trying to claim but round not initialized.")
 					return err
 				}
 				if !init {
