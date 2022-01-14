@@ -7,8 +7,8 @@
 ---
 [![Go Report Card](https://goreportcard.com/badge/github.com/livepeer/go-livepeer)](https://goreportcard.com/report/github.com/livepeer/go-livepeer)
 [![Discord](https://img.shields.io/discord/423160867534929930.svg?style=flat-square)](https://discord.gg/7wRSUGX)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/livepeer/go-livepeer/blob/master/LICENSE)
-[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=flat-square)](https://github.com/livepeer/go-livepeer/blob/master/CONTRIBUTING.md)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE.md)
+[![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=flat-square)](CONTRIBUTING.md)
 
 The Livepeer project aims to deliver a live video streaming network protocol
 that is fully decentralized, highly scalable, crypto token incentivized, and
@@ -36,7 +36,7 @@ go-livepeer is a Go implementation of the [Livepeer](https://livepeer.org) proto
 This project requires `go`. A unix shell is also
 required.
 
-- [Installing and Managing Go](https://github.com/livepeer/go-livepeer/blob/master/doc/go.md)
+- [Installing and Managing Go](doc/go.md)
 
 
 ## Getting Started
@@ -50,7 +50,7 @@ Next, follow [the guide to set up a private ETH network with the Livepeer protoc
 Thanks for your interest in contributing to go-livepeer. There are many ways you can contribute.
 To start, take a few minutes to look over the official guide:
 
-**[Read the "Contributing to go-livepeer" Guide &raquo;](https://github.com/livepeer/go-livepeer/blob/master/CONTRIBUTING.md)**
+**[Read the "Contributing to go-livepeer" Guide &raquo;](CONTRIBUTING.md)**
 
 We happily await your pull requests and/or involvement in our
 [issues page](https://github.com/livepeer/go-livepeer/issues) and hope to see
