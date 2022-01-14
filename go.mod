@@ -18,7 +18,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jaypipes/ghw v0.7.0
 	github.com/livepeer/livepeer-data v0.2.0
-	github.com/livepeer/lpms v0.0.0-20211208221036-644122186d24
+	github.com/livepeer/lpms v0.0.0-20220111151401-0eb91f2facdb
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/olekukonko/tablewriter v0.0.5
