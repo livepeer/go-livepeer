@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2180 Generate contract bindings related to L2 Arbitrum upgrade (@leszko)
 
 #### Broadcaster
 
