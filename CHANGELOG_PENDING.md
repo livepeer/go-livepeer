@@ -10,6 +10,8 @@
 
 #### Broadcaster
 
+- \#2188 Include pending Os in the discovery mechanism (@leszko)
+
 #### Orchestrator
 
 #### Transcoder
