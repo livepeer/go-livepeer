@@ -36,19 +36,13 @@ issue.
 
 #### 🐛 Fixing bugs, 🕶️ adding feature/enhancements, or 👌 improving code quality
 
-If you're into this whole coding thing, maybe try fixing a
-[bug](https://github.com/livepeer/livepeerjs/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22),
-tackling an
-[enhancement](https://github.com/livepeer/livepeerjs/issues?q=is%3Aissue+is%3Aopen+label%3A%22%E2%9E%95+enhancement%22),
+If you're into coding, maybe try fixing a
+[bug](https://github.com/livepeer/go-livepeer/labels/good%20first%20issue)
 or taking on a
-[feature request](https://github.com/livepeer/livepeerjs/labels/%F0%9F%95%B6%20feature).
+[feature request](https://github.com/livepeer/go-livepeer/labels/help%20wanted).
 
 If picking up issues isn't your thing, no worries -- you can always add more
-tests to improve coverage or refactor code to increase maintainability. Check
-out Code Climate for some insight into
-[code quality & coverage](https://codeclimate.com/github/livepeer/livepeerjs/issues)
-on a file-by-file basis. Whatever you do, be sure to check out the section about
-[useful tools](#useful-tools).
+tests to improve coverage or refactor code to increase maintainability. 
 
 > Note: Bonus points if you can delete code instead of adding it! 👾
 
@@ -84,7 +78,7 @@ it'd be good to have some proficiency with go.
     require many paragraphs of text. In fact, if you write too much, it's
     difficult to understand what you are actually trying to communicate.
     **Consider
-    [starting a discussion](https://github.com/livepeer/livepeerjs/issues/new?template=Custom.md)
+    [starting a discussion](https://github.com/livepeer/go-livepeer/issues/new/choose)
     if you're not clear on something or want feedback from the community.**
 
 - **If you are submitting a pull request...**
