@@ -57,7 +57,6 @@ We happily await your pull requests and/or involvement in our
 your username on our
 [list of contributors](https://github.com/livepeer/go-livepeer/graphs/contributors)
 🎉🎉🎉
-                                                 |
 
 ## Resources
 
