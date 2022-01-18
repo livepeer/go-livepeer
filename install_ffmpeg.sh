@@ -76,8 +76,8 @@ if [ ! -e "$ROOT/x264" ]; then
 fi
 
 if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
+  sudo apt-get install -y libnuma-dev cmake
   if [ ! -e "$ROOT/x265" ]; then
-    sudo apt-get install -y libnuma-dev cmake
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
     cd "$ROOT/x265"
     git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
