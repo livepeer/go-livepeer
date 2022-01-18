@@ -73,12 +73,6 @@ We expect a rich mixture of commits, conversation, support, and review. Adding d
 get involved without coding at all. If you do want to contribute code, however,
 it'd be good to have some proficiency with go.
 
-### How can I run LivepeerJS on Windows?
-
-You need a unix shell to run LivepeerJS. You can get one on Windows by
-installing the Linux on Windows subsystem on Windows 10. You can find
-instructions [here](https://docs.microsoft.com/en-us/windows/wsl/install-win10).
-
 ### How is a contribution reviewed and accepted?
 
 - **If you are opening an issue...**
