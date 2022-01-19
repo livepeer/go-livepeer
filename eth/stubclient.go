@@ -139,6 +139,11 @@ func (m *MockClient) Withdraw() (*types.Transaction, error) {
 	return mockTransaction(args, 0), args.Error(1)
 }
 
+func (m *MockClient) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
+	args := m.Called(addr, amount)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
 	WithdrawRound *big.Int
