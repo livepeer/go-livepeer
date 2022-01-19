@@ -675,37 +675,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 	})
 
-	mux.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			if err := r.ParseForm(); err != nil {
-				glog.Errorf("Parse Form Error: %v", err)
-				return
-			}
-
-			amountStr := r.FormValue("amount")
-			if amountStr == "" {
-				glog.Errorf("Need to provide amount")
-				return
-			}
-			amount, err := lpcommon.ParseBigInt(amountStr)
-			if err != nil {
-				glog.Errorf("Cannot convert amount: %v", err)
-				return
-			}
-
-			tx, err := s.LivepeerNode.Eth.WithdrawFees(s.LivepeerNode.Eth.Account().Address, amount)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-		}
-	})
+	mux.Handle("/withdrawFees", mustHaveFormParams(withdrawFeesHandler(s.LivepeerNode.Eth), "amount"))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
@@ -1183,11 +1153,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.Handle("/minGasPrice", minGasPriceHandler(s.LivepeerNode.Eth))
 	mux.Handle("/setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(s.LivepeerNode.Eth), "minGasPrice"))
-
 	mux.Handle("/currentBlock", currentBlockHandler(s.LivepeerNode.Database))
 
 	// TicketBroker
-
 	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(s.LivepeerNode.Eth), "depositAmount", "reserveAmount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/unlock", unlockHandler(s.LivepeerNode.Eth))
