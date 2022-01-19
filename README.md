@@ -16,7 +16,7 @@ network built on the Ethereum blockchain.
 
 ## Install Livepeer
 
-Follow the [installation guide](https://livepeer.org/docs/installation/install-livepeer).
+Follow the [installation guide](https://livepeer.org/docs/installation/install-livepeer/overview).
 
 ## Run Livepeer
 
