@@ -15,6 +15,13 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 )
 
+func respondOk(w http.ResponseWriter, msg []byte) {
+	w.WriteHeader(http.StatusOK)
+	if msg != nil {
+		w.Write(msg)
+	}
+}
+
 func respondWith500(w http.ResponseWriter, errMsg string) {
 	respondWithError(w, errMsg, http.StatusInternalServerError)
 }
@@ -89,8 +96,7 @@ func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write(currentRound.Bytes())
+		respondOk(w, currentRound.Bytes())
 	}),
 	)
 }
@@ -121,8 +127,7 @@ func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("fundDepositAndReserve success"))
+		respondOk(w, []byte("fundDepositAndReserve success"))
 	}),
 	)
 }
@@ -147,8 +152,7 @@ func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("fundDeposit success"))
+		respondOk(w, []byte("fundDeposit success"))
 	}),
 	)
 }
@@ -167,8 +171,7 @@ func unlockHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("unlock success"))
+		respondOk(w, []byte("unlock success"))
 	}),
 	)
 }
@@ -187,8 +190,7 @@ func cancelUnlockHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("cancelUnlock success"))
+		respondOk(w, []byte("cancelUnlock success"))
 	}),
 	)
 }
@@ -207,8 +209,7 @@ func withdrawHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("withdraw success"))
+		respondOk(w, []byte("withdraw success"))
 	}),
 	)
 }
@@ -312,8 +313,7 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 			}
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write(signed)
+		respondOk(w, signed)
 	}),
 	)
 }
@@ -361,8 +361,7 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write(tx.Hash().Bytes())
+		respondOk(w, tx.Hash().Bytes())
 	}),
 	)
 }
@@ -387,15 +386,14 @@ func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		respondOk(w, nil)
 	}),
 	)
 }
 
 func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(client.Backend().GasPriceMonitor().MinGasPrice().String()))
+		respondOk(w, []byte(client.Backend().GasPriceMonitor().MinGasPrice().String()))
 	}),
 	)
 }
@@ -409,8 +407,7 @@ func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 		client.Backend().GasPriceMonitor().SetMinGasPrice(minGasPrice)
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("setMinGasPrice success"))
+		respondOk(w, []byte("setMinGasPrice success"))
 	}),
 	)
 }
