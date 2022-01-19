@@ -336,7 +336,7 @@ func (w *wizard) withdrawFees() {
 	}
 
 	val := url.Values{
-		"amount": {fmt.Sprintf("%v", dInfo.Fees.String())},
+		"amount": {fmt.Sprintf("%v", dInfo.PendingFees.String())},
 	}
 
 	httpPostWithParams(fmt.Sprintf("http://%v:%v/withdrawFees", w.host, w.httpPort), val)
