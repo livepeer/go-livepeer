@@ -29,6 +29,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/livepeer-data/pkg/event"
+	"github.com/livepeer/livepeer-data/pkg/mistconnector"
 	"github.com/peterbourgon/ff/v3"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -82,6 +83,8 @@ func main() {
 	vFlag := flag.Lookup("v")
 	//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+	mistJson := flag.Bool("j", false, "Print application info as json")
 
 	// Network & Addresses:
 	network := flag.String("network", "offchain", "Network to connect to")
@@ -174,6 +177,11 @@ func main() {
 	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
 
 	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
+
+	if *mistJson {
+		mistconnector.PrintMistConfigJson("Livepeer", "", "", core.LivepeerVersion, flag.CommandLine)
+		return
+	}
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
