@@ -46,6 +46,16 @@ func mustHaveFormParams(h http.Handler, params ...string) http.Handler {
 	})
 }
 
+func mustHaveClient(client eth.LivepeerEthClient, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 // BlockGetter is an interface which describes an object capable
 // of getting blocks
 type BlockGetter interface {
@@ -72,12 +82,7 @@ func currentBlockHandler(getter BlockGetter) http.Handler {
 }
 
 func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		currentRound, err := client.CurrentRound()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not query current round: %v", err))
@@ -86,16 +91,12 @@ func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(currentRound.Bytes())
-	})
+	}),
+	)
 }
 
 func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		depositAmount, err := common.ParseBigInt(r.FormValue("depositAmount"))
 		if err != nil {
 			respondWith400(w, fmt.Sprintf("invalid depositAmount: %v", err))
@@ -122,16 +123,12 @@ func fundDepositAndReserveHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("fundDepositAndReserve success"))
-	})
+	}),
+	)
 }
 
 func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		amount, err := common.ParseBigInt(r.FormValue("amount"))
 		if err != nil {
 			respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
@@ -152,16 +149,12 @@ func fundDepositHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("fundDeposit success"))
-	})
+	}),
+	)
 }
 
 func unlockHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tx, err := client.Unlock()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not execute unlock: %v", err))
@@ -176,16 +169,12 @@ func unlockHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("unlock success"))
-	})
+	}),
+	)
 }
 
 func cancelUnlockHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tx, err := client.CancelUnlock()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not execute cancelUnlock: %v", err))
@@ -200,16 +189,12 @@ func cancelUnlockHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("cancelUnlock success"))
-	})
+	}),
+	)
 }
 
 func withdrawHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tx, err := client.Withdraw()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not execute withdraw: %v", err))
@@ -224,16 +209,12 @@ func withdrawHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("withdraw success"))
-	})
+	}),
+	)
 }
 
 func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		info, err := client.GetSenderInfo(client.Account().Address)
 		if err != nil {
 			if err.Error() == "ErrNoResult" {
@@ -260,16 +241,12 @@ func senderInfoHandler(client eth.LivepeerEthClient) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
-	})
+	}),
+	)
 }
 
 func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		unlockPeriod, err := client.UnlockPeriod()
 		if err != nil {
 			respondWith500(w, fmt.Sprintf("could not query TicketBroker unlockPeriod: %v", err))
@@ -291,16 +268,12 @@ func ticketBrokerParamsHandler(client eth.LivepeerEthClient) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(data)
-	})
+	}),
+	)
 }
 
 func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Use EIP-191 (https://github.com/ethereum/EIPs/blob/master/EIPS/eip-191.md) signature versioning
 		// The SigFormat terminology is taken from:
 		// https://github.com/ethereum/go-ethereum/blob/dddf73abbddb297e61cee6a7e6aebfee87125e49/signer/core/apitypes/types.go#L171
@@ -341,16 +314,12 @@ func signMessageHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(signed)
-	})
+	}),
+	)
 }
 
 func voteHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		poll := r.FormValue("poll")
 		if poll == "" {
 			respondWith500(w, "missing poll contract address")
@@ -394,16 +363,12 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(tx.Hash().Bytes())
-	})
+	}),
+	)
 }
 
 func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		amount, err := common.ParseBigInt(r.FormValue("amount"))
 		if err != nil {
 			respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
@@ -423,28 +388,20 @@ func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		w.WriteHeader(http.StatusOK)
-	})
+	}),
+	)
 }
 
 func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(client.Backend().GasPriceMonitor().MinGasPrice().String()))
-	})
+	}),
+	)
 }
 
 func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
-			respondWith500(w, "missing ETH client")
-			return
-		}
-
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		minGasPrice, err := common.ParseBigInt(r.FormValue("minGasPrice"))
 		if err != nil {
 			respondWith400(w, fmt.Sprintf("invalid minGasPrice: %v", err))
@@ -454,5 +411,6 @@ func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("setMinGasPrice success"))
-	})
+	}),
+	)
 }
