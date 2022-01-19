@@ -397,6 +397,35 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	})
 }
 
+func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			respondWith500(w, "missing ETH client")
+			return
+		}
+
+		amount, err := common.ParseBigInt(r.FormValue("amount"))
+		if err != nil {
+			respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
+			return
+		}
+
+		tx, err := client.WithdrawFees(client.Account().Address, amount)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		err = client.CheckTx(tx)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 func minGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if client == nil {
