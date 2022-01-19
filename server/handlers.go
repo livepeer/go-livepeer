@@ -412,13 +412,13 @@ func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
 
 		tx, err := client.WithdrawFees(client.Account().Address, amount)
 		if err != nil {
-			glog.Error(err)
+			respondWith500(w, fmt.Sprintf("could not execute WithdrawFees: %v", err))
 			return
 		}
 
 		err = client.CheckTx(tx)
 		if err != nil {
-			glog.Error(err)
+			respondWith500(w, fmt.Sprintf("could not execute WithdrawFees: %v", err))
 			return
 		}
 
