@@ -42,3 +42,4 @@ require (
 	google.golang.org/grpc v1.28.0
 	pgregory.net/rapid v0.4.0
 )
+replace github.com/livepeer/lpms => github.com/livepeer/lpms v0.0.0-20220111151401-0eb91f2facdb
