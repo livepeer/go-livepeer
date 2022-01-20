@@ -121,6 +121,8 @@ func (r *Redeemer) MonitorMaxFloat(req *net.MaxFloatReq, stream net.TicketRedeem
 	sender := ethcommon.BytesToAddress(req.Sender)
 
 	sink := make(chan struct{}, 10)
+	errCh := make(chan error)
+	defer close(errCh)
 	sub := r.sm.SubscribeMaxFloatChange(sender, sink)
 	defer sub.Unsubscribe()
 	for {
@@ -134,17 +136,21 @@ func (r *Redeemer) MonitorMaxFloat(req *net.MaxFloatReq, stream net.TicketRedeem
 				return status.Error(codes.Canceled, "subscription closed")
 			}
 			return status.Error(codes.Internal, err.Error())
+		case err := <-errCh:
+			return err
 		case <-sink:
-			maxFloat, err := r.sm.MaxFloat(sender)
-			if err != nil {
-				glog.Error(err)
-				continue
-			}
-			if err := stream.Send(&net.MaxFloatUpdate{MaxFloat: maxFloat.Bytes()}); err != nil {
+			go func() {
+				maxFloat, err := r.sm.MaxFloat(sender)
 				if err != nil {
-					return status.Error(codes.Internal, err.Error())
+					glog.Error(err)
+					return
 				}
-			}
+				if err := stream.Send(&net.MaxFloatUpdate{MaxFloat: maxFloat.Bytes()}); err != nil {
+					if err != nil {
+						errCh <- status.Error(codes.Internal, err.Error())
+					}
+				}
+			}()
 		}
 	}
 }

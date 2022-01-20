@@ -470,9 +470,11 @@ func (sm *LocalSenderMonitor) watchReserveChange() {
 			glog.Error(err)
 			continue
 		case sender := <-sink:
-			sm.mu.Lock()
-			sm.sendMaxFloatChange(sender)
-			sm.mu.Unlock()
+			go func() {
+				sm.mu.Lock()
+				sm.sendMaxFloatChange(sender)
+				sm.mu.Unlock()
+			}()
 		}
 	}
 }

@@ -51,10 +51,12 @@ func (s *RewardService) Start(ctx context.Context) error {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-rounds:
-			err := s.tryReward()
-			if err != nil {
-				glog.Errorf("Error trying to call reward err=%q", err)
-			}
+			go func() {
+				err := s.tryReward()
+				if err != nil {
+					glog.Errorf("Error trying to call reward err=%q", err)
+				}
+			}()
 		case <-cancelCtx.Done():
 			glog.V(5).Infof("Reward service done")
 			return nil

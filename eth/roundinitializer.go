@@ -2,6 +2,7 @@ package eth
 
 import (
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -33,6 +34,9 @@ type RoundInitializer struct {
 	quit   chan struct{}
 
 	nextRoundStartBlock *big.Int
+
+	// Prevent multiple round initializations at the same time
+	mu sync.Mutex
 }
 
 // NewRoundInitializer creates a RoundInitializer instance
@@ -80,12 +84,16 @@ func (r *RoundInitializer) Start() error {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
-			r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)
+			go func() {
+				r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)
+			}()
 		case block := <-blockSink:
 			if block.Cmp(r.nextRoundStartBlock) >= 0 {
-				if err := r.tryInitialize(); err != nil {
-					glog.Error(err)
-				}
+				go func() {
+					if err := r.tryInitialize(); err != nil {
+						glog.Error(err)
+					}
+				}()
 			}
 		}
 	}
@@ -97,6 +105,9 @@ func (r *RoundInitializer) Stop() {
 }
 
 func (r *RoundInitializer) tryInitialize() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	currentBlk := r.tw.LastSeenBlock()
 	lastInitializedBlkHash := r.tw.LastInitializedBlockHash()
 

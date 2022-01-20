@@ -57,11 +57,15 @@ func (ow *OrchestratorWatcher) Watch() {
 		case err := <-sub.Err():
 			glog.Error(err)
 		case events := <-events:
-			ow.handleBlockEvents(events)
+			go func() {
+				ow.handleBlockEvents(events)
+			}()
 		case roundEvent := <-roundEvents:
-			if err := ow.handleRoundEvent(roundEvent); err != nil {
-				glog.Errorf("error handling new round event: %v", err)
-			}
+			go func() {
+				if err := ow.handleRoundEvent(roundEvent); err != nil {
+					glog.Errorf("error handling new round event: %v", err)
+				}
+			}()
 		}
 	}
 }
