@@ -3,6 +3,7 @@ package server
 import (
 	"container/heap"
 	"context"
+	"github.com/golang/glog"
 	"math/rand"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -171,12 +172,13 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 	}
 
 	// Select an unknown session randomly based on randFreq frequency
-	//if rand.Float64() < s.randFreq {
-	//	i := rand.Intn(len(s.unknownSessions))
-	//	sess := s.unknownSessions[i]
-	//	s.removeUnknownSession(i)
-	//	return sess
-	//}
+	if rand.Float64() < s.randFreq {
+		i := rand.Intn(len(s.unknownSessions))
+		glog.Errorf("%d", i)
+		sess := s.unknownSessions[i]
+		s.removeUnknownSession(i)
+		return sess
+	}
 
 	var addrs []ethcommon.Address
 	addrCount := make(map[ethcommon.Address]int)
