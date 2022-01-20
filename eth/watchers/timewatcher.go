@@ -161,7 +161,9 @@ func (tw *TimeWatcher) Watch() error {
 		case err := <-sub.Err():
 			glog.Error(err)
 		case events := <-events:
-			tw.handleBlockEvents(events)
+			go func() {
+				tw.handleBlockEvents(events)
+			}()
 		}
 	}
 }
