@@ -70,7 +70,7 @@ func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			MaxPrice:       server.BroadcastCfg.MaxPrice(),
-			CurrentRound:   dbo.rm.LastInitializedRound(),
+			CurrentRound:   dbo.nextRound(),
 			UpdatedLastDay: true,
 		},
 	)
@@ -168,7 +168,7 @@ func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
 			MaxPrice:       server.BroadcastCfg.MaxPrice(),
-			CurrentRound:   dbo.rm.LastInitializedRound(),
+			CurrentRound:   dbo.nextRound(),
 			UpdatedLastDay: true,
 		},
 	)
@@ -200,7 +200,7 @@ func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {
 func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			CurrentRound: dbo.nextRound(),
 		},
 	)
 	if err != nil {
@@ -276,7 +276,7 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			CurrentRound: dbo.nextRound(),
 		},
 	)
 	if err != nil {
@@ -351,6 +351,13 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	return nil
+}
+
+func (dbo *DBOrchestratorPoolCache) nextRound() *big.Int {
+	if dbo.rm.LastInitializedRound() == nil {
+		return nil
+	}
+	return new(big.Int).Add(dbo.rm.LastInitializedRound(), big.NewInt(1))
 }
 
 func parseURI(addr string) (*url.URL, error) {
