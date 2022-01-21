@@ -45,8 +45,8 @@ func NewUnbondingWatcher(addr ethcommon.Address, bondingManagerAddr ethcommon.Ad
 
 // Watch kicks off a loop that handles events from a block subscription
 func (w *UnbondingWatcher) Watch() {
-	blockEvents := make(chan []*blockwatch.Event, 10)
-	sub := w.bw.Subscribe(blockEvents)
+	blockSink := make(chan []*blockwatch.Event, 10)
+	sub := w.bw.Subscribe(blockSink)
 	defer sub.Unsubscribe()
 
 	for {
@@ -55,9 +55,9 @@ func (w *UnbondingWatcher) Watch() {
 			return
 		case err := <-sub.Err():
 			glog.Errorf("error with block subscription: %v", err)
-		case events := <-blockEvents:
+		case block := <-blockSink:
 			go func() {
-				w.handleBlockEvents(events)
+				w.handleBlockEvents(block)
 			}()
 		}
 	}

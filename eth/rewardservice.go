@@ -35,8 +35,8 @@ func (s *RewardService) Start(ctx context.Context) error {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	s.cancelWorker = cancel
 
-	rounds := make(chan types.Log, 10)
-	sub := s.tw.SubscribeRounds(rounds)
+	roundSink := make(chan types.Log, 10)
+	sub := s.tw.SubscribeRounds(roundSink)
 	defer sub.Unsubscribe()
 
 	s.working = true
@@ -50,7 +50,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 			if err != nil {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
-		case <-rounds:
+		case <-roundSink:
 			go func() {
 				err := s.tryReward()
 				if err != nil {
