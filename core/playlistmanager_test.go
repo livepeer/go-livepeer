@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func init() {
+	JsonPlaylistQuitTimeout = 0 * time.Second
+}
+
 func TestJSONList1(t *testing.T) {
 	assert := assert.New(t)
 	jspl1 := NewJSONPlaylist()
@@ -121,13 +125,14 @@ func TestJsonFlush(t *testing.T) {
 	assert.False(c.jsonList.hasTrack(vProfile.Name))
 	assert.Len(c.jsonList.Segments, 0)
 	assert.Len(c.jsonList.Segments[vProfile.Name], 0)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	fir, err := msess.ReadData(context.Background(), "sess1/"+plName)
 	assert.Nil(err)
 	assert.NotNil(fir)
 	data, err := ioutil.ReadAll(fir.Body)
 	assert.Nil(err)
 	assert.Equal(`{"duration_ms":43200000,"tracks":[{"name":"source","bandwidth":400000,"resolution":"256x144"}],"segments":{"source":[{"seq_no":1,"uri":"test_seg/1.ts","duration_ms":43200000}]}}`, string(data))
+	c.Cleanup()
 }
 
 func TestGetMasterPlaylist(t *testing.T) {
@@ -151,6 +156,7 @@ func TestGetMasterPlaylist(t *testing.T) {
 	assert.NotNil(mpl)
 	s := mpl.Segments[0]
 	assert.Equal(segName, s.URI)
+	c.Cleanup()
 }
 
 func TestGetOrCreatePL(t *testing.T) {
@@ -198,6 +204,7 @@ func TestGetOrCreatePL(t *testing.T) {
 	if len(masterPL.Variants) != 2 || masterPL.Variants[1].Resolution != vProfile.Resolution {
 		t.Error("Master PL had some unexpected variants or properties")
 	}
+	c.Cleanup()
 }
 
 func TestPlaylists(t *testing.T) {
@@ -267,6 +274,7 @@ func TestPlaylists(t *testing.T) {
 	if !compareSeg(seg1, newPL.Segments[0]) || !compareSeg(pl.Segments[1], newPL.Segments[0]) {
 		t.Error("Unexpected seg properties in new playlist")
 	}
+	c.Cleanup()
 
 }
 
@@ -281,7 +289,7 @@ func TestCleanup(t *testing.T) {
 	testData := []byte{1, 2, 3, 4}
 
 	c := NewBasicPlaylistManager(mid, osSession, nil)
-	uri, err := c.GetOSSession().SaveData("testName", testData, nil)
+	uri, err := c.GetOSSession().SaveData(context.TODO(), "testName", testData, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

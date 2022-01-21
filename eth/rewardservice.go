@@ -48,12 +48,12 @@ func (s *RewardService) Start(ctx context.Context) error {
 		select {
 		case err := <-sub.Err():
 			if err != nil {
-				glog.Errorf("Round subscription error err=%v", err)
+				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-rounds:
 			err := s.tryReward()
 			if err != nil {
-				glog.Errorf("Error trying to call reward err=%v", err)
+				glog.Errorf("Error trying to call reward err=%q", err)
 			}
 		case <-cancelCtx.Done():
 			glog.V(5).Infof("Reward service done")
@@ -91,30 +91,11 @@ func (s *RewardService) tryReward() error {
 			return err
 		}
 
-		err = s.client.CheckTx(tx)
-		if err != nil {
-			if err == context.DeadlineExceeded {
-				glog.Infof("Reward tx did not confirm within defined time window - will try to replace pending tx once")
-				// Previous attempt to call reward() still pending
-				// Replace pending tx by bumping gas price
-				tx, err = s.client.ReplaceTransaction(tx, "reward", nil)
-				if err != nil {
-					return err
-				}
-				if err := s.client.CheckTx(tx); err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
-		}
-
-		tp, err := s.client.GetTranscoderEarningsPoolForRound(s.client.Account().Address, currentRound)
-		if err != nil {
+		if err := s.client.CheckTx(tx); err != nil {
 			return err
 		}
 
-		glog.Infof("Called reward for round %v - %v rewards minted", currentRound, FormatUnits(tp.RewardPool, "LPTU"))
+		glog.Infof("Called reward for round %v", currentRound)
 
 		return nil
 	}

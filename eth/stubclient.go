@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/mock"
@@ -223,7 +224,7 @@ func (e *StubClient) Setup(password string, gasLimit uint64, gasPrice *big.Int) 
 func (e *StubClient) Account() accounts.Account {
 	return accounts.Account{Address: e.TranscoderAddress}
 }
-func (e *StubClient) Backend() (Backend, error) { return nil, nil }
+func (e *StubClient) Backend() Backend { return nil }
 
 // Rounds
 
@@ -376,12 +377,15 @@ func (c *StubClient) ReplaceTransaction(tx *types.Transaction, method string, ga
 	return nil, nil
 }
 func (c *StubClient) Sign(msg []byte) ([]byte, error) { return msg, c.Err }
-func (c *StubClient) SetGasInfo(uint64) error         { return nil }
+func (c *StubClient) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
+	return []byte("foo"), c.Err
+}
+func (c *StubClient) SetGasInfo(uint64) error { return nil }
 
 // Faucet
 func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return nil, nil }
 
 // Governance
 func (c *StubClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
-	return &types.Transaction{}, c.Err
+	return types.NewTx(&types.DynamicFeeTx{}), c.Err
 }

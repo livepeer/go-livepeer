@@ -158,7 +158,7 @@ func (e *EpicClassifier) Verify(params *Params) (*Results, error) {
 	endTime := time.Now()
 	// `defer` param evaluation semantics force us into an anonymous function
 	defer func() {
-		glog.Infof("Verification complete manifestID=%s seqNo=%d err=%v dur=%v",
+		glog.Infof("Verification complete manifestID=%s seqNo=%d err=%q dur=%v",
 			mid, source.SeqNo, deferErr, endTime.Sub(startTime))
 	}()
 	if deferErr = err; err != nil {

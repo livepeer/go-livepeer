@@ -289,17 +289,20 @@ func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, d
 		select {
 		case red := <-queue.Redeemable():
 			tx, err := sm.redeemWinningTicket(red.SignedTicket)
-			if err != nil {
-				red.resCh <- struct {
-					txHash ethcommon.Hash
-					err    error
-				}{ethcommon.Hash{}, err}
-			} else {
-				red.resCh <- struct {
-					txHash ethcommon.Hash
-					err    error
-				}{tx.Hash(), nil}
+			res := struct {
+				txHash ethcommon.Hash
+				err    error
+			}{
+				ethcommon.Hash{},
+				err,
 			}
+			// FIXME: If there are replacement txs then tx.Hash() could be different
+			// from the hash of the replacement tx that was mined
+			if tx != nil {
+				res.txHash = tx.Hash()
+			}
+
+			red.resCh <- res
 		case <-done:
 			// When the ticket consumer exits, tell the ticketQueue
 			// to exit as well
@@ -348,6 +351,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 	}
 }
 
+// Returns a non-nil tx if one is sent. Otherwise, returns a nil tx
 func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.Transaction, error) {
 	availableFunds, err := sm.availableFunds(ticket.Sender)
 	if err != nil {
@@ -358,13 +362,13 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	used, err := sm.broker.IsUsedTicket(ticket.Ticket)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+			monitor.TicketRedemptionError()
 		}
 		return nil, err
 	}
 	if used {
 		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+			monitor.TicketRedemptionError()
 		}
 		return nil, errIsUsedTicket
 	}
@@ -412,7 +416,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	tx, err := sm.broker.RedeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+			monitor.TicketRedemptionError()
 		}
 		return nil, err
 	}
@@ -420,15 +424,16 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	// Wait for transaction to confirm
 	if err := sm.broker.CheckTx(tx); err != nil {
 		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Ticket.Sender.String())
+			monitor.TicketRedemptionError()
 		}
-		return nil, err
+		// Return tx so caller can utilize the tx if it fails
+		return tx, err
 	}
 
 	if monitor.Enabled {
 		// TODO(yondonfu): Handle case where < ticket.FaceValue is actually
 		// redeemed i.e. if sender reserve cannot cover the full ticket.FaceValue
-		monitor.ValueRedeemed(ticket.Ticket.Sender.String(), ticket.Ticket.FaceValue)
+		monitor.ValueRedeemed(ticket.Ticket.FaceValue)
 	}
 
 	return tx, nil

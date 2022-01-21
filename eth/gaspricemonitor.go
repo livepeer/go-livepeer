@@ -28,12 +28,14 @@ type GasPriceMonitor struct {
 	// pollingMu protects access to polling related fields
 	pollingMu sync.Mutex
 
-	// gasPriceMu protects access to gasPrice
+	// gasPriceMu protects access to gasPrice and minGasPrice
 	gasPriceMu sync.RWMutex
 	// gasPrice is the current gas price to be returned to users
 	gasPrice *big.Int
 	// minGasPrice is the minimum gas price below which polled values will be discarded
 	minGasPrice *big.Int
+	// maxGasPrice is the max acceptable gas price defined by the user
+	maxGasPrice *big.Int
 
 	// update is a channel used to send notifications to a listener
 	// when the gas price is updated
@@ -41,16 +43,24 @@ type GasPriceMonitor struct {
 }
 
 // NewGasPriceMonitor returns a GasPriceMonitor
-func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGasPrice *big.Int) *GasPriceMonitor {
+func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGasPrice *big.Int, maxGasPrice *big.Int) *GasPriceMonitor {
 	minGasP := big.NewInt(0)
 	if minGasPrice != nil {
 		minGasP = minGasPrice
 	}
+	if monitor.Enabled {
+		monitor.MinGasPrice(minGasP)
+		if maxGasPrice != nil {
+			monitor.MaxGasPrice(maxGasPrice)
+		}
+	}
+
 	return &GasPriceMonitor{
 		gpo:             gpo,
 		pollingInterval: pollingInterval,
 		gasPrice:        big.NewInt(0),
 		minGasPrice:     minGasP,
+		maxGasPrice:     maxGasPrice,
 	}
 }
 
@@ -59,7 +69,27 @@ func (gpm *GasPriceMonitor) GasPrice() *big.Int {
 	gpm.gasPriceMu.RLock()
 	defer gpm.gasPriceMu.RUnlock()
 
+	if gpm.gasPrice.Cmp(gpm.minGasPrice) < 0 {
+		return gpm.minGasPrice
+	}
+
 	return gpm.gasPrice
+}
+
+func (gpm *GasPriceMonitor) SetMinGasPrice(minGasPrice *big.Int) {
+	gpm.gasPriceMu.Lock()
+	defer gpm.gasPriceMu.Unlock()
+	gpm.minGasPrice = minGasPrice
+
+	if monitor.Enabled {
+		monitor.MinGasPrice(minGasPrice)
+	}
+}
+
+func (gpm *GasPriceMonitor) MinGasPrice() *big.Int {
+	gpm.gasPriceMu.RLock()
+	defer gpm.gasPriceMu.RUnlock()
+	return gpm.minGasPrice
 }
 
 // Start starts polling for gas price updates and returns a channel to receive
@@ -123,6 +153,22 @@ func (gpm *GasPriceMonitor) Stop() error {
 	close(gpm.update)
 
 	return nil
+}
+
+func (gpm *GasPriceMonitor) SetMaxGasPrice(gp *big.Int) {
+	gpm.gasPriceMu.Lock()
+	defer gpm.gasPriceMu.Unlock()
+	gpm.maxGasPrice = gp
+
+	if monitor.Enabled {
+		monitor.MaxGasPrice(gp)
+	}
+}
+
+func (gpm *GasPriceMonitor) MaxGasPrice() *big.Int {
+	gpm.gasPriceMu.RLock()
+	defer gpm.gasPriceMu.RUnlock()
+	return gpm.maxGasPrice
 }
 
 func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {

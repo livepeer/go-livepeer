@@ -41,6 +41,10 @@ func (s *stubGasPriceOracle) Queries() int {
 	return s.queries
 }
 
+func (s *stubGasPriceOracle) GasPrice() *big.Int {
+	return s.gasPrice
+}
+
 func (s *stubGasPriceOracle) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,7 +62,7 @@ func TestStart(t *testing.T) {
 	gasPrice := big.NewInt(777)
 	gpo := newStubGasPriceOracle(gasPrice)
 
-	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0), nil)
 
 	assert := assert.New(t)
 
@@ -78,7 +82,6 @@ func TestStart(t *testing.T) {
 	update, err = gpm.Start(context.Background())
 	assert.NotNil(update)
 	assert.Nil(err)
-	defer gpm.Stop()
 
 	assert.Equal(gasPrice, gpm.GasPrice())
 
@@ -87,6 +90,20 @@ func TestStart(t *testing.T) {
 	update, err = gpm.Start(context.Background())
 	assert.Nil(update)
 	assert.EqualError(err, "already polling")
+	gpm.Stop()
+
+	// Test initial gas price less than minGasPrice
+
+	minGasPrice := new(big.Int).Add(gasPrice, big.NewInt(1))
+	gpm = NewGasPriceMonitor(gpo, 1*time.Hour, minGasPrice, nil)
+
+	update, err = gpm.Start(context.Background())
+	assert.NotNil(update)
+	assert.Nil(err)
+	defer gpm.Stop()
+
+	assert.NotEqual(big.NewInt(0), gpm.GasPrice())
+	assert.Equal(minGasPrice, gpm.GasPrice())
 }
 
 func TestStart_Polling(t *testing.T) {
@@ -97,7 +114,7 @@ func TestStart_Polling(t *testing.T) {
 	gpo := newStubGasPriceOracle(gasPrice1)
 
 	pollingInterval := 1 * time.Millisecond
-	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(10))
+	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(10), nil)
 
 	assert := assert.New(t)
 
@@ -148,7 +165,7 @@ func TestStart_Polling_ContextCancel(t *testing.T) {
 	gpo := newStubGasPriceOracle(gasPrice1)
 
 	pollingInterval := 1 * time.Second
-	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(0))
+	gpm := NewGasPriceMonitor(gpo, pollingInterval, big.NewInt(0), nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	update, err := gpm.Start(ctx)
@@ -171,7 +188,7 @@ func TestStop(t *testing.T) {
 	gpo := newStubGasPriceOracle(gasPrice)
 	gpo.SetGasPrice(gasPrice)
 
-	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0))
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0), nil)
 
 	assert := assert.New(t)
 
@@ -199,4 +216,25 @@ func TestStop(t *testing.T) {
 	// check gasPriceUpdate channel is closed
 	_, ok := (<-gpm.update)
 	assert.False(ok)
+}
+
+func TestMinGasPrice(t *testing.T) {
+	gasPrice := big.NewInt(777)
+	gpo := newStubGasPriceOracle(gasPrice)
+	gpo.SetGasPrice(gasPrice)
+
+	assert := assert.New(t)
+
+	gpm := NewGasPriceMonitor(gpo, 1*time.Hour, big.NewInt(0), nil)
+	assert.Equal(big.NewInt(0), gpm.MinGasPrice())
+
+	gpm.SetMinGasPrice(big.NewInt(1))
+	assert.Equal(big.NewInt(1), gpm.MinGasPrice())
+}
+
+func TestSetMaxGasPrice(t *testing.T) {
+	gp := big.NewInt(10)
+	gpm := &GasPriceMonitor{}
+	gpm.SetMaxGasPrice(gp)
+	assert.Equal(t, gp, gpm.MaxGasPrice())
 }

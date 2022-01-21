@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -68,8 +69,9 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			MaxPrice:     server.BroadcastCfg.MaxPrice(),
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
+			CurrentRound:   dbo.nextRound(),
+			UpdatedLastDay: true,
 		},
 	)
 	if err != nil || len(orchs) <= 0 {
@@ -85,12 +87,33 @@ func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	return uris, nil
 }
 
-func (dbo *DBOrchestratorPoolCache) GetURLs() []*url.URL {
+func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
 	uris, _ := dbo.getURLs()
-	return uris
+	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
+	for _, uri := range uris {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: common.Score_Untrusted})
+	}
+	return infos
 }
 
-func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
+func (dbo *DBOrchestratorPoolCache) GetInfo(uri string) common.OrchestratorLocalInfo {
+	uris, _ := dbo.getURLs()
+	res := common.OrchestratorLocalInfo{
+		Score: common.Score_Untrusted,
+	}
+
+	for _, uri_ := range uris {
+		if uri_.String() == uri {
+			res.URL = uri_
+			break
+		}
+	}
+	return res
+}
+
+func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+
 	uris, err := dbo.getURLs()
 	if err != nil || len(uris) <= 0 {
 		return nil, err
@@ -103,7 +126,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 		}
 
 		if err := dbo.ticketParamsValidator.ValidateTicketParams(pmTicketParams(info.TicketParams)); err != nil {
-			glog.V(common.DEBUG).Infof("invalid ticket params orch=%v err=%v",
+			clog.V(common.DEBUG).Infof(ctx, "invalid ticket params orch=%v err=%q",
 				info.GetTranscoder(),
 				err,
 			)
@@ -114,15 +137,15 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 		maxPrice := server.BroadcastCfg.MaxPrice()
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
-			glog.V(common.DEBUG).Infof("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			clog.V(common.DEBUG).Infof(ctx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
 			return false
 		}
 		if price == nil {
-			glog.V(common.DEBUG).Infof("no price info received for orch=%v", info.GetTranscoder())
+			clog.V(common.DEBUG).Infof(ctx, "no price info received for orch=%v", info.GetTranscoder())
 			return false
 		}
 		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
-			glog.V(common.DEBUG).Infof("orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
+			clog.V(common.DEBUG).Infof(ctx, "orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
 				info.GetTranscoder(),
 				price.FloatString(3),
 				maxPrice.FloatString(3),
@@ -132,8 +155,8 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred)
-	orchInfos, err := orchPool.GetOrchestrators(numOrchestrators, suspender, caps)
+	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted)
+	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
 	}
@@ -144,11 +167,19 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(numOrchestrators int, suspe
 func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
-			MaxPrice:     server.BroadcastCfg.MaxPrice(),
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
+			CurrentRound:   dbo.nextRound(),
+			UpdatedLastDay: true,
 		},
 	)
 	return count
+}
+
+func (dbo *DBOrchestratorPoolCache) SizeWith(scorePred common.ScorePred) int {
+	if scorePred(common.Score_Untrusted) {
+		return dbo.Size()
+	}
+	return 0
 }
 
 func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {
@@ -169,7 +200,7 @@ func (dbo *DBOrchestratorPoolCache) cacheTranscoderPool() error {
 func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			CurrentRound: dbo.nextRound(),
 		},
 	)
 	if err != nil {
@@ -245,7 +276,7 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
+			CurrentRound: dbo.nextRound(),
 		},
 	)
 	if err != nil {
@@ -277,7 +308,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
-			errc <- fmt.Errorf("invalid price info orch=%v err=%v", info.GetTranscoder(), err)
+			errc <- fmt.Errorf("invalid price info orch=%v err=%q", info.GetTranscoder(), err)
 			return
 		}
 
@@ -320,6 +351,13 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	return nil
+}
+
+func (dbo *DBOrchestratorPoolCache) nextRound() *big.Int {
+	if dbo.rm.LastInitializedRound() == nil {
+		return nil
+	}
+	return new(big.Int).Add(dbo.rm.LastInitializedRound(), big.NewInt(1))
 }
 
 func parseURI(addr string) (*url.URL, error) {

@@ -73,11 +73,11 @@ func (r *RoundInitializer) Start() error {
 			return nil
 		case err := <-blockSub.Err():
 			if err != nil {
-				glog.Errorf("Block subscription error err=%v", err)
+				glog.Errorf("Block subscription error err=%q", err)
 			}
 		case err := <-roundSub.Err():
 			if err != nil {
-				glog.Errorf("Round subscription error err=%v", err)
+				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
 			r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)

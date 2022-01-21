@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// PollMetaData contains all meta data concerning the Poll contract.
+var PollMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_choiceID\",\"type\":\"uint256\"}],\"name\":\"vote\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"endBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"destroy\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endBlock\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"choiceID\",\"type\":\"uint256\"}],\"name\":\"Vote\",\"type\":\"event\"}]",
+}
+
 // PollABI is the input ABI used to generate the binding from.
-const PollABI = "[{\"constant\":true,\"inputs\":[],\"name\":\"endBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endBlock\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"choiceID\",\"type\":\"uint256\"}],\"name\":\"Vote\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_choiceID\",\"type\":\"uint256\"}],\"name\":\"vote\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"destroy\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+// Deprecated: Use PollMetaData.ABI instead.
+var PollABI = PollMetaData.ABI
 
 // Poll is an auto generated Go binding around an Ethereum contract.
 type Poll struct {
@@ -138,7 +145,7 @@ func bindPoll(address common.Address, caller bind.ContractCaller, transactor bin
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Poll *PollRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Poll *PollRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Poll.Contract.PollCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_Poll *PollRaw) Transact(opts *bind.TransactOpts, method string, params ..
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Poll *PollCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Poll *PollCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Poll.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,26 +181,31 @@ func (_Poll *PollTransactorRaw) Transact(opts *bind.TransactOpts, method string,
 
 // EndBlock is a free data retrieval call binding the contract method 0x083c6323.
 //
-// Solidity: function endBlock() constant returns(uint256)
+// Solidity: function endBlock() view returns(uint256)
 func (_Poll *PollCaller) EndBlock(opts *bind.CallOpts) (*big.Int, error) {
-	var (
-		ret0 = new(*big.Int)
-	)
-	out := ret0
-	err := _Poll.contract.Call(opts, out, "endBlock")
-	return *ret0, err
+	var out []interface{}
+	err := _Poll.contract.Call(opts, &out, "endBlock")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
 }
 
 // EndBlock is a free data retrieval call binding the contract method 0x083c6323.
 //
-// Solidity: function endBlock() constant returns(uint256)
+// Solidity: function endBlock() view returns(uint256)
 func (_Poll *PollSession) EndBlock() (*big.Int, error) {
 	return _Poll.Contract.EndBlock(&_Poll.CallOpts)
 }
 
 // EndBlock is a free data retrieval call binding the contract method 0x083c6323.
 //
-// Solidity: function endBlock() constant returns(uint256)
+// Solidity: function endBlock() view returns(uint256)
 func (_Poll *PollCallerSession) EndBlock() (*big.Int, error) {
 	return _Poll.Contract.EndBlock(&_Poll.CallOpts)
 }
@@ -381,5 +393,6 @@ func (_Poll *PollFilterer) ParseVote(log types.Log) (*PollVote, error) {
 	if err := _Poll.contract.UnpackLog(event, "Vote", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }

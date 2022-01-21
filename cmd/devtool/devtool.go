@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/livepeer/go-livepeer/eth"
@@ -159,10 +161,49 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 	}
 	glog.Infof("Using controller address %s", ethController)
 
-	client, err := eth.NewClient(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, passphrase, backend,
-		ethcommon.HexToAddress(ethController), ethTxTimeout, nil)
+	gpm := eth.NewGasPriceMonitor(backend, 5*time.Second, big.NewInt(0), nil)
+
+	// Start gas price monitor
+	_, err = gpm.Start(context.Background())
 	if err != nil {
-		glog.Errorf("Failed to create client: %v", err)
+		glog.Errorf("error starting gas price monitor: %v", err)
+		return
+	}
+	defer gpm.Stop()
+
+	chainID, err := backend.ChainID(context.Background())
+	if err != nil {
+		glog.Errorf("Failed to get chain ID from remote ethereum node: %v", err)
+		return
+	}
+
+	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, chainID)
+	if err != nil {
+		glog.Errorf("Error creating Ethereum account manager: %v", err)
+		return
+	}
+
+	if err := am.Unlock(passphrase); err != nil {
+		glog.Errorf("Error unlocking Ethereum account: %v", err)
+		return
+	}
+
+	tm := eth.NewTransactionManager(backend, gpm, am, 5*time.Minute, 0)
+	go tm.Start()
+	defer tm.Stop()
+
+	ethCfg := eth.LivepeerEthClientConfig{
+		AccountManager:     am,
+		ControllerAddr:     ethcommon.HexToAddress(ethController),
+		EthClient:          backend,
+		GasPriceMonitor:    gpm,
+		TransactionManager: tm,
+		Signer:             types.LatestSignerForChainID(chainID),
+	}
+
+	client, err := eth.NewClient(ethCfg)
+	if err != nil {
+		glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
 		return
 	}
 
@@ -393,10 +434,7 @@ func remoteConsole(destAccountAddr string) error {
 		console.log(logs[0][0].address);''
 	`
 		glog.Infof("Running eth script: %s", getEthControllerScript)
-		err = console.Evaluate(getEthControllerScript)
-		if err != nil {
-			glog.Error(err)
-		}
+		console.Evaluate(getEthControllerScript)
 		if printer.Len() == 0 {
 			glog.Fatal("Can't find deployed controller")
 		}
@@ -409,10 +447,7 @@ func remoteConsole(destAccountAddr string) error {
 		gethMiningAccount, broadcasterGeth)
 	glog.Infof("Running eth script: %s", script)
 
-	err = console.Evaluate(script)
-	if err != nil {
-		glog.Error(err)
-	}
+	console.Evaluate(script)
 
 	time.Sleep(3 * time.Second)
 

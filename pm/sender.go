@@ -155,13 +155,19 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	}
 
 	latestBlock := s.timeManager.LastSeenBlock()
-	if ticketParams.ExpirationBlock.Cmp(latestBlock) <= 0 {
+
+	currentBuffer := new(big.Int).Sub(ticketParams.ExpirationBlock, latestBlock).Int64()
+	if currentBuffer <= paramsExpiryBuffer {
 		return ErrTicketParamsExpired
 	}
 
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	if ev.Cmp(big.NewRat(0, 1)) <= 0 {
 		return nil
+	}
+
+	if ev.Cmp(new(big.Rat).SetInt(ticketParams.FaceValue)) >= 0 {
+		return fmt.Errorf("ticket faceValue too low faceValue=%v", ticketParams.FaceValue)
 	}
 
 	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)

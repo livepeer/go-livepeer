@@ -4,6 +4,7 @@
 package contracts
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
@@ -17,18 +18,24 @@ import (
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
-	_ = abi.U256
 	_ = bind.Bind
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
 )
 
+// ControllerMetaData contains all meta data concerning the Controller contract.
+var ControllerMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContractInfo\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"bytes20\",\"name\":\"\",\"type\":\"bytes20\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"_contractAddress\",\"type\":\"address\"},{\"internalType\":\"bytes20\",\"name\":\"_gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"setContractInfo\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"id\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"contractAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bytes20\",\"name\":\"gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"SetContractInfo\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"}]",
+}
+
 // ControllerABI is the input ABI used to generate the binding from.
-const ControllerABI = "[{\"constant\":false,\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"id\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"contractAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bytes20\",\"name\":\"gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"SetContractInfo\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Pause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[],\"name\":\"Unpause\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"_contractAddress\",\"type\":\"address\"},{\"internalType\":\"bytes20\",\"name\":\"_gitCommitHash\",\"type\":\"bytes20\"}],\"name\":\"setContractInfo\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"_controller\",\"type\":\"address\"}],\"name\":\"updateController\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContractInfo\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"bytes20\",\"name\":\"\",\"type\":\"bytes20\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"_id\",\"type\":\"bytes32\"}],\"name\":\"getContract\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"}]"
+// Deprecated: Use ControllerMetaData.ABI instead.
+var ControllerABI = ControllerMetaData.ABI
 
 // Controller is an auto generated Go binding around an Ethereum contract.
 type Controller struct {
@@ -138,7 +145,7 @@ func bindController(address common.Address, caller bind.ContractCaller, transact
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Controller *ControllerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Controller *ControllerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Controller.Contract.ControllerCaller.contract.Call(opts, result, method, params...)
 }
 
@@ -157,7 +164,7 @@ func (_Controller *ControllerRaw) Transact(opts *bind.TransactOpts, method strin
 // sets the output to result. The result type might be a single field for simple
 // returns, a slice of interfaces for anonymous returns and a struct for named
 // returns.
-func (_Controller *ControllerCallerRaw) Call(opts *bind.CallOpts, result interface{}, method string, params ...interface{}) error {
+func (_Controller *ControllerCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
 	return _Controller.Contract.contract.Call(opts, result, method, params...)
 }
 
@@ -174,108 +181,125 @@ func (_Controller *ControllerTransactorRaw) Transact(opts *bind.TransactOpts, me
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(bytes32 _id) constant returns(address)
+// Solidity: function getContract(bytes32 _id) view returns(address)
 func (_Controller *ControllerCaller) GetContract(opts *bind.CallOpts, _id [32]byte) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _Controller.contract.Call(opts, out, "getContract", _id)
-	return *ret0, err
+	var out []interface{}
+	err := _Controller.contract.Call(opts, &out, "getContract", _id)
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(bytes32 _id) constant returns(address)
+// Solidity: function getContract(bytes32 _id) view returns(address)
 func (_Controller *ControllerSession) GetContract(_id [32]byte) (common.Address, error) {
 	return _Controller.Contract.GetContract(&_Controller.CallOpts, _id)
 }
 
 // GetContract is a free data retrieval call binding the contract method 0xe16c7d98.
 //
-// Solidity: function getContract(bytes32 _id) constant returns(address)
+// Solidity: function getContract(bytes32 _id) view returns(address)
 func (_Controller *ControllerCallerSession) GetContract(_id [32]byte) (common.Address, error) {
 	return _Controller.Contract.GetContract(&_Controller.CallOpts, _id)
 }
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) view returns(address, bytes20)
 func (_Controller *ControllerCaller) GetContractInfo(opts *bind.CallOpts, _id [32]byte) (common.Address, [20]byte, error) {
-	var (
-		ret0 = new(common.Address)
-		ret1 = new([20]byte)
-	)
-	out := &[]interface{}{
-		ret0,
-		ret1,
+	var out []interface{}
+	err := _Controller.contract.Call(opts, &out, "getContractInfo", _id)
+
+	if err != nil {
+		return *new(common.Address), *new([20]byte), err
 	}
-	err := _Controller.contract.Call(opts, out, "getContractInfo", _id)
-	return *ret0, *ret1, err
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+	out1 := *abi.ConvertType(out[1], new([20]byte)).(*[20]byte)
+
+	return out0, out1, err
+
 }
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) view returns(address, bytes20)
 func (_Controller *ControllerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
 	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
 }
 
 // GetContractInfo is a free data retrieval call binding the contract method 0x613e2de2.
 //
-// Solidity: function getContractInfo(bytes32 _id) constant returns(address, bytes20)
+// Solidity: function getContractInfo(bytes32 _id) view returns(address, bytes20)
 func (_Controller *ControllerCallerSession) GetContractInfo(_id [32]byte) (common.Address, [20]byte, error) {
 	return _Controller.Contract.GetContractInfo(&_Controller.CallOpts, _id)
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_Controller *ControllerCaller) Owner(opts *bind.CallOpts) (common.Address, error) {
-	var (
-		ret0 = new(common.Address)
-	)
-	out := ret0
-	err := _Controller.contract.Call(opts, out, "owner")
-	return *ret0, err
+	var out []interface{}
+	err := _Controller.contract.Call(opts, &out, "owner")
+
+	if err != nil {
+		return *new(common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(common.Address)).(*common.Address)
+
+	return out0, err
+
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_Controller *ControllerSession) Owner() (common.Address, error) {
 	return _Controller.Contract.Owner(&_Controller.CallOpts)
 }
 
 // Owner is a free data retrieval call binding the contract method 0x8da5cb5b.
 //
-// Solidity: function owner() constant returns(address)
+// Solidity: function owner() view returns(address)
 func (_Controller *ControllerCallerSession) Owner() (common.Address, error) {
 	return _Controller.Contract.Owner(&_Controller.CallOpts)
 }
 
 // Paused is a free data retrieval call binding the contract method 0x5c975abb.
 //
-// Solidity: function paused() constant returns(bool)
+// Solidity: function paused() view returns(bool)
 func (_Controller *ControllerCaller) Paused(opts *bind.CallOpts) (bool, error) {
-	var (
-		ret0 = new(bool)
-	)
-	out := ret0
-	err := _Controller.contract.Call(opts, out, "paused")
-	return *ret0, err
+	var out []interface{}
+	err := _Controller.contract.Call(opts, &out, "paused")
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
 }
 
 // Paused is a free data retrieval call binding the contract method 0x5c975abb.
 //
-// Solidity: function paused() constant returns(bool)
+// Solidity: function paused() view returns(bool)
 func (_Controller *ControllerSession) Paused() (bool, error) {
 	return _Controller.Contract.Paused(&_Controller.CallOpts)
 }
 
 // Paused is a free data retrieval call binding the contract method 0x5c975abb.
 //
-// Solidity: function paused() constant returns(bool)
+// Solidity: function paused() view returns(bool)
 func (_Controller *ControllerCallerSession) Paused() (bool, error) {
 	return _Controller.Contract.Paused(&_Controller.CallOpts)
 }
@@ -534,6 +558,7 @@ func (_Controller *ControllerFilterer) ParseOwnershipTransferred(log types.Log) 
 	if err := _Controller.contract.UnpackLog(event, "OwnershipTransferred", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -666,6 +691,7 @@ func (_Controller *ControllerFilterer) ParsePause(log types.Log) (*ControllerPau
 	if err := _Controller.contract.UnpackLog(event, "Pause", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -801,6 +827,7 @@ func (_Controller *ControllerFilterer) ParseSetContractInfo(log types.Log) (*Con
 	if err := _Controller.contract.UnpackLog(event, "SetContractInfo", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }
 
@@ -933,5 +960,6 @@ func (_Controller *ControllerFilterer) ParseUnpause(log types.Log) (*ControllerU
 	if err := _Controller.contract.UnpackLog(event, "Unpause", log); err != nil {
 		return nil, err
 	}
+	event.Raw = log
 	return event, nil
 }

@@ -68,7 +68,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// Last InitializedRound error
 	lpEth.Errors["LastInitializedRound"] = testErr
-	expErr := fmt.Sprintf("error fetching initial lastInitializedRound value err=%v", testErr)
+	expErr := fmt.Sprintf("error fetching initial lastInitializedRound value err=%q", testErr)
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)
@@ -76,7 +76,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// BlockHashForRound error
 	lpEth.Errors["BlockHashForRound"] = testErr
-	expErr = fmt.Sprintf("error fetching initial lastInitializedBlockHash value err=%v", testErr)
+	expErr = fmt.Sprintf("error fetching initial lastInitializedBlockHash value err=%q", testErr)
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)
@@ -84,7 +84,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// CurrentRoundStartBlock error
 	lpEth.Errors["CurrentRoundStartBlock"] = testErr
-	expErr = fmt.Sprintf("error fetching current round start block err=%v", testErr)
+	expErr = fmt.Sprintf("error fetching current round start block err=%q", testErr)
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)
@@ -92,7 +92,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// GetLastestBlock error
 	watcher.err = fmt.Errorf("GetLatestBlock error")
-	expErr = fmt.Sprintf("error fetching last seen block err=%v", watcher.err)
+	expErr = fmt.Sprintf("error fetching last seen block err=%q", watcher.err)
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)
@@ -100,7 +100,7 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 
 	// TranscoderPoolSize error
 	lpEth.Errors["GetTranscoderPoolSize"] = testErr
-	expErr = fmt.Sprintf("error fetching initial transcoderPoolSize err=%v", testErr)
+	expErr = fmt.Sprintf("error fetching initial transcoderPoolSize err=%q", testErr)
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(tw)
 	assert.EqualError(err, expErr)

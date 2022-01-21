@@ -20,6 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/livepeer-data/pkg/data"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/m3u8"
@@ -28,6 +29,21 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func defaultTicketBatch() *pm.TicketBatch {
+	return &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient:       pm.RandAddress(),
+			FaceValue:       big.NewInt(1234),
+			WinProb:         big.NewInt(5678),
+			Seed:            big.NewInt(7777),
+			ExpirationBlock: big.NewInt(1000),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams:           []*pm.TicketSenderParams{{SenderNonce: 777, Sig: pm.RandBytes(42)}},
+	}
+}
 
 func StubBroadcastSession(transcoder string) *BroadcastSession {
 	return &BroadcastSession{
@@ -41,6 +57,8 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 			},
 			AuthToken: stubAuthToken,
 		},
+		OrchestratorScore: common.Score_Trusted,
+		lock:              &sync.RWMutex{},
 	}
 }
 
@@ -51,7 +69,23 @@ func StubBroadcastSessionsManager() *BroadcastSessionsManager {
 	return bsmWithSessList([]*BroadcastSession{sess1, sess2})
 }
 
+func selFactoryEmpty() BroadcastSessionsSelector {
+	return &LIFOSelector{}
+}
+
 func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
+	return bsmWithSessListExt(sessList, nil, false)
+}
+
+func cloneSessions(sessions []*BroadcastSession) []*BroadcastSession {
+	res := make([]*BroadcastSession, len(sessions))
+	for i, sess := range sessions {
+		res[i] = sess.Clone()
+	}
+	return res
+}
+
+func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefresh bool) *BroadcastSessionsManager {
 	sessMap := make(map[string]*BroadcastSession)
 	for _, sess := range sessList {
 		sessMap[sess.OrchestratorInfo.Transcoder] = sess
@@ -60,17 +94,49 @@ func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 	sel := &LIFOSelector{}
 	sel.Add(sessList)
 
-	return &BroadcastSessionsManager{
-		sel:      sel,
-		sessMap:  sessMap,
-		sessLock: &sync.Mutex{},
-		createSessions: func() ([]*BroadcastSession, error) {
-			return sessList, nil
-		},
-		sus:      newSuspender(),
-		numOrchs: 1,
-		poolSize: len(sessList),
+	var createSessions = func() ([]*BroadcastSession, error) {
+		// should return new sessions
+		return cloneSessions(sessList), nil
 	}
+
+	untrustedSessMap := make(map[string]*BroadcastSession)
+	for _, sess := range untrustedSessList {
+		untrustedSessMap[sess.OrchestratorInfo.Transcoder] = sess
+	}
+	unsel := &LIFOSelector{}
+	unsel.Add(untrustedSessList)
+	var createSessionsUntrusted = func() ([]*BroadcastSession, error) {
+		// should return new sessions
+		return cloneSessions(untrustedSessList), nil
+	}
+
+	var createSessionsEmpty = func() ([]*BroadcastSession, error) {
+		return nil, nil
+	}
+	if noRefresh {
+		createSessions = createSessionsEmpty
+		createSessionsUntrusted = createSessionsEmpty
+
+	}
+	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
+	trustedPool.sessMap = sessMap
+	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
+	untrustedPool.sessMap = untrustedSessMap
+
+	return &BroadcastSessionsManager{
+		trustedPool:   trustedPool,
+		untrustedPool: untrustedPool,
+	}
+}
+
+func stubSessionList(ctx context.Context, sessionCount int, handler http.HandlerFunc) []*BroadcastSession {
+	sessions := []*BroadcastSession{}
+	for i := 0; i < sessionCount; i++ {
+		sess := StubBroadcastSession(stubTestTranscoder(ctx, handler))
+		sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+		sessions = append(sessions, sess)
+	}
+	return sessions
 }
 
 type sessionsManagerLIFO struct {
@@ -82,7 +148,7 @@ func newSessionsManagerLIFO(bsm *BroadcastSessionsManager) *sessionsManagerLIFO 
 }
 
 func (bsm *sessionsManagerLIFO) sessList() []*BroadcastSession {
-	sessList, _ := bsm.sel.(*LIFOSelector)
+	sessList, _ := bsm.trustedPool.sel.(*LIFOSelector)
 	return *sessList
 }
 
@@ -114,7 +180,7 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
+func (s *stubOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -186,11 +252,12 @@ type stubSelector struct {
 	size int
 }
 
-func (s *stubSelector) Add(sessions []*BroadcastSession) {}
-func (s *stubSelector) Complete(sess *BroadcastSession)  {}
-func (s *stubSelector) Select() *BroadcastSession        { return s.sess }
-func (s *stubSelector) Size() int                        { return s.size }
-func (s *stubSelector) Clear()                           {}
+func (s *stubSelector) Add(sessions []*BroadcastSession)         {}
+func (s *stubSelector) Complete(sess *BroadcastSession)          {}
+func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
+func (s *stubSelector) Size() int                                { return s.size }
+func (s *stubSelector) Clear()                                   {}
+func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -234,24 +301,26 @@ func TestNewSessionManager(t *testing.T) {
 	params := &core.StreamParameters{OS: storage}
 
 	// Check empty pool produces expected numOrchs
-	sess := NewSessionManager(n, params, &LIFOSelector{})
-	assert.Equal(0, sess.numOrchs)
+
+	sess := NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+	assert.Equal(0, sess.trustedPool.numOrchs)
+	assert.Equal(0, sess.untrustedPool.numOrchs)
 
 	// Check numOrchs up to maximum and a bit beyond
 	sd := &stubDiscovery{}
 	n.OrchestratorPool = sd
 	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(n, params, &LIFOSelector{})
+		sess = NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
 		if i < max {
-			assert.Equal(i, sess.numOrchs)
+			assert.Equal(i, sess.trustedPool.numOrchs)
 		} else {
-			assert.Equal(max, sess.numOrchs)
+			assert.Equal(max, sess.trustedPool.numOrchs)
 		}
 		sd.infos = append(sd.infos, &net.OrchestratorInfo{PriceInfo: &net.PriceInfo{}})
 	}
 	// sanity check some expected postconditions
-	assert.Equal(sess.numOrchs, max)
+	assert.Equal(sess.trustedPool.numOrchs, max)
 	assert.True(sd.Size() > max, "pool should be greater than max numOrchs")
 }
 
@@ -264,69 +333,6 @@ func wgWait(wg *sync.WaitGroup) bool {
 	case <-time.After(1 * time.Second):
 		return false
 	}
-}
-
-func TestSelectSession(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	// assert that initial lengths are as expected
-	assert := assert.New(t)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-	expectedSess1 := bsm.sessList()[1]
-	expectedSess2 := bsm.sessList()[0]
-
-	// assert last session selected and sessList is correct length
-	sess := bsm.selectSession()
-	assert.Equal(expectedSess1, sess)
-	assert.Equal(sess, bsm.lastSess)
-	assert.Len(bsm.sessList(), 1)
-
-	sess = bsm.selectSession()
-	assert.Equal(expectedSess2, sess)
-	assert.Equal(sess, bsm.lastSess)
-	assert.Len(bsm.sessList(), 0)
-
-	// assert no session is selected from empty list
-	sess = bsm.selectSession()
-	assert.Nil(sess)
-	assert.Nil(bsm.lastSess)
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 2) // map should still track original sessions
-
-	// assert session list gets refreshed if under threshold. check via waitgroup
-	bsm = newSessionsManagerLIFO(bsmWithSessList([]*BroadcastSession{}))
-	bsm.numOrchs = 1
-	var wg sync.WaitGroup
-	wg.Add(1)
-	bsm.createSessions = func() ([]*BroadcastSession, error) { wg.Done(); return nil, fmt.Errorf("err") }
-	bsm.selectSession()
-	assert.True(wgWait(&wg), "Session refresh timed out")
-
-	// assert the selection retries if session in list doesn't exist in map
-	bsm = newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-	// sanity checks then rebuild in order
-	firstSess := bsm.selectSession()
-	expectedSess := bsm.selectSession()
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 2)
-	bsm.completeSession(expectedSess)
-	bsm.completeSession(firstSess)
-	// remove first sess from map, but keep in list. check results around that
-	bsm.removeSession(firstSess)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 1)
-	assert.Equal(firstSess, bsm.sessList()[1]) // ensure removed sess still in list
-	// now ensure next selectSession call fixes up sessList as expected
-	sess = bsm.selectSession()
-	assert.Equal(sess, expectedSess)
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 1)
-
-	// XXX check refresh condition more precisely - currently numOrchs / 2
 }
 
 func TestSelectSession_MultipleInFlight2(t *testing.T) {
@@ -415,20 +421,20 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(-1 * time.Hour).Unix()}
 	errC := make(chan error)
 	go func() {
-		res, err := transcodeSegment(cxn, &stream.HLSSegment{Name: "s1", Duration: 900}, "dummy", nil)
+		res, _, err := transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Name: "s1", Duration: 900}, "dummy", nil)
 		assert.Len(res, 1)
 		errC <- err
 	}()
 	<-segStarted
-	assert.Len(cxn.sessManager.lastSess.SegsInFlight, 1)
+	assert.Len(cxn.sessManager.trustedPool.lastSess[0].SegsInFlight, 1)
 	go func() {
-		res, err := transcodeSegment(cxn, &stream.HLSSegment{Name: "s2", Duration: 900}, "dummy", nil)
+		res, _, err := transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Name: "s2", Duration: 900}, "dummy", nil)
 		assert.Nil(err)
 		assert.Len(res, 1)
 		errC <- err
 	}()
 	<-segStarted
-	assert.Len(cxn.sessManager.lastSess.SegsInFlight, 2, "wrong length %d", len(cxn.sessManager.lastSess.SegsInFlight))
+	assert.Len(cxn.sessManager.trustedPool.lastSess[0].SegsInFlight, 2, "wrong length %d", len(cxn.sessManager.trustedPool.lastSess[0].SegsInFlight))
 
 	segDone <- nil
 	segDone <- nil
@@ -437,321 +443,6 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	err = <-errC
 	assert.Nil(err)
 	assert.Equal(1, orchInfoCalled)
-}
-
-func TestSelectSession_MultipleInFlight(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	sendSegStub := func() *BroadcastSession {
-		sess := bsm.selectSession()
-		bsm.sessLock.Lock()
-		if sess == nil {
-			bsm.sessLock.Unlock()
-			return nil
-		}
-		bsm.sessLock.Unlock()
-		seg := &stream.HLSSegment{Data: []byte("dummy"), Duration: 0.100}
-		bsm.pushSegInFlight(sess, seg)
-		return sess
-	}
-
-	completeSegStub := func(sess *BroadcastSession) {
-		// Create dummy result
-		res := &ReceivedTranscodeResult{
-			LatencyScore: sess.LatencyScore,
-			Info:         sess.OrchestratorInfo,
-		}
-		bsm.completeSession(updateSession(sess, res))
-	}
-
-	// assert that initial lengths are as expected
-	assert := assert.New(t)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-
-	expectedSess0 := &BroadcastSession{}
-	expectedSess1 := &BroadcastSession{}
-	*expectedSess0 = *(bsm.sessList()[1])
-	*expectedSess1 = *(bsm.sessList()[0])
-
-	// send in multiple segments at the same time and verify SegsInFlight & lastSess are updated
-	sess0 := sendSegStub()
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-
-	sess1 := sendSegStub()
-	assert.Equal(bsm.lastSess, sess1)
-	assert.Equal(sess0, sess1)
-	assert.Len(bsm.lastSess.SegsInFlight, 2)
-
-	completeSegStub(sess0)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-	assert.Len(bsm.sessList(), 1)
-
-	completeSegStub(sess1)
-	assert.Len(bsm.lastSess.SegsInFlight, 0)
-	assert.Len(bsm.sessList(), 2)
-
-	// Same as above but to check thread safety, run this under -race
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { sess0 = sendSegStub(); wg.Done() }()
-	go func() { sess1 = sendSegStub(); wg.Done() }()
-	assert.True(wgWait(&wg), "Segment sending timed out")
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(sess0, sess1)
-	assert.Len(bsm.lastSess.SegsInFlight, 2)
-	wg.Add(2)
-	go func() { completeSegStub(sess0); wg.Done() }()
-	go func() { completeSegStub(sess1); wg.Done() }()
-	assert.True(wgWait(&wg), "Segment completion timed out")
-	assert.Len(bsm.lastSess.SegsInFlight, 0)
-
-	// send in multiple segments with delay > segDur to trigger O switch
-	sess0 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-
-	time.Sleep(110 * time.Millisecond)
-
-	sess1 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess1)
-	assert.Equal(expectedSess1.OrchestratorInfo, sess1.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-
-	completeSegStub(sess0)
-	completeSegStub(sess1)
-
-	// send in multiple segments with delay > segDur but < 2*segDur and only a single session available
-	bsm.suspendOrch(expectedSess0)
-	bsm.removeSession(expectedSess0)
-	assert.Len(bsm.sessMap, 1)
-
-	sess0 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-
-	time.Sleep(110 * time.Millisecond)
-
-	sess1 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess1)
-	assert.Equal(expectedSess1.OrchestratorInfo, sess1.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 2)
-
-	completeSegStub(sess0)
-	completeSegStub(sess1)
-	assert.Len(bsm.lastSess.SegsInFlight, 0)
-
-	// send in multiple segments with delay > 2*segDur and only a single session available
-	bsm.suspendOrch(expectedSess0)
-	bsm.removeSession(expectedSess0)
-	assert.Len(bsm.sessMap, 1)
-
-	sess0 = sendSegStub()
-	assert.Equal(bsm.lastSess, sess0)
-	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
-	assert.Len(bsm.lastSess.SegsInFlight, 1)
-
-	time.Sleep(210 * time.Millisecond)
-
-	sess1 = sendSegStub()
-	assert.Nil(sess1)
-	assert.Nil(bsm.lastSess)
-
-	completeSegStub(sess0)
-
-	// remove both session and check if selector returns nil and sets lastSession to nil
-	bsm.suspendOrch(expectedSess0)
-	bsm.suspendOrch(expectedSess1)
-	bsm.removeSession(expectedSess0)
-	bsm.removeSession(expectedSess1)
-	bsm.sessLock.Lock() // refresh session could be running in parallel and modifying sessMap
-	assert.Len(bsm.sessMap, 0)
-	bsm.sessLock.Unlock()
-
-	sess0 = sendSegStub()
-	assert.Nil(sess0)
-	assert.Nil(bsm.lastSess)
-}
-
-func TestSelectSession_NilSession(t *testing.T) {
-	bsm := StubBroadcastSessionsManager()
-	// Replace selector with stubSelector that will return nil for Select(), but 1 for Size()
-	bsm.sel = &stubSelector{size: 1}
-
-	assert.Nil(t, bsm.selectSession())
-}
-
-func TestRemoveSession(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	sess1 := bsm.sessList()[0]
-	sess2 := bsm.sessList()[1]
-
-	assert := assert.New(t)
-	assert.Len(bsm.sessMap, 2)
-
-	// remove session in map
-	assert.NotNil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
-	bsm.removeSession(sess1)
-	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.sessMap, 1)
-
-	// remove nonexistent session
-	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
-	bsm.removeSession(sess1)
-	assert.Nil(bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.sessMap, 1)
-
-	// remove last session in map
-	assert.NotNil(bsm.sessMap[sess2.OrchestratorInfo.Transcoder])
-	bsm.removeSession(sess2)
-	assert.Nil(bsm.sessMap[sess2.OrchestratorInfo.Transcoder])
-	assert.Len(bsm.sessMap, 0)
-}
-
-func TestCompleteSessions(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	sess1 := bsm.selectSession()
-
-	// assert that initial lengths are as expected
-	assert := assert.New(t)
-	assert.Len(bsm.sessList(), 1)
-	assert.Len(bsm.sessMap, 2)
-
-	bsm.completeSession(sess1)
-
-	// assert that session already in sessMap is added back to sessList
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-	assert.Equal(sess1, bsm.sessMap[sess1.OrchestratorInfo.Transcoder])
-
-	// assert that we get the same session back next time we call select
-	newSess := bsm.selectSession()
-	assert.Equal(sess1, newSess)
-	bsm.completeSession(newSess)
-
-	// assert that session not in sessMap is not added to sessList
-	sess3 := StubBroadcastSession("transcoder3")
-	bsm.completeSession(sess3)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-
-	sess1 = bsm.selectSession()
-
-	copiedSess := &BroadcastSession{}
-	*copiedSess = *sess1
-	copiedSess.LatencyScore = 2.7
-	bsm.completeSession(copiedSess)
-
-	// assert that existing session with same key in sessMap is replaced
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-	assert.NotEqual(sess1, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
-	assert.Equal(copiedSess, bsm.sessMap[copiedSess.OrchestratorInfo.Transcoder])
-}
-
-func TestRefreshSessions(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	assert := assert.New(t)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-
-	sess1 := bsm.sessList()[0]
-	sess2 := bsm.sessList()[1]
-	bsm.createSessions = func() ([]*BroadcastSession, error) {
-		return []*BroadcastSession{sess1, sess2}, nil
-	}
-
-	// asserting that pre-existing sessions are not added to sessList or sessMap
-	bsm.refreshSessions()
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-
-	sess3 := StubBroadcastSession("transcoder3")
-	sess4 := StubBroadcastSession("transcoder4")
-
-	bsm.createSessions = func() ([]*BroadcastSession, error) {
-		return []*BroadcastSession{sess3, sess4}, nil
-	}
-
-	// asserting that new sessions are added to beginning of sessList and sessMap
-	bsm.refreshSessions()
-	assert.Len(bsm.sessList(), 4)
-	assert.Len(bsm.sessMap, 4)
-	assert.Equal(bsm.sessList()[0], sess3)
-	assert.Equal(bsm.sessList()[1], sess4)
-
-	// asserting that refreshes stop while another is in-flight
-	bsm.createSessions = func() ([]*BroadcastSession, error) {
-		return []*BroadcastSession{StubBroadcastSession("5"), StubBroadcastSession("6")}, nil
-	}
-	bsm.refreshing = true
-	bsm.refreshSessions()
-	assert.Len(bsm.sessList(), 4)
-	assert.Len(bsm.sessMap, 4)
-	assert.Equal(bsm.sessList()[0], sess3)
-	assert.Equal(bsm.sessList()[1], sess4)
-	bsm.refreshing = false
-
-	// Check thread safety, run this under -race
-	var wg sync.WaitGroup
-	for i := 0; i < 200; i++ {
-		wg.Add(1)
-		go func() { bsm.refreshSessions(); wg.Done() }()
-	}
-	assert.True(wgWait(&wg), "Session refresh timed out")
-
-	// asserting that refreshes stop after a cleanup
-	bsm.cleanup()
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 0)
-	bsm.refreshSessions()
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 0)
-
-	// check exit errors from createSession. Run this under -race
-	bsm = newSessionsManagerLIFO(StubBroadcastSessionsManager()) // reset bsm from previous tests
-
-	bsm.createSessions = func() ([]*BroadcastSession, error) {
-		time.Sleep(time.Millisecond)
-		return nil, fmt.Errorf("err")
-	}
-	for i := 0; i < 200; i++ {
-		wg.Add(1)
-		go func() { bsm.refreshSessions(); wg.Done() }()
-	}
-	assert.True(wgWait(&wg), "Session refresh timed out")
-
-	// check empty returns from createSession. Run this under -race
-	bsm.createSessions = func() ([]*BroadcastSession, error) {
-		time.Sleep(time.Millisecond)
-		return []*BroadcastSession{}, nil
-	}
-	for i := 0; i < 200; i++ {
-		wg.Add(1)
-		go func() { bsm.refreshSessions(); wg.Done() }()
-	}
-	assert.True(wgWait(&wg), "Session refresh timed out")
-}
-
-func TestCleanupSessions(t *testing.T) {
-	bsm := newSessionsManagerLIFO(StubBroadcastSessionsManager())
-
-	// sanity checks
-	assert := assert.New(t)
-	assert.Len(bsm.sessList(), 2)
-	assert.Len(bsm.sessMap, 2)
-
-	// check relevant fields are reset
-	bsm.cleanup()
-	assert.Len(bsm.sessList(), 0)
-	assert.Len(bsm.sessMap, 0)
 }
 
 // Note: Add processSegment tests, including:
@@ -766,8 +457,10 @@ func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
 	mem := &stubOSSession{err: errors.New("some error")}
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
-	sess := genBcastSess(t, baseURL, mem, mid)
+	sess := genBcastSess(ctx, t, baseURL, mem, mid)
 	sess.OrchestratorOS = mem
 
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
@@ -778,11 +471,11 @@ func TestTranscodeSegment_UploadFailed_SuspendAndRemove(t *testing.T) {
 		sessManager: bsm,
 	}
 	seg := &stream.HLSSegment{}
-	_, err := transcodeSegment(cxn, seg, "dummy", nil)
+	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.EqualError(err, "some error")
-	_, ok := cxn.sessManager.sessMap[sess.OrchestratorInfo.GetTranscoder()]
+	_, ok := cxn.sessManager.trustedPool.sessMap[sess.OrchestratorInfo.GetTranscoder()]
 	assert.False(ok)
-	assert.Greater(cxn.sessManager.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
+	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
 }
 
 func TestTranscodeSegment_RefreshSession(t *testing.T) {
@@ -836,11 +529,11 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 
 	// Validate TicketParams error (not ErrTicketParamsExpired) -> Don't refresh, remove session & suspend orch
 	sender.On("ValidateTicketParams", mock.Anything).Return(errors.New("some error")).Once()
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.True(strings.Contains(err.Error(), "some error"))
-	_, ok := cxn.sessManager.sessMap[ts.URL]
+	_, ok := cxn.sessManager.trustedPool.sessMap[ts.URL]
 	assert.False(ok)
-	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
+	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(ts.URL), 0)
 
 	cxn = &rtmpConnection{
 		mid:         core.ManifestID("foo"),
@@ -851,11 +544,11 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	}
 	// Expired ticket params -> GetOrchestratorInfo error -> Error
 	sender.On("ValidateTicketParams", mock.Anything).Return(pm.ErrTicketParamsExpired)
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.True(strings.Contains(err.Error(), "Could not get orchestrator"))
-	_, ok = cxn.sessManager.sessMap[ts.URL]
+	_, ok = cxn.sessManager.trustedPool.sessMap[ts.URL]
 	assert.False(ok)
-	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
+	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(ts.URL), 0)
 
 	// Expired ticket params -> GetOrchestratorInfo -> Still Expired -> Error
 	cxn = &rtmpConnection{
@@ -888,11 +581,11 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	balance.On("StageUpdate", mock.Anything, mock.Anything).Return(1, big.NewRat(100, 1), big.NewRat(100, 1))
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, pm.ErrTicketParamsExpired).Once()
 	balance.On("Credit", mock.Anything)
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.EqualError(err, pm.ErrTicketParamsExpired.Error())
-	_, ok = cxn.sessManager.sessMap[ts.URL]
+	_, ok = cxn.sessManager.trustedPool.sessMap[ts.URL]
 	assert.False(ok)
-	assert.Greater(cxn.sessManager.sus.Suspended(ts.URL), 0)
+	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(ts.URL), 0)
 
 	// Expired ticket params -> GetOrchestratorInfo -> No Longer Expired -> Complete Session
 	cxn = &rtmpConnection{
@@ -905,15 +598,15 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.Nil(err)
 
-	completedSess := cxn.sessManager.sessMap[ts.URL]
-	assert.NotEqual(completedSess, sess)
+	completedSess := cxn.sessManager.trustedPool.sessMap[ts.URL]
+	assert.Equal(completedSess, sess)
 	assert.NotZero(completedSess.LatencyScore)
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
-	completedSessInfo := cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	completedSessInfo := cxn.sessManager.trustedPool.sessMap[tr.Info.Transcoder].OrchestratorInfo
 	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
@@ -922,26 +615,26 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	// Missing auth token
 	sess.OrchestratorInfo.AuthToken = nil
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{}, "dummy", nil)
 	assert.Equal("missing auth token", err.Error())
 
 	// Refresh session for expired auth token
 	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(-1 * time.Hour).Unix()}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{}, "dummy", nil)
 	assert.Nil(err)
 
-	completedSessInfo = cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	completedSessInfo = cxn.sessManager.trustedPool.sessMap[tr.Info.Transcoder].OrchestratorInfo
 	assert.True(time.Now().Before(time.Unix(completedSessInfo.AuthToken.Expiration, 0)))
 	assert.True(proto.Equal(completedSessInfo.AuthToken, stubAuthToken))
 
 	// Refresh session for almost expired auth token
 	sess.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(30 * time.Second).Unix()}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{}, "dummy", nil)
 	assert.Nil(err)
 
-	completedSessInfo = cxn.sessManager.sessMap[tr.Info.Transcoder].OrchestratorInfo
+	completedSessInfo = cxn.sessManager.trustedPool.sessMap[tr.Info.Transcoder].OrchestratorInfo
 	assert.True(time.Now().Before(time.Unix(completedSessInfo.AuthToken.Expiration, 0)))
 	assert.True(proto.Equal(completedSessInfo.AuthToken, stubAuthToken))
 }
@@ -976,8 +669,8 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 	sess := StubBroadcastSession(ts.URL)
 	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
-	bsm.poolSize = 40
-	bsm.numOrchs = 8
+	bsm.trustedPool.poolSize = 40
+	bsm.trustedPool.numOrchs = 8
 	cxn := &rtmpConnection{
 		mid:         core.ManifestID("foo"),
 		nonce:       7,
@@ -986,10 +679,10 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 
 	assert.EqualError(err, "OrchestratorBusy")
-	assert.Equal(bsm.sus.Suspended(ts.URL), bsm.poolSize/bsm.numOrchs)
+	assert.Equal(bsm.trustedPool.sus.Suspended(ts.URL), bsm.trustedPool.poolSize/bsm.trustedPool.numOrchs)
 }
 
 func TestTranscodeSegment_CompleteSession(t *testing.T) {
@@ -1026,30 +719,22 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.Nil(err)
 
-	completedSess := bsm.sessMap[ts.URL]
-	assert.NotEqual(completedSess.LatencyScore, sess.LatencyScore)
+	completedSess := bsm.trustedPool.sessMap[ts.URL]
+	assert.Equal(sess, completedSess)
 	assert.NotZero(completedSess.LatencyScore)
-
-	// Check that the completed session is just the original session with a different LatencyScore
-	copiedSess := &BroadcastSession{}
-	*copiedSess = *completedSess
-	copiedSess.LatencyScore = 0.0
-	assert.Equal(copiedSess.Broadcaster, sess.Broadcaster)
-	assert.Equal(copiedSess.LatencyScore, sess.LatencyScore)
-	assert.Equal(copiedSess.OrchestratorInfo, sess.OrchestratorInfo)
 
 	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil)
 	assert.Nil(err)
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
-	completedSessInfo := bsm.sessMap[ts.URL].OrchestratorInfo
+	completedSessInfo := bsm.trustedPool.sessMap[ts.URL].OrchestratorInfo
 	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
@@ -1075,7 +760,7 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	mux2.HandleFunc("/segment", resp)
 	sess1 := StubBroadcastSession(ts1.URL)
 	sess2 := StubBroadcastSession(ts2.URL)
-	bsm := bsmWithSessList([]*BroadcastSession{sess1, sess2})
+	bsm := bsmWithSessListExt([]*BroadcastSession{sess1, sess2}, nil, true)
 	pl := &stubPlaylistManager{os: &stubOSSession{}}
 	cxn := &rtmpConnection{
 		profile:     &ffmpeg.VideoProfile{Name: "unused"},
@@ -1086,32 +771,211 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 
 	// Sanity check: zero attempts should not transcode
 	MaxAttempts = 0
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
 	assert.Equal(0, transcodeCalls, "Unexpectedly submitted segment")
-	assert.Len(bsm.sessMap, 2)
+	assert.Len(bsm.trustedPool.sessMap, 2)
 
 	// One failed transcode attempt. Should leave another in the map
 	MaxAttempts = 1
-	_, err = processSegment(cxn, seg)
+	transcodeCalls = 0
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.NotNil(err)
 	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
-	assert.Len(bsm.sessMap, 1)
+	assert.Len(bsm.trustedPool.sessMap, 1)
 
-	// Drain the swamp! Empty out the session list
-	_, err = processSegment(cxn, seg)
+	// Context canceled. Execute once and not retry
+	MaxAttempts = 10
+	transcodeCalls = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = processSegment(ctx, cxn, seg)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
-	assert.Len(bsm.sessMap, 0) // Now empty
+	assert.Contains("context canceled", err.Error())
+	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.trustedPool.sessMap, 0)
 
 	// The session list is empty. TODO Should return an error indicating such
 	// (This test should fail and be corrected once this is actually implemented)
-	_, err = processSegment(cxn, seg)
+	transcodeCalls = 0
+	_, err = processSegment(context.Background(), cxn, seg)
 	assert.Nil(err)
-	assert.Equal(2, transcodeCalls, "Segment submission calls did not match")
-	assert.Len(bsm.sessMap, 0)
+	assert.Equal(0, transcodeCalls, "Segment submission calls did not match")
+	assert.Len(bsm.trustedPool.sessMap, 0)
+}
+
+type queueEvent struct {
+	key  string
+	data interface{}
+}
+
+type producerChan struct {
+	C   chan queueEvent
+	err error
+}
+
+func (p producerChan) Publish(ctx context.Context, key string, body interface{}, persistent bool) error {
+	select {
+	case p.C <- queueEvent{key, body}:
+		return p.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p producerChan) receive(ctx context.Context) (queueEvent, bool) {
+	select {
+	case evt, ok := <-p.C:
+		return evt, ok
+	case <-ctx.Done():
+		return queueEvent{}, false
+	}
+}
+
+func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	// Preliminaries and test setup
+	oldQueue := MetadataQueue
+	defer func() {
+		MetadataQueue = oldQueue
+	}()
+	queue := producerChan{make(chan queueEvent, 1), nil}
+	MetadataQueue = queue
+
+	dummyRes := &net.TranscodeResult{
+		Result: &net.TranscodeResult_Data{
+			Data: &net.TranscodeData{
+				Segments: []*net.TranscodedSegmentData{{Url: "test.flv", Pixels: 100}},
+				Sig:      []byte("bar"),
+			},
+		},
+	}
+	transcodeResps := make(chan *net.TranscodeResult, 10)
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		select {
+		default:
+			require.FailNow("must setup all responses")
+		case resp := <-transcodeResps:
+			if resp == nil {
+				return // Cause UnknownResponse error
+			}
+			buf, err := proto.Marshal(resp)
+			require.Nil(err)
+			_, err = w.Write(buf)
+			require.Nil(err)
+		}
+	}
+	cxn := &rtmpConnection{
+		mid:     "dummy1",
+		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy"},
+		profile: &ffmpeg.VideoProfile{Name: "unused"},
+		pl:      &stubPlaylistManager{os: &stubOSSession{}},
+	}
+	seg := &stream.HLSSegment{Data: []byte("dummy"), SeqNo: 123}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Calls producer once with transcode event
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
+	transcodeResps <- dummyRes
+	_, err := processSegment(context.Background(), cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.trustedPool.sessMap, 2)
+	evt, ok := queue.receive(ctx)
+	require.True(ok)
+	assert.Equal("stream_health.transcode.d.ext_dummy", evt.key)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt := evt.data.(*data.TranscodeEvent)
+	assert.Equal(true, transEvt.Success)
+	assert.EqualValues(cxn.params.ExternalStreamID, transEvt.StreamID())
+	assert.Equal(seg.SeqNo, transEvt.Segment.SeqNo)
+	assert.Equal(1, len(transEvt.Attempts))
+	assert.Nil(transEvt.Attempts[0].Error)
+
+	require.Equal(0, len(transcodeResps))
+	// One failed transcode attempt. Failed attempt should be in transcode event
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 2, handler))
+	transcodeResps <- nil
+	transcodeResps <- dummyRes
+	_, err = processSegment(context.Background(), cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.trustedPool.sessMap, 1)
+	evt, ok = queue.receive(ctx)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(true, transEvt.Success)
+	assert.Equal(2, len(transEvt.Attempts))
+	assert.NotNil(transEvt.Attempts[0].Error)
+	assert.Equal("UnknownResponse", *transEvt.Attempts[0].Error)
+
+	// All failed transcode attempts. Transcode event should be sent with success=false
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 3, handler))
+	transcodeResps <- nil
+	transcodeResps <- nil
+	transcodeResps <- nil
+	_, err = processSegment(context.Background(), cxn, seg)
+	assert.NotNil(err)
+	assert.Len(cxn.sessManager.trustedPool.sessMap, 0)
+	evt, ok = queue.receive(ctx)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(false, transEvt.Success)
+	assert.Equal(3, len(transEvt.Attempts))
+	for _, attempt := range transEvt.Attempts {
+		assert.NotNil(attempt.Error)
+		assert.Equal("UnknownResponse", *attempt.Error)
+	}
+
+	// Empty session list. Transcode event should still have success=false
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{})
+	_, err = processSegment(context.Background(), cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.trustedPool.sessMap, 0)
+	evt, ok = queue.receive(ctx)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	transEvt = evt.data.(*data.TranscodeEvent)
+	assert.Equal(false, transEvt.Success)
+	assert.Equal(1, len(transEvt.Attempts))
+	assert.Nil(transEvt.Attempts[0].Error)
+
+	// Should not fail processing on queue error
+	queue.err = errors.New("publish failure")
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 1, handler))
+	transcodeResps <- dummyRes
+	_, err = processSegment(context.Background(), cxn, seg)
+	assert.Nil(err)
+	assert.Len(cxn.sessManager.trustedPool.sessMap, 1)
+	evt, ok = queue.receive(ctx)
+	require.True(ok)
+	require.IsType(&data.TranscodeEvent{}, evt.data)
+	assert.Equal(true, evt.data.(*data.TranscodeEvent).Success)
+
+	// Uses manifest ID if external stream ID or params not present
+	testMissingStreamID := func() {
+		transcodeResps <- dummyRes
+		_, err = processSegment(context.Background(), cxn, seg)
+		assert.Nil(err)
+		evt, ok = queue.receive(ctx)
+		require.True(ok)
+		assert.Equal("stream_health.transcode.d.dummy1", evt.key)
+		require.IsType(&data.TranscodeEvent{}, evt.data)
+		assert.EqualValues(cxn.mid, evt.data.(*data.TranscodeEvent).StreamID())
+	}
+	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 1, handler))
+	cxn.params.ExternalStreamID = ""
+	testMissingStreamID()
+	cxn.params = nil
+	testMissingStreamID()
+
+	// ensure no left-overs
+	assert.Zero(len(transcodeResps))
+	assert.Zero(len(queue.C))
 }
 
 func TestTranscodeSegment_VerifyPixels(t *testing.T) {
@@ -1156,7 +1020,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	urls, err := transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	urls, _, err := transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 	assert.NotNil(urls)
 	assert.Len(urls, 1)
@@ -1166,7 +1030,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Check that the session was NOT removed because we are in off-chain mode
-	_, ok := bsm.sessMap[ts.URL]
+	_, ok := bsm.trustedPool.sessMap[ts.URL]
 	assert.True(ok)
 
 	sess.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
@@ -1177,7 +1041,7 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 
-	urls, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	urls, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 	assert.Equal("test.flv", urls[0])
 
@@ -1187,14 +1051,14 @@ func TestTranscodeSegment_VerifyPixels(t *testing.T) {
 	bsm = bsmWithSessList([]*BroadcastSession{sess})
 	cxn.sessManager = bsm
 
-	_, err = transcodeSegment(cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy")}, "dummy", nil)
 	assert.Nil(err)
 
 	// Wait for async pixels verification to finish
 	time.Sleep(1 * time.Second)
 
 	// Check that the session was not removed
-	_, ok = bsm.sessMap[ts.URL]
+	_, ok = bsm.trustedPool.sessMap[ts.URL]
 	assert.True(ok)
 }
 
@@ -1203,16 +1067,14 @@ func TestUpdateSession(t *testing.T) {
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances}
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}
-	newSess := updateSession(sess, res)
-	assert.Equal(res.LatencyScore, newSess.LatencyScore)
-	// Check that LatencyScore of old session is not mutated
-	assert.Equal(1.1, sess.LatencyScore)
+	updateSession(sess, res)
+	assert.Equal(res.LatencyScore, sess.LatencyScore)
 
-	info := &net.OrchestratorInfo{
+	info := net.OrchestratorInfo{
 		Storage: []*net.OSInfo{
 			{
 				StorageType: 1,
@@ -1220,16 +1082,15 @@ func TestUpdateSession(t *testing.T) {
 			},
 		},
 	}
-	res.Info = info
+	res.Info = &info
 
-	newSess = updateSession(sess, res)
-	assert.Equal(info, newSess.OrchestratorInfo)
+	updateSession(sess, res)
+	assert.Equal(info, *sess.OrchestratorInfo)
 	// Check that BroadcastSession.OrchestratorOS is updated when len(info.Storage) > 0
-	assert.Equal(info.Storage[0], newSess.OrchestratorOS.GetInfo())
+	assert.Equal(info.Storage[0], sess.OrchestratorOS.GetInfo())
 	// Check that a new PM session is not created because BroadcastSession.Sender = nil
-	assert.Equal("foo", newSess.PMSessionID)
-	// Check that OrchestratorInfo of old session is not mutated
-	assert.Nil(sess.OrchestratorInfo)
+	assert.Equal("foo", sess.PMSessionID)
+	assert.Equal(info.Transcoder, sess.Transcoder())
 
 	sender := &pm.MockSender{}
 	sess.Sender = sender
@@ -1240,26 +1101,22 @@ func TestUpdateSession(t *testing.T) {
 		AuthToken:    stubAuthToken,
 	}
 	sender.On("StartSession", mock.Anything).Return("foo").Once()
-	newSess = updateSession(sess, res)
+	updateSession(sess, res)
 	// Check that a new PM session is not created because OrchestratorInfo.TicketParams = nil
-	assert.Equal("foo", newSess.PMSessionID)
+	assert.Equal("foo", sess.PMSessionID)
 
 	sender.On("StartSession", mock.Anything).Return("bar")
-	newSess = updateSession(sess, res)
+	updateSession(sess, res)
 	// Check that a new PM session is created
-	assert.Equal("bar", newSess.PMSessionID)
-	// Check that PMSessionID of old session is not mutated
-	assert.Equal("foo", sess.PMSessionID)
-	// Check that Balance of new session is not different because auth token sessionID did not change
-	assert.Equal(newSess.Balance, sess.Balance)
+	assert.Equal("bar", sess.PMSessionID)
 
+	info2 := *res.Info
+	res.Info = &info2
 	res.Info.AuthToken = &net.AuthToken{SessionId: "diffdiff"}
-	newSess = updateSession(sess, res)
-	// Check that Balance of new session is different because auth token sessionID did change
-	assert.NotEqual(newSess.Balance, sess.Balance)
+	updateSession(sess, res)
 	// Check that new Balance initialized with new auth token sessionID
 	assert.Nil(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")))
-	newSess.Balance.Credit(big.NewRat(5, 1))
+	sess.Balance.Credit(big.NewRat(5, 1))
 	assert.Equal(balances.Balance(ethcommon.Address{}, core.ManifestID("diffdiff")), big.NewRat(5, 1))
 }
 
@@ -1298,7 +1155,7 @@ func TestHLSInsertion(t *testing.T) {
 	}
 
 	seg := &stream.HLSSegment{SeqNo: 93}
-	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.Nil(err)
 
 	// some sanity checks
@@ -1350,41 +1207,45 @@ func TestVerifier_Invocation(t *testing.T) {
 	}
 
 	seg := &stream.HLSSegment{}
-	_, err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", segmentVerifier)
 	assert.Nil(err)
 	assert.Equal(1, verifier.calls)
 	require.NotNil(verifier.params)
 	assert.Equal(cxn.mid, verifier.params.ManifestID)
 	assert.Equal(seg, verifier.params.Source)
 	// Do it again for good measure
-	_, err = transcodeSegment(cxn, seg, "dummy", segmentVerifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", segmentVerifier)
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
 
 	// now "disable" the verifier and ensure no calls
-	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
 
 	// Pass in a nil policy
-	_, err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(nil))
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verification.NewSegmentVerifier(nil))
 	assert.Nil(err)
 
 	// Pass in a policy but no verifier specified
 	policy = &verification.Policy{}
-	_, err = transcodeSegment(cxn, seg, "dummy", verification.NewSegmentVerifier(policy))
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verification.NewSegmentVerifier(policy))
 	assert.Nil(err)
 }
 
 func TestVerifier_Verify(t *testing.T) {
 	assert := assert.New(t)
-
 	os := drivers.NewMemoryDriver(nil).NewSession("")
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
 	c := core.NewBasicPlaylistManager(core.ManifestID("streamName"), os, nil)
 	cxn := &rtmpConnection{
 		pl: c,
 	}
-	sess := &BroadcastSession{Params: &core.StreamParameters{}}
+	sess := &BroadcastSession{Params: &core.StreamParameters{}, OrchestratorScore: common.Score_Trusted, lock: &sync.RWMutex{}}
 	source := &stream.HLSSegment{}
 	res := &net.TranscodeData{}
 	verifier := verification.NewSegmentVerifier(&verification.Policy{})
@@ -1403,13 +1264,13 @@ func TestVerifier_Verify(t *testing.T) {
 	cxn.sessManager = bsm
 	sv := &stubVerifier{err: errors.New("NonRetryable")}
 	verifier = newStubSegmentVerifier(sv)
-	assert.Equal(0, sv.calls)  // sanity check initial call count
-	assert.Len(bsm.sessMap, 1) // sanity check initial bsm map
+	assert.Equal(0, sv.calls)              // sanity check initial call count
+	assert.Len(bsm.trustedPool.sessMap, 1) // sanity check initial bsm map
 	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
-	assert.Len(bsm.sessMap, 1) // No effect on map for now
+	assert.Len(bsm.trustedPool.sessMap, 1) // No effect on map for now
 
 	// Check retryable errors, esp broadcast session removal from manager
 	sv.err = verification.ErrTampered
@@ -1421,7 +1282,7 @@ func TestVerifier_Verify(t *testing.T) {
 	assert.NotNil(err)
 	assert.Equal(2, sv.calls)
 	assert.Equal(sv.err, err)
-	assert.Len(bsm.sessMap, 0)
+	assert.Len(bsm.trustedPool.sessMap, 0)
 
 	// When retries are set to 0, results are returned anyway in case of error
 	// (and more generally, when attempts > retries)
@@ -1437,7 +1298,7 @@ func TestVerifier_Verify(t *testing.T) {
 	}
 	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
 	assert.True(ok)
-	name, err := mem.SaveData("/rendition/seg/1", []byte("attempt1"), nil)
+	name, err := mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt1"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 	sess.BroadcasterOS = mem
@@ -1449,13 +1310,14 @@ func TestVerifier_Verify(t *testing.T) {
 
 	// Now "insert" 2nd attempt into OS
 	// and ensure 1st attempt is what remains after verification
-	_, err = mem.SaveData("/rendition/seg/1", []byte("attempt2"), nil)
+	_, err = mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt2"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}
 	err = verify(verifier, cxn, sess, source, res, URIs, renditionData)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
+	c.Cleanup()
 }
 
 func TestVerifier_HLSInsertion(t *testing.T) {
@@ -1476,11 +1338,13 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
 	bsm := bsmWithSessList([]*BroadcastSession{
-		genBcastSess(t, baseURL+"/resp1", mem, mid),
-		genBcastSess(t, baseURL+"/resp2", mem, mid),
-		genBcastSess(t, baseURL+"/resp3", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp1", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp2", mem, mid),
+		genBcastSess(ctx, t, baseURL+"/resp3", mem, mid),
 	})
 	cxn := &rtmpConnection{
 		mid:         mid,
@@ -1501,17 +1365,17 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 
 	oldDownloadSeg := downloadSeg
 	defer func() { downloadSeg = oldDownloadSeg }()
-	downloadSeg = func(url string) ([]byte, error) { return []byte("foo"), nil }
+	downloadSeg = func(ctx context.Context, url string) ([]byte, error) { return []byte("foo"), nil }
 
-	_, err := transcodeSegment(cxn, seg, "dummy", verifier)
+	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
 	assert.Empty(pl.uri) // sanity check that no insertion happened
 
-	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
 	assert.Empty(pl.uri)
 
-	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.Equal(baseURL+"/resp2", pl.uri)
 }
@@ -1524,8 +1388,10 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
 	assert.NotNil(mem)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	baseURL := "https://livepeer.s3.amazonaws.com"
-	sess := genBcastSess(t, baseURL, mem, mid)
+	sess := genBcastSess(ctx, t, baseURL, mem, mid)
 
 	bsm := bsmWithSessList([]*BroadcastSession{sess})
 	cxn := &rtmpConnection{
@@ -1546,12 +1412,12 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	})
 	oldDownloadSeg := downloadSeg
 	defer func() { downloadSeg = oldDownloadSeg }()
-	downloadSeg = func(url string) ([]byte, error) { return nil, errors.New("some error") }
-	_, err := transcodeSegment(cxn, seg, "dummy", verifier)
+	downloadSeg = func(ctx context.Context, url string) ([]byte, error) { return nil, errors.New("some error") }
+	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.EqualError(err, "some error")
-	_, ok := cxn.sessManager.sessMap[sess.OrchestratorInfo.GetTranscoder()]
+	_, ok := cxn.sessManager.trustedPool.sessMap[sess.OrchestratorInfo.GetTranscoder()]
 	assert.False(ok)
-	assert.Greater(cxn.sessManager.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
+	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(sess.OrchestratorInfo.GetTranscoder()), 0)
 }
 
 func TestRefreshSession(t *testing.T) {
@@ -1570,8 +1436,7 @@ func TestRefreshSession(t *testing.T) {
 
 	// trigger parse URL error
 	sess := StubBroadcastSession(string(rune(0x7f)))
-	newSess, err := refreshSession(sess)
-	assert.Nil(newSess)
+	err := refreshSession(context.TODO(), sess)
 	assert.Error(err)
 	assert.Contains(err.Error(), "invalid control character in URL")
 
@@ -1580,17 +1445,16 @@ func TestRefreshSession(t *testing.T) {
 		return nil, errors.New("some error")
 	}
 	sess = StubBroadcastSession("foo")
-	newSess, err = refreshSession(sess)
-	assert.Nil(newSess)
+	err = refreshSession(context.TODO(), sess)
 	assert.EqualError(err, "some error")
 
 	// trigger update
 	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
-	newSess, err = refreshSession(sess)
-	assert.Equal(newSess.OrchestratorInfo, successOrchInfoUpdate)
+	err = refreshSession(context.TODO(), sess)
 	assert.Nil(err)
+	assert.Equal(sess.OrchestratorInfo, successOrchInfoUpdate)
 
 	// trigger timeout
 	oldRefreshTimeout := refreshTimeout
@@ -1606,29 +1470,15 @@ func TestRefreshSession(t *testing.T) {
 
 		return nil, errors.New("context timeout")
 	}
-	newSess, err = refreshSession(sess)
-	assert.Nil(newSess)
+	err = refreshSession(context.TODO(), sess)
 	assert.EqualError(err, "context timeout")
-}
-
-func defaultTicketBatch() *pm.TicketBatch {
-	return &pm.TicketBatch{
-		TicketParams: &pm.TicketParams{
-			Recipient:       pm.RandAddress(),
-			FaceValue:       big.NewInt(1234),
-			WinProb:         big.NewInt(5678),
-			Seed:            big.NewInt(7777),
-			ExpirationBlock: big.NewInt(1000),
-		},
-		TicketExpirationParams: &pm.TicketExpirationParams{},
-		Sender:                 pm.RandAddress(),
-		SenderParams:           []*pm.TicketSenderParams{{SenderNonce: 777, Sig: pm.RandBytes(42)}},
-	}
 }
 
 func TestVerifier_SegDownload(t *testing.T) {
 	assert := assert.New(t)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	mid := core.ManifestID("foo")
 
 	externalOS := &stubOSSession{
@@ -1648,7 +1498,7 @@ func TestVerifier_SegDownload(t *testing.T) {
 	defer func() { downloadSeg = oldDownloadSeg }()
 
 	downloaded := make(map[string]bool)
-	downloadSeg = func(url string) ([]byte, error) {
+	downloadSeg = func(ctx context.Context, url string) ([]byte, error) {
 		downloaded[url] = true
 
 		return []byte("foo"), nil
@@ -1660,22 +1510,22 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	// When there is no broadcaster OS, segments should not be downloaded
 	url := "somewhere1"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
-	_, err := transcodeSegment(cxn, seg, "dummy", nil)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, nil, mid)})
+	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.False(downloaded[url])
 
 	// When segments are in the broadcaster's external OS, segments should not be downloaded
 	url = "https://livepeer.s3.amazonaws.com/resp1"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
-	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.False(downloaded[url])
 
 	// When segments are not in the broadcaster's external OS, segments should be downloaded
 	url = "somewhere2"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
-	_, err = transcodeSegment(cxn, seg, "dummy", nil)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", nil)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
@@ -1687,22 +1537,22 @@ func TestVerifier_SegDownload(t *testing.T) {
 
 	// When there is no broadcaster OS, segments should be downloaded
 	url = "somewhere3"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, nil, mid)})
-	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, nil, mid)})
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
 	// When segments are in the broadcaster's external OS, segments should be downloaded
 	url = "https://livepeer.s3.amazonaws.com/resp2"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
-	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
 	// When segments are not in the broadcaster's exernal OS, segments should be downloaded
 	url = "somewhere4"
-	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(t, url, externalOS, mid)})
-	_, err = transcodeSegment(cxn, seg, "dummy", verifier)
+	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Nil(err)
 	assert.True(downloaded[url])
 }
@@ -1711,9 +1561,11 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	// Test format from saving "transcoder" data into broadcaster/transcoder OS.
 	// For each rendition, check extension based on format (none, mp4, mpegts).
 	assert := assert.New(t)
-	bcastOS := &stubOSSession{host: "test://broad.com"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	bcastOS := &stubOSSession{host: "test://broad.com", external: true}
 	orchOS := &stubOSSession{host: "test://orch.com"}
-	sess := genBcastSess(t, "", bcastOS, "")
+	sess := genBcastSess(ctx, t, "", bcastOS, "")
 	sess.OrchestratorOS = orchOS
 	sess.Params.Profiles = append([]ffmpeg.VideoProfile{}, sess.Params.Profiles...)
 	sourceProfile := ffmpeg.P240p30fps16x9 // make copy bc we mutate the preset
@@ -1726,10 +1578,10 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 
 	oldDownloadSeg := downloadSeg
 	defer func() { downloadSeg = oldDownloadSeg }()
-	downloadSeg = func(url string) ([]byte, error) { return []byte(url), nil }
+	downloadSeg = func(ctx context.Context, url string) ([]byte, error) { return []byte(url), nil }
 
 	// processSegment will also call transcodeSegment; also check that behavior
-	_, err := processSegment(cxn, seg)
+	_, err := processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	assert.Equal(ffmpeg.FormatNone, cxn.profile.Format)
@@ -1741,7 +1593,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	assert.Equal("saved_P240p30fps16x9/0.ts", seg.Name)
 
 	// Check MP4. Reset OS for simplicity
-	bcastOS = &stubOSSession{host: "test://broad.com"}
+	bcastOS = &stubOSSession{host: "test://broad.com", external: true}
 	orchOS = &stubOSSession{host: "test://orch.com"}
 	sess.BroadcasterOS = bcastOS
 	sess.OrchestratorOS = orchOS
@@ -1752,7 +1604,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	for _, p := range sess.Params.Profiles {
@@ -1764,7 +1616,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	assert.Equal("saved_P240p30fps16x9/0.mp4", seg.Name)
 
 	// Check mpegts. Reset OS for simplicity
-	bcastOS = &stubOSSession{host: "test://broad.com"}
+	bcastOS = &stubOSSession{host: "test://broad.com", external: true}
 	orchOS = &stubOSSession{host: "test://orch.com"}
 	sess.BroadcasterOS = bcastOS
 	sess.OrchestratorOS = orchOS
@@ -1775,7 +1627,7 @@ func TestProcessSegment_VideoFormat(t *testing.T) {
 	}
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{sess})
 
-	_, err = processSegment(cxn, seg)
+	_, err = processSegment(context.Background(), cxn, seg)
 
 	assert.Nil(err)
 	for _, p := range sess.Params.Profiles {
@@ -1793,16 +1645,16 @@ func TestProcessSegment_CheckDuration(t *testing.T) {
 	cxn := &rtmpConnection{}
 
 	// Check less-than-zero
-	_, err := processSegment(cxn, seg)
-	assert.Equal("Invalid duration -1", err.Error())
+	_, err := processSegment(context.Background(), cxn, seg)
+	assert.Equal("invalid duration -1", err.Error())
 
 	// CHeck greater than max duration
 	seg.Duration = maxDurationSec + 0.01
-	_, err = processSegment(cxn, seg)
-	assert.Equal("Invalid duration 300.01", err.Error())
+	_, err = processSegment(context.Background(), cxn, seg)
+	assert.Equal("invalid duration 300.01", err.Error())
 }
 
-func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
+func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSession, mid core.ManifestID) *BroadcastSession {
 	segData := []*net.TranscodedSegmentData{
 		{Url: url, Pixels: 100},
 	}
@@ -1813,26 +1665,52 @@ func genBcastSess(t *testing.T, url string, os drivers.OSSession, mid core.Manif
 		},
 	})
 	require.Nil(t, err, fmt.Sprintf("Could not marshal results for %s", url))
-	ts, mux := stubTLSServer()
-	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+	transcoderURL := stubTestTranscoder(ctx, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
-	defer func() {
-		// Work around a weird timing issue. Tests fail if the server closes
-		// in-scope (prob leads to something like the client being unable
-		// to read the response?), so we delay the close for a little bit
-		go func() {
-			// We assume this test doesn't take more than 1s
-			// But if it does (eg, we get a POST error), then bump this up
-			time.Sleep(1 * time.Second)
-			ts.Close()
-		}()
-	}()
 	return &BroadcastSession{
-		Broadcaster:      stubBroadcaster2(),
-		Params:           &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
-		BroadcasterOS:    os,
-		OrchestratorInfo: &net.OrchestratorInfo{Transcoder: ts.URL, AuthToken: stubAuthToken},
+		Broadcaster:       stubBroadcaster2(),
+		Params:            &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
+		BroadcasterOS:     os,
+		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken},
+		OrchestratorScore: common.Score_Trusted,
+		lock:              &sync.RWMutex{},
 	}
+}
+
+func stubTestTranscoder(ctx context.Context, handler http.HandlerFunc) string {
+	ts, mux := stubTLSServer()
+	go func() { <-ctx.Done(); ts.Close() }()
+	mux.HandleFunc("/segment", handler)
+	return ts.URL
+}
+
+func TestCollectResults(t *testing.T) {
+	assert := assert.New(t)
+
+	trustedSess := StubBroadcastSession("trustedTranscoder")
+	trustedSess.OrchestratorScore = common.Score_Trusted
+	untrustedSess1 := StubBroadcastSession("untrustedTranscoder1")
+	untrustedSess1.OrchestratorScore = common.Score_Untrusted
+	untrustedSess2 := StubBroadcastSession("untrustedTranscoder2")
+	untrustedSess2.OrchestratorScore = common.Score_Untrusted
+	untrustedSessVerified := StubBroadcastSession("untrustedTranscoderVerified")
+	untrustedSessVerified.OrchestratorScore = common.Score_Untrusted
+	bsm := bsmWithSessList([]*BroadcastSession{trustedSess, untrustedSess1, untrustedSess2, untrustedSessVerified})
+	bsm.sessionVerified(untrustedSessVerified)
+
+	resChan := make(chan *SubmitResult, 4)
+	resChan <- &SubmitResult{Session: untrustedSess1, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: untrustedSessVerified, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: untrustedSess2, TranscodeResult: &ReceivedTranscodeResult{}}
+	resChan <- &SubmitResult{Session: trustedSess, TranscodeResult: &ReceivedTranscodeResult{}}
+
+	trustedResult, untrustedResults, err := bsm.collectResults(resChan, 4)
+
+	assert.NoError(err)
+	assert.Equal(trustedSess, trustedResult.Session)
+	assert.Len(untrustedResults, 3)
+	// the first result should always come from the verified session
+	assert.Equal(untrustedSessVerified, untrustedResults[0].Session)
 }

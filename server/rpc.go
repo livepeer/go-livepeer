@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -25,6 +27,7 @@ import (
 	"github.com/patrickmn/go-cache"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/golang/glog"
@@ -47,7 +50,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CurrentBlock() *big.Int
 	CheckCapacity(core.ManifestID) error
-	TranscodeSeg(*core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
+	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(payment net.Payment, manifestID core.ManifestID) error
@@ -100,17 +103,45 @@ type BalanceUpdate struct {
 
 // BroadcastSession - session-specific state for broadcasters
 type BroadcastSession struct {
-	Broadcaster      common.Broadcaster
-	Params           *core.StreamParameters
+	Broadcaster              common.Broadcaster
+	Params                   *core.StreamParameters
+	BroadcasterOS            drivers.OSSession
+	Sender                   pm.Sender
+	Balances                 *core.AddressBalances
+	OrchestratorScore        float32
+	VerifiedByPerceptualHash bool
+	lock                     *sync.RWMutex
+	// access these fields under the lock
+	SegsInFlight     []SegFlightMetadata
+	LatencyScore     float64
 	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
-	BroadcasterOS    drivers.OSSession
-	Sender           pm.Sender
 	PMSessionID      string
-	Balances         *core.AddressBalances
 	Balance          Balance
-	LatencyScore     float64
-	SegsInFlight     []SegFlightMetadata
+}
+
+func (bs *BroadcastSession) Transcoder() string {
+	bs.lock.RLock()
+	defer bs.lock.RUnlock()
+	return bs.OrchestratorInfo.Transcoder
+}
+
+func (bs *BroadcastSession) Address() string {
+	bs.lock.RLock()
+	defer bs.lock.RUnlock()
+	return hexutil.Encode(bs.OrchestratorInfo.Address)
+}
+
+func (bs *BroadcastSession) Clone() *BroadcastSession {
+	bs.lock.RLock()
+	newSess := *bs
+	newSess.lock = &sync.RWMutex{}
+	bs.lock.RUnlock()
+	return &newSess
+}
+
+func (bs *BroadcastSession) IsTrusted() bool {
+	return bs.OrchestratorScore == common.Score_Trusted
 }
 
 // ReceivedTranscodeResult contains received transcode result data and related metadata
@@ -185,7 +216,7 @@ func CheckOrchestratorAvailability(orch Orchestrator) bool {
 
 	ping := crypto.Keccak256(tsSignature)
 
-	orchClient, conn, err := startOrchestratorClient(orch.ServiceURI())
+	orchClient, conn, err := startOrchestratorClient(context.Background(), orch.ServiceURI())
 	if err != nil {
 		return false
 	}
@@ -215,7 +246,7 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
 func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
-	c, conn, err := startOrchestratorClient(orchestratorServer)
+	c, conn, err := startOrchestratorClient(ctx, orchestratorServer)
 	if err != nil {
 		return nil, err
 	}
@@ -224,22 +255,21 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	req, err := genOrchestratorReq(bcast)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
-		glog.Errorf("Could not get orchestrator orch=%v err=%v", orchestratorServer, err)
-		return nil, errors.New("Could not get orchestrator err=" + err.Error())
+		return nil, errors.Wrapf(err, "Could not get orchestrator orch=%v", orchestratorServer)
 	}
 
 	return r, nil
 }
 
-func startOrchestratorClient(uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
-	glog.V(common.DEBUG).Infof("Connecting RPC to %v", uri)
+func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
+	clog.V(common.DEBUG).Infof(ctx, "Connecting RPC to uri=%v", uri)
 	conn, err := grpc.Dial(uri.Host,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithBlock(),
 		grpc.WithTimeout(GRPCConnectTimeout))
 	if err != nil {
-		glog.Errorf("Did not connect to orch=%v err=%v", uri, err)
-		return nil, nil, fmt.Errorf("Did not connect to orch=%v err=%v", uri, err)
+		return nil, nil, errors.Wrapf(err, "Did not connect to orch=%v", uri)
+
 	}
 	c := net.NewOrchestratorClient(conn)
 
@@ -269,7 +299,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 }
 
 func getPriceInfo(orch Orchestrator, addr ethcommon.Address) (*net.PriceInfo, error) {
-	if AuthWebhookURL != "" {
+	if AuthWebhookURL != nil {
 		webhookRes := getFromDiscoveryAuthWebhookCache(addr.Hex())
 		if webhookRes != nil && webhookRes.PriceInfo != nil {
 			return webhookRes.PriceInfo, nil
@@ -331,7 +361,7 @@ type discoveryAuthWebhookRes struct {
 // authenticateBroadcaster returns an error if authentication fails
 // on success it caches the webhook response
 func authenticateBroadcaster(id string) (*discoveryAuthWebhookRes, error) {
-	if AuthWebhookURL == "" {
+	if AuthWebhookURL == nil {
 		return nil, nil
 	}
 
@@ -340,7 +370,7 @@ func authenticateBroadcaster(id string) (*discoveryAuthWebhookRes, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := http.Post(AuthWebhookURL, "application/json", bytes.NewBuffer(jsonValues))
+	res, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValues))
 	if err != nil {
 		return nil, err
 	}
@@ -447,14 +477,40 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		caps = core.NewCapabilities(nil, nil)
 	}
 
+	detectorProfs := []ffmpeg.DetectorProfile{}
+	for _, detector := range segData.DetectorProfiles {
+		var detectorProfile ffmpeg.DetectorProfile
+		// Refer to the following for type magic:
+		// https://developers.google.com/protocol-buffers/docs/reference/go-generated#oneof
+		switch x := detector.Value.(type) {
+		case *net.DetectorProfile_SceneClassification:
+			profile := x.SceneClassification
+			classes := []ffmpeg.DetectorClass{}
+			for _, class := range profile.Classes {
+				classes = append(classes, ffmpeg.DetectorClass{
+					ID:   int(class.ClassId),
+					Name: class.ClassName,
+				})
+			}
+			detectorProfile = &ffmpeg.SceneClassificationProfile{
+				SampleRate: uint(profile.SampleRate),
+				Classes:    classes,
+			}
+		}
+		detectorProfs = append(detectorProfs, detectorProfile)
+	}
+
 	return &core.SegTranscodingMetadata{
-		ManifestID: core.ManifestID(segData.ManifestId),
-		Seq:        segData.Seq,
-		Hash:       ethcommon.BytesToHash(segData.Hash),
-		Profiles:   profiles,
-		OS:         os,
-		Duration:   dur,
-		Caps:       caps,
-		AuthToken:  segData.AuthToken,
+		ManifestID:         core.ManifestID(segData.ManifestId),
+		Seq:                segData.Seq,
+		Hash:               ethcommon.BytesToHash(segData.Hash),
+		Profiles:           profiles,
+		OS:                 os,
+		Duration:           dur,
+		Caps:               caps,
+		AuthToken:          segData.AuthToken,
+		DetectorEnabled:    segData.DetectorEnabled,
+		DetectorProfiles:   detectorProfs,
+		CalcPerceptualHash: segData.CalcPerceptualHash,
 	}, nil
 }

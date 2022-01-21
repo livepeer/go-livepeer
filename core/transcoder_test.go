@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"errors"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -24,59 +26,59 @@ func TestLocalTranscoder(t *testing.T) {
 
 	md := stubMetadata("", videoProfiles...)
 	md.Fname = "test.ts"
-	res, err := tc.Transcode(md)
+	res, err := tc.Transcode(context.TODO(), md)
 	if err != nil {
 		t.Error("Error transcoding ", err)
 	}
 	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res.Segments[0].Data), 152280) {
+	if Over1Pct(len(res.Segments[0].Data), 522264) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 208116) {
+	if Over1Pct(len(res.Segments[1].Data), 715528) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
 }
-
 func TestNvidia_Transcoder(t *testing.T) {
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
-	WorkDir = tmp
-	defer func() { WorkDir = "" }()
-	tc := NewNvidiaTranscoder("123")
-	ffmpeg.InitFFmpeg()
-
-	// test.ts sample isn't in a supported pixel format, so use this instead
-	fname := "test2.ts"
-
-	// transcoding should fail due to invalid devices
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	md := stubMetadata("", profiles...)
-	md.Fname = fname
-	_, err := tc.Transcode(md)
-	if err == nil ||
-		(err.Error() != "Unknown error occurred" &&
-			err.Error() != "Cannot allocate memory") {
-		t.Error(err)
-	}
-
 	dev := os.Getenv("NV_DEVICE")
 	if dev == "" {
 		t.Skip("No device specified; skipping remainder of Nvidia tests")
 		return
 	}
-	tc = NewNvidiaTranscoder(dev)
-	res, err := tc.Transcode(md)
+
+	tmp, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(tmp)
+	WorkDir = tmp
+	defer func() { WorkDir = "" }()
+	// test.ts sample isn't in a supported pixel format, so use this instead
+	fname := "test2.ts"
+
+	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
+	md := stubMetadata("", profiles...)
+	md.Fname = fname
+
+	ffmpeg.InitFFmpeg()
+	tc := NewNvidiaTranscoder(dev)
+	res, err := tc.Transcode(context.TODO(), md)
 	if err != nil {
 		t.Error(err)
 	}
-	if Over1Pct(len(res.Segments[0].Data), 485416) {
+	if Over1Pct(len(res.Segments[0].Data), 659692) {
 		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
 	}
-	if Over1Pct(len(res.Segments[1].Data), 771740) {
+	if Over1Pct(len(res.Segments[1].Data), 874012) {
 		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
 	}
+
+	// transcoding should panic due to invalid device 123
+	tc = NewNvidiaTranscoder("123")
+	defer func() {
+		if err := recover(); err == nil {
+			t.Error("Expected error with invalid device")
+		}
+	}()
+	_, err = tc.Transcode(context.TODO(), md)
 }
 
 func TestResToTranscodeData(t *testing.T) {
@@ -90,12 +92,12 @@ func TestResToTranscodeData(t *testing.T) {
 
 	// Test lengths of results and options different error
 	res := &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
-	_, err := resToTranscodeData(res, []ffmpeg.TranscodeOptions{})
+	_, err := resToTranscodeData(context.TODO(), res, []ffmpeg.TranscodeOptions{})
 	assert.EqualError(err, "lengths of results and options different")
 
 	// Test immediate read error
 	opts := []ffmpeg.TranscodeOptions{{Oname: "badfile"}}
-	_, err = resToTranscodeData(res, opts)
+	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
 	// Test error after a successful read
@@ -114,7 +116,7 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[1].Oname = "badfile"
 	opts[2].Oname = file2.Name()
 
-	_, err = resToTranscodeData(res, opts)
+	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
@@ -124,7 +126,7 @@ func TestResToTranscodeData(t *testing.T) {
 	res.Encoded[0].Pixels = 100
 
 	opts = []ffmpeg.TranscodeOptions{{Oname: file2.Name()}}
-	tData, err := resToTranscodeData(res, opts)
+	tData, err := resToTranscodeData(context.TODO(), res, opts)
 	assert.Nil(err)
 	assert.Equal(1, len(tData.Segments))
 	assert.Equal(int64(100), tData.Segments[0].Pixels)
@@ -144,13 +146,30 @@ func TestResToTranscodeData(t *testing.T) {
 	opts[0].Oname = file1.Name()
 	opts[1].Oname = file2.Name()
 
-	tData, err = resToTranscodeData(res, opts)
+	tData, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.Nil(err)
 	assert.Equal(2, len(tData.Segments))
 	assert.Equal(int64(200), tData.Segments[0].Pixels)
 	assert.Equal(int64(300), tData.Segments[1].Pixels)
 	assert.True(fileDNE(file1.Name()))
 	assert.True(fileDNE(file2.Name()))
+
+	// Test signature file
+	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
+	pHash := []byte{4, 2, 0, 6, 9}
+
+	file1, err = ioutil.TempFile(tempDir, "foo")
+	require.Nil(err)
+	ioutil.WriteFile(file1.Name()+".bin", pHash, 0664)
+
+	opts = make([]ffmpeg.TranscodeOptions, 1)
+	opts[0].Oname = file1.Name()
+	opts[0].CalcSign = true
+
+	tData, err = resToTranscodeData(context.TODO(), res, opts)
+	assert.Nil(err)
+	assert.Equal(tData.Segments[0].PHash, pHash)
+	assert.True(fileDNE(file1.Name()))
 }
 
 func TestProfilesToTranscodeOptions(t *testing.T) {
@@ -166,12 +185,12 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	// Test 0 profiles
 	profiles := []ffmpeg.VideoProfile{}
-	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts := profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(0, len(opts))
 
 	// Test 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(1, len(opts))
 	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
@@ -180,7 +199,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	// Test > 1 profile
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9, ffmpeg.P240p30fps16x9}
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, profiles, false)
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
@@ -191,8 +210,13 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	}
 
 	// Test different acceleration value
-	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles)
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, false)
 	assert.Equal(2, len(opts))
+
+	// Test signature calculation
+	opts = profilesToTranscodeOptions(workDir, ffmpeg.Nvidia, profiles, true)
+	assert.True(opts[0].CalcSign)
+	assert.True(opts[1].CalcSign)
 
 	for i, p := range profiles {
 		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
@@ -224,7 +248,7 @@ func TestAudioCopy(t *testing.T) {
 
 	md := stubMetadata("", videoProfiles...)
 	md.Fname = audioSample
-	res, err := tc.Transcode(md)
+	res, err := tc.Transcode(context.TODO(), md)
 	assert.Nil(err)
 
 	o, err := ioutil.ReadFile(audioSample)
@@ -263,4 +287,33 @@ func TestTranscoder_Formats(t *testing.T) {
 	}
 	// sanity check the base format wasn't overwritten (has happened before!)
 	assert.Equal(ffmpeg.FormatNone, ffmpeg.P144p30fps16x9.Format)
+}
+
+func TestRecoverFromPanic(t *testing.T) {
+	assert := assert.New(t)
+
+	f := func() (err error) {
+		defer recoverFromPanic(&err)
+		panic(struct{}{})
+	}
+
+	err := f()
+
+	assert.NotNil(err)
+	assert.Equal("unrecoverable transcoding failure", err.Error())
+	assert.IsType(UnrecoverableError{}, err)
+}
+
+func TestRecoverFromPanic_WithError(t *testing.T) {
+	assert := assert.New(t)
+	sampleErr := errors.New("sample error")
+
+	f := func() (err error) {
+		defer recoverFromPanic(&err)
+		panic(sampleErr)
+	}
+
+	err := f()
+
+	assert.Equal(NewUnrecoverableError(sampleErr), err)
 }

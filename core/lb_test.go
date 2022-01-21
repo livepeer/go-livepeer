@@ -27,7 +27,7 @@ func TestLB_CalculateCost(t *testing.T) {
 
 func TestLB_LeastLoaded(t *testing.T) {
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
 	rapid.Check(t, func(t *rapid.T) {
 		cost := rapid.IntRange(1, 10).Draw(t, "cost").(int)
 		transcoder := lb.leastLoaded()
@@ -51,7 +51,7 @@ func TestLB_Ratchet(t *testing.T) {
 	// Test:     Two transcoders, several sessions with the same set of profiles
 	//           Run multiple transcodes.
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 
 	rapid.Check(t, func(t *rapid.T) {
@@ -59,7 +59,7 @@ func TestLB_Ratchet(t *testing.T) {
 		sess := sessions[sessIdx]
 		_, exists := lb.sessions[sess]
 		idx := lb.idx
-		lb.Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+		lb.Transcode(context.TODO(), stubMetadata(sess, ffmpeg.P144p30fps16x9))
 		if exists {
 			assert.Equal(idx, lb.idx)
 		} else {
@@ -72,10 +72,10 @@ func TestLB_SessionCleanupRace(t *testing.T) {
 	// Reproduce race condition around session cleanup #1750
 
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0"}, newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
 	sess := "sess"
 	// Force create a new session
-	_, err := lb.Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+	_, err := lb.Transcode(context.TODO(), stubMetadata(sess, ffmpeg.P144p30fps16x9))
 	assert.Nil(err)
 	// Mark transcoder to error out
 	transcoder := lb.sessions[sess].transcoder.(*StubTranscoder)
@@ -87,7 +87,7 @@ func TestLB_SessionCleanupRace(t *testing.T) {
 	// Error out on Job 1
 	go func() {
 		lb.mu.Lock() // lock the LB to prevent session cleanup
-		_, err = lb.sessions[sess].Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+		_, err = lb.sessions[sess].Transcode(context.TODO(), stubMetadata(sess, ffmpeg.P144p30fps16x9))
 		assert.Equal(ErrTranscode, err)
 		errSignal <- struct{}{}
 		wg.Done()
@@ -95,7 +95,7 @@ func TestLB_SessionCleanupRace(t *testing.T) {
 	// Job 2 arrives when the session loop() has closed, but session isn't cleaned up yet
 	go func() {
 		<-errSignal
-		_, err = lb.sessions[sess].Transcode(stubMetadata(sess, ffmpeg.P144p30fps16x9))
+		_, err = lb.sessions[sess].Transcode(context.TODO(), stubMetadata(sess, ffmpeg.P144p30fps16x9))
 		assert.Equal(ErrTranscoderStopped, err)
 		wg.Done()
 	}()
@@ -111,7 +111,7 @@ func TestLB_LoadAssignment(t *testing.T) {
 	//           Subsequent segments should ignore subsequent load costs.
 
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 	profiles := []ffmpeg.VideoProfile{}
 	for _, v := range ffmpeg.VideoProfileLookup {
@@ -124,7 +124,7 @@ func TestLB_LoadAssignment(t *testing.T) {
 		profs := shuffleProfiles(t)
 		_, exists := lb.sessions[sessName]
 		totalLoad := accumLoad(lb)
-		lb.Transcode(stubMetadata(sessName, profs...))
+		lb.Transcode(context.TODO(), stubMetadata(sessName, profs...))
 		if exists {
 			assert.Equal(totalLoad, accumLoad(lb))
 		} else {
@@ -148,12 +148,12 @@ func TestLB_SessionCancel(t *testing.T) {
 
 	wg := newWg(1)
 	go func() {
-		sess.loop()
+		sess.loop(context.TODO())
 		wg.Done()
 	}()
 	stubCancel()
 	wgWait(wg)
-	_, err := sess.Transcode(&SegTranscodingMetadata{})
+	_, err := sess.Transcode(context.TODO(), &SegTranscodingMetadata{})
 	assert.Equal(t, ErrTranscoderStopped, err)
 }
 
@@ -171,7 +171,7 @@ func TestLB_SessionConcurrency(t *testing.T) {
 
 	wg := newWg(1)
 	go func() {
-		sess.loop()
+		sess.loop(context.TODO())
 		wg.Done()
 	}()
 
@@ -182,7 +182,7 @@ func TestLB_SessionConcurrency(t *testing.T) {
 		}
 		wg.Add(1)
 		go func() {
-			sess.Transcode(&SegTranscodingMetadata{})
+			sess.Transcode(context.TODO(), &SegTranscodingMetadata{})
 			wg.Done()
 		}()
 	}
@@ -221,14 +221,14 @@ func TestLB_ConcurrentSessionErrors(t *testing.T) {
 			// Sanity check that we actually exit from the transcode loop
 			wg.Add(1)
 			go func() {
-				sess.loop()
+				sess.loop(context.TODO())
 				wg.Done()
 			}()
 
 			errCh := make(chan int)
 			for i := 0; i < innerIters; i++ {
 				go func(ch chan int) {
-					_, err := sess.Transcode(&SegTranscodingMetadata{})
+					_, err := sess.Transcode(context.TODO(), &SegTranscodingMetadata{})
 					if err == nil {
 						ch <- 0
 					} else {
@@ -323,7 +323,7 @@ func (m *lbMachine) Init(t *rapid.T) {
 		devices = append(devices, strconv.Itoa(i))
 	}
 
-	m.lb = NewLoadBalancingTranscoder(devices, newStubTranscoder).(*LoadBalancingTranscoder)
+	m.lb = NewLoadBalancingTranscoder(devices, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
 	m.states = make(map[string]*machineState)
 
 	assert.Equal(t, devices, m.lb.transcoders) // sanity check
@@ -333,7 +333,7 @@ func (m *lbMachine) TranscodeOK(t *rapid.T) {
 	// Run a successful segment transcode
 
 	sessName, state := m.randomSession(t)
-	_, err := m.lb.Transcode(stubMetadata(sessName, state.profiles...))
+	_, err := m.lb.Transcode(context.TODO(), stubMetadata(sessName, state.profiles...))
 
 	assert.Nil(t, err)
 
@@ -349,7 +349,7 @@ func (m *lbMachine) TranscodeError(t *rapid.T) {
 	// If session doesn't already exist, create it by forcing a transcode
 	_, ok := m.lb.sessions[sessName]
 	if !ok {
-		_, err := m.lb.Transcode(stubMetadata(sessName, state.profiles...))
+		_, err := m.lb.Transcode(context.TODO(), stubMetadata(sessName, state.profiles...))
 		assert.Nil(t, err)
 		require.Contains(t, m.lb.sessions, sessName)
 	}
@@ -358,7 +358,7 @@ func (m *lbMachine) TranscodeError(t *rapid.T) {
 	require.Equal(t, 0, transcoder.StoppedCount) // Sanity check
 
 	transcoder.FailTranscode = true
-	_, err := m.lb.Transcode(stubMetadata(sessName, state.profiles...))
+	_, err := m.lb.Transcode(context.TODO(), stubMetadata(sessName, state.profiles...))
 	assert.Equal(t, ErrTranscode, err)
 
 	m.totalLoad -= calculateCost(state.profiles)

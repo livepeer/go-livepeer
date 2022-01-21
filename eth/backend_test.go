@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -16,7 +17,6 @@ import (
 )
 
 func TestNewTxLog(t *testing.T) {
-	require := require.New(t)
 	assert := assert.New(t)
 
 	// https://etherscan.io/tx/0x6afffe4d95789e7a27bf0ec8adb8324b2e481a5a6df468366e6efffad15746a6
@@ -30,24 +30,18 @@ func TestNewTxLog(t *testing.T) {
 		common.Hex2Bytes("ec8b3cb6000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001a02ec8398aed129f376c296c8b999d2f9ee61494110f9a752494d2ef1b89a4c9d30000000000000000000000009c10672cee058fd658103d90872fe431bb6c0afa0000000000000000000000003ee860a4aba830af84ebbce2b381fc11db8493e20000000000000000000000000000000000000000000000000057c3cdc9be11ec0a5ce4361d251fc5d71ba8fa55eef46b5a59a967145c79aa4cdbe1f943ad00000000000000000000000000000000000000000000000000000000000000000001d00ef48a6825d9ae93097ad55bc76057fb50afc203aa98fd4e01aa6576d7129800000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000689a9f81d59be53a90a12cb12f627aa9e87c505320bad20a98fd98d5ed23bfe9a5400000000000000000000000000000000000000000000000000000000000000415ff5265992f1a6563851d085f363b16ad65416baaee090ee368b59082437df7a0237214659511fc188d6a4ef57c988bb18faa3e99826c78e9e75eb29366745891b00000000000000000000000000000000000000000000000000000000000000"),
 	)
 
-	abis, err := makeABIMap()
-	require.Nil(err)
-	b := &backend{
-		abiMap: abis,
-	}
-
-	txLog, err := b.newTxLog(tx)
+	txLog, err := newTxLog(tx)
 	assert.Equal("redeemWinningTicket", txLog.method)
 	assert.Equal(inputs, txLog.inputs)
 
 	// test unknown ABI
 	tx = types.NewTransaction(2, common.HexToAddress("foo"), big.NewInt(0), 200000, big.NewInt(1000000), common.Hex2Bytes("aaaabbbb"))
-	txLog, err = b.newTxLog(tx)
+	txLog, err = newTxLog(tx)
 	assert.EqualError(err, "unknown ABI")
 
 	// test no method signature
 	tx = types.NewTransaction(2, common.HexToAddress("foo"), big.NewInt(0), 200000, big.NewInt(1000000), nil)
-	txLog, err = b.newTxLog(tx)
+	txLog, err = newTxLog(tx)
 	assert.EqualError(err, "no method signature")
 }
 
@@ -80,8 +74,14 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	signedTx, err := types.SignTx(tx, signer, privateKey)
 	require.Nil(t, err)
 
-	bi, err := NewBackend(client, signer)
-	require.Nil(t, err)
+	gpm := NewGasPriceMonitor(&stubGasPriceOracle{
+		gasPrice: big.NewInt(1),
+	}, 1*time.Second, big.NewInt(0), nil)
+	gpm.gasPrice = big.NewInt(1)
+
+	tm := NewTransactionManager(client, gpm, &accountManager{}, 3*time.Second, 0)
+
+	bi := NewBackend(client, signer, gpm, tm)
 
 	nonceLockBefore := bi.(*backend).nonceManager.getNonceLock(fromAddress)
 
@@ -92,11 +92,4 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	nonceLockAfter := bi.(*backend).nonceManager.getNonceLock(fromAddress)
 
 	assert.Equal(t, nonceLockBefore.nonce, nonceLockAfter.nonce)
-}
-
-func TestBackend_SetMaxGasPrice(t *testing.T) {
-	gp := big.NewInt(10)
-	backend := &backend{}
-	backend.SetMaxGasPrice(gp)
-	assert.Equal(t, gp, backend.MaxGasPrice())
 }

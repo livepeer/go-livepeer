@@ -670,7 +670,7 @@ func TestSignMessageHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("could not sign message - err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("could not sign message - err=%q", err), strings.TrimSpace(string(body)))
 
 	// Test signing success
 	client.Err = nil
@@ -684,6 +684,96 @@ func TestSignMessageHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal(http.StatusOK, resp.StatusCode)
 	assert.Equal([]byte(msg), body)
+
+	// Test signing typed data JSON unmarshal error
+	headers := map[string]string{
+		"Content-Type": "application/x-www-form-urlencoded",
+		"SigFormat":    "data/typed",
+	}
+
+	resp = httpPostResp(handler, strings.NewReader(form.Encode()), headers)
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "could not unmarshal typed data")
+
+	// Test signing typed data success
+	jsonTypedData := `
+    {
+      "types": {
+        "EIP712Domain": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "type": "string"
+          },
+          {
+            "name": "chainId",
+            "type": "uint256"
+          },
+          {
+            "name": "verifyingContract",
+            "type": "address"
+          }
+        ],
+        "Person": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "wallet",
+            "type": "address"
+          }
+        ],
+        "Mail": [
+          {
+            "name": "from",
+            "type": "Person"
+          },
+          {
+            "name": "to",
+            "type": "Person"
+          },
+          {
+            "name": "contents",
+            "type": "string"
+          }
+        ]
+      },
+      "primaryType": "Mail",
+      "domain": {
+        "name": "Ether Mail",
+        "version": "1",
+        "chainId": "1",
+        "verifyingContract": "0xCCCcccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+      },
+      "message": {
+        "from": {
+          "name": "Cow",
+          "wallet": "0xcD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+        },
+        "to": {
+          "name": "Bob",
+          "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+        },
+        "contents": "Hello, Bob!"
+      }
+    }
+	`
+
+	form = url.Values{
+		"message": {jsonTypedData},
+	}
+
+	resp = httpPostResp(handler, strings.NewReader(form.Encode()), headers)
+	defer resp.Body.Close()
+	body, _ = ioutil.ReadAll(resp.Body)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+	assert.Equal([]byte("foo"), body)
 }
 
 func TestVoteHandler(t *testing.T) {
@@ -774,7 +864,7 @@ func TestVoteHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%q", err), strings.TrimSpace(string(body)))
 	client.Err = nil
 
 	// Test CheckTx() error
@@ -786,7 +876,7 @@ func TestVoteHandler(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 
 	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%v", err), strings.TrimSpace(string(body)))
+	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%q", err), strings.TrimSpace(string(body)))
 	client.CheckTxErr = nil
 
 	// Test Vote() success
@@ -799,7 +889,7 @@ func TestVoteHandler(t *testing.T) {
 	defer resp.Body.Close()
 	body, _ = ioutil.ReadAll(resp.Body)
 	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal((&types.Transaction{}).Hash().Bytes(), body)
+	assert.Equal((types.NewTx(&types.DynamicFeeTx{})).Hash().Bytes(), body)
 }
 
 func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {

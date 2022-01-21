@@ -2,14 +2,22 @@
 
 set -ex
 
+ROOT="${1:-$HOME}"
+ARCH="$(uname -m)"
+
+if [[ $ARCH == "arm64" ]] && [[ $(uname) == "Darwin" ]]; then
+  # Detect Apple Silicon
+  IS_M1=1
+fi
+echo "Arch $ARCH ${IS_M1:+(Apple Silicon)}"
+
 # Windows (MSYS2) needs a few tweaks
 if [[ $(uname) == *"MSYS"* ]]; then
+  ROOT="/build"
   export PATH="$PATH:/usr/bin:/mingw64/bin"
   export C_INCLUDE_PATH="${C_INCLUDE_PATH:-}:/mingw64/lib"
-  export HOME="/build"
-  mkdir -p $HOME
 
-  export PATH="$HOME/compiled/bin":$PATH
+  export PATH="$ROOT/compiled/bin":$PATH
   export PKG_CONFIG_PATH=/mingw64/lib/pkgconfig
 
   export TARGET_OS="--target-os=mingw64"
@@ -20,89 +28,81 @@ if [[ $(uname) == *"MSYS"* ]]; then
   export WINDOWS_BUILD=1
 fi
 
-export PATH="$HOME/compiled/bin":$PATH
-export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$HOME/compiled/lib/pkgconfig"
+export PATH="$ROOT/compiled/bin":$PATH
+export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$ROOT/compiled/lib/pkgconfig"
+
+mkdir -p "$ROOT/"
 
 # NVENC only works on Windows/Linux
 if [ $(uname) != "Darwin" ]; then
-  if [ ! -e "$HOME/nv-codec-headers" ]; then
-    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$HOME/nv-codec-headers"
-    cd $HOME/nv-codec-headers
+  if [ ! -e "$ROOT/nv-codec-headers" ]; then
+    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
+    cd $ROOT/nv-codec-headers
     git checkout 250292dd20af60edc6e0d07f1d6e489a2f8e1c44
-    make -e PREFIX="$HOME/compiled"
-    make install -e PREFIX="$HOME/compiled"
+    make -e PREFIX="$ROOT/compiled"
+    make install -e PREFIX="$ROOT/compiled"
   fi
 fi
 
-# Static linking of gnutls on Linux/Mac
-if [[ $(uname) != *"MSYS"* ]]; then
-  if [ ! -e "$HOME/nasm-2.14.02" ]; then
+if [[ $(uname) != *"MSYS"* ]] && [[ ! $IS_M1 ]]; then
+  if [ ! -e "$ROOT/nasm-2.14.02" ]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
-    cd "$HOME"
+    cd "$ROOT"
     curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
     echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' > nasm-2.14.02.tar.gz.sha256
     sha256sum -c nasm-2.14.02.tar.gz.sha256
     tar xf nasm-2.14.02.tar.gz
     rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
-    cd "$HOME/nasm-2.14.02"
-    ./configure --prefix="$HOME/compiled"
+    cd "$ROOT/nasm-2.14.02"
+    ./configure --prefix="$ROOT/compiled"
     make
     make install || echo "Installing docs fails but should be OK otherwise"
   fi
-
-  # rm -rf "$HOME/gmp-6.1.2"
-  if [ ! -e "$HOME/gmp-6.1.2" ]; then
-    cd "$HOME"
-    curl -LO https://github.com/livepeer/livepeer-builddeps/raw/34900f2b1be4e366c5270e3ee5b0d001f12bd8a4/gmp-6.1.2.tar.xz
-    tar xf gmp-6.1.2.tar.xz
-    cd "$HOME/gmp-6.1.2"
-    ./configure --prefix="$HOME/compiled" --disable-shared  --with-pic --enable-fat
-    make
-    make install
-  fi
-
-  ## rm -rf "$HOME/nettle-3.7"
-  #if [ ! -e "$HOME/nettle-3.7" ]; then
-  #  cd $HOME
-  #  curl -LO https://github.com/livepeer/livepeer-builddeps/raw/657a86b78759b1ab36dae227253c26ff50cb4b0a/nettle-3.7.tar.gz
-  #  tar xf nettle-3.7.tar.gz
-  #  cd nettle-3.7
-  #  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include" ./configure --prefix="$HOME/compiled" --disable-shared --enable-pic
-  #  make
-  #  make install
-  #fi
-
 fi
 
-if [ ! -e "$HOME/x264" ]; then
-  git clone http://git.videolan.org/git/x264.git "$HOME/x264"
-  cd "$HOME/x264"
-  # git master as of this writing
-  git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
-  ./configure --prefix="$HOME/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
+if [ ! -e "$ROOT/x264" ]; then
+  git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
+  cd "$ROOT/x264"
+  if [[ $IS_M1 ]]; then
+    # newer git master, compiles on Apple Silicon
+    git checkout 66a5bc1bd1563d8227d5d18440b525a09bcf17ca
+  else
+    # older git master, does not compile on Apple Silicon
+    git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
+  fi
+  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
   make
   make install-lib-static
 fi
 
-if [ ! -e "$HOME/gnutls-3.7.0" ]; then
-  EXTRA_GNUTLS_LIBS=""
-  if [[ $(uname) == *"MSYS"* ]]; then
-    EXTRA_GNUTLS_LIBS="-lncrypt -lcrypt32 -lwsock32 -lws2_32 -lwinpthread"
+if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
+  sudo apt-get install -y libnuma-dev cmake
+  if [ ! -e "$ROOT/x265" ]; then
+    git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
+    cd "$ROOT/x265"
+    git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
+    cd build/linux/
+    cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
+    make
+    make install
   fi
-  cd $HOME
-  curl -LO https://www.gnupg.org/ftp/gcrypt/gnutls/v3.7/gnutls-3.7.0.tar.xz
-  tar xf gnutls-3.7.0.tar.xz
-  cd gnutls-3.7.0
-  LDFLAGS="-L${HOME}/compiled/lib" CFLAGS="-I${HOME}/compiled/include -O2" LIBS="-lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS" ./configure ${BUILD_OS:-} --prefix="$HOME/compiled" --enable-static --disable-shared --with-pic --with-included-libtasn1 --with-included-unistring --without-p11-kit --without-idn --without-zlib --disable-doc --disable-cxx --disable-tools --disable-hardware-acceleration --disable-guile --disable-libdane --disable-tests --disable-rpath --disable-nls
-  make
-  make install
-  # gnutls doesn't properly set up its pkg-config or something? without this line ffmpeg and go
-  # don't know that they need gmp, nettle, and hogweed
-  sed -i'' -e "s/-lgnutls/-lgnutls -lhogweed -lnettle -lgmp $EXTRA_GNUTLS_LIBS/g" ~/compiled/lib/pkgconfig/gnutls.pc
+  # VP8/9 support
+  if [ ! -e "$ROOT/libvpx" ]; then
+    git clone https://chromium.googlesource.com/webm/libvpx.git "$ROOT/libvpx"
+    cd "$ROOT/libvpx"
+    git checkout ab35ee100a38347433af24df05a5e1578172a2ae
+    ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    make
+    make install
+  fi
 fi
 
 EXTRA_FFMPEG_FLAGS=""
+DISABLE_FFMPEG_COMPONENTS=""
 EXTRA_LDFLAGS=""
+# all flags which should be present for production build, but should be replaced/removed for debug build
+DEV_FFMPEG_FLAGS="--disable-programs"
+FFMPEG_MAKE_EXTRA_ARGS=""
 
 if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
@@ -110,32 +110,55 @@ else
   # If we have clang, we can compile with CUDA support!
   if which clang > /dev/null; then
     echo "clang detected, building with GPU support"
-    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid --enable-filter=scale_cuda --enable-encoder=h264_nvenc"
+    EXTRA_FFMPEG_FLAGS="--enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
+    if [[ $BUILD_TAGS == *"experimental"* ]]; then
+        if [ ! -e "/usr/local/lib/libtensorflow_framework.so" ]; then
+          LIBTENSORFLOW_VERSION=2.3.0 \
+          && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+          && rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+        fi
+        echo "experimental tag detected, building with Tensorflow support"
+        EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
+    fi
   fi
 fi
 
-if [ ! -e "$HOME/ffmpeg/libavcodec/libavcodec.a" ]; then
-  git clone https://github.com/livepeer/ffmpeg.git "$HOME/ffmpeg" || echo "FFmpeg dir already exists"
-  cd "$HOME/ffmpeg"
-  git checkout 1fdf06e14239e1aaa9ddfb648fa374ca3cb1b269
-  ./configure ${TARGET_OS:-} --fatal-warnings \
-    --disable-programs --disable-doc --disable-sdl2 --disable-iconv \
-    --disable-muxers --disable-demuxers --disable-parsers --disable-protocols \
-    --disable-encoders --disable-decoders --disable-filters --disable-bsfs \
-    --disable-postproc --disable-lzma \
-    --enable-gnutls --enable-libx264 --enable-gpl --enable-ffmpeg --enable-ffplay \
-    --enable-protocol=https,http,rtmp,file \
-    --enable-muxer=mpegts,hls,segment,mp4,null --enable-demuxer=flv,mpegts,mp4,mov \
-    --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps \
-    --enable-parser=aac,aac_latm,h264 \
-    --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat \
-    --enable-filter=aresample,asetnsamples,fps,scale \
-    --enable-encoder=aac,libx264 \
-    --enable-decoder=aac,h264 \
-    --extra-cflags="-I${HOME}/compiled/include" \
-    --extra-ldflags="-L${HOME}/compiled/lib ${EXTRA_LDFLAGS}" \
-    --prefix="$HOME/compiled" \
-    $EXTRA_FFMPEG_FLAGS
-  make
+if [[ $BUILD_TAGS == *"debug-video"* ]]; then
+    echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
+    DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
+    DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
+    DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
+    FFMPEG_MAKE_EXTRA_ARGS="-j4"
+else
+    # disable all unnecessary features for production build
+    DISABLE_FFMPEG_COMPONENTS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
+    DISABLE_FFMPEG_COMPONENTS+=" --disable-encoders --disable-decoders --disable-filters --disable-bsfs --disable-postproc --disable-lzma "
+fi
+
+if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
+  git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
+  cd "$ROOT/ffmpeg"
+  git checkout 1ece0e65b1ce2e330e673df0cda23b904979a1a6
+  ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
+    --enable-libx264 --enable-gpl \
+    --enable-protocol=rtmp,file,pipe \
+    --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
+    --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
+    --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
+    --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
+    --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
+    --enable-encoder=aac,opus,libx264 \
+    --enable-decoder=aac,opus,h264 \
+    --extra-cflags="-I${ROOT}/compiled/include" \
+    --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_LDFLAGS}" \
+    --prefix="$ROOT/compiled" \
+    $EXTRA_FFMPEG_FLAGS \
+    $DEV_FFMPEG_FLAGS
+fi
+
+if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" || $BUILD_TAGS == *"debug-video"* ]]; then
+  cd "$ROOT/ffmpeg"
+  make $FFMPEG_MAKE_EXTRA_ARGS
   make install
 fi

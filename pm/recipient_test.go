@@ -509,16 +509,47 @@ func TestTicketParams(t *testing.T) {
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 
-	// Test insufficient sender reserve error due to maxFloat < txCost
-	sm.maxFloat = new(big.Int).Add(cfg.EV, big.NewInt(1))
+	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue > txCostWithGasPrice(avg gasPrice)
+	// Set current gasPrice higher than avg gasPrice
+	gm.gasPrice = new(big.Int).Add(avgGasPrice, big.NewInt(1))
+	txCost := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.gasPrice)
+	txCostAvgGasPrice := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), avgGasPrice)
+	sm.maxFloat = new(big.Int).Sub(txCost, big.NewInt(1))
+	require.True(sm.maxFloat.Cmp(txCost) < 0)
+	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) > 0)
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.Nil(err)
+
+	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue = txCostWithGasPrice(avg gasPrice)
+	sm.maxFloat = txCostAvgGasPrice
+	require.True(sm.maxFloat.Cmp(txCost) < 0)
+	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) == 0)
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.Nil(err)
+
+	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue < txCostWithGasPrice(avg gasPrice)
+	sm.maxFloat = new(big.Int).Sub(txCostAvgGasPrice, big.NewInt(1))
+	require.True(sm.maxFloat.Cmp(txCost) < 0)
+	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) < 0)
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 
-	// Test insufficient sender reserve error due to maxFloat = txCost
-	txCost := new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.gasPrice)
-	sm.maxFloat = txCost
+	// Test lazy evaluation when faceValue > txCostWithGasPrice(current gasPrice)
+	// Set current gasPrice lower than avg gasPrice
+	gm.gasPrice = new(big.Int).Sub(avgGasPrice, big.NewInt(1))
+	txCost = new(big.Int).Mul(big.NewInt(int64(cfg.RedeemGas)), gm.gasPrice)
+	sm.maxFloat = new(big.Int).Add(txCost, big.NewInt(1))
+	require.True(sm.maxFloat.Cmp(txCost) > 0)
+	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) < 0)
 	_, err = r.TicketParams(sender, big.NewRat(1, 1))
-	assert.EqualError(err, errInsufficientSenderReserve.Error())
+	assert.Nil(err)
+
+	// Test lazy evaluation when faceValue = txCostWithGasPrice(current gasPrice)
+	sm.maxFloat = txCost
+	require.True(sm.maxFloat.Cmp(txCost) == 0)
+	require.True(sm.maxFloat.Cmp(txCostAvgGasPrice) < 0)
+	_, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.Nil(err)
 
 	// Test default faceValue < EV and maxFloat > EV
 	// Set gas price = 0 to set default faceValue = 0
@@ -528,9 +559,9 @@ func TestTicketParams(t *testing.T) {
 	params5, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
-	assert.Equal(cfg.EV, params5.FaceValue)
-	assert.Equal(maxWinProb, params5.WinProb)
-
+	assert.Equal(new(big.Int).Mul(cfg.EV, evMultiplier), params5.FaceValue)
+	expWinProb := calcWinProb(params5.FaceValue, cfg.EV)
+	assert.Equal(expWinProb, params5.WinProb)
 	// Test default faceValue < EV and maxFloat < EV
 	sm.maxFloat = big.NewInt(0) // Set maxFloat to some value less than EV
 
@@ -674,4 +705,23 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 	r.Stop()
 	time.Sleep(20 * time.Millisecond)
 	assert.True(tm.blockNumSub.(*stubSubscription).unsubscribed)
+}
+
+func calcWinProb(faceValue, EV *big.Int) *big.Int {
+	// Return 0 if faceValue happens to be 0
+	if faceValue.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0)
+	}
+	// Return maxWinProb if faceValue = EV
+	if faceValue.Cmp(EV) == 0 {
+		return maxWinProb
+	}
+
+	m := new(big.Int)
+	x, m := new(big.Int).DivMod(maxWinProb, faceValue, m)
+	if m.Int64() != 0 {
+		return new(big.Int).Mul(EV, x.Add(x, big.NewInt(1)))
+	}
+	// Compute winProb as the numerator of a fraction over maxWinProb
+	return new(big.Int).Mul(EV, x)
 }

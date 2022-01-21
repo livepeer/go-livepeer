@@ -10,7 +10,11 @@ jobs:
     steps:
     - name: configure git line endings
       run: git config --global core.autocrlf false
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
+      with:
+        # Needed for commands that depend on git tags
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: Setup Msys2 environment
       uses: msys2/setup-msys2@v2
       with:
@@ -21,11 +25,16 @@ jobs:
     - name: Build ffmpeg
       shell: msys2 {0}
       run: ./install_ffmpeg.sh
-    - name: Build Livepeer
+    # For some reason the next step sometimes cannot find protoc
+    # - name: Install protoc
+    #   uses: arduino/setup-protoc@v1
+    # We do not just run `make` because it would also require protoc
+    # Due to the issue described above with finding protoc, for now we just specify the individual binaries
+    - name: Build binaries
       shell: msys2 {0}
       run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
     - name: Upload build
-      if: github.event.pull_request.head.repo.full_name == github.repository
+      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       shell: msys2 {0}
       env: 
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}

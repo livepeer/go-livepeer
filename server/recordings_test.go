@@ -20,8 +20,9 @@ func TestRecordingHandler(t *testing.T) {
 	drivers.Testing = true
 	lpmon.NodeID = "testNode"
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
 		var req authWebhookReq
@@ -38,7 +39,7 @@ func TestRecordingHandler(t *testing.T) {
 	defer whts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = whts.URL
+	AuthWebhookURL = mustParseUrl(t, whts.URL)
 
 	makeReq := func(method, uri string) *http.Response {
 		writer := httptest.NewRecorder()
@@ -61,15 +62,15 @@ func TestRecordingHandler(t *testing.T) {
 	profile := ffmpeg.P144p25fps16x9
 	jpl.InsertHLSSegment(&profile, 1, "sess1/testNode/P144p25fps16x9/1.ts", 2100)
 	bjpl, _ := json.Marshal(jpl)
-	msess1.SaveData("testNode/playlist_1.json", bjpl, nil)
+	msess1.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 2, "sess2/testNode/P144p25fps16x9/2.ts", 2100)
 	bjpl, _ = json.Marshal(jpl)
-	msess2.SaveData("testNode/playlist_2.json", bjpl, nil)
+	msess2.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 1, "sess3/testNode/P144p25fps16x9/3.ts", 2100)
 	bjpl, _ = json.Marshal(jpl)
-	msess3.SaveData("testNode/playlist_3.json", bjpl, nil)
+	msess3.SaveData(context.TODO(), "testNode/playlist_3.json", bjpl, nil, 0)
 
 	resp = makeReq("GET", "/recordings/sess3/P144p25fps16x9.m3u8")
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -88,8 +89,9 @@ func TestRecording(t *testing.T) {
 	drivers.Testing = true
 	lpmon.NodeID = "testNode"
 	assert := assert.New(t)
-	s := setupServer()
+	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
+	defer cancel()
 
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		out, _ := ioutil.ReadAll(r.Body)
@@ -106,7 +108,7 @@ func TestRecording(t *testing.T) {
 	defer whts.Close()
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
-	AuthWebhookURL = whts.URL
+	AuthWebhookURL = mustParseUrl(t, whts.URL)
 	makeReq := func(method, uri string) *http.Response {
 		writer := httptest.NewRecorder()
 		req := httptest.NewRequest(method, uri, nil)
@@ -121,7 +123,7 @@ func TestRecording(t *testing.T) {
 
 	mos := drivers.TestMemoryStorages["recstore4"]
 	msess := mos.NewSession("sess1")
-	msess.SaveData("testNode/source/1.ts", []byte("segmentdata"), nil)
+	msess.SaveData(context.TODO(), "testNode/source/1.ts", []byte("segmentdata"), nil, 0)
 
 	resp = makeReq("GET", "/live/sess1/testNode/source/1.ts")
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -134,12 +136,12 @@ func TestRecording(t *testing.T) {
 	jpl.InsertHLSSegment(&profile, 1, "testNode/P144p25fps16x9/1.ts", 2100)
 	bjpl, err := json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData("testNode/playlist_1.json", bjpl, nil)
+	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 2, "testNode/P144p25fps16x9/2.ts", 2100)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData("testNode/playlist_2.json", bjpl, nil)
+	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
 
 	resp = makeReq("GET", "/live/sess1/index.m3u8")
 	body, _ = ioutil.ReadAll(resp.Body)
@@ -170,12 +172,12 @@ func TestRecording(t *testing.T) {
 	jpl.InsertHLSSegment(&profile, 3, "testNode/P144p25fps16x9/3.ts", 2100)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData("testNode/playlist_1.json", bjpl, nil)
+	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 4, "testNode/P144p25fps16x9/4.ts", 2450)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData("testNode/playlist_2.json", bjpl, nil)
+	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
 	resp = makeReq("GET", "/live/sess2/P144p25fps16x9.m3u8?finalize=false")
 	body, _ = ioutil.ReadAll(resp.Body)
 	resp.Body.Close()

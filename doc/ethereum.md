@@ -11,3 +11,38 @@ If the node detects that its address is registered on-chain, it will automatical
 The node can run a round initialization service that will automatically call a smart contract function to initialize the current round.
 
 The round initialization service is disabled by default and can be enabled by starting the node with `-initializeRound`.
+
+## Gas Prices
+
+After the EIP-1559 upgrade on Ethereum, the node treats the gas price as priority fee + base fee.
+
+### Max gas price
+
+The `maxGasPrice` parameter makes sure the transaction fee never exceeds the specified limit.
+- If the current network gas price is higher than `maxGasPrice`, the transaction is not sent
+- The transaction parameter `maxFeePerGas` is set to `maxGasPrice`
+	- **Note: As of v0.5.24, this is not true, but another release will be published to resolve this**
+
+The following options can be used to get the max gas price:
+
+- `curl localhost:7935/maxGasPrice`
+- Run `livepeer_cli` and observe the max gas price in the node stats
+
+The following options can be used to set the max gas price to `<MAX_GAS_PRICE>`, a Wei denominated value:
+
+- Start the node with `-maxGasPrice <MAX_GAS_PRICE>`
+- `curl localhost:7935/setMaxGasPrice?maxGasPrice=<MAX_GAS_PRICE>`
+- Run `livepeer_cli` and select the set max gas price option
+
+### Min gas price
+
+The following options can be used to get the min gas price:
+
+- `curl localhost:7935/minGasPrice`
+- Run `livepeer_cli` and observe the min gas price in the node statts
+
+The following options can be used to set the min gas price to `<MIN_GAS_PRICE>`, a Wei denominated value:
+
+- Start the node with `-minGasPrice <MIN_GAS_PRICE>`
+- `curl localhost:7935/setMinGasPrice?minGasPrice=<MIN_GAS_PRICE>`
+- Run `livepeer_cli` and select the set min gas price option

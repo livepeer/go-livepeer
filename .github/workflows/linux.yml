@@ -13,6 +13,7 @@ jobs:
       with:
         # Needed for commands that depend on git tags
         fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
     - name: Setup Go
       uses: actions/setup-go@v2
       with:
@@ -45,7 +46,7 @@ jobs:
           && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
           && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
           && sudo apt-get update \
-          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
+          && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
 
         sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
           && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
@@ -58,7 +59,7 @@ jobs:
     - name: Build binaries
       run: |
         export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-        ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
+        ./ci_env.sh make
         rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
@@ -68,6 +69,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          lfs: 'true'
       - name: Setup Go
         uses: actions/setup-go@v2
         with:
@@ -101,13 +105,14 @@ jobs:
   upload:
     runs-on: ubuntu-18.04
     needs: [build, test]
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout
         uses: actions/checkout@v2
         with:
           # Needed for commands that depend on git tags
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Cache binaries
         uses: actions/cache@v2.1.5
         with:

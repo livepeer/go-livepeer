@@ -45,6 +45,22 @@ const (
 	RedeemerNode
 )
 
+var nodeTypeStrs = map[NodeType]string{
+	DefaultNode:      "default",
+	BroadcasterNode:  "broadcaster",
+	OrchestratorNode: "orchestrator",
+	TranscoderNode:   "transcoder",
+	RedeemerNode:     "redeemer",
+}
+
+func (t NodeType) String() string {
+	str, ok := nodeTypeStrs[t]
+	if !ok {
+		return "unknown"
+	}
+	return str
+}
+
 //LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
@@ -63,6 +79,7 @@ type LivepeerNode struct {
 	TranscoderManager *RemoteTranscoderManager
 	Balances          *AddressBalances
 	Capabilities      *Capabilities
+	AutoAdjustPrice   bool
 
 	// Broadcaster public fields
 	Sender pm.Sender
@@ -79,11 +96,12 @@ type LivepeerNode struct {
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:          e,
-		WorkDir:      wd,
-		Database:     dbh,
-		SegmentChans: make(map[ManifestID]SegmentChan),
-		segmentMutex: &sync.RWMutex{},
+		Eth:             e,
+		WorkDir:         wd,
+		Database:        dbh,
+		AutoAdjustPrice: true,
+		SegmentChans:    make(map[ManifestID]SegmentChan),
+		segmentMutex:    &sync.RWMutex{},
 	}, nil
 }
 

@@ -29,6 +29,9 @@ import (
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
+// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment
+var SegmentUploadTimeout = 2 * time.Second
+
 // Max Segment Duration
 var MaxDuration = (5 * time.Minute)
 
@@ -370,6 +373,10 @@ var RandomBytesGenerator = func(length uint) []byte {
 // RandName generates random hexadecimal string
 func RandName() string {
 	return RandomIDGenerator(10)
+}
+
+var RandomUintUnder = func(max uint) uint {
+	return uint(rand.Uint32()) % max
 }
 
 func ToInt64(val *big.Int) int64 {

@@ -3,11 +3,13 @@ package discovery
 import (
 	"container/heap"
 	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"net/url"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
@@ -17,38 +19,65 @@ import (
 )
 
 var getOrchestratorsTimeoutLoop = 3 * time.Second
+var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	uris  []*url.URL
+	infos []common.OrchestratorLocalInfo
 	pred  func(info *net.OrchestratorInfo) bool
 	bcast common.Broadcaster
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL) *orchestratorPool {
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
 	}
+	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
+	for _, uri := range uris {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+	}
 
-	return &orchestratorPool{uris: uris, bcast: bcast}
+	return &orchestratorPool{infos: infos, bcast: bcast}
 }
 
-func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL, pred func(*net.OrchestratorInfo) bool) *orchestratorPool {
-	pool := NewOrchestratorPool(bcast, addresses)
+func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
+	pred func(*net.OrchestratorInfo) bool, score float32) *orchestratorPool {
+
+	pool := NewOrchestratorPool(bcast, addresses, score)
 	pool.pred = pred
 	return pool
 }
 
-func (o *orchestratorPool) GetURLs() []*url.URL {
-	return o.uris
+func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
+	return o.infos
 }
 
-func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator) ([]*net.OrchestratorInfo, error) {
-	numAvailableOrchs := len(o.uris)
+func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
+	var res common.OrchestratorLocalInfo
+	for _, info := range o.infos {
+		if info.URL.String() == uri {
+			res = info
+			break
+		}
+	}
+	return res
+}
+
+func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
+	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+
+	linfos := make([]common.OrchestratorLocalInfo, 0, len(o.infos))
+	for _, info := range o.infos {
+		if scorePred(info.Score) {
+			linfos = append(linfos, info)
+		}
+	}
+
+	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), getOrchestratorsCutoffTimeout)
 
 	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
@@ -85,8 +114,11 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 			infoCh <- info
 			return
 		}
-		if err != nil && monitor.Enabled {
-			monitor.LogDiscoveryError(err.Error())
+		if err != nil && !errors.Is(err, context.Canceled) {
+			clog.Errorf(ctx, "err=%q", err)
+			if monitor.Enabled {
+				monitor.LogDiscoveryError(err.Error())
+			}
 		}
 		errCh <- err
 	}
@@ -94,7 +126,7 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 	// Shuffle into new slice to avoid mutating underlying data
 	uris := make([]*url.URL, numAvailableOrchs)
 	for i, j := range rand.Perm(numAvailableOrchs) {
-		uris[i] = o.uris[j]
+		uris[i] = linfos[j].URL
 	}
 
 	for _, uri := range uris {
@@ -136,5 +168,15 @@ func (o *orchestratorPool) GetOrchestrators(numOrchestrators int, suspender comm
 }
 
 func (o *orchestratorPool) Size() int {
-	return len(o.uris)
+	return len(o.infos)
+}
+
+func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
+	var size int
+	for _, info := range o.infos {
+		if scorePred(info.Score) {
+			size++
+		}
+	}
+	return size
 }

@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"time"
 
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/mock"
@@ -9,10 +10,25 @@ import (
 
 type MockOSSession struct {
 	mock.Mock
+	waitForCh bool
+	waitCh    chan struct{}
+	back      chan struct{}
 }
 
-func (s *MockOSSession) SaveData(name string, data []byte, meta map[string]string) (string, error) {
-	args := s.Called()
+func NewMockOSSession() *MockOSSession {
+	return &MockOSSession{
+		waitCh: make(chan struct{}),
+		back:   make(chan struct{}),
+	}
+}
+
+func (s *MockOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+	args := s.Called(name, data, meta, timeout)
+	if s.waitForCh {
+		s.back <- struct{}{}
+		<-s.waitCh
+		s.waitForCh = false
+	}
 	return args.String(0), args.Error(1)
 }
 

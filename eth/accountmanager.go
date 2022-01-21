@@ -1,15 +1,17 @@
 package eth
 
 import (
-	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/console"
+	"github.com/ethereum/go-ethereum/console/prompt"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 )
@@ -26,17 +28,18 @@ type AccountManager interface {
 	CreateTransactOpts(gasLimit uint64) (*bind.TransactOpts, error)
 	SignTx(tx *types.Transaction) (*types.Transaction, error)
 	Sign(msg []byte) ([]byte, error)
+	SignTypedData(typedData apitypes.TypedData) ([]byte, error)
 	Account() accounts.Account
 }
 
 type accountManager struct {
 	account  accounts.Account
-	signer   types.Signer
+	chainID  *big.Int
 	unlocked bool
 	keyStore *keystore.KeyStore
 }
 
-func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, signer types.Signer) (AccountManager, error) {
+func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainID *big.Int) (AccountManager, error) {
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
@@ -70,7 +73,7 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, signer
 
 	return &accountManager{
 		account:  acct,
-		signer:   signer,
+		chainID:  chainID,
 		unlocked: false,
 		keyStore: keyStore,
 	}, nil
@@ -124,33 +127,49 @@ func (am *accountManager) CreateTransactOpts(gasLimit uint64) (*bind.TransactOpt
 		return nil, ErrLocked
 	}
 
-	return &bind.TransactOpts{
-		From:     am.account.Address,
-		GasLimit: gasLimit,
-		Signer: func(signer types.Signer, address ethcommon.Address, tx *types.Transaction) (*types.Transaction, error) {
-			if address != am.account.Address {
-				return nil, errors.New("not authorized to sign this account")
-			}
+	opts, err := bind.NewKeyStoreTransactorWithChainID(am.keyStore, am.account, am.chainID)
+	if err != nil {
+		return nil, err
+	}
+	opts.GasLimit = gasLimit
 
-			return am.SignTx(tx)
-		},
-	}, nil
+	return opts, nil
 }
 
 // Sign a transaction. Account must be unlocked
 func (am *accountManager) SignTx(tx *types.Transaction) (*types.Transaction, error) {
-	signature, err := am.keyStore.SignHash(am.account, am.signer.Hash(tx).Bytes())
+	signer := types.LatestSignerForChainID(am.chainID)
+	signature, err := am.keyStore.SignHash(am.account, signer.Hash(tx).Bytes())
 	if err != nil {
 		return nil, err
 	}
 
-	return tx.WithSignature(am.signer, signature)
+	return tx.WithSignature(signer, signature)
 }
 
 // Sign byte array message. Account must be unlocked
 func (am *accountManager) Sign(msg []byte) ([]byte, error) {
-	ethHash := accounts.TextHash(msg)
-	sig, err := am.keyStore.SignHash(am.account, ethHash)
+	return am.signHash(accounts.TextHash(msg))
+}
+
+// Based on https://github.com/ethereum/go-ethereum/blob/dddf73abbddb297e61cee6a7e6aebfee87125e49/signer/core/signed_data.go#L236
+func (am *accountManager) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
+	domainSeparator, err := typedData.HashStruct("EIP712Domain", typedData.Domain.Map())
+	if err != nil {
+		return nil, err
+	}
+	typedDataHash, err := typedData.HashStruct(typedData.PrimaryType, typedData.Message)
+	if err != nil {
+		return nil, err
+	}
+	rawData := []byte(fmt.Sprintf("\x19\x01%s%s", string(domainSeparator), string(typedDataHash)))
+	sighash := crypto.Keccak256(rawData)
+
+	return am.signHash(sighash)
+}
+
+func (am *accountManager) signHash(hash []byte) ([]byte, error) {
+	sig, err := am.keyStore.SignHash(am.account, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -202,13 +221,13 @@ func createAccount(keyStore *keystore.KeyStore) (accounts.Account, error) {
 
 // Prompt for passphrase
 func getPassphrase(shouldConfirm bool) (string, error) {
-	passphrase, err := console.Stdin.PromptPassword("Passphrase: ")
+	passphrase, err := prompt.Stdin.PromptPassword("Passphrase: ")
 	if err != nil {
 		return "", err
 	}
 
 	if shouldConfirm {
-		confirmation, err := console.Stdin.PromptPassword("Repeat passphrase: ")
+		confirmation, err := prompt.Stdin.PromptPassword("Repeat passphrase: ")
 		if err != nil {
 			return "", err
 		}

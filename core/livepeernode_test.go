@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -17,6 +18,7 @@ import (
 
 type StubTranscoder struct {
 	Profiles      []ffmpeg.VideoProfile
+	Detector      ffmpeg.DetectorProfile
 	SegCount      int
 	StoppedCount  int
 	FailTranscode bool
@@ -27,11 +29,15 @@ func newStubTranscoder(d string) TranscoderSession {
 	return &StubTranscoder{}
 }
 
+func newStubTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error) {
+	return &StubTranscoder{Detector: detector}, nil
+}
+
 func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder {
 	return &StubTranscoder{Profiles: profiles}
 }
 
-func (t *StubTranscoder) Transcode(md *SegTranscodingMetadata) (*TranscodeData, error) {
+func (t *StubTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode
 	}
@@ -72,7 +78,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}
 	ss := StubSegment()
-	res := n.transcodeSeg(config, ss, md)
+	res := n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err != nil {
 		t.Errorf("Error: %v", res.Err)
 	}
@@ -102,7 +108,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when transcoder fails
 	tr.FailTranscode = true
-	res = n.transcodeSeg(config, ss, md)
+	res = n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err == nil {
 		t.Error("Expecting a transcode error")
 	}
@@ -110,7 +116,7 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 
 	// Test when the number of results mismatchches expectations
 	tr.Profiles = []ffmpeg.VideoProfile{p[0]}
-	res = n.transcodeSeg(config, ss, md)
+	res = n.transcodeSeg(context.TODO(), config, ss, md)
 	if res.Err == nil || res.Err.Error() != "MismatchedSegments" {
 		t.Error("Did not get mismatched segments as expected")
 	}
@@ -130,7 +136,7 @@ func TestServiceURIChange(t *testing.T) {
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
 	sesh := drivers.NodeStorage.NewSession("testpath")
-	savedUrl, err := sesh.SaveData("testdata1", []byte{0, 0, 0}, nil)
+	savedUrl, err := sesh.SaveData(context.TODO(), "testdata1", []byte{0, 0, 0}, nil, 0)
 	require.Nil(err)
 	assert.Equal("test://testurl.com/stream/testpath/testdata1", savedUrl)
 
@@ -138,7 +144,7 @@ func TestServiceURIChange(t *testing.T) {
 	newUrl, err := url.Parse("test://newurl.com")
 	n.SetServiceURI(newUrl)
 	require.Nil(err)
-	furl, err := sesh.SaveData("testdata2", []byte{0, 0, 0}, nil)
+	furl, err := sesh.SaveData(context.TODO(), "testdata2", []byte{0, 0, 0}, nil, 0)
 	require.Nil(err)
 	assert.Equal("test://newurl.com/stream/testpath/testdata2", furl)
 
@@ -146,7 +152,7 @@ func TestServiceURIChange(t *testing.T) {
 	secondUrl, err := url.Parse("test://secondurl.com")
 	n.SetServiceURI(secondUrl)
 	require.Nil(err)
-	surl, err := sesh.SaveData("testdata3", []byte{0, 0, 0}, nil)
+	surl, err := sesh.SaveData(context.TODO(), "testdata3", []byte{0, 0, 0}, nil, 0)
 	require.Nil(err)
 	assert.Equal("test://secondurl.com/stream/testpath/testdata3", surl)
 }

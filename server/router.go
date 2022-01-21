@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/net"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -59,7 +60,7 @@ func (r *Router) Start(uri *url.URL, serviceURI *url.URL, workDir string) error 
 
 	time.Sleep(1 * time.Second)
 
-	if err := checkAvailability(serviceURI); err != nil {
+	if err := checkAvailability(context.Background(), serviceURI); err != nil {
 		s.Stop()
 		return err
 	}
@@ -81,14 +82,14 @@ func (r *Router) Ping(ctx context.Context, req *net.PingPong) (*net.PingPong, er
 	return &net.PingPong{Value: []byte{}}, nil
 }
 
-func checkAvailability(uri *url.URL) error {
-	client, conn, err := startOrchestratorClient(uri)
+func checkAvailability(ctx context.Context, uri *url.URL) error {
+	client, conn, err := startOrchestratorClient(ctx, uri)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), GRPCConnectTimeout)
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), GRPCConnectTimeout)
 	defer cancel()
 
 	_, err = client.Ping(ctx, &net.PingPong{Value: []byte{}})
@@ -112,16 +113,16 @@ func getOrchestratorInfo(ctx context.Context, uris []*url.URL, req *net.Orchestr
 
 	for _, uri := range uris {
 		go func(uri *url.URL) {
-			client, conn, err := startOrchestratorClient(uri)
+			client, conn, err := startOrchestratorClient(ctx, uri)
 			if err != nil {
-				errCh <- fmt.Errorf("%v err=%v", uri, err)
+				errCh <- fmt.Errorf("%v err=%q", uri, err)
 				return
 			}
 			defer conn.Close()
 
 			info, err := client.GetOrchestrator(cctx, req)
 			if err != nil {
-				errCh <- fmt.Errorf("%v err=%v", uri, err)
+				errCh <- fmt.Errorf("%v err=%q", uri, err)
 				return
 			}
 

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -22,7 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
-	"golang.org/x/net/http2"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -37,6 +37,9 @@ const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
 
+const segUploadTimeoutMultiplier = 0.5
+const segHttpPushTimeoutMultiplier = 4.0
+
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
@@ -44,16 +47,24 @@ var errProfile = errors.New("unrecognized encoder profile")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
 
+var dialTimeout = 2 * time.Second
+
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
-	Transport: &http2.Transport{
+	Transport: &http.Transport{
 		TLSClientConfig: tlsConfig,
-		DialTLS: func(network, addr string, cfg *tls.Config) (gonet.Conn, error) {
-			netDialer := &gonet.Dialer{
-				Timeout: 2 * time.Second,
-			}
-			return tls.DialWithDialer(netDialer, network, addr, cfg)
+		DialTLSContext: func(ctx context.Context, network, addr string) (gonet.Conn, error) {
+			cctx, cancel := context.WithTimeout(ctx, dialTimeout)
+			defer cancel()
+
+			tlsDialer := &tls.Dialer{Config: tlsConfig}
+			return tlsDialer.DialContext(cctx, network, addr)
 		},
+		// Required for the transport to try to upgrade to HTTP/2 if TLSClientConfig is non-nil or
+		// if custom dialers (i.e. via DialTLSContext) are used. This allows us to by default
+		// transparently support HTTP/2 while maintaining the flexibility to use HTTP/1 by running
+		// with GODEBUG=http2client=0
+		ForceAttemptHTTP2: true,
 	},
 	// Don't set a timeout here; pass a context to the request
 }
@@ -73,21 +84,22 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// check the segment sig from the broadcaster
 	seg := r.Header.Get(segmentHeader)
 
-	segData, err := verifySegCreds(orch, seg, sender)
+	segData, ctx, err := verifySegCreds(r.Context(), orch, seg, sender)
 	if err != nil {
-		glog.Error("Could not verify segment creds")
+		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
+	ctx = clog.AddSeqNo(ctx, uint64(segData.Seq))
 
-	glog.V(common.VERBOSE).Infof("Received segment manifestID=%s sessionID=%s seqNo=%d dur=%v", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, segData.Duration)
+	clog.V(common.VERBOSE).Infof(ctx, "Received segment dur=%v", segData.Duration)
 
 	if monitor.Enabled {
-		monitor.SegmentEmerged(0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
+		monitor.SegmentEmerged(ctx, 0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
 	}
 
 	if err := orch.ProcessPayment(payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		glog.Errorf("error processing payment: %v", err)
+		clog.Errorf(ctx, "error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -96,14 +108,14 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// We do not need to worry about differentiating between the case where the price is 0 as the default when no price is attached vs.
 	// the case where the price is actually set to 0 because ProcessPayment() should guarantee a price attached
 	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(segData.AuthToken.SessionId)) {
-		glog.Errorf("Insufficient credit balance for stream - manifestID=%v sessionID=%v\n", segData.ManifestID, segData.AuthToken.SessionId)
+		clog.Errorf(ctx, "Insufficient credit balance for stream")
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
 		return
 	}
 
 	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
 	if err != nil {
-		glog.Errorf("Error updating orchestrator info - err=%v", err)
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -114,35 +126,35 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	dlStart := time.Now()
 	data, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 	if err != nil {
-		glog.Errorf("Could not read request body - err=%v", err)
+		clog.Errorf(ctx, "Could not read request body - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	dlDur := time.Since(dlStart)
-	glog.V(common.VERBOSE).Infof("Downloaded segment manifestID=%s sessionID=%s seqNo=%d dur=%v", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, dlDur)
+	clog.V(common.VERBOSE).Infof(ctx, "Downloaded segment dur=%v", dlDur)
 
 	if monitor.Enabled {
-		monitor.SegmentDownloaded(0, uint64(segData.Seq), dlDur)
+		monitor.SegmentDownloaded(ctx, 0, uint64(segData.Seq), dlDur)
 	}
 
 	uri := ""
 	if r.Header.Get("Content-Type") == "application/vnd+livepeer.uri" {
 		uri = string(data)
-		glog.V(common.DEBUG).Infof("Start getting segment from %s", uri)
+		clog.V(common.DEBUG).Infof(ctx, "Start getting segment from url=%s", uri)
 		start := time.Now()
-		data, err = drivers.GetSegmentData(uri)
+		data, err = drivers.GetSegmentData(ctx, uri)
 		took := time.Since(start)
-		glog.V(common.DEBUG).Infof("Getting segment from %s took %s", uri, took)
+		clog.V(common.DEBUG).Infof(ctx, "Getting segment from url=%s took=%s bytes=%d", uri, took, len(data))
 		if err != nil {
-			glog.Errorf("Error getting input segment from input OS - segment=%v err=%v", uri, err)
+			clog.Errorf(ctx, "Error getting input segment from input OS - segment=%v err=%q", uri, err)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
 		if took > common.HTTPTimeout {
 			// download from object storage took more time when broadcaster will be waiting for result
 			// so there is no point to start transcoding process
-			glog.Errorf(" Getting segment from %s took too long, aborting", uri)
+			clog.Errorf(ctx, " Getting segment from url=%s took too long, aborting", uri)
 			http.Error(w, "BadRequest", http.StatusBadRequest)
 			return
 		}
@@ -150,7 +162,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	hash := crypto.Keccak256(data)
 	if !bytes.Equal(hash, segData.Hash.Bytes()) {
-		glog.Error("Mismatched hash for body; rejecting")
+		clog.Errorf(ctx, "Mismatched hash for body; rejecting")
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -168,7 +180,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		Name:  uri,
 	}
 
-	res, err := orch.TranscodeSeg(segData, &hlsStream)
+	res, err := orch.TranscodeSeg(ctx, segData, &hlsStream)
 
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
@@ -177,20 +189,30 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		var ext string
 		ext, err = common.ProfileFormatExtension(segData.Profiles[i].Format)
 		if err != nil {
-			glog.Errorf("Unknown format extension manifestID=%s sessionID=%s seqNo=%d err=%s", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, err)
+			clog.Errorf(ctx, "Unknown format extension err=%s", err)
 			break
 		}
 		name := fmt.Sprintf("%s/%d%s", segData.Profiles[i].Name, segData.Seq, ext)
 		// The use of := here is probably a bug?!?
-		uri, err := res.OS.SaveData(name, res.TranscodeData.Segments[i].Data, nil)
+		uri, err := res.OS.SaveData(ctx, name, res.TranscodeData.Segments[i].Data, nil, 0)
 		if err != nil {
-			glog.Error("Could not upload segment ", segData.Seq)
+			clog.Errorf(ctx, "Could not upload segment")
 			break
 		}
 		pixels += res.TranscodeData.Segments[i].Pixels
 		d := &net.TranscodedSegmentData{
 			Url:    uri,
 			Pixels: res.TranscodeData.Segments[i].Pixels,
+		}
+		// Save perceptual hash if generated
+		if res.TranscodeData.Segments[i].PHash != nil {
+			pHashFile := name + ".phash"
+			pHashUri, err := res.OS.SaveData(ctx, pHashFile, res.TranscodeData.Segments[i].PHash, nil, 0)
+			if err != nil {
+				clog.Errorf(ctx, "Could not upload segment perceptual hash")
+				break
+			}
+			d.PerceptualHashUrl = pHashUri
 		}
 		segments = append(segments, d)
 	}
@@ -201,13 +223,14 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	// construct the response
 	var result net.TranscodeResult
 	if err != nil {
-		glog.Errorf("Could not transcode manifestID=%s sessionID=%s seqNo=%d err=%v", segData.ManifestID, segData.AuthToken.SessionId, segData.Seq, err)
+		clog.Errorf(ctx, "Could not transcode err=%q", err)
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
 	} else {
 		result = net.TranscodeResult{Result: &net.TranscodeResult_Data{
 			Data: &net.TranscodeData{
-				Segments: segments,
-				Sig:      res.Sig,
+				Segments:   segments,
+				Sig:        res.Sig,
+				Detections: makeNetDetectData(res.TranscodeData.Detections),
 			}},
 		}
 	}
@@ -219,7 +242,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	buf, err := proto.Marshal(tr)
 	if err != nil {
-		glog.Error("Unable to marshal transcode result ", err)
+		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
 		return
 	}
 	w.Write(buf)
@@ -295,64 +318,91 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 	return profiles, nil
 }
 
-func verifySegCreds(orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, error) {
+func makeNetDetectData(ffmpegDetectData []ffmpeg.DetectData) []*net.DetectData {
+	netDataList := []*net.DetectData{}
+	for _, data := range ffmpegDetectData {
+		var netData *net.DetectData
+		switch data.Type() {
+		case ffmpeg.SceneClassification:
+			d := data.(ffmpeg.SceneClassificationData)
+			netClasses := make(map[uint32]float64)
+			for classID, prob := range d {
+				netClasses[uint32(classID)] = prob
+			}
+			netData = &net.DetectData{Value: &net.DetectData_SceneClassification{
+				SceneClassification: &net.SceneClassificationData{
+					ClassProbs: netClasses,
+				},
+			}}
+		}
+		netDataList = append(netDataList, netData)
+	}
+	return netDataList
+}
+
+func verifySegCreds(ctx context.Context, orch Orchestrator, segCreds string, broadcaster ethcommon.Address) (*core.SegTranscodingMetadata, context.Context, error) {
 	buf, err := base64.StdEncoding.DecodeString(segCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
-		return nil, errSegEncoding
+		return nil, ctx, errSegEncoding
 	}
 	var segData net.SegData
 	err = proto.Unmarshal(buf, &segData)
 	if err != nil {
 		glog.Error("Unable to unmarshal ", err)
-		return nil, err
+		return nil, ctx, err
 	}
 
 	md, err := coreSegMetadata(&segData)
 	if err != nil {
-		return nil, err
+		return nil, ctx, err
 	}
+	ctx = clog.AddManifestID(ctx, string(md.ManifestID))
 
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
-		glog.Error("Sig check failed")
-		return nil, errSegSig
+		clog.Errorf(ctx, "Sig check failed")
+		return nil, ctx, errSegSig
 	}
 
 	if !md.Caps.CompatibleWith(orch.Capabilities()) {
-		glog.Error("Capability check failed")
-		return nil, errCapCompat
+		clog.Errorf(ctx, "Capability check failed")
+		return nil, ctx, errCapCompat
 	}
 
 	// Check that auth token is valid and not expired
 	if segData.AuthToken == nil {
-		return nil, errors.New("missing auth token")
+		return nil, ctx, errors.New("missing auth token")
 	}
 
 	verifyToken := orch.AuthToken(segData.AuthToken.SessionId, segData.AuthToken.Expiration)
 	if !bytes.Equal(verifyToken.Token, segData.AuthToken.Token) {
-		return nil, errors.New("invalid auth token")
+		return nil, ctx, errors.New("invalid auth token")
 	}
+	ctx = clog.AddOrchSessionID(ctx, segData.AuthToken.SessionId)
 
 	expiration := time.Unix(segData.AuthToken.Expiration, 0)
 	if time.Now().After(expiration) {
-		return nil, errors.New("expired auth token")
+		return nil, ctx, errors.New("expired auth token")
 	}
 
 	if err := orch.CheckCapacity(core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		glog.Error("Cannot process manifest: ", err)
-		return nil, err
+		clog.Errorf(ctx, "Cannot process manifest err=%q", err)
+		return nil, ctx, err
 	}
 
-	return md, nil
+	return md, ctx, nil
 }
 
-func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64) (*ReceivedTranscodeResult, error) {
+func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash, verified bool) (*ReceivedTranscodeResult, error) {
 	uploaded := seg.Name != "" // hijack seg.Name to convey the uploaded URI
+	if sess.OrchestratorInfo != nil && sess.OrchestratorInfo.AuthToken != nil {
+		ctx = clog.AddOrchSessionID(ctx, sess.OrchestratorInfo.AuthToken.SessionId)
+	}
 
-	segCreds, err := genSegCreds(sess, seg)
+	segCreds, err := genSegCreds(sess, seg, calcPerceptualHash)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
 		}
 		return nil, err
 	}
@@ -383,33 +433,40 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	// at the time of completion
 	defer completeBalanceUpdate(sess, balUpdate)
 
-	payment, err := genPayment(sess, balUpdate.NumTickets)
+	payment, err := genPayment(ctx, sess, balUpdate.NumTickets)
 	if err != nil {
-		glog.Errorf("Could not create payment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v err=%v", nonce, sess.Params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), err)
+		clog.Errorf(ctx, "Could not create payment bytes=%v err=%q", len(data), err)
 
-		if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
-			recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-			monitor.PaymentCreateError(recipient, string(params.ManifestID))
+		if monitor.Enabled {
+			monitor.PaymentCreateError()
 		}
 
 		return nil, err
 	}
 
+	// timeout for the whole HTTP call: segment upload, transcoding, reading response
+	httpTimeout := common.HTTPTimeout
 	// set a minimum timeout to accommodate transport / processing overhead
-	dur := common.HTTPTimeout
-	paddedDur := 4.0 * seg.Duration // use a multiplier of 4 for now
-	if paddedDur > dur.Seconds() {
-		dur = time.Duration(paddedDur * float64(time.Second))
+	paddedDur := segHttpPushTimeoutMultiplier * seg.Duration
+	if paddedDur > httpTimeout.Seconds() {
+		httpTimeout = time.Duration(paddedDur * float64(time.Second))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), dur)
+	// timeout for the segment upload, until HTTP returns OK 200
+	uploadTimeout := time.Duration(segUploadTimeoutMultiplier * seg.Duration * float64(time.Second))
+	if uploadTimeout <= 0 {
+		uploadTimeout = common.SegmentUploadTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), httpTimeout)
 	defer cancel()
 
 	ti := sess.OrchestratorInfo
+
 	req, err := http.NewRequestWithContext(ctx, "POST", ti.Transcoder+"/segment", bytes.NewBuffer(data))
 	if err != nil {
-		glog.Errorf("Could not generate transcode request to orch=%s", ti.Transcoder)
+		clog.Errorf(ctx, "Could not generate transcode request to orch=%s", ti.Transcoder)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false)
 		}
 		return nil, err
 	}
@@ -424,14 +481,15 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	glog.Infof("Submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d bytes=%v orch=%s timeout=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, len(data), ti.Transcoder, dur)
+	clog.Infof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s uploadTimeout=%s segDur=%v",
+		len(data), ti.Transcoder, httpTimeout, uploadTimeout, seg.Duration)
 	start := time.Now()
-	resp, err := httpClient.Do(req)
+	resp, err := sendReqWithTimeout(req, uploadTimeout)
 	uploadDur := time.Since(start)
 	if err != nil {
-		glog.Errorf("Unable to submit segment orch=%v nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", ti.Transcoder, nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to submit segment orch=%v orch=%s uploadDur=%s err=%q", ti.Transcoder, ti.Transcoder, uploadDur, err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, false)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, false)
 		}
 		return nil, fmt.Errorf("header timeout: %w", err)
 	}
@@ -440,40 +498,37 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	// If the segment was submitted then we assume that any payment included was
 	// submitted as well so we consider the update's credit as spent
 	balUpdate.Status = CreditSpent
-	if monitor.Enabled && sess.OrchestratorInfo.TicketParams != nil {
-		recipient := ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient).String()
-		mid := string(params.ManifestID)
-
-		monitor.TicketValueSent(recipient, mid, balUpdate.NewCredit)
-		monitor.TicketsSent(recipient, mid, balUpdate.NumTickets)
+	if monitor.Enabled {
+		monitor.TicketValueSent(balUpdate.NewCredit)
+		monitor.TicketsSent(balUpdate.NumTickets)
 	}
 
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		glog.Errorf("Error submitting segment nonce=%d manifestID=%s sessionID=%s seqNo=%d code=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, resp.StatusCode, ti.Transcoder, string(data))
+		clog.Errorf(ctx, "Error submitting segment code=%d orch=%s err=%q", resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			if resp.StatusCode == 403 && strings.Contains(errorString, "OrchestratorCapped") {
-				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errors.New(errorString), false)
+				monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errors.New(errorString), false)
 			} else {
-				monitor.SegmentUploadFailed(nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
+				monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadError(resp.Status),
 					fmt.Errorf("Code: %d Error: %s", resp.StatusCode, errorString), false)
 			}
 		}
 		return nil, fmt.Errorf(errorString)
 	}
-	glog.Infof("Uploaded segment nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s dur=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, uploadDur)
+	clog.Infof(ctx, "Uploaded segment orch=%s dur=%s", ti.Transcoder, uploadDur)
 	if monitor.Enabled {
-		monitor.SegmentUploaded(nonce, seg.SeqNo, uploadDur)
+		monitor.SegmentUploaded(ctx, nonce, seg.SeqNo, uploadDur)
 	}
 
 	data, err = ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
 
 	if err != nil {
-		glog.Errorf("Unable to read response body for segment nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to read response body for segment orch=%s err=%q", ti.Transcoder, err)
 		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorReadBody, nonce, seg.SeqNo, err, false)
 		}
 		return nil, fmt.Errorf("body timeout: %w", err)
 	}
@@ -482,9 +537,9 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	var tr net.TranscodeResult
 	err = proto.Unmarshal(data, &tr)
 	if err != nil {
-		glog.Errorf("Unable to parse response for segment nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
+		clog.Errorf(ctx, "Unable to parse response for segment orch=%s err=%q", ti.Transcoder, err)
 		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorParseResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -494,18 +549,18 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
 		err = fmt.Errorf(res.Error)
-		glog.Errorf("Transcode failed for segment nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s err=%v", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder, err)
+		clog.Errorf(ctx, "Transcode failed for segment orch=%s err=%q", ti.Transcoder, err)
 		if err.Error() == "MediaStats Failure" {
-			glog.Info("Ensure the keyframe interval is 4 seconds or less")
+			clog.Infof(ctx, "Ensure the keyframe interval is 4 seconds or less")
 		}
 		if monitor.Enabled {
 			switch res.Error {
 			case "OrchestratorBusy":
-				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorOrchestratorBusy, nonce, seg.SeqNo, err, false)
 			case "OrchestratorCapped":
-				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorOrchestratorCapped, nonce, seg.SeqNo, err, false)
 			default:
-				monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err, false)
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorTranscode, nonce, seg.SeqNo, err, false)
 			}
 		}
 		return nil, err
@@ -513,10 +568,10 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		// fall through here for the normal case
 		tdata = res.Data
 	default:
-		glog.Errorf("Unexpected or unset transcode response field for nonce=%d manifestID=%s sessionID=%s seqNo=%d orch=%s", nonce, params.ManifestID, sess.OrchestratorInfo.AuthToken.SessionId, seg.SeqNo, ti.Transcoder)
+		clog.Errorf(ctx, "Unexpected or unset transcode response field for orch=%s", ti.Transcoder)
 		err = fmt.Errorf("UnknownResponse")
 		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorUnknownResponse, nonce, seg.SeqNo, err, false)
 		}
 		return nil, err
 	}
@@ -532,15 +587,20 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 		}
 
 		balUpdate.Debit.Mul(new(big.Rat).SetInt64(pixelCount), priceInfo)
+
+		if monitor.Enabled {
+			monitor.MilPixelsProcessed(float64(pixelCount) / 1000000.0)
+		}
 	}
 
 	// transcode succeeded; continue processing response
 	if monitor.Enabled {
-		monitor.SegmentTranscoded(nonce, seg.SeqNo, time.Duration(seg.Duration*float64(time.Second)), transcodeDur, common.ProfilesNames(params.Profiles))
+		monitor.SegmentTranscoded(ctx, nonce, seg.SeqNo, time.Duration(seg.Duration*float64(time.Second)), transcodeDur,
+			common.ProfilesNames(params.Profiles), sess.IsTrusted(), verified)
 	}
 
-	glog.Infof("Successfully transcoded segment nonce=%d manifestID=%s sessionID=%s segName=%s seqNo=%d orch=%s dur=%s", nonce,
-		string(params.ManifestID), sess.OrchestratorInfo.AuthToken.SessionId, seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
+	clog.Infof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
+		seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
 
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,
@@ -549,7 +609,7 @@ func SubmitSegment(sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64)
 	}, nil
 }
 
-func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error) {
+func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment, calcPerceptualHash bool) (string, error) {
 
 	// Send credentials for our own storage
 	var storage *net.OSInfo
@@ -557,18 +617,30 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment) (string, error)
 		storage = bos.GetInfo()
 	}
 
+	detectorProfiles := []ffmpeg.DetectorProfile{}
+	detectorEnabled := false
+	if sess.Params.Detection.Freq != 0 {
+		detectorProfiles = sess.Params.Detection.Profiles
+		if seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
+			detectorEnabled = true
+		}
+	}
+
 	// Generate signature for relevant parts of segment
 	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
 	md := &core.SegTranscodingMetadata{
-		ManifestID: params.ManifestID,
-		Seq:        int64(seg.SeqNo),
-		Hash:       ethcommon.BytesToHash(hash),
-		Profiles:   params.Profiles,
-		OS:         storage,
-		Duration:   time.Duration(seg.Duration * float64(time.Second)),
-		Caps:       params.Capabilities,
-		AuthToken:  sess.OrchestratorInfo.GetAuthToken(),
+		ManifestID:         params.ManifestID,
+		Seq:                int64(seg.SeqNo),
+		Hash:               ethcommon.BytesToHash(hash),
+		Profiles:           params.Profiles,
+		OS:                 storage,
+		Duration:           time.Duration(seg.Duration * float64(time.Second)),
+		Caps:               params.Capabilities,
+		AuthToken:          sess.OrchestratorInfo.GetAuthToken(),
+		DetectorEnabled:    detectorEnabled,
+		DetectorProfiles:   detectorProfiles,
+		CalcPerceptualHash: calcPerceptualHash,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
@@ -683,7 +755,7 @@ func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
 	sess.Balance.Credit(change)
 }
 
-func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
+func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (string, error) {
 	if sess.Sender == nil {
 		return "", nil
 	}
@@ -729,7 +801,7 @@ func genPayment(sess *BroadcastSession, numTickets int) (string, error) {
 		protoPayment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
-		glog.V(common.VERBOSE).Infof("Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
+		clog.V(common.VERBOSE).Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.Params.ManifestID,
 			sess.OrchestratorInfo.AuthToken.SessionId,
 			batch.Recipient.Hex(),
@@ -762,4 +834,21 @@ func validatePrice(sess *BroadcastSession) error {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
 	}
 	return nil
+}
+
+func sendReqWithTimeout(req *http.Request, timeout time.Duration) (*http.Response, error) {
+	ctx, cancel := context.WithCancel(req.Context())
+	timeouter := time.AfterFunc(timeout, cancel)
+
+	req = req.WithContext(ctx)
+	resp, err := httpClient.Do(req)
+	if timeouter.Stop() {
+		return resp, err
+	}
+	// timeout has already fired and cancelled the request
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return nil, context.DeadlineExceeded
 }
