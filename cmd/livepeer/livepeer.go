@@ -181,7 +181,7 @@ func main() {
 	if *mistJson {
 		mistconnector.PrintMistConfigJson(
 			"livepeer",
-			"Go implementation of the Livepeer protocol which powers the Livepeer network, a decentralized video streaming network built on the Ethereum blockchain.",
+			"Official implementation of the Livepeer video processing protocol. Can play all roles in the network.",
 			"Livepeer",
 			core.LivepeerVersion,
 			flag.CommandLine,

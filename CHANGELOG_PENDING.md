@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2196 Add support for Mist runtime environment (@hjpotter92)
 
 #### Broadcaster
 
