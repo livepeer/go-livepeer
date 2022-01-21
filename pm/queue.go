@@ -94,65 +94,64 @@ func (q *ticketQueue) startQueueLoop() {
 	blockSink := make(chan *big.Int, 10)
 	sub := q.tm.SubscribeBlocks(blockSink)
 	defer sub.Unsubscribe()
-	blockNumCh := make(chan *big.Int)
-	defer close(blockNumCh)
 
-ticketLoop:
 	for {
 		select {
 		case err := <-sub.Err():
 			if err != nil {
 				glog.Errorf("Block subscription error err=%q", err)
 			}
-		case blockNum := <-blockSink:
+		case block := <-blockSink:
 			go func() {
-				blockNumCh <- blockNum
+				q.handleBlockEvent(block)
 			}()
-		case latestBlock := <-blockNumCh:
-			numTickets, err := q.Length()
-			if err != nil {
-				glog.Errorf("Error getting queue length err=%q", err)
-				continue
-			}
-			for i := 0; i < int(numTickets); i++ {
-				nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
-				if err != nil {
-					glog.Errorf("Unable select earliest winning ticket err=%q", err)
-					continue ticketLoop
-				}
-				if nextTicket == nil {
-					continue ticketLoop
-				}
-
-				if nextTicket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
-					resCh := make(chan struct {
-						txHash ethcommon.Hash
-						err    error
-					})
-
-					q.redeemable <- &redemption{nextTicket, resCh}
-					select {
-					case res := <-resCh:
-						// after receiving the response we can close the channel so it can be GC'd
-						close(resCh)
-						if res.err != nil {
-							glog.Errorf("Error redeeming err=%q", res.err)
-							// If the error is non-retryable then we mark the ticket as redeemed
-							if !isNonRetryableTicketErr(res.err) {
-								continue
-							}
-						}
-						if err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash); err != nil {
-							glog.Error(err)
-							continue
-						}
-					case <-q.quit:
-						return
-					}
-				}
-			}
 		case <-q.quit:
 			return
+		}
+	}
+}
+
+func (q *ticketQueue) handleBlockEvent(block *big.Int) {
+	numTickets, err := q.Length()
+	if err != nil {
+		glog.Errorf("Error getting queue length err=%q", err)
+		return
+	}
+	for i := 0; i < int(numTickets); i++ {
+		nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
+		if err != nil {
+			glog.Errorf("Unable select earliest winning ticket err=%q", err)
+			return
+		}
+		if nextTicket == nil {
+			return
+		}
+
+		if nextTicket.ParamsExpirationBlock.Cmp(block) <= 0 {
+			resCh := make(chan struct {
+				txHash ethcommon.Hash
+				err    error
+			})
+
+			q.redeemable <- &redemption{nextTicket, resCh}
+			select {
+			case res := <-resCh:
+				// after receiving the response we can close the channel so it can be GC'd
+				close(resCh)
+				if res.err != nil {
+					glog.Errorf("Error redeeming err=%q", res.err)
+					// If the error is non-retryable then we mark the ticket as redeemed
+					if !isNonRetryableTicketErr(res.err) {
+						continue
+					}
+				}
+				if err := q.store.MarkWinningTicketRedeemed(nextTicket, res.txHash); err != nil {
+					glog.Error(err)
+					continue
+				}
+			case <-q.quit:
+				return
+			}
 		}
 	}
 }
