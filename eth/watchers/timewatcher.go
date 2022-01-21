@@ -151,8 +151,8 @@ func (tw *TimeWatcher) setLastSeenBlock(blockNum *big.Int) {
 
 // Watch the blockwatch subscription for NewRound events
 func (tw *TimeWatcher) Watch() error {
-	events := make(chan []*blockwatch.Event, 10)
-	sub := tw.watcher.Subscribe(events)
+	blockSink := make(chan []*blockwatch.Event, 10)
+	sub := tw.watcher.Subscribe(blockSink)
 	defer sub.Unsubscribe()
 	for {
 		select {
@@ -160,9 +160,9 @@ func (tw *TimeWatcher) Watch() error {
 			return nil
 		case err := <-sub.Err():
 			glog.Error(err)
-		case events := <-events:
+		case block := <-blockSink:
 			go func() {
-				tw.handleBlockEvents(events)
+				tw.handleBlockEvents(block)
 			}()
 		}
 	}

@@ -42,12 +42,12 @@ func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockW
 
 // Watch starts the event watching loop
 func (ow *OrchestratorWatcher) Watch() {
-	roundEvents := make(chan types.Log, 10)
-	roundSub := ow.tw.SubscribeRounds(roundEvents)
+	roundSink := make(chan types.Log, 10)
+	roundSub := ow.tw.SubscribeRounds(roundSink)
 	defer roundSub.Unsubscribe()
 
-	events := make(chan []*blockwatch.Event, 10)
-	sub := ow.watcher.Subscribe(events)
+	blockSink := make(chan []*blockwatch.Event, 10)
+	sub := ow.watcher.Subscribe(blockSink)
 	defer sub.Unsubscribe()
 
 	for {
@@ -56,13 +56,13 @@ func (ow *OrchestratorWatcher) Watch() {
 			return
 		case err := <-sub.Err():
 			glog.Error(err)
-		case events := <-events:
+		case block := <-blockSink:
 			go func() {
-				ow.handleBlockEvents(events)
+				ow.handleBlockEvents(block)
 			}()
-		case roundEvent := <-roundEvents:
+		case round := <-roundSink:
 			go func() {
-				if err := ow.handleRoundEvent(roundEvent); err != nil {
+				if err := ow.handleRoundEvent(round); err != nil {
 					glog.Errorf("error handling new round event: %v", err)
 				}
 			}()
