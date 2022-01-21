@@ -43,5 +43,5 @@ require (
 	pgregory.net/rapid v0.4.0
 )
 
-replace github.com/livepeer/lpms => /home/nvme/lpms
+replace github.com/livepeer/lpms => ../lpms
 
