@@ -179,7 +179,13 @@ func main() {
 	blockPollingTime := time.Duration(*blockPollingInterval) * time.Second
 
 	if *mistJson {
-		mistconnector.PrintMistConfigJson("Livepeer", "", "", core.LivepeerVersion, flag.CommandLine)
+		mistconnector.PrintMistConfigJson(
+			"livepeer",
+			"Go implementation of the Livepeer protocol which powers the Livepeer network, a decentralized video streaming network built on the Ethereum blockchain.",
+			"Livepeer",
+			core.LivepeerVersion,
+			flag.CommandLine,
+		)
 		return
 	}
 
