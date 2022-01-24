@@ -168,7 +168,7 @@ func main() {
 		ff.WithConfigFileParser(ff.PlainParser),
 	)
 	if err != nil {
-		glog.Fatal("Error using config file: ", err)
+		glog.Fatal("Error parsing config: ", err)
 	}
 
 	vFlag.Value.Set(*verbosity)
