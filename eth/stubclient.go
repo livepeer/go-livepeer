@@ -144,6 +144,12 @@ func (m *MockClient) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*typ
 	return mockTransaction(args, 0), args.Error(1)
 }
 
+// for L1 contracts backwards-compatibility
+func (m *MockClient) L1WithdrawFees() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
 	WithdrawRound *big.Int
