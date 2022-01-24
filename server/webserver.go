@@ -675,7 +675,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 	})
 
-	mux.Handle("/withdrawFees", mustHaveFormParams(withdrawFeesHandler(s.LivepeerNode.Eth), "amount"))
+	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, s.LivepeerNode.Database))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {

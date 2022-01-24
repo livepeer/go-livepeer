@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -14,6 +15,9 @@ import (
 	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
 )
+
+const MainnetChainId = 1
+const RinkebyChainId = 4
 
 func respondOk(w http.ResponseWriter, msg []byte) {
 	w.WriteHeader(http.StatusOK)
@@ -366,18 +370,44 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	)
 }
 
-func withdrawFeesHandler(client eth.LivepeerEthClient) http.Handler {
+func withdrawFeesHandler(client eth.LivepeerEthClient, database *common.DB) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		amount, err := common.ParseBigInt(r.FormValue("amount"))
-		if err != nil {
-			respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
+		// for L1 contracts backwards-compatibility
+		if database == nil {
+			respondWith500(w, "missing Livepeer database")
 			return
 		}
-
-		tx, err := client.WithdrawFees(client.Account().Address, amount)
+		chainID, err := database.ChainID()
 		if err != nil {
-			respondWith500(w, fmt.Sprintf("could not execute WithdrawFees: %v", err))
+			respondWith500(w, "Error getting eth network ID")
 			return
+		}
+		var tx *ethtypes.Transaction
+		if chainID.Int64() == MainnetChainId || chainID.Int64() == RinkebyChainId {
+			// L1 contracts
+			tx, err = client.L1WithdrawFees()
+			if err != nil {
+				respondWith500(w, fmt.Sprintf("could not execute WithdrawFees: %v", err))
+				return
+			}
+		} else {
+			// L2 contracts
+			amountStr := r.FormValue("amount")
+			if amountStr == "" {
+				respondWith400(w, "missing form param: amount")
+				return
+			}
+			amount, err := common.ParseBigInt(amountStr)
+			if err != nil {
+				respondWith400(w, fmt.Sprintf("invalid amount: %v", err))
+				return
+			}
+
+			tx, err = client.WithdrawFees(client.Account().Address, amount)
+			if err != nil {
+				respondWith500(w, fmt.Sprintf("could not execute WithdrawFees: %v", err))
+				return
+			}
 		}
 
 		err = client.CheckTx(tx)

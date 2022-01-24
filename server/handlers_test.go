@@ -893,7 +893,7 @@ func TestVoteHandler(t *testing.T) {
 }
 
 func TestWithdrawFeesHandler_MissingClient(t *testing.T) {
-	handler := withdrawFeesHandler(nil)
+	handler := withdrawFeesHandler(nil, nil)
 
 	resp := httpPostFormResp(handler, nil)
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -905,7 +905,7 @@ func TestWithdrawFeesHandler_MissingClient(t *testing.T) {
 
 func TestWithdrawFeesHandler_InvalidAmount(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client)
+	handler := withdrawFeesHandler(client, nil)
 
 	form := url.Values{
 		"amount": {"foo"},
@@ -920,7 +920,7 @@ func TestWithdrawFeesHandler_InvalidAmount(t *testing.T) {
 
 func TestWithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client)
+	handler := withdrawFeesHandler(client, nil)
 
 	addr := ethcommon.Address{}
 	client.On("Account").Return(accounts.Account{Address: addr})
@@ -939,7 +939,7 @@ func TestWithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
 
 func TestWithdrawFeesHandler_TransactionWaitError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client)
+	handler := withdrawFeesHandler(client, nil)
 
 	addr := ethcommon.Address{}
 	client.On("Account").Return(accounts.Account{Address: addr})
@@ -959,7 +959,7 @@ func TestWithdrawFeesHandler_TransactionWaitError(t *testing.T) {
 
 func TestWithdrawFeesHandler_Success(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client)
+	handler := withdrawFeesHandler(client, nil)
 
 	addr := ethcommon.Address{}
 	client.On("Account").Return(accounts.Account{Address: addr})

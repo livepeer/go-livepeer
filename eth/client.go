@@ -72,6 +72,8 @@ type LivepeerEthClient interface {
 	Unbond(amount *big.Int) (*types.Transaction, error)
 	WithdrawStake(unbondingLockID *big.Int) (*types.Transaction, error)
 	WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
+	// for L1 contracts backwards-compatibility
+	L1WithdrawFees() (*types.Transaction, error)
 	ClaimEarnings(endRound *big.Int) (*types.Transaction, error)
 	GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error)
 	GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error)
@@ -140,6 +142,9 @@ type client struct {
 	*contracts.RoundsManagerSession
 	*contracts.MinterSession
 	*contracts.LivepeerTokenFaucetSession
+
+	// for L1 contracts backwards-compatibility
+	l1BondingManagerSession *contracts.L1BondingManagerSession
 
 	gasLimit uint64
 	gasPrice *big.Int
@@ -240,6 +245,18 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	c.BondingManagerSession = &contracts.BondingManagerSession{
 		Contract:     bondingManager,
+		TransactOpts: *opts,
+	}
+
+	// for L1 contracts backwards-compatibility
+	l1BondingManager, err := contracts.NewL1BondingManager(bondingManagerAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating L1BondingManager binding: %v", err)
+		return err
+	}
+
+	c.l1BondingManagerSession = &contracts.L1BondingManagerSession{
+		Contract:     l1BondingManager,
 		TransactOpts: *opts,
 	}
 
@@ -800,6 +817,11 @@ func (c *client) Reward() (*types.Transaction, error) {
 	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64()))
 
 	return c.RewardWithHint(hints.PosPrev, hints.PosNext)
+}
+
+// for L1 contracts backwards-compatibility
+func (c *client) L1WithdrawFees() (*types.Transaction, error) {
+	return c.l1BondingManagerSession.WithdrawFees()
 }
 
 // Helpers
