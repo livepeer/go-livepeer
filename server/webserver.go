@@ -675,9 +675,21 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 	})
 
-	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, s.LivepeerNode.Database))
+	// for L1 contracts backwards-compatibility
+	chainIdProvider := func() (int64, error) {
+		if s.LivepeerNode.Database == nil {
+			return 0, errors.New("missing Livepeer database")
+		}
+		chainId, err := s.LivepeerNode.Database.ChainID()
+		if err != nil {
+			return 0, errors.New("Error getting eth network ID")
+		}
+		return chainId.Int64(), nil
+	}
+	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, chainIdProvider))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
+		s.LivepeerNode.Database.ChainID()
 		if s.LivepeerNode.Eth != nil {
 			claim := func() error {
 				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
