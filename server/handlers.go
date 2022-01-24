@@ -370,11 +370,11 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	)
 }
 
-func withdrawFeesHandler(client eth.LivepeerEthClient, chainIdProvider func() (int64, error)) http.Handler {
+func withdrawFeesHandler(client eth.LivepeerEthClient, getChainId func() (int64, error)) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// for L1 contracts backwards-compatibility
 		var tx *ethtypes.Transaction
-		chainId, err := chainIdProvider()
+		chainId, err := getChainId()
 		if err != nil {
 			respondWith500(w, err.Error())
 			return
