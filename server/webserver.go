@@ -689,7 +689,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, getChainId))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
-		s.LivepeerNode.Database.ChainID()
 		if s.LivepeerNode.Eth != nil {
 			claim := func() error {
 				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
