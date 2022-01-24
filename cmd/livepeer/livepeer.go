@@ -202,6 +202,9 @@ func main() {
 		"rinkeby": {
 			ethController: "0x9a9827455911a858E55f07911904fACC0D66027E",
 		},
+		"arbitrum-one-rinkeby": {
+			ethController: "0x9ceC649179e2C7Ab91688271bcD09fb707b3E574",
+		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
 			minGasPrice:   int64(params.GWei),

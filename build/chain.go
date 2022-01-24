@@ -8,7 +8,7 @@ type SupportedChains int
 const (
 	// Dev is a development chain
 	Dev SupportedChains = iota
-	// Rinkeby is the Ethereum Rinkeby test network chain
+	// Rinkeby is the Ethereum Rinkeby or Arbitrum Testnet test network chain
 	Rinkeby
 	// Mainnet is the Ethereum main network chain
 	Mainnet
@@ -17,7 +17,7 @@ const (
 // ChainSupported returns whether the node can connect to the chain with the given ID
 func ChainSupported(chainID int64) bool {
 	switch chainID {
-	case 4:
+	case 4, 421611:
 		return Rinkeby <= HighestChain
 	case 1:
 		return Mainnet <= HighestChain
