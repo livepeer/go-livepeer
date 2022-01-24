@@ -676,7 +676,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	})
 
 	// for L1 contracts backwards-compatibility
-	chainIdProvider := func() (int64, error) {
+	getChainId := func() (int64, error) {
 		if s.LivepeerNode.Database == nil {
 			return 0, errors.New("missing Livepeer database")
 		}
@@ -686,7 +686,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 		return chainId.Int64(), nil
 	}
-	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, chainIdProvider))
+	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, getChainId))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		s.LivepeerNode.Database.ChainID()
