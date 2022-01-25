@@ -3,6 +3,7 @@ package watchers
 import (
 	"math"
 	"math/big"
+	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,6 +23,8 @@ type OrchestratorWatcher struct {
 	lpEth   eth.LivepeerEthClient
 	tw      timeWatcher
 	quit    chan struct{}
+	blockMu sync.Mutex
+	roundMu sync.Mutex
 }
 
 func NewOrchestratorWatcher(bondingManagerAddr ethcommon.Address, watcher BlockWatcher, store common.OrchestratorStore, lpEth eth.LivepeerEthClient, tw timeWatcher) (*OrchestratorWatcher, error) {
@@ -94,6 +97,9 @@ func (ow *OrchestratorWatcher) handleLog(log types.Log) error {
 		// Noop if we cannot find the event name
 		return nil
 	}
+
+	ow.blockMu.Lock()
+	defer ow.blockMu.Unlock()
 
 	switch eventName {
 	case "TranscoderActivated":
@@ -168,6 +174,9 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 }
 
 func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
+	ow.roundMu.Lock()
+	defer ow.roundMu.Unlock()
+
 	round, err := ow.lpEth.CurrentRound()
 	if err != nil {
 		return err

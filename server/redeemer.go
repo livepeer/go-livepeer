@@ -34,6 +34,7 @@ type Redeemer struct {
 	eth       eth.LivepeerEthClient
 	sm        localSenderMonitor
 	quit      chan struct{}
+	mu        sync.Mutex
 }
 
 // NewRedeemer creates a new ticket redemption service instance

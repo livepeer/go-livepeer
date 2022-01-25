@@ -34,9 +34,7 @@ type RoundInitializer struct {
 	quit   chan struct{}
 
 	nextRoundStartBlock *big.Int
-
-	// Prevent multiple round initializations at the same time
-	mu sync.Mutex
+	mu                  sync.Mutex
 }
 
 // NewRoundInitializer creates a RoundInitializer instance
@@ -84,9 +82,7 @@ func (r *RoundInitializer) Start() error {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
-			go func() {
-				r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)
-			}()
+			r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)
 		case block := <-blockSink:
 			if block.Cmp(r.nextRoundStartBlock) >= 0 {
 				go func() {

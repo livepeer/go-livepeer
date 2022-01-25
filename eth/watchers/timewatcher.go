@@ -39,6 +39,7 @@ type TimeWatcher struct {
 	// last seen block number subscription feeds
 	blockSubFeed  event.Feed
 	blockSubScope event.SubscriptionScope
+	feedMu        sync.Mutex
 
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
@@ -206,6 +207,9 @@ func (tw *TimeWatcher) handleBlockEvents(events []*blockwatch.Event) {
 }
 
 func (tw *TimeWatcher) handleBlockNum(event *blockwatch.Event) {
+	tw.feedMu.Lock()
+	defer tw.feedMu.Unlock()
+
 	last := tw.LastSeenBlock()
 	new := event.BlockHeader.Number
 	if last == nil || last.Cmp(new) != 0 {
@@ -220,6 +224,9 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		// Noop if we cannot find the event name
 		return nil
 	}
+
+	tw.feedMu.Lock()
+	defer tw.feedMu.Unlock()
 
 	if eventName != "NewRound" {
 		return fmt.Errorf("eventName is not NewRound")

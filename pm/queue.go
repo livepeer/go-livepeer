@@ -3,6 +3,7 @@ package pm
 import (
 	"math/big"
 	"strings"
+	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
@@ -44,6 +45,8 @@ type ticketQueue struct {
 	store  TicketStore
 
 	quit chan struct{}
+
+	mu sync.Mutex
 }
 
 func newTicketQueue(sender ethcommon.Address, sm *LocalSenderMonitor) *ticketQueue {
@@ -112,6 +115,9 @@ func (q *ticketQueue) startQueueLoop() {
 }
 
 func (q *ticketQueue) handleBlockEvent(block *big.Int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
 	numTickets, err := q.Length()
 	if err != nil {
 		glog.Errorf("Error getting queue length err=%q", err)
