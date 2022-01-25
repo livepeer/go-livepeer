@@ -3,6 +3,7 @@ package watchers
 import (
 	"fmt"
 	"math/big"
+	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,6 +26,8 @@ type UnbondingWatcher struct {
 	dec   *EventDecoder
 
 	quit chan struct{}
+
+	mu sync.Mutex
 }
 
 // NewUnbondingWatcher creates an UnbondingWatcher instance
@@ -87,6 +90,9 @@ func (w *UnbondingWatcher) handleLog(log types.Log) error {
 		// Noop if we cannot find the event name
 		return nil
 	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	switch eventName {
 	case "Unbond":

@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
@@ -18,6 +19,7 @@ type RewardService struct {
 	working      bool
 	cancelWorker context.CancelFunc
 	tw           timeWatcher
+	mu           sync.Mutex
 }
 
 func NewRewardService(client LivepeerEthClient, tw timeWatcher) *RewardService {
@@ -80,6 +82,9 @@ func (s *RewardService) IsWorking() bool {
 }
 
 func (s *RewardService) tryReward() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	currentRound := s.tw.LastInitializedRound()
 
 	t, err := s.client.GetTranscoder(s.client.Account().Address)
