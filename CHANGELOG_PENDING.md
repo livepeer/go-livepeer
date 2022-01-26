@@ -8,6 +8,8 @@
 
 #### General
 
+- \#2216 Fix Accept Multiline message on Windows (@leszko)
+
 #### Broadcaster
 
 #### Orchestrator
