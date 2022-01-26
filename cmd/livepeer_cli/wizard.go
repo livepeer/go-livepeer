@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/build"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -44,7 +45,7 @@ func (w *wizard) readString() string {
 }
 
 func (w *wizard) readMultilineString() string {
-	fmt.Printf("(press enter followed by CTRL+D when done) > ")
+	fmt.Printf("(press enter followed by %s when done) > ", build.AcceptMultiline)
 
 	var buf strings.Builder
 	scanner := bufio.NewScanner(os.Stdin)
