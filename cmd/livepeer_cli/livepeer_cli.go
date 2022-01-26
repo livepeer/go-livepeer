@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/livepeer/go-livepeer/build"
 	"math/rand"
 	"net/http"
 	"os"
@@ -16,8 +15,6 @@ import (
 )
 
 func main() {
-	fmt.Printf("Accept Multiline %s\n", build.AcceptMultiline)
-	return
 	app := cli.NewApp()
 	app.Name = "livepeer-cli"
 	app.Usage = "interact with local Livepeer node"

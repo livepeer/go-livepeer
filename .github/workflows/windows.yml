@@ -33,8 +33,6 @@ jobs:
     - name: Build binaries
       shell: msys2 {0}
       run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
-    - name: Test Accept Multiline
-      run: ./livepeer_cli
     - name: Upload build
       if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       shell: msys2 {0}
