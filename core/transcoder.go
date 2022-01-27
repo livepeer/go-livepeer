@@ -80,6 +80,45 @@ type NvidiaTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
+type NetintTranscoder struct {
+	device  string
+	session *ffmpeg.Transcoder
+}
+
+func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
+
+	in := &ffmpeg.TranscodeOptionsIn{
+		Fname:  md.Fname,
+		Accel:  ffmpeg.Netint,
+		Device: nv.device,
+	}
+	profiles := md.Profiles
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash)
+	if md.DetectorEnabled {
+		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Netint, md.DetectorProfiles)...)
+	}
+
+	_, seqNo, parseErr := parseURI(md.Fname)
+	start := time.Now()
+
+	res, err := nv.session.Transcode(in, out)
+	if err != nil {
+		return nil, err
+	}
+
+	if monitor.Enabled && parseErr == nil {
+		// This will run only when fname is actual URL and contains seqNo in it.
+		// When orchestrator works as transcoder, `fname` will be relative path to file in local
+		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
+		// be called in orchestrator.go
+		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
+	}
+
+	return resToTranscodeData(ctx, res, out)
+}
+
 func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
@@ -151,8 +190,52 @@ func TestNvidiaTranscoder(devices []string) error {
 	return nil
 }
 
+func TestNetintTranscoder(devices []string) error {
+	buf, _ := os.ReadFile("core/test.ts")
+	b := bytes.NewReader(buf)
+	z, err := gzip.NewReader(b)
+	if err != nil {
+		return err
+	}
+	mp4testSeg, err := ioutil.ReadAll(z)
+	z.Close()
+	if err != nil {
+		return err
+	}
+	fname := filepath.Join(WorkDir, "testseg.tempfile")
+	err = ioutil.WriteFile(fname, mp4testSeg, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(fname)
+	for _, device := range devices {
+		t1 := NewNetintTranscoder(device)
+		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
+		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
+		md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
+		td, err := t1.Transcode(context.Background(), md)
+
+		t1.Stop()
+		if err != nil {
+			return err
+		}
+		if len(td.Segments) == 0 || td.Pixels == 0 {
+			return errors.New("Empty transcoded segment")
+		}
+	}
+
+	return nil
+}
+
 func NewNvidiaTranscoder(gpu string) TranscoderSession {
 	return &NvidiaTranscoder{
+		device:  gpu,
+		session: ffmpeg.NewTranscoder(),
+	}
+}
+
+func NewNetintTranscoder(gpu string) TranscoderSession {
+	return &NetintTranscoder{
 		device:  gpu,
 		session: ffmpeg.NewTranscoder(),
 	}
@@ -169,6 +252,10 @@ func NewNvidiaTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string
 }
 
 func (nv *NvidiaTranscoder) Stop() {
+	nv.session.StopTranscoder()
+}
+
+func (nv *NetintTranscoder) Stop() {
 	nv.session.StopTranscoder()
 }
 

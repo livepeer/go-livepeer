@@ -107,6 +107,7 @@ func main() {
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
+	netint := flag.String("netint", "", "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
 	sceneClassificationModelPath := flag.String("sceneClassificationModelPath", "", "Path to scene classification model")
 
@@ -276,7 +277,7 @@ func main() {
 		if *nvidia != "" {
 			// Get a list of device ids
 			devices, err := common.ParseNvidiaDevices(*nvidia)
-		        glog.Infof("Nvidia devices: %v", devices)
+			glog.Infof("Nvidia devices: %v", devices)
 			if err != nil {
 				glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
 			}
@@ -303,6 +304,23 @@ func main() {
 			}
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder, core.NewNvidiaTranscoderWithDetector)
+		} else if *netint != "" {
+			// Get a list of device ids
+			devices, err := common.ParseNvidiaDevices(*netint)
+			glog.Infof("Netint devices: %v", devices)
+			if err != nil {
+				glog.Fatalf("Error while parsing '-netint %v' flag: %v", *netint, err)
+			}
+			glog.Infof("Transcoding on these Netint devices: %v", devices)
+			// Test transcoding with nvidia
+			//if *testTranscoder {
+			//	err := core.TestNetintTranscoder(devices)
+			//	if err != nil {
+			//		glog.Fatalf("Unable to transcode using Netint hw=%q err=%q", strings.Join(devices, ","), err)
+			//	}
+			//}
+			// Initialize LB transcoder
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNetintTranscoder, core.NewNvidiaTranscoderWithDetector)
 		} else {
 			n.Transcoder = core.NewLocalTranscoder(*datadir)
 		}
