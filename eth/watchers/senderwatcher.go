@@ -113,9 +113,7 @@ func (sw *SenderWatcher) Watch() {
 		case err := <-sub.Err():
 			glog.Error(err)
 		case events := <-events:
-			go func() {
-				sw.handleBlockEvents(events)
-			}()
+			go sw.handleBlockEvents(events)
 		case round := <-roundSink:
 			go func() {
 				if err := sw.handleRoundEvent(round); err != nil {

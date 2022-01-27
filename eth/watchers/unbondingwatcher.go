@@ -59,9 +59,7 @@ func (w *UnbondingWatcher) Watch() {
 		case err := <-sub.Err():
 			glog.Errorf("error with block subscription: %v", err)
 		case block := <-blockSink:
-			go func() {
-				w.handleBlockEvents(block)
-			}()
+			go w.handleBlockEvents(block)
 		}
 	}
 }
