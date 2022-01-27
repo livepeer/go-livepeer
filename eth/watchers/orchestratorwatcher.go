@@ -60,9 +60,7 @@ func (ow *OrchestratorWatcher) Watch() {
 		case err := <-sub.Err():
 			glog.Error(err)
 		case block := <-blockSink:
-			go func() {
-				ow.handleBlockEvents(block)
-			}()
+			go ow.handleBlockEvents(block)
 		case round := <-roundSink:
 			go func() {
 				if err := ow.handleRoundEvent(round); err != nil {

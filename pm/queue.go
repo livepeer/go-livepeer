@@ -105,9 +105,7 @@ func (q *ticketQueue) startQueueLoop() {
 				glog.Errorf("Block subscription error err=%q", err)
 			}
 		case block := <-blockSink:
-			go func() {
-				q.handleBlockEvent(block)
-			}()
+			go q.handleBlockEvent(block)
 		case <-q.quit:
 			return
 		}
