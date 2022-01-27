@@ -37,9 +37,9 @@ issue.
 #### 🐛 Fixing bugs, 🕶️ adding feature/enhancements, or 👌 improving code quality
 
 If you're into coding, maybe try fixing a
-[bug](https://github.com/livepeer/go-livepeer/labels/good%20first%20issue)
+[bug](https://github.com/livepeer/go-livepeer/issues?q=is%3Aissue+is%3Aopen+label%3A%22type%3A+bug%22)
 or taking on a
-[feature request](https://github.com/livepeer/go-livepeer/labels/help%20wanted).
+[feature request](https://github.com/livepeer/go-livepeer/issues?q=is%3Aissue+is%3Aopen+label%3A%22type%3A+feature%22+).
 
 If picking up issues isn't your thing, no worries -- you can always add more
 tests to improve coverage or refactor code to increase maintainability. 
@@ -78,7 +78,7 @@ it'd be good to have some proficiency with go.
     require many paragraphs of text. In fact, if you write too much, it's
     difficult to understand what you are actually trying to communicate.
     **Consider
-    [starting a discussion](https://github.com/livepeer/go-livepeer/issues/new/choose)
+    [starting a discussion](https://github.com/livepeer/go-livepeer/discussions/new)
     if you're not clear on something or want feedback from the community.**
 
 - **If you are submitting a pull request...**
