@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 )
@@ -21,24 +20,21 @@ func (w *wizard) transferTokens() {
 		"amount": {fmt.Sprintf("%v", amount.String())},
 	}
 
-	var answer string
+	var input string
 	userAccepted := false
 	for !userAccepted {
-		fmt.Printf("Are you sure you want to send %s LPT to \"%s\"? [y/n]: ", val["amount"], val["to"])
+		fmt.Printf("Are you sure you want to send %s LPT to \"%s\"? (y/n) - ", val["amount"][0], val["to"][0])
 
-		_, err := fmt.Scanln(&answer)
-		if err != nil {
-			log.Fatal(err)
-		}
+		input = w.readString()
 
-		switch strings.ToLower(answer) {
-		case "y", "yes":
+		switch strings.ToLower(input) {
+		case "y":
 			userAccepted = true
-		case "n", "no":
-			fmt.Println("Transaction cancelled: Interrupted by user.")
+		case "n":
+			fmt.Printf("Transaction cancelled: Interrupted by user.\n")
 			return
 		default:
-			fmt.Println("Wrong input!")
+			fmt.Printf("Enter (y)es or (n)o \n")
 		}
 	}
 
