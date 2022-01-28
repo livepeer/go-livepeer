@@ -240,7 +240,7 @@ func (gspi *gsPageInfo) listFiles() error {
 				Name:         attrs.Name,
 				ETag:         attrs.Etag,
 				LastModified: attrs.Updated,
-				Size:         attrs.Size,
+				Size:         &attrs.Size,
 			}
 			gspi.files = append(gspi.files, fi)
 		}
@@ -303,7 +303,7 @@ func (os *gsSession) ReadData(ctx context.Context, name string) (*FileInfoReader
 	}
 	res := &FileInfoReader{}
 	res.Name = name
-	res.Size = attrs.Size
+	res.Size = &attrs.Size
 	res.ETag = attrs.Etag
 	res.LastModified = attrs.Updated
 	if len(attrs.Metadata) > 0 {

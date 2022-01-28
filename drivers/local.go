@@ -123,7 +123,8 @@ func (ostore *MemorySession) ListFiles(ctx context.Context, prefix, delim string
 						}
 					} else {
 						if pprefix == "" || strings.HasPrefix(it.name, pprefix) {
-							fi := FileInfo{Name: path.Join(cachePath, it.name), Size: int64(len(it.data))}
+							size := int64(len(it.data))
+							fi := FileInfo{Name: path.Join(cachePath, it.name), Size: &size}
 							pi.files = append(pi.files, fi)
 						}
 					}
@@ -139,10 +140,11 @@ func (ostore *MemorySession) ReadData(ctx context.Context, name string) (*FileIn
 	if data == nil {
 		return nil, errors.New("Not found")
 	}
+	size := int64(len(data))
 	res := &FileInfoReader{
 		FileInfo: FileInfo{
 			Name: name,
-			Size: int64(len(data)),
+			Size: &size,
 		},
 		Body: ioutil.NopCloser(bytes.NewReader(data)),
 	}

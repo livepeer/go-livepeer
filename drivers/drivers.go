@@ -43,7 +43,7 @@ type FileInfo struct {
 	Name         string
 	ETag         string
 	LastModified time.Time
-	Size         int64
+	Size         *int64
 }
 
 type FileInfoReader struct {

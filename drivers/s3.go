@@ -208,7 +208,7 @@ func (s3pi *s3pageInfo) listFiles() error {
 			Name:         *cont.Key,
 			ETag:         *cont.ETag,
 			LastModified: *cont.LastModified,
-			Size:         *cont.Size,
+			Size:         cont.Size,
 		}
 		s3pi.files = append(s3pi.files, fi)
 	}
@@ -264,7 +264,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	res.LastModified = *resp.LastModified
 	res.ETag = *resp.ETag
 	res.Name = name
-	res.Size = *resp.ContentLength
+	res.Size = resp.ContentLength
 	if len(resp.Metadata) > 0 {
 		res.Metadata = make(map[string]string, len(resp.Metadata))
 		for k, v := range resp.Metadata {
