@@ -12,6 +12,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+const (
+	FakeHash          = "0x6bbf9b6e836207ab25379c20e517a89090cbbaf8877746f6ed7fb6820770816b"
+	FakeBlockNumber   = 30
+	FakeL1BlockNumber = 50
+)
+
 // fixtureTimestep holds the JSON-RPC data available at every timestep of the simulation.
 type fixtureTimestep struct {
 	GetLatestBlock   MiniHeader                 `json:"getLatestBlock"  gencodec:"required"`
@@ -65,6 +71,15 @@ func (fc *fakeClient) HeaderByNumber(number *big.Int) (*MiniHeader, error) {
 // HeaderByHash fetches a block header by its block hash. If no block exists with this number it will return
 // a `ethereum.NotFound` error.
 func (fc *fakeClient) HeaderByHash(hash common.Hash) (*MiniHeader, error) {
+	// predefined block
+	if hash.String() == FakeHash {
+		return &MiniHeader{
+			Hash:          common.HexToHash(FakeHash),
+			Number:        big.NewInt(FakeBlockNumber),
+			L1BlockNumber: big.NewInt(FakeL1BlockNumber),
+		}, nil
+	}
+
 	fc.fixtureMut.Lock()
 	defer fc.fixtureMut.Unlock()
 	timestep := fc.fixtureData[fc.currentTimestep]
@@ -87,10 +102,10 @@ func (fc *fakeClient) FilterLogs(q ethereum.FilterQuery) ([]types.Log, error) {
 				common.HexToHash("0x0000000000000000000000004bdd0d16cfa18e33860470fc4d65c6f5cee60959"),
 			},
 			Data:        common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000337ad34c0"),
-			BlockNumber: uint64(30),
+			BlockNumber: uint64(FakeBlockNumber),
 			TxHash:      common.HexToHash("0xd9bb5f9e888ee6f74bedcda811c2461230f247c205849d6f83cb6c3925e54586"),
 			TxIndex:     uint(0),
-			BlockHash:   common.HexToHash("0x6bbf9b6e836207ab25379c20e517a89090cbbaf8877746f6ed7fb6820770816b"),
+			BlockHash:   common.HexToHash(FakeHash),
 			Index:       uint(0),
 			Removed:     false,
 		},

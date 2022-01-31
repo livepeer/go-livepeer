@@ -551,3 +551,76 @@ func aRange(from, to int) string {
 	r := fmt.Sprintf("%d-%d", from, to)
 	return r
 }
+
+func TestEnrichWithL1_Empty(t *testing.T) {
+	assert := assert.New(t)
+
+	w := New(config)
+	res := w.enrichWithL1([]*Event{})
+	assert.NotNil(res)
+	assert.Empty(res)
+}
+
+func TestEnrichWithL1_One(t *testing.T) {
+	assert := assert.New(t)
+
+	config.Client = &fakeClient{}
+	w := New(config)
+	header := &MiniHeader{
+		Number: big.NewInt(FakeBlockNumber),
+		Hash:   common.HexToHash(FakeHash),
+	}
+	events := []*Event{{BlockHeader: header}}
+
+	res := w.enrichWithL1(events)
+
+	assert.Len(res, 1)
+	assert.Equal(common.HexToHash(FakeHash), res[0].BlockHeader.Hash)
+	assert.Equal(big.NewInt(FakeBlockNumber), res[0].BlockHeader.Number)
+	assert.Equal(big.NewInt(FakeL1BlockNumber), res[0].BlockHeader.L1BlockNumber)
+}
+
+func TestEnrichWithL1_Multiple(t *testing.T) {
+	assert := assert.New(t)
+
+	config.Client = &fakeClient{}
+	w := New(config)
+	highestHeader := &MiniHeader{
+		Number: big.NewInt(FakeBlockNumber),
+		Hash:   common.HexToHash(FakeHash),
+	}
+	events := []*Event{
+		{BlockHeader: &MiniHeader{Number: big.NewInt(1)}},
+		{BlockHeader: highestHeader},
+		{BlockHeader: &MiniHeader{Number: big.NewInt(2)}},
+	}
+
+	res := w.enrichWithL1(events)
+
+	assert.Len(res, 3)
+	// highest block number event has L1 block number
+	assert.Equal(common.HexToHash(FakeHash), res[1].BlockHeader.Hash)
+	assert.Equal(big.NewInt(FakeBlockNumber), res[1].BlockHeader.Number)
+	assert.Equal(big.NewInt(FakeL1BlockNumber), res[1].BlockHeader.L1BlockNumber)
+	// other events do not have L1 block numbers
+	assert.Nil(res[0].BlockHeader.L1BlockNumber)
+	assert.Nil(res[2].BlockHeader.L1BlockNumber)
+}
+
+func TestEnrichWithL1BlockNumber(t *testing.T) {
+	assert := assert.New(t)
+
+	config.Client = &fakeClient{}
+	w := New(config)
+	header := &MiniHeader{
+		Number: big.NewInt(FakeBlockNumber),
+		Hash:   common.HexToHash(FakeHash),
+	}
+
+	res, err := w.enrichWithL1BlockNumber(header)
+
+	assert.NoError(err)
+	assert.Equal(common.HexToHash(FakeHash), res.Hash)
+	assert.Equal(big.NewInt(FakeBlockNumber), res.Number)
+	assert.Equal(big.NewInt(FakeL1BlockNumber), res.L1BlockNumber)
+}

@@ -26,20 +26,20 @@ import (
 //	* Last Seen Block Number
 type TimeWatcher struct {
 	// state
-	mu                       sync.RWMutex
-	lastInitializedRound     *big.Int
-	lastInitializedBlockHash [32]byte
-	currentRoundStartBlock   *big.Int
-	transcoderPoolSize       *big.Int
-	lastSeenBlock            *big.Int
+	mu                         sync.RWMutex
+	lastInitializedRound       *big.Int
+	lastInitializedL1BlockHash [32]byte
+	currentRoundStartL1Block   *big.Int
+	transcoderPoolSize         *big.Int
+	lastSeenL1Block            *big.Int
 
 	// last initialized round number subscription feeds
 	roundSubFeed  event.Feed
 	roundSubScope event.SubscriptionScope
 	// last seen block number subscription feeds
-	blockSubFeed  event.Feed
-	blockSubScope event.SubscriptionScope
-	feedMu        sync.Mutex
+	l1BlockSubFeed  event.Feed
+	l1BlockSubScope event.SubscriptionScope
+	feedMu          sync.Mutex
 
 	watcher BlockWatcher
 	lpEth   eth.LivepeerEthClient
@@ -68,7 +68,7 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	}
 	bh, err := tw.lpEth.BlockHashForRound(lr)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching initial lastInitializedBlockHash value err=%q", err)
+		return nil, fmt.Errorf("error fetching initial lastInitializedL1BlockHash value err=%q", err)
 	}
 	num, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
@@ -80,11 +80,11 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	if err != nil {
 		return nil, fmt.Errorf("error fetching last seen block err=%q", err)
 	}
-	blockNum := big.NewInt(0)
+	l1BlockNum := big.NewInt(0)
 	if lastSeenBlock != nil {
-		blockNum = lastSeenBlock.Number
+		l1BlockNum = lastSeenBlock.L1BlockNumber
 	}
-	tw.setLastSeenBlock(blockNum)
+	tw.setLastSeenL1Block(l1BlockNum)
 
 	size, err := tw.lpEth.GetTranscoderPoolSize()
 	if err != nil {
@@ -103,24 +103,24 @@ func (tw *TimeWatcher) LastInitializedRound() *big.Int {
 }
 
 // LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
-func (tw *TimeWatcher) LastInitializedBlockHash() [32]byte {
+func (tw *TimeWatcher) LastInitializedL1BlockHash() [32]byte {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
-	return tw.lastInitializedBlockHash
+	return tw.lastInitializedL1BlockHash
 }
 
-func (tw *TimeWatcher) CurrentRoundStartBlock() *big.Int {
+func (tw *TimeWatcher) CurrentRoundStartL1Block() *big.Int {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
-	return tw.currentRoundStartBlock
+	return tw.currentRoundStartL1Block
 }
 
 func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte, startBlk *big.Int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 	tw.lastInitializedRound = round
-	tw.lastInitializedBlockHash = hash
-	tw.currentRoundStartBlock = startBlk
+	tw.lastInitializedL1BlockHash = hash
+	tw.currentRoundStartL1Block = startBlk
 }
 
 func (tw *TimeWatcher) GetTranscoderPoolSize() *big.Int {
@@ -138,16 +138,16 @@ func (tw *TimeWatcher) setTranscoderPoolSize(size *big.Int) {
 	tw.transcoderPoolSize = size
 }
 
-func (tw *TimeWatcher) LastSeenBlock() *big.Int {
+func (tw *TimeWatcher) LastSeenL1Block() *big.Int {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
-	return tw.lastSeenBlock
+	return tw.lastSeenL1Block
 }
 
-func (tw *TimeWatcher) setLastSeenBlock(blockNum *big.Int) {
+func (tw *TimeWatcher) setLastSeenL1Block(blockNum *big.Int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	tw.lastSeenBlock = blockNum
+	tw.lastSeenL1Block = blockNum
 }
 
 // Watch the blockwatch subscription for NewRound events
@@ -175,24 +175,24 @@ func (tw *TimeWatcher) SubscribeRounds(sink chan<- types.Log) event.Subscription
 	return tw.roundSubScope.Track(tw.roundSubFeed.Subscribe(sink))
 }
 
-// SubscribeBlocks allows one to subscribe to newly seen block numbers
+// SubscribeL1Blocks allows one to subscribe to newly seen L1 block numbers
 // To unsubscribe, simply call `Unsubscribe` on the returned subscription.
 // The sink channel should have ample buffer space to avoid blocking other subscribers.
 // Slow subscribers are not dropped.
-func (tw *TimeWatcher) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
-	return tw.blockSubScope.Track(tw.blockSubFeed.Subscribe(sink))
+func (tw *TimeWatcher) SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription {
+	return tw.l1BlockSubScope.Track(tw.l1BlockSubFeed.Subscribe(sink))
 }
 
 // Stop TimeWatcher
 func (tw *TimeWatcher) Stop() {
 	close(tw.quit)
-	tw.blockSubScope.Close()
+	tw.l1BlockSubScope.Close()
 	tw.roundSubScope.Close()
 }
 
 func (tw *TimeWatcher) handleBlockEvents(events []*blockwatch.Event) {
 	for _, event := range events {
-		tw.handleBlockNum(event)
+		tw.handleL1BlockNum(event)
 		for _, log := range event.BlockHeader.Logs {
 			if event.Type == blockwatch.Removed {
 				log.Removed = true
@@ -204,15 +204,15 @@ func (tw *TimeWatcher) handleBlockEvents(events []*blockwatch.Event) {
 	}
 }
 
-func (tw *TimeWatcher) handleBlockNum(event *blockwatch.Event) {
+func (tw *TimeWatcher) handleL1BlockNum(event *blockwatch.Event) {
 	tw.feedMu.Lock()
 	defer tw.feedMu.Unlock()
 
-	last := tw.LastSeenBlock()
-	new := event.BlockHeader.Number
-	if last == nil || last.Cmp(new) != 0 {
-		tw.setLastSeenBlock(new)
-		tw.blockSubFeed.Send(new)
+	last := tw.LastSeenL1Block()
+	new := event.BlockHeader.L1BlockNumber
+	if new != nil && (last == nil || last.Cmp(new) != 0) {
+		tw.setLastSeenL1Block(new)
+		tw.l1BlockSubFeed.Send(new)
 	}
 }
 
@@ -235,7 +235,7 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		return fmt.Errorf("unable to decode event: %v", err)
 	}
 
-	roundStartBlock, err := tw.lpEth.CurrentRoundStartBlock()
+	roundStartL1Block, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
 		return err
 	}
@@ -248,9 +248,9 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		if err != nil {
 			return err
 		}
-		tw.setLastInitializedRound(lr, bh, roundStartBlock)
+		tw.setLastInitializedRound(lr, bh, roundStartL1Block)
 	} else {
-		tw.setLastInitializedRound(nr.Round, nr.BlockHash, roundStartBlock)
+		tw.setLastInitializedRound(nr.Round, nr.BlockHash, roundStartL1Block)
 	}
 
 	// Get the active transcoder pool size when we receive a NewRound event

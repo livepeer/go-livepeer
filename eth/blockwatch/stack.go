@@ -10,10 +10,11 @@ import (
 
 // MiniHeader is a succinct representation of an Ethereum block header
 type MiniHeader struct {
-	Hash   ethcommon.Hash
-	Parent ethcommon.Hash
-	Number *big.Int
-	Logs   []types.Log
+	Hash          ethcommon.Hash
+	Parent        ethcommon.Hash
+	Number        *big.Int
+	L1BlockNumber *big.Int
+	Logs          []types.Log
 }
 
 // MiniHeaderStore is an interface for a store that manages the state of a MiniHeader collection

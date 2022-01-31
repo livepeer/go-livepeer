@@ -71,15 +71,15 @@ type TimeManager interface {
 	// LastInitializedRound returns the last initialized round of the Livepeer protocol
 	LastInitializedRound() *big.Int
 	// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
-	LastInitializedBlockHash() [32]byte
+	LastInitializedL1BlockHash() [32]byte
 	// GetTranscoderPoolSize returns the size of the active transcoder set for a round
 	GetTranscoderPoolSize() *big.Int
 	// LastSeenBlock returns the last seen block number
-	LastSeenBlock() *big.Int
+	LastSeenL1Block() *big.Int
 	// SubscribeRounds allows one to subscribe to new round events
 	SubscribeRounds(sink chan<- types.Log) event.Subscription
 	// SubscribeBlocks allows one to subscribe to newly seen block numbers
-	SubscribeBlocks(sink chan<- *big.Int) event.Subscription
+	SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription
 }
 
 // SenderManager defines the methods for fetching sender information

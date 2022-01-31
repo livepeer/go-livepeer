@@ -279,7 +279,7 @@ func (m *stubTimeManager) LastInitializedRound() *big.Int {
 	return m.round
 }
 
-func (m *stubTimeManager) LastInitializedBlockHash() [32]byte {
+func (m *stubTimeManager) LastInitializedL1BlockHash() [32]byte {
 	return m.blkHash
 }
 
@@ -287,7 +287,7 @@ func (m *stubTimeManager) GetTranscoderPoolSize() *big.Int {
 	return m.transcoderPoolSize
 }
 
-func (m *stubTimeManager) LastSeenBlock() *big.Int {
+func (m *stubTimeManager) LastSeenL1Block() *big.Int {
 	return m.lastSeenBlock
 }
 
@@ -297,7 +297,7 @@ func (m *stubTimeManager) SubscribeRounds(sink chan<- types.Log) event.Subscript
 	return m.roundSub
 }
 
-func (m *stubTimeManager) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
+func (m *stubTimeManager) SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription {
 	m.blockNumSink = sink
 	m.blockNumSub = &stubSubscription{errCh: make(<-chan error)}
 	return m.blockNumSub

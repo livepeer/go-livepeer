@@ -342,9 +342,10 @@ func (s *stubUnbondingLockStore) Get(id int64) *stubUnbondingLock {
 
 func defaultMiniHeader() *blockwatch.MiniHeader {
 	block := &blockwatch.MiniHeader{
-		Number: big.NewInt(450),
-		Parent: pm.RandHash(),
-		Hash:   pm.RandHash(),
+		Number:        big.NewInt(450),
+		L1BlockNumber: big.NewInt(650),
+		Parent:        pm.RandHash(),
+		Hash:          pm.RandHash(),
 	}
 	log := types.Log{
 		Topics:    []ethcommon.Hash{pm.RandHash(), pm.RandHash()},

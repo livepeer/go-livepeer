@@ -97,7 +97,7 @@ func (w *Watcher) BackfillEventsIfNeeded(ctx context.Context) error {
 		return err
 	}
 	if len(events) > 0 {
-		w.blockFeed.Send(events)
+		w.blockFeed.Send(w.enrichWithL1(events))
 	}
 	return nil
 }
@@ -137,7 +137,11 @@ func (w *Watcher) Subscribe(sink chan<- []*Event) event.Subscription {
 
 // GetLatestBlock returns the latest block processed
 func (w *Watcher) GetLatestBlock() (*MiniHeader, error) {
-	return w.stack.Peek()
+	h, err := w.stack.Peek()
+	if err != nil {
+		return nil, err
+	}
+	return w.enrichWithL1BlockNumber(h)
 }
 
 // InspectRetainedBlocks returns the blocks retained in-memory by the Watcher instance. It is not
@@ -202,7 +206,7 @@ func (w *Watcher) pollNextBlock() error {
 	// Even if an error occurred, we still want to emit the events gathered since we might have
 	// popped blocks off the Stack and they won't be re-added
 	if len(events) != 0 {
-		w.blockFeed.Send(events)
+		w.blockFeed.Send(w.enrichWithL1(events))
 	}
 	if err != nil {
 		return err
@@ -607,6 +611,38 @@ func (w *Watcher) filterLogsRecursively(from, to int, allLogs []types.Log) ([]ty
 	}
 	allLogs = append(allLogs, logs...)
 	return allLogs, nil
+}
+
+// enrichWithL1 adds L1 block number to the event with the highest block number.
+//
+// Adding L1 block number to an event requires an RPC call and the only code using L1 block number is TimeWatcher that
+// is interested only in the highest L1 block number, not in all of them.
+func (w *Watcher) enrichWithL1(events []*Event) []*Event {
+	if len(events) == 0 {
+		return events
+	}
+
+	max := 0
+	for i, e := range events {
+		if events[max].BlockHeader.Number.Cmp(e.BlockHeader.Number) <= 0 {
+			max = i
+		}
+	}
+
+	block, err := w.enrichWithL1BlockNumber(events[max].BlockHeader)
+	if err != nil {
+		glog.Errorf("Cannot fetch L1 block number for block number %d err=%q", events[max].BlockHeader.Number, err)
+	}
+
+	events[max].BlockHeader = block
+	return events
+}
+
+func (w *Watcher) enrichWithL1BlockNumber(header *MiniHeader) (*MiniHeader, error) {
+	if header == nil || header.L1BlockNumber != nil {
+		return header, nil
+	}
+	return w.client.HeaderByHash(header.Hash)
 }
 
 func isUnknownBlockErr(err error) bool {

@@ -166,8 +166,8 @@ func (r *recipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int) (st
 	}
 
 	// check advertised params aren't expired
-	latestBlock := r.tm.LastSeenBlock()
-	if ticket.ParamsExpirationBlock.Cmp(latestBlock) <= 0 {
+	latestL1Block := r.tm.LastSeenL1Block()
+	if ticket.ParamsExpirationBlock.Cmp(latestL1Block) <= 0 {
 		return sessionID, won, ErrTicketParamsExpired
 	}
 
@@ -196,17 +196,17 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 		}
 	}
 
-	lastBlock := r.tm.LastSeenBlock()
-	expirationBlock := new(big.Int).Add(lastBlock, paramsExpirationBlock)
+	lastL1Block := r.tm.LastSeenL1Block()
+	expirationL1Block := new(big.Int).Add(lastL1Block, paramsExpirationBlock)
 
 	winProb := r.winProb(faceValue)
 
 	ticketExpirationParams := &TicketExpirationParams{
 		CreationRound:          r.tm.LastInitializedRound().Int64(),
-		CreationRoundBlockHash: r.tm.LastInitializedBlockHash(),
+		CreationRoundBlockHash: r.tm.LastInitializedL1BlockHash(),
 	}
 
-	recipientRand := r.rand(seed, sender, faceValue, winProb, expirationBlock, price, ticketExpirationParams)
+	recipientRand := r.rand(seed, sender, faceValue, winProb, expirationL1Block, price, ticketExpirationParams)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
 
 	return &TicketParams{
@@ -215,7 +215,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 		WinProb:           winProb,
 		RecipientRandHash: recipientRandHash,
 		Seed:              seed,
-		ExpirationBlock:   expirationBlock,
+		ExpirationBlock:   expirationL1Block,
 		PricePerPixel:     price,
 		ExpirationParams:  ticketExpirationParams,
 	}, nil
@@ -356,7 +356,7 @@ func (r *recipient) EV() *big.Rat {
 
 func (r *recipient) senderNoncesCleanupLoop() {
 	sink := make(chan *big.Int, 10)
-	sub := r.tm.SubscribeBlocks(sink)
+	sub := r.tm.SubscribeL1Blocks(sink)
 	defer sub.Unsubscribe()
 	for {
 		select {
@@ -364,10 +364,10 @@ func (r *recipient) senderNoncesCleanupLoop() {
 			return
 		case err := <-sub.Err():
 			glog.Error(err)
-		case latestBlock := <-sink:
+		case latestL1Block := <-sink:
 			r.senderNoncesLock.Lock()
 			for recipientRand, sn := range r.senderNonces {
-				if sn.expirationBlock.Cmp(latestBlock) <= 0 {
+				if sn.expirationBlock.Cmp(latestL1Block) <= 0 {
 					delete(r.senderNonces, recipientRand)
 				}
 			}
