@@ -450,7 +450,7 @@ func (w *wizard) currentBlock() (*big.Int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("http response status not ok")
+		return nil, errors.New(fmt.Sprintf("http response status %d", resp.StatusCode))
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
