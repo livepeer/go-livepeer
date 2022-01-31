@@ -165,11 +165,14 @@ func main() {
 
 	// Config file
 	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
-	ff.Parse(flag.CommandLine, os.Args[1:],
+	err = ff.Parse(flag.CommandLine, os.Args[1:],
 		ff.WithConfigFileFlag("config"),
 		ff.WithEnvVarPrefix("LP"),
 		ff.WithConfigFileParser(ff.PlainParser),
 	)
+	if err != nil {
+		glog.Fatal("Error parsing config: ", err)
+	}
 
 	vFlag.Value.Set(*verbosity)
 
@@ -212,6 +215,9 @@ func main() {
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
 			ethController: "0x9a9827455911a858E55f07911904fACC0D66027E",
+		},
+		"arbitrum-one-rinkeby": {
+			ethController: "0x9ceC649179e2C7Ab91688271bcD09fb707b3E574",
 		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",

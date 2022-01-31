@@ -139,6 +139,17 @@ func (m *MockClient) Withdraw() (*types.Transaction, error) {
 	return mockTransaction(args, 0), args.Error(1)
 }
 
+func (m *MockClient) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
+	args := m.Called(addr, amount)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+// for L1 contracts backwards-compatibility
+func (m *MockClient) L1WithdrawFees() (*types.Transaction, error) {
+	args := m.Called()
+	return mockTransaction(args, 0), args.Error(1)
+}
+
 func (m *MockClient) Senders(addr common.Address) (sender struct {
 	Deposit       *big.Int
 	WithdrawRound *big.Int
@@ -279,7 +290,14 @@ func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, 
 func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) WithdrawFees() (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
+	return nil, nil
+}
+
+// for L1 contracts backwards-compatibility
+func (e *StubClient) L1WithdrawFees() (*types.Transaction, error) {
+	return nil, nil
+}
 func (e *StubClient) ClaimEarnings(endRound *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }

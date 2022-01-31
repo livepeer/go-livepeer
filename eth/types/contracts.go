@@ -73,10 +73,11 @@ type UnbondingLock struct {
 }
 
 type TokenPools struct {
-	RewardPool     *big.Int
-	FeePool        *big.Int
-	TotalStake     *big.Int
-	ClaimableStake *big.Int
+	TotalStake             *big.Int
+	TranscoderRewardCut    *big.Int
+	TranscoderFeeShare     *big.Int
+	CumulativeRewardFactor *big.Int
+	CumulativeFeeFactor    *big.Int
 }
 
 type ProtocolParameters struct {
