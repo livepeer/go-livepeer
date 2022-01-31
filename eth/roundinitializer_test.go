@@ -102,7 +102,7 @@ func TestRoundInitializer_TryInitialize(t *testing.T) {
 		lastInitializedBlockHash: [32]byte{123},
 	}
 	initializer := NewRoundInitializer(client, tw)
-	initializer.nextRoundStartBlock = big.NewInt(5)
+	initializer.nextRoundStartL1Block = big.NewInt(5)
 	assert := assert.New(t)
 
 	// Test error checking should initialize
@@ -186,7 +186,7 @@ func TestRoundInitializer_Start_Stop(t *testing.T) {
 	err = <-errC
 	assert.Nil(err)
 	// should have set next round start block
-	assert.Equal(initializer.nextRoundStartBlock, big.NewInt(105)) // 100 + 5
+	assert.Equal(initializer.nextRoundStartL1Block, big.NewInt(105)) // 100 + 5
 }
 
 func TestRoundInitializer_RoundSubscription(t *testing.T) {
@@ -214,7 +214,7 @@ func TestRoundInitializer_RoundSubscription(t *testing.T) {
 
 	// Test set next round start block on initializer
 	time.Sleep(1 * time.Second)
-	assert.Equal(initializer.nextRoundStartBlock, big.NewInt(10)) // 5 +5
+	assert.Equal(initializer.nextRoundStartL1Block, big.NewInt(10)) // 5 +5
 	tw.currentRoundStartBlock = big.NewInt(100)
 	tw.roundSink <- types.Log{}
 	time.Sleep(1 * time.Second)
@@ -222,7 +222,7 @@ func TestRoundInitializer_RoundSubscription(t *testing.T) {
 	initializer.Stop()
 	err := <-errC
 	assert.Nil(err)
-	assert.Equal(initializer.nextRoundStartBlock, new(big.Int).Add(roundLength, tw.currentRoundStartBlock))
+	assert.Equal(initializer.nextRoundStartL1Block, new(big.Int).Add(roundLength, tw.currentRoundStartBlock))
 }
 
 func TestRoundInitializer_BlockSubscription(t *testing.T) {
@@ -255,7 +255,7 @@ func TestRoundInitializer_BlockSubscription(t *testing.T) {
 	// block < next round start block do nothing
 	tw.blockSink <- big.NewInt(5)
 	time.Sleep(1 * time.Second)
-	assert.Equal(initializer.nextRoundStartBlock, big.NewInt(10))
+	assert.Equal(initializer.nextRoundStartL1Block, big.NewInt(10))
 
 	// block >= next round start block , try initialize
 	caller := ethcommon.HexToAddress("foo")
@@ -302,7 +302,7 @@ type stubTimeWatcher struct {
 	blockSub  event.Subscription
 }
 
-func (m *stubTimeWatcher) LastSeenBlock() *big.Int {
+func (m *stubTimeWatcher) LastSeenL1Block() *big.Int {
 	return m.lastBlock
 }
 
@@ -310,7 +310,7 @@ func (m *stubTimeWatcher) LastInitializedRound() *big.Int {
 	return m.lastInitializedRound
 }
 
-func (m *stubTimeWatcher) LastInitializedBlockHash() [32]byte {
+func (m *stubTimeWatcher) LastInitializedL1BlockHash() [32]byte {
 	return m.lastInitializedBlockHash
 }
 
@@ -318,7 +318,7 @@ func (m *stubTimeWatcher) GetTranscoderPoolSize() *big.Int {
 	return nil
 }
 
-func (m *stubTimeWatcher) CurrentRoundStartBlock() *big.Int {
+func (m *stubTimeWatcher) CurrentRoundStartL1Block() *big.Int {
 	return m.currentRoundStartBlock
 }
 
@@ -328,7 +328,7 @@ func (m *stubTimeWatcher) SubscribeRounds(sink chan<- types.Log) event.Subscript
 	return m.roundSub
 }
 
-func (m *stubTimeWatcher) SubscribeBlocks(sink chan<- *big.Int) event.Subscription {
+func (m *stubTimeWatcher) SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription {
 	m.blockSink = sink
 	m.blockSub = &stubSubscription{errCh: make(<-chan error)}
 	return m.blockSub

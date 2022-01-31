@@ -801,6 +801,48 @@
           "parent": "0x7ac62ad1dc23753eb35ccbe193fdf1ad33828a68ed1c497a17ae66f7baa98144",
           "number": 11
         }
+      },
+      "getBlockByHash": {
+        "0x22a63eebe1b8f4034c3552502c0ba4ffbd613b6ee3cd5b530f75202ddc6d6220": {
+          "hash": "0x22a63eebe1b8f4034c3552502c0ba4ffbd613b6ee3cd5b530f75202ddc6d6220",
+          "parent": "0x2804206056bff166dbeef754799a248c48dd9521b21ee5898b7632837069200c",
+          "number": 5
+        },
+        "0x85fe65e36f4cc457a774cfe500ba7f3efaa6535dd6cb80373b3e91978ecaa01a": {
+          "hash": "0x85fe65e36f4cc457a774cfe500ba7f3efaa6535dd6cb80373b3e91978ecaa01a",
+          "parent": "0x22a63eebe1b8f4034c3552502c0ba4ffbd613b6ee3cd5b530f75202ddc6d6220",
+          "number": 6
+        },
+        "0xc308739706b1cf523663cbd1d8ce01208f7811cc6ff2005d23a13898f2f5adff": {
+          "hash": "0xc308739706b1cf523663cbd1d8ce01208f7811cc6ff2005d23a13898f2f5adff",
+          "parent": "0x85fe65e36f4cc457a774cfe500ba7f3efaa6535dd6cb80373b3e91978ecaa01a",
+          "number": 7
+        },
+        "0x7718297b91827d7a2f9238f4501a5c47cd6a5da83811e53d1cf1231346bd2001": {
+          "hash": "0x7718297b91827d7a2f9238f4501a5c47cd6a5da83811e53d1cf1231346bd2001",
+          "parent": "0xc308739706b1cf523663cbd1d8ce01208f7811cc6ff2005d23a13898f2f5adff",
+          "number": 8
+        },
+        "0x95483b1c35b7a6cdf6e56dc2ac22bda14b26b395823712ac9f881f3639718402": {
+          "hash": "0x95483b1c35b7a6cdf6e56dc2ac22bda14b26b395823712ac9f881f3639718402",
+          "parent": "0x7718297b91827d7a2f9238f4501a5c47cd6a5da83811e53d1cf1231346bd2001",
+          "number": 9
+        },
+        "0x7ac62ad1dc23753eb35ccbe193fdf1ad33828a68ed1c497a17ae66f7baa98144": {
+          "hash": "0x7ac62ad1dc23753eb35ccbe193fdf1ad33828a68ed1c497a17ae66f7baa98144",
+          "parent": "0x95483b1c35b7a6cdf6e56dc2ac22bda14b26b395823712ac9f881f3639718402",
+          "number": 10
+        },
+        "0x42a1a146cee23d156a8525a6ff9e3b41de7f40fb06e58323deb1443da7ba5dc2": {
+          "hash": "0x42a1a146cee23d156a8525a6ff9e3b41de7f40fb06e58323deb1443da7ba5dc2",
+          "parent": "0x7ac62ad1dc23753eb35ccbe193fdf1ad33828a68ed1c497a17ae66f7baa98144",
+          "number": 11
+        },
+        "0xf908916f8ea921df3a6256fc20874577139c9544fd04c7644ff14075bf102b22": {
+          "hash": "0xf908916f8ea921df3a6256fc20874577139c9544fd04c7644ff14075bf102b22",
+          "parent": "0x42a1a146cee23d156a8525a6ff9e3b41de7f40fb06e58323deb1443da7ba5dc2",
+          "number": 12
+        }
       }
     ],
     "scenarioLabel": "REORG_OUT_ALL_RETAINED_BLOCKS"

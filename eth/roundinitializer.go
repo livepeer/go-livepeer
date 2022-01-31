@@ -10,22 +10,22 @@ import (
 	"github.com/golang/glog"
 )
 
-// Number of blocks in an epoch which is the time period during which the caller should
+// Number of L1 blocks in an epoch which is the time period during which the caller should
 // initialize the round if it is selected and if the round is not initialized
-var epochBlocks = big.NewInt(5)
+var epochL1Blocks = big.NewInt(5)
 
 type timeWatcher interface {
-	LastSeenBlock() *big.Int
+	LastSeenL1Block() *big.Int
 	LastInitializedRound() *big.Int
-	LastInitializedBlockHash() [32]byte
-	CurrentRoundStartBlock() *big.Int
+	LastInitializedL1BlockHash() [32]byte
+	CurrentRoundStartL1Block() *big.Int
 	SubscribeRounds(sink chan<- types.Log) event.Subscription
-	SubscribeBlocks(sink chan<- *big.Int) event.Subscription
+	SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription
 	GetTranscoderPoolSize() *big.Int
 }
 
 // RoundInitializer is a service that automatically initializes the current round. Each round is split into epochs with a length of
-// epochBlocks. During each epoch a member of the upcoming active set is selected to initialize the round
+// epochL1Blocks. During each epoch a member of the upcoming active set is selected to initialize the round
 // This selection process is purely a client side implementation that attempts to minimize on-chain transaction collisions, but
 // collisions are still possible if initialization transactions are submitted by parties that are not using this selection process
 type RoundInitializer struct {
@@ -33,7 +33,7 @@ type RoundInitializer struct {
 	tw     timeWatcher
 	quit   chan struct{}
 
-	nextRoundStartBlock *big.Int
+	nextRoundStartL1Block *big.Int
 	mu                  sync.Mutex
 }
 
@@ -48,9 +48,9 @@ func NewRoundInitializer(client LivepeerEthClient, tw timeWatcher) *RoundInitial
 
 // Start kicks off a loop that checks if the round should be initialized
 func (r *RoundInitializer) Start() error {
-	blockSink := make(chan *big.Int, 10)
-	blockSub := r.tw.SubscribeBlocks(blockSink)
-	defer blockSub.Unsubscribe()
+	l1BlockSink := make(chan *big.Int, 10)
+	l1BlockSub := r.tw.SubscribeL1Blocks(l1BlockSink)
+	defer l1BlockSub.Unsubscribe()
 
 	roundSink := make(chan types.Log, 10)
 	roundSub := r.tw.SubscribeRounds(roundSink)
@@ -61,30 +61,30 @@ func (r *RoundInitializer) Start() error {
 		return err
 	}
 
-	currentRoundStartBlock, err := r.client.CurrentRoundStartBlock()
+	currentRoundStartL1Block, err := r.client.CurrentRoundStartBlock()
 	if err != nil {
 		return err
 	}
 
-	r.nextRoundStartBlock = new(big.Int).Add(currentRoundStartBlock, roundLength)
+	r.nextRoundStartL1Block = new(big.Int).Add(currentRoundStartL1Block, roundLength)
 
 	for {
 		select {
 		case <-r.quit:
 			glog.Infof("Stopping round initializer")
 			return nil
-		case err := <-blockSub.Err():
+		case err := <-l1BlockSub.Err():
 			if err != nil {
-				glog.Errorf("Block subscription error err=%q", err)
+				glog.Errorf("L1 Block subscription error err=%q", err)
 			}
 		case err := <-roundSub.Err():
 			if err != nil {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
-			r.nextRoundStartBlock = r.nextRoundStartBlock.Add(r.tw.CurrentRoundStartBlock(), roundLength)
-		case block := <-blockSink:
-			if block.Cmp(r.nextRoundStartBlock) >= 0 {
+			r.nextRoundStartL1Block = r.nextRoundStartL1Block.Add(r.tw.CurrentRoundStartL1Block(), roundLength)
+		case l1Block := <-l1BlockSink:
+			if l1Block.Cmp(r.nextRoundStartL1Block) >= 0 {
 				go func() {
 					if err := r.tryInitialize(); err != nil {
 						glog.Error(err)
@@ -104,10 +104,10 @@ func (r *RoundInitializer) tryInitialize() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	currentBlk := r.tw.LastSeenBlock()
-	lastInitializedBlkHash := r.tw.LastInitializedBlockHash()
+	currentL1Blk := r.tw.LastSeenL1Block()
+	lastInitializedL1BlkHash := r.tw.LastInitializedL1BlockHash()
 
-	epochSeed := r.currentEpochSeed(currentBlk, r.nextRoundStartBlock, lastInitializedBlkHash)
+	epochSeed := r.currentEpochSeed(currentL1Blk, r.nextRoundStartL1Block, lastInitializedL1BlkHash)
 
 	ok, err := r.shouldInitialize(epochSeed)
 	if err != nil {
@@ -180,11 +180,11 @@ func (r *RoundInitializer) shouldInitialize(epochSeed *big.Int) (bool, error) {
 // Returns the seed used to select a round initializer in the current epoch for the current round
 // This seed is not meant to be unpredictable. The only requirement for the seed is that it is calculated the same way for each
 // party running the round initializer
-func (r *RoundInitializer) currentEpochSeed(currentBlock, roundStartBlock *big.Int, lastInitializedBlkHash [32]byte) *big.Int {
-	epochNum := new(big.Int).Sub(currentBlock, roundStartBlock)
-	epochNum.Div(epochNum, epochBlocks)
+func (r *RoundInitializer) currentEpochSeed(currentL1Block, roundStartL1Block *big.Int, lastInitializedL1BlkHash [32]byte) *big.Int {
+	epochNum := new(big.Int).Sub(currentL1Block, roundStartL1Block)
+	epochNum.Div(epochNum, epochL1Blocks)
 
 	// The seed for the current epoch is calculated as:
-	// keccak256(lastInitializedBlkHash | epochNum)
-	return crypto.Keccak256Hash(append(lastInitializedBlkHash[:], epochNum.Bytes()...)).Big()
+	// keccak256(lastInitializedL1BlkHash | epochNum)
+	return crypto.Keccak256Hash(append(lastInitializedL1BlkHash[:], epochNum.Bytes()...)).Big()
 }

@@ -3,6 +3,7 @@ package blockwatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -44,33 +45,39 @@ func NewRPCClient(rpcURL string, requestTimeout time.Duration) (*RPCClient, erro
 	return &RPCClient{rpcClient: rpcClient, client: ethClient, requestTimeout: requestTimeout}, nil
 }
 
-type getBlockByNumberResponse struct {
-	Hash       common.Hash `json:"hash"`
-	ParentHash common.Hash `json:"parentHash"`
-	Number     string      `json:"number"`
+type getHeaderResponse struct {
+	Hash          common.Hash `json:"hash"`
+	ParentHash    common.Hash `json:"parentHash"`
+	Number        string      `json:"number"`
+	L1BlockNumber string      `json:"l1BlockNumber"`
 }
 
 // HeaderByNumber fetches a block header by its number. If no `number` is supplied, it will return the latest
 // block header. If no block exists with this number it will return a `ethereum.NotFound` error.
 func (rc *RPCClient) HeaderByNumber(number *big.Int) (*MiniHeader, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), rc.requestTimeout)
-	defer cancel()
-
 	var blockParam string
 	if number == nil {
 		blockParam = "latest"
 	} else {
 		blockParam = hexutil.EncodeBig(number)
 	}
-	shouldIncludeTransactions := false
 
-	// Note(fabio): We use a raw RPC call here instead of `EthClient`'s `BlockByNumber()` method because block
-	// hashes are computed differently on Kovan vs. mainnet, resulting in the wrong block hash being returned by
-	// `BlockByNumber` when using Kovan. By doing a raw RPC call, we can simply use the blockHash returned in the
-	// RPC response rather than re-compute it from the block header.
-	// Source: https://github.com/ethereum/go-ethereum/pull/18166
-	var header getBlockByNumberResponse
-	err := rc.rpcClient.CallContext(ctx, &header, "eth_getBlockByNumber", blockParam, shouldIncludeTransactions)
+	return rc.callEth("eth_getBlockByNumber", blockParam)
+}
+
+// HeaderByHash fetches a block header by its block hash. If no block exists with this number it will return
+// a `ethereum.NotFound` error.
+func (rc *RPCClient) HeaderByHash(hash common.Hash) (*MiniHeader, error) {
+	return rc.callEth("eth_getBlockByHash", hash)
+}
+
+func (rc *RPCClient) callEth(method string, arg interface{}) (*MiniHeader, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), rc.requestTimeout)
+	defer cancel()
+
+	var header getHeaderResponse
+	err := rc.rpcClient.CallContext(ctx, &header, method, arg, false)
+
 	if err != nil {
 		return nil, err
 	}
@@ -79,31 +86,24 @@ func (rc *RPCClient) HeaderByNumber(number *big.Int) (*MiniHeader, error) {
 		return nil, ethereum.NotFound
 	}
 
+	// If no L1BlockNumber, then Livepeer is running on L1, so L1BlockNumber is the same as BlockNumber
+	if header.L1BlockNumber == "" {
+		header.L1BlockNumber = header.Number
+	}
+
 	blockNum, ok := math.ParseBig256(header.Number)
 	if !ok {
 		return nil, errors.New("Failed to parse big.Int value from hex-encoded block number returned from eth_getBlockByNumber")
 	}
-	miniHeader := &MiniHeader{
-		Hash:   header.Hash,
-		Parent: header.ParentHash,
-		Number: blockNum,
-	}
-	return miniHeader, nil
-}
-
-// HeaderByHash fetches a block header by its block hash. If no block exists with this number it will return
-// a `ethereum.NotFound` error.
-func (rc *RPCClient) HeaderByHash(hash common.Hash) (*MiniHeader, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), rc.requestTimeout)
-	defer cancel()
-	header, err := rc.client.HeaderByHash(ctx, hash)
-	if err != nil {
-		return nil, err
+	l1BlockNum, ok := math.ParseBig256(header.L1BlockNumber)
+	if !ok {
+		return nil, fmt.Errorf("Failed to parse big.Int value from hex-encoded L1 block number returned from %v", method)
 	}
 	miniHeader := &MiniHeader{
-		Hash:   header.Hash(),
-		Parent: header.ParentHash,
-		Number: header.Number,
+		Hash:          header.Hash,
+		Parent:        header.ParentHash,
+		Number:        blockNum,
+		L1BlockNumber: l1BlockNum,
 	}
 	return miniHeader, nil
 }
