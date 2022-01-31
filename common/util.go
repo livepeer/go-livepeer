@@ -165,10 +165,6 @@ func BytesToVideoProfile(txData []byte) ([]ffmpeg.VideoProfile, error) {
 	return profiles, nil
 }
 
-func DefaultProfileName(width int, height int, bitrate int) string {
-	return fmt.Sprintf("%dx%d_%d", width, height, bitrate)
-}
-
 func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.VideoProfile, error) {
 	profiles := make([]*net.VideoProfile, 0, len(ffmpegProfiles))
 	for _, profile := range ffmpegProfiles {
@@ -183,7 +179,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		}
 		name := profile.Name
 		if name == "" {
-			name = "ffmpeg_" + DefaultProfileName(width, height, bitrate)
+			name = "ffmpeg_" + ffmpeg.DefaultProfileName(width, height, bitrate)
 		}
 		format := net.VideoProfile_MPEGTS
 		switch profile.Format {
@@ -249,22 +245,6 @@ func ProfilesNames(profiles []ffmpeg.VideoProfile) string {
 	}
 	names.Sort()
 	return strings.Join(names, ",")
-}
-
-func EncoderProfileNameToValue(profile string) (ffmpeg.Profile, error) {
-	var EncoderProfileLookup = map[string]ffmpeg.Profile{
-		"":                    ffmpeg.ProfileNone,
-		"none":                ffmpeg.ProfileNone,
-		"h264baseline":        ffmpeg.ProfileH264Baseline,
-		"h264main":            ffmpeg.ProfileH264Main,
-		"h264high":            ffmpeg.ProfileH264High,
-		"h264constrainedhigh": ffmpeg.ProfileH264ConstrainedHigh,
-	}
-	p, ok := EncoderProfileLookup[strings.ToLower(profile)]
-	if !ok {
-		return -1, ErrProfName
-	}
-	return p, nil
 }
 
 func ProfileExtensionFormat(ext string) ffmpeg.Format {
