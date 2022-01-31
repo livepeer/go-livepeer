@@ -2,13 +2,11 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -255,80 +253,30 @@ func main() {
 }
 
 func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
-	type profilesJson struct {
-		Profiles []struct {
-			Name    string `json:"name"`
-			Width   int    `json:"width"`
-			Height  int    `json:"height"`
-			Bitrate int    `json:"bitrate"`
-			FPS     uint   `json:"fps"`
-			FPSDen  uint   `json:"fpsDen"`
-			Profile string `json:"profile"`
-			GOP     string `json:"gop"`
-		} `json:"profiles"`
-	}
-	profs := []ffmpeg.VideoProfile{}
+	profiles := []ffmpeg.VideoProfile{}
 	if inp != "" {
 		// try opening up json file with profiles
 		content, err := ioutil.ReadFile(inp)
 		if err == nil && len(content) > 0 {
 			// parse json profiles
-			resp := &profilesJson{}
-			err = json.Unmarshal(content, &resp.Profiles)
-			if err != nil {
-				glog.Fatal("Unable to unmarshal the passed transcoding option: ", err)
-			}
-			for _, profile := range resp.Profiles {
-				name := profile.Name
-				if name == "" {
-					name = "custom_" + common.DefaultProfileName(
-						profile.Width,
-						profile.Height,
-						profile.Bitrate)
-				}
-				var gop time.Duration
-				if profile.GOP != "" {
-					if profile.GOP == "intra" {
-						gop = ffmpeg.GOPIntraOnly
-					} else {
-						gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
-						if err != nil {
-							glog.Fatal("Cannot parse the GOP value in the transcoding options: ", err)
-						}
-						if gopFloat <= 0.0 {
-							glog.Fatalf("Invalid gop value %f. Please set it to a positive value", gopFloat)
-						}
-						gop = time.Duration(gopFloat * float64(time.Second))
-					}
-				}
-				encodingProfile, err := common.EncoderProfileNameToValue(profile.Profile)
-				if err != nil {
-					glog.Fatal("Unable to parse the H264 encoder profile: ", err)
-				}
-				prof := ffmpeg.VideoProfile{
-					Name:         name,
-					Bitrate:      fmt.Sprint(profile.Bitrate),
-					Framerate:    profile.FPS,
-					FramerateDen: profile.FPSDen,
-					Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-					Profile:      encodingProfile,
-					GOP:          gop,
-				}
-				profs = append(profs, prof)
+			var parsingError error
+			profiles, parsingError = ffmpeg.ParseProfiles(content)
+			if parsingError != nil {
+				glog.Fatal(parsingError)
 			}
 		} else {
 			// check the built-in profiles
-			profs = make([]ffmpeg.VideoProfile, 0)
+			profiles = make([]ffmpeg.VideoProfile, 0)
 			presets := strings.Split(inp, ",")
 			for _, v := range presets {
 				if p, ok := ffmpeg.VideoProfileLookup[strings.TrimSpace(v)]; ok {
-					profs = append(profs, p)
+					profiles = append(profiles, p)
 				}
 			}
 		}
-		if len(profs) <= 0 {
+		if len(profiles) <= 0 {
 			glog.Fatalf("No transcoding options provided")
 		}
 	}
-	return profs
+	return profiles
 }

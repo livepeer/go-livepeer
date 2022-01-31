@@ -273,7 +273,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 	for _, profile := range protoProfiles {
 		name := profile.Name
 		if name == "" {
-			name = "net_" + common.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
+			name = "net_" + ffmpeg.DefaultProfileName(int(profile.Width), int(profile.Height), int(profile.Bitrate))
 		}
 		format := ffmpeg.FormatMPEGTS
 		switch profile.Format {
