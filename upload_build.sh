@@ -6,17 +6,21 @@ set -e
 set -o nounset
 
 if [[ $(uname) == *"MSYS"* ]]; then
-  ARCH="windows"
+  PLATFORM="windows"
   EXT=".exe"
 else
-  ARCH=$(uname | tr '[:upper:]' '[:lower:]')
+  PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
   EXT=""
   if [[ -n "${RELEASE_TAG:-}" ]]; then
-      ARCH="$ARCH-$RELEASE_TAG"
+      PLATFORM="$PLATFORM-$RELEASE_TAG"
   fi
 fi
+ARCH=$(uname -m)
+if [[ "$ARCH" == "aarch64" ]]; then
+  ARCH="arm64"
+fi
 
-BASE="livepeer-$ARCH-amd64"
+BASE="livepeer-$PLATFORM-$ARCH"
 BRANCH="${TRAVIS_BRANCH:-unknown}"
 if [[ "${GHA_REF:-}" != "" ]]; then
   BRANCH="$(echo $GHA_REF | sed 's/refs\/heads\///')"
@@ -52,7 +56,7 @@ cp $BENCH $BASE
 cp $ROUTER $BASE
 
 # do a basic upload so we know if stuff's working prior to doing everything else
-if [[ $ARCH == "windows" ]]; then
+if [[ $PLATFORM == "windows" ]]; then
   FILE=$BASE.zip
   zip -r ./$FILE ./$BASE
 else
@@ -94,5 +98,5 @@ curl -X PUT -T "${FILE}" \
 
 echo "upload done"
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $ARCH-amd64\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL 
+curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL
 echo "done"
