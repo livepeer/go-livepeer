@@ -30,22 +30,22 @@ jobs:
       uses: actions/cache@v2.1.5
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-
+          ${{ runner.os }}-${{ matrix.arch }}-go-
     - name: Cache ffmpeg
       id: cache-ffmpeg
       uses: actions/cache@v2.1.5
       with:
         path: ~/compiled
-        key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
         restore-keys: |
-          ${{ runner.os }}-ffmpeg
+          ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
     - name: Cache binaries
       uses: actions/cache@v2.1.5
       with:
         path: ~/build
-        key: ${{ runner.os }}-binaries-${{ github.sha }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
     - name: Install dependencies
       run: |
         sudo apt-get update \
@@ -71,7 +71,14 @@ jobs:
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
   test:
-    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        include:
+          - os: [ubuntu-18.04]
+            arch: amd64
+          - os: [self-hosted, Linux, ARM64]
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     needs: build
     steps:
       - name: Checkout
@@ -88,17 +95,17 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-${{ matrix.arch }}-go-
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v2.1.5
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-ffmpeg
+            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
       - name: Lint
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
@@ -110,7 +117,14 @@ jobs:
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
           ./test.sh
   upload:
-    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        include:
+          - os: [ubuntu-18.04]
+            arch: amd64
+          - os: [self-hosted, Linux, ARM64]
+            arch: arm64
+    runs-on: ${{ matrix.os }}
     needs: [build, test]
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -124,7 +138,7 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/build
-          key: ${{ runner.os }}-binaries-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
       - name: Upload build
         run: cp ~/build/* . && ./upload_build.sh
         env:
