@@ -2,6 +2,7 @@ package drivers
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/livepeer/go-livepeer/net"
@@ -22,7 +23,7 @@ func NewMockOSSession() *MockOSSession {
 	}
 }
 
-func (s *MockOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *MockOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	args := s.Called(name, data, meta, timeout)
 	if s.waitForCh {
 		s.back <- struct{}{}

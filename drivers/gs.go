@@ -1,7 +1,6 @@
 package drivers
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -153,7 +152,7 @@ func (os *gsSession) createClient() error {
 	return nil
 }
 
-func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *gsSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.useFullAPI {
 		if os.client == nil {
 			if err := os.createClient(); err != nil {
@@ -175,8 +174,12 @@ func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, met
 		for k, v := range meta {
 			wr.Metadata[k] = v
 		}
-		wr.ContentType = os.getContentType(name, data)
-		_, err := io.Copy(wr, bytes.NewReader(data))
+		data, contentType, err := os.peekContentType(name, data)
+		if err != nil {
+			return "", err
+		}
+		wr.ContentType = contentType
+		_, err = io.Copy(wr, data)
 		err2 := wr.Close()
 		if err != nil {
 			return "", err

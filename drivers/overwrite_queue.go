@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -69,7 +70,7 @@ func (oq *OverwriteQueue) workerLoop() {
 				data = oq.getLastMessage(data)
 				glog.V(common.VERBOSE).Infof("Start saving %s name=%s bytes=%d try=%d", oq.desc, oq.name, len(data), try)
 				now := time.Now()
-				_, err = oq.session.SaveData(context.Background(), oq.name, data, nil, timeout)
+				_, err = oq.session.SaveData(context.Background(), oq.name, bytes.NewReader(data), nil, timeout)
 				took := time.Since(now)
 				if err == nil {
 					glog.V(common.VERBOSE).Infof("Saving %s name=%s bytes=%d took=%s try=%d", oq.desc, oq.name,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/url"
 	"path"
@@ -197,7 +198,7 @@ func (ostore *MemorySession) GetInfo() *net.OSInfo {
 	return nil
 }
 
-func (ostore *MemorySession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (ostore *MemorySession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	path, file := path.Split(ostore.getAbsolutePath(name))
 
 	ostore.dLock.Lock()
@@ -207,8 +208,12 @@ func (ostore *MemorySession) SaveData(ctx context.Context, name string, data []b
 		return "", fmt.Errorf("Session ended")
 	}
 
+	bytes, err := ioutil.ReadAll(data)
+	if err != nil {
+		return "", err
+	}
 	dc := ostore.getCacheForStream(path)
-	dc.Insert(file, data)
+	dc.Insert(file, bytes)
 
 	return ostore.getAbsoluteURI(name), nil
 }

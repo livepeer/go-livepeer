@@ -2,6 +2,7 @@
 package drivers
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -62,7 +63,7 @@ type PageInfo interface {
 type OSSession interface {
 	OS() OSDriver
 
-	SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error)
+	SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error)
 	EndSession()
 
 	// Info in order to have this session used via RPC
@@ -192,7 +193,7 @@ func SaveRetried(ctx context.Context, sess OSSession, name string, data []byte, 
 	var uri string
 	var err error
 	for i := 0; i < retryCount; i++ {
-		uri, err = sess.SaveData(ctx, name, data, meta, 0)
+		uri, err = sess.SaveData(ctx, name, bytes.NewReader(data), meta, 0)
 		if err == nil {
 			return uri, err
 		}

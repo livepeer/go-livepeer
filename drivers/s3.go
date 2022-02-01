@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -9,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -274,7 +276,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	return res, nil
 }
 
-func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	now := time.Now()
 	bucket := aws.String(os.bucket)
 	keyname := aws.String(os.key + "/" + name)
@@ -285,15 +287,24 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, 
 			metadata[k] = aws.String(v)
 		}
 	}
-	contentType := aws.String(os.getContentType(name, data))
-
+	data, contentType, err := os.peekContentType(name, data)
+	if err != nil {
+		return "", err
+	}
+	// TODO: This completely breaks the purpose of receiving an io.Reader. Switch
+	// to use S3 upload instead which seems to be the only way to avoid having to
+	// provide an io.ReadSeeker to memory or disk. https://github.com/aws/aws-sdk-go/issues/915
+	body, err := ioutil.ReadAll(data)
+	if err != nil {
+		return "", err
+	}
 	params := &s3.PutObjectInput{
 		Bucket:        bucket,  // Required
 		Key:           keyname, // Required
 		Metadata:      metadata,
-		Body:          bytes.NewReader(data),
-		ContentType:   contentType,
-		ContentLength: aws.Int64(int64(len(data))),
+		Body:          bytes.NewReader(body),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(body))),
 	}
 	if timeout == 0 {
 		timeout = saveTimeout
@@ -306,11 +317,11 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, 
 	}
 	clog.Infof(ctx, "resp: %s", resp.String())
 	uri := os.getAbsURL(*keyname)
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 %s bytes=%v dur=%s", uri, len(data), time.Since(now))
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 %s bytes=%v dur=%s", uri, len(body), time.Since(now))
 	return uri, err
 }
 
-func (os *s3Session) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.s3svc != nil {
 		return os.saveDataPut(ctx, name, data, meta, timeout)
 	}
@@ -326,7 +337,7 @@ func (os *s3Session) SaveData(ctx context.Context, name string, data []byte, met
 	}
 	url := os.getAbsURL(path)
 
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s bytes=%d took=%s", tentativeURL, len(data), time.Since(started))
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s took=%s", tentativeURL, time.Since(started))
 
 	return url, err
 }
@@ -353,19 +364,26 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 	return oi
 }
 
-func (os *s3Session) getContentType(fileName string, buffer []byte) string {
+func (os *s3Session) peekContentType(fileName string, data io.Reader) (*bufio.Reader, string, error) {
+	bufData := bufio.NewReaderSize(data, 4096)
+	firstBytes, err := bufData.Peek(512)
+	if err != nil && err != io.EOF {
+		return nil, "", err
+	}
 	ext := path.Ext(fileName)
 	fileType, err := common.TypeByExtension(ext)
 	if err != nil {
-		fileType = http.DetectContentType(buffer)
+		fileType = http.DetectContentType(firstBytes)
 	}
-	return fileType
+	return bufData, fileType, nil
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(ctx context.Context, fileName string, buffer []byte, meta map[string]string, timeout time.Duration) (string, error) {
-	fileBytes := bytes.NewReader(buffer)
-	fileType := os.getContentType(fileName, buffer)
+func (os *s3Session) postData(ctx context.Context, fileName string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
+	data, fileType, err := os.peekContentType(fileName, data)
+	if err != nil {
+		return "", err
+	}
 	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
 		"acl":          "public-read",
@@ -380,7 +398,7 @@ func (os *s3Session) postData(ctx context.Context, fileName string, buffer []byt
 	if !strings.Contains(postURL, os.bucket) {
 		postURL += "/" + os.bucket
 	}
-	req, cancel, err := newfileUploadRequest(ctx, postURL, fields, fileBytes, fileName, timeout)
+	req, cancel, err := newfileUploadRequest(ctx, postURL, fields, data, fileName, timeout)
 	if err != nil {
 		clog.Errorf(ctx, "err=%q", err)
 		return "", err
