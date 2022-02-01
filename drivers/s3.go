@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -27,6 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 // S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
@@ -45,6 +45,7 @@ type s3OS struct {
 	awsAccessKeyID     string
 	awsSecretAccessKey string
 	s3svc              *s3.S3
+	s3sess             *session.Session
 	useFullAPI         bool
 }
 
@@ -60,6 +61,7 @@ type s3Session struct {
 	storageType net.OSInfo_StorageType
 	fields      map[string]string
 	s3svc       *s3.S3
+	s3sess      *session.Session
 }
 
 func s3Host(bucket string) string {
@@ -93,7 +95,8 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		os.s3svc = s3.New(session.New(), cfg)
+		os.s3sess = session.New(cfg)
+		os.s3svc = s3.New(os.s3sess)
 	}
 	return os
 }
@@ -114,10 +117,13 @@ func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, 
 	}
 	if os.awsAccessKeyID != "" {
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
-		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		cfg = cfg.WithEndpoint(host)
-		cfg = cfg.WithS3ForcePathStyle(true)
-		os.s3svc = s3.New(session.New(), cfg)
+		cfg := aws.NewConfig().
+			WithRegion(os.region).
+			WithCredentials(creds).
+			WithEndpoint(host).
+			WithS3ForcePathStyle(true)
+		os.s3sess = session.New(cfg)
+		os.s3svc = s3.New(os.s3sess)
 	}
 	return os
 }
@@ -138,6 +144,7 @@ func (os *s3OS) NewSession(path string) OSSession {
 	}
 	if os.useFullAPI {
 		sess.s3svc = os.s3svc
+		sess.s3sess = os.s3sess
 	}
 	sess.fields = s3GetFields(sess)
 	return sess
@@ -291,34 +298,32 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reade
 	if err != nil {
 		return "", err
 	}
-	// TODO: This completely breaks the purpose of receiving an io.Reader. Switch
-	// to use S3 upload instead which seems to be the only way to avoid having to
-	// provide an io.ReadSeeker to memory or disk. https://github.com/aws/aws-sdk-go/issues/915
-	body, err := ioutil.ReadAll(data)
-	if err != nil {
-		return "", err
-	}
-	params := &s3.PutObjectInput{
-		Bucket:        bucket,  // Required
-		Key:           keyname, // Required
-		Metadata:      metadata,
-		Body:          bytes.NewReader(body),
-		ContentType:   aws.String(contentType),
-		ContentLength: aws.Int64(int64(len(body))),
+
+	uploader := s3manager.NewUploader(os.s3sess, func(u *s3manager.Uploader) {
+		u.Concurrency = 2
+		u.RequestOptions = append(u.RequestOptions, request.WithLogLevel(aws.LogDebug))
+	})
+	params := &s3manager.UploadInput{
+		Bucket:      bucket,
+		Key:         keyname,
+		Metadata:    metadata,
+		Body:        data,
+		ContentType: aws.String(contentType),
 	}
 	if timeout == 0 {
 		timeout = saveTimeout
 	}
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
-	resp, err := os.s3svc.PutObjectWithContext(ctx, params, request.WithLogLevel(aws.LogDebug))
+	resp, err := uploader.UploadWithContext(ctx, params)
 	cancel()
 	if err != nil {
 		return "", err
 	}
-	clog.Infof(ctx, "resp: %s", resp.String())
-	uri := os.getAbsURL(*keyname)
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 %s bytes=%v dur=%s", uri, len(body), time.Since(now))
-	return uri, err
+
+	clog.Infof(ctx, "resp: %+v", resp)
+	url := os.getAbsURL(*keyname)
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s dur=%s", url, time.Since(now))
+	return url, nil
 }
 
 func (os *s3Session) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
@@ -335,11 +340,10 @@ func (os *s3Session) SaveData(ctx context.Context, name string, data io.Reader, 
 		clog.Errorf(ctx, "Save S3 error err=%q", err)
 		return "", err
 	}
+
 	url := os.getAbsURL(path)
-
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s took=%s", tentativeURL, time.Since(started))
-
-	return url, err
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s dur=%s", tentativeURL, time.Since(started))
+	return url, nil
 }
 
 func (os *s3Session) getAbsURL(path string) string {
