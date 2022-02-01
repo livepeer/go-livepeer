@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -180,7 +181,7 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -1298,7 +1299,7 @@ func TestVerifier_Verify(t *testing.T) {
 	}
 	mem, ok := drivers.NewMemoryDriver(nil).NewSession("streamName").(*drivers.MemorySession)
 	assert.True(ok)
-	name, err := mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt1"), nil, 0)
+	name, err := mem.SaveData(context.TODO(), "/rendition/seg/1", strings.NewReader("attempt1"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt1"), mem.GetData(name))
 	sess.BroadcasterOS = mem
@@ -1310,7 +1311,7 @@ func TestVerifier_Verify(t *testing.T) {
 
 	// Now "insert" 2nd attempt into OS
 	// and ensure 1st attempt is what remains after verification
-	_, err = mem.SaveData(context.TODO(), "/rendition/seg/1", []byte("attempt2"), nil, 0)
+	_, err = mem.SaveData(context.TODO(), "/rendition/seg/1", strings.NewReader("attempt2"), nil, 0)
 	assert.Nil(err)
 	assert.Equal([]byte("attempt2"), mem.GetData(name))
 	renditionData = [][]byte{[]byte("attempt2")}

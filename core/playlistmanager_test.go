@@ -289,7 +289,7 @@ func TestCleanup(t *testing.T) {
 	testData := []byte{1, 2, 3, 4}
 
 	c := NewBasicPlaylistManager(mid, osSession, nil)
-	uri, err := c.GetOSSession().SaveData(context.TODO(), "testName", testData, nil, 0)
+	uri, err := c.GetOSSession().SaveData(context.TODO(), "testName", bytes.NewReader(testData), nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

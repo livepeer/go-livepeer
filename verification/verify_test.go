@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -340,9 +341,10 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Create memory session and save a test file
 	bos := drivers.NewMemoryDriver(nil).NewSession("foo")
-	data, err := ioutil.ReadFile("../server/test.flv")
+	file, err := os.Open("../server/test.flv")
 	require.Nil(err)
-	fname, err := bos.SaveData(context.TODO(), "test.ts", data, nil, 0)
+	defer file.Close()
+	fname, err := bos.SaveData(context.TODO(), "test.ts", file, nil, 0)
 	require.Nil(err)
 	memOS, ok := bos.(*drivers.MemorySession)
 	require.True(ok)
