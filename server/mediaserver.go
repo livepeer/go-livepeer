@@ -1438,7 +1438,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
-			_, err = sess.SaveData(ctx, fileName, mpl.Encode().Bytes(), nil, 0)
+			_, err = sess.SaveData(ctx, fileName, mpl.Encode(), nil, 0)
 			clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", fileName, time.Since(nows))
 			if err != nil {
 				clog.Errorf(ctx, "Error saving finalized json playlist to store err=%q", err)
@@ -1447,7 +1447,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			}
 		}
 		nows := time.Now()
-		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode().Bytes(), nil, 0)
+		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode(), nil, 0)
 		clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", "index.m3u8", time.Since(nows))
 		if err != nil {
 			clog.Errorf(ctx, "Error saving playlist to store err=%q", err)
