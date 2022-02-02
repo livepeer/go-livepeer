@@ -48,6 +48,7 @@ const (
 
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
+	// 145x145 is the lowest resolution supported by NVENC on Windows
 	Capability_H264: {
 		inVideoData: testSegment_H264,
 		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},

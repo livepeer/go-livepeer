@@ -156,7 +156,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	}
 	ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
 	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
-	if n.Capabilities!=nil && !md.Caps.CompatibleWith(n.Capabilities.ToNetCapabilities()) {
+	if n.Capabilities != nil && !md.Caps.CompatibleWith(n.Capabilities.ToNetCapabilities()) {
 		clog.Errorf(ctx, "Requested capabilities for segment are not compatible with this node taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 		return
 	}
@@ -299,7 +299,10 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		glog.Errorf("err=%q", errZeroCapacity.Error())
 		return errZeroCapacity
 	}
-
+	// handle case of legacy Transcoder which do not advertise capabilities
+	if req.Capabilities == nil {
+		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
+	}
 	// blocks until stream is finished
 	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities)
 	return nil

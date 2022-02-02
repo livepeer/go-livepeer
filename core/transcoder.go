@@ -144,8 +144,8 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 			// check that capability is supported on all devices
 			for _, device := range devices {
 				t1 := NewNvidiaTranscoder(device)
-				// transcode in 3 sessions which is a maximum on consumer Nvidia GPU with official driver
-				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile}}
+				// transcode into 4 renditions
+				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile, capTest.outProfile}}
 				td, err := t1.Transcode(context.Background(), md)
 				t1.Stop()
 				if err != nil {
