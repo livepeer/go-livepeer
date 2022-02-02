@@ -417,8 +417,8 @@ github.com/leanovate/gopter v0.2.9/go.mod h1:U2L/78B+KVFIx2VmW6onHJQzXtFb+p5y3y2
 github.com/lib/pq v1.0.0/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cOQee+WqmaDOgGtP2oDMhcVvR4L0yA=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
-github.com/livepeer/livepeer-data v0.4.8 h1:dbv+rYLUIgWnNjEuUY3itUlL36sWk73euRwT5GhGwt0=
-github.com/livepeer/livepeer-data v0.4.8/go.mod h1:VIbJRdyH2Tas8EgLVkP79IPMepFDOv0dgHYLEZsCaf4=
+github.com/livepeer/livepeer-data v0.4.11 h1:Sv+ss8e4vcscnMWLxcRJ2g3sNIHyQ3RzCtgEelfGPzw=
+github.com/livepeer/livepeer-data v0.4.11/go.mod h1:VIbJRdyH2Tas8EgLVkP79IPMepFDOv0dgHYLEZsCaf4=
 github.com/livepeer/lpms v0.0.0-20220111151401-0eb91f2facdb h1:2EM2tlBmcnK6QiT5JjWyRVya5N2UXDT/1evaMVmTzTQ=
 github.com/livepeer/lpms v0.0.0-20220111151401-0eb91f2facdb/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
