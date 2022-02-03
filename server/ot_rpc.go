@@ -158,6 +158,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
 	if n.Capabilities != nil && !md.Caps.CompatibleWith(n.Capabilities.ToNetCapabilities()) {
 		clog.Errorf(ctx, "Requested capabilities for segment are not compatible with this node taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
 	data, err := drivers.GetSegmentData(ctx, notify.Url)
