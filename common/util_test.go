@@ -209,13 +209,13 @@ func TestVideoProfile_ProfileNameToValue(t *testing.T) {
 	outp := []ffmpeg.Profile{ffmpeg.ProfileNone, ffmpeg.ProfileH264Baseline, ffmpeg.ProfileH264Main, ffmpeg.ProfileH264High, ffmpeg.ProfileH264ConstrainedHigh}
 	assert.Len(inp, len(outp))
 	for i, profile := range inp {
-		p, err := EncoderProfileNameToValue(profile)
+		p, err := ffmpeg.EncoderProfileNameToValue(profile)
 		assert.Nil(err)
 		assert.Equal(outp[i], p)
 	}
-	p, _ := EncoderProfileNameToValue("none")
+	p, _ := ffmpeg.EncoderProfileNameToValue("none")
 	assert.Equal(ffmpeg.ProfileNone, p)
-	_, err := EncoderProfileNameToValue("invalid")
+	_, err := ffmpeg.EncoderProfileNameToValue("invalid")
 	assert.Equal(ErrProfName, err, "Could not get profile value")
 }
 

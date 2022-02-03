@@ -4,6 +4,7 @@ set -ex
 
 ROOT="${1:-$HOME}"
 ARCH="$(uname -m)"
+NPROC=${NPROC:-$(nproc)}
 
 if [[ $ARCH == "arm64" ]] && [[ $(uname) == "Darwin" ]]; then
   # Detect Apple Silicon
@@ -55,8 +56,8 @@ if [[ $(uname) != *"MSYS"* ]] && [[ ! $IS_M1 ]]; then
     rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
     cd "$ROOT/nasm-2.14.02"
     ./configure --prefix="$ROOT/compiled"
-    make
-    make install || echo "Installing docs fails but should be OK otherwise"
+    make -j$NPROC
+    make -j$NPROC install || echo "Installing docs fails but should be OK otherwise"
   fi
 fi
 
@@ -71,8 +72,8 @@ if [ ! -e "$ROOT/x264" ]; then
     git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
   fi
   ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli
-  make
-  make install-lib-static
+  make -j$NPROC
+  make -j$NPROC install-lib-static
 fi
 
 if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
@@ -83,8 +84,8 @@ if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
     git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
     cd build/linux/
     cmake -DCMAKE_INSTALL_PREFIX=$ROOT/compiled -G "Unix Makefiles" ../../source
-    make
-    make install
+    make -j$NPROC
+    make -j$NPROC install
   fi
   # VP8/9 support
   if [ ! -e "$ROOT/libvpx" ]; then
@@ -92,8 +93,8 @@ if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
     cd "$ROOT/libvpx"
     git checkout ab35ee100a38347433af24df05a5e1578172a2ae
     ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
-    make
-    make install
+    make -j$NPROC
+    make -j$NPROC install
   fi
 fi
 
@@ -102,7 +103,6 @@ DISABLE_FFMPEG_COMPONENTS=""
 EXTRA_LDFLAGS=""
 # all flags which should be present for production build, but should be replaced/removed for debug build
 DEV_FFMPEG_FLAGS="--disable-programs"
-FFMPEG_MAKE_EXTRA_ARGS=""
 
 if [ $(uname) == "Darwin" ]; then
   EXTRA_LDFLAGS="-framework CoreFoundation -framework Security"
@@ -129,7 +129,6 @@ if [[ $BUILD_TAGS == *"debug-video"* ]]; then
     DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
     DEV_FFMPEG_FLAGS+="--enable-shared --enable-debug=3 --disable-stripping --disable-optimizations --enable-encoder=libx265,libvpx_vp8,libvpx_vp9 "
     DEV_FFMPEG_FLAGS+="--enable-decoder=hevc,libvpx_vp8,libvpx_vp9 --enable-libx265 --enable-libvpx --enable-bsf=noise "
-    FFMPEG_MAKE_EXTRA_ARGS="-j4"
 else
     # disable all unnecessary features for production build
     DISABLE_FFMPEG_COMPONENTS+=" --disable-doc --disable-sdl2 --disable-iconv --disable-muxers --disable-demuxers --disable-parsers --disable-protocols "
@@ -159,6 +158,6 @@ fi
 
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" || $BUILD_TAGS == *"debug-video"* ]]; then
   cd "$ROOT/ffmpeg"
-  make $FFMPEG_MAKE_EXTRA_ARGS
-  make install
+  make -j$NPROC
+  make -j$NPROC install
 fi
