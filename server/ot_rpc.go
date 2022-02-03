@@ -42,6 +42,7 @@ const transcodingErrorMimeType = "livepeer/transcoding-error"
 var errSecret = errors.New("invalid secret")
 var errZeroCapacity = errors.New("zero capacity")
 var errInterrupted = errors.New("execution interrupted")
+var errCapabilities = errors.New("incompatible segment capabilities")
 
 // Standalone Transcoder
 
@@ -157,8 +158,8 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
 	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
 	if n.Capabilities != nil && !md.Caps.CompatibleWith(n.Capabilities.ToNetCapabilities()) {
-		clog.Errorf(ctx, "Requested capabilities for segment are not compatible with this node taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
-		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		clog.Errorf(ctx, "Requested capabilities for segment are not compatible with this node taskId=%d url=%s err=%q", notify.TaskId, notify.Url, errCapabilities)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
 		return
 	}
 	data, err := drivers.GetSegmentData(ctx, notify.Url)
