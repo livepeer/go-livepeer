@@ -76,8 +76,8 @@ if [ ! -e "$ROOT/x264" ]; then
 fi
 
 if [[ $(uname) == "Linux" && $BUILD_TAGS == *"debug-video"* ]]; then
+  sudo apt-get install -y libnuma-dev cmake
   if [ ! -e "$ROOT/x265" ]; then
-    sudo apt-get install -y libnuma-dev cmake
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
     cd "$ROOT/x265"
     git checkout 17839cc0dc5a389e27810944ae2128a65ac39318
@@ -139,7 +139,7 @@ fi
 if [ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout e0eebeeeddf863f72da0232f9dddc05200340560
+  git checkout 1ece0e65b1ce2e330e673df0cda23b904979a1a6
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \

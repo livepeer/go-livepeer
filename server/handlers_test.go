@@ -892,6 +892,139 @@ func TestVoteHandler(t *testing.T) {
 	assert.Equal((types.NewTx(&types.DynamicFeeTx{})).Hash().Bytes(), body)
 }
 
+func TestWithdrawFeesHandler_MissingClient(t *testing.T) {
+	handler := withdrawFeesHandler(nil, stubChainIdProvider)
+
+	resp := httpPostFormResp(handler, nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawFeesHandler_InvalidAmount(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubChainIdProvider)
+
+	form := url.Values{
+		"amount": {"foo"},
+	}
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(strings.TrimSpace(string(body)), "invalid amount")
+}
+
+func TestWithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubChainIdProvider)
+
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, errors.New("WithdrawFees error"))
+
+	form := url.Values{
+		"amount": {"50"},
+	}
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute WithdrawFees: WithdrawFees error", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawFeesHandler_TransactionWaitError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubChainIdProvider)
+
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx").Return(errors.New("CheckTx error"))
+
+	form := url.Values{
+		"amount": {"50"},
+	}
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute WithdrawFees: CheckTx error", strings.TrimSpace(string(body)))
+}
+
+func TestWithdrawFeesHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubChainIdProvider)
+
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	form := url.Values{
+		"amount": {"50"},
+	}
+	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func stubChainIdProvider() (int64, error) {
+	return 12345, nil
+}
+
+func TestL1WithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
+
+	client.On("L1WithdrawFees").Return(nil, errors.New("WithdrawFees error"))
+
+	resp := httpPostFormResp(handler, nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute WithdrawFees: WithdrawFees error", strings.TrimSpace(string(body)))
+}
+
+func TestL1WithdrawFeesHandler_TransactionWaitError(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
+
+	client.On("L1WithdrawFees").Return(nil, nil)
+	client.On("CheckTx").Return(errors.New("CheckTx error"))
+
+	resp := httpPostFormResp(handler, nil)
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal("could not execute WithdrawFees: CheckTx error", strings.TrimSpace(string(body)))
+}
+
+func TestL1WithdrawFeesHandler_Success(t *testing.T) {
+	client := &eth.MockClient{}
+	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
+
+	client.On("L1WithdrawFees").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	resp := httpPostFormResp(handler, nil)
+
+	assert := assert.New(t)
+	assert.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func stubL1ChainIdProvider() (int64, error) {
+	return 1, nil
+}
+
 func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {
 	headers := map[string]string{
 		"Content-Type": "application/x-www-form-urlencoded",

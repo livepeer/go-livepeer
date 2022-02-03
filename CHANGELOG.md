@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.26
+
+*January 24th 2022*
+
+This release adds support for a new L2 Arbitrum Rinkeby contract deployment used for the [Confluence](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md) testnet. **If you are planning on participating in the testnet you should upgrade to this release.**
+
+This release also includes a small update for the node to fail fast if the config file specified is invalid.
+
+### Features ⚒
+
+#### General
+
+- [#2198](https://github.com/livepeer/go-livepeer/pull/2198) Add fail-fast approach in case of incorrect config file (@leszko)
+- [#2180](https://github.com/livepeer/go-livepeer/pull/2180) Generate contract bindings related to L2 Arbitrum upgrade (@leszko)
+- [#2204](https://github.com/livepeer/go-livepeer/pull/2204) Support both L1 and L2 contract interfaces (@leszko)
+- [#2202](https://github.com/livepeer/go-livepeer/pull/2202) Add `arbitrum-one-rinkeby` network (@leszko)
+
+#### Broadcaster
+
+- [#2188](https://github.com/livepeer/go-livepeer/pull/2188) Include pending Os in the discovery mechanism (@leszko)
+
 ## v0.5.25
 
 *January 12th 2022*

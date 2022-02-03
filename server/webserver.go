@@ -675,28 +675,25 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 	})
 
-	mux.HandleFunc("/withdrawFees", func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.Eth != nil {
-			tx, err := s.LivepeerNode.Eth.WithdrawFees()
-			if err != nil {
-				glog.Error(err)
-				return
-			}
-
-			err = s.LivepeerNode.Eth.CheckTx(tx)
-			if err != nil {
-				glog.Error(err)
-				return
-			}
+	// for L1 contracts backwards-compatibility
+	getChainId := func() (int64, error) {
+		if s.LivepeerNode.Database == nil {
+			return 0, errors.New("missing Livepeer database")
 		}
-	})
+		chainId, err := s.LivepeerNode.Database.ChainID()
+		if err != nil {
+			return 0, errors.New("Error getting eth network ID")
+		}
+		return chainId.Int64(), nil
+	}
+	mux.Handle("/withdrawFees", withdrawFeesHandler(s.LivepeerNode.Eth, getChainId))
 
 	mux.HandleFunc("/claimEarnings", func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.Eth != nil {
 			claim := func() error {
 				init, err := s.LivepeerNode.Eth.CurrentRoundInitialized()
 				if err != nil {
-					glog.Errorf("Trying to claim but round not initalized.")
+					glog.Errorf("Trying to claim but round not initialized.")
 					return err
 				}
 				if !init {
@@ -1167,11 +1164,9 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 
 	mux.Handle("/minGasPrice", minGasPriceHandler(s.LivepeerNode.Eth))
 	mux.Handle("/setMinGasPrice", mustHaveFormParams(setMinGasPriceHandler(s.LivepeerNode.Eth), "minGasPrice"))
-
 	mux.Handle("/currentBlock", currentBlockHandler(s.LivepeerNode.Database))
 
 	// TicketBroker
-
 	mux.Handle("/fundDepositAndReserve", mustHaveFormParams(fundDepositAndReserveHandler(s.LivepeerNode.Eth), "depositAmount", "reserveAmount"))
 	mux.Handle("/fundDeposit", mustHaveFormParams(fundDepositHandler(s.LivepeerNode.Eth), "amount"))
 	mux.Handle("/unlock", unlockHandler(s.LivepeerNode.Eth))

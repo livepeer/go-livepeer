@@ -171,9 +171,10 @@ func (w *wizard) doCLIOpt(choice string, options []wizardOpt) {
 
 var RinkebyChainID = "4"
 var DevenvChainID = "54321"
+var ArbitrumTestnetChainID = "421611"
 
 func (w *wizard) checkNet() {
 	nID := httpGet(fmt.Sprintf("http://%v:%v/EthChainID", w.host, w.httpPort))
-	w.testnet = nID == RinkebyChainID || nID == DevenvChainID
+	w.testnet = nID == RinkebyChainID || nID == DevenvChainID || nID == ArbitrumTestnetChainID
 	w.offchain = nID == "0"
 }
