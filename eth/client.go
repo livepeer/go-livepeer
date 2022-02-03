@@ -133,6 +133,8 @@ type client struct {
 	verifierAddr        ethcommon.Address
 	faucetAddr          ethcommon.Address
 
+	transactOpts *bind.TransactOpts
+
 	// Embedded contract sessions
 	*contracts.ControllerSession
 	*contracts.LivepeerTokenSession
@@ -174,6 +176,8 @@ func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
 }
 
 func (c *client) setContracts(opts *bind.TransactOpts) error {
+	c.transactOpts = opts
+
 	controller, err := contracts.NewController(c.controllerAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating Controller binding: %v", err)
@@ -768,7 +772,7 @@ func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Tra
 		return nil, err
 	}
 
-	return poll.Vote(nil, choiceID)
+	return poll.Vote(c.transactOpts, choiceID)
 }
 
 func (c *client) Reward() (*types.Transaction, error) {
