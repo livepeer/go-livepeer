@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.27
+
+*February 3rd 2022*
+
+This release fixes a bug with the voting option in `livepeer_cli` that caused the node to crash as well as a few other small updates. **If you need to vote in the recently created [LIP-73 poll](https://explorer.livepeer.org/voting/0xd00a506956896c8dfd5dfed0133f870cbe8e49f2) with your node's keystore based wallet using livepeer_cli you should upgrade to this release**.
+
+### Features ⚒
+
+#### General
+
+- [#2196](https://github.com/livepeer/go-livepeer/pull/2196) Add support for Mist runtime environment (@hjpotter92)
+- [#2212](https://github.com/livepeer/go-livepeer/pull/2212) y/n confirmation when sending a transaction via the CLI (@noisersup)
+- [#2218](https://github.com/livepeer/go-livepeer/pull/2218) Display http status codes in livepeer_cli (@noisersup)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#2216](https://github.com/livepeer/go-livepeer/pull/2216) Fix Accept Multiline message on Windows (@leszko)
+- [#2227](https://github.com/livepeer/go-livepeer/pull/2227) Fix nil pointer in client.Vote() (@leszko)
+
 ## v0.5.26
 
 *January 24th 2022*
