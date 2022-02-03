@@ -7,7 +7,7 @@ ENV LIBRARY_PATH /usr/local/cuda/lib64
 
 RUN apt-get update \
   && apt-get install -y software-properties-common curl apt-transport-https \
-  && curl https://dl.google.com/go/go1.15.5.linux-amd64.tar.gz | tar -C /usr/local -xz \
+  && curl https://dl.google.com/go/go1.17.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
   && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
   && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
   && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
