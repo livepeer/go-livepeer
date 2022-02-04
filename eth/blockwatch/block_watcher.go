@@ -45,7 +45,6 @@ type Config struct {
 	Store               MiniHeaderStore
 	PollingInterval     time.Duration
 	StartBlockDepth     rpc.BlockNumber
-	BackfillStartBlock  *big.Int
 	BlockRetentionLimit int
 	WithLogs            bool
 	Topics              []common.Hash
@@ -58,7 +57,6 @@ type Config struct {
 type Watcher struct {
 	blockRetentionLimit int
 	startBlockDepth     rpc.BlockNumber
-	backfillStartBlock  *big.Int
 	stack               *Stack
 	client              Client
 	blockFeed           event.Feed
@@ -79,7 +77,6 @@ func New(config Config) *Watcher {
 		pollingInterval:     config.PollingInterval,
 		blockRetentionLimit: config.BlockRetentionLimit,
 		startBlockDepth:     config.StartBlockDepth,
-		backfillStartBlock:  config.BackfillStartBlock,
 		stack:               stack,
 		client:              config.Client,
 		withLogs:            config.WithLogs,
@@ -330,9 +327,7 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 	}
 	latestBlockNum := int(latestBlock.Number.Int64())
 
-	if w.backfillStartBlock != nil {
-		startBlockNum = int(w.backfillStartBlock.Int64())
-	} else if latestRetainedBlock != nil {
+	if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
 		// Events for latestRetainedBlock already processed, start at latestRetainedBlock + 1
 		startBlockNum = latestRetainedBlockNum + 1
