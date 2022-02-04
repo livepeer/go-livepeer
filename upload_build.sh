@@ -60,10 +60,10 @@ BENCH="./livepeer_bench${EXT}"
 ROUTER="./livepeer_router${EXT}"
 
 mkdir $BASE
-cp $NODE $BASE
-cp $CLI $BASE
-cp $BENCH $BASE
-cp $ROUTER $BASE
+mv $NODE $BASE
+mv $CLI $BASE
+mv $BENCH $BASE
+mv $ROUTER $BASE
 
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $PLATFORM == "windows" ]]; then
