@@ -15,6 +15,9 @@ jobs:
     steps:
     - name: Set build environment
       run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: "12.4"
     - name: Checkout
       uses: actions/checkout@v2
       with:
