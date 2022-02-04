@@ -61,6 +61,7 @@ jobs:
         MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
         MACOS_CERTIFICATE_PW: ${{ secrets.MACOS_CERTIFICATE_PW }}
       run: |
+        set -euo pipefail
         TEMP_PASSWORD=$(uuidgen)
         echo $MACOS_CERTIFICATE_BASE64 | base64 --decode > certificate.p12
         security create-keychain -p $TEMP_PASSWORD build.keychain
