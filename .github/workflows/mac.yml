@@ -33,7 +33,7 @@ jobs:
       uses: actions/cache@v2.1.5
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
+        key: x${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.arch }}-go-
     - name: Cache ffmpeg
@@ -41,7 +41,7 @@ jobs:
       uses: actions/cache@v2.1.5
       with:
         path: ~/compiled
-        key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+        key: x${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
         restore-keys: |
           ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
     - name: Install dependencies
