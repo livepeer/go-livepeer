@@ -66,7 +66,7 @@ jobs:
         security create-keychain -p $TEMP_PASSWORD build.keychain
         security default-keychain -s build.keychain
         security unlock-keychain -p $TEMP_PASSWORD build.keychain
-        security import certificate.cer -k build.keychain -P $MACOS_CERTIFICATE_PW -T /usr/bin/codesign
+        security import certificate.cer -k build.keychain -T /usr/bin/codesign
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $TEMP_PASSWORD build.keychain
         /usr/bin/codesign --force -s $MACOS_CERTIFICATE_ID livepeer livepeer_cli livepeer_bench livepeer_router
     - name: Upload build
