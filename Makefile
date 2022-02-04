@@ -26,6 +26,7 @@ ifeq ($(uname_s),Darwin)
 	ifeq ($(GOARCH),arm64)
 		cgo_cflags += --target=arm64-apple-macos11
 		cgo_ldflags += --target=arm64-apple-macos11
+		ldflags += -s
 	endif
 endif
 
