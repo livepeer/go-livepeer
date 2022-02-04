@@ -24,8 +24,8 @@ uname_s := $(shell uname -s)
 ifeq ($(uname_s),Darwin)
 		cgo_ldflags += -framework CoreFoundation -framework Security
 	ifeq ($(GOARCH),arm64)
-		cgo_cflags += --target=arm64-apple-macos11 -mmacosx-version-min=11.0
-		cgo_ldflags += --target=arm64-apple-macos11 -mmacosx-version-min=11.0
+		cgo_cflags += --target=arm64-apple-macos11
+		cgo_ldflags += --target=arm64-apple-macos11
 		ldflags += -s
 	endif
 endif

@@ -15,8 +15,8 @@ if [[ $ARCH == "arm64" ]] && [[ $(uname) == "Darwin" ]]; then
 fi
 if [[ $ARCH == "x86_64" ]] && [[ $(uname) == "Darwin" ]] && [[ "${GOARCH:-}" == "arm64" ]]; then
   echo "cross-compiling darwin-arm64"
-  EXTRA_CFLAGS="$EXTRA_CFLAGS --target=arm64-apple-macos11 -mmacosx-version-min=11.0"
-  EXTRA_LDFLAGS="$EXTRA_LDFLAGS --target=arm64-apple-macos11 -mmacosx-version-min=11.0 -s"
+  EXTRA_CFLAGS="$EXTRA_CFLAGS --target=arm64-apple-macos11"
+  EXTRA_LDFLAGS="$EXTRA_LDFLAGS --target=arm64-apple-macos11 -s"
   HOST_OS="--host=aarch64-darwin"
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile"
   IS_M1=1
