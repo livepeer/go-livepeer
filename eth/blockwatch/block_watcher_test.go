@@ -214,48 +214,6 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 	assert.Equal(t, big.NewInt(30), headers[0].Number)
 }
 
-func TestGetMissedEventsToBackfill_BackfillStartBlock(t *testing.T) {
-	// Fixture will return block 30 as the tip of the chain
-	fakeClient, err := newFakeClient("testdata/fake_client_fast_sync_fixture.json")
-	require.NoError(t, err)
-
-	store := &stubMiniHeaderStore{}
-
-	config.Store = store
-	config.Client = fakeClient
-	config.BackfillStartBlock = big.NewInt(0)
-	watcher := New(config)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	events, err := watcher.getMissedEventsToBackfill(ctx)
-	require.NoError(t, err)
-	assert.Len(t, events, 1)
-
-	// Check that block 30 is now in the DB as it is the last processed block
-	headers, err := store.FindAllMiniHeadersSortedByNumber()
-	require.NoError(t, err)
-	require.Len(t, headers, 1)
-	assert.Equal(t, big.NewInt(30), headers[0].Number)
-
-	store = &stubMiniHeaderStore{}
-	config.Store = store
-	config.BackfillStartBlock = big.NewInt(5)
-	watcher = New(config)
-	events, err = watcher.getMissedEventsToBackfill(ctx)
-	require.NoError(t, err)
-	assert.Len(t, events, 1)
-
-	// Check that block 30 is now in the DB as it is the last processed block
-	headers, err = store.FindAllMiniHeadersSortedByNumber()
-	require.NoError(t, err)
-	require.Len(t, headers, 1)
-	assert.Equal(t, big.NewInt(30), headers[0].Number)
-
-	config.BackfillStartBlock = nil
-}
-
 func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {
 	// Fixture will return block 5 as the tip of the chain
 	fakeClient, err := newFakeClient("testdata/fake_client_basic_fixture.json")

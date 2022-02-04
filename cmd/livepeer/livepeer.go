@@ -482,28 +482,10 @@ func main() {
 		}
 		topics := watchers.FilterTopics()
 
-		// Determine backfilling start block
-		originalLastSeenBlock, err := dbh.LastSeenBlock()
-		if err != nil {
-			glog.Errorf("db: failed to retrieve latest retained block: %v", err)
-			return
-		}
-		currentRoundStartBlock, err := client.CurrentRoundStartBlock()
-		if err != nil {
-			glog.Errorf("eth: failed to retrieve current round start block: %v", err)
-			return
-		}
-
-		var blockWatcherBackfillStartBlock *big.Int
-		if originalLastSeenBlock == nil || originalLastSeenBlock.Cmp(currentRoundStartBlock) < 0 {
-			blockWatcherBackfillStartBlock = currentRoundStartBlock
-		}
-
 		blockWatcherCfg := blockwatch.Config{
 			Store:               n.Database,
 			PollingInterval:     blockPollingTime,
 			StartBlockDepth:     rpc.LatestBlockNumber,
-			BackfillStartBlock:  blockWatcherBackfillStartBlock,
 			BlockRetentionLimit: blockWatcherRetentionLimit,
 			WithLogs:            true,
 			Topics:              topics,
