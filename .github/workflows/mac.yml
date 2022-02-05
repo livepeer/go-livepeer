@@ -17,6 +17,7 @@ jobs:
       run: |
         echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
         echo "GOOS=darwin" >> $GITHUB_ENV
+        echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v2
       with:
