@@ -58,6 +58,10 @@ jobs:
         ./ci_env.sh make 
       env:
         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-darwin-${{ matrix.arch }}-unsigned
+        path: livepeer
     - name: Sign binaries
       env:
         MACOS_CERTIFICATE_ID: ${{ secrets.MACOS_CERTIFICATE_ID }}
@@ -81,4 +85,50 @@ jobs:
         GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
         DISCORD_URL: ${{ secrets.DISCORD_URL }}
       run: ./upload_build.sh
- 
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-darwin-${{ matrix.arch }}
+        path: ./livepeer-darwin-${{ matrix.arch }}/livepeer
+
+  build_universal:
+    needs: [build]
+    runs-on: macos-latest
+    steps:
+    - uses: actions/download-artifact@v2
+      with:
+        name: livepeer-darwin-amd64
+        path: ./livepeer-darwin-amd64/livepeer
+    - uses: actions/download-artifact@v2
+      with:
+        name: livepeer-darwin-arm64
+        path: ./livepeer-darwin-arm64/livepeer
+    - name: combine into universal binary
+      run:
+        lipo -create -output livepeer-universal ./livepeer-darwin-amd64/livepeer ./livepeer-darwin-arm64/livepeer
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-darwin-${{ matrix.arch }}
+        path: ./livepeer-darwin-${{ matrix.arch }}/livepeer
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-universal-unsigned
+        path: ./livepeer-universal
+    - name: Sign binary
+      env:
+        MACOS_CERTIFICATE_ID: ${{ secrets.MACOS_CERTIFICATE_ID }}
+        MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+        MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      run: |
+        set -euo pipefail
+        TEMP_PASSWORD=$(uuidgen)
+        echo $MACOS_CERTIFICATE_BASE64 | base64 --decode > certificate.cer
+        security create-keychain -p $TEMP_PASSWORD build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p $TEMP_PASSWORD build.keychain
+        security import certificate.cer -f pkcs12 -k build.keychain -T /usr/bin/codesign -P $MACOS_CERTIFICATE_PASSWORD
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $TEMP_PASSWORD build.keychain
+        /usr/bin/codesign --force -s $MACOS_CERTIFICATE_ID livepeer-universal
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-universal-signed
+        path: ./livepeer-universal
