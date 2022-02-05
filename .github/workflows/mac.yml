@@ -49,6 +49,14 @@ jobs:
     - name: Install ffmpeg
       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
       run: ./install_ffmpeg.sh
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-ffmpeg-${{ matrix.arch }}
+        path: ~/compiled/bin/ffmpeg
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-x264-${{ matrix.arch }}
+        path: ~/x264/x264
     - name: Build binaries
       run: |
         export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig

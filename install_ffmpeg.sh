@@ -73,7 +73,7 @@ if [ ! -e "$ROOT/x264" ]; then
     # older git master, does not compile on Apple Silicon
     git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
   fi
-  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS" --extra-ldflags="$EXTRA_LDFLAGS"
+  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS" --extra-ldflags="$EXTRA_LDFLAGS"
   make -j$NPROC
   make -j$NPROC install-lib-static
 fi
@@ -103,7 +103,6 @@ fi
 DISABLE_FFMPEG_COMPONENTS=""
 EXTRA_FFMPEG_LDFLAGS="$EXTRA_LDFLAGS"
 # all flags which should be present for production build, but should be replaced/removed for debug build
-DEV_FFMPEG_FLAGS="--disable-programs"
 
 if [ $(uname) == "Darwin" ]; then
   EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS"
