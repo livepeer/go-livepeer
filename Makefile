@@ -31,7 +31,7 @@ endif
 
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer/*.go
+	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -x -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
