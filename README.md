@@ -10,14 +10,12 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE.md)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg?style=flat-square)](CONTRIBUTING.md)
 
-The Livepeer project aims to deliver a live video streaming network protocol
-that is fully decentralized, highly scalable, crypto token incentivized, and
-results in a solution which can serve as the live media layer in the
-decentralized development (web3) stack. You can learn more about the protocol
-and economic incentives by reading
-[our docs](https://docs.livepeer.org/protocol/overview).
+The Livepeer project aims to deliver a live video-streaming network protocol
+that is fully decentralized, highly scalable and crypto-token incentivized to
+serve as the live media layer in the decentralized development (Web3) stack.
+[Read our documentation](https://docs.livepeer.org/protocol/overview) to learn more about the protocol and its economic incentives.
 
-go-livepeer is a Go implementation of the [Livepeer](https://livepeer.org) protocol which powers the Livepeer Network. Specifically, go-livepeer contains implementations of broadcaster, orchestrator, and transcoder nodes on the Livepeer Network
+`go-livepeer` is a Go implementation of the [Livepeer](https://livepeer.org) protocol which powers the Livepeer Network. Specifically, `go-livepeer` contains implementations of Broadcaster, Orchestrator, and Transcoder nodes (roles) in the Livepeer Network ecosystem.
 
 <!-- hide-on-docup-start -->
 
@@ -33,8 +31,7 @@ go-livepeer is a Go implementation of the [Livepeer](https://livepeer.org) proto
 
 ## Requirements
 
-This project requires `go`. A unix shell is also
-required.
+This project requires `go` and a unix shell.
 
 - [Installing and Managing Go](doc/go.md)
 
@@ -47,12 +44,11 @@ Next, follow [the guide to set up a private ETH network with the Livepeer protoc
 
 ## Contributing
 
-Thanks for your interest in contributing to go-livepeer. There are many ways you can contribute.
-To start, take a few minutes to look over the official guide:
+Thanks for your interest in contributing to go-livepeer. There are many ways you can contribute to the project, even non-developers.
 
-**[Read the "Contributing to go-livepeer" Guide &raquo;](CONTRIBUTING.md)**
+To start, take a few minutes to **[read the "Contributing to go-livepeer" guide](CONTRIBUTING.md)**.
 
-We happily await your pull requests and/or involvement in our
+We look forward to your pull requests and / or involvement in our
 [issues page](https://github.com/livepeer/go-livepeer/issues) and hope to see
 your username on our
 [list of contributors](https://github.com/livepeer/go-livepeer/graphs/contributors)
