@@ -68,7 +68,7 @@ jobs:
         name: livepeer-darwin-${{ matrix.arch }}-unsigned
         path: livepeer
     - name: build hello-world
-      run: go build hello-world.go
+      run: CGO_CFLAGS=--target=arm64-apple-macos11 CGO_LDFLAGS=--target=arm64-apple-macos11 go build hello-world.go
     - uses: actions/upload-artifact@v2
       with:
         name: livepeer-darwin-${{ matrix.arch }}-hello-world
