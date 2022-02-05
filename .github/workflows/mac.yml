@@ -14,7 +14,9 @@ jobs:
     runs-on: macos-latest
     steps:
     - name: Set build environment
-      run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+      run: |
+        echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+        echo "GOOS=darwin" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v2
       with:
