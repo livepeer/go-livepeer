@@ -67,6 +67,12 @@ jobs:
       with:
         name: livepeer-darwin-${{ matrix.arch }}-unsigned
         path: livepeer
+    - name: build hello-world
+      run: go build hello-world.go
+    - uses: actions/upload-artifact@v2
+      with:
+        name: livepeer-darwin-${{ matrix.arch }}-hello-world
+        path: hello-world
     - name: Sign binaries
       env:
         MACOS_CERTIFICATE_ID: ${{ secrets.MACOS_CERTIFICATE_ID }}
