@@ -86,7 +86,7 @@ jobs:
         /usr/bin/codesign --force -s $MACOS_CERTIFICATE_ID -o runtime livepeer livepeer_cli livepeer_bench livepeer_router
         xcrun altool --store-password-in-keychain-item altool \
           -u $MACOS_ACCOUNT_EMAIL \
-          -p MACOS_ACCOUNT_PASSWORD
+          -p $MACOS_ACCOUNT_PASSWORD
         xcrun altool --notarize-app \
             --primary-bundle-id org.livepeer.go-livepeer \
             --username $MACOS_ACCOUNT_EMAIL \
