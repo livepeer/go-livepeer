@@ -57,19 +57,10 @@ if [ $(uname) != "Darwin" ]; then
 fi
 
 if [[ $(uname) != *"MSYS"* ]] && [[ ! $IS_M1 ]]; then
-  if [ ! -e "$ROOT/nasm-2.14.02" ]; then
-    # sudo apt-get -y install asciidoc xmlto # this fails :(
-    cd "$ROOT"
-    curl -o nasm-2.14.02.tar.gz https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.gz
-    echo 'b34bae344a3f2ed93b2ca7bf25f1ed3fb12da89eeda6096e3551fd66adeae9fc  nasm-2.14.02.tar.gz' > nasm-2.14.02.tar.gz.sha256
-    sha256sum -c nasm-2.14.02.tar.gz.sha256
-    tar xf nasm-2.14.02.tar.gz
-    rm nasm-2.14.02.tar.gz nasm-2.14.02.tar.gz.sha256
-    cd "$ROOT/nasm-2.14.02"
-    ./configure --prefix="$ROOT/compiled"
-    make -j$NPROC
-    make -j$NPROC install || echo "Installing docs fails but should be OK otherwise"
+  if ! which nasm >/dev/null; then
+    "Could not find nasm on path, needed to build ffmpeg"
   fi
+
 fi
 
 if [ ! -e "$ROOT/x264" ]; then
@@ -115,7 +106,7 @@ EXTRA_FFMPEG_LDFLAGS="$EXTRA_LDFLAGS"
 DEV_FFMPEG_FLAGS="--disable-programs"
 
 if [ $(uname) == "Darwin" ]; then
-  EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS -framework CoreFoundation -framework Security"
+  EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS"
 else
   # If we have clang, we can compile with CUDA support!
   if which clang > /dev/null; then
