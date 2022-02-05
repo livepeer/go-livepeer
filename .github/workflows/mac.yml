@@ -72,6 +72,8 @@ jobs:
         MACOS_CERTIFICATE_ID: ${{ secrets.MACOS_CERTIFICATE_ID }}
         MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
         MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        MACOS_ACCOUNT_EMAIL: ${{ secrets.MACOS_ACCOUNT_EMAIL }}
+        MACOS_ACCOUNT_PASSWORD: ${{ secrets.MACOS_ACCOUNT_PASSWORD }}
       run: |
         set -euo pipefail
         TEMP_PASSWORD=$(uuidgen)
@@ -81,7 +83,15 @@ jobs:
         security unlock-keychain -p $TEMP_PASSWORD build.keychain
         security import certificate.cer -f pkcs12 -k build.keychain -T /usr/bin/codesign -P $MACOS_CERTIFICATE_PASSWORD
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $TEMP_PASSWORD build.keychain
-        /usr/bin/codesign --force -s $MACOS_CERTIFICATE_ID livepeer livepeer_cli livepeer_bench livepeer_router
+        /usr/bin/codesign --force -s $MACOS_CERTIFICATE_ID -o runtime livepeer livepeer_cli livepeer_bench livepeer_router
+        xcrun altool --store-password-in-keychain-item altool \
+          -u $MACOS_ACCOUNT_EMAIL \
+          -p MACOS_ACCOUNT_PASSWORD
+        xcrun altool --notarize-app \
+            --primary-bundle-id org.livepeer.go-livepeer \
+            --username $MACOS_ACCOUNT_EMAIL \
+            --password "@keychain:altool" \
+            --file ./livepeer
     - name: Upload build
       if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
       env: 
