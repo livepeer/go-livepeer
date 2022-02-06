@@ -117,7 +117,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		if err != nil && !errors.Is(err, context.Canceled) {
 			clog.Errorf(ctx, "err=%q", err)
 			if monitor.Enabled {
-				monitor.LogDiscoveryError(err.Error())
+				monitor.LogDiscoveryError(ctx, uri.String(), err.Error())
 			}
 		}
 		errCh <- err
@@ -162,7 +162,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 	}
 
-	glog.Infof("Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
+	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
 		len(infos), nbResp, len(uris), timeout)
 	return infos, nil
 }

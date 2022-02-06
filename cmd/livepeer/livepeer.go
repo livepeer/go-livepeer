@@ -147,6 +147,8 @@ func main() {
 	reward := flag.Bool("reward", false, "Set to true to run a reward service")
 	// Metrics & logging:
 	monitor := flag.Bool("monitor", false, "Set to true to send performance metrics")
+	metricsPerStream := flag.Bool("metricsPerStream", false, "Set to true to group performance metrics per stream")
+	metricsExposeClientIP := flag.Bool("metricsClientIP", false, "Set to true to expose client's IP in metrics")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
 	metadataQueueUri := flag.String("metadataQueueUri", "", "URI for message broker to send operation metadata")
@@ -354,7 +356,12 @@ func main() {
 	lpmon.NodeID += hn
 
 	if *monitor {
+		if *metricsExposeClientIP {
+			*metricsPerStream = true
+		}
 		lpmon.Enabled = true
+		lpmon.PerStreamMetrics = *metricsPerStream
+		lpmon.ExposeClientIP = *metricsExposeClientIP
 		nodeType := lpmon.Default
 		switch n.NodeType {
 		case core.BroadcasterNode:

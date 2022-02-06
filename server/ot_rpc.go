@@ -283,7 +283,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
 	if monitor.Enabled {
-		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur)
+		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur, "")
 	}
 }
 

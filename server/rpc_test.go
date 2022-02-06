@@ -129,7 +129,7 @@ func (r *stubOrchestrator) StreamIDs(jobID string) ([]core.StreamID, error) {
 	return []core.StreamID{}, nil
 }
 
-func (r *stubOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+func (r *stubOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
 	return nil
 }
 
@@ -1294,7 +1294,7 @@ func (o *mockOrchestrator) ServeTranscoder(stream net.Transcoder_RegisterTransco
 func (o *mockOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscoderResult) {
 	o.Called(job, res)
 }
-func (o *mockOrchestrator) ProcessPayment(payment net.Payment, manifestID core.ManifestID) error {
+func (o *mockOrchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error {
 	args := o.Called(payment, manifestID)
 	return args.Error(0)
 }

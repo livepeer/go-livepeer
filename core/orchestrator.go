@@ -100,7 +100,7 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
-func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID ManifestID) error {
+func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
 	}
@@ -167,7 +167,7 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			tsp.SenderNonce,
 		)
 
-		glog.V(common.DEBUG).Infof("Receiving ticket sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
+		clog.V(common.DEBUG).Infof(ctx, "Receiving ticket sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
@@ -175,10 +175,10 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 			seed,
 		)
 		if err != nil {
-			glog.Errorf("Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
 			if monitor.Enabled {
-				monitor.PaymentRecvError(err.Error())
+				monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
 			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
@@ -195,22 +195,22 @@ func (orch *orchestrator) ProcessPayment(payment net.Payment, manifestID Manifes
 		}
 
 		if won {
-			glog.V(common.DEBUG).Infof("Received winning ticket sessionID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
+			clog.V(common.DEBUG).Infof(ctx, "Received winning ticket sessionID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			totalWinningTickets++
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
-					glog.Errorf("error redeeming ticket sessionID=%v recipientRandHash=%x senderNonce=%v err=%q", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
+					clog.Errorf(ctx, "error redeeming ticket sessionID=%v recipientRandHash=%x senderNonce=%v err=%q", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 				}
 			}(ticket, tsp.Sig, seed)
 		}
 	}
 
 	if monitor.Enabled {
-		monitor.TicketValueRecv(totalEV)
-		monitor.TicketsRecv(totalTickets)
-		monitor.WinningTicketsRecv(totalWinningTickets)
+		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
+		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
+		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
 	}
 
 	if receiveErr != nil {

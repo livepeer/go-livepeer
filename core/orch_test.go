@@ -700,7 +700,7 @@ func TestProcessPayment_GivenRecipientError_ReturnsNil(t *testing.T) {
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, nil)
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 
 	assert := assert.New(t)
 	assert.Nil(err)
@@ -716,7 +716,7 @@ func TestProcessPayment_GivenNoSender_ReturnsError(t *testing.T) {
 
 	protoPayment.Sender = nil
 
-	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), protoPayment, ManifestID("some manifest"))
 
 	assert := assert.New(t)
 	assert.Error(err)
@@ -733,7 +733,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNil(t *testing.T) {
 
 	protoPayment.TicketParams = nil
 
-	err := orch.ProcessPayment(protoPayment, ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), protoPayment, ManifestID("some manifest"))
 
 	assert := assert.New(t)
 	assert.Nil(err)
@@ -742,7 +742,7 @@ func TestProcessPayment_GivenNoTicketParams_ReturnsNil(t *testing.T) {
 func TestProcessPayment_GivenNilNode_ReturnsNil(t *testing.T) {
 	orch := &orchestrator{}
 
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 
 	assert.Nil(t, err)
 }
@@ -752,7 +752,7 @@ func TestProcessPayment_GivenNilRecipient_ReturnsNil(t *testing.T) {
 	orch := NewOrchestrator(n, nil)
 	n.Recipient = nil
 
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 
 	assert.Nil(t, err)
 }
@@ -780,7 +780,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 	orch.node.SetBasePrice(big.NewRat(0, 1))
 
 	// orchestrator inactive -> error
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 	expErr := fmt.Sprintf("orchestrator %v is not eligible for payments in round %v, cannot process payments", addr.Hex(), 10)
 	assert.EqualError(err, expErr)
 
@@ -793,7 +793,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
-	err = orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err = orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 	assert.NoError(err)
 }
 
@@ -818,13 +818,13 @@ func TestProcessPayment_InvalidExpectedPrice(t *testing.T) {
 
 	// test ExpectedPrice.PixelsPerUnit = 0
 	pay.ExpectedPrice = &net.PriceInfo{PricePerUnit: 500, PixelsPerUnit: 0}
-	err := orch.ProcessPayment(pay, ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), pay, ManifestID("some manifest"))
 	assert.Error(err)
 	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "pixels per unit is 0"))
 
 	// test ExpectedPrice = nil
 	pay.ExpectedPrice = nil
-	err = orch.ProcessPayment(pay, ManifestID("some manifest"))
+	err = orch.ProcessPayment(context.Background(), pay, ManifestID("some manifest"))
 	assert.Error(err)
 	assert.EqualError(err, fmt.Sprintf("invalid expected price sent with payment err=%q", "expected price is nil"))
 }
@@ -853,7 +853,7 @@ func TestProcessPayment_GivenLosingTicket_DoesNotRedeem(t *testing.T) {
 	recipient.On("TxCostMultiplier", mock.Anything).Return(big.NewRat(1, 1), nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("some sessionID", false, nil)
 
-	err := orch.ProcessPayment(defaultPayment(t), ManifestID("some manifest"))
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
@@ -891,7 +891,7 @@ func TestProcessPayment_GivenWinningTicket_RedeemError(t *testing.T) {
 
 	errorLogsBefore := glog.Stats.Error.Lines()
 
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), manifestID)
 
 	time.Sleep(time.Millisecond * 20)
 	errorLogsAfter := glog.Stats.Error.Lines()
@@ -931,7 +931,7 @@ func TestProcessPayment_GivenWinningTicket_Redeems(t *testing.T) {
 
 	errorLogsBefore := glog.Stats.Error.Lines()
 
-	err := orch.ProcessPayment(defaultPayment(t), manifestID)
+	err := orch.ProcessPayment(context.Background(), defaultPayment(t), manifestID)
 
 	time.Sleep(time.Millisecond * 20)
 	errorLogsAfter := glog.Stats.Error.Lines()
@@ -994,7 +994,7 @@ func TestProcessPayment_GivenMultipleWinningTickets_RedeemsAll(t *testing.T) {
 		CreationRoundBlockHash: ethcommon.BytesToHash(payment.ExpirationParams.CreationRoundBlockHash),
 	}
 
-	err := orch.ProcessPayment(payment, manifestID)
+	err := orch.ProcessPayment(context.Background(), payment, manifestID)
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
@@ -1058,7 +1058,7 @@ func TestProcessPayment_GivenConcurrentWinningTickets_RedeemsAll(t *testing.T) {
 				)
 			}
 
-			err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), ManifestID(manifestID))
+			err := orch.ProcessPayment(context.Background(), *defaultPaymentWithTickets(t, senderParams), ManifestID(manifestID))
 			assert.Nil(err)
 
 			wg.Done()
@@ -1111,7 +1111,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 		)
 	}
 
-	err := orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	err := orch.ProcessPayment(context.Background(), *defaultPaymentWithTickets(t, senderParams), manifestID)
 
 	time.Sleep(time.Millisecond * 20)
 	assert := assert.New(t)
@@ -1120,7 +1120,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 
 	// Does not loop through tickets if won==false and error is a fatal receive error
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", false, pm.NewFatalReceiveErr(errors.New("ReceiveTicket error"))).Once()
-	err = orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	err = orch.ProcessPayment(context.Background(), *defaultPaymentWithTickets(t, senderParams), manifestID)
 	time.Sleep(time.Millisecond * 20)
 	_, ok := err.(*pm.FatalReceiveErr)
 	assert.True(ok)
@@ -1130,7 +1130,7 @@ func TestProcessPayment_GivenReceiveTicketError_ReturnsError(t *testing.T) {
 	// Redeem winning tickets if won==true and not a signature error (but err != nil)
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, errors.New("ReceiveTicket error")).Once()
 	recipient.On("ReceiveTicket", mock.Anything, mock.Anything, mock.Anything).Return("", true, nil).Once()
-	err = orch.ProcessPayment(*defaultPaymentWithTickets(t, senderParams), manifestID)
+	err = orch.ProcessPayment(context.Background(), *defaultPaymentWithTickets(t, senderParams), manifestID)
 	time.Sleep(time.Millisecond * 20)
 	assert.EqualError(err, "ReceiveTicket error")
 	// 3 RedeemWinningTicket calls (1 + 2)
@@ -1167,7 +1167,7 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 	assert := assert.New(t)
 
 	payment := defaultPayment(t)
-	err := orch.ProcessPayment(payment, manifestID)
+	err := orch.ProcessPayment(context.Background(), payment, manifestID)
 	assert.Error(err)
 	assert.Nil(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
@@ -1245,7 +1245,7 @@ func TestSufficientBalance_IsSufficient_ReturnsTrue(t *testing.T) {
 	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
 	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
 
-	err := orch.ProcessPayment(payment, manifestID)
+	err := orch.ProcessPayment(context.Background(), payment, manifestID)
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(100, 100))
 	assert.True(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
@@ -1286,7 +1286,7 @@ func TestSufficientBalance_IsNotSufficient_ReturnsFalse(t *testing.T) {
 	payment.TicketParams.FaceValue = big.NewInt(100).Bytes()
 	payment.TicketParams.WinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1)).Bytes()
 
-	err := orch.ProcessPayment(payment, manifestID)
+	err := orch.ProcessPayment(context.Background(), payment, manifestID)
 	assert.Nil(err)
 	recipient.On("EV").Return(big.NewRat(10000, 1))
 	assert.False(orch.SufficientBalance(ethcommon.BytesToAddress(payment.Sender), manifestID))
