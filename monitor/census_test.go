@@ -11,7 +11,7 @@ import (
 )
 
 func TestAveragerCanBeRemoved(t *testing.T) {
-	a1 := newAverager()
+	a1 := newAverager("test")
 	if !a1.canBeRemoved() {
 		t.Fatal("Should be able to remove empty buffer")
 	}
@@ -33,7 +33,7 @@ func TestAveragerCanBeRemoved(t *testing.T) {
 	if !a1.canBeRemoved() {
 		t.Fatal("Should be able to remove buffer with all transcoded segments")
 	}
-	a2 := newAverager()
+	a2 := newAverager("test")
 	a2.addEmerged(1)
 	old := timeToWaitForError
 	timeToWaitForError = time.Millisecond
@@ -61,7 +61,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	SegmentFullyTranscoded(1, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 1, 1, "ps", "")
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
@@ -73,7 +73,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	SegmentEmerged(context.TODO(), 1, 3, 3, 1)
 	SegmentTranscodeFailed(context.TODO(), SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"), true)
 	SegmentEmerged(context.TODO(), 1, 4, 3, 1)
-	SegmentFullyTranscoded(1, 4, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 1, 4, "ps", "")
 	if sr := census.successRate(); sr != 0.75 {
 		t.Fatalf("Success rate should be 0.75, not %f", sr)
 	}
@@ -84,7 +84,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 
 	StreamCreated("h1", 2)
 	SegmentEmerged(context.TODO(), 2, 1, 3, 1)
-	SegmentFullyTranscoded(2, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 2, 1, "ps", "")
 	SegmentEmerged(context.TODO(), 2, 2, 3, 1)
 	StreamEnded(context.TODO(), 2)
 	if len(census.success) != 1 {
@@ -110,7 +110,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 
 	StreamCreated("h3", 3)
 	SegmentEmerged(context.TODO(), 3, 1, 3, 1)
-	SegmentFullyTranscoded(3, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 3, 1, "ps", "")
 	SegmentEmerged(context.TODO(), 3, 2, 3, 1)
 	StreamEnded(context.TODO(), 3)
 	if len(census.success) != 1 {

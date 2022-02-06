@@ -276,7 +276,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
 				clog.V(common.DEBUG).Infof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
 				if monitor.Enabled {
-					monitor.OrchestratorSwapped()
+					monitor.OrchestratorSwapped(ctx)
 				}
 			}
 		}
@@ -290,7 +290,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
 				if monitor.Enabled {
-					monitor.OrchestratorSwapped()
+					monitor.OrchestratorSwapped(ctx)
 				}
 			}
 		}
@@ -505,7 +505,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		}
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
 		if monitor.Enabled {
-			monitor.FastVerificationDone()
+			monitor.FastVerificationDone(ctx)
 		}
 		if err != nil {
 			clog.Errorf(ctx, "error comparing perceptual hashes from url=%s err=%q",
@@ -527,7 +527,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
 			if monitor.Enabled {
-				monitor.FastVerificationFailed()
+				monitor.FastVerificationFailed(ctx)
 			}
 		}
 	}
@@ -735,7 +735,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	if err != nil {
 		clog.Errorf(ctx, "Error saving segment err=%q", err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
 		}
 		return nil, err
 	}
@@ -749,7 +749,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	if err != nil {
 		clog.Errorf(ctx, "Error inserting segment err=%q", err)
 		if monitor.Enabled {
-			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
 		}
 	}
 
@@ -767,7 +767,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			if err != nil {
 				clog.Errorf(ctx, "Error saving segment err=%q", err)
 				if monitor.Enabled {
-					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true)
+					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
 				}
 				return nil, err
 			}
@@ -776,7 +776,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			if err != nil {
 				clog.Errorf(ctx, "Error inserting segment err=%q", err)
 				if monitor.Enabled {
-					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false)
+					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
 				}
 			}
 		}
@@ -1021,7 +1021,7 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		if err != nil {
 			clog.Errorf(ctx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%q", cxn.mid, cxn.nonce, seg.SeqNo, err)
 			if monitor.Enabled {
-				monitor.SegmentUploadFailed(ctx, cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false)
+				monitor.SegmentUploadFailed(ctx, cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false, "")
 			}
 			cxn.sessManager.suspendAndRemoveOrch(sess)
 			return nil, err
@@ -1218,7 +1218,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	}
 
 	if monitor.Enabled {
-		monitor.SegmentFullyTranscoded(nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
+		monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "Successfully validated segment")

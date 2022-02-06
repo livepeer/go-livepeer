@@ -19,6 +19,8 @@ type clogContextKeyT struct{}
 var clogContextKey = clogContextKeyT{}
 
 const (
+	ClientIP = "clientIP"
+
 	// standard keys
 	manifestID    = "manifestID"
 	sessionID     = "sessionID"
@@ -96,6 +98,22 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
 	return ctx
+}
+
+func GetManifestID(ctx context.Context) string {
+	return GetVal(ctx, manifestID)
+}
+
+func GetVal(ctx context.Context, key string) string {
+	var val string
+	cmap, _ := ctx.Value(clogContextKey).(*values)
+	if cmap == nil {
+		return val
+	}
+	cmap.mu.Lock()
+	val = cmap.vals[key]
+	cmap.mu.Unlock()
+	return val
 }
 
 func Warningf(ctx context.Context, format string, args ...interface{}) {

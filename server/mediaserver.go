@@ -807,8 +807,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if mid != "" {
 		ctx = clog.AddManifestID(ctx, string(mid))
 	}
+	remoteAddr := getRemoteAddr(r)
+	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
 
-	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
 		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
 
 	now := time.Now()
@@ -983,7 +985,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		// HTTP request already timed out
 		if monitor.Enabled {
-			monitor.HTTPClientTimedOut1()
+			monitor.HTTPClientTimedOut1(ctx)
 		}
 		return
 	default:
@@ -1070,7 +1072,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		clog.Errorf(ctx, "Error sending transcoded response url=%s err=%q", r.URL.String(), err)
 		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2()
+			monitor.HTTPClientTimedOut2(ctx)
 		}
 		return
 	}
@@ -1082,13 +1084,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	case <-r.Context().Done():
 		// HTTP request already timed out
 		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2()
+			monitor.HTTPClientTimedOut2(ctx)
 		}
 		return
 	default:
 	}
 	if monitor.Enabled {
-		monitor.SegmentFullyProcessed(seg.Duration, roundtripTime.Seconds())
+		monitor.SegmentFullyProcessed(ctx, seg.Duration, roundtripTime.Seconds())
 	}
 }
 
@@ -1604,4 +1606,12 @@ func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 func shouldStopStream(err error) bool {
 	_, ok := err.(pm.ErrSenderValidation)
 	return ok
+}
+
+func getRemoteAddr(r *http.Request) string {
+	addr := r.RemoteAddr
+	if proxiedAddr := r.Header.Get("X-Forwarded-For"); proxiedAddr != "" {
+		addr = strings.Split(proxiedAddr, ",")[0]
+	}
+	return strings.Split(addr, ":")[0]
 }
