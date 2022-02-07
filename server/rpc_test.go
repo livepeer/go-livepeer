@@ -85,10 +85,6 @@ func (r *stubOrchestrator) ServiceURI() *url.URL {
 	return url
 }
 
-func (r *stubOrchestrator) CurrentBlock() *big.Int {
-	return r.block
-}
-
 func (r *stubOrchestrator) Sign(msg []byte) ([]byte, error) {
 	if r.offchain {
 		return nil, nil
@@ -1281,10 +1277,6 @@ func (o *mockOrchestrator) Sign(msg []byte) ([]byte, error) {
 func (o *mockOrchestrator) VerifySig(addr ethcommon.Address, msg string, sig []byte) bool {
 	args := o.Called(addr, msg, sig)
 	return args.Bool(0)
-}
-func (o *mockOrchestrator) CurrentBlock() *big.Int {
-	o.Called()
-	return nil
 }
 func (o *mockOrchestrator) TranscodeSeg(ctx context.Context, md *core.SegTranscodingMetadata, seg *stream.HLSSegment) (*core.TranscodeResult, error) {
 	args := o.Called(md, seg)
