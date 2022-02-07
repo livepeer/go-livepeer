@@ -42,18 +42,19 @@ const transcodingErrorMimeType = "livepeer/transcoding-error"
 var errSecret = errors.New("invalid secret")
 var errZeroCapacity = errors.New("zero capacity")
 var errInterrupted = errors.New("execution interrupted")
+var errCapabilities = errors.New("incompatible segment capabilities")
 
 // Standalone Transcoder
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
-func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr, capacity)
+		err := runTranscoder(n, orchAddr, capacity, caps)
 		glog.Info("Unregistering transcoder: ", err)
 		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
 			glog.Info("Terminating transcoder because of ", err)
@@ -81,7 +82,7 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -96,7 +97,8 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int) error {
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity)})
+	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
@@ -155,7 +157,11 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	}
 	ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
 	ctx = clog.AddVal(ctx, "taskId", strconv.FormatInt(notify.TaskId, 10))
-
+	if n.Capabilities != nil && !md.Caps.CompatibleWith(n.Capabilities.ToNetCapabilities()) {
+		clog.Errorf(ctx, "Requested capabilities for segment are not compatible with this node taskId=%d url=%s err=%q", notify.TaskId, notify.Url, errCapabilities)
+		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
+		return
+	}
 	data, err := drivers.GetSegmentData(ctx, notify.Url)
 	if err != nil {
 		clog.Errorf(ctx, "Transcoder cannot get segment from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
@@ -295,9 +301,12 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		glog.Errorf("err=%q", errZeroCapacity.Error())
 		return errZeroCapacity
 	}
-
+	// handle case of legacy Transcoder which do not advertise capabilities
+	if req.Capabilities == nil {
+		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
+	}
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream, int(req.Capacity))
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities)
 	return nil
 }
 

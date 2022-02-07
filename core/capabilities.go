@@ -16,6 +16,10 @@ type Capabilities struct {
 	mandatories CapabilityString
 	constraints Constraints
 }
+type CapabilityTest struct {
+	inVideoData []byte
+	outProfile ffmpeg.VideoProfile
+}
 
 // Do not rearrange these values! Only append.
 const (
@@ -36,7 +40,36 @@ const (
 	Capability_AuthToken
 	Capability_SceneClassification
 	Capability_MPEG7VideoSignature
+	Capability_HEVC_Decode
+	Capability_HEVC_Encode
+	Capability_VP8_Decode
+	Capability_VP9_Decode
 )
+
+
+var CapabilityTestLookup = map[Capability]CapabilityTest{
+	// 145x145 is the lowest resolution supported by NVENC on Windows
+	Capability_H264: {
+		inVideoData: testSegment_H264,
+		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_HEVC_Decode: {
+		inVideoData: testSegment_HEVC,
+		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_HEVC_Encode: {
+		inVideoData: testSegment_H264,
+		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS, Encoder: ffmpeg.H265},
+	},
+	Capability_VP8_Decode: {
+		inVideoData: testSegment_VP8,
+		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_VP9_Decode: {
+		inVideoData: testSegment_VP9,
+		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+}
 
 var capFormatConv = errors.New("capability: unknown format")
 var capStorageConv = errors.New("capability: unknown storage")
@@ -62,12 +95,21 @@ func DefaultCapabilities() []Capability {
 	}
 }
 
+func OptionalCapabilities() []Capability {
+	return []Capability{
+		Capability_HEVC_Decode,
+		Capability_HEVC_Encode,
+		Capability_VP8_Decode,
+		Capability_VP9_Decode,
+	}
+}
+
 func ExperimentalCapabilities() []Capability {
 	// Add experimental capabilities if enabled during build
 	return experimentalCapabilities
 }
 
-func MandatoryCapabilities() []Capability {
+func MandatoryOCapabilities() []Capability {
 	// Add to this list as certain features become mandatory.
 	// Use sparingly, as adding to this is a hard break with older nodes
 	return []Capability{
