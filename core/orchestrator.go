@@ -54,14 +54,6 @@ func (orch *orchestrator) ServiceURI() *url.URL {
 	return orch.node.GetServiceURI()
 }
 
-func (orch *orchestrator) CurrentBlock() *big.Int {
-	if orch.node == nil || orch.node.Database == nil {
-		return nil
-	}
-	block, _ := orch.node.Database.LastSeenBlock()
-	return block
-}
-
 func (orch *orchestrator) Sign(msg []byte) ([]byte, error) {
 	if orch.node == nil || orch.node.Eth == nil {
 		return []byte{}, nil

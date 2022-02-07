@@ -5,11 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"math/rand"
-	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -31,47 +29,6 @@ import (
 )
 
 var defaultRecipient = ethcommon.BytesToAddress([]byte("defaultRecipient"))
-
-func TestCurrentBlock(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
-	if err != nil {
-		t.Error(err)
-	}
-	defer os.RemoveAll(tmpdir)
-	rm := &stubRoundsManager{}
-	orch := NewOrchestrator(n, rm)
-
-	// test empty db
-	if orch.CurrentBlock() != nil {
-		t.Error("Expected nil block")
-	}
-
-	db, dbraw, err := common.TempDB(t)
-	if err != nil {
-		t.Error("Error creating db ", err)
-	}
-	defer db.Close()
-	defer dbraw.Close()
-	n.Database = db
-
-	blkNum := big.NewInt(1234)
-	blkHash := ethcommon.BytesToHash([]byte("foo"))
-	if _, err := dbraw.Exec(fmt.Sprintf("INSERT INTO blockheaders(number, parent, hash, logs) VALUES(%v, \"\", %v, \"[]\")", blkNum.Int64(), blkHash.Hex())); err != nil {
-		t.Error("Unexpected error inserting mini header ", err)
-	}
-	if orch.CurrentBlock().Int64() != blkNum.Int64() {
-		t.Error("Unexpected block ", orch.CurrentBlock())
-	}
-
-	if _, err := dbraw.Exec(fmt.Sprintf("DELETE FROM blockheaders WHERE hash = %v", blkHash.Hex())); err != nil {
-		t.Error("Unexpected error deleting mini header ", err)
-	}
-
-	if orch.CurrentBlock() != nil {
-		t.Error("Expected nil getting nonexistent row")
-	}
-}
 
 func TestServeTranscoder(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
