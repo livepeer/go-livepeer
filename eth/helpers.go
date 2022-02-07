@@ -2,17 +2,13 @@ package eth
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/big"
 	"reflect"
 	"regexp"
 	"strings"
-	"time"
-
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/common"
 )
 
 const DefaultMaxDecimals = 18
@@ -70,40 +66,6 @@ func FromPerc(perc float64) *big.Int {
 func FromPercOfUint256(perc float64) *big.Int {
 	multiplier := new(big.Float).SetInt(new(big.Int).Div(maxUint256, big.NewInt(100)))
 	return fromPerc(perc, multiplier)
-}
-
-func Wait(db *common.DB, blocks *big.Int) error {
-	var (
-		lastSeenBlock *big.Int
-		err           error
-	)
-
-	lastSeenBlock, err = db.LastSeenBlock()
-	if err != nil {
-		return err
-	}
-
-	targetBlock := new(big.Int).Add(lastSeenBlock, blocks)
-	tickCh := time.NewTicker(15 * time.Second).C
-
-	glog.Infof("Waiting %v blocks...", blocks)
-
-	for {
-		select {
-		case <-tickCh:
-			if lastSeenBlock.Cmp(targetBlock) >= 0 {
-				return nil
-			}
-
-			lastSeenBlock, err = db.LastSeenBlock()
-			if err != nil {
-				glog.Error("Error getting last seen block ", err)
-				continue
-			}
-		}
-	}
-
-	return nil
 }
 
 func IsNullAddress(addr ethcommon.Address) bool {
