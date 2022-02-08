@@ -1,3 +1,4 @@
+//go:build rinkeby
 // +build rinkeby
 
 package build
