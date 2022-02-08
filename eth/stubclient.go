@@ -398,8 +398,8 @@ func (c *StubClient) Sign(msg []byte) ([]byte, error) { return msg, c.Err }
 func (c *StubClient) SignTypedData(typedData apitypes.TypedData) ([]byte, error) {
 	return []byte("foo"), c.Err
 }
-func (c *StubClient) SetGasInfo(uint64) error { return nil }
-func (c *StubClient) SetMaxGasPrice(*big.Int) {}
+func (c *StubClient) SetGasInfo(uint64) error       { return nil }
+func (c *StubClient) SetMaxGasPrice(*big.Int) error { return nil }
 
 // Faucet
 func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return nil, nil }

@@ -469,7 +469,10 @@ func main() {
 			glog.Errorf("Failed to set gas info on Livepeer Ethereum Client: %v", err)
 			return
 		}
-		client.SetMaxGasPrice(bigMaxGasPrice)
+		if err := client.SetMaxGasPrice(bigMaxGasPrice); err != nil {
+			glog.Errorf("Failed to set max gas price: %v", err)
+			return
+		}
 
 		n.Eth = client
 
