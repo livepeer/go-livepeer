@@ -175,9 +175,9 @@ func (tm *TransactionManager) replace(tx *types.Transaction) (*types.Transaction
 		txLog.method = "unknown"
 	}
 	if sendErr != nil {
-		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Priority Fee: %v Max Fee: %v \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.GasTipCap().String(), newSignedTx.GasFeeCap().String(), sendErr, strings.Repeat("*", 75))
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\". \nTransaction Failed: %v\n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, sendErr, strings.Repeat("*", 75))
 	} else {
-		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\".  Priority Fee: %v Max Fee: %v \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.Hash().String(), newSignedTx.GasTipCap().String(), newSignedTx.GasFeeCap().String(), strings.Repeat("*", 75))
+		glog.Infof("\n%vEth Transaction%v\n\nReplacement transaction: \"%v\".  Hash: \"%v\". \n\n%v\n", strings.Repeat("*", 30), strings.Repeat("*", 30), txLog.method, newSignedTx.Hash().String(), strings.Repeat("*", 75))
 	}
 
 	return newSignedTx, sendErr
@@ -243,21 +243,39 @@ func applyPriceBump(val *big.Int, priceBump uint64) *big.Int {
 
 // Calculate the gas price as gas tip cap + base fee
 func calcGasPrice(tx *types.Transaction) *big.Int {
-	// Assume that the gas fee cap is calculated as gas tip cap + (baseFee * 2)
-	baseFee := new(big.Int).Div(new(big.Int).Sub(tx.GasFeeCap(), tx.GasTipCap()), big.NewInt(2))
-	return new(big.Int).Add(baseFee, tx.GasTipCap())
+	if tx.GasFeeCap() == nil {
+		// legacy tx, not London ready
+		return tx.GasPrice()
+	} else {
+		// Assume that the gas fee cap is calculated as gas tip cap + (baseFee * 2)
+		baseFee := new(big.Int).Div(new(big.Int).Sub(tx.GasFeeCap(), tx.GasTipCap()), big.NewInt(2))
+		return new(big.Int).Add(baseFee, tx.GasTipCap())
+	}
 }
 
 func newReplacementTx(tx *types.Transaction) *types.Transaction {
-	baseTx := &types.DynamicFeeTx{
-		Nonce: tx.Nonce(),
-		// geth requires the price bump to be applied to both the gas tip cap and gas fee cap
-		GasFeeCap: applyPriceBump(tx.GasFeeCap(), priceBump),
-		GasTipCap: applyPriceBump(tx.GasTipCap(), priceBump),
-		Gas:       tx.Gas(),
-		Value:     tx.Value(),
-		Data:      tx.Data(),
-		To:        tx.To(),
+	var baseTx types.TxData
+	if tx.GasFeeCap() == nil {
+		// legacy tx, not London ready
+		baseTx = &types.LegacyTx{
+			Nonce:    tx.Nonce(),
+			GasPrice: applyPriceBump(tx.GasPrice(), priceBump),
+			Gas:      tx.Gas(),
+			To:       tx.To(),
+			Value:    tx.Value(),
+			Data:     tx.Data(),
+		}
+	} else {
+		baseTx = &types.DynamicFeeTx{
+			Nonce: tx.Nonce(),
+			// geth requires the price bump to be applied to both the gas tip cap and gas fee cap
+			GasFeeCap: applyPriceBump(tx.GasFeeCap(), priceBump),
+			GasTipCap: applyPriceBump(tx.GasTipCap(), priceBump),
+			Gas:       tx.Gas(),
+			Value:     tx.Value(),
+			Data:      tx.Data(),
+			To:        tx.To(),
+		}
 	}
 
 	return types.NewTx(baseTx)
