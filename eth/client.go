@@ -13,6 +13,7 @@ package eth
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.json --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
 //go:generate abigen --abi protocol/abi/Poll.json --pkg contracts --type Poll --out contracts/poll.go
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"sort"
@@ -117,7 +118,7 @@ type LivepeerEthClient interface {
 	Sign([]byte) ([]byte, error)
 	SignTypedData(apitypes.TypedData) ([]byte, error)
 	SetGasInfo(uint64) error
-	SetMaxGasPrice(*big.Int)
+	SetMaxGasPrice(*big.Int) error
 }
 
 type client struct {
@@ -361,10 +362,23 @@ func (c *client) SetGasInfo(gasLimit uint64) error {
 	}
 }
 
-func (c *client) SetMaxGasPrice(maxGasPrice *big.Int) {
+func (c *client) SetMaxGasPrice(maxGasPrice *big.Int) error {
+	head, err := c.backend.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+
 	c.transOptsMu.Lock()
-	c.transOpts.GasFeeCap = maxGasPrice
+	if head.BaseFee == nil {
+		// legacy tx, not London ready
+		c.transOpts.GasPrice = maxGasPrice
+	} else {
+		// dynamic tx
+		c.transOpts.GasFeeCap = maxGasPrice
+	}
 	c.transOptsMu.Unlock()
+
+	return nil
 }
 
 func (c *client) setTransactOpts(opts bind.TransactOpts) {
