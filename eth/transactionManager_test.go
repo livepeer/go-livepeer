@@ -394,16 +394,37 @@ func TestApplyPriceBump(t *testing.T) {
 func TestCalcGasPrice(t *testing.T) {
 	assert := assert.New(t)
 
+	// legacy tx, not London ready
+	gasPrice := big.NewInt(300)
+	tx := newStubLegacyTx(gasPrice)
+	result := calcGasPrice(tx)
+	assert.Equal(gasPrice, result)
+
+	// dynamic tx
 	baseFee := big.NewInt(1000)
 	gasTipCap := big.NewInt(100)
 	gasFeeCap := new(big.Int).Add(gasTipCap, new(big.Int).Mul(baseFee, big.NewInt(2)))
-	tx := newStubDynamicFeeTx(gasFeeCap, gasTipCap)
-
-	gasPrice := calcGasPrice(tx)
-	assert.Equal(new(big.Int).Add(baseFee, gasTipCap), gasPrice)
+	tx = newStubDynamicFeeTx(gasFeeCap, gasTipCap)
+	result = calcGasPrice(tx)
+	assert.Equal(new(big.Int).Add(baseFee, gasTipCap), result)
 }
 
-func TestNewReplacementTx(t *testing.T) {
+func TestNewReplacementTx_LegacyTx(t *testing.T) {
+	assert := assert.New(t)
+
+	gasPrice := big.NewInt(100)
+
+	tx1 := newStubLegacyTx(gasPrice)
+	tx2 := newReplacementTx(tx1)
+	assert.NotEqual(tx1.Hash(), tx2.Hash())
+	assert.Equal(applyPriceBump(tx1.GasPrice(), priceBump), tx2.GasPrice())
+	assert.Equal(tx1.Nonce(), tx2.Nonce())
+	assert.Equal(tx1.Gas(), tx2.Gas())
+	assert.Equal(tx1.Value(), tx1.Value())
+	assert.Equal(tx1.To(), tx2.To())
+}
+
+func TestNewReplacementTx_DynamicFeeTx(t *testing.T) {
 	assert := assert.New(t)
 
 	gasTipCap := big.NewInt(100)
@@ -418,6 +439,18 @@ func TestNewReplacementTx(t *testing.T) {
 	assert.Equal(tx1.Gas(), tx2.Gas())
 	assert.Equal(tx1.Value(), tx1.Value())
 	assert.Equal(tx1.To(), tx2.To())
+}
+
+func newStubLegacyTx(gasPrice *big.Int) *types.Transaction {
+	addr := pm.RandAddress()
+	return types.NewTx(&types.LegacyTx{
+		Nonce:    1,
+		GasPrice: gasPrice,
+		Gas:      1000000,
+		Value:    big.NewInt(100),
+		Data:     pm.RandBytes(68),
+		To:       &addr,
+	})
 }
 
 func newStubDynamicFeeTx(gasFeeCap, gasTipCap *big.Int) *types.Transaction {
