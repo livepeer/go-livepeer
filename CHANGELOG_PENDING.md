@@ -20,6 +20,7 @@
 * VP8/VP9 decoding
 
 ### Bug Fixes 🐞
+- \#2245 Fast verification fix (@oscar-davids)
 
 #### General
 
