@@ -258,6 +258,16 @@ message VideoProfile {
 
   // GOP interval
   int32 gop = 24;
+
+  enum VideoCodec {
+    H264 = 0;
+    H265 = 1;
+    VP8  = 2;
+    VP9  = 3;
+  }
+
+  // Encoder (video codec)
+  VideoCodec Encoder = 25;
 }
 
 // Individual transcoded segment data.

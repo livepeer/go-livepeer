@@ -55,6 +55,7 @@ var (
 	ErrFormatMime  = fmt.Errorf("unknown VideoProfile format for mime type")
 	ErrFormatExt   = fmt.Errorf("unknown VideoProfile format for extension")
 	ErrProfProto   = fmt.Errorf("unknown VideoProfile profile for protobufs")
+	ErrProfEncoder = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName    = fmt.Errorf("unknown VideoProfile profile name")
 
 	ext2mime = map[string]string{
@@ -204,6 +205,19 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		default:
 			return nil, ErrProfProto
 		}
+		encoder := net.VideoProfile_H264
+		switch profile.Encoder {
+		case ffmpeg.H264:
+			encoder = net.VideoProfile_H264
+		case ffmpeg.H265:
+			encoder = net.VideoProfile_H265
+		case ffmpeg.VP8:
+			encoder = net.VideoProfile_VP8
+		case ffmpeg.VP9:
+			encoder = net.VideoProfile_VP9
+		default:
+			return nil, ErrProfEncoder
+		}
 		gop := int32(0)
 		if profile.GOP < 0 {
 			gop = int32(profile.GOP)
@@ -220,6 +234,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 			Format:  format,
 			Profile: encoderProf,
 			Gop:     gop,
+			Encoder: encoder,
 		}
 		profiles = append(profiles, &fullProfile)
 	}

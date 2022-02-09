@@ -121,6 +121,7 @@ type authWebhookResponse struct {
 		FPSDen  uint   `json:"fpsDen"`
 		Profile string `json:"profile"`
 		GOP     string `json:"gop"`
+		Encoder string `json:"encoder"`
 	} `json:"profiles"`
 	PreviousSessions []string `json:"previousSessions"`
 	Detection        struct {
@@ -415,6 +416,10 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 		if err != nil {
 			return nil, err
 		}
+		encoder, err := ffmpeg.CodecNameToValue(profile.Encoder)
+		if err != nil {
+			return nil, err
+		}
 		prof := ffmpeg.VideoProfile{
 			Name:         name,
 			Bitrate:      fmt.Sprint(profile.Bitrate),
@@ -423,6 +428,7 @@ func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile
 			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
 			Profile:      encodingProfile,
 			GOP:          gop,
+			Encoder:      encoder,
 		}
 		profiles = append(profiles, prof)
 	}
