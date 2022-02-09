@@ -44,6 +44,7 @@ var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
 var errProfile = errors.New("unrecognized encoder profile")
+var errEncoder = errors.New("unrecognized video codec")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
 
@@ -297,6 +298,19 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 		default:
 			return nil, errProfile
 		}
+		encoder := ffmpeg.H264
+		switch profile.Encoder {
+		case net.VideoProfile_H264:
+			encoder = ffmpeg.H264
+		case net.VideoProfile_H265:
+			encoder = ffmpeg.H265
+		case net.VideoProfile_VP8:
+			encoder = ffmpeg.VP8
+		case net.VideoProfile_VP9:
+			encoder = ffmpeg.VP9
+		default:
+			return nil, errEncoder
+		}
 		var gop time.Duration
 		if profile.Gop < 0 {
 			gop = time.Duration(profile.Gop)
@@ -312,6 +326,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 			Format:       format,
 			Profile:      encoderProf,
 			GOP:          gop,
+			Encoder:      encoder,
 		}
 		profiles = append(profiles, prof)
 	}
