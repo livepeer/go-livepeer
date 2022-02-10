@@ -12,6 +12,7 @@
 - \#2240 Backfill always from the back last seen in DB (instead of the last round block) (@leszko)
 - \#2171 Make transactions compatible with Arbitrum and fix setting max gas price (@leszko)
 - \#2252 Use different hardcoded redeemGas when connected to an Arbitrum network (@leszko)
+- \#2251 Add fail fast for Arbitrum One Mainnet when LIP-73 has not been activated yet (@leszko)
 
 #### Broadcaster
 
