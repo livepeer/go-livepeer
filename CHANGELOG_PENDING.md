@@ -11,6 +11,7 @@
 - \#2222 Use L1 block number for Ticket Parameters and Round Initialization (@leszko)
 - \#2240 Backfill always from the back last seen in DB (instead of the last round block) (@leszko)
 - \#2171 Make transactions compatible with Arbitrum and fix setting max gas price (@leszko)
+- \#2252 Use different hardcoded redeemGas when connected to an Arbitrum network (@leszko)
 
 #### Broadcaster
 
