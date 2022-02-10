@@ -16,6 +16,7 @@ import (
 type stubBlockStore struct {
 	lastBlock *big.Int
 	err       error
+	isActive  bool
 }
 
 type stubTicketStore struct {
@@ -32,6 +33,9 @@ func newStubTicketStore() *stubTicketStore {
 	return &stubTicketStore{
 		tickets:   make(map[ethcommon.Address][]*SignedTicket),
 		submitted: make(map[string]bool),
+		stubBlockStore: stubBlockStore{
+			isActive: true,
+		},
 	}
 }
 
@@ -108,6 +112,10 @@ func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, minCreat
 		}
 	}
 	return count, nil
+}
+
+func (ts *stubTicketStore) IsOrchActive(addr ethcommon.Address, round *big.Int) (bool, error) {
+	return ts.isActive, ts.err
 }
 
 func (ts *stubBlockStore) LastSeenBlock() (*big.Int, error) {
