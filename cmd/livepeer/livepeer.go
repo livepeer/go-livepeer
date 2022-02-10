@@ -56,8 +56,10 @@ var (
 	// The maximum blocks for the block watcher to retain
 	blockWatcherRetentionLimit = 20
 
-	// Estimate of the gas required to redeem a PM ticket
-	redeemGas = 350000
+	// Estimate of the gas required to redeem a PM ticket on L1 Ethereum
+	redeemGasL1 = 350000
+	// Estimate of the gas required to redeem a PM ticket on L2 Arbitrum
+	redeemGasL2 = 1200000
 	// The multiplier on the transaction cost to use for PM ticket faceValue
 	txCostMultiplier = 100
 
@@ -210,6 +212,7 @@ func main() {
 	type NetworkConfig struct {
 		ethController string
 		minGasPrice   int64
+		redeemGas     int
 	}
 
 	ctx := context.Background()
@@ -217,13 +220,16 @@ func main() {
 	configOptions := map[string]*NetworkConfig{
 		"rinkeby": {
 			ethController: "0x9a9827455911a858E55f07911904fACC0D66027E",
+			redeemGas:     redeemGasL1,
 		},
 		"arbitrum-one-rinkeby": {
 			ethController: "0x9ceC649179e2C7Ab91688271bcD09fb707b3E574",
+			redeemGas:     redeemGasL2,
 		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
 			minGasPrice:   int64(params.GWei),
+			redeemGas:     redeemGasL1,
 		},
 	}
 
@@ -246,6 +252,7 @@ func main() {
 	}
 
 	// Setting config options based on specified network
+	var redeemGas int
 	if netw, ok := configOptions[*network]; ok {
 		if *ethController == "" {
 			*ethController = netw.ethController
@@ -255,8 +262,11 @@ func main() {
 			*minGasPrice = netw.minGasPrice
 		}
 
+		redeemGas = netw.redeemGas
+
 		glog.Infof("***Livepeer is running on the %v network: %v***", *network, *ethController)
 	} else {
+		redeemGas = redeemGasL1
 		glog.Infof("***Livepeer is running on the %v network***", *network)
 	}
 
