@@ -329,3 +329,29 @@ func TestTicketQueue_Length(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(qlen, 3)
 }
+
+func TestIsRecipientActive(t *testing.T) {
+	assert := assert.New(t)
+
+	ts := newStubTicketStore()
+	tm := &stubTimeManager{round: big.NewInt(100)}
+	sm := &LocalSenderMonitor{
+		ticketStore: ts,
+		tm:          tm,
+	}
+	sender := RandAddress()
+	q := newTicketQueue(sender, sm)
+	addr := RandAddress()
+
+	// active
+	ts.isActive = true
+	assert.True(q.isRecipientActive(addr))
+
+	// inactive
+	ts.isActive = false
+	assert.False(q.isRecipientActive(addr))
+
+	// db error
+	ts.err = errors.New("some error")
+	assert.True(q.isRecipientActive(addr))
+}

@@ -13,6 +13,7 @@
 - \#2171 Make transactions compatible with Arbitrum and fix setting max gas price (@leszko)
 - \#2252 Use different hardcoded redeemGas when connected to an Arbitrum network (@leszko)
 - \#2251 Add fail fast for Arbitrum One Mainnet when LIP-73 has not been activated yet (@leszko)
+- \#2253 Redeem tickets only when recipient is active (@leszko)
 
 #### Broadcaster
 

@@ -124,13 +124,16 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 	for i := 0; i < int(numTickets); i++ {
 		nextTicket, err := q.store.SelectEarliestWinningTicket(q.sender, new(big.Int).Sub(q.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
 		if err != nil {
-			glog.Errorf("Unable select earliest winning ticket err=%q", err)
+			glog.Errorf("Unable to select earliest winning ticket err=%q", err)
 			return
 		}
 		if nextTicket == nil {
 			return
 		}
-
+		if !q.isRecipientActive(nextTicket.Recipient) {
+			glog.V(5).Infof("Ticket recipient is not active in this round, cannot redeem ticket recipient=%v", nextTicket.Recipient.Hex())
+			continue
+		}
 		if nextTicket.ParamsExpirationBlock.Cmp(latestL1Block) <= 0 {
 			resCh := make(chan struct {
 				txHash ethcommon.Hash
@@ -163,4 +166,14 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 func isNonRetryableTicketErr(err error) bool {
 	// The latter check depends on logic in eth.client.CheckTx()
 	return err == errIsUsedTicket || strings.Contains(err.Error(), "transaction failed")
+}
+
+func (q *ticketQueue) isRecipientActive(addr ethcommon.Address) bool {
+	isActive, err := q.store.IsOrchActive(addr, q.tm.LastInitializedRound())
+	if err != nil {
+		glog.Errorf("Unable to select an active orchestrator")
+		// In the case of error, assume recipient is active in order to try to redeem the ticket
+		return true
+	}
+	return isActive
 }

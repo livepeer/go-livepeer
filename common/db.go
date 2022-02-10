@@ -567,6 +567,19 @@ func (db *DB) OrchCount(filter *DBOrchFilter) (int, error) {
 	return int(count64), nil
 }
 
+func (db *DB) IsOrchActive(addr ethcommon.Address, round *big.Int) (bool, error) {
+	orchs, err := db.SelectOrchs(
+		&DBOrchFilter{
+			CurrentRound: round,
+			Addresses:    []ethcommon.Address{addr},
+		},
+	)
+	if err != nil {
+		return false, err
+	}
+	return len(orchs) > 0, nil
+}
+
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {
 	glog.V(DEBUG).Infof("db: Inserting unbonding lock %v for delegator %v", id, delegator.Hex())
 	_, err := db.insertUnbondingLock.Exec(id.Int64(), delegator.Hex(), amount.String(), withdrawRound.Int64())

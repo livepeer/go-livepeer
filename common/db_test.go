@@ -564,6 +564,34 @@ func TestDBFilterOrchs(t *testing.T) {
 	assert.Len(orchsFiltered, 0)
 }
 
+func TestIsOrchActive(t *testing.T) {
+	assert := assert.New(t)
+
+	dbh, dbraw, _ := TempDB(t)
+	defer dbh.Close()
+	defer dbraw.Close()
+
+	addr := pm.RandAddress().String()
+	activationRound := 5
+	orch := NewDBOrch(addr, "https://127.0.0.1:8936", 1, int64(activationRound), int64(activationRound+2), 0)
+	dbh.UpdateOrch(orch)
+
+	// inactive in round 4
+	isActive, err := dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(4))
+	assert.NoError(err)
+	assert.False(isActive)
+
+	// active in round 5
+	isActive, err = dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(5))
+	assert.NoError(err)
+	assert.True(isActive)
+
+	// active in round 6
+	isActive, err = dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(6))
+	assert.NoError(err)
+	assert.True(isActive)
+}
+
 func TestDBUnbondingLocks(t *testing.T) {
 	dbh, dbraw, err := TempDB(t)
 	defer dbh.Close()
