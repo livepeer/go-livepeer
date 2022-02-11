@@ -231,6 +231,10 @@ func main() {
 			minGasPrice:   int64(params.GWei),
 			redeemGas:     redeemGasL1,
 		},
+		"arbitrum-one-mainnet": {
+			ethController: "0xD8E8328501E9645d16Cf49539efC04f734606ee4",
+			redeemGas:     redeemGasL2,
+		},
 	}
 
 	// If multiple orchAddr specified, ensure other necessary flags present and clean up list
