@@ -14,7 +14,7 @@
 - \#2252 Use different hardcoded redeemGas when connected to an Arbitrum network (@leszko)
 - \#2251 Add fail fast for Arbitrum One Mainnet when LIP-73 has not been activated yet (@leszko)
 - \#2253 Redeem tickets only when recipient is active (@leszko)
-- \#2254 Add `rinkeby-one-mainnet` network (@leszko)
+- \#2254 Add `arbitrum-one-mainnet` network (@leszko)
 
 #### Broadcaster
 
