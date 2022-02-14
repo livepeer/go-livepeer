@@ -119,9 +119,18 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError error) {
 	// default capabilities
 	allCaps := append(DefaultCapabilities(), OptionalCapabilities()...)
+	fname := filepath.Join(WorkDir, "testseg.tempfile")
+	defer os.Remove(fname)
+	nvTest3Rend := true
 	// iterate all capabilities and test ones which has test data
 	for _, c := range allCaps {
 		capTest, hasTest := CapabilityTestLookup[c]
+		capName, _ := CapabilityToName(c)
+		isRequired := InArray(c, DefaultCapabilities())
+		capKindStr := "Optional capability"
+		if isRequired {
+			capKindStr = "Required capability"
+		}
 		if hasTest {
 			b := bytes.NewReader(capTest.inVideoData)
 			z, err := gzip.NewReader(b)
@@ -134,13 +143,11 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 				glog.Errorf("Error reading test segment for capability %d: %s", c, err)
 				continue
 			}
-			fname := filepath.Join(WorkDir, "testseg.tempfile")
 			err = ioutil.WriteFile(fname, mp4testSeg, 0644)
 			if err != nil {
 				glog.Errorf("Error writing test segment for capability %d: %s", c, err)
 				continue
 			}
-			defer os.Remove(fname)
 			// check that capability is supported on all devices
 			for _, device := range devices {
 				t1 := NewNvidiaTranscoder(device)
@@ -149,29 +156,36 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 				td, err := t1.Transcode(context.Background(), md)
 				t1.Stop()
 				if err != nil {
-					// likely means capability is not supported
+					glog.Infof("%s %q is not supported on device %s, see other error messages for details", capKindStr, capName, device)
+					// likely means capability is not supported, don't check on other devices
 					goto test_fail
 				}
 				if len(td.Segments) == 0 || td.Pixels == 0 {
 					// abnormal behavior
-					glog.Errorf("Empty result segment when testing for capability %d", c)
+					glog.Errorf("Empty result segment when testing for %s %q", strings.ToLower(capKindStr), capName)
 					goto test_fail
 				}
+				// no error creating 4 renditions - disable 3 renditions test, as restriction is on driver level, not device
+				nvTest3Rend = false
 			}
 		}
 		caps = append(caps, c)
-		test_fail:
-	}
-	for _, defCap := range DefaultCapabilities() {
-		found := false
-		for _, supportedCap := range caps {
-			if defCap == supportedCap {
-				found = true
-				break
+		continue
+	test_fail:
+		if nvTest3Rend {
+			// if 4 renditions didn't succeed, try 3 renditions on first device to check if it could be session limit
+			t1 := NewNvidiaTranscoder(devices[0])
+			md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile}}
+			td, err := t1.Transcode(context.Background(), md)
+			t1.Stop()
+			if err == nil && len(td.Segments) > 0 && td.Pixels > 0 {
+				glog.Error("Maximum number of simultaneous NVENC video encoding sessions is restricted by driver")
 			}
+			// do it only once
+			nvTest3Rend = false
 		}
-		if !found {
-			return caps, fmt.Errorf("Default capability %d is not supported", defCap)
+		if isRequired {
+			return nil, fmt.Errorf("%s %q is not supported on hardware", capKindStr, capName)
 		}
 	}
 	return caps, nil
