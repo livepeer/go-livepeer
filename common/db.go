@@ -104,20 +104,6 @@ var schema = `
 	-- Index to only retrieve unbonding locks that have not been used
 	CREATE INDEX IF NOT EXISTS idx_unbondinglocks_usedblock ON unbondingLocks(usedBlock);
 
-	CREATE TABLE IF NOT EXISTS winningTickets (
-		createdAt STRING DEFAULT CURRENT_TIMESTAMP,
-		sender STRING,
-		recipient STRING,
-		faceValue BLOB,
-		winProb BLOB,
-		senderNonce INTEGER,
-		recipientRand BLOB,
-		recipientRandHash STRING,
-		sig BLOB,
-		sessionID STRING
-	);
-	CREATE INDEX IF NOT EXISTS idx_winningtickets_sessionid ON winningTickets(sessionID);
-
 	CREATE TABLE IF NOT EXISTS ticketQueue (
 		createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
 		sender STRING,
