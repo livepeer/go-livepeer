@@ -112,18 +112,10 @@ type authWebhookResponse struct {
 	ObjectStore          string   `json:"objectStore"`
 	RecordObjectStore    string   `json:"recordObjectStore"`
 	RecordObjectStoreURL string   `json:"recordObjectStoreUrl"`
-	Profiles             []struct {
-		Name    string `json:"name"`
-		Width   int    `json:"width"`
-		Height  int    `json:"height"`
-		Bitrate int    `json:"bitrate"`
-		FPS     uint   `json:"fps"`
-		FPSDen  uint   `json:"fpsDen"`
-		Profile string `json:"profile"`
-		GOP     string `json:"gop"`
-		Encoder string `json:"encoder"`
-	} `json:"profiles"`
-	PreviousSessions []string `json:"previousSessions"`
+	// Same json structure is used in lpms to decode profile from
+	// files, while here we decode from HTTP
+	Profiles         []ffmpeg.JsonProfile `json:"profiles"`
+	PreviousSessions []string             `json:"previousSessions"`
 	Detection        struct {
 		// Run detection on 1/freq segments
 		Freq                uint `json:"freq"`
@@ -155,7 +147,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 				if err != nil {
 					return nil, err
 				}
-				profiles, err = jsonProfileToVideoProfile(stubResp)
+				profiles, err = ffmpeg.ParseProfilesFromJsonProfileArray(stubResp.Profiles)
 				if err != nil {
 					return nil, err
 				}
@@ -259,7 +251,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 				profiles = parsePresets(resp.Presets)
 			}
 
-			parsedProfiles, err := jsonProfileToVideoProfile(resp)
+			parsedProfiles, err := ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 			if err != nil {
 				clog.Errorf(ctx, "Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
 				return nil
@@ -348,53 +340,49 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 	}
 }
 
-func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile, error) {
-	profiles := []ffmpeg.VideoProfile{}
-	for _, profile := range resp.Profiles {
-		name := profile.Name
-		if name == "" {
-			name = "webhook_" + ffmpeg.DefaultProfileName(
-				profile.Width,
-				profile.Height,
-				profile.Bitrate)
-		}
-		var gop time.Duration
-		if profile.GOP != "" {
-			if profile.GOP == "intra" {
-				gop = ffmpeg.GOPIntraOnly
-			} else {
-				gopFloat, err := strconv.ParseFloat(profile.GOP, 64)
-				if err != nil {
-					return nil, err
-				}
-				if gopFloat < 0.0 {
-					return nil, errors.New("invalid gop value")
-				}
-				gop = time.Duration(gopFloat * float64(time.Second))
-			}
-		}
-		encodingProfile, err := ffmpeg.EncoderProfileNameToValue(profile.Profile)
-		if err != nil {
-			return nil, err
-		}
-		encoder, err := ffmpeg.CodecNameToValue(profile.Encoder)
-		if err != nil {
-			return nil, err
-		}
-		prof := ffmpeg.VideoProfile{
-			Name:         name,
-			Bitrate:      fmt.Sprint(profile.Bitrate),
-			Framerate:    profile.FPS,
-			FramerateDen: profile.FPSDen,
-			Resolution:   fmt.Sprintf("%dx%d", profile.Width, profile.Height),
-			Profile:      encodingProfile,
-			GOP:          gop,
-			Encoder:      encoder,
-		}
-		profiles = append(profiles, prof)
+func authenticateStream(url string) (*authWebhookResponse, error) {
+	if AuthWebhookURL == nil {
+		return nil, nil
 	}
-	return profiles, nil
+	started := time.Now()
+	values := map[string]string{"url": url}
+	jsonValue, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+
+	if err != nil {
+		return nil, err
+	}
+	rbody, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
+	}
+	if len(rbody) == 0 {
+		return nil, nil
+	}
+	var authResp authWebhookResponse
+	err = json.Unmarshal(rbody, &authResp)
+	if err != nil {
+		return nil, err
+	}
+	if authResp.ManifestID == "" {
+		return nil, errors.New("empty manifest id not allowed")
+	}
+	took := time.Since(started)
+	glog.Infof("Stream authentication for url=%s dur=%s", url, took)
+	if monitor.Enabled {
+		monitor.AuthWebhookFinished(took)
+	}
+	return &authResp, nil
 }
+
+// func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile, error) {
+// 	profiles, err := ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
+// 	return profiles, err
+// }
 
 func jsonDetectionToDetectionConfig(ctx context.Context, resp *authWebhookResponse) (core.DetectionConfig, error) {
 	detection := core.DetectionConfig{
