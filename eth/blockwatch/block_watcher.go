@@ -637,7 +637,12 @@ func (w *Watcher) enrichWithL1BlockNumber(header *MiniHeader) (*MiniHeader, erro
 	if header == nil || header.L1BlockNumber != nil {
 		return header, nil
 	}
-	return w.client.HeaderByHash(header.Hash)
+	fetchedBlock, err := w.client.HeaderByHash(header.Hash)
+	if err != nil {
+		return header, err
+	}
+	header.L1BlockNumber = fetchedBlock.L1BlockNumber
+	return header, nil
 }
 
 func isUnknownBlockErr(err error) bool {

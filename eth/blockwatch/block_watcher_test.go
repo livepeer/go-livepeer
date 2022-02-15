@@ -527,6 +527,7 @@ func TestEnrichWithL1_One(t *testing.T) {
 	header := &MiniHeader{
 		Number: big.NewInt(FakeBlockNumber),
 		Hash:   common.HexToHash(FakeHash),
+		Logs:   []types.Log{logStub},
 	}
 	events := []*Event{{BlockHeader: header}}
 
@@ -536,6 +537,7 @@ func TestEnrichWithL1_One(t *testing.T) {
 	assert.Equal(common.HexToHash(FakeHash), res[0].BlockHeader.Hash)
 	assert.Equal(big.NewInt(FakeBlockNumber), res[0].BlockHeader.Number)
 	assert.Equal(big.NewInt(FakeL1BlockNumber), res[0].BlockHeader.L1BlockNumber)
+	assert.Contains(res[0].BlockHeader.Logs, logStub)
 }
 
 func TestEnrichWithL1_Multiple(t *testing.T) {
