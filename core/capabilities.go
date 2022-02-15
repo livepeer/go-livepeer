@@ -48,6 +48,11 @@ const (
 	Capability_VP9_Decode
 	Capability_VP8_Encode
 	Capability_VP9_Encode
+	Capability_H264_Decode_444_8bit
+	Capability_H264_Decode_422_8bit
+	Capability_H264_Decode_444_10bit
+	Capability_H264_Decode_422_10bit
+	Capability_H264_Decode_420_10bit
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -98,6 +103,26 @@ var CapabilityTestLookup = map[Capability]CapabilityTest{
 		inVideoData: testSegment_VP9,
 		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
+	Capability_H264_Decode_444_8bit: {
+		inVideoData: testSegment_H264_444_8bit,
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_H264_Decode_422_8bit: {
+		inVideoData: testSegment_H264_422_8bit,
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_H264_Decode_444_10bit: {
+		inVideoData: testSegment_H264_444_10bit,
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_H264_Decode_422_10bit: {
+		inVideoData: testSegment_H264_422_10bit,
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
+	Capability_H264_Decode_420_10bit: {
+		inVideoData: testSegment_H264_420_10bit,
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+	},
 }
 
 var capFormatConv = errors.New("capability: unknown format")
@@ -132,6 +157,11 @@ func OptionalCapabilities() []Capability {
 		Capability_HEVC_Encode,
 		Capability_VP8_Decode,
 		Capability_VP9_Decode,
+		Capability_H264_Decode_444_8bit,
+		Capability_H264_Decode_422_8bit,
+		Capability_H264_Decode_444_10bit,
+		Capability_H264_Decode_422_10bit,
+		Capability_H264_Decode_420_10bit,
 	}
 }
 
@@ -172,6 +202,17 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 	return true
 }
 
+type chromaDepth struct {
+	Chroma ffmpeg.ChromaSubsampling
+	Depth  ffmpeg.ColorDepthBits
+}
+
+var cap_444_8bit = chromaDepth{ffmpeg.ChromaSubsampling444, 8}
+var cap_422_8bit = chromaDepth{ffmpeg.ChromaSubsampling422, 8}
+var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, 10}
+var cap_422_10bit = chromaDepth{ffmpeg.ChromaSubsampling422, 10}
+var cap_420_10bit = chromaDepth{ffmpeg.ChromaSubsampling420, 10}
+
 func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps := make(map[Capability]bool)
 
@@ -179,6 +220,26 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps[Capability_AuthToken] = true
 	if params.VerificationFreq > 0 {
 		caps[Capability_MPEG7VideoSignature] = true
+	}
+	// capabilities based on given input
+	switch params.Codec {
+	case ffmpeg.H264:
+		chromaSubsampling, colorDepth, formatError := params.PixelFormat.Properties()
+		if formatError == nil {
+			feature := chromaDepth{chromaSubsampling, colorDepth}
+			switch feature {
+			case cap_444_8bit:
+				caps[Capability_H264_Decode_444_8bit] = true
+			case cap_422_8bit:
+				caps[Capability_H264_Decode_422_8bit] = true
+			case cap_444_10bit:
+				caps[Capability_H264_Decode_444_10bit] = true
+			case cap_422_10bit:
+				caps[Capability_H264_Decode_422_10bit] = true
+			case cap_420_10bit:
+				caps[Capability_H264_Decode_420_10bit] = true
+			}
+		}
 	}
 
 	// capabilities based on requested output
