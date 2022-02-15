@@ -51,12 +51,13 @@ var (
 	ErrParseBigInt = fmt.Errorf("failed to parse big integer")
 	ErrProfile     = fmt.Errorf("failed to parse profile")
 
-	ErrFormatProto = fmt.Errorf("unknown VideoProfile format for protobufs")
-	ErrFormatMime  = fmt.Errorf("unknown VideoProfile format for mime type")
-	ErrFormatExt   = fmt.Errorf("unknown VideoProfile format for extension")
-	ErrProfProto   = fmt.Errorf("unknown VideoProfile profile for protobufs")
-	ErrProfEncoder = fmt.Errorf("unknown VideoProfile encoder for protobufs")
-	ErrProfName    = fmt.Errorf("unknown VideoProfile profile name")
+	ErrChromaFormat = fmt.Errorf("unknown VideoProfile ChromaFormat")
+	ErrFormatProto  = fmt.Errorf("unknown VideoProfile format for protobufs")
+	ErrFormatMime   = fmt.Errorf("unknown VideoProfile format for mime type")
+	ErrFormatExt    = fmt.Errorf("unknown VideoProfile format for extension")
+	ErrProfProto    = fmt.Errorf("unknown VideoProfile profile for protobufs")
+	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
+	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
@@ -224,17 +225,30 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		} else {
 			gop = int32(profile.GOP.Milliseconds())
 		}
+		chromaFormat := net.VideoProfile_CHROMA_420
+		switch profile.ChromaFormat {
+		case ffmpeg.ChromaSubsampling420:
+			// chromaFormat := net.VideoProfile_CHROMA_420
+		case ffmpeg.ChromaSubsampling422:
+			chromaFormat = net.VideoProfile_CHROMA_422
+		case ffmpeg.ChromaSubsampling444:
+			chromaFormat = net.VideoProfile_CHROMA_444
+		default:
+			return nil, ErrChromaFormat
+		}
 		fullProfile := net.VideoProfile{
-			Name:    name,
-			Width:   int32(width),
-			Height:  int32(height),
-			Bitrate: int32(bitrate),
-			Fps:     uint32(profile.Framerate),
-			FpsDen:  uint32(profile.FramerateDen),
-			Format:  format,
-			Profile: encoderProf,
-			Gop:     gop,
-			Encoder: encoder,
+			Name:         name,
+			Width:        int32(width),
+			Height:       int32(height),
+			Bitrate:      int32(bitrate),
+			Fps:          uint32(profile.Framerate),
+			FpsDen:       uint32(profile.FramerateDen),
+			Format:       format,
+			Profile:      encoderProf,
+			Gop:          gop,
+			Encoder:      encoder,
+			ColorDepth:   int32(profile.ColorDepth),
+			ChromaFormat: chromaFormat,
 		}
 		profiles = append(profiles, &fullProfile)
 	}
