@@ -422,7 +422,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil)
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, ffmpeg.PixelFormat{-1})
 		if err != nil {
 			return err
 		}
@@ -489,7 +489,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec) (*rtmpConnection, error) {
+func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat) (*rtmpConnection, error) {
 	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
@@ -514,6 +514,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	if actualStreamCodec != nil {
 		params.Codec = *actualStreamCodec
 	}
+	params.PixelFormat = pixelFormat
 
 	caps, err := core.JobCapabilities(params)
 	if err != nil {
@@ -731,19 +732,21 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 // HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+	errorOut := func(status int, s string, params ...interface{}) {
+		httpErr := fmt.Sprintf(s, params...)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, status)
+	}
+
 	start := time.Now()
 	if r.Method != "POST" && r.Method != "PUT" {
-		httpErr := fmt.Sprintf(`http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
-		glog.Error(httpErr)
-		http.Error(w, httpErr, http.StatusMethodNotAllowed)
+		errorOut(http.StatusMethodNotAllowed, `http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		return
 	}
 	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 
 	if err != nil {
-		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
-		glog.Error(httpErr)
-		http.Error(w, httpErr, http.StatusInternalServerError)
+		errorOut(http.StatusInternalServerError, `Error reading http request body: %s`, err.Error())
 		return
 	}
 	r.Body.Close()
@@ -756,12 +759,16 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		httpErr := fmt.Sprintf(`ignoring file extension: %s`, ext)
-		glog.Error(httpErr)
-		http.Error(w, httpErr, http.StatusBadRequest)
+		errorOut(http.StatusBadRequest, `ignoring file extension: %s`, ext)
 		return
 	}
 	ctx := r.Context()
+	errorOut = func(status int, s string, params ...interface{}) {
+		httpErr := fmt.Sprintf(s, params...)
+		clog.Errorf(ctx, httpErr)
+		http.Error(w, httpErr, status)
+	}
+
 	mid := parseManifestID(r.URL.Path)
 	if mid != "" {
 		ctx = clog.AddManifestID(ctx, string(mid))
@@ -774,9 +781,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	if mid == "" {
-		httpErr := fmt.Sprintf("Bad URL url=%s", r.URL)
-		glog.Error(httpErr)
-		http.Error(w, httpErr, http.StatusBadRequest)
+		errorOut(http.StatusBadRequest, "Bad URL url=%s", r.URL)
 		return
 	}
 	s.connectionLock.RLock()
@@ -797,11 +802,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
-	isZeroFrame, _, vcodecStr, err := ffmpeg.GetCodecInfoBytes(body)
+	status, _, vcodecStr, pixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
+	isZeroFrame := status == ffmpeg.GetCodecNeedsBypass
 	if err != nil {
-		httpErr := fmt.Sprintf("Error getting codec info url=%s", r.URL)
-		clog.Errorf(ctx, httpErr)
-		http.Error(w, httpErr, http.StatusUnprocessableEntity)
+		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
 		return
 	}
 
@@ -812,20 +816,24 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[vcodecStr]
 		vcodec = &vcodecVal
 		if !ok {
-			httpErr := fmt.Sprintf("Unknown input stream codec=%s", vcodecStr)
-			clog.Errorf(ctx, httpErr)
-			http.Error(w, httpErr, http.StatusUnprocessableEntity)
+			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", vcodecStr)
 			return
 		}
 	}
+
+	// Fail early on unsupported chroma subsampling
+	// chromaSubsampling, _, pixelFormatError := pixelFormat.Properties()
+	// correctChroma := chromaSubsampling == ffmpeg.ChromaSubsampling420 || chromaSubsampling == ffmpeg.ChromaSubsampling422
+	// if pixelFormatError != nil || !correctChroma {
+	// 	errorOut(http.StatusUnprocessableEntity, "Unsupported chroma subsampling")
+	// 	return
+	// }
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
 		appData := (createRTMPStreamIDHandler(ctx, s))(r.URL)
 		if appData == nil {
-			httpErr := fmt.Sprintf("Could not create stream ID: url=%s", r.URL)
-			clog.Errorf(ctx, httpErr)
-			http.Error(w, httpErr, http.StatusInternalServerError)
+			errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
 			return
 		}
 		params := streamParams(appData)
@@ -860,13 +868,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec)
+		cxn, err = s.registerConnection(ctx, st, vcodec, pixelFormat)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
-				httpErr := fmt.Sprintf("http push error url=%s err=%q", r.URL, err)
-				clog.Errorf(ctx, httpErr)
-				http.Error(w, httpErr, http.StatusInternalServerError)
+				errorOut(http.StatusInternalServerError, "http push error url=%s err=%q", r.URL, err)
 				return
 			} // else we continue with the old cxn
 		} else {
@@ -954,13 +960,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Do the transcoding!
 	urls, err := processSegment(ctx, cxn, seg)
 	if err != nil {
-		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
-		clog.Errorf(ctx, httpErr)
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
 			status = http.StatusUnprocessableEntity
 		}
-		http.Error(w, httpErr, status)
+		errorOut(status, "http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
 		return
 	}
 	select {
