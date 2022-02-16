@@ -211,7 +211,9 @@ func init() {
 	proto.RegisterType((*MaxFloatUpdate)(nil), "net.MaxFloatUpdate")
 }
 
-func init() { proto.RegisterFile("net/redeemer.proto", fileDescriptor_41a074e4ea0232f2) }
+func init() {
+	proto.RegisterFile("net/redeemer.proto", fileDescriptor_41a074e4ea0232f2)
+}
 
 var fileDescriptor_41a074e4ea0232f2 = []byte{
 	// 323 bytes of a gzipped FileDescriptorProto
@@ -240,11 +242,11 @@ var fileDescriptor_41a074e4ea0232f2 = []byte{
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ grpc.ClientConn
+var _ grpc.ClientConnInterface
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion4
+const _ = grpc.SupportPackageIsVersion6
 
 // TicketRedeemerClient is the client API for TicketRedeemer service.
 //
@@ -256,10 +258,10 @@ type TicketRedeemerClient interface {
 }
 
 type ticketRedeemerClient struct {
-	cc *grpc.ClientConn
+	cc grpc.ClientConnInterface
 }
 
-func NewTicketRedeemerClient(cc *grpc.ClientConn) TicketRedeemerClient {
+func NewTicketRedeemerClient(cc grpc.ClientConnInterface) TicketRedeemerClient {
 	return &ticketRedeemerClient{cc}
 }
 
