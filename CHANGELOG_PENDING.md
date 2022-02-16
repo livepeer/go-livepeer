@@ -15,6 +15,7 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
+- \#2267 Fix nil pointer in the block header logs (@leszko)
 
 #### General
 
