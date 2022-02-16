@@ -22,4 +22,6 @@
 
 #### Orchestrator
 
+- \#2266 Fix default reward cut and fee cut in `livepeer_cli` (@leszko)
+
 #### Transcoder

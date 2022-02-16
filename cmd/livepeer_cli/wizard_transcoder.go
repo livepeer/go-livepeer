@@ -53,10 +53,10 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 	}
 
 	fmt.Printf("Enter block reward cut percentage (current=%v default=%v) - ", blockRewardCut, defaultRewardCut)
-	blockRewardCut = w.readDefaultFloat(blockRewardCut)
+	blockRewardCut = w.readDefaultFloat(defaultRewardCut)
 
 	fmt.Printf("Enter fee cut percentage (current=%v default=%v) - ", feeCut, defaultFeeCut)
-	feeCut = w.readDefaultFloat(feeCut)
+	feeCut = w.readDefaultFloat(defaultFeeCut)
 
 	fmt.Println("Enter a transcoding base price in wei per pixels")
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
