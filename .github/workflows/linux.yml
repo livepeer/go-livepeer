@@ -76,6 +76,13 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: '1.17.6'
+      - name: Install protobuf
+        run: |
+          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
       - name: Cache go modules
         id: cache-go-mod
         uses: actions/cache@v2.1.5
@@ -95,6 +102,12 @@ jobs:
       - name: go fmt
         run: |
           go fmt ./...
+          git diff --exit-code
+      - name: Compile proto files
+        run: |
+          protoc --version
+          touch net/lp_rpc.proto net/redeemer.proto
+          make net/lp_rpc.pb.go net/redeemer.pb.go
           git diff --exit-code
       - name: Lint
         run: |
