@@ -6,8 +6,15 @@ on:
       - master
 jobs:
   build:
-    runs-on: macOS-latest
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    runs-on: macos-latest
     steps:
+    - name: Set build environment
+      run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
     - name: Checkout
       uses: actions/checkout@v2
       with:
@@ -17,23 +24,23 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v2
       with:
-        go-version: '1.15.5'
+        go-version: '1.17.6'
     - name: Cache go modules
       id: cache-go-mod
       uses: actions/cache@v2.1.5
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
-          ${{ runner.os }}-go-
+          ${{ runner.os }}-${{ matrix.arch }}-go-
     - name: Cache ffmpeg
       id: cache-ffmpeg
       uses: actions/cache@v2.1.5
       with:
         path: ~/compiled
-        key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
         restore-keys: |
-          ${{ runner.os }}-ffmpeg
+          ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
     - name: Install dependencies
       run: brew install coreutils
     - name: Install go modules
