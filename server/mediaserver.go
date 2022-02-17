@@ -422,7 +422,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, ffmpeg.PixelFormat{-1})
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, ffmpeg.PixelFormat{ffmpeg.PixelFormatNone})
 		if err != nil {
 			return err
 		}
