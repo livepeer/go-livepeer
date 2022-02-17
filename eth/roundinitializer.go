@@ -34,7 +34,7 @@ type RoundInitializer struct {
 	quit   chan struct{}
 
 	nextRoundStartL1Block *big.Int
-	mu                  sync.Mutex
+	mu                    sync.Mutex
 }
 
 // NewRoundInitializer creates a RoundInitializer instance
