@@ -48,54 +48,53 @@ const (
 	Capability_VP9_Encode
 )
 
-var CapabilityNameLookup = map[Capability]string {
-	Capability_Invalid: "Invalid",
-	Capability_Unused: "Unused",
-	Capability_H264: "H.264",
-	Capability_MPEGTS: "MPEGTS",
-	Capability_MP4: "MP4",
-	Capability_FractionalFramerates: "Fractional framerates",
-	Capability_StorageDirect: "Storage direct",
-	Capability_StorageS3: "Storage S3",
-	Capability_StorageGCS: "Storage GCS",
-	Capability_ProfileH264Baseline: "H264 Baseline profile",
-	Capability_ProfileH264Main: "H264 Main profile",
-	Capability_ProfileH264High: "H264 High profile",
+var CapabilityNameLookup = map[Capability]string{
+	Capability_Invalid:                    "Invalid",
+	Capability_Unused:                     "Unused",
+	Capability_H264:                       "H.264",
+	Capability_MPEGTS:                     "MPEGTS",
+	Capability_MP4:                        "MP4",
+	Capability_FractionalFramerates:       "Fractional framerates",
+	Capability_StorageDirect:              "Storage direct",
+	Capability_StorageS3:                  "Storage S3",
+	Capability_StorageGCS:                 "Storage GCS",
+	Capability_ProfileH264Baseline:        "H264 Baseline profile",
+	Capability_ProfileH264Main:            "H264 Main profile",
+	Capability_ProfileH264High:            "H264 High profile",
 	Capability_ProfileH264ConstrainedHigh: "H264 Constained High profile",
-	Capability_GOP: "GOP",
-	Capability_AuthToken: "Auth token",
-	Capability_SceneClassification: "Scene slassification",
-	Capability_MPEG7VideoSignature: "MPEG7 signature",
-	Capability_HEVC_Decode: "HEVC decode",
-	Capability_HEVC_Encode: "HEVC encode",
-	Capability_VP8_Decode: "VP8 decode",
-	Capability_VP9_Decode: "VP9 decode",
-	Capability_VP8_Encode: "VP8 encode",
-	Capability_VP9_Encode: "VP9 encode",
+	Capability_GOP:                        "GOP",
+	Capability_AuthToken:                  "Auth token",
+	Capability_SceneClassification:        "Scene slassification",
+	Capability_MPEG7VideoSignature:        "MPEG7 signature",
+	Capability_HEVC_Decode:                "HEVC decode",
+	Capability_HEVC_Encode:                "HEVC encode",
+	Capability_VP8_Decode:                 "VP8 decode",
+	Capability_VP9_Decode:                 "VP9 decode",
+	Capability_VP8_Encode:                 "VP8 encode",
+	Capability_VP9_Encode:                 "VP9 encode",
 }
-
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
 	// 145x145 is the lowest resolution supported by NVENC on Windows
 	Capability_H264: {
 		inVideoData: testSegment_H264,
-		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_HEVC_Decode: {
 		inVideoData: testSegment_HEVC,
-		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_HEVC_Encode: {
 		inVideoData: testSegment_H264,
-		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS, Encoder: ffmpeg.H265},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS, Encoder: ffmpeg.H265},
 	},
 	Capability_VP8_Decode: {
 		inVideoData: testSegment_VP8,
-		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_VP9_Decode: {
 		inVideoData: testSegment_VP9,
-		outProfile: ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 }
 
