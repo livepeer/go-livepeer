@@ -1153,10 +1153,6 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		segURLs[i] = url
 		segData[i] = data
 		segLock.Unlock()
-
-		if monitor.Enabled {
-			monitor.TranscodedSegmentAppeared(ctx, nonce, seg.SeqNo, profile.Name, bros != nil)
-		}
 	}
 
 	dlStart := time.Now()

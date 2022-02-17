@@ -590,7 +590,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "upload_time_seconds",
 			Measure:     census.mUploadTime,
 			Description: "UploadTime, seconds",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTags...),
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
 		{
@@ -632,7 +632,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "discovery_errors_total",
 			Measure:     census.mDiscoveryError,
 			Description: "Number of discover errors",
-			TagKeys:     append([]tag.Key{census.kErrorCode, census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kErrorCode, census.kOrchestratorURI}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -899,15 +899,20 @@ func manifestIDTagAndIP(ctx context.Context, others ...tag.Mutator) []tag.Mutato
 func LogDiscoveryError(ctx context.Context, uri, code string) {
 	if strings.Contains(code, "OrchestratorCapped") {
 		code = "OrchestratorCapped"
+	} else if strings.Contains(code, "HTTP status code 404") {
+		code = "HTTP 404"
+	} else if strings.Contains(code, "DeadlineExceeded") || strings.Contains(code, "deadline") {
+		code = "DeadlineExceeded"
 	} else if strings.Contains(code, "Canceled") {
 		code = "Canceled"
 	}
-	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx,
-			tag.Insert(census.kErrorCode, code),
-			tag.Insert(census.kOrchestratorURI, uri)),
-		census.mDiscoveryError.M(1)); err != nil {
-		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	if code != "Canceled" {
+		if err := stats.RecordWithTags(census.ctx,
+			[]tag.Mutator{tag.Insert(census.kErrorCode, code),
+				tag.Insert(census.kOrchestratorURI, uri)},
+			census.mDiscoveryError.M(1)); err != nil {
+			clog.Errorf(ctx, "Error recording metrics err=%q", err)
+		}
 	}
 }
 
@@ -1179,7 +1184,11 @@ func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Du
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx,
 			tag.Insert(census.kOrchestratorURI, uri)),
-		census.mSegmentUploaded.M(1),
+		census.mSegmentUploaded.M(1)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kOrchestratorURI, uri)},
 		census.mUploadTime.M(uploadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1406,40 +1415,6 @@ func RecordingSegmentSaved(dur time.Duration, err error) {
 	} else {
 		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
 		stats.Record(census.ctx, census.mRecordingSavedSegments.M(1))
-	}
-}
-
-func TranscodedSegmentAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
-	clog.V(logLevel).Infof(ctx, "Logging LogTranscodedSegmentAppeared... profile=%s", profile)
-	census.segmentTranscodedAppeared(ctx, nonce, seqNo, profile, recordingEnabled)
-}
-
-func (cen *censusMetricsCounter) segmentTranscodedAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
-	cen.lock.Lock()
-	defer cen.lock.Unlock()
-	rctx, err := tag.New(cen.ctx, tag.Insert(cen.kProfile, profile))
-	if err != nil {
-		glog.Error("Error creating context", err)
-		return
-	}
-
-	// cen.transcodedSegments[nonce] = cen.transcodedSegments[nonce] + 1
-	if st, ok := cen.emergeTimes[nonce][seqNo]; ok {
-		latency := time.Since(st)
-		clog.V(logLevel).Infof(ctx, "Recording latency for segment profile=%s latency=%s", profile, latency)
-		if err := stats.RecordWithTags(rctx,
-			manifestIDTag(ctx), cen.mTranscodeLatency.M(latency.Seconds())); err != nil {
-			clog.Errorf(ctx, "Error recording metrics err=%q", err)
-		}
-	}
-
-	segType := segTypeRegular
-	if recordingEnabled {
-		segType = segTypeRec
-	}
-	if err := stats.RecordWithTags(rctx,
-		manifestIDTag(ctx, tag.Insert(cen.kSegmentType, segType)), cen.mSegmentTranscodedAppeared.M(1)); err != nil {
-		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
 
