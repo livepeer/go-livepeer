@@ -75,7 +75,7 @@ func (x VideoProfile_Format) String() string {
 }
 
 func (VideoProfile_Format) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{12, 0}
+	return fileDescriptor_034e29c79f9ba827, []int{13, 0}
 }
 
 type VideoProfile_Profile int32
@@ -109,7 +109,7 @@ func (x VideoProfile_Profile) String() string {
 }
 
 func (VideoProfile_Profile) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{12, 1}
+	return fileDescriptor_034e29c79f9ba827, []int{13, 1}
 }
 
 type VideoProfile_VideoCodec int32
@@ -140,7 +140,7 @@ func (x VideoProfile_VideoCodec) String() string {
 }
 
 func (VideoProfile_VideoCodec) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{12, 2}
+	return fileDescriptor_034e29c79f9ba827, []int{13, 2}
 }
 
 type VideoProfile_ChromaSubsampling int32
@@ -892,6 +892,8 @@ type SegData struct {
 	FullProfiles2 []*VideoProfile `protobuf:"bytes,34,rep,name=fullProfiles2,proto3" json:"fullProfiles2,omitempty"`
 	// Transcoding profiles to use. Supersedes `fullProfiles2` field
 	FullProfiles3 []*VideoProfile `protobuf:"bytes,35,rep,name=fullProfiles3,proto3" json:"fullProfiles3,omitempty"`
+	// Transcoding parameters specific to this segment
+	SegmentParameters *SegParameters `protobuf:"bytes,37,opt,name=segment_parameters,json=segmentParameters,proto3" json:"segment_parameters,omitempty"`
 	// [EXPERIMENTAL]
 	// Detector profiles to use
 	DetectorProfiles     []*DetectorProfile `protobuf:"bytes,36,rep,name=detector_profiles,json=detectorProfiles,proto3" json:"detector_profiles,omitempty"`
@@ -1023,11 +1025,69 @@ func (m *SegData) GetFullProfiles3() []*VideoProfile {
 	return nil
 }
 
+func (m *SegData) GetSegmentParameters() *SegParameters {
+	if m != nil {
+		return m.SegmentParameters
+	}
+	return nil
+}
+
 func (m *SegData) GetDetectorProfiles() []*DetectorProfile {
 	if m != nil {
 		return m.DetectorProfiles
 	}
 	return nil
+}
+
+type SegParameters struct {
+	// Start timestamp from which to start encoding
+	// Milliseconds, from start of the file
+	From uint64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
+	// Skip all frames after that timestamp
+	// Milliseconds, from start of the file
+	To                   uint64   `protobuf:"varint,2,opt,name=to,proto3" json:"to,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *SegParameters) Reset()         { *m = SegParameters{} }
+func (m *SegParameters) String() string { return proto.CompactTextString(m) }
+func (*SegParameters) ProtoMessage()    {}
+func (*SegParameters) Descriptor() ([]byte, []int) {
+	return fileDescriptor_034e29c79f9ba827, []int{12}
+}
+
+func (m *SegParameters) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_SegParameters.Unmarshal(m, b)
+}
+func (m *SegParameters) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_SegParameters.Marshal(b, m, deterministic)
+}
+func (m *SegParameters) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SegParameters.Merge(m, src)
+}
+func (m *SegParameters) XXX_Size() int {
+	return xxx_messageInfo_SegParameters.Size(m)
+}
+func (m *SegParameters) XXX_DiscardUnknown() {
+	xxx_messageInfo_SegParameters.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SegParameters proto.InternalMessageInfo
+
+func (m *SegParameters) GetFrom() uint64 {
+	if m != nil {
+		return m.From
+	}
+	return 0
+}
+
+func (m *SegParameters) GetTo() uint64 {
+	if m != nil {
+		return m.To
+	}
+	return 0
 }
 
 type VideoProfile struct {
@@ -1061,7 +1121,7 @@ func (m *VideoProfile) Reset()         { *m = VideoProfile{} }
 func (m *VideoProfile) String() string { return proto.CompactTextString(m) }
 func (*VideoProfile) ProtoMessage()    {}
 func (*VideoProfile) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{12}
+	return fileDescriptor_034e29c79f9ba827, []int{13}
 }
 
 func (m *VideoProfile) XXX_Unmarshal(b []byte) error {
@@ -1183,7 +1243,7 @@ func (m *TranscodedSegmentData) Reset()         { *m = TranscodedSegmentData{} }
 func (m *TranscodedSegmentData) String() string { return proto.CompactTextString(m) }
 func (*TranscodedSegmentData) ProtoMessage()    {}
 func (*TranscodedSegmentData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{13}
+	return fileDescriptor_034e29c79f9ba827, []int{14}
 }
 
 func (m *TranscodedSegmentData) XXX_Unmarshal(b []byte) error {
@@ -1239,7 +1299,7 @@ func (m *SceneClassificationData) Reset()         { *m = SceneClassificationData
 func (m *SceneClassificationData) String() string { return proto.CompactTextString(m) }
 func (*SceneClassificationData) ProtoMessage()    {}
 func (*SceneClassificationData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{14}
+	return fileDescriptor_034e29c79f9ba827, []int{15}
 }
 
 func (m *SceneClassificationData) XXX_Unmarshal(b []byte) error {
@@ -1282,7 +1342,7 @@ func (m *DetectData) Reset()         { *m = DetectData{} }
 func (m *DetectData) String() string { return proto.CompactTextString(m) }
 func (*DetectData) ProtoMessage()    {}
 func (*DetectData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{15}
+	return fileDescriptor_034e29c79f9ba827, []int{16}
 }
 
 func (m *DetectData) XXX_Unmarshal(b []byte) error {
@@ -1352,7 +1412,7 @@ func (m *TranscodeData) Reset()         { *m = TranscodeData{} }
 func (m *TranscodeData) String() string { return proto.CompactTextString(m) }
 func (*TranscodeData) ProtoMessage()    {}
 func (*TranscodeData) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{16}
+	return fileDescriptor_034e29c79f9ba827, []int{17}
 }
 
 func (m *TranscodeData) XXX_Unmarshal(b []byte) error {
@@ -1415,7 +1475,7 @@ func (m *TranscodeResult) Reset()         { *m = TranscodeResult{} }
 func (m *TranscodeResult) String() string { return proto.CompactTextString(m) }
 func (*TranscodeResult) ProtoMessage()    {}
 func (*TranscodeResult) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{17}
+	return fileDescriptor_034e29c79f9ba827, []int{18}
 }
 
 func (m *TranscodeResult) XXX_Unmarshal(b []byte) error {
@@ -1512,7 +1572,7 @@ func (m *RegisterRequest) Reset()         { *m = RegisterRequest{} }
 func (m *RegisterRequest) String() string { return proto.CompactTextString(m) }
 func (*RegisterRequest) ProtoMessage()    {}
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{18}
+	return fileDescriptor_034e29c79f9ba827, []int{19}
 }
 
 func (m *RegisterRequest) XXX_Unmarshal(b []byte) error {
@@ -1574,7 +1634,7 @@ func (m *NotifySegment) Reset()         { *m = NotifySegment{} }
 func (m *NotifySegment) String() string { return proto.CompactTextString(m) }
 func (*NotifySegment) ProtoMessage()    {}
 func (*NotifySegment) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{19}
+	return fileDescriptor_034e29c79f9ba827, []int{20}
 }
 
 func (m *NotifySegment) XXX_Unmarshal(b []byte) error {
@@ -1650,7 +1710,7 @@ func (m *TicketParams) Reset()         { *m = TicketParams{} }
 func (m *TicketParams) String() string { return proto.CompactTextString(m) }
 func (*TicketParams) ProtoMessage()    {}
 func (*TicketParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{20}
+	return fileDescriptor_034e29c79f9ba827, []int{21}
 }
 
 func (m *TicketParams) XXX_Unmarshal(b []byte) error {
@@ -1736,7 +1796,7 @@ func (m *TicketSenderParams) Reset()         { *m = TicketSenderParams{} }
 func (m *TicketSenderParams) String() string { return proto.CompactTextString(m) }
 func (*TicketSenderParams) ProtoMessage()    {}
 func (*TicketSenderParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{21}
+	return fileDescriptor_034e29c79f9ba827, []int{22}
 }
 
 func (m *TicketSenderParams) XXX_Unmarshal(b []byte) error {
@@ -1786,7 +1846,7 @@ func (m *TicketExpirationParams) Reset()         { *m = TicketExpirationParams{}
 func (m *TicketExpirationParams) String() string { return proto.CompactTextString(m) }
 func (*TicketExpirationParams) ProtoMessage()    {}
 func (*TicketExpirationParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{22}
+	return fileDescriptor_034e29c79f9ba827, []int{23}
 }
 
 func (m *TicketExpirationParams) XXX_Unmarshal(b []byte) error {
@@ -1844,7 +1904,7 @@ func (m *Payment) Reset()         { *m = Payment{} }
 func (m *Payment) String() string { return proto.CompactTextString(m) }
 func (*Payment) ProtoMessage()    {}
 func (*Payment) Descriptor() ([]byte, []int) {
-	return fileDescriptor_034e29c79f9ba827, []int{23}
+	return fileDescriptor_034e29c79f9ba827, []int{24}
 }
 
 func (m *Payment) XXX_Unmarshal(b []byte) error {
@@ -1919,6 +1979,7 @@ func init() {
 	proto.RegisterType((*SceneClassificationProfile)(nil), "net.SceneClassificationProfile")
 	proto.RegisterType((*DetectorProfile)(nil), "net.DetectorProfile")
 	proto.RegisterType((*SegData)(nil), "net.SegData")
+	proto.RegisterType((*SegParameters)(nil), "net.SegParameters")
 	proto.RegisterType((*VideoProfile)(nil), "net.VideoProfile")
 	proto.RegisterType((*TranscodedSegmentData)(nil), "net.TranscodedSegmentData")
 	proto.RegisterType((*SceneClassificationData)(nil), "net.SceneClassificationData")
@@ -1938,6 +1999,7 @@ func init() {
 	proto.RegisterFile("net/lp_rpc.proto", fileDescriptor_034e29c79f9ba827)
 }
 
+// TODO: How do I regenerate this?
 var fileDescriptor_034e29c79f9ba827 = []byte{
 	// 1937 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x58, 0xef, 0x6e, 0xdb, 0xc8,

@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 
+	"sync"
+
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
-	"sync"
 )
 
 type Capability int
@@ -55,6 +56,7 @@ const (
 	Capability_H264_Decode_444_10bit
 	Capability_H264_Decode_422_10bit
 	Capability_H264_Decode_420_10bit
+	Capability_SegmentSlicing
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -86,6 +88,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_444_10bit:      "H264 Decode YUV444 10-bit",
 	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
+	Capability_SegmentSlicing:             "Segment slicing",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -156,6 +159,7 @@ func DefaultCapabilities() []Capability {
 		Capability_GOP,
 		Capability_AuthToken,
 		Capability_MPEG7VideoSignature,
+		Capability_SegmentSlicing,
 	}
 }
 
@@ -222,7 +226,7 @@ var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth10
 var cap_422_10bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth10Bit}
 var cap_420_10bit = chromaDepth{ffmpeg.ChromaSubsampling420, ffmpeg.ColorDepth10Bit}
 
-func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
+func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capabilities, error) {
 	caps := make(map[Capability]bool)
 
 	// Define any default capabilities (especially ones that may be mandatory)
@@ -230,6 +234,10 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	if params.VerificationFreq > 0 {
 		caps[Capability_MPEG7VideoSignature] = true
 	}
+	if segPar != nil {
+		caps[Capability_SegmentSlicing] = true
+	}
+
 	// capabilities based on given input
 	switch params.Codec {
 	case ffmpeg.H264:

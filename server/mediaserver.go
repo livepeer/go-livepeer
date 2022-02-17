@@ -407,7 +407,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, PixelFormatNone())
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, PixelFormatNone(), nil)
 		if err != nil {
 			return err
 		}
@@ -432,7 +432,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.StreamStarted(nonce)
 					}
 				}
-				go processSegment(context.Background(), cxn, seg)
+				go processSegment(context.Background(), cxn, seg, nil)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -474,7 +474,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat) (*rtmpConnection, error) {
+func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat, segPar *core.SegmentParameters) (*rtmpConnection, error) {
 	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
@@ -501,7 +501,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	}
 	params.PixelFormat = pixelFormat
 
-	caps, err := core.JobCapabilities(params)
+	caps, err := core.JobCapabilities(params, segPar)
 	if err != nil {
 		return nil, err
 	}
@@ -767,8 +767,32 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	remoteAddr := getRemoteAddr(r)
 	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
 
-	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
-		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
+	sliceFromStr := r.Header.Get("Content-Slice-From")
+	sliceToStr := r.Header.Get("Content-Slice-To")
+
+	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s slice-from=%s slice-to=%s", r.URL.String(), r.UserAgent(),
+		remoteAddr, len(body), r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), sliceFromStr, sliceToStr)
+	var sliceFromDur time.Duration
+	if valMs, err := strconv.ParseUint(sliceFromStr, 10, 64); err == nil {
+		sliceFromDur = time.Duration(valMs) * time.Millisecond
+	}
+	var sliceToDur time.Duration
+	if valMs, err := strconv.ParseUint(sliceToStr, 10, 64); err == nil {
+		sliceToDur = time.Duration(valMs) * time.Millisecond
+	}
+	var segPar *core.SegmentParameters
+	if sliceFromDur > 0 || sliceToDur > 0 {
+		if sliceFromDur > 0 && sliceToDur > 0 && sliceFromDur > sliceToDur {
+			httpErr := fmt.Sprintf(`Invalid slice config from=%s to=%s`, sliceFromDur, sliceToDur)
+			clog.Errorf(ctx, httpErr)
+			http.Error(w, httpErr, http.StatusBadRequest)
+			return
+		}
+		segPar = &core.SegmentParameters{
+			From: sliceFromDur,
+			To:   sliceToDur,
+		}
+	}
 
 	now := time.Now()
 	if mid == "" {
@@ -851,7 +875,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec, pixelFormat)
+		cxn, err = s.registerConnection(ctx, st, vcodec, pixelFormat, segPar)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
@@ -960,7 +984,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Do the transcoding!
-	urls, err := processSegment(ctx, cxn, seg)
+	urls, err := processSegment(ctx, cxn, seg, segPar)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
