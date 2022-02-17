@@ -267,7 +267,7 @@ message VideoProfile {
   }
 
   // Encoder (video codec)
-  VideoCodec Encoder = 25;
+  VideoCodec encoder = 25;
 }
 
 // Individual transcoded segment data.
