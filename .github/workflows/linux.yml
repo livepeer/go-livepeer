@@ -92,6 +92,10 @@ jobs:
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-ffmpeg
+      - name: go fmt
+        run: |
+          go fmt ./...
+          git diff --exit-code
       - name: Lint
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
