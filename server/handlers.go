@@ -374,12 +374,12 @@ func withdrawFeesHandler(client eth.LivepeerEthClient, getChainId func() (int64,
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// for L1 contracts backwards-compatibility
 		var tx *ethtypes.Transaction
-		chainId, err := getChainId()
+		isL1Network, err := isL1Network(getChainId)
 		if err != nil {
 			respondWith500(w, err.Error())
 			return
 		}
-		if chainId == MainnetChainId || chainId == RinkebyChainId {
+		if isL1Network {
 			// L1 contracts
 			tx, err = client.L1WithdrawFees()
 			if err != nil {
@@ -436,4 +436,13 @@ func setMinGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 		respondOk(w, []byte("setMinGasPrice success"))
 	}),
 	)
+}
+
+func isL1Network(getChainId func() (int64, error)) (bool, error) {
+	chainId, err := getChainId()
+	if err != nil {
+		return false, err
+	}
+	isL1Network := chainId == MainnetChainId || chainId == RinkebyChainId
+	return isL1Network, err
 }

@@ -895,7 +895,17 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 				return
 			}
 
-			totalSupply, err := lp.TotalSupply()
+			isL1Network, err := isL1Network(getChainId)
+			if err != nil {
+				glog.Error(err)
+				return
+			}
+			var totalSupply *big.Int
+			if isL1Network {
+				totalSupply, err = lp.TotalSupply()
+			} else {
+				totalSupply, err = lp.GetGlobalTotalSupply()
+			}
 			if err != nil {
 				glog.Error(err)
 				return
