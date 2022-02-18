@@ -58,12 +58,14 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 
 	profiles := []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfile{
-			Name:       "prof1",
-			Bitrate:    "432k",
-			Framerate:  uint(560),
-			Resolution: "123x456",
-			Profile:    ffmpeg.ProfileH264Main,
-			GOP:        123 * 1000000, //  milliseconds (in nanoseconds)
+			Name:         "prof1",
+			Bitrate:      "432k",
+			Framerate:    uint(560),
+			Resolution:   "123x456",
+			Profile:      ffmpeg.ProfileH264Main,
+			GOP:          123 * 1000000, //  milliseconds (in nanoseconds)
+			ColorDepth:   ffmpeg.ColorDepth8Bit,
+			ChromaFormat: ffmpeg.ChromaSubsampling420,
 		},
 		ffmpeg.VideoProfile{
 			Name:         "prof2",
@@ -72,12 +74,21 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 			FramerateDen: uint(12),
 			Resolution:   "456x987",
 			GOP:          -100,
+			ColorDepth:   ffmpeg.ColorDepth10Bit,
+			ChromaFormat: ffmpeg.ChromaSubsampling444,
 		},
 	}
 
 	// empty name should return automatically generated name
 	profiles[0].Name = ""
 	fullProfiles, err := FFmpegProfiletoNetProfile(profiles)
+
+	assert.Equal(fullProfiles[0].ColorDepth, int32(8))
+	assert.Equal(fullProfiles[1].ColorDepth, int32(10))
+	assert.Equal(fullProfiles[0].ChromaFormat, net.VideoProfile_CHROMA_420)
+	assert.Equal(fullProfiles[1].ChromaFormat, net.VideoProfile_CHROMA_444)
+	profiles[0].ColorDepth = ffmpeg.ColorDepth12Bit
+	profiles[0].ChromaFormat = ffmpeg.ChromaSubsampling422
 
 	width, height, err := ffmpeg.VideoProfileResolution(profiles[0])
 	assert.Nil(err)
@@ -92,6 +103,9 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	fullProfiles, err = FFmpegProfiletoNetProfile(profiles)
 	assert.Nil(err)
 	profiles[0].Name = "prof1"
+
+	assert.Equal(fullProfiles[0].ColorDepth, int32(12))
+	assert.Equal(fullProfiles[0].ChromaFormat, net.VideoProfile_CHROMA_422)
 
 	// Empty bitrate should return parsing error
 	profiles[0].Bitrate = ""
