@@ -384,6 +384,7 @@ func (c *StubClient) UnbondingPeriod() (uint64, error)            { return 0, ni
 func (c *StubClient) Inflation() (*big.Int, error)                { return big.NewInt(0), nil }
 func (c *StubClient) InflationChange() (*big.Int, error)          { return big.NewInt(0), nil }
 func (c *StubClient) TargetBondingRate() (*big.Int, error)        { return big.NewInt(0), nil }
+func (c *StubClient) GetGlobalTotalSupply() (*big.Int, error)     { return big.NewInt(0), nil }
 
 // Helpers
 

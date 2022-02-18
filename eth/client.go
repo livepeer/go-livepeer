@@ -107,6 +107,7 @@ type LivepeerEthClient interface {
 	Inflation() (*big.Int, error)
 	InflationChange() (*big.Int, error)
 	TargetBondingRate() (*big.Int, error)
+	GetGlobalTotalSupply() (*big.Int, error)
 	Paused() (bool, error)
 
 	// Governance
@@ -469,6 +470,10 @@ func (c *client) InflationChange() (*big.Int, error) {
 
 func (c *client) TargetBondingRate() (*big.Int, error) {
 	return c.minterSess.TargetBondingRate()
+}
+
+func (c *client) GetGlobalTotalSupply() (*big.Int, error) {
+	return c.minterSess.GetGlobalTotalSupply()
 }
 
 func (c *client) CurrentMintableTokens() (*big.Int, error) {
