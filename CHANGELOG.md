@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.5.29
+
+*February 21 2022*
+
+This release is a fast follow release for v0.5.28 with a few bug fixes including a fix for a nil pointer error when parsing block header logs that could cause the node to crash and a fix for displaying the global LPT supply and participation rate in `livepeer_cli`. 
+
+This release also includes a darwin arm64 build and darwin/linux binaries compiled using Go 1.17.6.
+
+### Breaking Changes 🚨🚨
+
+- The `segment_transcoded_appeared_total` and `transcode_latency_seconds` metrics are removed because they were tracked per transcoding profile and the node already tracks the overall version of the metrics
+- The `upload_time_seconds` and `discovery_errors_toatl` metrics are tracked per orchestrators instead of per stream
+
+### Features ⚒
+
+#### General
+
+- [#2274](https://github.com/livepeer/go-livepeer/pull/2274) Reduce the number of metrics datapoints (@darkdragon)
+
+#### Transcoder
+
+- [#2259](https://github.com/livepeer/go-livepeer/pull/2259) Improve startup capability test to check for Nvidia encoder session limit and to fail fast if a default capability is not supported (@cyberj0g)
+
+### Bug Fixes 🐞
+
+#### General
+
+- [#2267](https://github.com/livepeer/go-livepeer/pull/2267) Fix nil pointer in the block header logs (@leszko)
+- [#2276](https://github.com/livepeer/go-livepeer/pull/2276) Use global total supply instead of L2 supply to calculate participation rate on Arbitrum networks (@leszko)
+
+#### Orchestrator
+
+- [#2266](https://github.com/livepeer/go-livepeer/pull/2266) Fix default reward cut and fee cut in `livepeer_cli` (@leszko)
+
 ## v0.5.28
 
 *February 11th 2022*
