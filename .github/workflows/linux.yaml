@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -75,7 +75,7 @@ jobs:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
 
   upload:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     needs: build
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:

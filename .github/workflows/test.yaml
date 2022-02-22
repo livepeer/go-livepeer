@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -48,6 +48,24 @@ jobs:
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-ffmpeg
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update \
+            && sudo apt-get install -y software-properties-common curl apt-transport-https \
+            && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+            && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
+            && sudo apt-get update \
+            && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
+
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
+            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+
+      - name: Install go modules
+        run: go mod download
+
+      - name: Install ffmpeg
+        run: ./install_ffmpeg.sh
 
       - name: go fmt
         run: |
