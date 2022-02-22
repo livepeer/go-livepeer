@@ -76,7 +76,7 @@ jobs:
 
   upload:
     runs-on: ubuntu-18.04
-    needs: [build, test]
+    needs: build
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Checkout

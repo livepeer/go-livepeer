@@ -1,8 +1,10 @@
 name: Trigger test suite
+
 on:
+  pull_request:
   push:
     branches:
-      - '*'
+      - master
 
 jobs:
   test:
