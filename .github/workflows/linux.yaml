@@ -1,4 +1,4 @@
-name: Linux Build
+name: Linux build
 
 on:
   pull_request:
@@ -99,6 +99,12 @@ jobs:
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}
+
+      - name: Upload artifacts for cutting release
+        uses: actions/upload-artifact@master
+        with:
+          name: release-artifacts-linux
+          path: releases/
 
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev

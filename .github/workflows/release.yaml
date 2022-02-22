@@ -1,0 +1,54 @@
+name: Create release on github
+
+on:
+  workflow_run:
+    workflows:
+      - Windows build
+      - MacOS build
+      - Linux build
+    types:
+      - "completed"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.ref_type == "tag"
+    steps:
+      - name: checkout
+        uses: actions/checkout@master
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts from build stage (linux)
+        uses: actions/download-artifact@master
+        with:
+          name: release-artifacts-linux
+          path: releases/
+
+      - name: Download artifacts from build stage (windows)
+        uses: actions/download-artifact@master
+        with:
+          name: release-artifacts-windows
+          path: releases/
+
+      - name: Download artifacts from build stage (macos)
+        uses: actions/download-artifact@master
+        with:
+          name: release-artifacts-macos
+          path: releases/
+
+      - name: Generate sha256 checksum and gpg signatures for release artifacts
+        uses: livepeer/action-gh-checksum-and-gpg-sign@latest
+        with:
+          artifacts-dir: releases
+          release-name: ${{ github.ref_name }}
+          gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
+          gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
+
+      - name: Release Posix
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            releases/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

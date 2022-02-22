@@ -1,4 +1,4 @@
-name: Windows Build
+name: Windows build
 
 on:
   pull_request:
@@ -50,3 +50,9 @@ jobs:
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}
         run: ./upload_build.sh
+
+      - name: Upload artifacts for cutting release
+        uses: actions/upload-artifact@master
+        with:
+          name: release-artifacts-windows
+          path: releases/

@@ -1,9 +1,11 @@
-name: MacOS Build
+name: MacOS build
+
 on:
   pull_request:
   push:
     branches:
       - master
+
 jobs:
   build:
     strategy:
@@ -12,54 +14,70 @@ jobs:
           - amd64
           - arm64
     runs-on: macos-latest
+
     steps:
-    - name: Set build environment
-      run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-    - name: Checkout
-      uses: actions/checkout@v2
-      with:
-        # Needed for commands that depend on git tags
-        fetch-depth: 0
-        ref: ${{ github.event.pull_request.head.sha }}
-    - name: Setup Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: '1.17.6'
-    - name: Cache go modules
-      id: cache-go-mod
-      uses: actions/cache@v2.1.5
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.arch }}-go-
-    - name: Cache ffmpeg
-      id: cache-ffmpeg
-      uses: actions/cache@v2.1.5
-      with:
-        path: ~/compiled
-        key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
-    - name: Install dependencies
-      run: brew install coreutils
-    - name: Install go modules
-      if: steps.cache-go-mod.outputs.cache-hit != 'true'
-      run: go mod download
-    - name: Install ffmpeg
-      if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-      run: ./install_ffmpeg.sh
-    - name: Build binaries
-      run: |
-        export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-        ./ci_env.sh make 
-      env:
-        GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-    - name: Upload build
-      if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-      env: 
-        GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-        GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-        GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-        DISCORD_URL: ${{ secrets.DISCORD_URL }}
-      run: ./upload_build.sh
+      - name: Set build environment
+        run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          # Needed for commands that depend on git tags
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.6'
+
+      - name: Cache go modules
+        id: cache-go-mod
+        uses: actions/cache@v2.1.5
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-go-
+
+      - name: Cache ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v2.1.5
+        with:
+          path: ~/compiled
+          key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
+
+      - name: Install dependencies
+        run: brew install coreutils
+
+      - name: Install go modules
+        if: steps.cache-go-mod.outputs.cache-hit != 'true'
+        run: go mod download
+
+      - name: Install ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: ./install_ffmpeg.sh
+
+      - name: Build binaries
+        run: |
+          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+          ./ci_env.sh make
+        env:
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+
+      - name: Upload build
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
+          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
+          DISCORD_URL: ${{ secrets.DISCORD_URL }}
+        run: ./upload_build.sh
+
+      - name: Upload artifacts for cutting release
+        uses: actions/upload-artifact@master
+        with:
+          name: release-artifacts-macos
+          path: releases/
