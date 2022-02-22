@@ -12,7 +12,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: github.ref_type == "tag"
+    # if: github.ref_type == "tag"
     steps:
       - name: checkout
         uses: actions/checkout@master
@@ -45,7 +45,14 @@ jobs:
           gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
+      - name: Check releases directory
+        shell: bash
+        run: |
+          cd releases/
+          ls -lha *
+
       - name: Release Posix
+        if: github.ref_type == "tag"
         uses: softprops/action-gh-release@v1
         with:
           files: |
