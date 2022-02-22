@@ -6,6 +6,7 @@ on:
       - Windows build
       - MacOS build
       - Linux build
+      - Linux tensorflow build
     types:
       - "completed"
 
@@ -20,21 +21,31 @@ jobs:
           fetch-depth: 0
 
       - name: Download artifacts from build stage (linux)
-        uses: actions/download-artifact@master
+        uses: dawidd6/action-download-artifact@v2
         with:
+          workflow: Linux build
           name: release-artifacts-linux
           path: releases/
 
       - name: Download artifacts from build stage (windows)
-        uses: actions/download-artifact@master
+        uses: dawidd6/action-download-artifact@v2
         with:
+          workflow: Windows build
           name: release-artifacts-windows
           path: releases/
 
       - name: Download artifacts from build stage (macos)
-        uses: actions/download-artifact@master
+        uses: dawidd6/action-download-artifact@v2
         with:
+          workflow: MacOS build
           name: release-artifacts-macos
+          path: releases/
+
+      - name: Download artifacts from build stage (tensorflow)
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: Linux tensorflow build
+          name: release-artifacts-linux-tensorflow
           path: releases/
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts
@@ -51,11 +62,10 @@ jobs:
           cd releases/
           ls -lha *
 
-      - name: Release Posix
+      - name: Release to github
         if: github.ref_type == "tag"
         uses: softprops/action-gh-release@v1
         with:
+          generate_release_notes: true
           files: |
             releases/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
