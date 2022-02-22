@@ -21,5 +21,6 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#2284 Fix issue with not redeeming tickets by Redeemer (@leszko)
 
 #### Transcoder
