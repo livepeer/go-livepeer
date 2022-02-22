@@ -570,14 +570,17 @@ func (db *DB) OrchCount(filter *DBOrchFilter) (int, error) {
 func (db *DB) IsOrchActive(addr ethcommon.Address, round *big.Int) (bool, error) {
 	orchs, err := db.SelectOrchs(
 		&DBOrchFilter{
-			CurrentRound: round,
-			Addresses:    []ethcommon.Address{addr},
+			Addresses: []ethcommon.Address{addr},
 		},
 	)
 	if err != nil {
 		return false, err
 	}
-	return len(orchs) > 0, nil
+	if len(orchs) == 0 {
+		return false, errors.New("Orchestrator not found")
+	}
+	isActive := orchs[0].ActivationRound <= round.Int64() && round.Int64() < orchs[0].DeactivationRound
+	return isActive, nil
 }
 
 func (db *DB) InsertUnbondingLock(id *big.Int, delegator ethcommon.Address, amount, withdrawRound *big.Int) error {

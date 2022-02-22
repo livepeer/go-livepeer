@@ -572,12 +572,17 @@ func TestIsOrchActive(t *testing.T) {
 	defer dbraw.Close()
 
 	addr := pm.RandAddress().String()
+
+	// not found
+	isActive, err := dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(4))
+	assert.EqualError(err, "Orchestrator not found")
+
 	activationRound := 5
 	orch := NewDBOrch(addr, "https://127.0.0.1:8936", 1, int64(activationRound), int64(activationRound+2), 0)
 	dbh.UpdateOrch(orch)
 
 	// inactive in round 4
-	isActive, err := dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(4))
+	isActive, err = dbh.IsOrchActive(ethcommon.HexToAddress(addr), big.NewInt(4))
 	assert.NoError(err)
 	assert.False(isActive)
 
