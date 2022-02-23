@@ -2,10 +2,14 @@ package core
 
 import (
 	"context"
+	"fmt"
+	"io/ioutil"
+	"os"
 	"sort"
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -124,6 +128,55 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 			assert.Equal(c2, c1)
 		}
 	})
+}
+
+func decode_capabilities(caps []Capability) []string {
+	var found []string = make([]string, 0, 5)
+	for _, cap := range caps {
+		switch cap {
+		case Capability_H264_Decode_444_8bit:
+			found = append(found, "h264_444_8bit")
+		case Capability_H264_Decode_422_8bit:
+			found = append(found, "h264_422_8bit")
+		case Capability_H264_Decode_444_10bit:
+			found = append(found, "h264_444_10bit")
+		case Capability_H264_Decode_422_10bit:
+			found = append(found, "h264_422_10bit")
+		case Capability_H264_Decode_420_10bit:
+			found = append(found, "h264_420_10bit")
+		}
+	}
+	return found
+}
+
+// We need this in order to call `NvidiaTranscoder::Transcode()` properly
+func setupWorkDir() (string, func()) {
+	tmp, _ := ioutil.TempDir("", "")
+	WorkDir = tmp
+	cleanup := func() {
+		WorkDir = ""
+		defer os.RemoveAll(tmp)
+	}
+	return tmp, cleanup
+}
+
+func TestCapability_TranscoderCapabilities(t *testing.T) {
+	tmpdir, cleanup := setupWorkDir()
+	defer cleanup()
+
+	var nvidiaCaps, softwareCaps []Capability
+
+	// nvidia test
+	devices, err := common.ParseNvidiaDevices("all")
+	assert.Nil(t, err)
+	nvidiaCaps, err = TestTranscoderCapabilities(devices)
+	assert.Nil(t, err)
+	fmt.Printf("Nvidia transcoder supports: %v\n", decode_capabilities(nvidiaCaps))
+
+	// Same test with software transcoder:
+	softwareCaps, err = TestSoftwareTranscoderCapabilities(tmpdir)
+	assert.Nil(t, err)
+	fmt.Printf("Software transcoder supports: %v\n", decode_capabilities(softwareCaps))
 }
 
 func TestCapability_JobCapabilities(t *testing.T) {
