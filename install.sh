@@ -20,7 +20,7 @@ if ! command -v gpg >/dev/null; then
 fi
 
 if [[ "$VERSION" == "latest" ]]; then
-  VERSION="$(curl https://api.github.com/repos/livepeer/go-livepeer/releases/latest | grep -F '"name": "v' | cut -d '"' -f4)"
+  VERSION="$(curl https://api.github.com/repos/livepeer/go-livepeer/releases/latest 2>/dev/null | grep -F '"name": "v' | cut -d '"' -f4)"
 else
   VERSION="v${VERSION}"
 fi
@@ -47,10 +47,10 @@ get_download_url() {
 }
 
 download_files() {
-  curl -sLO "$(get_download_url)/$(get_archive_name)"
-  curl -sLO "$(get_download_url)/${VERSION}_checksums.txt"
+  curl -sLO "$(get_download_url)/$(get_archive_name)" 2>/dev/null
+  curl -sLO "$(get_download_url)/${VERSION}_checksums.txt" 2>/dev/null
   if [[ "$GPG_VERIFY" == "true" ]]; then
-    curl -sLO "$(get_download_url)/$(get_archive_name).sig"
+    curl -sLO "$(get_download_url)/$(get_archive_name).sig" 2>/dev/null
   fi
 }
 
