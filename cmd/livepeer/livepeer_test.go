@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"math/big"
 	"testing"
@@ -40,7 +39,7 @@ func TestSetupOrchestrator(t *testing.T) {
 	n, err := core.NewLivepeerNode(stubEthClient, "", dbh)
 	require.Nil(err)
 
-	err = setupOrchestrator(context.Background(), n, orch)
+	err = setupOrchestrator(n, orch)
 	assert.Nil(err)
 
 	orchs, err := dbh.SelectOrchs(&common.DBOrchFilter{
@@ -53,7 +52,7 @@ func TestSetupOrchestrator(t *testing.T) {
 
 	// test eth.GetTranscoder error
 	stubEthClient.Err = errors.New("GetTranscoder error")
-	err = setupOrchestrator(context.Background(), n, orch)
+	err = setupOrchestrator(n, orch)
 	assert.EqualError(err, "GetTranscoder error")
 }
 

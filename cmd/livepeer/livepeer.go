@@ -635,10 +635,7 @@ func main() {
 				return
 			}
 
-			orchSetupCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			if err := setupOrchestrator(orchSetupCtx, n, recipientAddr); err != nil {
+			if err := setupOrchestrator(n, recipientAddr); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
@@ -721,6 +718,11 @@ func main() {
 		}
 
 		if n.NodeType == core.RedeemerNode {
+			if err := setupOrchestrator(n, recipientAddr); err != nil {
+				glog.Errorf("Error setting up orchestrator: %v", err)
+				return
+			}
+
 			r, err := server.NewRedeemer(
 				recipientAddr,
 				n.Eth,
@@ -1173,7 +1175,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	return ethUri, nil
 }
 
-func setupOrchestrator(ctx context.Context, n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
+func setupOrchestrator(n *core.LivepeerNode, ethOrchAddr ethcommon.Address) error {
 	// add orchestrator to DB
 	orch, err := n.Eth.GetTranscoder(ethOrchAddr)
 	if err != nil {
