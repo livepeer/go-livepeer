@@ -85,7 +85,7 @@ var CapabilityTestLookup = map[Capability]CapabilityTest{
 	// 145x145 is the lowest resolution supported by NVENC on Windows
 	Capability_H264: {
 		inVideoData: testSegment_H264,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_HEVC_Decode: {
 		inVideoData: testSegment_HEVC,
@@ -105,23 +105,23 @@ var CapabilityTestLookup = map[Capability]CapabilityTest{
 	},
 	Capability_H264_Decode_444_8bit: {
 		inVideoData: testSegment_H264_444_8bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_H264_Decode_422_8bit: {
 		inVideoData: testSegment_H264_422_8bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_H264_Decode_444_10bit: {
 		inVideoData: testSegment_H264_444_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_H264_Decode_422_10bit: {
 		inVideoData: testSegment_H264_422_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_H264_Decode_420_10bit: {
 		inVideoData: testSegment_H264_420_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 }
 
