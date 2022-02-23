@@ -8,6 +8,8 @@
 
 #### General
 
+- \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
+
 #### Broadcaster
 
 #### Orchestrator
