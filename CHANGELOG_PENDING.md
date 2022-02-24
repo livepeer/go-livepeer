@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2289 Add timeouts to ETH client (@leszko)
 
 #### Broadcaster
 
