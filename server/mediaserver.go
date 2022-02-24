@@ -379,11 +379,6 @@ func authenticateStream(url string) (*authWebhookResponse, error) {
 	return &authResp, nil
 }
 
-// func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile, error) {
-// 	profiles, err := ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
-// 	return profiles, err
-// }
-
 func jsonDetectionToDetectionConfig(ctx context.Context, resp *authWebhookResponse) (core.DetectionConfig, error) {
 	detection := core.DetectionConfig{
 		Freq:               resp.Detection.Freq,
@@ -820,14 +815,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	// Fail early on unsupported chroma subsampling
-	// chromaSubsampling, _, pixelFormatError := pixelFormat.Properties()
-	// correctChroma := chromaSubsampling == ffmpeg.ChromaSubsampling420 || chromaSubsampling == ffmpeg.ChromaSubsampling422
-	// if pixelFormatError != nil || !correctChroma {
-	// 	errorOut(http.StatusUnprocessableEntity, "Unsupported chroma subsampling")
-	// 	return
-	// }
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
