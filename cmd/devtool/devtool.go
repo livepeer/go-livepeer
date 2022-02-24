@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	ethTxTimeout              = 600 * time.Second
+	ethTxTimeout              = 5 * time.Minute
 	endpoint                  = "http://localhost:8545/"
 	gethMiningAccount         = "87da6a8c6e9eff15d703fc2773e32f6af8dbe301"
 	gethMiningAccountOverride = false
@@ -188,7 +188,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 
-	tm := eth.NewTransactionManager(backend, gpm, am, 5*time.Minute, 0)
+	maxTxReplacements := 0
+	tm := eth.NewTransactionManager(backend, gpm, am, ethTxTimeout, maxTxReplacements)
 	go tm.Start()
 	defer tm.Stop()
 
@@ -199,6 +200,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		GasPriceMonitor:    gpm,
 		TransactionManager: tm,
 		Signer:             types.LatestSignerForChainID(chainID),
+		CheckTxTimeout:     time.Duration(int64(ethTxTimeout) * int64(maxTxReplacements+1)),
 	}
 
 	client, err := eth.NewClient(ethCfg)
