@@ -115,23 +115,44 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	return resToTranscodeData(ctx, res, out)
 }
 
-// Test which capabilities transcoder supports
-func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError error) {
+type transcodeTestParams struct {
+	TestAvailable bool
+	Cap           Capability
+	OutProfile    ffmpeg.VideoProfile
+	SegmentPath   string
+}
+
+func (params transcodeTestParams) IsRequired() bool {
+	return InArray(params.Cap, DefaultCapabilities())
+}
+
+func (params transcodeTestParams) Kind() string {
+	if params.IsRequired() {
+		return "required capability"
+	}
+	return "optional capability"
+}
+
+func (params transcodeTestParams) Name() string {
+	name, err := CapabilityToName(params.Cap)
+	if err == nil {
+		return name
+	}
+	return "unknown"
+}
+
+type continueLoop bool
+
+func forEachTranscoderSample(handler func(*transcodeTestParams) continueLoop) {
 	// default capabilities
 	allCaps := append(DefaultCapabilities(), OptionalCapabilities()...)
-	fname := filepath.Join(WorkDir, "testseg.tempfile")
-	defer os.Remove(fname)
-	nvTest3Rend := true
-	// iterate all capabilities and test ones which has test data
-	for _, c := range allCaps {
-		capTest, hasTest := CapabilityTestLookup[c]
-		capName, _ := CapabilityToName(c)
-		isRequired := InArray(c, DefaultCapabilities())
-		capKindStr := "Optional capability"
-		if isRequired {
-			capKindStr = "Required capability"
-		}
-		if hasTest {
+	handlerParams := transcodeTestParams{SegmentPath: filepath.Join(WorkDir, "testseg.tempfile")}
+	defer os.Remove(handlerParams.SegmentPath)
+	for _, handlerParams.Cap = range allCaps {
+		var capTest CapabilityTest
+		capTest, handlerParams.TestAvailable = CapabilityTestLookup[handlerParams.Cap]
+		if handlerParams.TestAvailable {
+			handlerParams.OutProfile = capTest.outProfile
 			b := bytes.NewReader(capTest.inVideoData)
 			z, err := gzip.NewReader(b)
 			if err != nil {
@@ -140,55 +161,128 @@ func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError
 			mp4testSeg, err := ioutil.ReadAll(z)
 			z.Close()
 			if err != nil {
-				glog.Errorf("Error reading test segment for capability %d: %s", c, err)
+				glog.Errorf("error reading test segment for capability %d: %s", handlerParams.Cap, err)
 				continue
 			}
-			err = ioutil.WriteFile(fname, mp4testSeg, 0644)
+			err = ioutil.WriteFile(handlerParams.SegmentPath, mp4testSeg, 0644)
 			if err != nil {
-				glog.Errorf("Error writing test segment for capability %d: %s", c, err)
+				glog.Errorf("error writing test segment for capability %d: %s", handlerParams.Cap, err)
 				continue
 			}
-			// check that capability is supported on all devices
-			for _, device := range devices {
-				t1 := NewNvidiaTranscoder(device)
-				// transcode into 4 renditions
-				md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile, capTest.outProfile}}
-				td, err := t1.Transcode(context.Background(), md)
-				t1.Stop()
-				if err != nil {
-					glog.Infof("%s %q is not supported on device %s, see other error messages for details", capKindStr, capName, device)
-					// likely means capability is not supported, don't check on other devices
-					goto test_fail
-				}
-				if len(td.Segments) == 0 || td.Pixels == 0 {
-					// abnormal behavior
-					glog.Errorf("Empty result segment when testing for %s %q", strings.ToLower(capKindStr), capName)
-					goto test_fail
-				}
-				// no error creating 4 renditions - disable 3 renditions test, as restriction is on driver level, not device
-				nvTest3Rend = false
-			}
 		}
-		caps = append(caps, c)
-		continue
-	test_fail:
-		if nvTest3Rend {
-			// if 4 renditions didn't succeed, try 3 renditions on first device to check if it could be session limit
-			t1 := NewNvidiaTranscoder(devices[0])
-			md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{capTest.outProfile, capTest.outProfile, capTest.outProfile}}
-			td, err := t1.Transcode(context.Background(), md)
-			t1.Stop()
-			if err == nil && len(td.Segments) > 0 && td.Pixels > 0 {
-				glog.Error("Maximum number of simultaneous NVENC video encoding sessions is restricted by driver")
-			}
-			// do it only once
-			nvTest3Rend = false
-		}
-		if isRequired {
-			return nil, fmt.Errorf("%s %q is not supported on hardware", capKindStr, capName)
+		if !handler(&handlerParams) {
+			return
 		}
 	}
-	return caps, nil
+}
+
+func testNvidiaTranscode(device string, fname string, profile ffmpeg.VideoProfile, renditionCount int) (outputProduced, outputValid bool, err error) {
+	transcoder := NewNvidiaTranscoder(device)
+	outputProfiles := make([]ffmpeg.VideoProfile, 0, renditionCount)
+	for i := 0; i < renditionCount; i++ {
+		outputProfiles = append(outputProfiles, profile)
+	}
+	metadata := &SegTranscodingMetadata{Fname: fname, Profiles: outputProfiles}
+	td, err := transcoder.Transcode(context.Background(), metadata)
+	transcoder.Stop()
+	if err != nil {
+		return false, false, err
+	}
+	outputProduced = len(td.Segments) > 0
+	outputValid = td.Pixels > 0
+	return outputProduced, outputValid, err
+}
+
+// Test which capabilities transcoder supports
+func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError error) {
+	fatalError = nil
+	forEachTranscoderSample(func(params *transcodeTestParams) continueLoop {
+		if !params.TestAvailable {
+			// Assume capability is supported if we do not have test for it
+			caps = append(caps, params.Cap)
+			return true
+		}
+		runRestrictedSessionTest := true
+		transcodingFailed := func() {
+			// check GeForce limit
+			if runRestrictedSessionTest {
+				// do it only once
+				runRestrictedSessionTest = false
+				// if 4 renditions didn't succeed, try 3 renditions on first device to check if it could be session limit
+				outputProduced, outputValid, err := testNvidiaTranscode(devices[0], params.SegmentPath, params.OutProfile, 3)
+				if err != nil && outputProduced && outputValid {
+					glog.Error("Maximum number of simultaneous NVENC video encoding sessions is restricted by driver")
+					fatalError = fmt.Errorf("maximum number of simultaneous NVENC video encoding sessions is restricted by driver")
+				}
+			}
+			if params.IsRequired() {
+				// All devices need to support this capability, stop further testing
+				fatalError = fmt.Errorf("%s %q is not supported on hardware", params.Kind(), params.Name())
+			}
+		}
+		// check that capability is supported on all devices
+		for _, device := range devices {
+			outputProduced, outputValid, err := testNvidiaTranscode(device, params.SegmentPath, params.OutProfile, 4)
+			if err != nil {
+				glog.Infof("%s %q is not supported on device %s, see other error messages for details", params.Kind(), params.Name(), device)
+				// likely means capability is not supported, don't check on other devices
+				transcodingFailed()
+				return fatalError == nil
+			}
+			if !outputProduced || !outputValid {
+				// abnormal behavior
+				glog.Errorf("Empty result segment when testing for %s %q", params.Kind(), params.Name())
+				transcodingFailed()
+				return fatalError == nil
+			}
+			// no error creating 4 renditions - disable 3 renditions test, as restriction is on driver level, not device
+			runRestrictedSessionTest = false
+		}
+		caps = append(caps, params.Cap)
+		return true
+	})
+	return caps, fatalError
+}
+
+func testSoftwareTranscode(tmpdir string, fname string, profile ffmpeg.VideoProfile, renditionCount int) (outputProduced, outputValid bool, err error) {
+	transcoder := NewLocalTranscoder(tmpdir)
+	outputProfiles := make([]ffmpeg.VideoProfile, 0, renditionCount)
+	for i := 0; i < renditionCount; i++ {
+		outputProfiles = append(outputProfiles, profile)
+	}
+	metadata := &SegTranscodingMetadata{Fname: fname, Profiles: outputProfiles}
+	td, err := transcoder.Transcode(context.Background(), metadata)
+	if err != nil {
+		return false, false, err
+	}
+	outputProduced = len(td.Segments) > 0
+	outputValid = td.Pixels > 0
+	return outputProduced, outputValid, err
+}
+
+func TestSoftwareTranscoderCapabilities(tmpdir string) (caps []Capability, fatalError error) {
+	// iterate all capabilities and test ones which has test data
+	fatalError = nil
+	forEachTranscoderSample(func(params *transcodeTestParams) continueLoop {
+		if !params.TestAvailable {
+			caps = append(caps, params.Cap)
+			return true
+		}
+		// check that capability is supported on all devices
+		outputProduced, outputValid, err := testSoftwareTranscode(tmpdir, params.SegmentPath, params.OutProfile, 4)
+		if err != nil {
+			// likely means capability is not supported
+			return true
+		}
+		if !outputProduced || !outputValid {
+			// abnormal behavior
+			fatalError = fmt.Errorf("empty result segment when testing for capability %d", params.Cap)
+			return false
+		}
+		caps = append(caps, params.Cap)
+		return true
+	})
+	return caps, fatalError
 }
 
 func NewNvidiaTranscoder(gpu string) TranscoderSession {
