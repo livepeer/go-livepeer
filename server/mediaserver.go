@@ -66,6 +66,10 @@ var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
 var SelectRandFreq float64
 
+func PixelFormatNone() ffmpeg.PixelFormat {
+	return ffmpeg.PixelFormat{ffmpeg.PixelFormatNone}
+}
+
 // For HTTP push watchdog
 var httpPushTimeout = 1 * time.Minute
 var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
@@ -417,7 +421,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, ffmpeg.PixelFormat{ffmpeg.PixelFormatNone})
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, PixelFormatNone())
 		if err != nil {
 			return err
 		}

@@ -563,6 +563,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Resolution:   "123x456",
 			Profile:      ffmpeg.ProfileH264Baseline,
 			GOP:          time.Duration(0),
+			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "prof2",
@@ -572,6 +573,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Resolution:   "456x987",
 			Profile:      ffmpeg.ProfileNone,
 			GOP:          ffmpeg.GOPIntraOnly,
+			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "passthru_fps",
@@ -581,6 +583,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			FramerateDen: 0,
 			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 			GOP:          time.Duration(123) * time.Second,
+			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "gop0",
@@ -590,6 +593,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			FramerateDen: 0,
 			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 			GOP:          time.Duration(0),
+			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 	}
 
@@ -1006,13 +1010,13 @@ func TestRegisterConnection(t *testing.T) {
 
 	// Should return an error if missing node storage
 	drivers.NodeStorage = nil
-	_, err := s.registerConnection(context.TODO(), strm, nil)
+	_, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
 	rand.Seed(123)
-	cxn, err := s.registerConnection(context.TODO(), strm, nil)
+	cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.NotNil(cxn)
 	assert.Nil(err)
 
@@ -1028,13 +1032,13 @@ func TestRegisterConnection(t *testing.T) {
 	assert.NotNil(cxn.params.Capabilities)
 
 	// Should return an error if creating another cxn with the same mid
-	_, err = s.registerConnection(context.TODO(), strm, nil)
+	_, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
 	storage := drivers.NewS3Driver("", "", "", "", false).NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil)
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.Nil(err)
 	assert.Equal(storage, cxn.params.OS)
 	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
@@ -1043,7 +1047,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil)
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.Nil(err)
 	job, err := core.JobCapabilities(streamParams(strm.AppData()))
 	assert.Nil(err)
@@ -1052,7 +1056,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities with codec specified
 	inCodec := ffmpeg.H264
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec)
+	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone())
 	assert.Nil(err)
 	assert.True(core.NewCapabilities([]core.Capability{core.Capability_H264}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
 	assert.False(core.NewCapabilities([]core.Capability{core.Capability_HEVC_Decode}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
@@ -1060,7 +1064,7 @@ func TestRegisterConnection(t *testing.T) {
 	inCodec = ffmpeg.H265
 	profiles[0].Encoder = ffmpeg.H265
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec)
+	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone())
 	assert.Nil(err)
 	assert.True(core.NewCapabilities([]core.Capability{
 		core.Capability_HEVC_Decode,
@@ -1070,7 +1074,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities: exit with an invalid cap
 	profiles[0].Format = -1
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil)
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 	assert.Nil(cxn)
 	assert.Equal("capability: unknown format", err.Error())
 	// TODO test with non-legacy capabilities once we have some
@@ -1085,7 +1089,7 @@ func TestRegisterConnection(t *testing.T) {
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
 			strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: mid})
-			cxn, err := s.registerConnection(context.TODO(), strm, nil)
+			cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
 
 			assert.Nil(err)
 			assert.NotNil(cxn)
@@ -1260,7 +1264,7 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	resp := &authWebhookResponse{}
 
 	// test empty case
-	p, err := jsonProfileToVideoProfile(resp)
+	p, err := ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Len(p, 0)
 
@@ -1268,13 +1272,14 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Nil(err)
 
 	// test default name
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
-	assert.Equal("webhook_1x2_0", p[0].Name)
+	// TODO: Did i break some code with default naming being `custom` ?
+	assert.Equal("custom_1x2_0", p[0].Name)
 
 	// test provided name
 	resp.Profiles[0].Name = "abc"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal("abc", p[0].Name)
 
@@ -1284,59 +1289,56 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 
 	// test gop intra
 	resp.Profiles[0].GOP = "intra"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(ffmpeg.GOPIntraOnly, p[0].GOP)
 
 	// test gop float
 	resp.Profiles[0].GOP = "1.2"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(time.Duration(1200)*time.Millisecond, p[0].GOP)
 
 	// test gop integer
 	resp.Profiles[0].GOP = "60"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(time.Minute, p[0].GOP)
 
 	// test gop 0
 	resp.Profiles[0].GOP = "0"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(time.Duration(0), p[0].GOP)
 
 	// test gop <0
 	resp.Profiles[0].GOP = "-0.001"
-	p, err = jsonProfileToVideoProfile(resp)
-	assert.Nil(p)
+	_, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.NotNil(err)
-	assert.Equal("invalid gop value", err.Error())
+	assert.Equal("invalid gop value -0.001000. Please set it to a positive value", err.Error())
 
 	// test gop non-numeric
 	resp.Profiles[0].GOP = " 1 "
-	p, err = jsonProfileToVideoProfile(resp)
-	assert.Nil(p)
+	_, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.NotNil(err)
 	assert.Contains(err.Error(), "strconv.ParseFloat: parsing")
 	resp.Profiles[0].GOP = ""
 
 	// test default encoding profile
-	p, err = jsonProfileToVideoProfile(resp)
+	_, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(ffmpeg.ProfileNone, p[0].Profile)
 
 	// test encoding profile
 	resp.Profiles[0].Profile = "h264baseline"
-	p, err = jsonProfileToVideoProfile(resp)
+	p, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Nil(err)
 	assert.Equal(ffmpeg.ProfileH264Baseline, p[0].Profile)
 
 	// test invalid encoding profile
 	resp.Profiles[0].Profile = "invalid"
-	p, err = jsonProfileToVideoProfile(resp)
-	assert.Nil(p)
-	assert.Equal(common.ErrProfName, err)
+	_, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
+	assert.Equal("unable to parse the H264 encoder profile: unknown VideoProfile profile name", err.Error())
 }
 
 func mustParseUrl(t *testing.T, str string) *url.URL {

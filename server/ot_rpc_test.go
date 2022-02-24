@@ -89,6 +89,8 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	profiles[1].AspectRatio = ""
 	profiles[0].Format = ffmpeg.FormatMPEGTS // default is ffmpeg.FormatNone
 	profiles[1].Format = ffmpeg.FormatMPEGTS
+	profiles[0].ColorDepth = 0
+	profiles[1].ColorDepth = 0
 	assert.Equal(profiles, tr.profiles)
 	assert.True(strings.HasSuffix(tr.fname, ".tempfile"))
 
