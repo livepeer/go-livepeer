@@ -16,7 +16,7 @@ func (c *client) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*
 	opts := c.transactOpts()
 	opts.Value = new(big.Int).Add(depositAmount, reserveAmount)
 
-	return c.ticketBrokerSess.Contract.FundDepositAndReserve(opts, depositAmount, reserveAmount)
+	return c.ticketBroker.FundDepositAndReserve(opts, depositAmount, reserveAmount)
 }
 
 // FundDeposit funds a sender's deposit
@@ -26,7 +26,7 @@ func (c *client) FundDeposit(amount *big.Int) (*types.Transaction, error) {
 	opts := c.transactOpts()
 	opts.Value = amount
 
-	return c.ticketBrokerSess.Contract.FundDeposit(opts)
+	return c.ticketBroker.FundDeposit(opts)
 }
 
 // FundReserve funds a sender's reserve
@@ -36,7 +36,7 @@ func (c *client) FundReserve(amount *big.Int) (*types.Transaction, error) {
 	opts := c.transactOpts()
 	opts.Value = amount
 
-	return c.ticketBrokerSess.Contract.FundReserve(opts)
+	return c.ticketBroker.FundReserve(opts)
 }
 
 // RedeemWinningTicket submits a ticket to be validated by the broker and if a valid winning ticket
@@ -45,7 +45,7 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 	var recipientRandHash [32]byte
 	copy(recipientRandHash[:], ticket.RecipientRandHash.Bytes()[:32])
 
-	return c.ticketBrokerSess.Contract.RedeemWinningTicket(
+	return c.ticketBroker.RedeemWinningTicket(
 		c.transactOpts(),
 		contracts.MTicketBrokerCoreTicket{
 			Recipient:         ticket.Recipient,
@@ -63,7 +63,7 @@ func (c *client) RedeemWinningTicket(ticket *pm.Ticket, sig []byte, recipientRan
 
 // GetSenderInfo returns the info for a sender
 func (c *client) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
-	info, err := c.ticketBrokerSess.GetSenderInfo(addr)
+	info, err := c.ticketBroker.GetSenderInfo(c.callOpts(), addr)
 	if err != nil {
 		return nil, err
 	}
@@ -85,5 +85,5 @@ func (c *client) IsUsedTicket(ticket *pm.Ticket) (bool, error) {
 	var ticketHash [32]byte
 	copy(ticketHash[:], ticket.Hash().Bytes()[:32])
 
-	return c.ticketBrokerSess.UsedTickets(ticketHash)
+	return c.ticketBroker.UsedTickets(c.callOpts(), ticketHash)
 }
