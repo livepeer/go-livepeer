@@ -478,6 +478,7 @@ func main() {
 			GasPriceMonitor:    gpm,
 			TransactionManager: tm,
 			Signer:             types.LatestSignerForChainID(chainID),
+			CheckTxTimeout:     time.Duration(int64(*txTimeout) * int64(*maxTxReplacements+1)),
 		}
 
 		client, err := eth.NewClient(ethCfg)
