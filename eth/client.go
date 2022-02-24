@@ -39,7 +39,7 @@ var (
 	ErrReplacingMinedTx   = fmt.Errorf("trying to replace already mined tx")
 	ErrCurrentRoundLocked = fmt.Errorf("current round locked")
 	ErrMissingBackend     = fmt.Errorf("missing Ethereum client backend")
-	ethRpcTimeout         = 5 * time.Minute
+	ethRpcTimeout         = 2 * time.Minute
 )
 
 type LivepeerEthClient interface {
