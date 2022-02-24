@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -171,12 +170,21 @@ func TestCapability_TranscoderCapabilities(t *testing.T) {
 	assert.Nil(t, err)
 	nvidiaCaps, err = TestTranscoderCapabilities(devices)
 	assert.Nil(t, err)
-	fmt.Printf("Nvidia transcoder supports: %v\n", decode_capabilities(nvidiaCaps))
+	assert.False(t, InArray(Capability_H264_Decode_444_8bit, nvidiaCaps), "Nvidia device should not support decode of 444_8bit")
+	assert.False(t, InArray(Capability_H264_Decode_422_8bit, nvidiaCaps), "Nvidia device should not support decode of 422_8bit")
+	assert.False(t, InArray(Capability_H264_Decode_444_10bit, nvidiaCaps), "Nvidia device should not support decode of 444_10bit")
+	assert.False(t, InArray(Capability_H264_Decode_422_10bit, nvidiaCaps), "Nvidia device should not support decode of 422_10bit")
+	assert.False(t, InArray(Capability_H264_Decode_420_10bit, nvidiaCaps), "Nvidia device should not support decode of 420_10bit")
 
 	// Same test with software transcoder:
 	softwareCaps, err = TestSoftwareTranscoderCapabilities(tmpdir)
 	assert.Nil(t, err)
-	fmt.Printf("Software transcoder supports: %v\n", decode_capabilities(softwareCaps))
+	// Software transcoder supports: [h264_444_8bit h264_422_8bit h264_444_10bit h264_422_10bit h264_420_10bit]
+	assert.True(t, InArray(Capability_H264_Decode_444_8bit, softwareCaps), "software decoder should support 444_8bit input")
+	assert.True(t, InArray(Capability_H264_Decode_422_8bit, softwareCaps), "software decoder should support 422_8bit input")
+	assert.True(t, InArray(Capability_H264_Decode_444_10bit, softwareCaps), "software decoder should support 444_10bit input")
+	assert.True(t, InArray(Capability_H264_Decode_422_10bit, softwareCaps), "software decoder should support 422_10bit input")
+	assert.True(t, InArray(Capability_H264_Decode_420_10bit, softwareCaps), "software decoder should support 420_10bit input")
 }
 
 func TestCapability_JobCapabilities(t *testing.T) {
