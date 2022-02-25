@@ -432,26 +432,6 @@ func main() {
 			return
 		}
 
-		// TODO: Remove after LIP-73 block (Arbitrum L2 contracts are unpaused)
-		arbitrumOneChainId := big.NewInt(42161)
-		lip73Block := big.NewInt(14207040)
-		if arbitrumOneChainId.Cmp(chainID) == 0 {
-			ethClient, err := blockwatch.NewRPCClient(*ethUrl, ethRPCTimeout)
-			if err != nil {
-				glog.Errorf("Failed to connect to Ethereum client: %v", err)
-				return
-			}
-			head, err := ethClient.HeaderByNumber(nil)
-			if err != nil {
-				glog.Errorf("Failed to get the latest block: %v", err)
-				return
-			}
-			if head.L1BlockNumber.Cmp(lip73Block) <= 0 {
-				glog.Errorf("LIP-73 has not been activated yet")
-				return
-			}
-		}
-
 		if !build.ChainSupported(chainID.Int64()) {
 			glog.Errorf("node does not support chainID = %v right now", chainID)
 			return
