@@ -542,8 +542,10 @@ func TestPush_HTTPIngest(t *testing.T) {
 	reader := strings.NewReader("")
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	// HTTP ingest disabled
 	s, _ := NewLivepeerServer("127.0.0.1:1938", n, false, "")
+	s.SetContextFromUnitTest(ctx)
 	h, pattern := s.HTTPMux.Handler(req)
 	assert.Equal("", pattern)
 
@@ -552,9 +554,12 @@ func TestPush_HTTPIngest(t *testing.T) {
 	resp := writer.Result()
 	defer resp.Body.Close()
 	assert.Equal(404, resp.StatusCode)
+	cancel()
 
+	ctx, cancel = context.WithCancel(context.Background())
 	// HTTP ingest enabled
 	s, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s.SetContextFromUnitTest(ctx)
 	h, pattern = s.HTTPMux.Handler(req)
 	assert.Equal("/live/", pattern)
 
@@ -567,6 +572,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
 	assert.Equal("No sessions available", strings.TrimSpace(string(body)))
+	cancel()
 }
 
 func TestPush_MP4(t *testing.T) {
@@ -1257,6 +1263,8 @@ func TestPush_OSPerStream(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	s, _ := NewLivepeerServer("127.0.0.1:1939", n, true, "")
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	s.SetContextFromUnitTest(serverCtx)
 	defer serverCleanup(s)
 
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1411,6 +1419,8 @@ func TestPush_OSPerStream(t *testing.T) {
 	fi, err = sess2.ReadData(ctx, fmt.Sprintf("sess1/%s/source/2.ts", lpmon.NodeID))
 	assert.EqualError(err, "Not found")
 	assert.Nil(fi)
+
+	serverCancel()
 }
 
 func TestPush_ConcurrentSegments(t *testing.T) {
@@ -1420,6 +1430,8 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.BroadcasterNode
 	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	s.SetContextFromUnitTest(serverCtx)
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = nil
@@ -1451,6 +1463,7 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	close(start)
 	// Wait for goroutines to end
 	wg.Wait()
+	serverCancel()
 }
 
 func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {

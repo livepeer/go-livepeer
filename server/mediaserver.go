@@ -104,7 +104,12 @@ type LivepeerServer struct {
 	internalManifests map[core.ManifestID]core.ManifestID
 	lastHLSStreamID   core.StreamID
 	lastManifestID    core.ManifestID
+	context           context.Context
 	connectionLock    *sync.RWMutex
+}
+
+func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
+	s.context = c
 }
 
 type authWebhookResponse struct {
@@ -181,6 +186,9 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 //StartMediaServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) error {
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
+
+	// Store ctx to later use as cancel signal for watchdog goroutine
+	s.context = ctx
 
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
@@ -729,6 +737,8 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 //End RTMP Handlers
 
+type BreakOperation bool
+
 // HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	errorOut := func(status int, s string, params ...interface{}) {
@@ -869,9 +879,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Start a watchdog to remove session after a period of inactivity
 			ticker := time.NewTicker(httpPushTimeout)
+			// print stack trace here:
 			go func(s *LivepeerServer, intmid, extmid core.ManifestID) {
-				defer ticker.Stop()
-				for range ticker.C {
+				runCheck := func() BreakOperation {
 					var lastUsed time.Time
 					s.connectionLock.RLock()
 					if cxn, exists := s.rtmpConnections[intmid]; exists {
@@ -880,13 +890,30 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					if _, exists := s.internalManifests[extmid]; !exists && intmid != extmid {
 						s.connectionLock.RUnlock()
 						clog.Warningf(ctx, "Watchdog tried closing session for streamID=%s, which was already closed", extmid)
-						return
+						return true
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {
 						_ = removeRTMPStream(ctx, s, extmid)
+						return true
+					}
+					return false
+				}
+				defer ticker.Stop()
+				if s.context == nil {
+					for range ticker.C {
+						if runCheck() {
+							return
+						}
+					}
+				}
+				select {
+				case <-ticker.C:
+					if runCheck() {
 						return
 					}
+				case <-s.context.Done():
+					return
 				}
 			}(s, cxn.mid, mid)
 		}
