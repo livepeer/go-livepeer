@@ -802,7 +802,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status, _, vcodecStr, pixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
-	isZeroFrame := status == ffmpeg.GetCodecNeedsBypass
+	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
 		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
 		return
