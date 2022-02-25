@@ -58,3 +58,5 @@ ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -pix_fmt yuv420p10be -c:v l
   -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
   xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
 echo "}" >> $FILE
+
+gofmt -w $FILE
