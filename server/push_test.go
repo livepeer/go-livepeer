@@ -1533,7 +1533,9 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 
 func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	assert := assert.New(t)
-
+	//need real video data for fast verification
+	transcodeddata, err := ioutil.ReadFile("../core/test.ts")
+	assert.NoError(err)
 	goodHash, err := ioutil.ReadFile("../core/test.phash")
 	assert.NoError(err)
 
@@ -1574,7 +1576,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	})
 	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("trusted transcoded binary data"))
+		w.Write(transcodeddata)
 	})
 	mux.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1593,7 +1595,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	})
 	mux2.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("UNtrusted transcoded binary data"))
+		w.Write(transcodeddata)
 	})
 	unverifiedHash := goodHash
 	unverifiedHashCalled := 0
@@ -1617,7 +1619,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	})
 	mux3.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("second UNtrusted transcoded binary data"))
+		w.Write(transcodeddata)
 	})
 	mux3.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1693,16 +1695,11 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		assert.Equal("P144p25fps16x9_17.ts", params["name"])
 		assert.Equal(`attachment; filename="P144p25fps16x9_17.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
-		bodyPart, err := ioutil.ReadAll(p)
-		assert.NoError(err)
 		assert.Equal("video/mp2t", strings.ToLower(mediaType))
-		assert.Equal("UNtrusted transcoded binary data", string(bodyPart))
-
 		i++
 	}
 	assert.Equal(1, i)
 	assert.Equal(uint64(12), cxn.sourceBytes)
-	assert.Equal(uint64(32), cxn.transcodedBytes)
 
 	// now make unverified to respond with bad hash
 	unverifiedHash = []byte{0}
@@ -1734,16 +1731,12 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 		assert.Equal("P144p25fps16x9_18.ts", params["name"])
 		assert.Equal(`attachment; filename="P144p25fps16x9_18.ts"`, p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
-		bodyPart, err := ioutil.ReadAll(p)
-		assert.NoError(err)
 		assert.Equal("video/mp2t", strings.ToLower(mediaType))
-		assert.Equal("second UNtrusted transcoded binary data", string(bodyPart))
 
 		i++
 	}
 	assert.Equal(1, i)
 	assert.Equal(uint64(12*2), cxn.sourceBytes)
-	assert.Equal(uint64(71), cxn.transcodedBytes)
 	assert.Equal(2, unverifiedHashCalled)
 	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
 	assert.Equal(0, bsm.untrustedPool.sus.count)

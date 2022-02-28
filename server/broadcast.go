@@ -508,7 +508,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 		if err != nil {
 			err = fmt.Errorf("error downloading segment from url=%s err=%w",
-				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 			return nil, nil, err
 		}
 		vequal, err := ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
