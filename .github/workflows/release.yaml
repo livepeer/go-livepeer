@@ -10,7 +10,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: ${{ github.ref_type == "tag" && github.event.workflow_run.conclusion == "success" }}
+    if: ${{ github.ref_type == 'tag' && github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
         uses: actions/checkout@master
@@ -60,7 +60,6 @@ jobs:
           ls -lha *
 
       - name: Release to github
-        if: github.ref_type == "tag"
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
