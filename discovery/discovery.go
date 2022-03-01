@@ -19,7 +19,7 @@ import (
 )
 
 var getOrchestratorsTimeoutLoop = 3 * time.Second
-var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
+var getOrchestratorsCutoffTimeout = 1 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
