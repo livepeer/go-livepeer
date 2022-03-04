@@ -504,20 +504,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 	// verify untrusted hashes
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
-		// download untrusted video segment
-		untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
-		if err != nil {
-			err = fmt.Errorf("error downloading segment from url=%s err=%w",
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
-			return nil, nil, err
-		}
-		vequal, err := ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
-		if err != nil {
-			clog.Errorf(ctx, "error comparing video from url=%s err=%q",
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
-			return nil, nil, err
-		}
-
 		untrustedHash, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
 			err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
@@ -535,6 +521,22 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
 			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
+		vequal := false
+		if equal {
+			// download untrusted video segment
+			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+			if err != nil {
+				err = fmt.Errorf("error downloading segment from url=%s err=%w",
+					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+				return nil, nil, err
+			}
+			vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
+			if err != nil {
+				clog.Errorf(ctx, "error comparing video from url=%s err=%q",
+					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+				return nil, nil, err
+			}
+		}
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
 			if untrustedResult.Err == nil {
