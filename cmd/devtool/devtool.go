@@ -102,7 +102,7 @@ func main() {
 	}
 	serviceURI += strconv.Itoa(mediaPort + nodeIndex)
 	mediaPort += nodeIndex
-	cliPort += nodeIndex
+	cliPort += nodeIndex * 2 // Because we need different CLI ports for the Orchestrator and Transcoder scripts
 	rtmpPort += nodeIndex
 
 	t := getNodeType(isBroadcaster)
@@ -328,42 +328,74 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 }
 
 func createTranscoderRunScript(ethAcctAddr, dataDir, serviceHost string) {
-	script := "#!/bin/bash\n"
-	// script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s \
-	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr %s:%d -cliAddr %s:%d -transcoder`,
-		dataDir, serviceHost, mediaPort, serviceHost, cliPort)
-	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
-	err := ioutil.WriteFile(fName, []byte(script), 0755)
-	if err != nil {
-		glog.Warningf("Error writing run script: %v", err)
+	args := []string{
+		"./livepeer",
+		"-v 99",
+		fmt.Sprintf("-datadir ./%s", dataDir),
+		"-orchSecret secre",
+		fmt.Sprintf("-orchAddr %s:%d", serviceHost, mediaPort),
+		fmt.Sprintf("-cliAddr %s:%d", serviceHost, cliPort),
+		"-transcoder",
 	}
+	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
+	writeScript(fName, args...)
 }
 
 func createRunScript(ethAcctAddr, dataDir, serviceHost string, isBroadcaster bool) {
-	script := "#!/bin/bash\n"
-	script += fmt.Sprintf(`./livepeer -v 99 -ethController %s -datadir ./%s \
-    -ethAcctAddr %s \
-    -ethUrl %s \
-    -ethPassword "" \
-    -network=devenv \
-    -blockPollingInterval 1 \
-    -monitor=false -currentManifest=true -cliAddr %s:%d -httpAddr %s:%d `,
-		ethController, dataDir, ethAcctAddr, endpoint, serviceHost, cliPort, serviceHost, mediaPort)
-
-	if !isBroadcaster {
-		script += fmt.Sprintf(` -initializeRound=true \
-    -serviceAddr %s:%d  -transcoder=true -orchestrator=true \
-    -orchSecret secre -pricePerUnit 1
-    `, serviceHost, mediaPort)
-	} else {
-		script += fmt.Sprintf(` -broadcaster=true -rtmpAddr %s:%d`, serviceHost, rtmpPort)
+	args := []string{
+		"./livepeer",
+		"-v 99",
+		"-ethController " + ethController,
+		"-datadir ./" + dataDir,
+		"-ethAcctAddr " + ethAcctAddr,
+		"-ethUrl " + endpoint,
+		"-ethPassword \"\"",
+		"-network=devenv",
+		"-blockPollingInterval 1",
+		"-monitor=false",
+		"-currentManifest=true",
+		fmt.Sprintf("-cliAddr %s:%d", serviceHost, cliPort),
+		fmt.Sprintf("-httpAddr %s:%d", serviceHost, mediaPort),
 	}
 
+	if !isBroadcaster {
+		args = append(
+			args,
+			"-initializeRound=true",
+			fmt.Sprintf("-serviceAddr=%s:%d", serviceHost, mediaPort),
+			"-orchestrator=true",
+			"-orchSecret secre",
+			"-pricePerUnit 1",
+		)
+
+		fName := fmt.Sprintf("run_%s_standalone_%s.sh", getNodeType(isBroadcaster), ethAcctAddr)
+		writeScript(fName, args...)
+
+		args = append(args, "-transcoder=true")
+		fName = fmt.Sprintf("run_%s_with_transcoder_%s.sh", getNodeType(isBroadcaster), ethAcctAddr)
+		writeScript(fName, args...)
+	} else {
+		args = append(
+			args,
+			"-broadcaster=true",
+			fmt.Sprintf("-rtmpAddr %s:%d", serviceHost, rtmpPort),
+		)
+
+		fName := fmt.Sprintf("run_%s_%s.sh", getNodeType(isBroadcaster), ethAcctAddr)
+		writeScript(fName, args...)
+	}
+}
+
+func writeScript(fName string, args ...string) {
+	script := "#!/bin/bash\n"
+
+	script += strings.Join(args, " \\\n\t")
+	script += "\n"
+
 	glog.Info(script)
-	fName := fmt.Sprintf("run_%s_%s.sh", getNodeType(isBroadcaster), ethAcctAddr)
 	err := ioutil.WriteFile(fName, []byte(script), 0755)
 	if err != nil {
-		glog.Warningf("Error writing run script: %v", err)
+		glog.Warningf("Error writing run script %q: %v", fName, err)
 	}
 }
 
