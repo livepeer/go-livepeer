@@ -17,32 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download artifacts from build stage (linux)
+      - name: Download artifacts from build stage
         uses: dawidd6/action-download-artifact@v2
         with:
           workflow: build.yaml
-          name: release-artifacts-linux
-          path: releases/
-
-      - name: Download artifacts from build stage (windows)
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          workflow: build.yaml
-          name: release-artifacts-windows
-          path: releases/
-
-      - name: Download artifacts from build stage (macos)
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          workflow: build.yaml
-          name: release-artifacts-macos
-          path: releases/
-
-      - name: Download artifacts from build stage (tensorflow)
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          workflow: build.yaml
-          name: release-artifacts-linux-tensorflow
+          name: release-artifacts
           path: releases/
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts

@@ -86,7 +86,7 @@ jobs:
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master
         with:
-          name: release-artifacts-linux
+          name: release-artifacts
           path: releases/
 
       - name: Notify new build upload
@@ -164,7 +164,7 @@ jobs:
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master
         with:
-          name: release-artifacts-macos
+          name: release-artifacts
           path: releases/
 
   windows:
@@ -215,7 +215,7 @@ jobs:
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master
         with:
-          name: release-artifacts-windows
+          name: release-artifacts
           path: releases/
 
   linux-tensorflow:
@@ -310,7 +310,7 @@ jobs:
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master
         with:
-          name: release-artifacts-linux-tensorflow
+          name: release-artifacts
           path: releases/
 
       - name: Notify new build upload
