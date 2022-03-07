@@ -207,11 +207,11 @@ type chromaDepth struct {
 	Depth  ffmpeg.ColorDepthBits
 }
 
-var cap_444_8bit = chromaDepth{ffmpeg.ChromaSubsampling444, 8}
-var cap_422_8bit = chromaDepth{ffmpeg.ChromaSubsampling422, 8}
-var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, 10}
-var cap_422_10bit = chromaDepth{ffmpeg.ChromaSubsampling422, 10}
-var cap_420_10bit = chromaDepth{ffmpeg.ChromaSubsampling420, 10}
+var cap_444_8bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth8Bit}
+var cap_422_8bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth8Bit}
+var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth10Bit}
+var cap_422_10bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth10Bit}
+var cap_420_10bit = chromaDepth{ffmpeg.ChromaSubsampling420, ffmpeg.ColorDepth10Bit}
 
 func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps := make(map[Capability]bool)

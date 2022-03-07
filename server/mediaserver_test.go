@@ -563,7 +563,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Resolution:   "123x456",
 			Profile:      ffmpeg.ProfileH264Baseline,
 			GOP:          time.Duration(0),
-			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "prof2",
@@ -573,7 +572,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			Resolution:   "456x987",
 			Profile:      ffmpeg.ProfileNone,
 			GOP:          ffmpeg.GOPIntraOnly,
-			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "passthru_fps",
@@ -583,7 +581,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			FramerateDen: 0,
 			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 			GOP:          time.Duration(123) * time.Second,
-			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 		{
 			Name:         "gop0",
@@ -593,7 +590,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 			FramerateDen: 0,
 			Profile:      ffmpeg.ProfileH264ConstrainedHigh,
 			GOP:          time.Duration(0),
-			ColorDepth:   ffmpeg.ColorDepth8Bit,
 		},
 	}
 
