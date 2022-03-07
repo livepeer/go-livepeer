@@ -17,6 +17,7 @@
 ### Bug Fixes 🐞
 
 #### General
+- \#2299 Prevent Transcoder/Broadcaster run scripts from using same CLI port
 
 #### Broadcaster
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)

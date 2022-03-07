@@ -26,8 +26,7 @@ import (
 )
 
 const (
-	clientIdentifier = "geth" // Client identifier to advertise over the network
-	passphrase       = ""
+	passphrase = ""
 )
 
 var (
@@ -133,6 +132,7 @@ func main() {
 	ethSetup(acc, keystoreDir, isBroadcaster)
 	createRunScript(acc, dataDir, serviceHost, isBroadcaster)
 	if !isBroadcaster {
+		cliPort += 1
 		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
 		err = os.MkdirAll(tDataDir, 0755)
 		if err != nil {
@@ -330,8 +330,8 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 func createTranscoderRunScript(ethAcctAddr, dataDir, serviceHost string) {
 	script := "#!/bin/bash\n"
 	// script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s \
-	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr %s:%d -transcoder`,
-		dataDir, serviceHost, mediaPort)
+	script += fmt.Sprintf(`./livepeer -v 99 -datadir ./%s -orchSecret secre -orchAddr %s:%d -cliAddr %s:%d -transcoder`,
+		dataDir, serviceHost, mediaPort, serviceHost, cliPort)
 	fName := fmt.Sprintf("run_transcoder_%s.sh", ethAcctAddr)
 	err := ioutil.WriteFile(fName, []byte(script), 0755)
 	if err != nil {
