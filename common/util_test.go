@@ -83,8 +83,8 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	profiles[0].Name = ""
 	fullProfiles, err := FFmpegProfiletoNetProfile(profiles)
 
-	assert.Equal(fullProfiles[0].ColorDepth, int32(0))
-	assert.Equal(fullProfiles[1].ColorDepth, int32(2))
+	assert.Equal(fullProfiles[0].ColorDepth, int32(ffmpeg.ColorDepth8Bit))
+	assert.Equal(fullProfiles[1].ColorDepth, int32(ffmpeg.ColorDepth10Bit))
 	assert.Equal(fullProfiles[0].ChromaFormat, net.VideoProfile_CHROMA_420)
 	assert.Equal(fullProfiles[1].ChromaFormat, net.VideoProfile_CHROMA_444)
 	profiles[0].ColorDepth = ffmpeg.ColorDepth12Bit
@@ -105,9 +105,9 @@ func TestFFmpegProfiletoNetProfile(t *testing.T) {
 	assert.Nil(err)
 	profiles[0].Name = "prof1"
 
-	assert.Equal(fullProfiles[0].ColorDepth, int32(4))
+	assert.Equal(fullProfiles[0].ColorDepth, int32(ffmpeg.ColorDepth12Bit))
 	assert.Equal(fullProfiles[0].ChromaFormat, net.VideoProfile_CHROMA_422)
-	assert.Equal(fullProfiles[1].ColorDepth, int32(8))
+	assert.Equal(fullProfiles[1].ColorDepth, int32(ffmpeg.ColorDepth16Bit))
 
 	// Empty bitrate should return parsing error
 	profiles[0].Bitrate = ""
