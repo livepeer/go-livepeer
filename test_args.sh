@@ -285,7 +285,7 @@ $TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/invalid.json 2>&1 |   
 
 # Check that it fails out on an invalid schema - width / height as strings
 echo '[{"width":"1","height":"2"}]' > $TMPDIR/schema.json
-$TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/schema.json 2>&1 | grep "cannot unmarshal string into Go struct field .width of type int"
+$TMPDIR/livepeer -broadcaster -transcodingOptions $TMPDIR/schema.json 2>&1 | grep "cannot unmarshal string into Go struct field JsonProfile.width of type int"
 
 # Check that local verification is disabled by default in off-chain mode
 $TMPDIR/livepeer -broadcaster -transcodingOptions invalid 2>&1 | grep -v "Local verification enabled"
