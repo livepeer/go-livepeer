@@ -22,6 +22,9 @@ eth/protocol
 /livepeer_router
 /livepeer_bench
 
+# Generated run scripts
+run_*.sh
+
 /.git.describe
 /livepeer-windows-amd64.zip
 

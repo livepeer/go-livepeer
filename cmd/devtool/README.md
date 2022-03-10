@@ -31,5 +31,7 @@ This command will submit the setup transactions for a broadcaster and generate t
 
 `go run cmd/devtool/devtool.go setup transcoder`
 
-This command will submit the setup transactions for an orchestrator/transcoder and generate the Bash scripts 
-`run_orchestrator_<ETH_ACCOUNT>.sh` which can be used to start an orchestrator node and `run_transcoder_<ETH_ACCOUNT>.sh` which can be used to start a transcoder node.
+This command will submit the setup transactions for an orchestrator/transcoder and generate the Bash scripts:
+
+* `run_orchestrator_with_transcoder_<ETH_ACCOUNT>.sh` which can be used to start an orchestrator node that contains a transcoder (combined OT)
+* `run_orchestrator_standalone_<ETH_ACCOUNT>.sh`  and `run_transcoder_<ETH_ACCOUNT>.sh` which can be used to start separate orchestrator and transcoder nodes (split O/T)
