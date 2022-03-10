@@ -772,11 +772,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	errorOut = func(status int, s string, params ...interface{}) {
-		httpErr := fmt.Sprintf(s, params...)
-		clog.Errorf(ctx, httpErr)
-		http.Error(w, httpErr, status)
-	}
 
 	mid := parseManifestID(r.URL.Path)
 	if mid != "" {
