@@ -129,25 +129,6 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 	})
 }
 
-func decode_capabilities(caps []Capability) []string {
-	var found []string = make([]string, 0, 5)
-	for _, cap := range caps {
-		switch cap {
-		case Capability_H264_Decode_444_8bit:
-			found = append(found, "h264_444_8bit")
-		case Capability_H264_Decode_422_8bit:
-			found = append(found, "h264_422_8bit")
-		case Capability_H264_Decode_444_10bit:
-			found = append(found, "h264_444_10bit")
-		case Capability_H264_Decode_422_10bit:
-			found = append(found, "h264_422_10bit")
-		case Capability_H264_Decode_420_10bit:
-			found = append(found, "h264_420_10bit")
-		}
-	}
-	return found
-}
-
 // We need this in order to call `NvidiaTranscoder::Transcode()` properly
 func setupWorkDir() (string, func()) {
 	tmp, _ := ioutil.TempDir("", "")
