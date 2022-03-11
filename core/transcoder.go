@@ -143,7 +143,7 @@ func (params transcodeTestParams) Name() string {
 
 type continueLoop bool
 
-func forEachTranscoderSample(handler func(*transcodeTestParams) continueLoop) {
+func transcodeWithSample(handler func(*transcodeTestParams) continueLoop) {
 	// default capabilities
 	allCaps := append(DefaultCapabilities(), OptionalCapabilities()...)
 	handlerParams := transcodeTestParams{SegmentPath: filepath.Join(WorkDir, "testseg.tempfile")}
@@ -196,7 +196,7 @@ func testNvidiaTranscode(device string, fname string, profile ffmpeg.VideoProfil
 // Test which capabilities transcoder supports
 func TestTranscoderCapabilities(devices []string) (caps []Capability, fatalError error) {
 	fatalError = nil
-	forEachTranscoderSample(func(params *transcodeTestParams) continueLoop {
+	transcodeWithSample(func(params *transcodeTestParams) continueLoop {
 		if !params.TestAvailable {
 			// Assume capability is supported if we do not have test for it
 			caps = append(caps, params.Cap)
@@ -263,7 +263,7 @@ func testSoftwareTranscode(tmpdir string, fname string, profile ffmpeg.VideoProf
 func TestSoftwareTranscoderCapabilities(tmpdir string) (caps []Capability, fatalError error) {
 	// iterate all capabilities and test ones which has test data
 	fatalError = nil
-	forEachTranscoderSample(func(params *transcodeTestParams) continueLoop {
+	transcodeWithSample(func(params *transcodeTestParams) continueLoop {
 		if !params.TestAvailable {
 			caps = append(caps, params.Cap)
 			return true
