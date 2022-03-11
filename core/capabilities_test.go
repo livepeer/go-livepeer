@@ -146,7 +146,7 @@ func TestCapability_TranscoderCapabilities(t *testing.T) {
 
 	// nvidia test
 	devices, err := common.ParseNvidiaDevices("all")
-	devicesAvailable := err != nil && len(devices) > 0
+	devicesAvailable := err == nil && len(devices) > 0
 	if devicesAvailable {
 		nvidiaCaps, err := TestTranscoderCapabilities(devices)
 		assert.Nil(t, err)
