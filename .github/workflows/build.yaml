@@ -108,7 +108,6 @@ jobs:
         with:
           # Needed for commands that depend on git tags
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v2
@@ -177,7 +176,6 @@ jobs:
         with:
           # Needed for commands that depend on git tags
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup Msys2 environment
         uses: msys2/setup-msys2@v2
@@ -226,7 +224,6 @@ jobs:
         with:
           # Needed for commands that depend on git tags
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Setup Go
         uses: actions/setup-go@v2
