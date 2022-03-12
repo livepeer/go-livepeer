@@ -37,7 +37,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.event.workflow_run.head_branch }}
-          regex: "^v([0-9]+\.\d+\.\d+)$"
+          regex: '^v([0-9]+\.\d+\.\d+)$'
 
       - name: Release to github
         uses: softprops/action-gh-release@v1
