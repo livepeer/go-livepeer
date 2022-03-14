@@ -12,6 +12,7 @@
 - \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
 
 #### Broadcaster
+- \#2309 Add dynamic timeout for the orchestrator discovery (@leszko)
 
 #### Orchestrator
 
