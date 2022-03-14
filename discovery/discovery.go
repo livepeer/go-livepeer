@@ -19,7 +19,8 @@ import (
 )
 
 var getOrchestratorsTimeoutLoop = 3 * time.Second
-var getOrchestratorsCutoffTimeout = 1 * time.Second
+var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
+var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
@@ -77,10 +78,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
-	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), getOrchestratorsCutoffTimeout)
-
-	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
-	errCh := make(chan error, numAvailableOrchs)
 
 	// The following allows us to avoid capability check for jobs that only
 	// depend on "legacy" features, since older orchestrators support these
@@ -108,7 +105,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	getOrchInfo := func(uri *url.URL) {
+	getOrchInfo := func(ctx context.Context, uri *url.URL, infoCh chan *net.OrchestratorInfo, errCh chan error) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
 		if err == nil && isCompatible(info) {
 			infoCh <- info
@@ -129,30 +126,52 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		uris[i] = linfos[j].URL
 	}
 
-	for _, uri := range uris {
-		go getOrchInfo(uri)
-	}
+	var infos []*net.OrchestratorInfo
+	var suspendedInfos *suspensionQueue
+	var timedOut bool
+	var nbResp int
 
-	timeout := false
-	infos := []*net.OrchestratorInfo{}
-	suspendedInfos := newSuspensionQueue()
-	nbResp := 0
-	for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timeout; i++ {
-		select {
-		case info := <-infoCh:
-			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
-				infos = append(infos, info)
-			} else {
-				heap.Push(suspendedInfos, &suspension{info, penalty})
-			}
-			nbResp++
-		case <-errCh:
-			nbResp++
-		case <-ctx.Done():
-			timeout = true
+	// try to discover orchestrators until at least 1 is found (with the exponential backoff timout)
+	timeout := getOrchestratorsCutoffTimeout
+	for {
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
+		infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
+		errCh := make(chan error, numAvailableOrchs)
+
+		for _, uri := range uris {
+			go getOrchInfo(ctx, uri, infoCh, errCh)
 		}
+
+		timedOut = false
+		suspendedInfos = newSuspensionQueue()
+		nbResp = 0
+		for i := 0; i < numAvailableOrchs && len(infos) < numOrchestrators && !timedOut; i++ {
+			select {
+			case info := <-infoCh:
+				if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
+					infos = append(infos, info)
+				} else {
+					heap.Push(suspendedInfos, &suspension{info, penalty})
+				}
+				nbResp++
+			case <-errCh:
+				nbResp++
+			case <-ctx.Done():
+				timedOut = true
+			}
+		}
+		cancel()
+
+		if len(infos) > 0 {
+			break
+		}
+
+		timeout *= 2
+		if timeout >= maxGetOrchestratorCutoffTimeout {
+			break
+		}
+		clog.V(common.DEBUG).Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
 	}
-	cancel()
 
 	if len(infos) < numOrchestrators {
 		diff := numOrchestrators - len(infos)
@@ -162,8 +181,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 	}
 
-	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timeout=%t",
-		len(infos), nbResp, len(uris), timeout)
+	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
+		len(infos), nbResp, len(uris), timedOut)
 	return infos, nil
 }
 

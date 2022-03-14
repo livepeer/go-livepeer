@@ -918,9 +918,10 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 
 func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	// Test setup
-
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
+	// Disable retrying discovery with extended timeout
+	maxGetOrchestratorCutoffTimeout = getOrchestratorsCutoffTimeout
 
 	server.BroadcastCfg.SetMaxPrice(nil)
 
