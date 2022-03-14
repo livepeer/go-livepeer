@@ -10,6 +10,7 @@
 - \#2289 Add timeouts to ETH client (@leszko)
 
 #### Broadcaster
+- \#2309 Add dynamic timeout for the orchestrator discovery (@leszko)
 
 #### Orchestrator
 
