@@ -22,6 +22,7 @@
 
 #### Broadcaster
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
+- \#2291 Calling video comparison to improve the security strength (@oscar-davids)
 
 #### Orchestrator
 - \#2284 Fix issue with not redeeming tickets by Redeemer (@leszko)
