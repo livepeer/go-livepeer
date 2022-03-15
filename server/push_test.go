@@ -533,7 +533,7 @@ func TestPush_ShouldUpdateLastUsed(t *testing.T) {
 	assert.True(lu.Before(s.rtmpConnections["mani1"].lastUsed))
 }
 
-func TestPush_HTTPIngest(t *testing.T) {
+func TestPush_HTTPIngestNoSessions(t *testing.T) {
 	assert := assert.New(t)
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
@@ -1110,7 +1110,7 @@ func TestPush_StorageError(t *testing.T) {
 	drivers.NodeStorage = nil
 	req := httptest.NewRequest("POST", "/live/seg.ts", reader)
 	mid := parseManifestID(req.URL.Path)
-	err := removeRTMPStream(context.TODO(), s, mid)
+	err := removeStream(context.TODO(), s, mid)
 	assert.Equal(errUnknownStream, err)
 
 	handler.ServeHTTP(w, req)

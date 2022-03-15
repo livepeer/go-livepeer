@@ -36,7 +36,6 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 	"github.com/livepeer/lpms/vidplayer"
 	"github.com/livepeer/m3u8"
@@ -50,13 +49,9 @@ var errNoOrchs = errors.New("ErrNoOrchs")
 var errUnknownStream = errors.New("ErrUnknownStream")
 var errMismatchedParams = errors.New("Mismatched type for stream params")
 
-const HLSWaitInterval = time.Second
-const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
-const HLSBufferWindow = uint(5)
 const StreamKeyBytes = 6
 
 const SegLen = 2 * time.Second
-const BroadcastRetry = 15 * time.Second
 
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
@@ -87,7 +82,6 @@ type rtmpConnection struct {
 }
 
 type LivepeerServer struct {
-	RTMPSegmenter           lpmscore.RTMPSegmenter
 	LPMS                    *lpmscore.LPMS
 	LivepeerNode            *core.LivepeerNode
 	HTTPMux                 *http.ServeMux
@@ -170,7 +164,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		}
 	}
 	server := lpmscore.New(&opts)
-	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
+	ls := &LivepeerServer{LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
 		rtmpConnections:         make(map[core.ManifestID]*rtmpConnection),
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
@@ -186,11 +180,10 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) error {
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
-	//LPMS handlers for handling RTMP video
-	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
+	//LPMS handler for playing RTMP video
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
-	//LPMS hanlder for handling HLS video play
+	//LPMS handler for handling HLS video play
 	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
 
 	//Start the LPMS server
@@ -470,76 +463,6 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 	return p
 }
 
-func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
-	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
-
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil)
-		if err != nil {
-			return err
-		}
-
-		mid := cxn.mid
-		nonce := cxn.nonce
-		startSeq := 0
-
-		streamStarted := false
-		//Segment the stream, insert the segments into the broadcaster
-		go func(rtmpStrm stream.RTMPVideoStream) {
-			hid := string(core.RandomManifestID()) // ffmpeg m3u8 output name
-			hlsStrm := stream.NewBasicHLSVideoStream(hid, stream.DefaultHLSStreamWin)
-			hlsStrm.SetSubscriber(func(seg *stream.HLSSegment, eof bool) {
-				if eof {
-					// XXX update HLS manifest
-					return
-				}
-				if !streamStarted {
-					streamStarted = true
-					if monitor.Enabled {
-						monitor.StreamStarted(nonce)
-					}
-				}
-				go processSegment(context.Background(), cxn, seg)
-			})
-
-			segOptions := segmenter.SegmenterOptions{
-				StartSeq:  startSeq,
-				SegLength: SegLen,
-			}
-			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, segOptions)
-			if err != nil {
-				// Stop the incoming RTMP connection.
-				// TODO retry segmentation if err != SegmenterTimeout; may be recoverable
-				rtmpStrm.Close()
-			}
-
-		}(rtmpStrm)
-
-		if monitor.Enabled {
-			monitor.StreamCreated(string(mid), nonce)
-		}
-
-		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
-
-		return nil
-	}
-}
-
-func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
-	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
-		params := streamParams(rtmpStrm.AppData())
-		if params == nil {
-			return errMismatchedParams
-		}
-
-		//Remove RTMP stream
-		err := removeRTMPStream(context.Background(), s, params.ManifestID)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
 func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec) (*rtmpConnection, error) {
 	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
@@ -646,7 +569,7 @@ func countStreamsWithFastVerificationEnabled(rtmpConnections map[core.ManifestID
 	return enabled, using
 }
 
-func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.ManifestID) error {
+func removeStream(ctx context.Context, s *LivepeerServer, extmid core.ManifestID) error {
 	s.connectionLock.Lock()
 	defer s.connectionLock.Unlock()
 	intmid := extmid
@@ -898,7 +821,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				// TODO try to re-use old HLS playlist?
 				clog.Warningf(ctx, "Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
 					oldStreamID, mid, params.ManifestID)
-				removeRTMPStream(ctx, s, oldStreamID)
+				removeStream(ctx, s, oldStreamID)
 			}
 		} else {
 			s.connectionLock.RUnlock()
@@ -938,7 +861,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {
-						_ = removeRTMPStream(ctx, s, extmid)
+						_ = removeStream(ctx, s, extmid)
 						return
 					}
 				}
@@ -1630,7 +1553,7 @@ func (s *LivepeerServer) LatestPlaylist() core.PlaylistManager {
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
 	cxn, ok := s.rtmpConnections[s.lastManifestID]
-	if !ok || cxn.pl == nil {
+	if !ok {
 		return nil
 	}
 	return cxn.pl

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -11,10 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
@@ -23,24 +24,15 @@ import (
 
 	gonet "net"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
 )
 
-// var S *LivepeerServer
-
 var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
-
-// func setupServer() *LivepeerServer {
-// 	s, _ := setupServerWithCancel()
-// 	return s
-// }
 var port = 10000
 
 // waitForTCP tries to establish TCP connection for a specified time
@@ -197,32 +189,6 @@ func (d *stubDiscovery) Size() int {
 
 func (d *stubDiscovery) SizeWith(scorePred common.ScorePred) int {
 	return len(d.infos)
-}
-
-type StubSegmenter struct {
-	skip bool
-}
-
-func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVideoStream, hs stream.HLSVideoStream, segOptions segmenter.SegmenterOptions) error {
-	if s.skip {
-		// prevents spamming the console w error logging
-		// when segment can't be submitted successfully
-		return nil
-	}
-	glog.Infof("Calling StubSegmenter")
-	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 0, Name: "seg0.ts"}); err != nil {
-		glog.Errorf("Error adding hls seg0")
-	}
-	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 1, Name: "seg1.ts"}); err != nil {
-		glog.Errorf("Error adding hls seg1")
-	}
-	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 2, Name: "seg2.ts"}); err != nil {
-		glog.Errorf("Error adding hls seg2")
-	}
-	if err := hs.AddHLSSegment(&stream.HLSSegment{SeqNo: 3, Name: "seg3.ts"}); err != nil {
-		glog.Errorf("Error adding hls seg3")
-	}
-	return nil
 }
 
 func TestSelectOrchestrator(t *testing.T) {
@@ -468,7 +434,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(context.TODO(), s)
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
@@ -693,256 +658,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert.Nil(sid)
 }
 
-func TestCreateRTMPStreamHandler(t *testing.T) {
-
-	// Monkey patch rng to avoid unpredictability even when seeding
-	oldRandFunc := common.RandomIDGenerator
-	common.RandomIDGenerator = func(length uint) string {
-		return "abcdef"
-	}
-	defer func() { common.RandomIDGenerator = oldRandFunc }()
-
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	handler := gotRTMPStreamHandler(s)
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
-	endHandler := endRTMPStreamHandler(s)
-	// Test default path structure
-	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
-	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
-
-	rand.Seed(123)
-	sid := createSid(u)
-	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
-
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
-	u = mustParseUrl(t, "rtmp://localhost/stream/"+expectedSid.String()) // with stream
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
-		t.Error("Unexpected streamid")
-	}
-	expectedMid := "mnopq"
-	key := common.RandomIDGenerator(StreamKeyBytes)
-	u = mustParseUrl(t, "rtmp://localhost/"+string(expectedMid)) // without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
-	u = mustParseUrl(t, "rtmp://localhost/stream/"+string(expectedMid)) // with stream, without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
-	// Test normal case
-	u = mustParseUrl(t, "rtmp://localhost")
-	st := stream.NewBasicRTMPVideoStream(createSid(u))
-	if st.GetStreamID() == "" {
-		t.Error("Empty streamid")
-	}
-	// Populate internal state with s1
-	if err := handler(u, st); err != nil {
-		t.Error("Handler failed ", err)
-	}
-	// Test collisions via stream reuse
-	if sid := createSid(u); sid == nil {
-		t.Error("Did not expect a failure due to naming collision")
-	}
-	// Ensure the stream ID is reusable after the stream ends
-	if err := endHandler(u, st); err != nil {
-		t.Error("Could not clean up stream")
-	}
-	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
-		t.Error("Mismatched streamid during stream reuse", sid.StreamID(), st.GetStreamID())
-	}
-
-	// Test a couple of odd cases; subset of parseManifestID checks
-	// (Would be nice to stub out parseManifestID to receive stronger
-	//  transitive assurance via existing parseManifestID tests)
-	testManifestIDQueryParam := func(inp string) {
-		// This isn't a great test because if the query param ever changes,
-		// this test will still pass
-		u := mustParseUrl(t, "rtmp://localhost/"+inp)
-		if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
-			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
-		}
-	}
-	inputs := []string{"  /  ", ".m3u8", "/stream/", "stream/.m3u8"}
-	for _, v := range inputs {
-		testManifestIDQueryParam(v)
-	}
-	st.Close()
-}
-
-func TestEndRTMPStreamHandler(t *testing.T) {
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
-	handler := gotRTMPStreamHandler(s)
-	endHandler := endRTMPStreamHandler(s)
-	u := mustParseUrl(t, "rtmp://localhost")
-	sid := createSid(u)
-	st := stream.NewBasicRTMPVideoStream(sid)
-
-	// Nonexistent stream
-	if err := endHandler(u, st); err != errUnknownStream {
-		t.Error("Expected unknown stream ", err)
-	}
-	// Normal case: clean up existing stream
-	if err := handler(u, st); err != nil {
-		t.Error("Handler failed ", err)
-	}
-	if err := endHandler(u, st); err != nil {
-		t.Error("Did  not end stream ", err)
-	}
-	// Check behavior on calling `endHandler` twice
-	if err := endHandler(u, st); err != errUnknownStream {
-		t.Error("Stream was not cleaned up properly ", err)
-	}
-	st.Close()
-}
-
-// Should publish RTMP stream, turn the RTMP stream into HLS, and broadcast the HLS stream.
-func TestGotRTMPStreamHandler(t *testing.T) {
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	s.RTMPSegmenter = &StubSegmenter{}
-	handler := gotRTMPStreamHandler(s)
-
-	vProfile := ffmpeg.P720p30fps16x9
-	hlsStrmID := core.MakeStreamID(core.ManifestID("ghijkl"), &vProfile)
-	u := mustParseUrl(t, "rtmp://localhost:1935/movie")
-	strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: hlsStrmID.ManifestID})
-	defer strm.Close()
-	expectedSid := core.MakeStreamIDFromString(string(hlsStrmID.ManifestID), "source")
-
-	// Check for invalid node storage
-	oldStorage := drivers.NodeStorage
-	drivers.NodeStorage = nil
-	if err := handler(u, strm); err != errStorage {
-		t.Error("Expected storage error ", err)
-	}
-	drivers.NodeStorage = oldStorage
-
-	//Try to handle test RTMP data.
-	if err := handler(u, strm); err != nil {
-		t.Errorf("Error: %v", err)
-	}
-
-	// Check assigned IDs
-	mid := streamParams(strm.AppData()).ManifestID
-	if s.LatestPlaylist().ManifestID() != mid {
-		t.Error("Unexpected Manifest ID")
-	}
-	if s.LastHLSStreamID() != expectedSid {
-		t.Error("Unexpected Stream ID ", s.LastHLSStreamID(), expectedSid)
-	}
-
-	//Stream already exists
-	if err := handler(u, strm); err != errAlreadyExists {
-		t.Errorf("Expecting publish error because stream already exists, but got: %v", err)
-	}
-
-	start := time.Now()
-	for time.Since(start) < time.Second*2 {
-		pl := s.LatestPlaylist().GetHLSMediaPlaylist(expectedSid.Rendition)
-		if pl == nil || len(pl.Segments) != 4 {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		} else {
-			break
-		}
-	}
-	pl := s.LatestPlaylist().GetHLSMediaPlaylist(expectedSid.Rendition)
-	if pl == nil {
-		t.Error("Expected media playlist; got none ", expectedSid)
-	}
-
-	if pl.Count() != 4 {
-		t.Errorf("Should have received 4 data chunks, got: %v", pl.Count())
-	}
-
-	for i := 0; i < 4; i++ {
-		// XXX we shouldn't do this. Need threadsafe accessors for playlist
-		seg := pl.Segments[i]
-		shouldSegName := fmt.Sprintf("/stream/%s/%s/%d.ts", mid, expectedSid.Rendition, i)
-		if seg.URI != shouldSegName {
-			t.Fatalf("Wrong segment, should have URI %s, has %s", shouldSegName, seg.URI)
-		}
-	}
-}
-
-func TestMultiStream(t *testing.T) {
-	// set unlimited sessions because this tests creates 500 streams
-	core.MaxSessions = 0
-	//Turning off logging to stderr because this test prints ALOT of logs.
-	//Ideally we would record the flag value and set it back instead of hardcoding the value,
-	// but the `flag` doesn't allow easy access to existing flag value.
-	flag.Set("logtostderr", "false")
-	defer func() {
-		flag.Set("logtostderr", "true")
-	}()
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	handler := gotRTMPStreamHandler(s)
-	u := mustParseUrl(t, "rtmp://localhost")
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
-
-	handleStream := func(i int) {
-		st := stream.NewBasicRTMPVideoStream(createSid(u))
-		if err := handler(u, st); err != nil {
-			t.Error("Could not handle stream ", i, err)
-		}
-	}
-
-	// test synchronous
-	const syncStreams = 10
-	for i := 0; i < syncStreams; i++ {
-		handleStream(i)
-	}
-
-	// test more streams, somewhat concurrently
-	var wg sync.WaitGroup
-	const asyncStreams = 500
-	for i := syncStreams; i < asyncStreams; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			handleStream(i)
-		}(i)
-	}
-
-	// block until complete
-	ch := make(chan struct{})
-	go func() {
-		wg.Wait()
-		ch <- struct{}{}
-	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	select {
-	case <-ch:
-		close(ch)
-		if len(s.rtmpConnections) < asyncStreams {
-			t.Error("Did not have expected number of streams", len(s.rtmpConnections))
-		}
-	case <-ctx.Done():
-		t.Error("Timed out")
-		close(ch)
-	}
-
-	// probably should test (concurrent) cleanups as well
-}
-
 func TestGetHLSMasterPlaylistHandler(t *testing.T) {
-	glog.Infof("\n\nTestGetHLSMasterPlaylistHandler...\n")
-
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -954,44 +670,77 @@ func TestGetHLSMasterPlaylistHandler(t *testing.T) {
 		lpmscore.RetryCount = orc
 		lpmscore.SegmenterRetryWait = srw
 	}()
-	handler := gotRTMPStreamHandler(s)
-
 	vProfile := ffmpeg.P720p30fps16x9
 	hlsStrmID := core.MakeStreamID(core.RandomManifestID(), &vProfile)
-	url := mustParseUrl(t, "rtmp://localhost:1935/movie")
-	strm := stream.NewBasicRTMPVideoStream(newStreamParams(hlsStrmID.ManifestID, "source"))
 
-	if err := handler(url, strm); err != nil {
-		t.Errorf("Error: %v", err)
-	}
+	ts, mux := stubTLSServer()
+	defer ts.Close()
 
-	segName := "test_seg/1.ts"
-	err := s.LatestPlaylist().InsertHLSSegment(&vProfile, 1, segName, 12)
-	if err != nil {
-		t.Fatal(err)
+	segPath := "/transcoded/segment.ts"
+	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100}}
+	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
+		return &net.TranscodeResult{
+			Result: &net.TranscodeResult_Data{
+				Data: &net.TranscodeData{
+					Segments: tSegData,
+				},
+			},
+		}
 	}
-	mid := hlsStrmID.ManifestID
+	buf, err := proto.Marshal(dummyRes(tSegData))
+	require.Nil(t, err)
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf)
+	})
+	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("transcoded binary data"))
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9}
+	sess.Params.ManifestID = hlsStrmID.ManifestID
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+
+	osd := drivers.NewMemoryDriver(mustParseUrl(t, "test://some.host"))
+	osSession := osd.NewSession("testPath")
+
+	s.rtmpConnections[hlsStrmID.ManifestID] = &rtmpConnection{
+		mid:         hlsStrmID.ManifestID,
+		nonce:       7,
+		pl:          core.NewBasicPlaylistManager(hlsStrmID.ManifestID, osSession, nil),
+		profile:     &ffmpeg.P720p30fps16x9,
+		sessManager: bsm,
+		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9}},
+	}
+	s.lastManifestID = hlsStrmID.ManifestID
+
+	reader := strings.NewReader("InsteadOf.mp4")
+	req, err := http.NewRequest(http.MethodPost, "/live/"+string(hlsStrmID.ManifestID)+"/1.ts", reader)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	s.HandlePush(w, req)
+
+	bytes, err := ioutil.ReadAll(w.Body)
+	require.NoError(t, err)
+	println(string(bytes))
+	require.Equal(t, http.StatusOK, w.Code)
 
 	mlHandler := getHLSMasterPlaylistHandler(s)
-	url2 := mustParseUrl(t, fmt.Sprintf("http://localhost/stream/%s.m3u8", mid))
+	url2 := mustParseUrl(t, fmt.Sprintf("http://localhost/stream/%s.m3u8", hlsStrmID.ManifestID))
 
 	//Test get master playlist
 	pl, err := mlHandler(url2)
-	if err != nil {
-		t.Errorf("Error handling getHLSMasterPlaylist: %v", err)
-	}
-	if pl == nil {
-		t.Fatal("Expected playlist; got none")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, pl)
+	require.Equal(t, 1, len(pl.Variants), "Expected 1 variant")
 
-	if len(pl.Variants) != 1 {
-		t.Errorf("Expecting 1 variant, but got %v", pl)
-	}
 	mediaPLName := fmt.Sprintf("%s.m3u8", hlsStrmID)
-	if pl.Variants[0].URI != mediaPLName {
-		t.Errorf("Expecting %s, but got: %s", mediaPLName, pl.Variants[0].URI)
-	}
-	strm.Close()
+	require.Equal(t, mediaPLName, pl.Variants[0].URI)
+
 	// need to wait until SegmentRTMPToHLS loop exits (we don't have a way to force it)
 	time.Sleep(100 * time.Millisecond)
 }
@@ -1093,75 +842,6 @@ func TestRegisterConnection(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-
-}
-
-func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
-	assert := assert.New(t)
-
-	s, cancel := setupServerWithCancel()
-	defer func() {
-		s.LivepeerNode.OrchestratorPool = nil
-		serverCleanup(s)
-		cancel()
-	}()
-
-	// populate stub discovery
-	sd := &stubDiscovery{}
-	sd.infos = []*net.OrchestratorInfo{
-		{Transcoder: "transcoder1", AuthToken: &net.AuthToken{}, TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
-		{Transcoder: "transcoder2", AuthToken: &net.AuthToken{}, TicketParams: &net.TicketParams{}, PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}},
-	}
-	s.LivepeerNode.OrchestratorPool = sd
-
-	// create RTMPStream handler methods
-	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
-	handler := gotRTMPStreamHandler(s)
-	endHandler := endRTMPStreamHandler(s)
-
-	// create BasicRTMPVideoStream and extract ManifestID
-	u := mustParseUrl(t, "rtmp://localhost")
-	sid := createSid(u)
-	st := stream.NewBasicRTMPVideoStream(sid)
-	mid := streamParams(st.AppData()).ManifestID
-
-	// assert that ManifestID has not been added to rtmpConnections yet
-	_, exists := s.rtmpConnections[mid]
-	assert.Equal(exists, false)
-
-	// assert stream starts successfully
-	err := handler(u, st)
-	assert.Nil(err)
-
-	// assert sessManager is running and has right number of sessions
-	cxn, exists := s.rtmpConnections[mid]
-	assert.Equal(exists, true)
-	assert.Equal(cxn.sessManager.finished, false)
-	// assert.Equal(cxn.sessManager.sel.Size(), 2)
-	// assert.Len(cxn.sessManager.sessMap, 2)
-
-	// assert stream ends successfully
-	err = endHandler(u, st)
-	assert.Nil(err)
-
-	// assert sessManager is not running and has no sessions
-	_, exists = s.rtmpConnections[mid]
-	assert.Equal(exists, false)
-	assert.Equal(cxn.sessManager.finished, true)
-	// assert.Equal(cxn.sessManager.sel.Size(), 0)
-	// assert.Len(cxn.sessManager.sessMap, 0)
-
-	// assert stream starts successfully again
-	err = handler(u, st)
-	assert.Nil(err)
-
-	// assert sessManager is running and has right number of sessions
-	cxn, exists = s.rtmpConnections[mid]
-	assert.Equal(exists, true)
-	assert.Equal(cxn.sessManager.finished, false)
-	// assert.Equal(cxn.sessManager.sel.Size(), 2)
-	// assert.Len(cxn.sessManager.sessMap, 2)
 
 }
 
@@ -1340,9 +1020,7 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 }
 
 func mustParseUrl(t *testing.T, str string) *url.URL {
-	url, err := url.Parse(str)
-	if err != nil {
-		t.Fatalf(`Bad url "%s": %v`, str, err)
-	}
-	return url
+	u, err := url.Parse(str)
+	require.NoError(t, err)
+	return u
 }
