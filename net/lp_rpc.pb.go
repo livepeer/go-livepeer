@@ -426,6 +426,8 @@ type Capabilities struct {
 	Bitstring []uint64 `protobuf:"varint,1,rep,packed,name=bitstring,proto3" json:"bitstring,omitempty"`
 	// Bit string of features that are required to be supported
 	Mandatories          []uint64 `protobuf:"varint,2,rep,packed,name=mandatories,proto3" json:"mandatories,omitempty"`
+	// Capacity corresponding to each capability
+	Capacities map[uint32]uint32 `protobuf:"bytes,3,rep,name=capacities,proto3" json:"capacities,omitempty" protobuf_key:"varint,1,opt,name=key,proto3" protobuf_val:"varint,2,opt,name=value,proto3"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`

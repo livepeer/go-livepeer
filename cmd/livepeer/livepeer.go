@@ -307,7 +307,7 @@ func main() {
 		n.OrchSecret, _ = common.GetPass(*orchSecret)
 	}
 
-	transcoderCaps := core.DefaultCapabilities()
+	var transcoderCaps []core.Capability
 	if *transcoder {
 		core.WorkDir = *datadir
 		if *nvidia != "" {
@@ -938,12 +938,11 @@ func main() {
 			// Only enable experimental capabilities if scene classification model is actually loaded
 			transcoderCaps = append(transcoderCaps, core.ExperimentalCapabilities()...)
 		}
-		n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
-
 		if !*transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
 	}
+	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
 	*cliAddr = defaultAddr(*cliAddr, "127.0.0.1", CliPort)
 
 	if drivers.NodeStorage == nil {

@@ -92,6 +92,9 @@ message Capabilities {
     // Bit string of features that are required to be supported
     repeated uint64 mandatories = 2;
 
+    // Capacity corresponding to each capability
+    map<uint32, uint32> capacities = 3;
+
     // Non-binary capability constraints, such as supported ranges.
     message Constraints {
             // Empty for now

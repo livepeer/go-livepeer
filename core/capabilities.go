@@ -2,10 +2,10 @@ package core
 
 import (
 	"errors"
-
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
+	"sync"
 )
 
 type Capability int
@@ -15,6 +15,8 @@ type Capabilities struct {
 	bitstring   CapabilityString
 	mandatories CapabilityString
 	constraints Constraints
+	capacities  map[Capability]int
+	mutex       sync.Mutex
 }
 type CapabilityTest struct {
 	inVideoData []byte
@@ -281,28 +283,95 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	if c == nil {
 		return nil
 	}
-	return &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32)}
+	for capability, capacity := range c.capacities {
+		netCaps.Capacities[uint32(capability)] = uint32(capacity)
+	}
+	return netCaps
 }
 
 func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	if caps == nil {
 		return nil
 	}
-	return &Capabilities{
+	coreCaps := &Capabilities{
 		bitstring:   caps.Bitstring,
 		mandatories: caps.Mandatories,
+		capacities:  make(map[Capability]int),
 	}
+	if caps.Capacities == nil || len(caps.Capacities) == 0 {
+		// build capacities map if not present (struct received from previous versions)
+		for arrIdx := 0; arrIdx < len(caps.Bitstring); arrIdx++ {
+			for capIdx := 0; capIdx < 64; capIdx++ {
+				capInt := arrIdx*64 + capIdx
+				if caps.Bitstring[arrIdx]&uint64(1<<capIdx) > 0 {
+					coreCaps.capacities[Capability(capInt)] = 1
+				}
+			}
+		}
+	} else {
+		for capabilityInt, capacity := range caps.Capacities {
+			coreCaps.capacities[Capability(capabilityInt)] = int(capacity)
+		}
+	}
+	return coreCaps
 }
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{}
+	c := &Capabilities{capacities: make(map[Capability]int)}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
+		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
+		for _, capability := range caps {
+			c.capacities[capability] = 1
+		}
 	}
 	if len(m) > 0 {
 		c.mandatories = NewCapabilityString(m)
 	}
 	return c
+}
+
+func (cap *Capabilities) AddCapacity(newCaps *Capabilities) {
+	cap.mutex.Lock()
+	defer cap.mutex.Unlock()
+	for capability, capacity := range newCaps.capacities {
+		curCapacity, e := cap.capacities[capability]
+		if !e {
+			cap.capacities[capability] = 0
+		}
+		cap.capacities[capability] = curCapacity + capacity
+		arrIdx := int(capability) / 64
+		bitIdx := int(capability) % 64
+		if arrIdx >= len(cap.bitstring) {
+			cap.bitstring = append(cap.bitstring, 0)
+		}
+		cap.bitstring[arrIdx] |= uint64(1 << bitIdx)
+	}
+}
+
+func (cap *Capabilities) RemoveCapacity(goneCaps *Capabilities) {
+	cap.mutex.Lock()
+	defer cap.mutex.Unlock()
+	for capability, capacity := range goneCaps.capacities {
+		curCapacity, e := cap.capacities[capability]
+		if !e {
+			continue
+		}
+		newCapacity := curCapacity - capacity
+		if newCapacity <= 0 {
+			delete(cap.capacities, capability)
+			arrIdx := int(capability) / 64
+			bitIdx := int(capability) % 64
+			if arrIdx >= len(cap.bitstring) {
+				// shouldn't reach this point
+				continue
+			}
+			cap.bitstring[arrIdx] &= ^uint64(1 << bitIdx)
+		} else {
+			cap.capacities[capability] = newCapacity
+		}
+	}
 }
 
 func CapabilityToName(capability Capability) (string, error) {
