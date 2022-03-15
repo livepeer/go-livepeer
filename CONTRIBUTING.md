@@ -59,6 +59,12 @@ to improve this codebase for everyone.
 > this additional cognitive load, you may not want to begin here for you first
 > contribution.
 
+#### Commits
+
+- We generally prefer to logically group changes into individual commits as much as possible and like to follow these [guidelines](https://github.com/lightningnetwork/lnd/blob/master/docs/code_contribution_guidelines.md#ideal-git-commit-structure) for commit structure
+- We like to use [fixup commits and auto-squashing when rebasing](https://thoughtbot.com/blog/autosquashing-git-commits) during the PR review process to a) make it easy to review incremental changes and b) make it easy to logically group changes into individual commits
+- We like to use descriptive commit messages following these [guidelines](https://github.com/lightningnetwork/lnd/blob/master/docs/code_contribution_guidelines.md#model-git-commit-messages). Additionally, we like to prefix commit titles with the package/functionality that the commit updates (i.e. `eth: ...`) as described [here](https://github.com/lightningnetwork/lnd/blob/master/docs/code_contribution_guidelines.md#ideal-git-commit-structure)
+
 ## FAQ
 
 ### How much do I need to know about peer-to-peer/livestreaming/go/etc to be an effective contributor?
@@ -87,7 +93,11 @@ it'd be good to have some proficiency with go.
   - Make sure your PR is up-to-date with `master` (rebase please 🙏)
   - Wait for a maintainer to review your PR
   - Push additional commits to your PR branch to fix any issues noted in review.
+    - Avoid force pushing to the branch which will clobber commit history and makes it more difficult for reviewing incremental changes in the PR
+    - Instead use [fixup commits](#commits) that can be squashed prior to merging
   - Wait for a maintainer to merge your PR
+    - For a small changesets, the Github "squash and merge" option can be an acceptable
+    - For larger changesets, the Github "rebase and merge" option is preferable and a maintainer may request you do a local rebase first to cleanup the branch commit history before merging
 
 
 ### Changelog

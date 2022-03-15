@@ -108,10 +108,7 @@ type (
 		mSegmentTranscoded            *stats.Int64Measure
 		mSegmentTranscodedUnprocessed *stats.Int64Measure
 		mSegmentTranscodeFailed       *stats.Int64Measure
-		mSegmentTranscodedAppeared    *stats.Int64Measure
 		mSegmentTranscodedAllAppeared *stats.Int64Measure
-		mStartBroadcastClientFailed   *stats.Int64Measure
-		mStreamCreateFailed           *stats.Int64Measure
 		mStreamCreated                *stats.Int64Measure
 		mStreamStarted                *stats.Int64Measure
 		mStreamEnded                  *stats.Int64Measure
@@ -125,7 +122,6 @@ type (
 		mSuccessRate                  *stats.Float64Measure
 		mSuccessRatePerStream         *stats.Float64Measure
 		mTranscodeTime                *stats.Float64Measure
-		mTranscodeLatency             *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
 		mUploadTime                   *stats.Float64Measure
 		mDownloadTime                 *stats.Float64Measure
@@ -146,12 +142,11 @@ type (
 		mOrchestratorSwaps            *stats.Int64Measure
 
 		// Metrics for sending payments
-		mTicketValueSent     *stats.Float64Measure
-		mTicketsSent         *stats.Int64Measure
-		mPaymentCreateError  *stats.Int64Measure
-		mDeposit             *stats.Float64Measure
-		mReserve             *stats.Float64Measure
-		mMaxTranscodingPrice *stats.Float64Measure
+		mTicketValueSent    *stats.Float64Measure
+		mTicketsSent        *stats.Int64Measure
+		mPaymentCreateError *stats.Int64Measure
+		mDeposit            *stats.Float64Measure
+		mReserve            *stats.Float64Measure
 		// Metrics for receiving payments
 		mTicketValueRecv       *stats.Float64Measure
 		mTicketsRecv           *stats.Int64Measure
@@ -255,10 +250,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mSegmentTranscoded = stats.Int64("segment_transcoded_total", "SegmentTranscoded", "tot")
 	census.mSegmentTranscodedUnprocessed = stats.Int64("segment_transcoded_unprocessed_total", "SegmentTranscodedUnprocessed", "tot")
 	census.mSegmentTranscodeFailed = stats.Int64("segment_transcode_failed_total", "SegmentTranscodeFailed", "tot")
-	census.mSegmentTranscodedAppeared = stats.Int64("segment_transcoded_appeared_total", "SegmentTranscodedAppeared", "tot")
 	census.mSegmentTranscodedAllAppeared = stats.Int64("segment_transcoded_all_appeared_total", "SegmentTranscodedAllAppeared", "tot")
-	census.mStartBroadcastClientFailed = stats.Int64("broadcast_client_start_failed_total", "StartBroadcastClientFailed", "tot")
-	census.mStreamCreateFailed = stats.Int64("stream_create_failed_total", "StreamCreateFailed", "tot")
 	census.mStreamCreated = stats.Int64("stream_created_total", "StreamCreated", "tot")
 	census.mStreamStarted = stats.Int64("stream_started_total", "StreamStarted", "tot")
 	census.mStreamEnded = stats.Int64("stream_ended_total", "StreamEnded", "tot")
@@ -272,8 +264,6 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mSuccessRatePerStream = stats.Float64("success_rate_per_stream", "Success rate, per stream", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
-	census.mTranscodeLatency = stats.Float64("transcode_latency_seconds",
-		"Transcoding latency, from source segment emerged from segmenter till transcoded segment apeeared in manifest", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
@@ -293,7 +283,6 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
 	census.mDeposit = stats.Float64("broadcaster_deposit", "Current remaining deposit for the broadcaster node", "gwei")
 	census.mReserve = stats.Float64("broadcaster_reserve", "Current remaing reserve for the broadcaster node", "gwei")
-	census.mMaxTranscodingPrice = stats.Float64("max_transcoding_price", "MaxTranscodingPrice", "wei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -356,13 +345,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "broadcast_client_start_failed_total",
-			Measure:     census.mStartBroadcastClientFailed,
-			Description: "StartBroadcastClientFailed",
-			TagKeys:     baseTags,
-			Aggregation: view.Count(),
-		},
-		{
 			Name:        "stream_created_total",
 			Measure:     census.mStreamCreated,
 			Description: "StreamCreated",
@@ -380,13 +362,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "stream_ended_total",
 			Measure:     census.mStreamEnded,
 			Description: "StreamEnded",
-			TagKeys:     baseTags,
-			Aggregation: view.Count(),
-		},
-		{
-			Name:        "stream_create_failed_total",
-			Measure:     census.mStreamCreateFailed,
-			Description: "StreamCreateFailed",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
 		},
@@ -510,13 +485,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.Count(),
 		},
 		{
-			Name:        "segment_transcoded_appeared_total",
-			Measure:     census.mSegmentTranscodedAppeared,
-			Description: "SegmentTranscodedAppeared",
-			TagKeys:     append([]tag.Key{census.kProfile, census.kSegmentType}, baseTagsWithManifestID...),
-			Aggregation: view.Count(),
-		},
-		{
 			Name:        "segment_transcoded_all_appeared_total",
 			Measure:     census.mSegmentTranscodedAllAppeared,
 			Description: "SegmentTranscodedAllAppeared",
@@ -543,13 +511,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "TranscodeTime, seconds",
 			TagKeys:     append([]tag.Key{census.kProfiles, census.kTrusted, census.kVerified}, baseTags...),
 			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
-		},
-		{
-			Name:        "transcode_latency_seconds",
-			Measure:     census.mTranscodeLatency,
-			Description: "Transcoding latency, from source segment emerged from segmenter till transcoded segment apeeared in manifest",
-			TagKeys:     append([]tag.Key{census.kProfile}, baseTagsWithManifestID...),
-			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
 		{
 			Name:        "transcode_overall_latency_seconds",
@@ -705,13 +666,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mReserve,
 			Description: "Current remaining reserve for the broadcaster node",
 			TagKeys:     baseTagsWithEthAddr,
-			Aggregation: view.LastValue(),
-		},
-		{
-			Name:        "max_transcoding_price",
-			Measure:     census.mMaxTranscodingPrice,
-			Description: "Maximum price per pixel to pay for transcoding",
-			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
 
@@ -1416,11 +1370,6 @@ func RecordingSegmentSaved(dur time.Duration, err error) {
 		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
 		stats.Record(census.ctx, census.mRecordingSavedSegments.M(1))
 	}
-}
-
-func StreamCreateFailed(nonce uint64, reason string) {
-	glog.Errorf("Logging StreamCreateFailed... nonce=%d reason='%s'", nonce, reason)
-	stats.Record(census.ctx, census.mStreamCreateFailed.M(1))
 }
 
 func newAverager(manifestID string) *segmentsAverager {
