@@ -149,21 +149,14 @@ func MandatoryOCapabilities() []Capability {
 }
 
 func NewCapabilityString(caps []Capability) CapabilityString {
-	capStr := []uint64{}
+	capStr := CapabilityString{}
 	for _, v := range caps {
 		if v <= Capability_Unused {
 			continue
 		}
-		int_index := int(v) / 64 // floors automatically
-		bit_index := int(v) % 64
-		// grow capStr until it's of length int_index
-		for len(capStr) <= int_index {
-			capStr = append(capStr, 0)
-		}
-		capStr[int_index] |= uint64(1 << bit_index)
+		capStr.addCapability(v)
 	}
 	return capStr
-
 }
 
 func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
@@ -361,17 +354,31 @@ func (cap *Capabilities) RemoveCapacity(goneCaps *Capabilities) {
 		newCapacity := curCapacity - capacity
 		if newCapacity <= 0 {
 			delete(cap.capacities, capability)
-			arrIdx := int(capability) / 64
-			bitIdx := int(capability) % 64
-			if arrIdx >= len(cap.bitstring) {
-				// shouldn't reach this point
-				continue
-			}
-			cap.bitstring[arrIdx] &= ^uint64(1 << bitIdx)
+			cap.bitstring.removeCapability(capability)
 		} else {
 			cap.capacities[capability] = newCapacity
 		}
 	}
+}
+
+func (capStr *CapabilityString) removeCapability(capability Capability) {
+	arrIdx := int(capability) / 64 // floors automatically
+	bitIdx := int(capability) % 64
+	if arrIdx >= len(*capStr) {
+		// don't have this capability byte
+		return
+	}
+	(*capStr)[arrIdx] &= ^uint64(1 << bitIdx)
+}
+
+func (capStr *CapabilityString) addCapability(capability Capability) {
+	int_index := int(capability) / 64 // floors automatically
+	bit_index := int(capability) % 64
+	// grow capStr until it's of length int_index
+	for len(*capStr) <= int_index {
+		*capStr = append(*capStr, 0)
+	}
+	(*capStr)[int_index] |= uint64(1 << bit_index)
 }
 
 func CapabilityToName(capability Capability) (string, error) {
