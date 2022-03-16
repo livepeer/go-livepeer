@@ -129,17 +129,13 @@ type authWebhookResponse struct {
 	VerificationFreq uint `json:"verificationFreq"`
 }
 
-func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
+func NewLivepeerServer(lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
 	opts := lpmscore.LPMSOpts{
-		RtmpAddr:     rtmpAddr,
-		RtmpDisabled: true,
-		WorkDir:      lpNode.WorkDir,
-		HttpMux:      http.NewServeMux(),
+		WorkDir: lpNode.WorkDir,
+		HttpMux: http.NewServeMux(),
 	}
 	switch lpNode.NodeType {
 	case core.BroadcasterNode:
-		opts.RtmpDisabled = false
-
 		if transcodingOptions != "" {
 			var profiles []ffmpeg.VideoProfile
 			content, err := ioutil.ReadFile(transcodingOptions)
@@ -184,7 +180,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS handler for handling HLS video play
-	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler(s))
+	s.LPMS.HandleHLSPlay(getHLSMasterPlaylistHandler(s), getHLSMediaPlaylistHandler(s), getHLSSegmentHandler())
 
 	//Start the LPMS server
 	lpmsCtx, cancel := context.WithCancel(ctx)
@@ -651,7 +647,7 @@ func getHLSMediaPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.Med
 	}
 }
 
-func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) {
+func getHLSSegmentHandler() func(url *url.URL) ([]byte, error) {
 	return func(url *url.URL) ([]byte, error) {
 		// Strip the /stream/ prefix
 		segName := cleanStreamPrefix(url.Path)

@@ -83,7 +83,7 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		// doesn't really starts server at 1938
-		S, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+		S, _ = NewLivepeerServer(n, true, "")
 		// rtmpurl := fmt.Sprintf("rtmp://127.0.0.1:%d", port)
 		// S, _ = NewLivepeerServer(rtmpurl, n, true, "")
 		// glog.Errorf("++> rtmp server with port %d", port)
@@ -124,7 +124,7 @@ func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
 			return ctx, wrapCancel
 		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
+		S, _ = NewLivepeerServer(n, true, "")
 		go S.StartMediaServer(ctx, "127.0.0.1:9080")
 		go S.StartCliWebserver("127.0.0.1:9938")
 	}
@@ -413,9 +413,6 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
 	}
-	if sid.StreamID() != "id1/secret" {
-		t.Error("Stream id/key did not match ", sid)
-	}
 	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
 	params := createSid(u)
@@ -498,7 +495,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	params = createSid(u).(*core.StreamParameters)
 	mid = params.ManifestID
 	assert.Equal(core.ManifestID("xyz"), mid, "Should set manifest to one provided by webhook")
-	assert.Equal("xyz/zyx", params.StreamID(), "Should set streamkey to one provided by webhook")
 	assert.Equal("zyx", params.RtmpKey, "Should set rtmp key to one provided by webhook")
 
 	// set presets (with some invalid)

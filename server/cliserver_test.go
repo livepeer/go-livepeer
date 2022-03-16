@@ -33,7 +33,7 @@ func newMockServer() *httptest.Server {
 	go func() { n.TranscoderManager.Manage(strm, 5, nil) }()
 	time.Sleep(1 * time.Millisecond)
 	n.Transcoder = n.TranscoderManager
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ := NewLivepeerServer(n, true, "")
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	return srv
@@ -52,7 +52,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	go func() { n.TranscoderManager.Manage(strm, 5, nil) }()
 	time.Sleep(1 * time.Millisecond)
 	n.Transcoder = n.TranscoderManager
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ := NewLivepeerServer(n, true, "")
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -233,7 +233,7 @@ func TestGetEthChainID(t *testing.T) {
 	err = dbh.SetChainID(big.NewInt(1))
 	require.Nil(err)
 	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", dbh)
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ := NewLivepeerServer(n, true, "")
 	mux := s.cliWebServerHandlers("addr")
 	srv = httptest.NewServer(mux)
 	defer srv.Close()
@@ -321,7 +321,7 @@ func TestRegisteredOrchestrators(t *testing.T) {
 
 	n, _ := core.NewLivepeerNode(eth, "./tmp", dbh)
 
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ := NewLivepeerServer(n, true, "")
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
