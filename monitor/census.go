@@ -323,17 +323,18 @@ func InitCensus(nodeType NodeType, version string) {
 		glog.Fatal("Error creating tagged context", err)
 	}
 	baseTags := []tag.Key{census.kNodeID, census.kNodeType}
+	baseTagsWithEthAddr := append([]tag.Key{census.kSender}, baseTags...)
 	baseTagsWithManifestID := baseTags
-	baseTagsWithEthAddr := baseTags
-	baseTagsWithManifestIDAndEthAddr := baseTags
+	baseTagsWithClientIP := baseTags
+	baseTagsWithEthAddrAndManifestID := baseTagsWithEthAddr
+	baseTagsWithManifestIDAndClientIP := baseTagsWithEthAddr
 	if PerStreamMetrics {
-		baseTagsWithManifestID = []tag.Key{census.kNodeID, census.kNodeType, census.kManifestID}
-		baseTagsWithEthAddr = []tag.Key{census.kNodeID, census.kNodeType, census.kSender}
-		baseTagsWithManifestIDAndEthAddr = []tag.Key{census.kNodeID, census.kNodeType, census.kManifestID, census.kSender}
+		baseTagsWithManifestID = append([]tag.Key{census.kManifestID}, baseTags...)
+		baseTagsWithEthAddrAndManifestID = append([]tag.Key{census.kManifestID}, baseTagsWithEthAddr...)
 	}
-	baseTagsWithManifestIDAndIP := baseTagsWithManifestID
 	if ExposeClientIP {
-		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
+		baseTagsWithClientIP = append([]tag.Key{census.kClientIP}, baseTags...)
+		baseTagsWithManifestIDAndClientIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
 
 	views := []*view.View{
@@ -369,56 +370,70 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "http_client_timeout_1",
 			Measure:     census.mHTTPClientTimeout1,
 			Description: "Number of times HTTP connection was dropped before transcoding complete",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_timeout_2",
 			Measure:     census.mHTTPClientTimeout2,
 			Description: "Number of times HTTP connection was dropped before transcoded segments was sent back to client",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_ratio",
 			Measure:     census.mRealtimeRatio,
 			Description: "Ratio of source segment duration / transcode time as measured on HTTP client",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0.5, 1, 2, 3, 5, 10, 50, 100),
+		},
+		{
+			Name:        "http_client_segment_transcoded_realtime_ratio_per_stream",
+			Measure:     census.mRealtimeRatio,
+			Description: "Ratio of source segment duration / transcode time as measured on HTTP client",
+			TagKeys:     baseTagsWithManifestID,
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
+		},
+		{
+			Name:        "http_client_segment_transcoded_realtime_ratio_per_client_ip",
+			Measure:     census.mRealtimeRatio,
+			Description: "Ratio of source segment duration / transcode time as measured on HTTP client",
+			TagKeys:     baseTagsWithClientIP,
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_3x",
 			Measure:     census.mRealtime3x,
 			Description: "Number of segment transcoded 3x faster than realtime",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_2x",
 			Measure:     census.mRealtime2x,
 			Description: "Number of segment transcoded 2x faster than realtime",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_1x",
 			Measure:     census.mRealtime1x,
 			Description: "Number of segment transcoded 1x faster than realtime",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_half",
 			Measure:     census.mRealtimeHalf,
 			Description: "Number of segment transcoded no more than two times slower than realtime",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "http_client_segment_transcoded_realtime_slow",
 			Measure:     census.mRealtimeSlow,
 			Description: "Number of segment transcoded more than two times slower than realtime",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
@@ -439,21 +454,35 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_source_emerged_unprocessed_total",
 			Measure:     census.mSegmentEmergedUnprocessed,
 			Description: "Raw number of segments emerged from segmenter.",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "segment_source_uploaded_total",
 			Measure:     census.mSegmentUploaded,
 			Description: "SegmentUploaded",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_source_uploaded_total_per_stream",
+			Measure:     census.mSegmentUploaded,
+			Description: "SegmentUploaded",
+			TagKeys:     baseTagsWithManifestID,
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "segment_source_upload_failed_total",
 			Measure:     census.mSegmentUploadFailed,
 			Description: "SegmentUploadedFailed",
-			TagKeys:     append([]tag.Key{census.kErrorCode, census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kErrorCode, census.kOrchestratorURI}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "segment_source_upload_failed_total_per_stream",
+			Measure:     census.mSegmentUploadFailed,
+			Description: "SegmentUploadedFailed",
+			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -516,8 +545,15 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
 			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTags...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+		},
+		{
+			Name:        "transcode_overall_latency_seconds_per_stream",
+			Measure:     census.mTranscodeOverallLatency,
+			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestID...),
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
 		},
 		{
 			Name:        "transcode_score",
@@ -555,11 +591,25 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
 		{
+			Name:        "upload_time_seconds_per_stream",
+			Measure:     census.mUploadTime,
+			Description: "UploadTime, seconds",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
+		},
+		{
 			Name:        "download_time_seconds",
 			Measure:     census.mDownloadTime,
 			Description: "Download time",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
+		{
+			Name:        "download_time_seconds_per_stream",
+			Measure:     census.mDownloadTime,
+			Description: "Download time",
+			TagKeys:     baseTagsWithManifestID,
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
 		},
 		{
 			Name:        "auth_webhook_time_milliseconds",
@@ -572,8 +622,15 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "source_segment_duration_seconds",
 			Measure:     census.mSourceSegmentDuration,
 			Description: "Source segment's duration",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     baseTags,
 			Aggregation: view.Distribution(0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 15, 20),
+		},
+		{
+			Name:        "source_segment_duration_seconds_per_stream",
+			Measure:     census.mSourceSegmentDuration,
+			Description: "Source segment's duration",
+			TagKeys:     baseTagsWithManifestID,
+			Aggregation: view.Distribution(), // single bucket with boundaries (-infinity, +infinity)
 		},
 		{
 			Name:        "max_sessions_total",
@@ -674,28 +731,28 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ticket_value_recv",
 			Measure:     census.mTicketValueRecv,
 			Description: "Ticket value received",
-			TagKeys:     baseTagsWithManifestIDAndEthAddr,
+			TagKeys:     baseTagsWithEthAddrAndManifestID,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "tickets_recv",
 			Measure:     census.mTicketsRecv,
 			Description: "Tickets received",
-			TagKeys:     baseTagsWithManifestIDAndEthAddr,
+			TagKeys:     baseTagsWithEthAddrAndManifestID,
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "payment_recv_errors",
 			Measure:     census.mPaymentRecvErr,
 			Description: "Errors when receiving payments",
-			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTagsWithManifestIDAndEthAddr...),
+			TagKeys:     append([]tag.Key{census.kErrorCode}, baseTagsWithEthAddrAndManifestID...),
 			Aggregation: view.Sum(),
 		},
 		{
 			Name:        "winning_tickets_recv",
 			Measure:     census.mWinningTicketsRecv,
 			Description: "Winning tickets received",
-			TagKeys:     baseTagsWithManifestIDAndEthAddr,
+			TagKeys:     baseTagsWithEthAddrAndManifestID,
 			Aggregation: view.Sum(),
 		},
 		{
@@ -732,7 +789,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "mil_pixels_processed",
 			Measure:     census.mMilPixelsProcessed,
 			Description: "Million pixels processed",
-			TagKeys:     baseTagsWithManifestIDAndIP,
+			TagKeys:     baseTagsWithManifestIDAndClientIP,
 			Aggregation: view.Sum(),
 		},
 		{
