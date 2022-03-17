@@ -22,6 +22,7 @@
 
 #### Broadcaster
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
+- \#2326 Split Auth/Webhook functionality into its own file
 
 #### Orchestrator
 - \#2284 Fix issue with not redeeming tickets by Redeemer (@leszko)
