@@ -974,7 +974,7 @@ func main() {
 	//Create Livepeer Node
 
 	//Set up the media server
-	s, err := server.NewLivepeerServer(n, *httpIngest, *transcodingOptions)
+	s, err := server.NewLivepeerServer(*rtmpAddr, n, *httpIngest, *transcodingOptions)
 	if err != nil {
 		glog.Fatal("Error creating Livepeer server err=", err)
 	}

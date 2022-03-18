@@ -543,7 +543,7 @@ func TestPush_HTTPIngestNoSessions(t *testing.T) {
 	req := httptest.NewRequest("POST", "/live/name/1.mp4", reader)
 
 	// HTTP ingest disabled
-	s, _ := NewLivepeerServer(n, false, "")
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, false, "")
 	h, pattern := s.HTTPMux.Handler(req)
 	assert.Equal("", pattern)
 
@@ -554,7 +554,7 @@ func TestPush_HTTPIngestNoSessions(t *testing.T) {
 	assert.Equal(404, resp.StatusCode)
 
 	// HTTP ingest enabled
-	s, _ = NewLivepeerServer(n, true, "")
+	s, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	h, pattern = s.HTTPMux.Handler(req)
 	assert.Equal("/live/", pattern)
 
@@ -585,7 +585,7 @@ func TestPush_MP4(t *testing.T) {
 	defer cancel()
 	s.rtmpConnections = map[core.ManifestID]*rtmpConnection{}
 	defer func() { s.rtmpConnections = map[core.ManifestID]*rtmpConnection{} }()
-	segHandler := getHLSSegmentHandler()
+	segHandler := getHLSSegmentHandler(s)
 	ts, mux := stubTLSServer()
 	defer ts.Close()
 
@@ -1256,7 +1256,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert := assert.New(t)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-	s, _ := NewLivepeerServer(n, true, "")
+	s, _ := NewLivepeerServer("127.0.0.1:1939", n, true, "")
 	defer serverCleanup(s)
 
 	whts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1419,7 +1419,7 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.BroadcasterNode
-	s, _ := NewLivepeerServer(n, true, "")
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()
 	AuthWebhookURL = nil
