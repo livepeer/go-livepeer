@@ -244,7 +244,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
-		if resp, err = authenticateStream(url.String()); err != nil {
+		if resp, err = authenticateStream(AuthWebhookURL, url.String()); err != nil {
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
@@ -346,45 +346,6 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 			Nonce:            nonce,
 		}
 	}
-}
-
-func authenticateStream(url string) (*authWebhookResponse, error) {
-	if AuthWebhookURL == nil {
-		return nil, nil
-	}
-	started := time.Now()
-	values := map[string]string{"url": url}
-	jsonValue, err := json.Marshal(values)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
-
-	if err != nil {
-		return nil, err
-	}
-	rbody, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
-	}
-	if len(rbody) == 0 {
-		return nil, nil
-	}
-	var authResp authWebhookResponse
-	err = json.Unmarshal(rbody, &authResp)
-	if err != nil {
-		return nil, err
-	}
-	if authResp.ManifestID == "" {
-		return nil, errors.New("empty manifest id not allowed")
-	}
-	took := time.Since(started)
-	glog.Infof("Stream authentication for url=%s dur=%s", url, took)
-	if monitor.Enabled {
-		monitor.AuthWebhookFinished(took)
-	}
-	return &authResp, nil
 }
 
 func jsonProfileToVideoProfile(resp *authWebhookResponse) ([]ffmpeg.VideoProfile, error) {
@@ -1314,7 +1275,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	if cresp, has := s.recordingsAuthResponses.Get(manifestID); has {
 		resp = cresp.(*authWebhookResponse)
 		fromCache = true
-	} else if resp, err = authenticateStream(r.URL.String()); err != nil {
+	} else if resp, err = authenticateStream(AuthWebhookURL, r.URL.String()); err != nil {
 		glog.Errorf("Authentication denied for url=%s err=%q", r.URL.String(), err)
 		if strings.Contains(err.Error(), "not found") {
 			w.WriteHeader(http.StatusNotFound)
