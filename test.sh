@@ -4,7 +4,7 @@ set -eux
 
 #Test script to run all the tests for continuous integration
 
-go test ./...
+go test -coverprofile cover.out ./...
 
 cd core
 # Be more strict with load balancer tests: run with race detector enabled

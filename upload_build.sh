@@ -5,6 +5,13 @@
 set -e
 set -o nounset
 
+BASE_DIR="$(realpath $(dirname "$0"))"
+
+cd "$BASE_DIR"
+RELEASES_DIR="${BASE_DIR}/${RELEASES_DIR:-releases}/"
+
+mkdir -p "$RELEASES_DIR"
+
 if [[ $(uname) == *"MSYS"* ]]; then
   PLATFORM="windows"
   EXT=".exe"
@@ -12,10 +19,12 @@ else
   PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
   EXT=""
   if [[ -n "${RELEASE_TAG:-}" ]]; then
-      PLATFORM="$PLATFORM-$RELEASE_TAG"
+    PLATFORM="$PLATFORM-$RELEASE_TAG"
   fi
 fi
+
 ARCH="$(uname -m)"
+
 if [[ "${GOARCH:-}" != "" ]]; then
   ARCH="$GOARCH"
 fi
@@ -33,7 +42,7 @@ fi
 BASE="livepeer-$PLATFORM-$ARCH"
 BRANCH="${TRAVIS_BRANCH:-unknown}"
 if [[ "${GHA_REF:-}" != "" ]]; then
-  BRANCH="$(echo $GHA_REF | sed 's/refs\/heads\///')"
+  BRANCH="$(echo $GHA_REF | sed 's:refs/heads/::')"
 fi
 VERSION="$(./print_version.sh)"
 if echo $VERSION | grep dirty; then
@@ -59,22 +68,21 @@ CLI="./livepeer_cli${EXT}"
 BENCH="./livepeer_bench${EXT}"
 ROUTER="./livepeer_router${EXT}"
 
-mkdir $BASE
-cp $NODE $BASE
-cp $CLI $BASE
-cp $BENCH $BASE
-cp $ROUTER $BASE
+mkdir -p "${BASE_DIR}/$BASE"
+cp "$NODE" "$CLI" "$BENCH" "$ROUTER" "${BASE_DIR}/$BASE"
 
 # do a basic upload so we know if stuff's working prior to doing everything else
 if [[ $PLATFORM == "windows" ]]; then
-  FILE=$BASE.zip
-  zip -r ./$FILE ./$BASE
+  FILE="$BASE.zip"
+  zip -r "${RELEASES_DIR}/$FILE" ./$BASE
 else
-  FILE=$BASE.tar.gz
-  tar -czvf ./$FILE ./$BASE
+  FILE="$BASE.tar.gz"
+  tar -czvf "${RELEASES_DIR}/$FILE" ./$BASE
 fi
 
-FILE_SHA256=`shasum -a 256 ${FILE}`
+cd "$RELEASES_DIR"
+
+FILE_SHA256=$(shasum -a 256 ${FILE})
 
 if [[ "${GCLOUD_KEY:-}" == "" ]]; then
   echo "GCLOUD_KEY not found, not uploading to Google Cloud."
@@ -85,9 +93,9 @@ fi
 bucket=build.livepeer.live
 resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
 contentType="application/x-compressed-tar"
-dateValue=`date -R`
+dateValue="$(date -R)"
 stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
-signature=`echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64`
+signature="$(echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64)"
 fullUrl="https://storage.googleapis.com${resource}"
 
 # Failsafe - don't overwrite existing uploads!
@@ -105,5 +113,8 @@ curl -X PUT -T "${FILE}" \
 
 echo "upload done"
 
-curl --fail -s -H "Content-Type: application/json" -X POST -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" $DISCORD_URL
+curl -X POST --fail -s \
+  -H "Content-Type: application/json" \
+  -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" \
+  $DISCORD_URL
 echo "done"

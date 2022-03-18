@@ -9,6 +9,8 @@
 #### General
 - \#2289 Add timeouts to ETH client (@leszko)
 
+- \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
+
 #### Broadcaster
 
 #### Orchestrator
@@ -22,6 +24,7 @@
 
 #### Broadcaster
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
+- \#2291 Calling video comparison to improve the security strength (@oscar-davids)
 - \#2326 Split Auth/Webhook functionality into its own file
 
 #### Orchestrator
