@@ -81,7 +81,6 @@ jobs:
           protoc --version
           touch net/lp_rpc.proto net/redeemer.proto
           make net/lp_rpc.pb.go net/redeemer.pb.go
-          git diff --exit-code
 
       - name: Lint
         run: |
