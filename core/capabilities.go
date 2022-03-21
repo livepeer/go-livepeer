@@ -83,6 +83,7 @@ var CapabilityNameLookup = map[Capability]string{
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
 	// 145x145 is the lowest resolution supported by NVENC on Windows
+	// Software encoder requires `width must be multiple of 2` so we use 146x146
 	Capability_H264: {
 		inVideoData: testSegment_H264,
 		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
@@ -130,6 +131,7 @@ var capStorageConv = errors.New("capability: unknown storage")
 var capProfileConv = errors.New("capability: unknown profile")
 var capCodecConv = errors.New("capability: unknown codec")
 var capUnknown = errors.New("capability: unknown")
+var capPixFmtUnknown = errors.New("capability: unknown pixel format")
 
 func DefaultCapabilities() []Capability {
 	// Add to this list as new features are added.
@@ -238,6 +240,8 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 				caps[Capability_H264_Decode_422_10bit] = true
 			case cap_420_10bit:
 				caps[Capability_H264_Decode_420_10bit] = true
+			default:
+				return nil, capPixFmtUnknown
 			}
 		}
 	}
