@@ -352,45 +352,6 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 	}
 }
 
-func authenticateStream(url string) (*authWebhookResponse, error) {
-	if AuthWebhookURL == nil {
-		return nil, nil
-	}
-	started := time.Now()
-	values := map[string]string{"url": url}
-	jsonValue, err := json.Marshal(values)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := http.Post(AuthWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
-
-	if err != nil {
-		return nil, err
-	}
-	rbody, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
-	}
-	if len(rbody) == 0 {
-		return nil, nil
-	}
-	var authResp authWebhookResponse
-	err = json.Unmarshal(rbody, &authResp)
-	if err != nil {
-		return nil, err
-	}
-	if authResp.ManifestID == "" {
-		return nil, errors.New("empty manifest id not allowed")
-	}
-	took := time.Since(started)
-	glog.Infof("Stream authentication for url=%s dur=%s", url, took)
-	if monitor.Enabled {
-		monitor.AuthWebhookFinished(took)
-	}
-	return &authResp, nil
-}
-
 func jsonDetectionToDetectionConfig(ctx context.Context, resp *authWebhookResponse) (core.DetectionConfig, error) {
 	detection := core.DetectionConfig{
 		Freq:               resp.Detection.Freq,
