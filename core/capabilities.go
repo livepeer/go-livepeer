@@ -2,6 +2,8 @@ package core
 
 import (
 	"errors"
+	"fmt"
+
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -131,7 +133,6 @@ var capStorageConv = errors.New("capability: unknown storage")
 var capProfileConv = errors.New("capability: unknown profile")
 var capCodecConv = errors.New("capability: unknown codec")
 var capUnknown = errors.New("capability: unknown")
-var capPixFmtUnknown = errors.New("capability: unknown pixel format")
 
 func DefaultCapabilities() []Capability {
 	// Add to this list as new features are added.
@@ -209,6 +210,7 @@ type chromaDepth struct {
 	Depth  ffmpeg.ColorDepthBits
 }
 
+var cap_420_8bit = chromaDepth{ffmpeg.ChromaSubsampling420, ffmpeg.ColorDepth8Bit}
 var cap_444_8bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth8Bit}
 var cap_422_8bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth8Bit}
 var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth10Bit}
@@ -227,6 +229,7 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	switch params.Codec {
 	case ffmpeg.H264:
 		chromaSubsampling, colorDepth, formatError := params.PixelFormat.Properties()
+		caps[Capability_H264] = true
 		if formatError == nil {
 			feature := chromaDepth{chromaSubsampling, colorDepth}
 			switch feature {
@@ -240,8 +243,9 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 				caps[Capability_H264_Decode_422_10bit] = true
 			case cap_420_10bit:
 				caps[Capability_H264_Decode_420_10bit] = true
+			case cap_420_8bit:
 			default:
-				return nil, capPixFmtUnknown
+				return nil, fmt.Errorf("capability: unsupported pixel format chroma=%d colorBits=%d", chromaSubsampling, colorDepth)
 			}
 		}
 	}
