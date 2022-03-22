@@ -276,6 +276,8 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	if c == nil {
 		return nil
 	}
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32)}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
