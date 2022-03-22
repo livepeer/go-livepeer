@@ -14,6 +14,56 @@ import (
 	"pgregory.net/rapid"
 )
 
+func TestCapability_Capacities(t *testing.T) {
+	assert := assert.New(t)
+	// create capabilities
+	capabilities := []Capability{128, 2, 3}
+	mandatory := []Capability{4}
+	caps := NewCapabilities(capabilities, mandatory)
+	// convert to net.Capabilities and back
+	caps = CapabilitiesFromNetCapabilities(caps.ToNetCapabilities())
+	// check all capacities present and set to 1
+	assert.Equal(len(caps.capacities), len(capabilities))
+	for _, c := range capabilities {
+		v, exist := caps.capacities[c]
+		assert.True(exist)
+		assert.Equal(1, v)
+	}
+	// test increase capacity
+	newCaps := NewCapabilities([]Capability{2, 3, 5}, mandatory)
+	newCaps.capacities[2] = 2
+	newCaps.capacities[5] = 2
+	caps.AddCapacity(newCaps)
+	assert.Equal(3, caps.capacities[2])
+	assert.Equal(2, caps.capacities[5])
+	// check new capability appeared in bitstring
+	assert.True(caps.bitstring[0]&uint64(1<<5) > 0)
+	// test decrease capacity
+	caps.RemoveCapacity(newCaps)
+	assert.Equal(1, caps.capacities[2])
+	// check new cap is gone from capacities and bitstring
+	_, exists := caps.capacities[5]
+	assert.False(exists)
+	assert.True(caps.bitstring[0]&uint64(1<<5) == 0)
+	// decrease again and check only capability 1 left
+	caps.RemoveCapacity(newCaps)
+	assert.Equal(1, len(caps.capacities))
+	assert.Equal(1, caps.capacities[128])
+	assert.True(caps.bitstring[0] == 0)
+	assert.True(caps.bitstring[1] == 0)
+	assert.True(caps.bitstring[2] == 1)
+	// check compatibility
+	caps = NewCapabilities(capabilities, mandatory)
+	netCapsLegacy := caps.ToNetCapabilities()
+	netCapsLegacy.Capacities = nil
+	legacyCaps := CapabilitiesFromNetCapabilities(netCapsLegacy)
+	for _, c := range capabilities {
+		v, exist := legacyCaps.capacities[c]
+		assert.True(exist)
+		assert.Equal(1, v)
+	}
+}
+
 func TestCapability_NewString(t *testing.T) {
 	assert := assert.New(t)
 

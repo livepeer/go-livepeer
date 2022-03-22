@@ -76,13 +76,6 @@ jobs:
           go fmt ./...
           git diff --exit-code
 
-      - name: Compile proto files
-        run: |
-          protoc --version
-          touch net/lp_rpc.proto net/redeemer.proto
-          make net/lp_rpc.pb.go net/redeemer.pb.go
-          git diff --exit-code
-
       - name: Lint
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
