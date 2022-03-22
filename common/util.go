@@ -225,10 +225,10 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 		} else {
 			gop = int32(profile.GOP.Milliseconds())
 		}
-		chromaFormat := net.VideoProfile_CHROMA_420
+		var chromaFormat net.VideoProfile_ChromaSubsampling
 		switch profile.ChromaFormat {
 		case ffmpeg.ChromaSubsampling420:
-			// chromaFormat := net.VideoProfile_CHROMA_420
+			chromaFormat = net.VideoProfile_CHROMA_420
 		case ffmpeg.ChromaSubsampling422:
 			chromaFormat = net.VideoProfile_CHROMA_422
 		case ffmpeg.ChromaSubsampling444:

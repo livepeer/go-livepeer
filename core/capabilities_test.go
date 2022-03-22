@@ -214,19 +214,6 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P10LE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_10bit}))
 	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P10BE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_444_10bit}))
 	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P10LE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_444_10bit}))
-	// NYI:
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P16LE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P16BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P16LE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P16BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P16LE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P16BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P12BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P12LE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P12BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P12LE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P12BE, []Capability{Capability_AuthToken, Capability_H264, }))
-	// assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P12LE, []Capability{Capability_AuthToken, Capability_H264, }))
 
 	// check with everything empty
 	assert.True(checkSuccess(&StreamParameters{}, []Capability{
