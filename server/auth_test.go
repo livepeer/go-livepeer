@@ -67,6 +67,40 @@ func TestAuthSucceeds(t *testing.T) {
 	require.Equal(t, "456", resp.StreamID)
 }
 
+func TestNoErrorWhenTranscodeAuthHeaderNotPassed(t *testing.T) {
+	r, err := http.NewRequest(http.MethodPost, "some.com/url", nil)
+	require.NoError(t, err)
+
+	config, err := getTranscodeConfiguration(r)
+
+	require.NoError(t, err)
+	require.Nil(t, config)
+}
+
+func TestErrorWhenTranscodeAuthHeaderIsInvalidJSON(t *testing.T) {
+	r, err := http.NewRequest(http.MethodPost, "some.com/url", nil)
+	require.NoError(t, err)
+	r.Header.Add("Livepeer-Transcode-Configuration", `{"end brace": "is missing"`)
+
+	_, err = getTranscodeConfiguration(r)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected end of JSON input")
+}
+
+func TestTranscodeAuthHeaderParsing(t *testing.T) {
+	r, err := http.NewRequest(http.MethodPost, "some.com/url", nil)
+	require.NoError(t, err)
+	r.Header.Add("Livepeer-Transcode-Configuration", `{"manifestID": "id-123", "sessionID": "id-456"}`)
+
+	config, err := getTranscodeConfiguration(r)
+
+	require.NoError(t, err)
+	require.NotNil(t, config)
+	require.Equal(t, "id-123", config.ManifestID)
+	require.Equal(t, "id-456", config.SessionID)
+}
+
 func stubAuthServer(t *testing.T, respCode int, respBody string) (*httptest.Server, *url.URL) {
 	server := httptest.NewServer(
 		http.HandlerFunc(

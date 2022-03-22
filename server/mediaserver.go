@@ -187,7 +187,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
 	//LPMS handlers for handling RTMP video
-	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
+	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s, nil), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
@@ -223,9 +223,11 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookResponseOverride *authWebhookResponse) func(url *url.URL) (strmID stream.AppData) {
 	return func(url *url.URL) (strmID stream.AppData) {
-		//Check webhook for ManifestID
+		//Check HTTP header for ManifestID
+		//If ManifestID is passed in HTTP header, use that one
+		//Else check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
 		//Else check URL for ManifestID
 		//If ManifestID is passed in URL, use that one
@@ -244,10 +246,15 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
+
 		if resp, err = authenticateStream(AuthWebhookURL, url.String()); err != nil {
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
+		if webhookResponseOverride != nil {
+			resp = webhookResponseOverride
+		}
+
 		if resp != nil {
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			extStreamID, sessionID = resp.StreamID, resp.SessionID
@@ -744,14 +751,24 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 // HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	ctx := r.Context()
+
 	if r.Method != "POST" && r.Method != "PUT" {
 		httpErr := fmt.Sprintf(`http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		glog.Error(httpErr)
 		http.Error(w, httpErr, http.StatusMethodNotAllowed)
 		return
 	}
-	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 
+	authHeaderConfig, err := getTranscodeConfiguration(r)
+	if err != nil {
+		httpErr := fmt.Sprintf(`failed to parse transcode config header: %q`, err)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusBadRequest)
+		return
+	}
+
+	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 	if err != nil {
 		httpErr := fmt.Sprintf(`Error reading http request body: %s`, err.Error())
 		glog.Error(httpErr)
@@ -759,9 +776,23 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body.Close()
-	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
+
+	contentDuration := r.Header.Get("Content-Duration")
+	ctx = clog.AddVal(ctx, "Content-Duration", contentDuration)
+	duration, err := strconv.Atoi(contentDuration)
+	if err != nil {
+		duration = 2000
+		glog.Info("Missing duration; filling in a default of 2000ms")
+	}
+
+	contentResolution := r.Header.Get("Content-Resolution")
+	ctx = clog.AddVal(ctx, "Content-Resolution", contentResolution)
+
+	remoteAddr := getRemoteAddr(r)
+	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
 
 	// Determine the input format the request is claiming to have
+	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 	ext := path.Ext(r.URL.Path)
 	format := common.ProfileExtensionFormat(ext)
 	if ffmpeg.FormatNone == format {
@@ -773,24 +804,22 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, httpErr, http.StatusBadRequest)
 		return
 	}
-	ctx := r.Context()
+
+	ctx = clog.AddVal(ctx, "url", r.URL.String())
+	ctx = clog.AddVal(ctx, "addr", remoteAddr)
+	clog.Infof(ctx, "Got push request at ua=%s bytes=%d", r.UserAgent(), len(body))
+
 	mid := parseManifestID(r.URL.Path)
-	if mid != "" {
-		ctx = clog.AddManifestID(ctx, string(mid))
-	}
-	remoteAddr := getRemoteAddr(r)
-	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
-
-	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
-		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
-
-	now := time.Now()
 	if mid == "" {
 		httpErr := fmt.Sprintf("Bad URL url=%s", r.URL)
 		glog.Error(httpErr)
 		http.Error(w, httpErr, http.StatusBadRequest)
 		return
 	}
+	if mid != "" {
+		ctx = clog.AddManifestID(ctx, string(mid))
+	}
+
 	s.connectionLock.RLock()
 	if intmid, exists := s.internalManifests[mid]; exists {
 		mid = intmid
@@ -804,14 +833,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	ctx = clog.AddManifestID(ctx, string(mid))
 	if exists && cxn != nil {
 		s.connectionLock.Lock()
-		cxn.lastUsed = now
+		cxn.lastUsed = start
 		s.connectionLock.Unlock()
 		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
 	isZeroFrame, _, vcodecStr, err := ffmpeg.GetCodecInfoBytes(body)
 	if err != nil {
-		httpErr := fmt.Sprintf("Error getting codec info url=%s", r.URL)
+		httpErr := fmt.Sprintf("Error getting codec info: %q", err)
 		clog.Errorf(ctx, httpErr)
 		http.Error(w, httpErr, http.StatusUnprocessableEntity)
 		return
@@ -833,15 +862,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
-		appData := (createRTMPStreamIDHandler(ctx, s))(r.URL)
+		appData := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
 		if appData == nil {
-			httpErr := fmt.Sprintf("Could not create stream ID: url=%s", r.URL)
+			httpErr := "Could not create stream ID"
 			clog.Errorf(ctx, httpErr)
 			http.Error(w, httpErr, http.StatusInternalServerError)
 			return
 		}
 		params := streamParams(appData)
-		params.Resolution = r.Header.Get("Content-Resolution")
+		params.Resolution = contentResolution
 		params.Format = format
 		s.connectionLock.RLock()
 		if mid != params.ManifestID && s.rtmpConnections[params.ManifestID] != nil && s.internalManifests[mid] == "" {
@@ -876,7 +905,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
-				httpErr := fmt.Sprintf("http push error url=%s err=%q", r.URL, err)
+				httpErr := fmt.Sprintf("http push error err=%q", err)
 				clog.Errorf(ctx, httpErr)
 				http.Error(w, httpErr, http.StatusInternalServerError)
 				return
@@ -917,9 +946,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = clog.AddManifestID(ctx, string(mid))
 	defer func(now time.Time) {
-		clog.Infof(ctx, "Finished push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
-			r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), time.Since(now))
-	}(now)
+		clog.Infof(ctx, "Finished push request at ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.UserAgent(), r.RemoteAddr, len(body),
+			contentDuration, contentResolution, time.Since(now))
+	}(start)
 
 	fname := path.Base(r.URL.Path)
 	seq, err := strconv.ParseUint(strings.TrimSuffix(fname, ext), 10, 64)
@@ -927,12 +956,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		seq = 0
 	}
 	ctx = clog.AddSeqNo(ctx, seq)
-
-	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
-	if err != nil {
-		duration = 2000
-		glog.Info("Missing duration; filling in a default of 2000ms")
-	}
 
 	seg := &stream.HLSSegment{
 		Data:        body,
@@ -953,7 +976,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				cancel()
 				return
 			case <-tick.Done():
-				clog.V(common.VERBOSE).Infof(ctx, "watchdog reset seq=%d dur=%v started=%v", seq, duration, now)
+				clog.V(common.VERBOSE).Infof(ctx, "watchdog reset seq=%d dur=%v started=%v", seq, duration, start)
 				s.connectionLock.RLock()
 				if cxn, exists := s.rtmpConnections[mid]; exists {
 					cxn.lastUsed = time.Now()
@@ -966,7 +989,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Do the transcoding!
 	urls, err := processSegment(ctx, cxn, seg)
 	if err != nil {
-		httpErr := fmt.Sprintf("http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
+		httpErr := fmt.Sprintf("http push error processing segment manifestID=%s err=%q", mid, err)
 		clog.Errorf(ctx, httpErr)
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
@@ -985,7 +1008,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
-		clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+		clog.Errorf(ctx, "No sessions available name=%s", fname)
 		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
@@ -1000,7 +1023,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	clog.Infof(ctx, "Finished transcoding push request at url=%s took=%s", r.URL.String(), time.Since(now))
+	clog.Infof(ctx, "Finished transcoding push request at took=%s", time.Since(start))
 
 	boundary := common.RandName()
 	accept := r.Header.Get("Accept")
@@ -1032,7 +1055,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 			typ, err = common.ProfileFormatMimeType(format)
 			if err != nil {
-				clog.Errorf(ctx, "Unknown mime type for format url=%s err=%q ", r.URL, err)
+				clog.Errorf(ctx, "Unknown mime type for format err=%q", err)
 			}
 		}
 		profile := cxn.params.Profiles[i].Name
@@ -1064,7 +1087,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		err = mw.Close()
 	}
 	if err != nil {
-		clog.Errorf(ctx, "Error sending transcoded response url=%s err=%q", r.URL.String(), err)
+		clog.Errorf(ctx, "Error sending transcoded response err=%q", err)
 		if monitor.Enabled {
 			monitor.HTTPClientTimedOut2(ctx)
 		}

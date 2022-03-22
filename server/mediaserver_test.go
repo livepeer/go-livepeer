@@ -437,7 +437,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 		connectionLock:  &sync.RWMutex{},
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	u := mustParseUrl(t, "http://hot/id1/secret")
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
@@ -469,7 +469,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
@@ -694,7 +694,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 }
 
 func TestCreateRTMPStreamHandler(t *testing.T) {
-
 	// Monkey patch rng to avoid unpredictability even when seeding
 	oldRandFunc := common.RandomIDGenerator
 	common.RandomIDGenerator = func(length uint) string {
@@ -707,55 +706,43 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	endHandler := endRTMPStreamHandler(s)
 	// Test default path structure
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
 	rand.Seed(123)
-	sid := createSid(u)
-	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
+	sap := createSid(u).(*core.StreamParameters)
+	require.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
 
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
+	require.Equal(t, expectedSid.String(), createSid(u).StreamID())
+
 	u = mustParseUrl(t, "rtmp://localhost/stream/"+expectedSid.String()) // with stream
-	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
-		t.Error("Unexpected streamid")
-	}
+	require.Equal(t, expectedSid.String(), createSid(u).StreamID())
+
 	expectedMid := "mnopq"
 	key := common.RandomIDGenerator(StreamKeyBytes)
-	u = mustParseUrl(t, "rtmp://localhost/"+string(expectedMid)) // without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
-	u = mustParseUrl(t, "rtmp://localhost/stream/"+string(expectedMid)) // with stream, without key
-	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
-		t.Error("Unexpected streamid", sid.StreamID())
-	}
+	u = mustParseUrl(t, "rtmp://localhost/"+expectedMid) // without key
+	require.Equal(t, expectedMid+"/"+key, createSid(u).StreamID())
+
+	u = mustParseUrl(t, "rtmp://localhost/stream/"+expectedMid) // with stream, without key
+	require.Equal(t, expectedMid+"/"+key, createSid(u).StreamID())
+
 	// Test normal case
 	u = mustParseUrl(t, "rtmp://localhost")
 	st := stream.NewBasicRTMPVideoStream(createSid(u))
-	if st.GetStreamID() == "" {
-		t.Error("Empty streamid")
-	}
+	require.NotEqual(t, "", st.GetStreamID())
+
 	// Populate internal state with s1
-	if err := handler(u, st); err != nil {
-		t.Error("Handler failed ", err)
-	}
+	require.NoError(t, handler(u, st))
+
 	// Test collisions via stream reuse
-	if sid := createSid(u); sid == nil {
-		t.Error("Did not expect a failure due to naming collision")
-	}
+	require.NotNil(t, createSid(u), "Did not expect a failure due to naming collision")
+
 	// Ensure the stream ID is reusable after the stream ends
-	if err := endHandler(u, st); err != nil {
-		t.Error("Could not clean up stream")
-	}
-	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
-		t.Error("Mismatched streamid during stream reuse", sid.StreamID(), st.GetStreamID())
-	}
+	require.NoError(t, endHandler(u, st), "Could not clean up stream")
+	require.Equal(t, st.GetStreamID(), createSid(u).StreamID(), "Mismatched streamid during stream reuse")
 
 	// Test a couple of odd cases; subset of parseManifestID checks
 	// (Would be nice to stub out parseManifestID to receive stronger
@@ -764,9 +751,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		// This isn't a great test because if the query param ever changes,
 		// this test will still pass
 		u := mustParseUrl(t, "rtmp://localhost/"+inp)
-		if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
-			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
-		}
+		require.Equal(t, st.GetStreamID(), createSid(u).StreamID(), "Unexpected StreamID for input '%v'", inp)
 	}
 	inputs := []string{"  /  ", ".m3u8", "/stream/", "stream/.m3u8"}
 	for _, v := range inputs {
@@ -775,12 +760,59 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	st.Close()
 }
 
+// Test that when an Auth header is present, it overrides values from the callback URL
+func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
+	// Monkey patch rng to avoid unpredictability even when seeding
+	oldRandFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(length uint) string {
+		return "abcdef"
+	}
+	defer func() { common.RandomIDGenerator = oldRandFunc }()
+
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
+		ManifestID: "override-manifest-id",
+		Profiles: []struct {
+			Name    string `json:"name"`
+			Width   int    `json:"width"`
+			Height  int    `json:"height"`
+			Bitrate int    `json:"bitrate"`
+			FPS     uint   `json:"fps"`
+			FPSDen  uint   `json:"fpsDen"`
+			Profile string `json:"profile"`
+			GOP     string `json:"gop"`
+			Encoder string `json:"encoder"`
+		}{
+			{
+				Name:    "P144p30fps16x9",
+				Bitrate: 400000,
+				Width:   256,
+				Height:  144,
+			},
+		},
+	})
+	// Test default path structure
+	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
+	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
+
+	require.Equal(t, expectedSid.String(), createSid(u).StreamID())
+
+	sap := createSid(u).(*core.StreamParameters)
+	require.Len(t, sap.Profiles, 1)
+	require.Equal(t, "P144p30fps16x9", sap.Profiles[0].Name)
+	require.Equal(t, "256x144", sap.Profiles[0].Resolution)
+	require.Equal(t, "400000", sap.Profiles[0].Bitrate)
+}
+
 func TestEndRTMPStreamHandler(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
@@ -892,7 +924,7 @@ func TestMultiStream(t *testing.T) {
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
 		st := stream.NewBasicRTMPVideoStream(createSid(u))
@@ -1116,7 +1148,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 
 	// create RTMPStream handler methods
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 

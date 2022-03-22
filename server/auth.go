@@ -57,3 +57,15 @@ func authenticateStream(authURL *url.URL, incomingRequestURL string) (*authWebho
 
 	return &authResp, nil
 }
+
+func getTranscodeConfiguration(r *http.Request) (*authWebhookResponse, error) {
+	transcodeConfigurationHeader := r.Header.Get("Livepeer-Transcode-Configuration")
+	if transcodeConfigurationHeader == "" {
+		return nil, nil
+	}
+
+	var transcodeConfiguration authWebhookResponse
+	err := json.Unmarshal([]byte(transcodeConfigurationHeader), &transcodeConfiguration)
+
+	return &transcodeConfiguration, err
+}
