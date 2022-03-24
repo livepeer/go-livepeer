@@ -248,12 +248,8 @@ func TestAudioCopy(t *testing.T) {
 
 	md := stubMetadata("", videoProfiles...)
 	md.Fname = audioSample
-	res, err := tc.Transcode(context.TODO(), md)
-	assert.Nil(err)
-
-	o, err := ioutil.ReadFile(audioSample)
-	assert.Nil(err)
-	assert.Equal(o, res.Segments[0].Data)
+	_, err = tc.Transcode(context.TODO(), md)
+	assert.Equal(ffmpeg.ErrTranscoderVid, err)
 }
 
 func TestTranscoder_Formats(t *testing.T) {

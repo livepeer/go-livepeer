@@ -2,10 +2,13 @@ package core
 
 import (
 	"context"
+	"io/ioutil"
+	"os"
 	"sort"
 	"testing"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -126,6 +129,45 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 	})
 }
 
+// We need this in order to call `NvidiaTranscoder::Transcode()` properly
+func setupWorkDir() (string, func()) {
+	tmp, _ := ioutil.TempDir("", "")
+	WorkDir = tmp
+	cleanup := func() {
+		WorkDir = ""
+		defer os.RemoveAll(tmp)
+	}
+	return tmp, cleanup
+}
+
+func TestCapability_TranscoderCapabilities(t *testing.T) {
+	tmpdir, cleanup := setupWorkDir()
+	defer cleanup()
+
+	// nvidia test
+	devices, err := common.ParseNvidiaDevices("all")
+	devicesAvailable := err == nil && len(devices) > 0
+	if devicesAvailable {
+		nvidiaCaps, err := TestTranscoderCapabilities(devices)
+		assert.Nil(t, err)
+		assert.False(t, InArray(Capability_H264_Decode_444_8bit, nvidiaCaps), "Nvidia device should not support decode of 444_8bit")
+		assert.False(t, InArray(Capability_H264_Decode_422_8bit, nvidiaCaps), "Nvidia device should not support decode of 422_8bit")
+		assert.False(t, InArray(Capability_H264_Decode_444_10bit, nvidiaCaps), "Nvidia device should not support decode of 444_10bit")
+		assert.False(t, InArray(Capability_H264_Decode_422_10bit, nvidiaCaps), "Nvidia device should not support decode of 422_10bit")
+		assert.False(t, InArray(Capability_H264_Decode_420_10bit, nvidiaCaps), "Nvidia device should not support decode of 420_10bit")
+	}
+
+	// Same test with software transcoder:
+	softwareCaps, err := TestSoftwareTranscoderCapabilities(tmpdir)
+	assert.Nil(t, err)
+	// Software transcoder supports: [h264_444_8bit h264_422_8bit h264_444_10bit h264_422_10bit h264_420_10bit]
+	assert.True(t, InArray(Capability_H264_Decode_444_8bit, softwareCaps), "software decoder should support 444_8bit input")
+	assert.True(t, InArray(Capability_H264_Decode_422_8bit, softwareCaps), "software decoder should support 422_8bit input")
+	assert.True(t, InArray(Capability_H264_Decode_444_10bit, softwareCaps), "software decoder should support 444_10bit input")
+	assert.True(t, InArray(Capability_H264_Decode_422_10bit, softwareCaps), "software decoder should support 422_10bit input")
+	assert.True(t, InArray(Capability_H264_Decode_420_10bit, softwareCaps), "software decoder should support 420_10bit input")
+}
+
 func TestCapability_JobCapabilities(t *testing.T) {
 	assert := assert.New(t)
 
@@ -149,6 +191,29 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		ret = assert.Equal(expectedCaps, jobCaps) && ret
 		return ret
 	}
+
+	checkPixelFormat := func(constValue int, expected []Capability) bool {
+		streamParams := &StreamParameters{Codec: ffmpeg.H264, PixelFormat: ffmpeg.PixelFormat{RawValue: constValue}}
+		jobCaps, err := JobCapabilities(streamParams)
+		ret := assert.Nil(err)
+		expectedCaps := &Capabilities{bitstring: NewCapabilityString(expected)}
+		ret = assert.Equal(jobCaps, expectedCaps, "failed decode capability check") && ret
+		return ret
+	}
+	// Capability_AuthToken appears to be mandatory
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P, []Capability{Capability_AuthToken, Capability_H264}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUYV422, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_8bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_8bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_444_8bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatUYVY422, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_8bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatNV12, []Capability{Capability_AuthToken, Capability_H264}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatNV21, []Capability{Capability_AuthToken, Capability_H264}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P10BE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_420_10bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV420P10LE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_420_10bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P10BE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_10bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV422P10LE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_422_10bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P10BE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_444_10bit}))
+	assert.True(checkPixelFormat(ffmpeg.PixelFormatYUV444P10LE, []Capability{Capability_AuthToken, Capability_H264, Capability_H264_Decode_444_10bit}))
 
 	// check with everything empty
 	assert.True(checkSuccess(&StreamParameters{}, []Capability{

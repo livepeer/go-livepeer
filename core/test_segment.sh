@@ -24,3 +24,39 @@ echo "var testSegment_VP9 = []byte{" >> $FILE
 ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -c:v libvpx-vp9 -f webm - | gzip -9 | xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }' >> $FILE
 echo "}" >> $FILE
 
+echo "var testSegment_H264_444_8bit = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5 -pix_fmt yuv444p -c:v libx264 -f mpegts - |  \
+  ffmpeg -f mpegts -i pipe:0 -c:v copy  \
+  -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
+  xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
+echo "}" >> $FILE
+
+echo "var testSegment_H264_422_8bit = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5 -pix_fmt yuv422p -c:v libx264 -f mpegts - |  \
+  ffmpeg -f mpegts -i pipe:0 -c:v copy  \
+  -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
+  xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
+echo "}" >> $FILE
+
+echo "var testSegment_H264_444_10bit = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -pix_fmt yuv444p10le -c:v libx264 -f mpegts - |  \
+  ffmpeg -f mpegts -i pipe:0 -c:v copy  \
+  -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
+  xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
+echo "}" >> $FILE
+
+echo "var testSegment_H264_422_10bit = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -pix_fmt yuv422p10le -c:v libx264 -f mpegts - |  \
+  ffmpeg -f mpegts -i pipe:0 -c:v copy  \
+  -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
+  xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
+echo "}" >> $FILE
+
+echo "var testSegment_H264_420_10bit = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -pix_fmt yuv420p10be -c:v libx264 -f mpegts - |  \
+  ffmpeg -f mpegts -i pipe:0 -c:v copy  \
+  -f mpegts -metadata title='!' -metadata service_provider='!' - | gzip -9  | \
+  xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
+echo "}" >> $FILE
+
+gofmt -w $FILE
