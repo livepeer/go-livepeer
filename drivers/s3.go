@@ -300,7 +300,8 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reade
 	}
 
 	uploader := s3manager.NewUploader(os.s3sess, func(u *s3manager.Uploader) {
-		u.Concurrency = 2
+		u.Concurrency = 8
+		u.PartSize = 63 * 1024 * 1024
 		u.RequestOptions = append(u.RequestOptions, request.WithLogLevel(aws.LogDebug))
 	})
 	params := &s3manager.UploadInput{
