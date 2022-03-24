@@ -33,14 +33,8 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-// var S *LivepeerServer
-
 var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
 
-// func setupServer() *LivepeerServer {
-// 	s, _ := setupServerWithCancel()
-// 	return s
-// }
 var port = 10000
 
 // waitForTCP tries to establish TCP connection for a specified time
@@ -92,11 +86,6 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		// doesn't really starts server at 1938
 		S, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
-		// rtmpurl := fmt.Sprintf("rtmp://127.0.0.1:%d", port)
-		// S, _ = NewLivepeerServer(rtmpurl, n, true, "")
-		// glog.Errorf("++> rtmp server with port %d", port)
-		// port++
-		// mediaUrl := fmt.Sprintf("http://127.0.0.1:%d", port)
 		// doesn't really starts server at 8938
 		go S.StartMediaServer(ctx, "127.0.0.1:8938")
 		// port++
@@ -106,10 +95,6 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		port++
 		// sometimes LivepeerServer needs time  to start
 		// esp if this is the only test in the suite being run (eg, via `-run)
-		// time.Sleep(10 * time.Millisecond)
-		// if err := waitForTCP(2*time.Second, rtmpurl); err != nil {
-		// 	panic(err)
-		// }
 		if err := waitForTCP(2*time.Second, "http://"+cliUrl); err != nil {
 			panic(err)
 		}
@@ -790,7 +775,7 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 		}
 
 		j, err := json.Marshal(authWebhookResponse{
-			ManifestID: "!!!!!!!!!",
+			ManifestID: "!!!!!Should be overridden!!!!",
 			Profiles:   profiles,
 		})
 		require.NoError(t, err)
@@ -799,13 +784,14 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 	}))
 	defer ts.Close()
 	AuthWebhookURL = mustParseUrl(t, ts.URL)
+	defer func() { AuthWebhookURL = nil }()
 
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
-		ManifestID: "!!!!!Should be overridden!!!!",
+		ManifestID: "override-manifest-id",
 		Profiles:   profiles,
 	})
 
@@ -861,6 +847,7 @@ func TestCreateRTMPStreamHandlerWithAuthHeader_DifferentProfilesToCallbackURL(t 
 	}))
 	defer ts.Close()
 	AuthWebhookURL = mustParseUrl(t, ts.URL)
+	defer func() { AuthWebhookURL = nil }()
 
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
