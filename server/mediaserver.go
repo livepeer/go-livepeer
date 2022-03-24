@@ -103,28 +103,30 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 }
 
+type authWebhookResponseProfiles struct {
+	Name    string `json:"name"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Bitrate int    `json:"bitrate"`
+	FPS     uint   `json:"fps"`
+	FPSDen  uint   `json:"fpsDen"`
+	Profile string `json:"profile"`
+	GOP     string `json:"gop"`
+	Encoder string `json:"encoder"`
+}
+
 type authWebhookResponse struct {
-	ManifestID           string   `json:"manifestID"`
-	StreamID             string   `json:"streamID"`
-	SessionID            string   `json:"sessionID"`
-	StreamKey            string   `json:"streamKey"`
-	Presets              []string `json:"presets"`
-	ObjectStore          string   `json:"objectStore"`
-	RecordObjectStore    string   `json:"recordObjectStore"`
-	RecordObjectStoreURL string   `json:"recordObjectStoreUrl"`
-	Profiles             []struct {
-		Name    string `json:"name"`
-		Width   int    `json:"width"`
-		Height  int    `json:"height"`
-		Bitrate int    `json:"bitrate"`
-		FPS     uint   `json:"fps"`
-		FPSDen  uint   `json:"fpsDen"`
-		Profile string `json:"profile"`
-		GOP     string `json:"gop"`
-		Encoder string `json:"encoder"`
-	} `json:"profiles"`
-	PreviousSessions []string `json:"previousSessions"`
-	Detection        struct {
+	ManifestID           string                        `json:"manifestID"`
+	StreamID             string                        `json:"streamID"`
+	SessionID            string                        `json:"sessionID"`
+	StreamKey            string                        `json:"streamKey"`
+	Presets              []string                      `json:"presets"`
+	ObjectStore          string                        `json:"objectStore"`
+	RecordObjectStore    string                        `json:"recordObjectStore"`
+	RecordObjectStoreURL string                        `json:"recordObjectStoreUrl"`
+	Profiles             []authWebhookResponseProfiles `json:"profiles"`
+	PreviousSessions     []string                      `json:"previousSessions"`
+	Detection            struct {
 		// Run detection on 1/freq segments
 		Freq                uint `json:"freq"`
 		SampleRate          uint `json:"sampleRate"`
@@ -251,6 +253,17 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
+
+		// If we've received auth in header AND callback URL forms then for now, we reject cases where they're
+		// trying to give us different profiles
+		if resp != nil && webhookResponseOverride != nil {
+			if !resp.areProfilesEqual(*webhookResponseOverride) {
+				clog.Errorf(ctx, "Received auth header with profiles that don't match those in callback URL response")
+				return nil
+			}
+		}
+
+		// If we've received a header containing auth values then let those override any from a callback URL
 		if webhookResponseOverride != nil {
 			resp = webhookResponseOverride
 		}

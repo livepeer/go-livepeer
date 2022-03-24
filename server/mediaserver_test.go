@@ -762,6 +762,16 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 
 // Test that when an Auth header is present, it overrides values from the callback URL
 func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
+	// Example profile, used to check behaviour when returned by Auth header / callback URL
+	profiles := []authWebhookResponseProfiles{
+		{
+			Name:    "P144p30fps16x9",
+			Bitrate: 400000,
+			Width:   256,
+			Height:  144,
+		},
+	}
+
 	// Monkey patch rng to avoid unpredictability even when seeding
 	oldRandFunc := common.RandomIDGenerator
 	common.RandomIDGenerator = func(length uint) string {
@@ -769,23 +779,96 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 	}
 	defer func() { common.RandomIDGenerator = oldRandFunc }()
 
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			fmt.Printf("Error parsing URL: %v\n", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		j, err := json.Marshal(authWebhookResponse{
+			ManifestID: "!!!!!!!!!",
+			Profiles:   profiles,
+		})
+		require.NoError(t, err)
+
+		w.Write(j)
+	}))
+	defer ts.Close()
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
+
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
+		ManifestID: "!!!!!Should be overridden!!!!",
+		Profiles:   profiles,
+	})
+
+	// Test default path structure
+	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
+	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
+
+	sid := createSid(u)
+	require.NotNil(t, sid)
+	require.Equal(t, expectedSid.String(), sid.StreamID())
+
+	sap := sid.(*core.StreamParameters)
+	require.Len(t, sap.Profiles, 1)
+	require.Equal(t, "P144p30fps16x9", sap.Profiles[0].Name)
+	require.Equal(t, "256x144", sap.Profiles[0].Resolution)
+	require.Equal(t, "400000", sap.Profiles[0].Bitrate)
+}
+
+// Test that when an Auth header is present, we get an error response if the Profiles it provides
+// are different to those that come from the Callback URL
+func TestCreateRTMPStreamHandlerWithAuthHeader_DifferentProfilesToCallbackURL(t *testing.T) {
+	// Monkey patch rng to avoid unpredictability even when seeding
+	oldRandFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(length uint) string {
+		return "abcdef"
+	}
+	defer func() { common.RandomIDGenerator = oldRandFunc }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			fmt.Printf("Error parsing URL: %v\n", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		j, err := json.Marshal(authWebhookResponse{
+			ManifestID: "!!!!!Should be overridden!!!!",
+			Profiles: []authWebhookResponseProfiles{
+				{
+					Name:    "This is different",
+					Bitrate: 1,
+					Width:   1,
+					Height:  1,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		w.Write(j)
+	}))
+	defer ts.Close()
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
+
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
 		ManifestID: "override-manifest-id",
-		Profiles: []struct {
-			Name    string `json:"name"`
-			Width   int    `json:"width"`
-			Height  int    `json:"height"`
-			Bitrate int    `json:"bitrate"`
-			FPS     uint   `json:"fps"`
-			FPSDen  uint   `json:"fpsDen"`
-			Profile string `json:"profile"`
-			GOP     string `json:"gop"`
-			Encoder string `json:"encoder"`
-		}{
+		Profiles: []authWebhookResponseProfiles{
 			{
 				Name:    "P144p30fps16x9",
 				Bitrate: 400000,
@@ -794,17 +877,13 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 			},
 		},
 	})
+
 	// Test default path structure
 	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	require.Equal(t, expectedSid.String(), createSid(u).StreamID())
-
-	sap := createSid(u).(*core.StreamParameters)
-	require.Len(t, sap.Profiles, 1)
-	require.Equal(t, "P144p30fps16x9", sap.Profiles[0].Name)
-	require.Equal(t, "256x144", sap.Profiles[0].Resolution)
-	require.Equal(t, "400000", sap.Profiles[0].Bitrate)
+	sid := createSid(u)
+	require.Nil(t, sid)
 }
 
 func TestEndRTMPStreamHandler(t *testing.T) {

@@ -101,6 +101,151 @@ func TestTranscodeAuthHeaderParsing(t *testing.T) {
 	require.Equal(t, "id-456", config.SessionID)
 }
 
+func TestProfileEqualityWithNoProfiles(t *testing.T) {
+	a := authWebhookResponse{}
+	b := authWebhookResponse{}
+
+	require.True(t, a.areProfilesEqual(b))
+}
+
+func TestProfileEqualityFailsWhenProfilesDiffer(t *testing.T) {
+	a := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name 1",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+		},
+	}
+	b := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name DIFFERENT",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+		},
+	}
+
+	require.False(t, a.areProfilesEqual(b))
+}
+
+func TestProfileEqualityFailsWhenNumProfilesDiffer(t *testing.T) {
+	a := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name 1",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+			{
+				Name:    "Name 2",
+				Profile: "Profile 2",
+				GOP:     "",
+				Bitrate: 20000,
+				Width:   1,
+				Height:  1,
+				FPS:     1000,
+				Encoder: "encoder-2",
+				FPSDen:  900,
+			},
+		},
+	}
+	b := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name 1",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+		},
+	}
+
+	require.False(t, a.areProfilesEqual(b))
+}
+
+func TestProfileEqualityWithMultipleProfiles(t *testing.T) {
+	a := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name 1",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+			{
+				Name:    "Name 2",
+				Profile: "Profile 2",
+				GOP:     "",
+				Bitrate: 20000,
+				Width:   1,
+				Height:  1,
+				FPS:     1000,
+				Encoder: "encoder-2",
+				FPSDen:  900,
+			},
+		},
+	}
+	b := authWebhookResponse{
+		Profiles: []authWebhookResponseProfiles{
+			{
+				Name:    "Name 1",
+				Profile: "Profile 1",
+				GOP:     "intra",
+				Bitrate: 10000,
+				Width:   1024,
+				Height:  768,
+				FPS:     1,
+				Encoder: "encoder-1",
+				FPSDen:  1,
+			},
+			{
+				Name:    "Name 2",
+				Profile: "Profile 2",
+				GOP:     "",
+				Bitrate: 20000,
+				Width:   1,
+				Height:  1,
+				FPS:     1000,
+				Encoder: "encoder-2",
+				FPSDen:  900,
+			},
+		},
+	}
+
+	require.True(t, a.areProfilesEqual(b))
+}
+
 func stubAuthServer(t *testing.T, respCode int, respBody string) (*httptest.Server, *url.URL) {
 	server := httptest.NewServer(
 		http.HandlerFunc(
