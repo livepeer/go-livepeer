@@ -8,11 +8,11 @@
 
 #### General
 - \#2289 Add timeouts to ETH client (@leszko)
-
 - \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
 
 #### Broadcaster
 - \#2309 Add dynamic timeout for the orchestrator discovery (@leszko)
+- \#2337 Fix dynamic discovery timeout to not retry sending requests, but wait for the same request to complete (@leszko)
 
 #### Orchestrator
 
