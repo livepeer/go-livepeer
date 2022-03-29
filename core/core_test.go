@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -48,8 +47,7 @@ func TestTranscode(t *testing.T) {
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 
@@ -90,8 +88,7 @@ func TestTranscode(t *testing.T) {
 }
 
 func TestTranscodeSeg(t *testing.T) {
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P720p60fps16x9, ffmpeg.P144p30fps16x9}
 	n, _ := NewLivepeerNode(nil, tmp, nil)
@@ -133,8 +130,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 	//Set up the node
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	seth := &eth.StubClient{}
-	tmp, _ := ioutil.TempDir("", "")
-	defer os.RemoveAll(tmp)
+	tmp := t.TempDir()
 	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()

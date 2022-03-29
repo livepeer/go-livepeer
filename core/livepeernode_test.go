@@ -3,10 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/url"
-	"os"
 	"testing"
 
 	"github.com/golang/glog"
@@ -68,12 +66,10 @@ func TestTranscodeAndBroadcast(t *testing.T) {
 	storage := drivers.NewMemoryDriver(nil).NewSession("")
 	config := transcodeConfig{LocalOS: storage, OS: storage}
 
-	tmpdir, _ := ioutil.TempDir("", "")
-	n, err := NewLivepeerNode(nil, tmpdir, nil)
+	n, err := NewLivepeerNode(nil, t.TempDir(), nil)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}
-	defer os.RemoveAll(tmpdir)
 	n.Transcoder = tr
 
 	md := &SegTranscodingMetadata{Profiles: p, AuthToken: stubAuthToken()}

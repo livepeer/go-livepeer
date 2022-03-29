@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -104,14 +103,12 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 func TestEpic_WriteSegments(t *testing.T) {
 	assert := assert.New(t)
 
-	dir, err := ioutil.TempDir("", t.Name())
-	assert.Nil(err)
-	defer os.RemoveAll(dir) // clean up
+	dir := t.TempDir()
 	baseDir := filepath.Base(dir)
 	bucketPath := "https://livepeer.s3.amazonaws.com"
 
 	// empty case
-	_, _, err = writeSegments(&Params{}, dir)
+	_, _, err := writeSegments(&Params{}, dir)
 	assert.Equal(ErrMissingSource, err)
 
 	// successful cases

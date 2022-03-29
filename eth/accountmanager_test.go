@@ -2,9 +2,7 @@ package eth
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -83,7 +81,6 @@ var jsonTypedData = `
 
 func TestAccountManager(t *testing.T) {
 	dir, ks := tmpKeyStore(t, true)
-	defer os.RemoveAll(dir)
 
 	a, err := ks.NewAccount("foo")
 	if err != nil {
@@ -114,7 +111,6 @@ func TestAccountManager(t *testing.T) {
 
 func TestEmptyPassphrase(t *testing.T) {
 	dir, ks := tmpKeyStore(t, true)
-	defer os.RemoveAll(dir)
 
 	a, err := ks.NewAccount("")
 	if err != nil {
@@ -145,7 +141,6 @@ func TestSign(t *testing.T) {
 	assert := assert.New(t)
 
 	dir, ks := tmpKeyStore(t, true)
-	defer os.RemoveAll(dir)
 
 	a, err := ks.NewAccount("")
 	require.Nil(err)
@@ -170,7 +165,6 @@ func TestSignTypedData(t *testing.T) {
 	assert := assert.New(t)
 
 	dir, ks := tmpKeyStore(t, true)
-	defer os.RemoveAll(dir)
 
 	a, err := ks.NewAccount("")
 	require.Nil(err)
@@ -192,10 +186,7 @@ func TestSignTypedData(t *testing.T) {
 }
 
 func tmpKeyStore(t *testing.T, encrypted bool) (string, *keystore.KeyStore) {
-	d, err := ioutil.TempDir("", "eth-keystore-test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := t.TempDir()
 
 	new := keystore.NewPlaintextKeyStore
 	if encrypted {
