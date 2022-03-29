@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/livepeer/go-livepeer/build"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/livepeer/go-livepeer/build"
 
 	"github.com/ethereum/go-ethereum/log"
 	lpcommon "github.com/livepeer/go-livepeer/common"
@@ -161,15 +162,15 @@ func (w *wizard) readDefaultInt(def int) int {
 	return def
 }
 
-func (w *wizard) readBigInt() *big.Int {
+func (w *wizard) readBigInt(prompt string) *big.Int {
+	if prompt == "" {
+		prompt = ">"
+	}
 	for {
-		fmt.Printf("> ")
+		fmt.Printf(prompt)
 		text, err := w.in.ReadString('\n')
 		if err != nil {
 			log.Crit("Failed to read user input", "err", err)
-		}
-		if text = strings.TrimSpace(text); text == "" {
-			continue
 		}
 		val, err := lpcommon.ParseBigInt(strings.TrimSpace(text))
 		if err != nil {
