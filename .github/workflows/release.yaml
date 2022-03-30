@@ -25,19 +25,20 @@ jobs:
           name: release-artifacts
           path: releases/
 
+      - uses: actions-ecosystem/action-regex-match@v2
+        id: match-tag
+        with:
+          text: ${{ github.event.workflow_run.head_branch }}
+          regex: '^v([0-9]+\.\d+\.\d+)$'
+
       - name: Generate sha256 checksum and gpg signatures for release artifacts
+        if: ${{ steps.match-tag.outputs.match != '' }}
         uses: livepeer/action-gh-checksum-and-gpg-sign@latest
         with:
           artifacts-dir: releases
           release-name: ${{ github.event.workflow_run.head_branch }}
           gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
-
-      - uses: actions-ecosystem/action-regex-match@v2
-        id: match-tag
-        with:
-          text: ${{ github.event.workflow_run.head_branch }}
-          regex: '^v([0-9]+\.\d+\.\d+)$'
 
       - name: Release to github
         uses: softprops/action-gh-release@v1
