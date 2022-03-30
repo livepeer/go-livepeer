@@ -163,9 +163,6 @@ func (w *wizard) readDefaultInt(def int) int {
 }
 
 func (w *wizard) readBigInt(prompt string) *big.Int {
-	if prompt == "" {
-		prompt = ">"
-	}
 	for {
 		fmt.Printf(prompt)
 		text, err := w.in.ReadString('\n')
