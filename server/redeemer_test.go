@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -61,9 +59,7 @@ func TestRedeemerServer_Start(t *testing.T) {
 	url, err := url.ParseRequestURI("https://127.0.0.1:8935")
 	require.Nil(err)
 
-	tmpdir, err := ioutil.TempDir("", "")
-	require.Nil(err)
-	defer os.Remove(tmpdir)
+	tmpdir := t.TempDir()
 
 	errCh := make(chan error)
 	go func() {
