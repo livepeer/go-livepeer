@@ -165,7 +165,7 @@ func (w *wizard) bond() {
 
 	amount := big.NewInt(0)
 	for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
-		amount = w.readBigInt("Enter bond amount - > ")
+		amount = w.readBigInt("Enter bond amount")
 		if amount.Cmp(big.NewInt(0)) == 0 {
 			break
 		}
@@ -276,7 +276,7 @@ func (w *wizard) unbond() {
 	}
 
 	for amount.Cmp(big.NewInt(0)) == 0 || dInfo.BondedAmount.Cmp(amount) < 0 {
-		amount = w.readBigInt("Enter unbond amount - > ")
+		amount = w.readBigInt("Enter unbond amount")
 		if dInfo.BondedAmount.Cmp(amount) < 0 {
 			fmt.Printf("Must enter an amount less than or equal to the current bonded amount.")
 		}

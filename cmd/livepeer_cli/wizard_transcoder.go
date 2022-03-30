@@ -143,7 +143,7 @@ func (w *wizard) activateOrchestrator() {
 
 			amount := big.NewInt(0)
 			for amount.Cmp(big.NewInt(0)) == 0 || balBigInt.Cmp(amount) < 0 {
-				amount = w.readBigInt("Enter bond amount - > ")
+				amount = w.readBigInt("Enter bond amount")
 				if balBigInt.Cmp(amount) < 0 {
 					fmt.Printf("Must enter an amount smaller than the current balance. ")
 				}
