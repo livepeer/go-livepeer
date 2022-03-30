@@ -22,7 +22,6 @@
 
 #### General
 - \#2299 Split devtool Orchestrator run scripts into versions with/without external transcoder and prevent Transcoder/Broadcaster run scripts from using same CLI port (@thomshutt)
-- \#2334 Fix issue with checksum generation step with branch names having a `/` (forward slash) character (@hjpotter92)
 
 #### Broadcaster
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
