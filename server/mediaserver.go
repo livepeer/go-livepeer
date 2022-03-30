@@ -869,6 +869,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				case <-s.context.Done():
+					// make sure our connection is removed at server exit
+					_ = removeRTMPStream(ctx, s, extmid)
 					return
 				}
 			}(s, cxn.mid, mid)
