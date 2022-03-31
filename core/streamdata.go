@@ -43,7 +43,6 @@ type StreamParameters struct {
 	VerificationFreq uint
 	Nonce            uint64
 	Codec            ffmpeg.VideoCodec
-	PixelFormat      ffmpeg.PixelFormat
 }
 
 func (s *StreamParameters) StreamID() string {

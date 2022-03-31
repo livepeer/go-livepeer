@@ -306,9 +306,7 @@ func TestPixels(t *testing.T) {
 	assert := assert.New(t)
 
 	p, err := pixels("foo")
-	// Early codec check didn't find video in missing input file so
-	//  we get `TranscoderInvalidVideo` err instead of `No such file or directory`
-	assert.EqualError(err, "TranscoderInvalidVideo")
+	assert.EqualError(err, "No such file or directory")
 	assert.Equal(int64(0), p)
 
 	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
@@ -350,9 +348,7 @@ func TestVerifyPixels(t *testing.T) {
 	// Test error for relative URI and no memory storage if the file does not exist on disk
 	// Will try to use the relative URI to read the file from disk and fail
 	err = verifyPixels(fname, nil, 50)
-	// Early codec check didn't find video in missing input file so we get `TranscoderInvalidVideo`
-	//  instead of `Invalid data found when processing input`
-	assert.EqualError(err, "TranscoderInvalidVideo")
+	assert.EqualError(err, "Invalid data found when processing input")
 
 	// Test writing temp file for relative URI and local memory storage with incorrect pixels
 	err = verifyPixels(fname, memOS.GetData(fname), 50)
@@ -367,7 +363,5 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Test nil data
 	err = verifyPixels("../server/test.flv", nil, 50)
-	// Early codec check didn't find video in missing input file so we get `TranscoderInvalidVideo`
-	//  instead of `Invalid data found when processing input`
-	assert.EqualError(err, "TranscoderInvalidVideo")
+	assert.EqualError(err, "Invalid data found when processing input")
 }

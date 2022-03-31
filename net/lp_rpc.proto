@@ -271,15 +271,6 @@ message VideoProfile {
 
   // Encoder (video codec)
   VideoCodec encoder = 25;
-
-  int32 colorDepth = 26;
-
-  enum ChromaSubsampling {
-    CHROMA_420 = 0;
-    CHROMA_422 = 1;
-    CHROMA_444 = 2;
-  }
-  ChromaSubsampling chromaFormat = 27;
 }
 
 // Individual transcoded segment data.

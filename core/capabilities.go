@@ -2,8 +2,6 @@ package core
 
 import (
 	"errors"
-	"fmt"
-
 	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -50,11 +48,6 @@ const (
 	Capability_VP9_Decode
 	Capability_VP8_Encode
 	Capability_VP9_Encode
-	Capability_H264_Decode_444_8bit
-	Capability_H264_Decode_422_8bit
-	Capability_H264_Decode_444_10bit
-	Capability_H264_Decode_422_10bit
-	Capability_H264_Decode_420_10bit
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -85,10 +78,9 @@ var CapabilityNameLookup = map[Capability]string{
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
 	// 145x145 is the lowest resolution supported by NVENC on Windows
-	// Software encoder requires `width must be multiple of 2` so we use 146x146
 	Capability_H264: {
 		inVideoData: testSegment_H264,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
+		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 	Capability_HEVC_Decode: {
 		inVideoData: testSegment_HEVC,
@@ -105,26 +97,6 @@ var CapabilityTestLookup = map[Capability]CapabilityTest{
 	Capability_VP9_Decode: {
 		inVideoData: testSegment_VP9,
 		outProfile:  ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
-	},
-	Capability_H264_Decode_444_8bit: {
-		inVideoData: testSegment_H264_444_8bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
-	},
-	Capability_H264_Decode_422_8bit: {
-		inVideoData: testSegment_H264_422_8bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
-	},
-	Capability_H264_Decode_444_10bit: {
-		inVideoData: testSegment_H264_444_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
-	},
-	Capability_H264_Decode_422_10bit: {
-		inVideoData: testSegment_H264_422_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
-	},
-	Capability_H264_Decode_420_10bit: {
-		inVideoData: testSegment_H264_420_10bit,
-		outProfile:  ffmpeg.VideoProfile{Resolution: "146x146", Bitrate: "1000k", Format: ffmpeg.FormatMPEGTS},
 	},
 }
 
@@ -160,11 +132,6 @@ func OptionalCapabilities() []Capability {
 		Capability_HEVC_Encode,
 		Capability_VP8_Decode,
 		Capability_VP9_Decode,
-		Capability_H264_Decode_444_8bit,
-		Capability_H264_Decode_422_8bit,
-		Capability_H264_Decode_444_10bit,
-		Capability_H264_Decode_422_10bit,
-		Capability_H264_Decode_420_10bit,
 	}
 }
 
@@ -205,18 +172,6 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 	return true
 }
 
-type chromaDepth struct {
-	Chroma ffmpeg.ChromaSubsampling
-	Depth  ffmpeg.ColorDepthBits
-}
-
-var cap_420_8bit = chromaDepth{ffmpeg.ChromaSubsampling420, ffmpeg.ColorDepth8Bit}
-var cap_444_8bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth8Bit}
-var cap_422_8bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth8Bit}
-var cap_444_10bit = chromaDepth{ffmpeg.ChromaSubsampling444, ffmpeg.ColorDepth10Bit}
-var cap_422_10bit = chromaDepth{ffmpeg.ChromaSubsampling422, ffmpeg.ColorDepth10Bit}
-var cap_420_10bit = chromaDepth{ffmpeg.ChromaSubsampling420, ffmpeg.ColorDepth10Bit}
-
 func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps := make(map[Capability]bool)
 
@@ -224,30 +179,6 @@ func JobCapabilities(params *StreamParameters) (*Capabilities, error) {
 	caps[Capability_AuthToken] = true
 	if params.VerificationFreq > 0 {
 		caps[Capability_MPEG7VideoSignature] = true
-	}
-	// capabilities based on given input
-	switch params.Codec {
-	case ffmpeg.H264:
-		chromaSubsampling, colorDepth, formatError := params.PixelFormat.Properties()
-		caps[Capability_H264] = true
-		if formatError == nil {
-			feature := chromaDepth{chromaSubsampling, colorDepth}
-			switch feature {
-			case cap_444_8bit:
-				caps[Capability_H264_Decode_444_8bit] = true
-			case cap_422_8bit:
-				caps[Capability_H264_Decode_422_8bit] = true
-			case cap_444_10bit:
-				caps[Capability_H264_Decode_444_10bit] = true
-			case cap_422_10bit:
-				caps[Capability_H264_Decode_422_10bit] = true
-			case cap_420_10bit:
-				caps[Capability_H264_Decode_420_10bit] = true
-			case cap_420_8bit:
-			default:
-				return nil, fmt.Errorf("capability: unsupported pixel format chroma=%d colorBits=%d", chromaSubsampling, colorDepth)
-			}
-		}
 	}
 
 	// capabilities based on requested output
