@@ -12,8 +12,7 @@ func (w *wizard) transferTokens() {
 	fmt.Printf("Enter receipient address (in hex i.e. 0xfoo) - ")
 	to := w.readString()
 
-	fmt.Printf("Enter amount - ")
-	amount := w.readBigInt()
+	amount := w.readBigInt("Enter amount")
 
 	val := url.Values{
 		"to":     {fmt.Sprintf("%v", to)},

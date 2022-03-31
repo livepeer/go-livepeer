@@ -21,6 +21,9 @@
 
 ### Bug Fixes 🐞
 
+#### CLI
+- \#2345 Improve user feedback when specifying numeric values for some wizard options (@kparkins)
+
 #### General
 - \#2299 Split devtool Orchestrator run scripts into versions with/without external transcoder and prevent Transcoder/Broadcaster run scripts from using same CLI port (@thomshutt)
 
