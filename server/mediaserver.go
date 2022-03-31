@@ -863,13 +863,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 				}
-				select {
-				case <-ticker.C:
-					if runCheck() {
+				for {
+					select {
+					case <-ticker.C:
+						if runCheck() {
+							return
+						}
+					case <-s.context.Done():
 						return
 					}
-				case <-s.context.Done():
-					return
 				}
 			}(s, cxn.mid, mid)
 		}
