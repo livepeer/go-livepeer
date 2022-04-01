@@ -112,6 +112,7 @@ func main() {
 	maxSessions := flag.Int("maxSessions", 10, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	currentManifest := flag.Bool("currentManifest", false, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	nvidia := flag.String("nvidia", "", "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
+	netint := flag.String("netint", "", "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	testTranscoder := flag.Bool("testTranscoder", true, "Test Nvidia GPU transcoding at startup")
 	sceneClassificationModelPath := flag.String("sceneClassificationModelPath", "", "Path to scene classification model")
 
@@ -310,22 +311,39 @@ func main() {
 	var transcoderCaps []core.Capability
 	if *transcoder {
 		core.WorkDir = *datadir
+		accel := ffmpeg.Software
+		var devicesStr string
 		if *nvidia != "" {
-			// Get a list of device ids
-			devices, err := common.ParseNvidiaDevices(*nvidia)
-			if err != nil {
-				glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
+			accel = ffmpeg.Nvidia
+			devicesStr = *nvidia
+		}
+		if *netint != "" {
+			accel = ffmpeg.Netint
+			devicesStr = *netint
+		}
+		if accel != ffmpeg.Software {
+			accelName := ffmpeg.AccelerationNameLookup[accel]
+			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
+			if err!=nil {
+				glog.Fatalf("Error unsupported acceleration", err)
 			}
-			glog.Infof("Transcoding on these Nvidia GPUs: %v", devices)
-			// Test transcoding with nvidia
+			// Get a list of device ids
+			devices, err := common.ParseAccelDevices(devicesStr, accel)
+			glog.Infof("%v devices: %v", accelName, devices)
+			if err != nil {
+				glog.Fatalf("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
+			}
+			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
+			// Test transcoding with specified device
 			if *testTranscoder {
-				transcoderCaps, err = core.TestTranscoderCapabilities(devices)
+				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
 				if err != nil {
 					glog.Fatal(err)
+					return
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
-			if *sceneClassificationModelPath != "" {
+			if accel==ffmpeg.Nvidia && *sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *sceneClassificationModelPath
 				core.DetectorProfile = &detectorProfile
@@ -338,7 +356,7 @@ func main() {
 				}
 			}
 			// Initialize LB transcoder
-			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder, core.NewNvidiaTranscoderWithDetector)
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf, dtf)
 		} else {
 			// for local software mode, enable all capabilities
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
