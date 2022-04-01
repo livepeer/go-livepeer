@@ -71,7 +71,7 @@ func main() {
 	if *nvidia != "" {
 		var err error
 		accel = ffmpeg.Nvidia
-		devices, err = common.ParseAccelDevices(*nvidia)
+		devices, err = common.ParseAccelDevices(*nvidia, accel)
 		if err != nil {
 			glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
 		}
@@ -80,7 +80,7 @@ func main() {
 	if *netint != "" {
 	   var err error
 	   accel = ffmpeg.Netint
-	   devices, err = common.ParseAccelDevices(*netint)
+	   devices, err = common.ParseAccelDevices(*netint, accel)
 	   if err != nil {
 	      glog.Fatalf("Error while parsing '-netint %v' flag: %v", *netint, err)
 	   }
