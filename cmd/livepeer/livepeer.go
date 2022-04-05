@@ -324,7 +324,7 @@ func main() {
 		if accel != ffmpeg.Software {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
 			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
-			if err!=nil {
+			if err != nil {
 				glog.Fatalf("Error unsupported acceleration", err)
 			}
 			// Get a list of device ids
@@ -343,7 +343,7 @@ func main() {
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
-			if accel==ffmpeg.Nvidia && *sceneClassificationModelPath != "" {
+			if accel == ffmpeg.Nvidia && *sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *sceneClassificationModelPath
 				core.DetectorProfile = &detectorProfile

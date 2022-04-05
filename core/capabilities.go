@@ -81,6 +81,11 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_VP9_Decode:                 "VP9 decode",
 	Capability_VP8_Encode:                 "VP8 encode",
 	Capability_VP9_Encode:                 "VP9 encode",
+	Capability_H264_Decode_444_8bit:       "H264 Decode YUV444 8-bit",
+	Capability_H264_Decode_422_8bit:       "H264 Decode YUV422 8-bit",
+	Capability_H264_Decode_444_10bit:      "H264 Decode YUV444 10-bit",
+	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
+	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{

@@ -78,17 +78,16 @@ func main() {
 	}
 
 	if *netint != "" {
-	   var err error
-	   accel = ffmpeg.Netint
-	   devices, err = common.ParseAccelDevices(*netint, accel)
-	   if err != nil {
-	      glog.Fatalf("Error while parsing '-netint %v' flag: %v", *netint, err)
-	   }
+		var err error
+		accel = ffmpeg.Netint
+		devices, err = common.ParseAccelDevices(*netint, accel)
+		if err != nil {
+			glog.Fatalf("Error while parsing '-netint %v' flag: %v", *netint, err)
+		}
 	}
 
-	glog.Infof("log level is: %d", ffmpeg.LogLevel(*log * 8))
+	glog.Infof("log level is: %d", ffmpeg.LogLevel(*log*8))
 	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.LogLevel(*log * 8))
-
 
 	var wg sync.WaitGroup
 	dir := path.Dir(*in)
@@ -187,8 +186,8 @@ func main() {
 					}
 					u := path.Join(dir, v.URI)
 					in := &ffmpeg.TranscodeOptionsIn{
-						Fname: u,
-						Accel: accel,
+						Fname:        u,
+						Accel:        accel,
 						XcoderParams: *xcoderParams,
 					}
 					if ffmpeg.Software != accel {
