@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - master
-      - "hjp/*"
 
 jobs:
   linux:
@@ -175,7 +174,7 @@ jobs:
           app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
           app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
           binary-path: "lp-builds/"
-          app-bundle-id: "org.livepeer.analyzer"
+          app-bundle-id: "org.livepeer.livepeer"
 
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
