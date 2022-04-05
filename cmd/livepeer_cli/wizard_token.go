@@ -22,7 +22,7 @@ func (w *wizard) transferTokens() {
 	var input string
 	userAccepted := false
 	for !userAccepted {
-		fmt.Printf("Are you sure you want to send %s LPT to \"%s\"? (y/n) - ", val["amount"][0], val["to"][0])
+		fmt.Printf("Are you sure you want to send %s LPTU to \"%s\"? (y/n) - ", val["amount"][0], val["to"][0])
 
 		input = w.readString()
 
