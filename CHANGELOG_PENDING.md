@@ -10,6 +10,7 @@
 - \#2289 Add timeouts to ETH client (@leszko)
 - \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
 - \#2344 Use T.TempDir to create temporary test directory (@Juneezee)
+- \#2353 Codesign and notarize macOS binaries to be allowed to run without warnings on apple devices (@hjpotter92)
 
 #### Broadcaster
 - \#2309 Add dynamic timeout for the orchestrator discovery (@leszko)
