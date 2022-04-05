@@ -165,7 +165,7 @@ jobs:
           regex: '^v([0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
-        # if: ${{ steps.match-tag.outputs.match != '' }}
+        if: ${{ steps.match-tag.outputs.match != '' }}
         uses: livepeer/action-gh-codesign-apple@latest
         with:
           developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
