@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - master
+    tags:
+      - "v*"
 
 jobs:
   linux:
@@ -162,7 +164,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.event.workflow_run.head_branch }}
-          regex: '^v([0-9]+\.\d+\.\d+)$'
+          regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
         if: ${{ steps.match-tag.outputs.match != '' }}
