@@ -163,7 +163,7 @@ jobs:
       - uses: actions-ecosystem/action-regex-match@v2
         id: match-tag
         with:
-          text: ${{ github.event.workflow_run.head_branch }}
+          text: ${{ github.ref_name }}
           regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
