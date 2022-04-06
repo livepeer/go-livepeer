@@ -5,25 +5,27 @@ on:
   push:
     branches:
       - master
+    tags:
+      - "v*"
 
 jobs:
   linux:
     name: Build linux binaries
     runs-on: ubuntu-18.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v3
         with:
-          # Needed for commands that depend on git tags
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v3
         with:
-          go-version: '1.17.6'
+          go-version: 1.17
 
       - name: Cache go modules
         id: cache-go-mod
@@ -104,25 +106,27 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Set build environment
-        run: echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+        run: |
+          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v3
         with:
-          # Needed for commands that depend on git tags
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v3
         with:
-          go-version: '1.17.6'
+          go-version: 1.17
 
       - name: Cache go modules
         id: cache-go-mod
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
@@ -131,12 +135,12 @@ jobs:
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/compiled
           key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
+            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-
 
       - name: Install dependencies
         run: brew install coreutils
@@ -155,6 +159,24 @@ jobs:
           ./ci_env.sh make
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+
+      - uses: actions-ecosystem/action-regex-match@v2
+        id: match-tag
+        with:
+          text: ${{ github.event.workflow_run.head_branch }}
+          regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
+
+      - name: Codesign and notarize binaries
+        if: ${{ steps.match-tag.outputs.match != '' }}
+        uses: livepeer/action-gh-codesign-apple@latest
+        with:
+          developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
+          developer-certificate-base64: ${{ secrets.CI_MACOS_CERTIFICATE_BASE64 }}
+          developer-certificate-password: ${{ secrets.CI_MACOS_CERTIFICATE_PASSWORD }}
+          app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
+          app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
+          binary-path: "lp-builds/"
+          app-bundle-id: "org.livepeer.livepeer"
 
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -178,9 +200,9 @@ jobs:
       - name: configure git line endings
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v3
         with:
-          # Needed for commands that depend on git tags
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
@@ -228,19 +250,19 @@ jobs:
     name: Build binaries for linux using tensorflow
     runs-on: ubuntu-18.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v3
         with:
-          # Needed for commands that depend on git tags
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v3
         with:
-          go-version: '1.17.6'
+          go-version: 1.17
 
       - name: Cache go modules
         id: cache-go-mod
