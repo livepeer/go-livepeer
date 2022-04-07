@@ -325,7 +325,7 @@ func main() {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
 			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
-				glog.Fatalf("Error unsupported acceleration", err)
+				glog.Fatalf("Error unsupported acceleration: %v", err)
 			}
 			// Get a list of device ids
 			devices, err := common.ParseAccelDevices(devicesStr, accel)
