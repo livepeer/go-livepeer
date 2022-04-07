@@ -552,6 +552,9 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	start := time.Now()
 	tData, err := transcoder.Transcode(ctx, md)
 	if err != nil {
+		if _, ok := err.(UnrecoverableError); ok {
+			panic(err)
+		}
 		clog.Errorf(ctx, "Error transcoding segName=%s err=%q", seg.Name, err)
 		return terr(err)
 	}
