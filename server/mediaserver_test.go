@@ -437,7 +437,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 		connectionLock:  &sync.RWMutex{},
 		rtmpConnections: make(map[core.ManifestID]*rtmpConnection),
 	}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	u := mustParseUrl(t, "http://hot/id1/secret")
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
@@ -469,7 +469,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
@@ -707,7 +707,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	endHandler := endRTMPStreamHandler(s)
 	// Test default path structure
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
@@ -775,12 +775,140 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	st.Close()
 }
 
+// Test that when an Auth header is present, it overrides values from the callback URL
+func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
+	// Example profile, used to check behaviour when returned by Auth header / callback URL
+	profiles := []ffmpeg.JsonProfile{
+		{
+			Name:    "P144p30fps16x9",
+			Bitrate: 400000,
+			Width:   256,
+			Height:  144,
+		},
+	}
+
+	// Monkey patch rng to avoid unpredictability even when seeding
+	oldRandFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(length uint) string {
+		return "abcdef"
+	}
+	defer func() { common.RandomIDGenerator = oldRandFunc }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			fmt.Printf("Error parsing URL: %v\n", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		j, err := json.Marshal(authWebhookResponse{
+			ManifestID: "!!!!!Should be overridden!!!!",
+			Profiles:   profiles,
+		})
+		require.NoError(t, err)
+
+		w.Write(j)
+	}))
+	defer ts.Close()
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
+	defer func() { AuthWebhookURL = nil }()
+
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
+		ManifestID: "override-manifest-id",
+		Profiles:   profiles,
+	})
+
+	// Test default path structure
+	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
+	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
+
+	sid := createSid(u)
+	require.NotNil(t, sid)
+	require.Equal(t, expectedSid.String(), sid.StreamID())
+
+	sap := sid.(*core.StreamParameters)
+	require.Len(t, sap.Profiles, 1)
+	require.Equal(t, "P144p30fps16x9", sap.Profiles[0].Name)
+	require.Equal(t, "256x144", sap.Profiles[0].Resolution)
+	require.Equal(t, "400000", sap.Profiles[0].Bitrate)
+}
+
+// Test that when an Auth header is present, we get an error response if the Profiles it provides
+// are different to those that come from the Callback URL
+func TestCreateRTMPStreamHandlerWithAuthHeader_DifferentProfilesToCallbackURL(t *testing.T) {
+	// Monkey patch rng to avoid unpredictability even when seeding
+	oldRandFunc := common.RandomIDGenerator
+	common.RandomIDGenerator = func(length uint) string {
+		return "abcdef"
+	}
+	defer func() { common.RandomIDGenerator = oldRandFunc }()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, _ := ioutil.ReadAll(r.Body)
+		var req authWebhookReq
+		err := json.Unmarshal(out, &req)
+		if err != nil {
+			fmt.Printf("Error parsing URL: %v\n", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		j, err := json.Marshal(authWebhookResponse{
+			ManifestID: "!!!!!Should be overridden!!!!",
+			Profiles: []ffmpeg.JsonProfile{
+				{
+					Name:    "This is different",
+					Bitrate: 1,
+					Width:   1,
+					Height:  1,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		w.Write(j)
+	}))
+	defer ts.Close()
+	AuthWebhookURL = mustParseUrl(t, ts.URL)
+	defer func() { AuthWebhookURL = nil }()
+
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	s.RTMPSegmenter = &StubSegmenter{skip: true}
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, &authWebhookResponse{
+		ManifestID: "override-manifest-id",
+		Profiles: []ffmpeg.JsonProfile{
+			{
+				Name:    "P144p30fps16x9",
+				Bitrate: 400000,
+				Width:   256,
+				Height:  144,
+			},
+		},
+	})
+
+	// Test default path structure
+	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
+	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
+
+	sid := createSid(u)
+	require.Nil(t, sid)
+}
+
 func TestEndRTMPStreamHandler(t *testing.T) {
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
@@ -892,7 +1020,7 @@ func TestMultiStream(t *testing.T) {
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
 		st := stream.NewBasicRTMPVideoStream(createSid(u))
@@ -1116,7 +1244,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 
 	// create RTMPStream handler methods
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
-	createSid := createRTMPStreamIDHandler(context.TODO(), s)
+	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 

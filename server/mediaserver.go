@@ -191,7 +191,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	s.context = ctx
 
 	//LPMS handlers for handling RTMP video
-	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
+	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s, nil), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
 
 	//LPMS hanlder for handling HLS video play
@@ -227,9 +227,11 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 }
 
 //RTMP Publish Handlers
-func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url *url.URL) (strmID stream.AppData) {
+func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookResponseOverride *authWebhookResponse) func(url *url.URL) (strmID stream.AppData) {
 	return func(url *url.URL) (strmID stream.AppData) {
-		//Check webhook for ManifestID
+		//Check HTTP header for ManifestID
+		//If ManifestID is passed in HTTP header, use that one
+		//Else check webhook for ManifestID
 		//If ManifestID is returned from webhook, use it
 		//Else check URL for ManifestID
 		//If ManifestID is passed in URL, use that one
@@ -252,6 +254,21 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer) func(url
 			clog.Errorf(ctx, "Authentication denied for streamID url=%s err=%q", url.String(), err)
 			return nil
 		}
+
+		// If we've received auth in header AND callback URL forms then for now, we reject cases where they're
+		// trying to give us different profiles
+		if resp != nil && webhookResponseOverride != nil {
+			if !resp.areProfilesEqual(*webhookResponseOverride) {
+				clog.Errorf(ctx, "Received auth header with profiles that don't match those in callback URL response")
+				return nil
+			}
+		}
+
+		// If we've received a header containing auth values then let those override any from a callback URL
+		if webhookResponseOverride != nil {
+			resp = webhookResponseOverride
+		}
+
 		if resp != nil {
 			mid, key = parseManifestID(resp.ManifestID), resp.StreamKey
 			extStreamID, sessionID = resp.StreamID, resp.SessionID
@@ -713,6 +730,15 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		errorOut(http.StatusMethodNotAllowed, `http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		return
 	}
+
+	authHeaderConfig, err := getTranscodeConfiguration(r)
+	if err != nil {
+		httpErr := fmt.Sprintf(`failed to parse transcode config header: %q`, err)
+		glog.Error(httpErr)
+		http.Error(w, httpErr, http.StatusBadRequest)
+		return
+	}
+
 	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 
 	if err != nil {
@@ -788,7 +814,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
-		appData := (createRTMPStreamIDHandler(ctx, s))(r.URL)
+		appData := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
 		if appData == nil {
 			errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
 			return
