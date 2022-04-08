@@ -21,6 +21,7 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
+- \#2322 Fix ZeroSegments error (@AlexKordic)
 
 #### CLI
 - \#2345 Improve user feedback when specifying numeric values for some wizard options (@kparkins)
