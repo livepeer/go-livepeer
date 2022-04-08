@@ -3,8 +3,8 @@
 set -ex
 
 ROOT="${1:-$HOME}"
-[[ ! -v ARCH ]] && ARCH="$(uname -m)"
-[[ ! -v UNAME ]] && UNAME="$(uname)"
+[[ -z "$ARCH" ]] && ARCH="$(uname -m)"
+[[ -z "$UNAME" ]] && UNAME="$(uname)"
 NPROC=${NPROC:-$(nproc)}
 EXTRA_CFLAGS=""
 EXTRA_LDFLAGS=""
