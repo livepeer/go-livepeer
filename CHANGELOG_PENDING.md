@@ -39,5 +39,6 @@
 #### Orchestrator
 - \#2284 Fix issue with not redeeming tickets by Redeemer (@leszko)
 - \#2352 Fix standalone orchestrator not crashing under UnrecoverableError (@leszko)
+- \#2359 Fix redeeming tickets with zero block hash (@leszko)
 
 #### Transcoder
