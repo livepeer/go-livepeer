@@ -76,10 +76,10 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v2
+        uses: golangci/golangci-lint-action@v3
         with:
           version: v1.39.0
-          args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m'
+          args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
 
       - name: Run tests
         run: |
