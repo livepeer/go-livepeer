@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
 	"time"
@@ -84,8 +85,9 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 
 	// Happy case , check that reward was called
 	// Assert that no error was logged
-	eth.On("Account").Return(accounts.Account{})
-	eth.On("GetTranscoder").Return(&lpTypes.Transcoder{
+	addr := ethcommon.Address{}
+	eth.On("Account").Return(accounts.Account{Address: addr})
+	eth.On("GetTranscoder", addr).Return(&lpTypes.Transcoder{
 		LastRewardRound: big.NewInt(1),
 		Active:          true,
 	}, nil)

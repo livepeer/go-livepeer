@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -60,6 +61,10 @@ func (w *wizard) getRegisteredOrchestrators() ([]lpTypes.Transcoder, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/registeredOrchestrators", w.host, w.httpPort))
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
 	}
 
 	defer resp.Body.Close()
