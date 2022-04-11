@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -15,638 +19,750 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
+
+// Status
+type mockChainIdGetter struct {
+	mock.Mock
+}
+
+func (m *mockChainIdGetter) ChainID() (*big.Int, error) {
+	return mockBigInt(m.Called())
+}
+
+func TestChainIdHandler_Error(t *testing.T) {
+	assert := assert.New(t)
+
+	db := &mockChainIdGetter{}
+	db.On("ChainID").Return(nil, errors.New("ChainID error"))
+
+	handler := ethChainIdHandler(db)
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("Error getting eth network ID err=\"ChainID error\"", body)
+}
+
+func TestChainIdHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	db := &mockChainIdGetter{}
+	db.On("ChainID").Return(big.NewInt(4), nil)
+
+	handler := ethChainIdHandler(db)
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("4", body)
+}
 
 type mockBlockGetter struct {
 	mock.Mock
 }
 
 func (m *mockBlockGetter) LastSeenBlock() (*big.Int, error) {
-	args := m.Called()
-
-	var blk *big.Int
-	if args.Get(0) != nil {
-		blk = args.Get(0).(*big.Int)
-	}
-
-	return blk, args.Error(1)
+	return mockBigInt(m.Called())
 }
 
-func dummyHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
-	})
-}
-
-func TestMustHaveFormParams_NoParamsRequired(t *testing.T) {
-	handler := mustHaveFormParams(dummyHandler())
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestCurrentBlockHandler_Error(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("success", strings.TrimSpace(string(body)))
-}
 
-func TestMustHaveFormParams_SingleParamRequiredNotProvided(t *testing.T) {
-	handler := mustHaveFormParams(dummyHandler(), "a")
+	db := &mockBlockGetter{}
+	db.On("LastSeenBlock").Return(nil, errors.New("LastSeenBlock error"))
 
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
+	handler := currentBlockHandler(db)
+	status, body := get(handler)
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Equal("missing form param: a", strings.TrimSpace(string(body)))
-}
-
-func TestMustHaveFormParams_SingleParamRequiredAndProvided(t *testing.T) {
-	handler := mustHaveFormParams(dummyHandler(), "a")
-
-	form := url.Values{
-		"a": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("success", strings.TrimSpace(string(body)))
-}
-
-func TestMustHaveFormParams_MultipleParamsRequiredOneNotProvided(t *testing.T) {
-	handler := mustHaveFormParams(dummyHandler(), "a", "b")
-
-	form := url.Values{
-		"a": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Equal("missing form param: b", strings.TrimSpace(string(body)))
-}
-func TestMustHaveFormParams_MultipleParamsRequiredAllProvided(t *testing.T) {
-	handler := mustHaveFormParams(dummyHandler(), "a", "b")
-
-	form := url.Values{
-		"a": {"foo"},
-		"b": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("success", strings.TrimSpace(string(body)))
-}
-
-func TestCurrentBlockHandler_MissingBlockGetter(t *testing.T) {
-	handler := currentBlockHandler(nil)
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing block getter", strings.TrimSpace(string(body)))
-}
-
-func TestCurrentBlockHandler_LastSeenBlockError(t *testing.T) {
-	getter := &mockBlockGetter{}
-	handler := currentBlockHandler(getter)
-
-	getter.On("LastSeenBlock").Return(nil, errors.New("LastSeenBlock error"))
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query last seen block: LastSeenBlock error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not query last seen block: LastSeenBlock error", body)
 }
 
 func TestCurrentBlockHandler_Success(t *testing.T) {
-	getter := &mockBlockGetter{}
-	handler := currentBlockHandler(getter)
-
-	getter.On("LastSeenBlock").Return(big.NewInt(50), nil)
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(big.NewInt(50), new(big.Int).SetBytes(body))
+
+	db := &mockBlockGetter{}
+	db.On("LastSeenBlock").Return(big.NewInt(50), nil)
+
+	handler := currentBlockHandler(db)
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(big.NewInt(50), new(big.Int).SetBytes([]byte(body)))
 }
-func TestCurrentRoundHandler(t *testing.T) {
+
+func TestOrchestratorInfoHandler_TranscoderError(t *testing.T) {
 	assert := assert.New(t)
 
-	// Test missing client
-	handler := currentRoundHandler(nil)
-
-	resp := httpGetResp(handler)
-	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-
-	// Test CurrentRound() error
+	s := &LivepeerServer{}
 	client := &eth.MockClient{}
-	handler = currentRoundHandler(client)
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(nil, errors.New("ErrNoResult"))
 
+	handler := s.orchestratorInfoHandler(client)
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not get transcoder", body)
+}
+
+func TestOrchestratorInfoHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	s := &LivepeerServer{LivepeerNode: &core.LivepeerNode{}}
+	price := big.NewRat(1, 2)
+	s.LivepeerNode.SetBasePrice(price)
+
+	trans := &types.Transcoder{
+		ServiceURI: "127.0.0.1:8935",
+	}
+	client := &eth.MockClient{}
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil)
+
+	handler := s.orchestratorInfoHandler(client)
+	status, body := get(handler)
+
+	var info orchInfo
+	err := json.Unmarshal([]byte(body), &info)
+	assert.NoError(err)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(price, info.PriceInfo)
+	assert.Equal(trans, info.Transcoder)
+}
+
+// Broadcast / Transcoding config
+func TestSetBroadcastConfigHandler_MissingPricePerUnitError(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, body := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("missing form params (maxPricePerUnit AND pixelsPerUnit) or transcodingOptions", body)
+}
+
+func TestSetBroadcastConfigHandler_ConvertPricePerUnitError(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, body := postForm(handler, url.Values{
+		"maxPricePerUnit": {"invalidParameter"},
+		"pixelsPerUnit":   {"2"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "Error converting string to int64")
+}
+
+func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, body := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"invalidParameter"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "Error converting string to int64")
+}
+
+func TestSetBroadcastConfigHandler_NegativePixelPerUnitError(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, body := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"-2"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "pixels per unit must be greater than 0")
+}
+
+func TestSetBroadcastConfigHandler_TranscodingOptionsError(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, body := postForm(handler, url.Values{
+		"transcodingOptions": {"invalidTranscodingOptions"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "invalid transcoding options")
+}
+
+func TestSetBroadcastConfigHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := setBroadcastConfigHandler()
+	status, _ := postForm(handler, url.Values{
+		"maxPricePerUnit":    {"1"},
+		"pixelsPerUnit":      {"2"},
+		"transcodingOptions": {"P720p25fps16x9,P360p25fps16x9"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(big.NewRat(1, 2), BroadcastCfg.MaxPrice())
+	profiles := []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfileLookup["P720p25fps16x9"],
+		ffmpeg.VideoProfileLookup["P360p25fps16x9"],
+	}
+	assert.Equal(profiles, BroadcastJobVideoProfiles)
+}
+
+func TestGetBroadcastConfigHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	BroadcastCfg.maxPrice = big.NewRat(1, 2)
+	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{
+		ffmpeg.VideoProfileLookup["P240p25fps16x9"],
+	}
+
+	handler := getBroadcastConfigHandler()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	expected := `{"MaxPrice":"1/2","TranscodingOptions":"P240p25fps16x9"}`
+	assert.JSONEq(expected, body)
+}
+
+func TestGetAvailableTranscodingOptionsHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := getAvailableTranscodingOptionsHandler()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.NotEmpty(body)
+}
+
+// Rounds
+func TestCurrentRoundHandler_Error(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := currentRoundHandler(client)
 	client.On("CurrentRound").Return(nil, errors.New("CurrentRound error")).Once()
 
-	resp = httpGetResp(handler)
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body := get(handler)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query current round: CurrentRound error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not query current round: CurrentRound error", body)
+}
 
-	// Test success
+func TestCurrentRoundHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := currentRoundHandler(client)
 	currentRound := big.NewInt(7)
 	client.On("CurrentRound").Return(currentRound, nil)
 
-	resp = httpGetResp(handler)
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body := get(handler)
 
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(currentRound, new(big.Int).SetBytes(body))
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(currentRound, new(big.Int).SetBytes([]byte(body)))
 }
 
-func TestFundDepositAndReserveHandler_MissingClient(t *testing.T) {
-	handler := fundDepositAndReserveHandler(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestInitializeRoundHandler_InitializeRoundError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := initializeRoundHandler(client)
+	client.On("InitializeRound").Return(nil, errors.New("InitializeRound error")).Once()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not initialize round: InitializeRound error", body)
 }
 
-func TestFundDepositAndReserveHandler_InvalidDepositAmount(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositAndReserveHandler(client)
-
-	form := url.Values{
-		"depositAmount": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestInitializeRoundHandler_CheckTxError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "invalid depositAmount")
+
+	client := &eth.MockClient{}
+	handler := initializeRoundHandler(client)
+	client.On("InitializeRound").Return(nil, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error")).Once()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not initialize round: CheckTx error", body)
 }
 
-func TestFundDepositAndReserveHandler_InvalidReserveAmount(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositAndReserveHandler(client)
-
-	form := url.Values{
-		"depositAmount": {"100"},
-		"reserveAmount": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestInitializeRoundHandler_Success(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "invalid reserveAmount")
+
+	client := &eth.MockClient{}
+	handler := initializeRoundHandler(client)
+	client.On("InitializeRound").Return(nil, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+
+	status, _ := get(handler)
+
+	assert.Equal(http.StatusOK, status)
 }
 
-func TestFundDepositAndReserveHandler_TransactionSubmissionError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositAndReserveHandler(client)
-
-	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, errors.New("FundDepositAndReserve error"))
-
-	form := url.Values{
-		"depositAmount": {"50"},
-		"reserveAmount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestRoundInitialized_Error(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundDepositAndReserve: FundDepositAndReserve error", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := roundInitializedHandler(client)
+	client.On("CurrentRoundInitialized").Return(false, errors.New("CurrentRoundInitialized error")).Once()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not get initialized round: CurrentRoundInitialized error", body)
 }
 
-func TestFundDepositAndReserveHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositAndReserveHandler(client)
+func TestRoundInitialized_Success(t *testing.T) {
+	assert := assert.New(t)
 
-	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
+	client := &eth.MockClient{}
+	handler := roundInitializedHandler(client)
+	client.On("CurrentRoundInitialized").Return(true, nil).Once()
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("true", body)
+}
+
+// Orchestrator registration/activation
+func TestActivateOrchestratorHandler_GetTranscoderError(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.activateOrchestratorHandler(client)
+
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(nil, errors.New("GetTranscoder error")).Once()
+
+	status, body := post(handler)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("GetTranscoder error", body)
+}
+
+func TestActivateOrchestratorHandler_TranscoderAlreadyRegisteredError(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.activateOrchestratorHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{Status: "Registered"}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("orchestrator already registered", body)
+}
+
+func TestActivateOrchestratorHandler_CurrentRoundLockedError(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.activateOrchestratorHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+	client.On("CurrentRoundLocked").Return(false, errors.New("CurrentRoundLocked error")).Once()
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("CurrentRoundLocked error", body)
+}
+
+func TestActivateOrchestratorHandler_CurrentRoundIsLockedError(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.activateOrchestratorHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+	client.On("CurrentRoundLocked").Return(true, nil).Once()
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("current round is locked", body)
+}
+
+func TestActivateOrchestratorHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.activateOrchestratorHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{}
+	serviceURI := "http://127.0.0.1:8935"
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+	client.On("CurrentRoundLocked").Return(false, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	client.On("GetServiceURI", addr).Return(serviceURI, nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"blockRewardCut": {"0.5"},
+		"feeShare":       {"0.5"},
+		"pricePerUnit":   {"1"},
+		"pixelsPerUnit":  {"1"},
+		"serviceURI":     {serviceURI},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestSetOrchestratorConfigHandler_NoChangeSuccess(t *testing.T) {
+	assert := assert.New(t)
+
+	server := stubServer()
+	client := &eth.MockClient{}
+	handler := server.setOrchestratorConfigHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+
+	status, _ := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestSetOrchestratorPriceInfo(t *testing.T) {
+	s := stubServer()
+
+	// pricePerUnit is not an integer
+	err := s.setOrchestratorPriceInfo("nil", "1")
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "pricePerUnit is not a valid integer"))
+
+	// pixelsPerUnit is not an integer
+	err = s.setOrchestratorPriceInfo("1", "nil")
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "pixelsPerUnit is not a valid integer"))
+
+	err = s.setOrchestratorPriceInfo("1", "1")
+	assert.Nil(t, err)
+	assert.Zero(t, s.LivepeerNode.GetBasePrice().Cmp(big.NewRat(1, 1)))
+
+	err = s.setOrchestratorPriceInfo("-5", "1")
+	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than or equal to 0, provided %d\n", -5)
+
+	// pixels per unit <= 0
+	err = s.setOrchestratorPriceInfo("1", "0")
+	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", 0)
+	err = s.setOrchestratorPriceInfo("1", "-5")
+	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", -5)
+}
+
+// Bond, withdraw, reward
+func TestBondHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := bondHandler(client)
+
+	addr := ethcommon.Address{}
+	trans := &types.Transcoder{}
+	serviceURI := "http://127.0.0.1:8935"
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetTranscoder", addr).Return(trans, nil).Once()
+	client.On("CurrentRoundLocked").Return(false, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	client.On("GetServiceURI", addr).Return(serviceURI, nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"amount":         {"1"},
+		"blockRewardCut": {"0.5"},
+		"feeShare":       {"0.5"},
+		"pricePerUnit":   {"1"},
+		"pixelsPerUnit":  {"1"},
+		"serviceURI":     {serviceURI},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestRebondHandler_RebondFromUnbonded(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := rebondHandler(client)
+
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"unbondingLockId": {"1"},
+		"toAddr":          {"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestRebondHandler_Rebond(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := rebondHandler(client)
+
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"unbondingLockId": {"1"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestUnbondHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := unbondHandler(client)
+
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"amount": {"1"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestWithdrawStakeHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := withdrawStakeHandler(client)
+
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+
+	status, _ := postForm(handler, url.Values{
+		"unbondingLockId": {"1"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestL1WithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	db := &mockChainIdGetter{}
+	handler := withdrawFeesHandler(client, db)
+
+	db.On("ChainID").Return(big.NewInt(MainnetChainId), nil)
+	client.On("L1WithdrawFees").Return(nil, errors.New("WithdrawFees error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute WithdrawFees: WithdrawFees error", body)
+}
+
+func TestL1WithdrawFeesHandler_TransactionWaitError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	db := &mockChainIdGetter{}
+	handler := withdrawFeesHandler(client, db)
+
+	db.On("ChainID").Return(big.NewInt(MainnetChainId), nil)
+	client.On("L1WithdrawFees").Return(nil, nil)
 	client.On("CheckTx").Return(errors.New("CheckTx error"))
 
-	form := url.Values{
-		"depositAmount": {"50"},
-		"reserveAmount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := post(handler)
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundDepositAndReserve: CheckTx error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute WithdrawFees: CheckTx error", body)
 }
 
-func TestFundDepositAndReserveHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositAndReserveHandler(client)
+func TestL1WithdrawFeesHandler_Success(t *testing.T) {
+	assert := assert.New(t)
 
-	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
+	client := &eth.MockClient{}
+	db := &mockChainIdGetter{}
+	handler := withdrawFeesHandler(client, db)
+
+	db.On("ChainID").Return(big.NewInt(MainnetChainId), nil)
+	client.On("L1WithdrawFees").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	form := url.Values{
-		"depositAmount": {"50"},
-		"reserveAmount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, _ := post(handler)
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("fundDepositAndReserve success", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusOK, status)
 }
 
-func TestFundDepositHandler_MissingClient(t *testing.T) {
-	handler := fundDepositHandler(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestWithdrawFeesHandler_InvalidAmount(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
 
-func TestFundDepositHandler_InvalidAmount(t *testing.T) {
+	db := &mockChainIdGetter{}
 	client := &eth.MockClient{}
-	handler := fundDepositHandler(client)
+	handler := withdrawFeesHandler(client, db)
 
-	form := url.Values{
+	db.On("ChainID").Return(big.NewInt(123), nil)
+
+	status, body := postForm(handler, url.Values{
 		"amount": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
+	})
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "invalid amount")
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "invalid amount")
 }
 
-func TestFundDepositHandler_TransactionSubmissionError(t *testing.T) {
+func TestWithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
+	assert := assert.New(t)
+
+	db := &mockChainIdGetter{}
 	client := &eth.MockClient{}
-	handler := fundDepositHandler(client)
+	handler := withdrawFeesHandler(client, db)
 
-	client.On("FundDeposit", big.NewInt(100)).Return(nil, errors.New("FundDeposit error"))
-
-	form := url.Values{
-		"amount": {"100"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundDeposit: FundDeposit error", strings.TrimSpace(string(body)))
-}
-
-func TestFundDepositHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositHandler(client)
-
-	client.On("FundDeposit", big.NewInt(100)).Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
-
-	form := url.Values{
-		"amount": {"100"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute fundDeposit: CheckTx error", strings.TrimSpace(string(body)))
-}
-
-func TestFundDepositHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := fundDepositHandler(client)
-
-	client.On("FundDeposit", big.NewInt(100)).Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(nil)
-
-	form := url.Values{
-		"amount": {"100"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("fundDeposit success", strings.TrimSpace(string(body)))
-}
-
-func TestUnlockHandler_MissingClient(t *testing.T) {
-	handler := unlockHandler(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
-
-func TestUnlockHandler_TransactionSubmissionError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := unlockHandler(client)
-
-	client.On("Unlock").Return(nil, errors.New("Unlock error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute unlock: Unlock error", strings.TrimSpace(string(body)))
-}
-
-func TestUnlockHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := unlockHandler(client)
-
-	client.On("Unlock").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute unlock: CheckTx error", strings.TrimSpace(string(body)))
-}
-
-func TestUnlockHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := unlockHandler(client)
-
-	client.On("Unlock").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("unlock success", strings.TrimSpace(string(body)))
-}
-
-func TestCancelUnlockHandler_MissingClient(t *testing.T) {
-	handler := cancelUnlockHandler(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
-
-func TestCancelUnlockHandler_TransactionSubmissionError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := cancelUnlockHandler(client)
-
-	client.On("CancelUnlock").Return(nil, errors.New("CancelUnlock error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute cancelUnlock: CancelUnlock error", strings.TrimSpace(string(body)))
-}
-
-func TestCancelUnlockHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := cancelUnlockHandler(client)
-
-	client.On("CancelUnlock").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute cancelUnlock: CheckTx error", strings.TrimSpace(string(body)))
-}
-
-func TestCancelUnlockHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := cancelUnlockHandler(client)
-
-	client.On("CancelUnlock").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("cancelUnlock success", strings.TrimSpace(string(body)))
-}
-
-func TestWithdrawHandler_MissingClient(t *testing.T) {
-	handler := withdrawHandler(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
-
-func TestWithdrawHandler_TransactionSubmissionError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawHandler(client)
-
-	client.On("Withdraw").Return(nil, errors.New("Withdraw error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute withdraw: Withdraw error", strings.TrimSpace(string(body)))
-}
-func TestWithdrawHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawHandler(client)
-
-	client.On("Withdraw").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute withdraw: CheckTx error", strings.TrimSpace(string(body)))
-}
-
-func TestWithdrawHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawHandler(client)
-
-	client.On("Withdraw").Return(nil, nil)
-	client.On("CheckTx", mock.Anything).Return(nil)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("withdraw success", strings.TrimSpace(string(body)))
-}
-
-func TestSenderInfoHandler_MissingClient(t *testing.T) {
-	handler := senderInfoHandler(nil)
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
-
-func TestSenderInfoHandler_GetSenderInfoErrNoResult(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := senderInfoHandler(client)
+	db.On("ChainID").Return(big.NewInt(123), nil)
 	addr := ethcommon.Address{}
-
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("GetSenderInfo", addr).Return(nil, errors.New("ErrNoResult"))
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, errors.New("WithdrawFees error"))
 
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := postForm(handler, url.Values{
+		"amount": {"50"},
+	})
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal("{\"Deposit\":0,\"WithdrawRound\":0,\"Reserve\":{\"FundsRemaining\":0,\"ClaimedInCurrentRound\":0}}", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute WithdrawFees: WithdrawFees error", body)
 }
 
-func TestSenderInfoHandler_GetSenderInfoOtherError(t *testing.T) {
+func TestWithdrawFeesHandler_TransactionWaitError(t *testing.T) {
+	assert := assert.New(t)
+
+	db := &mockChainIdGetter{}
 	client := &eth.MockClient{}
-	handler := senderInfoHandler(client)
+	handler := withdrawFeesHandler(client, db)
+
+	db.On("ChainID").Return(big.NewInt(123), nil)
 	addr := ethcommon.Address{}
-
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("GetSenderInfo", addr).Return(nil, errors.New("foo"))
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx").Return(errors.New("CheckTx error"))
 
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := postForm(handler, url.Values{
+		"amount": {"50"},
+	})
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query sender info: foo", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute WithdrawFees: CheckTx error", body)
 }
 
-func TestSenderInfoHandler_Success(t *testing.T) {
+func TestWithdrawFeesHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	db := &mockChainIdGetter{}
 	client := &eth.MockClient{}
-	handler := senderInfoHandler(client)
+	handler := withdrawFeesHandler(client, db)
+
+	db.On("ChainID").Return(big.NewInt(123), nil)
 	addr := ethcommon.Address{}
-
-	mockInfo := &pm.SenderInfo{
-		Deposit:       big.NewInt(0),
-		WithdrawRound: big.NewInt(102),
-		Reserve: &pm.ReserveInfo{
-			FundsRemaining:        big.NewInt(104),
-			ClaimedInCurrentRound: big.NewInt(0),
-		}}
-
 	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("GetSenderInfo", addr).Return(mockInfo, nil)
+	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, _ := postForm(handler, url.Values{
+		"amount": {"50"},
+	})
 
-	var info pm.SenderInfo
-	err := json.Unmarshal(body, &info)
-	require.Nil(t, err)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(mockInfo.Deposit, info.Deposit)
-	assert.Equal(mockInfo.WithdrawRound, info.WithdrawRound)
-	assert.Equal(mockInfo.Reserve, info.Reserve)
+	assert.Equal(http.StatusOK, status)
 }
 
-func TestTicketBrokerParamsHandler_MissingClient(t *testing.T) {
-	handler := ticketBrokerParamsHandler(nil)
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestClaimEarningsHandler(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-}
 
-func TestTicketBrokerParamsHandler_UnlockPeriodError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := ticketBrokerParamsHandler(client)
+	handler := claimEarningsHandler(client)
 
-	client.On("MinPenaltyEscrow").Return(big.NewInt(50), nil)
-	client.On("UnlockPeriod").Return(nil, errors.New("UnlockPeriod error"))
+	client.On("CurrentRoundInitialized").Return(true, nil).Once()
+	client.On("CurrentRound").Return(big.NewInt(7), nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, _ := post(handler)
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not query TicketBroker unlockPeriod: UnlockPeriod error", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusOK, status)
 }
 
-func TestTicketBrokerParamsHandler_Success(t *testing.T) {
+func TestDelegatorInfoHandler(t *testing.T) {
+	assert := assert.New(t)
+
 	client := &eth.MockClient{}
-	handler := ticketBrokerParamsHandler(client)
-	minPenaltyEscrow := big.NewInt(50)
-	unlockPeriod := big.NewInt(51)
-
-	client.On("MinPenaltyEscrow").Return(minPenaltyEscrow, nil)
-	client.On("UnlockPeriod").Return(unlockPeriod, nil)
-
-	resp := httpGetResp(handler)
-	body, _ := ioutil.ReadAll(resp.Body)
-
-	var params struct {
-		MinPenaltyEscrow *big.Int
-		UnlockPeriod     *big.Int
+	handler := delegatorInfoHandler(client)
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	delegator := &types.Delegator{
+		StartRound: big.NewInt(4),
 	}
-	err := json.Unmarshal(body, &params)
-	require.Nil(t, err)
+	client.On("GetDelegator", addr).Return(delegator, nil)
 
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Contains(body, `"StartRound":4`)
+}
+
+func TestRewardHandler(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal(unlockPeriod, params.UnlockPeriod)
+
+	client := &eth.MockClient{}
+	handler := rewardHandler(client)
+	client.On("Reward").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	status, _ := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+}
+
+// Eth
+func TestTransferTokensHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := transferTokensHandler(client)
+
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	status, _ := postForm(handler, url.Values{
+		"to":     {"0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B"},
+		"amount": {"10"},
+	})
+
+	assert.Equal(http.StatusOK, status)
 }
 
 func TestSignMessageHandler(t *testing.T) {
@@ -654,23 +770,19 @@ func TestSignMessageHandler(t *testing.T) {
 
 	// Test missing client
 	handler := signMessageHandler(nil)
-	resp := httpPostFormResp(handler, nil)
-	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := postForm(handler, nil)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
 
 	// Test signing error
 	err := errors.New("signing error")
 	client := &eth.StubClient{Err: err}
 	handler = signMessageHandler(client)
-	resp = httpPostFormResp(handler, nil)
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body = post(handler)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("could not sign message - err=%q", err), strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("could not sign message - err=%q", err), body)
 
 	// Test signing success
 	client.Err = nil
@@ -679,11 +791,9 @@ func TestSignMessageHandler(t *testing.T) {
 		"message": {msg},
 	}
 	handler = signMessageHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal([]byte(msg), body)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(msg, body)
 
 	// Test signing typed data JSON unmarshal error
 	headers := map[string]string{
@@ -691,11 +801,9 @@ func TestSignMessageHandler(t *testing.T) {
 		"SigFormat":    "data/typed",
 	}
 
-	resp = httpPostResp(handler, strings.NewReader(form.Encode()), headers)
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "could not unmarshal typed data")
+	status, body = postFormWithHeaders(handler, form, headers)
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "could not unmarshal typed data")
 
 	// Test signing typed data success
 	jsonTypedData := `
@@ -769,11 +877,9 @@ func TestSignMessageHandler(t *testing.T) {
 		"message": {jsonTypedData},
 	}
 
-	resp = httpPostResp(handler, strings.NewReader(form.Encode()), headers)
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal([]byte("foo"), body)
+	status, body = postFormWithHeaders(handler, form, headers)
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("foo", body)
 }
 
 func TestVoteHandler(t *testing.T) {
@@ -783,49 +889,21 @@ func TestVoteHandler(t *testing.T) {
 
 	// Test missing client
 	handler := voteHandler(nil)
-	resp := httpPostFormResp(handler, nil)
-	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := post(handler)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
-
-	// Test missing form params - poll
-	form := url.Values{
-		"choiceID": {"0"},
-	}
-	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing poll contract address", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
 
 	// Test invalid poll address
-	form = url.Values{
+	form := url.Values{
 		"poll":     {"foo"},
 		"choiceID": {"-1"},
 	}
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body = postForm(handler, form)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("invalid poll contract address", strings.TrimSpace(string(body)))
-
-	// Test missing form params - choiceID
-	form = url.Values{
-		"poll": {"0xbf790e51fa21e1515cece96975b3505350b20083"},
-	}
-	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing choiceID", strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("invalid poll contract address", body)
 
 	// Test choiceID invalid integer
 	form = url.Values{
@@ -833,11 +911,9 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"foo"},
 	}
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("choiceID is not a valid integer value", strings.TrimSpace(string(body)))
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("choiceID is not a valid integer value", body)
 
 	// Test invalid choiceID
 	form = url.Values{
@@ -845,11 +921,9 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"-1"},
 	}
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("invalid choiceID", strings.TrimSpace(string(body)))
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("invalid choiceID", body)
 
 	// Test Vote() error
 	form = url.Values{
@@ -859,24 +933,20 @@ func TestVoteHandler(t *testing.T) {
 	err := errors.New("voting error")
 	client.Err = err
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body = postForm(handler, form)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%q", err), strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to submit vote transaction err=%q", err), body)
 	client.Err = nil
 
 	// Test CheckTx() error
 	err = errors.New("unable to mine tx")
 	client.CheckTxErr = err
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
+	status, body = postForm(handler, form)
 
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%q", err), strings.TrimSpace(string(body)))
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to mine vote transaction err=%q", err), body)
 	client.CheckTxErr = nil
 
 	// Test Vote() success
@@ -885,156 +955,536 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"0"},
 	}
 	handler = voteHandler(client)
-	resp = httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	defer resp.Body.Close()
-	body, _ = ioutil.ReadAll(resp.Body)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-	assert.Equal((types.NewTx(&types.DynamicFeeTx{})).Hash().Bytes(), body)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	assert.Equal((ethtypes.NewTx(&ethtypes.DynamicFeeTx{})).Hash().Bytes(), []byte(body))
 }
 
-func TestWithdrawFeesHandler_MissingClient(t *testing.T) {
-	handler := withdrawFeesHandler(nil, stubChainIdProvider)
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+// Tickets
+func TestFundDepositAndReserveHandler_InvalidDepositAmount(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("missing ETH client", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := fundDepositAndReserveHandler(client)
+
+	status, body := postForm(handler, url.Values{
+		"depositAmount": {"foo"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "invalid depositAmount")
 }
 
-func TestWithdrawFeesHandler_InvalidAmount(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubChainIdProvider)
+func TestFundDepositAndReserveHandler_InvalidReserveAmount(t *testing.T) {
+	assert := assert.New(t)
 
-	form := url.Values{
+	client := &eth.MockClient{}
+	handler := fundDepositAndReserveHandler(client)
+
+	status, body := postForm(handler, url.Values{
+		"depositAmount": {"100"},
+		"reserveAmount": {"foo"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "invalid reserveAmount")
+}
+
+func TestFundDepositAndReserveHandler_TransactionSubmissionError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := fundDepositAndReserveHandler(client)
+
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, errors.New("FundDepositAndReserve error"))
+
+	status, body := postForm(handler, url.Values{
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
+	})
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute fundDepositAndReserve: FundDepositAndReserve error", body)
+}
+
+func TestFundDepositAndReserveHandler_TransactionWaitError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := fundDepositAndReserveHandler(client)
+
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx").Return(errors.New("CheckTx error"))
+
+	status, body := postForm(handler, url.Values{
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
+	})
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute fundDepositAndReserve: CheckTx error", body)
+}
+
+func TestFundDepositAndReserveHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := fundDepositAndReserveHandler(client)
+
+	client.On("FundDepositAndReserve", big.NewInt(50), big.NewInt(50)).Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	status, body := postForm(handler, url.Values{
+		"depositAmount": {"50"},
+		"reserveAmount": {"50"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("fundDepositAndReserve success", body)
+}
+
+func TestFundDepositHandler_InvalidAmount(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := fundDepositHandler(client)
+
+	status, body := postForm(handler, url.Values{
 		"amount": {"foo"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
+	})
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode)
-	assert.Contains(strings.TrimSpace(string(body)), "invalid amount")
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Contains(body, "invalid amount")
 }
 
-func TestWithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubChainIdProvider)
-
-	addr := ethcommon.Address{}
-	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, errors.New("WithdrawFees error"))
-
-	form := url.Values{
-		"amount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestFundDepositHandler_TransactionSubmissionError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute WithdrawFees: WithdrawFees error", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := fundDepositHandler(client)
+
+	client.On("FundDeposit", big.NewInt(100)).Return(nil, errors.New("FundDeposit error"))
+
+	status, body := postForm(handler, url.Values{
+		"amount": {"100"},
+	})
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute fundDeposit: FundDeposit error", body)
 }
 
-func TestWithdrawFeesHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubChainIdProvider)
-
-	addr := ethcommon.Address{}
-	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
-	client.On("CheckTx").Return(errors.New("CheckTx error"))
-
-	form := url.Values{
-		"amount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestFundDepositHandler_TransactionWaitError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute WithdrawFees: CheckTx error", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := fundDepositHandler(client)
+
+	client.On("FundDeposit", big.NewInt(100)).Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	status, body := postForm(handler, url.Values{
+		"amount": {"100"},
+	})
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute fundDeposit: CheckTx error", body)
 }
 
-func TestWithdrawFeesHandler_Success(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubChainIdProvider)
+func TestFundDepositHandler_Success(t *testing.T) {
+	assert := assert.New(t)
 
-	addr := ethcommon.Address{}
-	client.On("Account").Return(accounts.Account{Address: addr})
-	client.On("WithdrawFees", addr, big.NewInt(50)).Return(nil, nil)
+	client := &eth.MockClient{}
+	handler := fundDepositHandler(client)
+
+	client.On("FundDeposit", big.NewInt(100)).Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	form := url.Values{
-		"amount": {"50"},
-	}
-	resp := httpPostFormResp(handler, strings.NewReader(form.Encode()))
+	status, body := postForm(handler, url.Values{
+		"amount": {"100"},
+	})
 
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("fundDeposit success", body)
+}
+
+func TestUnlockHandler_TransactionSubmissionError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
-}
 
-func stubChainIdProvider() (int64, error) {
-	return 12345, nil
-}
-
-func TestL1WithdrawFeesHandler_TransactionSubmissionError(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
+	handler := unlockHandler(client)
 
-	client.On("L1WithdrawFees").Return(nil, errors.New("WithdrawFees error"))
+	client.On("Unlock").Return(nil, errors.New("Unlock error"))
 
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
+	status, body := post(handler)
 
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute unlock: Unlock error", body)
+}
+
+func TestUnlockHandler_TransactionWaitError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute WithdrawFees: WithdrawFees error", strings.TrimSpace(string(body)))
+
+	client := &eth.MockClient{}
+	handler := unlockHandler(client)
+
+	client.On("Unlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute unlock: CheckTx error", body)
 }
 
-func TestL1WithdrawFeesHandler_TransactionWaitError(t *testing.T) {
-	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
-
-	client.On("L1WithdrawFees").Return(nil, nil)
-	client.On("CheckTx").Return(errors.New("CheckTx error"))
-
-	resp := httpPostFormResp(handler, nil)
-	body, _ := ioutil.ReadAll(resp.Body)
-
+func TestUnlockHandler_Success(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
-	assert.Equal("could not execute WithdrawFees: CheckTx error", strings.TrimSpace(string(body)))
-}
 
-func TestL1WithdrawFeesHandler_Success(t *testing.T) {
 	client := &eth.MockClient{}
-	handler := withdrawFeesHandler(client, stubL1ChainIdProvider)
+	handler := unlockHandler(client)
 
-	client.On("L1WithdrawFees").Return(nil, nil)
+	client.On("Unlock").Return(nil, nil)
 	client.On("CheckTx", mock.Anything).Return(nil)
 
-	resp := httpPostFormResp(handler, nil)
+	status, body := post(handler)
 
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("unlock success", body)
+}
+
+func TestCancelUnlockHandler_TransactionSubmissionError(t *testing.T) {
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, resp.StatusCode)
+
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, errors.New("CancelUnlock error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute cancelUnlock: CancelUnlock error", body)
 }
 
-func stubL1ChainIdProvider() (int64, error) {
-	return 1, nil
+func TestCancelUnlockHandler_TransactionWaitError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute cancelUnlock: CheckTx error", body)
 }
 
-func httpPostFormResp(handler http.Handler, body io.Reader) *http.Response {
+func TestCancelUnlockHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := cancelUnlockHandler(client)
+
+	client.On("CancelUnlock").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("cancelUnlock success", body)
+}
+
+func TestWithdrawHandler_TransactionSubmissionError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+
+	client.On("Withdraw").Return(nil, errors.New("Withdraw error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute withdraw: Withdraw error", body)
+}
+func TestWithdrawHandler_TransactionWaitError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+
+	client.On("Withdraw").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(errors.New("CheckTx error"))
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not execute withdraw: CheckTx error", body)
+}
+
+func TestWithdrawHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := withdrawHandler(client)
+
+	client.On("Withdraw").Return(nil, nil)
+	client.On("CheckTx", mock.Anything).Return(nil)
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("withdraw success", body)
+}
+
+func TestSenderInfoHandler_GetSenderInfoErrNoResult(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := senderInfoHandler(client)
+	addr := ethcommon.Address{}
+
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetSenderInfo", addr).Return(nil, errors.New("ErrNoResult"))
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.JSONEq(`{"Deposit":0,"WithdrawRound":0,"Reserve":{"FundsRemaining":0,"ClaimedInCurrentRound":0}}`, body)
+}
+
+func TestSenderInfoHandler_GetSenderInfoOtherError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := senderInfoHandler(client)
+
+	addr := ethcommon.Address{}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetSenderInfo", addr).Return(nil, errors.New("foo"))
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not query sender info: foo", body)
+}
+
+func TestSenderInfoHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := senderInfoHandler(client)
+	addr := ethcommon.Address{}
+
+	mockInfo := &pm.SenderInfo{
+		Deposit:       big.NewInt(0),
+		WithdrawRound: big.NewInt(102),
+		Reserve: &pm.ReserveInfo{
+			FundsRemaining:        big.NewInt(104),
+			ClaimedInCurrentRound: big.NewInt(0),
+		}}
+	client.On("Account").Return(accounts.Account{Address: addr})
+	client.On("GetSenderInfo", addr).Return(mockInfo, nil)
+
+	status, body := get(handler)
+
+	var info pm.SenderInfo
+	err := json.Unmarshal([]byte(body), &info)
+	assert.NoError(err)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(mockInfo.Deposit, info.Deposit)
+	assert.Equal(mockInfo.WithdrawRound, info.WithdrawRound)
+	assert.Equal(mockInfo.Reserve, info.Reserve)
+}
+
+func TestTicketBrokerParamsHandler_UnlockPeriodError(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := ticketBrokerParamsHandler(client)
+
+	client.On("MinPenaltyEscrow").Return(big.NewInt(50), nil)
+	client.On("UnlockPeriod").Return(nil, errors.New("UnlockPeriod error"))
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("could not query TicketBroker unlockPeriod: UnlockPeriod error", body)
+}
+
+func TestTicketBrokerParamsHandler_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{}
+	handler := ticketBrokerParamsHandler(client)
+	minPenaltyEscrow := big.NewInt(50)
+	unlockPeriod := big.NewInt(51)
+
+	client.On("MinPenaltyEscrow").Return(minPenaltyEscrow, nil)
+	client.On("UnlockPeriod").Return(unlockPeriod, nil)
+
+	status, body := get(handler)
+
+	var params struct {
+		MinPenaltyEscrow *big.Int
+		UnlockPeriod     *big.Int
+	}
+	err := json.Unmarshal([]byte(body), &params)
+	assert.NoError(err)
+	assert.Equal(http.StatusOK, status)
+	assert.Equal(unlockPeriod, params.UnlockPeriod)
+}
+
+// Helpers
+func TestMustHaveFormParams_NoParamsRequired(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveFormParams(dummyHandler())
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("success", body)
+}
+
+func TestMustHaveFormParams_SingleParamRequiredNotProvided(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveFormParams(dummyHandler(), "a")
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("missing form param: a", body)
+}
+
+func TestMustHaveFormParams_SingleParamRequiredAndProvided(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveFormParams(dummyHandler(), "a")
+
+	status, body := postForm(handler, url.Values{
+		"a": {"foo"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("success", body)
+}
+
+func TestMustHaveFormParams_MultipleParamsRequiredOneNotProvided(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveFormParams(dummyHandler(), "a", "b")
+
+	status, body := postForm(handler, url.Values{
+		"a": {"foo"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("missing form param: b", body)
+}
+
+func TestMustHaveFormParams_MultipleParamsRequiredAllProvided(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveFormParams(dummyHandler(), "a", "b")
+
+	status, body := postForm(handler, url.Values{
+		"a": {"foo"},
+		"b": {"foo"},
+	})
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("success", body)
+}
+
+func TestMustHaveClient_MissingClient(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveClient(nil, dummyHandler())
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
+}
+
+func TestMustHaveClient_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveClient(&eth.MockClient{}, dummyHandler())
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("success", body)
+}
+
+func TestMustHaveDb_MissingDb(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveDb(nil, dummyHandler())
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing database", body)
+}
+
+func TestMustHaveDb_Success(t *testing.T) {
+	assert := assert.New(t)
+
+	handler := mustHaveDb(struct{}{}, dummyHandler())
+
+	status, body := get(handler)
+
+	assert.Equal(http.StatusOK, status)
+	assert.Equal("success", body)
+}
+
+func dummyHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("success"))
+	})
+}
+
+func stubServer() *LivepeerServer {
+	n, _ := core.NewLivepeerNode(nil, "", nil)
+	return &LivepeerServer{
+		LivepeerNode: n,
+	}
+}
+
+func post(handler http.Handler) (int, string) {
+	return postForm(handler, url.Values{})
+}
+
+func postForm(handler http.Handler, form url.Values) (int, string) {
 	headers := map[string]string{
 		"Content-Type": "application/x-www-form-urlencoded",
 	}
+	return postFormWithHeaders(handler, form, headers)
+}
 
-	return httpPostResp(handler, body, headers)
+func postFormWithHeaders(handler http.Handler, form url.Values, headers map[string]string) (int, string) {
+	resp := httpPostResp(handler, strings.NewReader(form.Encode()), headers)
+	defer resp.Body.Close()
+	body, _ := ioutil.ReadAll(resp.Body)
+	return resp.StatusCode, trim(body)
 }
 
 func httpPostResp(handler http.Handler, body io.Reader, headers map[string]string) *http.Response {
 	return httpResp(handler, "POST", body, headers)
+}
+
+func get(handler http.Handler) (int, string) {
+	resp := httpGetResp(handler)
+	defer resp.Body.Close()
+	body, _ := ioutil.ReadAll(resp.Body)
+	return resp.StatusCode, trim(body)
 }
 
 func httpGetResp(handler http.Handler) *http.Response {
@@ -1052,4 +1502,17 @@ func httpResp(handler http.Handler, method string, body io.Reader, headers map[s
 	handler.ServeHTTP(w, req)
 
 	return w.Result()
+}
+
+func mockBigInt(args mock.Arguments) (*big.Int, error) {
+	var blk *big.Int
+	if args.Get(0) != nil {
+		blk = args.Get(0).(*big.Int)
+	}
+
+	return blk, args.Error(1)
+}
+
+func trim(str []byte) string {
+	return strings.TrimSpace(string(str))
 }
