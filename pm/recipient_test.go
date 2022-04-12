@@ -28,7 +28,7 @@ func newRecipientFixtureOrFatal(t *testing.T) (ethcommon.Address, *stubBroker, *
 	gm := &stubGasPriceMonitor{gasPrice: big.NewInt(100)}
 	sm := newStubSenderMonitor()
 	sm.maxFloat = big.NewInt(10000000000)
-	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1), blkHash: RandHash()}
+	tm := &stubTimeManager{lastSeenBlock: big.NewInt(1), round: big.NewInt(1), blkHash: RandHash(), preBlkHash: RandHash()}
 	cfg := TicketParamsConfig{
 		EV:               big.NewInt(5),
 		RedeemGas:        10000,
@@ -441,47 +441,53 @@ func TestTicketParams(t *testing.T) {
 	assert.Equal(params1.ExpirationParams.CreationRound, tm.round.Int64())
 	assert.Equal(params1.ExpirationParams.CreationRoundBlockHash.Bytes(), tm.blkHash[:])
 
+	// Test expiration params from the previous round if the current round L1 block hash is zero
+	tm.blkHash = [32]byte{}
+	params, err = r.TicketParams(sender, big.NewRat(1, 1))
+	assert.Equal(params.ExpirationParams.CreationRound, tm.round.Int64()-1)
+	assert.Equal(params.ExpirationParams.CreationRoundBlockHash.Bytes(), tm.preBlkHash[:])
+
 	// Test correct params returned and different seed + recipientRandHash
-	params2, err := r.TicketParams(sender, big.NewRat(1, 1))
+	params, err = r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
-	if params2.Recipient != recipient {
-		t.Errorf("expected recipient %x got %x", recipient, params2.Recipient)
+	if params.Recipient != recipient {
+		t.Errorf("expected recipient %x got %x", recipient, params.Recipient)
 	}
 
-	if params2.FaceValue.Cmp(faceValue) != 0 {
-		t.Errorf("expected faceValue %d got %d", faceValue, params2.FaceValue)
+	if params.FaceValue.Cmp(faceValue) != 0 {
+		t.Errorf("expected faceValue %d got %d", faceValue, params.FaceValue)
 	}
 
-	if params2.WinProb.Cmp(winProb) != 0 {
-		t.Errorf("expected winProb %d got %d", winProb, params2.WinProb)
+	if params.WinProb.Cmp(winProb) != 0 {
+		t.Errorf("expected winProb %d got %d", winProb, params.WinProb)
 	}
 
-	if params2.RecipientRandHash == params1.RecipientRandHash {
+	if params.RecipientRandHash == params1.RecipientRandHash {
 		t.Errorf("expected different recipientRandHash value for different params")
 	}
 
-	if params2.Seed == params1.Seed {
+	if params.Seed == params1.Seed {
 		t.Errorf("expected different seed value for different params")
 	}
 
-	recipientRandHash = crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params2).Bytes(), uint256Size))
+	recipientRandHash = crypto.Keccak256Hash(ethcommon.LeftPadBytes(genRecipientRand(sender, secret, params).Bytes(), uint256Size))
 
-	if params2.RecipientRandHash != recipientRandHash {
-		t.Errorf("expected recipientRandHash %x got %x", recipientRandHash, params2.RecipientRandHash)
+	if params.RecipientRandHash != recipientRandHash {
+		t.Errorf("expected recipientRandHash %x got %x", recipientRandHash, params.RecipientRandHash)
 	}
 
 	// Test correct params returned and different faceValue + winProb
 	gm.gasPrice = big.NewInt(777)
 
-	params3, err := r.TicketParams(sender, big.NewRat(1, 1))
+	params, err = r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
 	faceValue = big.NewInt(777000000)
-	assert.Equal(faceValue, params3.FaceValue)
+	assert.Equal(faceValue, params.FaceValue)
 
 	winProb, _ = new(big.Int).SetString("745122839364969082519761808292714979750772102095499125093034646125570", 10)
-	assert.Equal(winProb, params3.WinProb)
+	assert.Equal(winProb, params.WinProb)
 
 	// Might be slightly off due to truncation
 	expEV = new(big.Int).Div(new(big.Int).Mul(faceValue, winProb), maxWinProb)
@@ -491,14 +497,14 @@ func TestTicketParams(t *testing.T) {
 	sm.maxFloat = big.NewInt(10001)
 	gm.gasPrice = big.NewInt(1)
 
-	params4, err := r.TicketParams(sender, big.NewRat(1, 1))
+	params, err = r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
 	faceValue = sm.maxFloat
-	assert.Equal(faceValue, params4.FaceValue)
+	assert.Equal(faceValue, params.FaceValue)
 
 	winProb, _ = new(big.Int).SetString("57890255593098787833002192285115442382396752657554526567072084795477017120", 10)
-	assert.Equal(winProb, params4.WinProb)
+	assert.Equal(winProb, params.WinProb)
 
 	// Might be slightly off due to truncation
 	expEV = new(big.Int).Div(new(big.Int).Mul(faceValue, winProb), maxWinProb)
@@ -556,12 +562,12 @@ func TestTicketParams(t *testing.T) {
 	gm.gasPrice = big.NewInt(0)
 	sm.maxFloat = maxWinProb // Set maxFloat to some really big number
 
-	params5, err := r.TicketParams(sender, big.NewRat(1, 1))
+	params, err = r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(err)
 
-	assert.Equal(new(big.Int).Mul(cfg.EV, evMultiplier), params5.FaceValue)
-	expWinProb := calcWinProb(params5.FaceValue, cfg.EV)
-	assert.Equal(expWinProb, params5.WinProb)
+	assert.Equal(new(big.Int).Mul(cfg.EV, evMultiplier), params.FaceValue)
+	expWinProb := calcWinProb(params.FaceValue, cfg.EV)
+	assert.Equal(expWinProb, params.WinProb)
 	// Test default faceValue < EV and maxFloat < EV
 	sm.maxFloat = big.NewInt(0) // Set maxFloat to some value less than EV
 
