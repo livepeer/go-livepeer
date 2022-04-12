@@ -18,6 +18,7 @@
 - \#2337 Fix dynamic discovery timeout to not retry sending requests, but wait for the same request to complete (@leszko)
 
 #### Orchestrator
+- \#2362 Backdate tickets by one round if the block hash for the current round is 0 (@leszko)
 
 #### Transcoder
 
