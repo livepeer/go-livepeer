@@ -36,6 +36,7 @@
 - \#2296 Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
 - \#2291 Calling video comparison to improve the security strength (@oscar-davids)
 - \#2326 Split Auth/Webhook functionality into its own file (@thomshutt)
+- \#2357 Begin accepting auth header (from Mist) and have it override callback URL values
 
 #### Orchestrator
 - \#2284 Fix issue with not redeeming tickets by Redeemer (@leszko)
