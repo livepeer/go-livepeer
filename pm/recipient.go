@@ -225,7 +225,7 @@ func (r *recipient) ticketExpirationsParams() *TicketExpirationParams {
 	// Because of a bug in Arbitrum, some L1 blocks have zero block hashes
 	// In that case, try to use the previous round block instead
 	if roundBlockHash == [32]byte{} {
-		round -= 1
+		round--
 		roundBlockHash = r.tm.PreLastInitializedL1BlockHash()
 	}
 
