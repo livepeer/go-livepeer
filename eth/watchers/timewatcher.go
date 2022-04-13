@@ -114,7 +114,7 @@ func (tw *TimeWatcher) LastInitializedL1BlockHash() [32]byte {
 	return tw.lastInitializedL1BlockHash
 }
 
-// PreLastInitializedL1BlockHash returns the blockhash of the L1 block the previous to the last round was initiated in
+// PreLastInitializedL1BlockHash returns the blockhash of the L1 block for the round proceeding the last initialized round
 func (tw *TimeWatcher) PreLastInitializedL1BlockHash() [32]byte {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
