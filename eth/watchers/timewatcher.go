@@ -248,6 +248,10 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		return fmt.Errorf("unable to decode event: %v", err)
 	}
 
+	return tw.handleDecodedLog(log, nr)
+}
+
+func (tw *TimeWatcher) handleDecodedLog(log types.Log, nr contracts.RoundsManagerNewRound) error {
 	roundStartL1Block, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
 		return err

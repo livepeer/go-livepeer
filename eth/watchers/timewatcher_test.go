@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"fmt"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	"math/big"
 	"testing"
 	"time"
@@ -225,6 +226,72 @@ func TestTimeWatcher_HandleLog(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(big.NewInt(2), tw.LastInitializedRound())
 	assert.Equal([32]byte{}, tw.LastInitializedL1BlockHash())
+}
+
+func TestTimeWatcher_HandleDecodedLog(t *testing.T) {
+	assert := assert.New(t)
+
+	lpEth := &eth.StubClient{
+		Round: big.NewInt(2),
+		BlockHashForRoundMap: map[int64]common.Hash{
+			1: ethcommon.BytesToHash([]byte("one")),
+			2: ethcommon.BytesToHash([]byte("two")),
+			3: ethcommon.BytesToHash([]byte("three")),
+			4: ethcommon.BytesToHash([]byte("four")),
+			5: ethcommon.BytesToHash([]byte("five")),
+			6: ethcommon.BytesToHash([]byte("six")),
+		},
+	}
+	watcher := &stubBlockWatcher{}
+	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
+	require.Nil(t, err)
+
+	var hash [32]byte
+	var preHash [32]byte
+	var nr contracts.RoundsManagerNewRound
+
+	// Test remove log, data refreshed from eth client
+	log := newStubBaseLog()
+	log.Removed = true
+	lpEth.Round = big.NewInt(3)
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(3), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[3].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], lpEth.BlockHashForRoundMap[2].Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
+
+	// Test add log with subsequent round
+	log.Removed = false
+	currentHash := ethcommon.BytesToHash([]byte("last"))
+	tw.lastInitializedL1BlockHash = currentHash
+	nr.Round = big.NewInt(4)
+	nr.BlockHash = lpEth.BlockHashForRoundMap[4]
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(4), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[4].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], currentHash.Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
+
+	// Test add log with not subsequent round
+	nr.Round = big.NewInt(6)
+	nr.BlockHash = lpEth.BlockHashForRoundMap[6]
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(6), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[6].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], lpEth.BlockHashForRoundMap[5].Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
 }
 
 func TestLastSeenBlock(t *testing.T) {
