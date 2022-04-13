@@ -73,7 +73,7 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	}
 	pbh, err := tw.lpEth.BlockHashForRound(prevRound(lr))
 	if err != nil {
-		return nil, fmt.Errorf("error fetching initial prelastInitializedL1BlockHash value err=%q", err)
+		return nil, fmt.Errorf("error fetching initial preLastInitializedL1BlockHash value err=%q", err)
 	}
 	num, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
