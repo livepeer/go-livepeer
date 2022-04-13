@@ -847,6 +847,7 @@ func (s *stubSenderManager) Clear(addr ethcommon.Address) {
 type stubTimeManager struct {
 	round              *big.Int
 	blkHash            [32]byte
+	preBlkHash         [32]byte
 	transcoderPoolSize *big.Int
 	lastSeenBlock      *big.Int
 
@@ -860,6 +861,10 @@ func (m *stubTimeManager) LastInitializedRound() *big.Int {
 
 func (m *stubTimeManager) LastInitializedL1BlockHash() [32]byte {
 	return m.blkHash
+}
+
+func (m *stubTimeManager) PreLastInitializedL1BlockHash() [32]byte {
+	return m.preBlkHash
 }
 
 func (m *stubTimeManager) GetTranscoderPoolSize() *big.Int {

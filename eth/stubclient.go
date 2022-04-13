@@ -241,6 +241,7 @@ type StubClient struct {
 	TranscoderAddress            common.Address
 	BlockNum                     *big.Int
 	BlockHashToReturn            common.Hash
+	BlockHashForRoundMap         map[int64]common.Hash
 	ProcessHistoricalUnbondError error
 	Orchestrators                []*lpTypes.Transcoder
 	Round                        *big.Int
@@ -276,6 +277,11 @@ func (e *StubClient) LastInitializedRound() (*big.Int, error) {
 	return e.Round, e.Errors["LastInitializedRound"]
 }
 func (e *StubClient) BlockHashForRound(round *big.Int) ([32]byte, error) {
+	if e.BlockHashForRoundMap != nil {
+		if hash, ok := e.BlockHashForRoundMap[round.Int64()]; ok {
+			return hash, nil
+		}
+	}
 	return e.BlockHashToReturn, e.Errors["BlockHashForRound"]
 }
 func (e *StubClient) CurrentRoundInitialized() (bool, error) { return false, nil }

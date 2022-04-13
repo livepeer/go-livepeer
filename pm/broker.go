@@ -70,8 +70,10 @@ type Broker interface {
 type TimeManager interface {
 	// LastInitializedRound returns the last initialized round of the Livepeer protocol
 	LastInitializedRound() *big.Int
-	// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
+	// LastInitializedL1BlockHash returns the blockhash of the L1 block the last round was initiated in
 	LastInitializedL1BlockHash() [32]byte
+	// PreLastInitializedL1BlockHash returns the blockhash of the L1 block for the round proceeding the last initialized round
+	PreLastInitializedL1BlockHash() [32]byte
 	// GetTranscoderPoolSize returns the size of the active transcoder set for a round
 	GetTranscoderPoolSize() *big.Int
 	// LastSeenBlock returns the last seen block number
