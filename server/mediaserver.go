@@ -713,13 +713,28 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		errorOut(http.StatusMethodNotAllowed, `http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
 		return
 	}
-	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
+	ctx := r.Context()
+	remoteAddr := getRemoteAddr(r)
+	clog.Infof(ctx, "[latency] Start push request at url=%s addr=%s", r.URL.String(), remoteAddr)
 
+	boundary := common.RandName()
+	accept := r.Header.Get("Accept")
+	if accept == "multipart/mixed" {
+		contentType := "multipart/mixed; boundary=" + boundary
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.WriteHeader(http.StatusOK)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
 	if err != nil {
 		errorOut(http.StatusInternalServerError, `Error reading http request body: %s`, err.Error())
 		return
 	}
 	r.Body.Close()
+
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 
 	// Determine the input format the request is claiming to have
@@ -732,16 +747,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		errorOut(http.StatusBadRequest, `ignoring file extension: %s`, ext)
 		return
 	}
-	ctx := r.Context()
 
 	mid := parseManifestID(r.URL.Path)
 	if mid != "" {
 		ctx = clog.AddManifestID(ctx, string(mid))
 	}
-	remoteAddr := getRemoteAddr(r)
 	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
 
-	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
+	clog.Infof(ctx, "[latency] Received push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
 		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
 
 	now := time.Now()
@@ -887,7 +900,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = clog.AddManifestID(ctx, string(mid))
 	defer func(now time.Time) {
-		clog.Infof(ctx, "Finished push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
+		clog.Infof(ctx, "[latency] Finished push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s took=%s", r.URL.String(), r.UserAgent(), r.RemoteAddr, len(body),
 			r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), time.Since(now))
 	}(now)
 
@@ -970,16 +983,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	clog.Infof(ctx, "Finished transcoding push request at url=%s took=%s", r.URL.String(), time.Since(now))
 
-	boundary := common.RandName()
-	accept := r.Header.Get("Accept")
-	if accept == "multipart/mixed" {
-		contentType := "multipart/mixed; boundary=" + boundary
-		w.Header().Set("Content-Type", contentType)
-	}
-	w.WriteHeader(http.StatusOK)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
 	if accept != "multipart/mixed" {
 		return
 	}
