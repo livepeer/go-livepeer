@@ -69,6 +69,108 @@ var (
 	smTTL = 60 // 1 minute
 )
 
+type ProgramArguments interface {
+	Set(name, value string) error
+	Lookup(name string) *flag.Flag
+	SetCommandLine(value *flag.FlagSet)
+	GetCommandLine() *flag.FlagSet
+	Bool(name string, value bool, usage string) *bool
+	String(name string, value string, usage string) *string
+	Int(name string, value int, usage string) *int
+	Int64(name string, value int64, usage string) *int64
+	Float64(name string, value float64, usage string) *float64
+	Duration(name string, value time.Duration, usage string) *time.Duration
+	Visit(fn func(*flag.Flag))
+	GetCfg() LivepeerConfig
+}
+
+type RealProgramArguments struct{}
+
+func (arg *RealProgramArguments) Set(name, value string) error {
+	return flag.Set(name, value)
+}
+func (arg *RealProgramArguments) Lookup(name string) *flag.Flag {
+	return flag.Lookup(name)
+}
+func (arg *RealProgramArguments) SetCommandLine(value *flag.FlagSet) {
+	flag.CommandLine = value
+}
+func (arg *RealProgramArguments) GetCommandLine() *flag.FlagSet {
+	return flag.CommandLine
+}
+func (arg *RealProgramArguments) Bool(name string, value bool, usage string) *bool {
+	return flag.Bool(name, value, usage)
+}
+func (arg *RealProgramArguments) String(name string, value string, usage string) *string {
+	return flag.String(name, value, usage)
+}
+func (arg *RealProgramArguments) Int(name string, value int, usage string) *int {
+	return flag.Int(name, value, usage)
+}
+func (arg *RealProgramArguments) Int64(name string, value int64, usage string) *int64 {
+	return flag.Int64(name, value, usage)
+}
+func (arg *RealProgramArguments) Float64(name string, value float64, usage string) *float64 {
+	return flag.Float64(name, value, usage)
+}
+func (arg *RealProgramArguments) Duration(name string, value time.Duration, usage string) *time.Duration {
+	return flag.Duration(name, value, usage)
+}
+func (arg *RealProgramArguments) Visit(fn func(*flag.Flag)) {
+	flag.Visit(fn)
+}
+func (arg *RealProgramArguments) GetCfg() LivepeerConfig {
+	return parseLivepeerConfig(arg)
+}
+
+type SimulatedProgramArguments struct {
+	arguments *flag.FlagSet
+	cfg       LivepeerConfig
+}
+
+func NewSimulatedProgramArguments() *SimulatedProgramArguments {
+	programArguments := &SimulatedProgramArguments{arguments: flag.NewFlagSet("livepeer", flag.ExitOnError)}
+	programArguments.cfg = parseLivepeerConfig(programArguments)
+	return programArguments
+}
+
+func (arg *SimulatedProgramArguments) GetCfg() LivepeerConfig {
+	return arg.cfg
+}
+func (arg *SimulatedProgramArguments) Set(name, value string) error {
+	return arg.arguments.Set(name, value)
+}
+func (arg *SimulatedProgramArguments) Lookup(name string) *flag.Flag {
+	return arg.arguments.Lookup(name)
+}
+func (arg *SimulatedProgramArguments) SetCommandLine(value *flag.FlagSet) {
+	arg.arguments = value
+}
+func (arg *SimulatedProgramArguments) GetCommandLine() *flag.FlagSet {
+	return arg.arguments
+}
+func (arg *SimulatedProgramArguments) Bool(name string, value bool, usage string) *bool {
+	return arg.arguments.Bool(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) String(name string, value string, usage string) *string {
+	return arg.arguments.String(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) Int(name string, value int, usage string) *int {
+	return arg.arguments.Int(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) Int64(name string, value int64, usage string) *int64 {
+	return arg.arguments.Int64(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) Float64(name string, value float64, usage string) *float64 {
+	return arg.arguments.Float64(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) Duration(name string, value time.Duration, usage string) *time.Duration {
+	return arg.arguments.Duration(name, value, usage)
+}
+func (arg *SimulatedProgramArguments) Visit(fn func(*flag.Flag)) {
+	arg.arguments.Visit(fn)
+}
+
 const RtmpPort = "1935"
 const RpcPort = "8935"
 const CliPort = "7935"
@@ -133,36 +235,49 @@ type LivepeerConfig struct {
 	detectionWebhookURL          *string
 }
 
+var isMain bool = false
+
 func main() {
-	// Override the default flag set since there are dependencies that
-	// incorrectly add their own flags (specifically, due to the 'testing'
-	// package being linked)
-	flag.Set("logtostderr", "true")
-	vFlag := flag.Lookup("v")
-	//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	isMain = true
+	ctx, cancel := context.WithCancel(context.Background())
+	arguments := &RealProgramArguments{}
+	InvokeLivepeerMain(arguments, ctx, cancel)
+}
 
-	// Help & Log
-	mistJson := flag.Bool("j", false, "Print application info as json")
-	version := flag.Bool("version", false, "Print out the version")
-	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
-
-	cfg := parseLivepeerConfig()
-
-	// Config file
-	_ = flag.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
-	err := ff.Parse(flag.CommandLine, os.Args[1:],
-		ff.WithConfigFileFlag("config"),
-		ff.WithEnvVarPrefix("LP"),
-		ff.WithConfigFileParser(ff.PlainParser),
-	)
-	if err != nil {
-		glog.Fatal("Error parsing config: ", err)
+func InvokeLivepeerMain(programArguments ProgramArguments, ctx context.Context, cancel context.CancelFunc) {
+	var vFlag *flag.Flag
+	if isMain {
+		// Override the default flag set since there are dependencies that
+		// incorrectly add their own flags (specifically, due to the 'testing'
+		// package being linked)
+		programArguments.Set("logtostderr", "true")
+		vFlag = programArguments.Lookup("v")
+		//We preserve this flag before resetting all the flags.  Not a scalable approach, but it'll do for now.  More discussions here - https://github.com/livepeer/go-livepeer/pull/617
+		programArguments.SetCommandLine(flag.NewFlagSet(os.Args[0], flag.ExitOnError))
 	}
 
-	vFlag.Value.Set(*verbosity)
+	// Help & Log
+	mistJson := programArguments.Bool("j", false, "Print application info as json")
+	version := programArguments.Bool("version", false, "Print out the version")
+	verbosity := programArguments.String("v", "", "Log verbosity.  {4|5|6}")
 
-	cfg = updateNilsForUnsetFlags(cfg)
+	cfg := programArguments.GetCfg()
+
+	// Config file
+	_ = programArguments.String("config", "", "Config file in the format 'key value', flags and env vars take precedence over the config file")
+	if isMain {
+		err := ff.Parse(programArguments.GetCommandLine(), os.Args[1:],
+			ff.WithConfigFileFlag("config"),
+			ff.WithEnvVarPrefix("LP"),
+			ff.WithConfigFileParser(ff.PlainParser),
+		)
+		if err != nil {
+			glog.Fatal("Error parsing config: ", err)
+		}
+		vFlag.Value.Set(*verbosity)
+	}
+
+	cfg = updateNilsForUnsetFlags(cfg, programArguments)
 
 	if *mistJson {
 		mistconnector.PrintMistConfigJson(
@@ -170,7 +285,7 @@ func main() {
 			"Official implementation of the Livepeer video processing protocol. Can play all roles in the network.",
 			"Livepeer",
 			core.LivepeerVersion,
-			flag.CommandLine,
+			programArguments.GetCommandLine(),
 		)
 		return
 	}
@@ -183,7 +298,6 @@ func main() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
 	lc := make(chan struct{})
 
 	go func() {
@@ -331,95 +445,95 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	}
 }
 
-func parseLivepeerConfig() LivepeerConfig {
+func parseLivepeerConfig(programArguments ProgramArguments) LivepeerConfig {
 	cfg := DefaultLivepeerConfig()
 
 	// Network & Addresses:
-	cfg.network = flag.String("network", *cfg.network, "Network to connect to")
-	cfg.rtmpAddr = flag.String("rtmpAddr", *cfg.rtmpAddr, "Address to bind for RTMP commands")
-	cfg.cliAddr = flag.String("cliAddr", *cfg.cliAddr, "Address to bind for  CLI commands")
-	cfg.httpAddr = flag.String("httpAddr", *cfg.httpAddr, "Address to bind for HTTP commands")
-	cfg.serviceAddr = flag.String("serviceAddr", *cfg.serviceAddr, "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
-	cfg.orchAddr = flag.String("orchAddr", *cfg.orchAddr, "Comma-separated list of orchestrators to connect to")
-	cfg.verifierURL = flag.String("verifierUrl", *cfg.verifierURL, "URL of the verifier to use")
-	cfg.verifierPath = flag.String("verifierPath", *cfg.verifierPath, "Path to verifier shared volume")
-	cfg.localVerify = flag.Bool("localVerify", true, "Set to true to enable local verification i.e. pixel count and signature verification.")
-	cfg.httpIngest = flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
+	cfg.network = programArguments.String("network", *cfg.network, "Network to connect to")
+	cfg.rtmpAddr = programArguments.String("rtmpAddr", *cfg.rtmpAddr, "Address to bind for RTMP commands")
+	cfg.cliAddr = programArguments.String("cliAddr", *cfg.cliAddr, "Address to bind for  CLI commands")
+	cfg.httpAddr = programArguments.String("httpAddr", *cfg.httpAddr, "Address to bind for HTTP commands")
+	cfg.serviceAddr = programArguments.String("serviceAddr", *cfg.serviceAddr, "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
+	cfg.orchAddr = programArguments.String("orchAddr", *cfg.orchAddr, "Comma-separated list of orchestrators to connect to")
+	cfg.verifierURL = programArguments.String("verifierUrl", *cfg.verifierURL, "URL of the verifier to use")
+	cfg.verifierPath = programArguments.String("verifierPath", *cfg.verifierPath, "Path to verifier shared volume")
+	cfg.localVerify = programArguments.Bool("localVerify", true, "Set to true to enable local verification i.e. pixel count and signature verification.")
+	cfg.httpIngest = programArguments.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
-	cfg.orchestrator = flag.Bool("orchestrator", *cfg.orchestrator, "Set to true to be an orchestrator")
-	cfg.transcoder = flag.Bool("transcoder", *cfg.transcoder, "Set to true to be a transcoder")
-	cfg.broadcaster = flag.Bool("broadcaster", *cfg.broadcaster, "Set to true to be a broadcaster")
-	cfg.orchSecret = flag.String("orchSecret", *cfg.orchSecret, "Shared secret with the orchestrator as a standalone transcoder")
-	cfg.transcodingOptions = flag.String("transcodingOptions", *cfg.transcodingOptions, "Transcoding options for broadcast job, or path to json config")
-	cfg.maxAttempts = flag.Int("maxAttempts", *cfg.maxAttempts, "Maximum transcode attempts")
-	cfg.selectRandFreq = flag.Float64("selectRandFreq", *cfg.selectRandFreq, "Frequency to randomly select unknown orchestrators (on-chain mode only)")
-	cfg.maxSessions = flag.Int("maxSessions", *cfg.maxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
-	cfg.currentManifest = flag.Bool("currentManifest", *cfg.currentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
-	cfg.nvidia = flag.String("nvidia", *cfg.nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
-	cfg.testTranscoder = flag.Bool("testTranscoder", *cfg.testTranscoder, "Test Nvidia GPU transcoding at startup")
-	cfg.sceneClassificationModelPath = flag.String("sceneClassificationModelPath", *cfg.sceneClassificationModelPath, "Path to scene classification model")
+	cfg.orchestrator = programArguments.Bool("orchestrator", *cfg.orchestrator, "Set to true to be an orchestrator")
+	cfg.transcoder = programArguments.Bool("transcoder", *cfg.transcoder, "Set to true to be a transcoder")
+	cfg.broadcaster = programArguments.Bool("broadcaster", *cfg.broadcaster, "Set to true to be a broadcaster")
+	cfg.orchSecret = programArguments.String("orchSecret", *cfg.orchSecret, "Shared secret with the orchestrator as a standalone transcoder")
+	cfg.transcodingOptions = programArguments.String("transcodingOptions", *cfg.transcodingOptions, "Transcoding options for broadcast job, or path to json config")
+	cfg.maxAttempts = programArguments.Int("maxAttempts", *cfg.maxAttempts, "Maximum transcode attempts")
+	cfg.selectRandFreq = programArguments.Float64("selectRandFreq", *cfg.selectRandFreq, "Frequency to randomly select unknown orchestrators (on-chain mode only)")
+	cfg.maxSessions = programArguments.Int("maxSessions", *cfg.maxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
+	cfg.currentManifest = programArguments.Bool("currentManifest", *cfg.currentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
+	cfg.nvidia = programArguments.String("nvidia", *cfg.nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
+	cfg.testTranscoder = programArguments.Bool("testTranscoder", *cfg.testTranscoder, "Test Nvidia GPU transcoding at startup")
+	cfg.sceneClassificationModelPath = programArguments.String("sceneClassificationModelPath", *cfg.sceneClassificationModelPath, "Path to scene classification model")
 
 	// Onchain:
-	cfg.ethAcctAddr = flag.String("ethAcctAddr", *cfg.ethAcctAddr, "Existing Eth account address")
-	cfg.ethPassword = flag.String("ethPassword", *cfg.ethPassword, "Password for existing Eth account address")
-	cfg.ethKeystorePath = flag.String("ethKeystorePath", *cfg.ethKeystorePath, "Path for the Eth Key")
-	cfg.ethOrchAddr = flag.String("ethOrchAddr", *cfg.ethOrchAddr, "ETH address of an on-chain registered orchestrator")
-	cfg.ethUrl = flag.String("ethUrl", *cfg.ethUrl, "Ethereum node JSON-RPC URL")
-	cfg.txTimeout = flag.Duration("transactionTimeout", *cfg.txTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
-	cfg.maxTxReplacements = flag.Int("maxTransactionReplacements", *cfg.maxTxReplacements, "Number of times to automatically replace pending Ethereum transactions")
-	cfg.gasLimit = flag.Int("gasLimit", *cfg.gasLimit, "Gas limit for ETH transactions")
-	cfg.minGasPrice = flag.Int64("minGasPrice", 0, "Minimum gas price (priority fee + base fee) for ETH transactions in wei, 10 Gwei = 10000000000")
-	cfg.maxGasPrice = flag.Int("maxGasPrice", *cfg.maxGasPrice, "Maximum gas price (priority fee + base fee) for ETH transactions in wei, 40 Gwei = 40000000000")
-	cfg.ethController = flag.String("ethController", *cfg.ethController, "Protocol smart contract address")
-	cfg.initializeRound = flag.Bool("initializeRound", *cfg.initializeRound, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
-	cfg.ticketEV = flag.String("ticketEV", *cfg.ticketEV, "The expected value for PM tickets")
+	cfg.ethAcctAddr = programArguments.String("ethAcctAddr", *cfg.ethAcctAddr, "Existing Eth account address")
+	cfg.ethPassword = programArguments.String("ethPassword", *cfg.ethPassword, "Password for existing Eth account address")
+	cfg.ethKeystorePath = programArguments.String("ethKeystorePath", *cfg.ethKeystorePath, "Path for the Eth Key")
+	cfg.ethOrchAddr = programArguments.String("ethOrchAddr", *cfg.ethOrchAddr, "ETH address of an on-chain registered orchestrator")
+	cfg.ethUrl = programArguments.String("ethUrl", *cfg.ethUrl, "Ethereum node JSON-RPC URL")
+	cfg.txTimeout = programArguments.Duration("transactionTimeout", *cfg.txTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
+	cfg.maxTxReplacements = programArguments.Int("maxTransactionReplacements", *cfg.maxTxReplacements, "Number of times to automatically replace pending Ethereum transactions")
+	cfg.gasLimit = programArguments.Int("gasLimit", *cfg.gasLimit, "Gas limit for ETH transactions")
+	cfg.minGasPrice = programArguments.Int64("minGasPrice", 0, "Minimum gas price (priority fee + base fee) for ETH transactions in wei, 10 Gwei = 10000000000")
+	cfg.maxGasPrice = programArguments.Int("maxGasPrice", *cfg.maxGasPrice, "Maximum gas price (priority fee + base fee) for ETH transactions in wei, 40 Gwei = 40000000000")
+	cfg.ethController = programArguments.String("ethController", *cfg.ethController, "Protocol smart contract address")
+	cfg.initializeRound = programArguments.Bool("initializeRound", *cfg.initializeRound, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	cfg.ticketEV = programArguments.String("ticketEV", *cfg.ticketEV, "The expected value for PM tickets")
 	// Broadcaster max acceptable ticket EV
-	cfg.maxTicketEV = flag.String("maxTicketEV", *cfg.maxTicketEV, "The maximum acceptable expected value for PM tickets")
+	cfg.maxTicketEV = programArguments.String("maxTicketEV", *cfg.maxTicketEV, "The maximum acceptable expected value for PM tickets")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
-	cfg.depositMultiplier = flag.Int("depositMultiplier", *cfg.depositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
+	cfg.depositMultiplier = programArguments.Int("depositMultiplier", *cfg.depositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 	// Orchestrator base pricing info
-	cfg.pricePerUnit = flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
+	cfg.pricePerUnit = programArguments.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
 	// Broadcaster max acceptable price
-	cfg.maxPricePerUnit = flag.Int("maxPricePerUnit", *cfg.maxPricePerUnit, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
+	cfg.maxPricePerUnit = programArguments.Int("maxPricePerUnit", *cfg.maxPricePerUnit, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
 	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
-	cfg.pixelsPerUnit = flag.Int("pixelsPerUnit", *cfg.pixelsPerUnit, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
-	cfg.autoAdjustPrice = flag.Bool("autoAdjustPrice", *cfg.autoAdjustPrice, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
+	cfg.pixelsPerUnit = programArguments.Int("pixelsPerUnit", *cfg.pixelsPerUnit, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
+	cfg.autoAdjustPrice = programArguments.Bool("autoAdjustPrice", *cfg.autoAdjustPrice, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
 	// Interval to poll for blocks
-	cfg.blockPollingInterval = flag.Int("blockPollingInterval", *cfg.blockPollingInterval, "Interval in seconds at which different blockchain event services poll for blocks")
+	cfg.blockPollingInterval = programArguments.Int("blockPollingInterval", *cfg.blockPollingInterval, "Interval in seconds at which different blockchain event services poll for blocks")
 	// Redemption service
-	cfg.redeemer = flag.Bool("redeemer", *cfg.redeemer, "Set to true to run a ticket redemption service")
-	cfg.redeemerAddr = flag.String("redeemerAddr", *cfg.redeemerAddr, "URL of the ticket redemption service to use")
+	cfg.redeemer = programArguments.Bool("redeemer", *cfg.redeemer, "Set to true to run a ticket redemption service")
+	cfg.redeemerAddr = programArguments.String("redeemerAddr", *cfg.redeemerAddr, "URL of the ticket redemption service to use")
 	// Reward service
-	cfg.reward = flag.Bool("reward", false, "Set to true to run a reward service")
+	cfg.reward = programArguments.Bool("reward", false, "Set to true to run a reward service")
 	// Metrics & logging:
-	cfg.monitor = flag.Bool("monitor", *cfg.monitor, "Set to true to send performance metrics")
-	cfg.metricsPerStream = flag.Bool("metricsPerStream", *cfg.metricsPerStream, "Set to true to group performance metrics per stream")
-	cfg.metricsExposeClientIP = flag.Bool("metricsClientIP", *cfg.metricsExposeClientIP, "Set to true to expose client's IP in metrics")
-	cfg.metadataQueueUri = flag.String("metadataQueueUri", *cfg.metadataQueueUri, "URI for message broker to send operation metadata")
-	cfg.metadataAmqpExchange = flag.String("metadataAmqpExchange", *cfg.metadataAmqpExchange, "Name of AMQP exchange to send operation metadata")
-	cfg.metadataPublishTimeout = flag.Duration("metadataPublishTimeout", *cfg.metadataPublishTimeout, "Max time to wait in background for publishing operation metadata events")
+	cfg.monitor = programArguments.Bool("monitor", *cfg.monitor, "Set to true to send performance metrics")
+	cfg.metricsPerStream = programArguments.Bool("metricsPerStream", *cfg.metricsPerStream, "Set to true to group performance metrics per stream")
+	cfg.metricsExposeClientIP = programArguments.Bool("metricsClientIP", *cfg.metricsExposeClientIP, "Set to true to expose client's IP in metrics")
+	cfg.metadataQueueUri = programArguments.String("metadataQueueUri", *cfg.metadataQueueUri, "URI for message broker to send operation metadata")
+	cfg.metadataAmqpExchange = programArguments.String("metadataAmqpExchange", *cfg.metadataAmqpExchange, "Name of AMQP exchange to send operation metadata")
+	cfg.metadataPublishTimeout = programArguments.Duration("metadataPublishTimeout", *cfg.metadataPublishTimeout, "Max time to wait in background for publishing operation metadata events")
 
 	// Storage:
-	cfg.datadir = flag.String("datadir", *cfg.datadir, "Directory that data is stored in")
-	cfg.objectstore = flag.String("objectStore", *cfg.objectstore, "url of primary object store")
-	cfg.recordstore = flag.String("recordStore", *cfg.recordstore, "url of object store for recordings")
+	cfg.datadir = programArguments.String("datadir", *cfg.datadir, "Directory that data is stored in")
+	cfg.objectstore = programArguments.String("objectStore", *cfg.objectstore, "url of primary object store")
+	cfg.recordstore = programArguments.String("recordStore", *cfg.recordstore, "url of object store for recordings")
 
 	// API
-	cfg.authWebhookURL = flag.String("authWebhookUrl", *cfg.authWebhookURL, "RTMP authentication webhook URL")
-	cfg.orchWebhookURL = flag.String("orchWebhookUrl", *cfg.orchWebhookURL, "Orchestrator discovery callback URL")
-	cfg.detectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.detectionWebhookURL, "(Experimental) Detection results callback URL")
+	cfg.authWebhookURL = programArguments.String("authWebhookUrl", *cfg.authWebhookURL, "RTMP authentication webhook URL")
+	cfg.orchWebhookURL = programArguments.String("orchWebhookUrl", *cfg.orchWebhookURL, "Orchestrator discovery callback URL")
+	cfg.detectionWebhookURL = programArguments.String("detectionWebhookUrl", *cfg.detectionWebhookURL, "(Experimental) Detection results callback URL")
 
 	return cfg
 }
 
 // updateNilsForUnsetFlags changes some cfg fields to nil if they were not explicitly set with flags.
 // For some flags, the behavior is different whether the value is default or not set by the user at all.
-func updateNilsForUnsetFlags(cfg LivepeerConfig) LivepeerConfig {
+func updateNilsForUnsetFlags(cfg LivepeerConfig, programArguments ProgramArguments) LivepeerConfig {
 	res := cfg
 
 	isFlagSet := make(map[string]bool)
-	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
+	programArguments.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
 
 	if !isFlagSet["minGasPrice"] {
 		res.minGasPrice = nil
