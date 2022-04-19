@@ -420,7 +420,9 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 
 	segCreds, err := genSegCreds(sess, seg, calcPerceptualHash)
 	if err != nil {
-		monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false, sess.OrchestratorInfo.Transcoder)
+		if monitor.Enabled {
+			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorGenCreds, err, false, sess.OrchestratorInfo.Transcoder)
+		}
 		return nil, err
 	}
 	data := seg.Data

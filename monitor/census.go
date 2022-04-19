@@ -81,6 +81,7 @@ var timeoutWatcherPause = 15 * time.Second
 
 type (
 	censusMetricsCounter struct {
+		initialized                   bool
 		nodeType                      NodeType
 		nodeID                        string
 		ctx                           context.Context
@@ -810,6 +811,8 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// init metrics values
 	SetTranscodersNumberAndLoad(0, 0, 0)
+
+	census.initialized = true
 }
 
 func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
@@ -842,6 +845,9 @@ func manifestIDTagAndIP(ctx context.Context, others ...tag.Mutator) []tag.Mutato
 
 // LogDiscoveryError records discovery error
 func LogDiscoveryError(ctx context.Context, uri, code string) {
+	if !census.initialized {
+		return
+	}
 	if strings.Contains(code, "OrchestratorCapped") {
 		code = "OrchestratorCapped"
 	} else if strings.Contains(code, "HTTP status code 404") {
@@ -1027,25 +1033,37 @@ func (cen *censusMetricsCounter) timeoutWatcher(ctx context.Context) {
 }
 
 func MaxSessions(maxSessions int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mMaxSessions.M(int64(maxSessions)))
 }
 
 func OrchestratorSwapped(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx, manifestIDTag(ctx), census.mOrchestratorSwaps.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metric err=%q", err)
 	}
 }
 
 func CurrentSessions(currentSessions int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mCurrentSessions.M(int64(currentSessions)))
 }
 
 func FastVerificationEnabledAndUsingCurrentSessions(enabled, using int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mFastVerificationEnabledCurrentSessions.M(int64(enabled)), census.mFastVerificationUsingCurrentSessions.M(int64(using)))
 }
 
 func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
-	if !Enabled {
+	if !census.initialized {
 		return
 	}
 
@@ -1076,12 +1094,18 @@ func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
 }
 
 func SetTranscodersNumberAndLoad(load, capacity, number int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mTranscodersLoad.M(int64(load)))
 	Record(census.ctx, census.mTranscodersCapacity.M(int64(capacity)))
 	Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
 }
 
 func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, dur float64) {
+	if !census.initialized {
+		return
+	}
 	clog.V(logLevel).Infof(ctx, "Logging SegmentEmerged... duration=%v", dur)
 	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
@@ -1109,11 +1133,17 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 }
 
 func SourceSegmentAppeared(ctx context.Context, nonce, seqNo uint64, manifestID, profile string, recordingEnabled bool) {
+	if !census.initialized {
+		return
+	}
 	clog.V(logLevel).Infof(ctx, "Logging SourceSegmentAppeared... profile=%s", profile)
 	census.segmentSourceAppeared(ctx, nonce, seqNo, profile, recordingEnabled)
 }
 
 func (cen *censusMetricsCounter) segmentSourceAppeared(ctx context.Context, nonce, seqNo uint64, profile string, recordingEnabled bool) {
+	if !census.initialized {
+		return
+	}
 	segType := segTypeRegular
 	if recordingEnabled {
 		segType = segTypeRec
@@ -1128,6 +1158,9 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(ctx context.Context, nonc
 }
 
 func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Duration, uri string) {
+	if !census.initialized {
+		return
+	}
 	clog.V(logLevel).Infof(ctx, "Logging SegmentUploaded... dur=%s", uploadDur)
 
 	if err := RecordWithTags(census.ctx,
@@ -1144,6 +1177,10 @@ func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Du
 }
 
 func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur time.Duration) {
+	if !census.initialized {
+		return
+	}
+
 	clog.V(logLevel).Infof(ctx, "Logging SegmentDownloaded... dur=%s", downloadDur)
 
 	if err := RecordWithTags(census.ctx,
@@ -1155,6 +1192,9 @@ func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur tim
 }
 
 func HTTPClientTimedOut1(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mHTTPClientTimeout1.M(1)); err != nil {
@@ -1163,6 +1203,9 @@ func HTTPClientTimedOut1(ctx context.Context) {
 }
 
 func HTTPClientTimedOut2(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mHTTPClientTimeout2.M(1)); err != nil {
@@ -1171,6 +1214,9 @@ func HTTPClientTimedOut2(ctx context.Context) {
 }
 
 func SegmentFullyProcessed(ctx context.Context, segDur, processDur float64) {
+	if !census.initialized {
+		return
+	}
 	if processDur == 0 {
 		return
 	}
@@ -1200,11 +1246,17 @@ func AuthWebhookFinished(dur time.Duration) {
 }
 
 func (cen *censusMetricsCounter) authWebhookFinished(dur time.Duration) {
-	Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
+	if cen.mAuthWebhookTime != nil {
+		Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
+	}
 }
 
 func SegmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentUploadError, err error, permanent bool,
 	uri string) {
+
+	if !census.initialized {
+		return
+	}
 
 	if code == SegmentUploadErrorUnknown {
 		reason := err.Error()
@@ -1228,6 +1280,10 @@ func SegmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentU
 func (cen *censusMetricsCounter) segmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentUploadError, permanent bool,
 	uri string) {
 
+	if census.mSegmentUploadFailed == nil {
+		return
+	}
+
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	if permanent {
@@ -1248,13 +1304,19 @@ func (cen *censusMetricsCounter) segmentUploadFailed(ctx context.Context, nonce,
 
 func SegmentTranscoded(ctx context.Context, nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string,
 	trusted, verified bool) {
-
+	if !census.initialized {
+		return
+	}
 	clog.V(logLevel).Infof(ctx, "Logging SegmentTranscode nonce=%d seqNo=%d dur=%s trusted=%v verified=%v", nonce, seqNo, transcodeDur, trusted, verified)
 	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles, trusted, verified)
 }
 
 func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration,
 	profiles string, trusted, verified bool) {
+
+	if !census.initialized {
+		return
+	}
 
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -1275,11 +1337,18 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDu
 }
 
 func SegmentTranscodeFailed(ctx context.Context, subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
+	if !census.initialized {
+		return
+	}
 	clog.Errorf(ctx, "Logging SegmentTranscodeFailed subtype=%v err=%q", subType, err.Error())
 	census.segmentTranscodeFailed(ctx, nonce, seqNo, subType, permanent)
 }
 
 func (cen *censusMetricsCounter) segmentTranscodeFailed(ctx context.Context, nonce, seqNo uint64, code SegmentTranscodeError, permanent bool) {
+	if !census.initialized {
+		return
+	}
+
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	if err := RecordWithTags(census.ctx,
@@ -1315,6 +1384,10 @@ func (cen *censusMetricsCounter) sendSuccess() {
 }
 
 func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError) {
+	if !census.initialized {
+		return
+	}
+
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	rctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
@@ -1351,6 +1424,9 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 }
 
 func RecordingPlaylistSaved(dur time.Duration, err error) {
+	if !census.initialized {
+		return
+	}
 	if err != nil {
 		Record(census.ctx, census.mRecordingSaveErrors.M(1))
 	} else {
@@ -1359,6 +1435,9 @@ func RecordingPlaylistSaved(dur time.Duration, err error) {
 }
 
 func RecordingSegmentSaved(dur time.Duration, err error) {
+	if !census.initialized {
+		return
+	}
 	if err != nil {
 		Record(census.ctx, census.mRecordingSaveErrors.M(1))
 	} else {
@@ -1390,11 +1469,17 @@ func newAverager(manifestID string) *segmentsAverager {
 }
 
 func StreamCreated(manifestID string, nonce uint64) {
+	if !census.initialized {
+		return
+	}
 	glog.V(logLevel).Infof("Logging StreamCreated... nonce=%d manifestID=%s", nonce, manifestID)
 	census.streamCreated(manifestID, nonce)
 }
 
 func (cen *censusMetricsCounter) streamCreated(manifestID string, nonce uint64) {
+	if cen.mStreamCreated == nil {
+		return
+	}
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	Record(cen.ctx, cen.mStreamCreated.M(1))
@@ -1402,20 +1487,32 @@ func (cen *censusMetricsCounter) streamCreated(manifestID string, nonce uint64) 
 }
 
 func StreamStarted(nonce uint64) {
+	if !census.initialized {
+		return
+	}
 	glog.V(logLevel).Infof("Logging StreamStarted... nonce=%d", nonce)
 	census.streamStarted(nonce)
 }
 
 func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
+	if cen.mStreamStarted == nil {
+		return
+	}
 	Record(cen.ctx, cen.mStreamStarted.M(1))
 }
 
 func StreamEnded(ctx context.Context, nonce uint64) {
+	if !census.initialized {
+		return
+	}
 	clog.V(logLevel).Infof(ctx, "Logging StreamEnded... nonce=%d", nonce)
 	census.streamEnded(nonce)
 }
 
 func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
+	if cen.mStreamEnded == nil {
+		return
+	}
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 	Record(cen.ctx, cen.mStreamEnded.M(1))
@@ -1433,6 +1530,10 @@ func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 
 // TicketValueSent records the ticket value sent
 func TicketValueSent(ctx context.Context, value *big.Rat) {
+	if !census.initialized {
+		return
+	}
+
 	if value.Cmp(big.NewRat(0, 1)) <= 0 {
 		return
 	}
@@ -1445,6 +1546,9 @@ func TicketValueSent(ctx context.Context, value *big.Rat) {
 
 // TicketsSent records the number of tickets sent
 func TicketsSent(ctx context.Context, numTickets int) {
+	if !census.initialized {
+		return
+	}
 	if numTickets <= 0 {
 		return
 	}
@@ -1457,6 +1561,10 @@ func TicketsSent(ctx context.Context, numTickets int) {
 
 // PaymentCreateError records a error from payment creation
 func PaymentCreateError(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
+
 	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mPaymentCreateError.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1465,6 +1573,9 @@ func PaymentCreateError(ctx context.Context) {
 
 // Deposit records the current deposit for the broadcaster
 func Deposit(sender string, deposit *big.Int) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mDeposit.M(wei2gwei(deposit))); err != nil {
 
@@ -1473,6 +1584,9 @@ func Deposit(sender string, deposit *big.Int) {
 }
 
 func Reserve(sender string, reserve *big.Int) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mReserve.M(wei2gwei(reserve))); err != nil {
 
@@ -1481,6 +1595,9 @@ func Reserve(sender string, reserve *big.Int) {
 }
 
 func MaxTranscodingPrice(maxPrice *big.Rat) {
+	if !census.initialized {
+		return
+	}
 	floatWei, ok := maxPrice.Float64()
 	if ok {
 		if err := RecordWithTags(census.ctx,
@@ -1494,6 +1611,9 @@ func MaxTranscodingPrice(maxPrice *big.Rat) {
 
 // TicketValueRecv records the ticket value received from a sender for a manifestID
 func TicketValueRecv(ctx context.Context, sender string, value *big.Rat) {
+	if !census.initialized {
+		return
+	}
 	if value.Cmp(big.NewRat(0, 1)) <= 0 {
 		return
 	}
@@ -1507,6 +1627,9 @@ func TicketValueRecv(ctx context.Context, sender string, value *big.Rat) {
 
 // TicketsRecv records the number of tickets received from a sender for a manifestID
 func TicketsRecv(ctx context.Context, sender string, numTickets int) {
+	if !census.initialized {
+		return
+	}
 	if numTickets <= 0 {
 		return
 	}
@@ -1520,6 +1643,9 @@ func TicketsRecv(ctx context.Context, sender string, numTickets int) {
 
 // PaymentRecvError records an error from receiving a payment
 func PaymentRecvError(ctx context.Context, sender string, errStr string) {
+	if !census.initialized {
+		return
+	}
 
 	var errCode string
 	if strings.Contains(errStr, "Expected price") {
@@ -1544,6 +1670,9 @@ func PaymentRecvError(ctx context.Context, sender string, errStr string) {
 
 // WinningTicketsRecv records the number of winning tickets received
 func WinningTicketsRecv(ctx context.Context, sender string, numTickets int) {
+	if !census.initialized {
+		return
+	}
 	if numTickets <= 0 {
 		return
 	}
@@ -1558,20 +1687,24 @@ func WinningTicketsRecv(ctx context.Context, sender string, numTickets int) {
 
 // ValueRedeemed records the value from redeeming winning tickets
 func ValueRedeemed(sender string, value *big.Int) {
+	if !census.initialized {
+		return
+	}
 	if value.Cmp(big.NewInt(0)) <= 0 {
 		return
 	}
 
-	if err := RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kSender, sender)},
-		census.mValueRedeemed.M(wei2gwei(value))); err != nil {
-
+	m := census.mValueRedeemed.M(wei2gwei(value))
+	if err := RecordWithTags(census.ctx, []tag.Mutator{tag.Insert(census.kSender, sender)}, m); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
 // TicketRedemptionError records an error from redeeming a ticket
 func TicketRedemptionError(sender string) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)},
 		census.mTicketRedemptionError.M(1)); err != nil {
@@ -1581,6 +1714,9 @@ func TicketRedemptionError(sender string) {
 }
 
 func MilPixelsProcessed(ctx context.Context, milPixels float64) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx), census.mMilPixelsProcessed.M(milPixels)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1589,19 +1725,31 @@ func MilPixelsProcessed(ctx context.Context, milPixels float64) {
 
 // SuggestedGasPrice records the last suggested gas price
 func SuggestedGasPrice(gasPrice *big.Int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
 }
 
 func MinGasPrice(minGasPrice *big.Int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mMinGasPrice.M(wei2gwei(minGasPrice)))
 }
 
 func MaxGasPrice(maxGasPrice *big.Int) {
+	if !census.initialized {
+		return
+	}
 	Record(census.ctx, census.mMaxGasPrice.M(wei2gwei(maxGasPrice)))
 }
 
 // TranscodingPrice records the last transcoding price
 func TranscodingPrice(sender string, price *big.Rat) {
+	if !census.initialized {
+		return
+	}
 	floatWei, ok := price.Float64()
 	if ok {
 		Record(census.ctx, census.mTranscodingPrice.M(floatWei))
@@ -1627,6 +1775,9 @@ func fracwei2gwei(wei *big.Rat) float64 {
 }
 
 func FastVerificationDone(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mFastVerificationDone.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1634,6 +1785,9 @@ func FastVerificationDone(ctx context.Context) {
 }
 
 func FastVerificationFailed(ctx context.Context) {
+	if !census.initialized {
+		return
+	}
 	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)

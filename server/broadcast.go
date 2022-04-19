@@ -198,8 +198,6 @@ func removeSessionFromList(sessions []*BroadcastSession, sess *BroadcastSession)
 
 func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
 	for _, session := range sessions {
-		clog.Errorf(nil, "TIME SINCE: %v. BOOL PART 1: %v. BOOL PART 2: %v. BOOL PART 3: !%v", time.Since(session.SegsInFlight[0].startTime).String(), len(session.SegsInFlight) > 0, time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur, includesSession(exclude, session))
-
 		if len(session.SegsInFlight) > 0 &&
 			time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur &&
 			!includesSession(exclude, session) {
