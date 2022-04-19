@@ -176,7 +176,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		)
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
-			monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())			}
+			monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
 			}
@@ -255,7 +255,6 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 	}
 
 	monitor.TranscodingPrice(sender.String(), price)
-
 
 	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),

@@ -286,7 +286,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 			if !includesSession(selectedSessions, ls) {
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
-					monitor.OrchestratorSwapped(ctx)
+				monitor.OrchestratorSwapped(ctx)
 			}
 		}
 		sp.lastSess = append([]*BroadcastSession{}, selectedSessions...)
@@ -733,7 +733,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 					name, len(seg.Data), took)
 				cpl.FlushRecord()
 			}
-			monitor.RecordingSegmentSaved(took, err)			}
+			monitor.RecordingSegmentSaved(took, err)
 		}()
 	}
 	uri, err := cpl.GetOSSession().SaveData(ctx, name, seg.Data, nil, 0)
@@ -746,10 +746,10 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 	err = cpl.InsertHLSSegment(vProfile, seg.SeqNo, uri, seg.Duration)
-	monitor.SourceSegmentAppeared(ctx, nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)	}
+	monitor.SourceSegmentAppeared(ctx, nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
 	if err != nil {
 		clog.Errorf(ctx, "Error inserting segment err=%q", err)
-		monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")		}
+		monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
 	}
 
 	if hasZeroVideoFrame {
