@@ -176,10 +176,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		)
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
-
-			if monitor.Enabled {
-				monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
-			}
+			monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
 			}
@@ -207,11 +204,9 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		}
 	}
 
-	if monitor.Enabled {
-		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
-		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
-		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
-	}
+	monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
+	monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
+	monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
 
 	if receiveErr != nil {
 		return receiveErr
@@ -259,9 +254,8 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 		return nil, err
 	}
 
-	if monitor.Enabled {
-		monitor.TranscodingPrice(sender.String(), price)
-	}
+	monitor.TranscodingPrice(sender.String(), price)
+
 
 	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
@@ -568,9 +562,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
-	if monitor.Enabled {
-		monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
-	}
+	monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 
 	// Prepare the result object
 	var tr TranscodeResult
@@ -856,26 +848,18 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 	var totalLoad, totalCapacity, liveTranscodersNum int
-	if monitor.Enabled {
-		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
-	}
+	totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
-	}
+	monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 
 	<-transcoder.eof
 	glog.Infof("Got transcoder=%s eof, removing from live transcoders map", from)
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
-	if monitor.Enabled {
-		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
-	}
+	totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
-	}
+	monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 }
 
 func removeFromRemoteTranscoders(rt *RemoteTranscoder, remoteTranscoders []*RemoteTranscoder) []*RemoteTranscoder {

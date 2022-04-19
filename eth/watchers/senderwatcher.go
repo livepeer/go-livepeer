@@ -72,7 +72,7 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 	defer sw.mu.Unlock()
 	sw.senders[addr] = info
 
-	if addr == sw.lpEth.Account().Address && monitor.Enabled {
+	if addr == sw.lpEth.Account().Address {
 		monitor.Deposit(addr.Hex(), info.Deposit)
 		monitor.Reserve(addr.Hex(), info.Reserve.FundsRemaining)
 	}
@@ -269,7 +269,7 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 		}
 	}
 
-	if sender == sw.lpEth.Account().Address && monitor.Enabled {
+	if sender == sw.lpEth.Account().Address {
 		monitor.Deposit(sender.Hex(), sw.senders[sender].Deposit)
 		monitor.Reserve(sender.Hex(), sw.senders[sender].Reserve.FundsRemaining)
 	}

@@ -361,15 +361,11 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	// Fail early if ticket is used
 	used, err := sm.broker.IsUsedTicket(ticket.Ticket)
 	if err != nil {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.Hex())
-		}
+		monitor.TicketRedemptionError(ticket.Sender.Hex())
 		return nil, err
 	}
 	if used {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.Hex())
-		}
+		monitor.TicketRedemptionError(ticket.Sender.Hex())
 		return nil, errIsUsedTicket
 	}
 
@@ -415,26 +411,20 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	// is an error in transaction submission
 	tx, err := sm.broker.RedeemWinningTicket(ticket.Ticket, ticket.Sig, ticket.RecipientRand)
 	if err != nil {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.Hex())
-		}
+		monitor.TicketRedemptionError(ticket.Sender.Hex())
 		return nil, err
 	}
 
 	// Wait for transaction to confirm
 	if err := sm.broker.CheckTx(tx); err != nil {
-		if monitor.Enabled {
-			monitor.TicketRedemptionError(ticket.Sender.Hex())
-		}
+		monitor.TicketRedemptionError(ticket.Sender.Hex())
 		// Return tx so caller can utilize the tx if it fails
 		return tx, err
 	}
 
-	if monitor.Enabled {
-		// TODO(yondonfu): Handle case where < ticket.FaceValue is actually
-		// redeemed i.e. if sender reserve cannot cover the full ticket.FaceValue
-		monitor.ValueRedeemed(ticket.Sender.Hex(), ticket.Ticket.FaceValue)
-	}
+	// TODO(yondonfu): Handle case where < ticket.FaceValue is actually
+	// redeemed i.e. if sender reserve cannot cover the full ticket.FaceValue
+	monitor.ValueRedeemed(ticket.Sender.Hex(), ticket.Ticket.FaceValue)
 
 	return tx, nil
 }

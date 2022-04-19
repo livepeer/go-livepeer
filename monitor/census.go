@@ -798,7 +798,7 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// Register the Prometheus exporters as a stats exporter.
 	view.RegisterExporter(pe)
-	stats.Record(ctx, mVersions.M(1))
+	Record(ctx, mVersions.M(1))
 	ctx, err = tag.New(census.ctx, tag.Insert(census.kErrorCode, "LostSegment"))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -811,15 +811,6 @@ func InitCensus(nodeType NodeType, version string) {
 	// init metrics values
 	SetTranscodersNumberAndLoad(0, 0, 0)
 }
-
-/*
-func addManifestID(ctx context.Context, manifestID string) (context.Context, error) {
-	if !PerStreamMetrics {
-		return ctx, nil
-	}
-	return tag.New(ctx, tag.Insert(census.kManifestID, manifestID))
-}
-*/
 
 func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	if PerStreamMetrics {
@@ -861,7 +852,7 @@ func LogDiscoveryError(ctx context.Context, uri, code string) {
 		code = "Canceled"
 	}
 	if code != "Canceled" {
-		if err := stats.RecordWithTags(census.ctx,
+		if err := RecordWithTags(census.ctx,
 			[]tag.Mutator{tag.Insert(census.kErrorCode, code),
 				tag.Insert(census.kOrchestratorURI, uri)},
 			census.mDiscoveryError.M(1)); err != nil {
@@ -879,7 +870,7 @@ func (cen *censusMetricsCounter) successRate() float64 {
 	for _, avg := range cen.success {
 		if r, has := avg.successRate(); has {
 			if PerStreamMetrics {
-				if err := stats.RecordWithTags(census.ctx,
+				if err := RecordWithTags(census.ctx,
 					[]tag.Mutator{tag.Insert(census.kManifestID, avg.manifestID)}, census.mSuccessRatePerStream.M(r)); err != nil {
 
 					glog.Errorf("Error recording metrics manifestID=%s err=%q", avg.manifestID, err)
@@ -1003,13 +994,13 @@ func (cen *censusMetricsCounter) timeoutWatcher(ctx context.Context) {
 			for seqNo, tm := range emerged {
 				ago := now.Sub(tm)
 				if ago > timeToWaitForError {
-					if err := stats.RecordWithTags(ctx, manifestIDTagStr(manifestID), census.mSegmentEmerged.M(1)); err != nil {
+					if err := RecordWithTags(ctx, manifestIDTagStr(manifestID), census.mSegmentEmerged.M(1)); err != nil {
 						glog.Errorf("Error recording metrics mnanifestID=%s err=%q", manifestID, err)
 					}
 					delete(emerged, seqNo)
 					// This shouldn't happen, but if it is, we record
 					// `LostSegment` error, to try to find out why we missed segment
-					if err := stats.RecordWithTags(ctx, manifestIDTagStr(manifestID), census.mSegmentTranscodeFailed.M(1)); err != nil {
+					if err := RecordWithTags(ctx, manifestIDTagStr(manifestID), census.mSegmentTranscodeFailed.M(1)); err != nil {
 						glog.Errorf("Error recording metrics mnanifestID=%s err=%q", manifestID, err)
 					}
 					glog.Errorf("LostSegment nonce=%d seqNo=%d emerged=%ss ago", nonce, seqNo, ago)
@@ -1036,24 +1027,28 @@ func (cen *censusMetricsCounter) timeoutWatcher(ctx context.Context) {
 }
 
 func MaxSessions(maxSessions int) {
-	stats.Record(census.ctx, census.mMaxSessions.M(int64(maxSessions)))
+	Record(census.ctx, census.mMaxSessions.M(int64(maxSessions)))
 }
 
 func OrchestratorSwapped(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx, manifestIDTag(ctx), census.mOrchestratorSwaps.M(1)); err != nil {
+	if err := RecordWithTags(census.ctx, manifestIDTag(ctx), census.mOrchestratorSwaps.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metric err=%q", err)
 	}
 }
 
 func CurrentSessions(currentSessions int) {
-	stats.Record(census.ctx, census.mCurrentSessions.M(int64(currentSessions)))
+	Record(census.ctx, census.mCurrentSessions.M(int64(currentSessions)))
 }
 
 func FastVerificationEnabledAndUsingCurrentSessions(enabled, using int) {
-	stats.Record(census.ctx, census.mFastVerificationEnabledCurrentSessions.M(int64(enabled)), census.mFastVerificationUsingCurrentSessions.M(int64(using)))
+	Record(census.ctx, census.mFastVerificationEnabledCurrentSessions.M(int64(enabled)), census.mFastVerificationUsingCurrentSessions.M(int64(using)))
 }
 
 func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
+	if !Enabled {
+		return
+	}
+
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	if av, ok := census.success[nonce]; ok {
@@ -1069,7 +1064,7 @@ func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
 			if ts.tries < 11 {
 				label = strconv.Itoa(ts.tries)
 			}
-			if err := stats.RecordWithTags(census.ctx, manifestIDTag(ctx, tag.Insert(census.kTry, label)), census.mTranscodeRetried.M(1)); err != nil {
+			if err := RecordWithTags(census.ctx, manifestIDTag(ctx, tag.Insert(census.kTry, label)), census.mTranscodeRetried.M(1)); err != nil {
 				clog.Errorf(ctx, "Error recording metrics err=%q", err)
 				return
 			}
@@ -1081,14 +1076,14 @@ func TranscodeTry(ctx context.Context, nonce, seqNo uint64) {
 }
 
 func SetTranscodersNumberAndLoad(load, capacity, number int) {
-	stats.Record(census.ctx, census.mTranscodersLoad.M(int64(load)))
-	stats.Record(census.ctx, census.mTranscodersCapacity.M(int64(capacity)))
-	stats.Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
+	Record(census.ctx, census.mTranscodersLoad.M(int64(load)))
+	Record(census.ctx, census.mTranscodersCapacity.M(int64(capacity)))
+	Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
 }
 
 func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, dur float64) {
 	clog.V(logLevel).Infof(ctx, "Logging SegmentEmerged... duration=%v", dur)
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mSegmentEmergedUnprocessed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1096,7 +1091,7 @@ func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, d
 	if census.nodeType == Broadcaster {
 		census.segmentEmerged(nonce, seqNo, profilesNum)
 	}
-	if err := stats.RecordWithTags(census.ctx, manifestIDTag(ctx), census.mSourceSegmentDuration.M(dur)); err != nil {
+	if err := RecordWithTags(census.ctx, manifestIDTag(ctx), census.mSourceSegmentDuration.M(dur)); err != nil {
 		clog.Errorf(ctx, "Error recording metric err=%q", err)
 	}
 }
@@ -1123,7 +1118,7 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(ctx context.Context, nonc
 	if recordingEnabled {
 		segType = segTypeRec
 	}
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx,
 			tag.Insert(cen.kSegmentType, segType),
 			tag.Insert(census.kProfile, profile)),
@@ -1135,13 +1130,13 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(ctx context.Context, nonc
 func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Duration, uri string) {
 	clog.V(logLevel).Infof(ctx, "Logging SegmentUploaded... dur=%s", uploadDur)
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx,
 			tag.Insert(census.kOrchestratorURI, uri)),
 		census.mSegmentUploaded.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kOrchestratorURI, uri)},
 		census.mUploadTime.M(uploadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1151,7 +1146,7 @@ func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Du
 func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur time.Duration) {
 	clog.V(logLevel).Infof(ctx, "Logging SegmentDownloaded... dur=%s", downloadDur)
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx),
 		census.mSegmentDownloaded.M(1),
 		census.mDownloadTime.M(downloadDur.Seconds())); err != nil {
@@ -1160,7 +1155,7 @@ func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur tim
 }
 
 func HTTPClientTimedOut1(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mHTTPClientTimeout1.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1168,7 +1163,7 @@ func HTTPClientTimedOut1(ctx context.Context) {
 }
 
 func HTTPClientTimedOut2(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mHTTPClientTimeout2.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1193,7 +1188,7 @@ func SegmentFullyProcessed(ctx context.Context, segDur, processDur float64) {
 	default:
 		bucketM = census.mRealtimeSlow.M(1)
 	}
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		bucketM, census.mRealtimeRatio.M(ratio)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1205,7 +1200,7 @@ func AuthWebhookFinished(dur time.Duration) {
 }
 
 func (cen *censusMetricsCounter) authWebhookFinished(dur time.Duration) {
-	stats.Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
+	Record(cen.ctx, cen.mAuthWebhookTime.M(float64(dur)/float64(time.Millisecond)))
 }
 
 func SegmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentUploadError, err error, permanent bool,
@@ -1239,7 +1234,7 @@ func (cen *censusMetricsCounter) segmentUploadFailed(ctx context.Context, nonce,
 		cen.countSegmentEmerged(ctx, nonce, seqNo)
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri), tag.Insert(census.kErrorCode, string(code))),
 		census.mSegmentUploadFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
@@ -1276,7 +1271,7 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDu
 		glog.Error("Error creating context", err)
 		return
 	}
-	stats.Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()), cen.mTranscodeScore.M(sourceDur.Seconds()/transcodeDur.Seconds()))
+	Record(ctx, cen.mSegmentTranscoded.M(1), cen.mTranscodeTime.M(transcodeDur.Seconds()), cen.mTranscodeScore.M(sourceDur.Seconds()/transcodeDur.Seconds()))
 }
 
 func SegmentTranscodeFailed(ctx context.Context, subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
@@ -1287,7 +1282,7 @@ func SegmentTranscodeFailed(ctx context.Context, subType SegmentTranscodeError, 
 func (cen *censusMetricsCounter) segmentTranscodeFailed(ctx context.Context, nonce, seqNo uint64, code SegmentTranscodeError, permanent bool) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kErrorCode, string(code))), cen.mSegmentTranscodeFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1307,7 +1302,7 @@ func (cen *censusMetricsCounter) countSegmentTranscoded(nonce, seqNo uint64, fai
 
 func (cen *censusMetricsCounter) countSegmentEmerged(ctx context.Context, nonce, seqNo uint64) {
 	if _, ok := cen.emergeTimes[nonce][seqNo]; ok {
-		if err := stats.RecordWithTags(cen.ctx,
+		if err := RecordWithTags(cen.ctx,
 			manifestIDTag(ctx), cen.mSegmentEmerged.M(1)); err != nil {
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
@@ -1316,7 +1311,7 @@ func (cen *censusMetricsCounter) countSegmentEmerged(ctx context.Context, nonce,
 }
 
 func (cen *censusMetricsCounter) sendSuccess() {
-	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
+	Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
 func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError) {
@@ -1331,7 +1326,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 	if st, ok := census.emergeTimes[nonce][seqNo]; ok {
 		if errCode == "" {
 			latency := time.Since(st)
-			if err := stats.RecordWithTags(rctx,
+			if err := RecordWithTags(rctx,
 				manifestIDTag(ctx), census.mTranscodeOverallLatency.M(latency.Seconds())); err != nil {
 				clog.Errorf(ctx, "Error recording metrics err=%q", err)
 			}
@@ -1339,7 +1334,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 		census.countSegmentEmerged(ctx, nonce, seqNo)
 	}
 	if errCode == "" {
-		if err := stats.RecordWithTags(rctx,
+		if err := RecordWithTags(rctx,
 			manifestIDTag(ctx), census.mSegmentTranscodedAllAppeared.M(1)); err != nil {
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
@@ -1347,7 +1342,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 	failed := errCode != "" && errCode != SegmentTranscodeErrorSessionEnded
 	census.countSegmentTranscoded(nonce, seqNo, failed)
 	if !failed {
-		if err := stats.RecordWithTags(rctx,
+		if err := RecordWithTags(rctx,
 			manifestIDTag(ctx), census.mSegmentTranscodedUnprocessed.M(1)); err != nil {
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
@@ -1357,19 +1352,33 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 
 func RecordingPlaylistSaved(dur time.Duration, err error) {
 	if err != nil {
-		stats.Record(census.ctx, census.mRecordingSaveErrors.M(1))
+		Record(census.ctx, census.mRecordingSaveErrors.M(1))
 	} else {
-		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
+		Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
 	}
 }
 
 func RecordingSegmentSaved(dur time.Duration, err error) {
 	if err != nil {
-		stats.Record(census.ctx, census.mRecordingSaveErrors.M(1))
+		Record(census.ctx, census.mRecordingSaveErrors.M(1))
 	} else {
-		stats.Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
-		stats.Record(census.ctx, census.mRecordingSavedSegments.M(1))
+		Record(census.ctx, census.mRecordingSaveLatency.M(dur.Seconds()))
+		Record(census.ctx, census.mRecordingSavedSegments.M(1))
 	}
+}
+
+func Record(ctx context.Context, ms ...stats.Measurement) {
+	if !Enabled {
+		return
+	}
+	Record(ctx, ms...)
+}
+
+func RecordWithTags(ctx context.Context, mutators []tag.Mutator, ms ...stats.Measurement) error {
+	if !Enabled {
+		return nil
+	}
+	return stats.RecordWithTags(ctx, mutators, ms...)
 }
 
 func newAverager(manifestID string) *segmentsAverager {
@@ -1388,7 +1397,7 @@ func StreamCreated(manifestID string, nonce uint64) {
 func (cen *censusMetricsCounter) streamCreated(manifestID string, nonce uint64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	stats.Record(cen.ctx, cen.mStreamCreated.M(1))
+	Record(cen.ctx, cen.mStreamCreated.M(1))
 	cen.success[nonce] = newAverager(manifestID)
 }
 
@@ -1398,7 +1407,7 @@ func StreamStarted(nonce uint64) {
 }
 
 func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
-	stats.Record(cen.ctx, cen.mStreamStarted.M(1))
+	Record(cen.ctx, cen.mStreamStarted.M(1))
 }
 
 func StreamEnded(ctx context.Context, nonce uint64) {
@@ -1409,7 +1418,7 @@ func StreamEnded(ctx context.Context, nonce uint64) {
 func (cen *censusMetricsCounter) streamEnded(nonce uint64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
-	stats.Record(cen.ctx, cen.mStreamEnded.M(1))
+	Record(cen.ctx, cen.mStreamEnded.M(1))
 	delete(cen.emergeTimes, nonce)
 	if avg, has := cen.success[nonce]; has {
 		if avg.canBeRemoved() {
@@ -1428,7 +1437,7 @@ func TicketValueSent(ctx context.Context, value *big.Rat) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mTicketValueSent.M(fracwei2gwei(value))); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1440,7 +1449,7 @@ func TicketsSent(ctx context.Context, numTickets int) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mTicketsSent.M(int64(numTickets))); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1448,7 +1457,7 @@ func TicketsSent(ctx context.Context, numTickets int) {
 
 // PaymentCreateError records a error from payment creation
 func PaymentCreateError(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mPaymentCreateError.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1456,7 +1465,7 @@ func PaymentCreateError(ctx context.Context) {
 
 // Deposit records the current deposit for the broadcaster
 func Deposit(sender string, deposit *big.Int) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mDeposit.M(wei2gwei(deposit))); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1464,7 +1473,7 @@ func Deposit(sender string, deposit *big.Int) {
 }
 
 func Reserve(sender string, reserve *big.Int) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mReserve.M(wei2gwei(reserve))); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1474,7 +1483,7 @@ func Reserve(sender string, reserve *big.Int) {
 func MaxTranscodingPrice(maxPrice *big.Rat) {
 	floatWei, ok := maxPrice.Float64()
 	if ok {
-		if err := stats.RecordWithTags(census.ctx,
+		if err := RecordWithTags(census.ctx,
 			[]tag.Mutator{tag.Insert(census.kSender, "max")},
 			census.mTranscodingPrice.M(floatWei)); err != nil {
 
@@ -1489,7 +1498,7 @@ func TicketValueRecv(ctx context.Context, sender string, value *big.Rat) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kSender, sender)), census.mTicketValueRecv.M(fracwei2gwei(value))); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1502,7 +1511,7 @@ func TicketsRecv(ctx context.Context, sender string, numTickets int) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kSender, sender)), census.mTicketsRecv.M(int64(numTickets))); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1525,7 +1534,7 @@ func PaymentRecvError(ctx context.Context, sender string, errStr string) {
 		errCode = "PaymentError"
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kErrorCode, errCode), tag.Insert(census.kSender, sender)),
 		census.mPaymentRecvErr.M(1)); err != nil {
 
@@ -1539,7 +1548,7 @@ func WinningTicketsRecv(ctx context.Context, sender string, numTickets int) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kSender, sender)),
 		census.mWinningTicketsRecv.M(int64(numTickets))); err != nil {
 
@@ -1553,7 +1562,7 @@ func ValueRedeemed(sender string, value *big.Int) {
 		return
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)},
 		census.mValueRedeemed.M(wei2gwei(value))); err != nil {
 
@@ -1563,7 +1572,7 @@ func ValueRedeemed(sender string, value *big.Int) {
 
 // TicketRedemptionError records an error from redeeming a ticket
 func TicketRedemptionError(sender string) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)},
 		census.mTicketRedemptionError.M(1)); err != nil {
 
@@ -1572,7 +1581,7 @@ func TicketRedemptionError(sender string) {
 }
 
 func MilPixelsProcessed(ctx context.Context, milPixels float64) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx), census.mMilPixelsProcessed.M(milPixels)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1580,23 +1589,23 @@ func MilPixelsProcessed(ctx context.Context, milPixels float64) {
 
 // SuggestedGasPrice records the last suggested gas price
 func SuggestedGasPrice(gasPrice *big.Int) {
-	stats.Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
+	Record(census.ctx, census.mSuggestedGasPrice.M(wei2gwei(gasPrice)))
 }
 
 func MinGasPrice(minGasPrice *big.Int) {
-	stats.Record(census.ctx, census.mMinGasPrice.M(wei2gwei(minGasPrice)))
+	Record(census.ctx, census.mMinGasPrice.M(wei2gwei(minGasPrice)))
 }
 
 func MaxGasPrice(maxGasPrice *big.Int) {
-	stats.Record(census.ctx, census.mMaxGasPrice.M(wei2gwei(maxGasPrice)))
+	Record(census.ctx, census.mMaxGasPrice.M(wei2gwei(maxGasPrice)))
 }
 
 // TranscodingPrice records the last transcoding price
 func TranscodingPrice(sender string, price *big.Rat) {
 	floatWei, ok := price.Float64()
 	if ok {
-		stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
-		if err := stats.RecordWithTags(census.ctx,
+		Record(census.ctx, census.mTranscodingPrice.M(floatWei))
+		if err := RecordWithTags(census.ctx,
 			[]tag.Mutator{tag.Insert(census.kSender, sender)},
 			census.mTranscodingPrice.M(floatWei)); err != nil {
 
@@ -1618,14 +1627,14 @@ func fracwei2gwei(wei *big.Rat) float64 {
 }
 
 func FastVerificationDone(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mFastVerificationDone.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
 
 func FastVerificationFailed(ctx context.Context) {
-	if err := stats.RecordWithTags(census.ctx,
+	if err := RecordWithTags(census.ctx,
 		manifestIDTag(ctx), census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}

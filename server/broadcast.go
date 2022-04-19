@@ -70,10 +70,7 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 	cfg.maxPrice = price
-
-	if monitor.Enabled {
-		monitor.MaxTranscodingPrice(price)
-	}
+	monitor.MaxTranscodingPrice(price)
 }
 
 type sessionsCreator func() ([]*BroadcastSession, error)
@@ -201,6 +198,8 @@ func removeSessionFromList(sessions []*BroadcastSession, sess *BroadcastSession)
 
 func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
 	for _, session := range sessions {
+		clog.Errorf(nil, "TIME SINCE: %v. BOOL PART 1: %v. BOOL PART 2: %v. BOOL PART 3: !%v", time.Since(session.SegsInFlight[0].startTime).String(), len(session.SegsInFlight) > 0, time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur, includesSession(exclude, session))
+
 		if len(session.SegsInFlight) > 0 &&
 			time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur &&
 			!includesSession(exclude, session) {
@@ -275,9 +274,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 				sess.SegsInFlight = nil
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
 				clog.V(common.DEBUG).Infof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
-				if monitor.Enabled {
-					monitor.OrchestratorSwapped(ctx)
-				}
+				monitor.OrchestratorSwapped(ctx)
 			}
 		}
 	}
@@ -289,9 +286,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 			if !includesSession(selectedSessions, ls) {
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
-				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
-				}
 			}
 		}
 		sp.lastSess = append([]*BroadcastSession{}, selectedSessions...)
@@ -362,6 +357,7 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	trustedNumOrchs := int(math.Min(trustedPoolSize, maxInflight*2))
 	untrustedNumOrchs := int(untrustedPoolSize)
+	clog.Errorf(ctx, "maxInflight: %d, trustedNumOrchs: %d, trustedPoolSize: %d", maxInflight, trustedNumOrchs, trustedPoolSize)
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
@@ -511,9 +507,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			return nil, nil, err
 		}
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
-		if monitor.Enabled {
-			monitor.FastVerificationDone(ctx)
-		}
+		monitor.FastVerificationDone(ctx)
 		if err != nil {
 			clog.Errorf(ctx, "error comparing perceptual hashes from url=%s err=%q",
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -549,9 +543,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
-			if monitor.Enabled {
-				monitor.FastVerificationFailed(ctx)
-			}
+			monitor.FastVerificationFailed(ctx)
 		}
 	}
 
@@ -628,13 +620,13 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 	scorePred common.ScorePred) ([]*BroadcastSession, error) {
 
 	if n.OrchestratorPool == nil {
-		clog.Infof(ctx, "No orchestrators specified; not transcoding")
+		clog.Errorf(ctx, "No orchestrators specified; not transcoding")
 		return nil, errDiscovery
 	}
 
 	tinfos, err := n.OrchestratorPool.GetOrchestrators(ctx, count, sus, params.Capabilities, scorePred)
 	if len(tinfos) <= 0 {
-		clog.InfofErr(ctx, "No orchestrators found; not transcoding", err)
+		clog.Errorf(ctx, "No orchestrators found; not transcoding", err)
 		return nil, errNoOrchs
 	}
 	if err != nil {
@@ -701,7 +693,6 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 }
 
 func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
-
 	rtmpStrm := cxn.stream
 	nonce := cxn.nonce
 	cpl := cxn.pl
@@ -714,9 +705,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "Processing segment dur=%v bytes=%v", seg.Duration, len(seg.Data))
-	if monitor.Enabled {
-		monitor.SegmentEmerged(ctx, nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
-	}
+	monitor.SegmentEmerged(ctx, nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	atomic.AddUint64(&cxn.sourceBytes, uint64(len(seg.Data)))
 
 	seg.Name = "" // hijack seg.Name to convey the uploaded URI
@@ -744,31 +733,23 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 					name, len(seg.Data), took)
 				cpl.FlushRecord()
 			}
-			if monitor.Enabled {
-				monitor.RecordingSegmentSaved(took, err)
-			}
+			monitor.RecordingSegmentSaved(took, err)			}
 		}()
 	}
 	uri, err := cpl.GetOSSession().SaveData(ctx, name, seg.Data, nil, 0)
 	if err != nil {
 		clog.Errorf(ctx, "Error saving segment err=%q", err)
-		if monitor.Enabled {
-			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
-		}
+		monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
 		return nil, err
 	}
 	if cpl.GetOSSession().IsExternal() {
 		seg.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 	err = cpl.InsertHLSSegment(vProfile, seg.SeqNo, uri, seg.Duration)
-	if monitor.Enabled {
-		monitor.SourceSegmentAppeared(ctx, nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)
-	}
+	monitor.SourceSegmentAppeared(ctx, nonce, seg.SeqNo, string(mid), vProfile.Name, ros != nil)	}
 	if err != nil {
 		clog.Errorf(ctx, "Error inserting segment err=%q", err)
-		if monitor.Enabled {
-			monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
-		}
+		monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")		}
 	}
 
 	if hasZeroVideoFrame {
@@ -784,18 +765,14 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			uri, err := cpl.GetOSSession().SaveData(ctx, name, seg.Data, nil, 0)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving segment err=%q", err)
-				if monitor.Enabled {
-					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
-				}
+				monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorUnknown, err, true, "")
 				return nil, err
 			}
 			urls = append(urls, uri)
 			err = cpl.InsertHLSSegment(&profile, seg.SeqNo, uri, seg.Duration)
 			if err != nil {
 				clog.Errorf(ctx, "Error inserting segment err=%q", err)
-				if monitor.Enabled {
-					monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
-				}
+				monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorDuplicateSegment, err, false, "")
 			}
 		}
 		return urls, nil
@@ -878,9 +855,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	// Return early under a few circumstances:
 	// View-only (non-transcoded) streams or no sessions available
 	if len(sessions) == 0 {
-		if monitor.Enabled {
-			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
-		}
+		monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNoOrchestrators, nonce, seg.SeqNo, errNoOrchs, true)
 		clog.Infof(ctx, "No sessions available for segment")
 		// We may want to introduce a "non-retryable" error type here
 		// would help error propagation for live ingest.
@@ -893,9 +868,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	}
 
 	clog.Infof(ctx, "Trying to transcode segment using sessions=%d", len(sessions))
-	if monitor.Enabled {
-		monitor.TranscodeTry(ctx, nonce, seg.SeqNo)
-	}
+	monitor.TranscodeTry(ctx, nonce, seg.SeqNo)
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
@@ -1038,9 +1011,7 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		uri, err := ios.SaveData(ctx, name, seg.Data, nil, 0)
 		if err != nil {
 			clog.Errorf(ctx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%q", cxn.mid, cxn.nonce, seg.SeqNo, err)
-			if monitor.Enabled {
-				monitor.SegmentUploadFailed(ctx, cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false, "")
-			}
+			monitor.SegmentUploadFailed(ctx, cxn.nonce, seg.SeqNo, monitor.SegmentUploadErrorOS, err, false, "")
 			cxn.sessManager.suspendAndRemoveOrch(sess)
 			return nil, err
 		}
@@ -1076,7 +1047,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	var errCode monitor.SegmentTranscodeError
 	errFunc := func(subType monitor.SegmentTranscodeError, url string, err error) {
 		clog.Errorf(ctx, "%v error with segment nonce=%d seqNo=%d: %v (URL: %v)", subType, nonce, seg.SeqNo, err, url)
-		if monitor.Enabled && !gotErr {
+		if !gotErr {
 			monitor.SegmentTranscodeFailed(ctx, subType, nonce, seg.SeqNo, err, false)
 			gotErr = true
 			errCode = subType
@@ -1141,9 +1112,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 						nonce, cxn.mid, name, len(data), took)
 				}
 				recordWG.Done()
-				if monitor.Enabled {
-					monitor.RecordingSegmentSaved(took, err)
-				}
+				monitor.RecordingSegmentSaved(took, err)
 			}()
 		}
 
@@ -1204,9 +1173,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	cxn.sessManager.completeSession(sess)
 
 	downloadDur := time.Since(dlStart)
-	if monitor.Enabled {
-		monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
-	}
+	monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
@@ -1225,15 +1192,11 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			// all the transcoded segments or none, so we shouldn't hit this error
 			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
 			clog.Errorf(ctx, "Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%q", nonce, cxn.mid, seg.SeqNo, err)
-			if monitor.Enabled {
-				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
-			}
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorDuplicateSegment, nonce, seg.SeqNo, err, false)
 		}
 	}
 
-	if monitor.Enabled {
-		monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
-	}
+	monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode)
 
 	clog.V(common.DEBUG).Infof(ctx, "Successfully validated segment")
 	return segURLs, nil

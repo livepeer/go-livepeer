@@ -411,9 +411,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 				}
 				if !streamStarted {
 					streamStarted = true
-					if monitor.Enabled {
-						monitor.StreamStarted(nonce)
-					}
+					monitor.StreamStarted(nonce)
 				}
 				go processSegment(context.Background(), cxn, seg)
 			})
@@ -431,9 +429,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 		}(rtmpStrm)
 
-		if monitor.Enabled {
-			monitor.StreamCreated(string(mid), nonce)
-		}
+		monitor.StreamCreated(string(mid), nonce)
 
 		glog.Infof("\n\nVideo Created With ManifestID: %v\n\n", mid)
 
@@ -543,10 +539,8 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 	s.connectionLock.Unlock()
 
-	if monitor.Enabled {
-		monitor.CurrentSessions(sessionsNumber)
-		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
-	}
+	monitor.CurrentSessions(sessionsNumber)
+	monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
 
 	return cxn, nil
 }
@@ -585,11 +579,9 @@ func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.Manife
 	delete(s.rtmpConnections, intmid)
 	delete(s.internalManifests, extmid)
 
-	if monitor.Enabled {
-		monitor.StreamEnded(ctx, cxn.nonce)
-		monitor.CurrentSessions(len(s.rtmpConnections))
-		monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
-	}
+	monitor.StreamEnded(ctx, cxn.nonce)
+	monitor.CurrentSessions(len(s.rtmpConnections))
+	monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
 
 	return nil
 }
@@ -754,10 +746,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		mid = intmid
 	}
 	cxn, exists := s.rtmpConnections[mid]
-	if monitor.Enabled {
-		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
-		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
-	}
+	monitor.FastVerificationEnabledAndUsingCurrentSessions(countStreamsWithFastVerificationEnabled(s.rtmpConnections))
 	s.connectionLock.RUnlock()
 	ctx = clog.AddManifestID(ctx, string(mid))
 	if exists && cxn != nil {
@@ -946,9 +935,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-r.Context().Done():
 		// HTTP request already timed out
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut1(ctx)
-		}
+		monitor.HTTPClientTimedOut1(ctx)
 		return
 	default:
 	}
@@ -1033,9 +1020,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		clog.Errorf(ctx, "Error sending transcoded response url=%s err=%q", r.URL.String(), err)
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2(ctx)
-		}
+		monitor.HTTPClientTimedOut2(ctx)
 		return
 	}
 	if f, ok := w.(http.Flusher); ok {
@@ -1045,15 +1030,11 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-r.Context().Done():
 		// HTTP request already timed out
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2(ctx)
-		}
+		monitor.HTTPClientTimedOut2(ctx)
 		return
 	default:
 	}
-	if monitor.Enabled {
-		monitor.SegmentFullyProcessed(ctx, seg.Duration, roundtripTime.Seconds())
-	}
+	monitor.SegmentFullyProcessed(ctx, seg.Duration, roundtripTime.Seconds())
 }
 
 // getPlaylistsFromStore finds all the json playlist files belonging to the provided manifests

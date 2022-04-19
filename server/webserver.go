@@ -3,6 +3,7 @@ package server
 import (
 	"flag"
 	"net/http"
+
 	// pprof adds handlers to default mux via `init()`
 	_ "net/http/pprof"
 
@@ -109,9 +110,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/debug", s.debugHandler())
 
 	// Metrics
-	if monitor.Enabled {
-		mux.Handle("/metrics", monitor.Exporter)
-	}
+	mux.Handle("/metrics", monitor.Exporter)
 
 	return mux
 }
