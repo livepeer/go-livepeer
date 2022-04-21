@@ -14,6 +14,8 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 )
 
+const LIVERPEER_TRANSCODE_CONFIG_HEADER = "Livepeer-Transcode-Configuration"
+
 // Call a webhook URL, passing the request URL we received
 // Based on the response, we can authenticate and confirm whether to accept an incoming stream
 func authenticateStream(authURL *url.URL, incomingRequestURL string) (*authWebhookResponse, error) {
@@ -56,4 +58,40 @@ func authenticateStream(authURL *url.URL, incomingRequestURL string) (*authWebho
 	}
 
 	return &authResp, nil
+}
+
+func getTranscodeConfiguration(r *http.Request) (*authWebhookResponse, error) {
+	transcodeConfigurationHeader := r.Header.Get(LIVERPEER_TRANSCODE_CONFIG_HEADER)
+	if transcodeConfigurationHeader == "" {
+		return nil, nil
+	}
+
+	var transcodeConfiguration authWebhookResponse
+	err := json.Unmarshal([]byte(transcodeConfigurationHeader), &transcodeConfiguration)
+
+	return &transcodeConfiguration, err
+}
+
+// Compare two sets of profiles. Since there's no deep equality method in Go,
+// we marshal to JSON and compare the resulting strings
+func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
+	// Return quickly in simple cases without trying to marshal JSON
+	if len(a.Profiles) != len(b.Profiles) {
+		return false
+	}
+	if len(a.Profiles) == 0 {
+		return true
+	}
+
+	profilesA, err := json.Marshal(a.Profiles)
+	if err != nil {
+		return false
+	}
+
+	profilesB, err := json.Marshal(b.Profiles)
+	if err != nil {
+		return false
+	}
+
+	return string(profilesA) == string(profilesB)
 }
