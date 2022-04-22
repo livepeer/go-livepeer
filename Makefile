@@ -1,4 +1,5 @@
 SHELL=/bin/bash
+GO_BUILD_DIR?="./"
 
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli livepeer_router livepeer_bench
 
@@ -31,19 +32,19 @@ endif
 
 .PHONY: livepeer
 livepeer:
-	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer/*.go
+	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -tags "$(BUILD_TAGS)" -ldflags="$(ldflags)" cmd/livepeer/*.go
 
 .PHONY: livepeer_cli
 livepeer_cli:
-	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -tags $(BUILD_TAGS) -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
+	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -tags "$(BUILD_TAGS)" -ldflags="$(ldflags)" cmd/livepeer_cli/*.go
 
 .PHONY: livepeer_bench
 livepeer_bench:
-	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -ldflags="$(ldflags)" cmd/livepeer_bench/*.go
+	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_bench/*.go
 
 .PHONY: livepeer_router
 livepeer_router:
-	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -ldflags="$(ldflags)" cmd/livepeer_router/*.go
+	GO111MODULE=on CGO_ENABLED=1 CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_router/*.go
 
 .PHONY: localdocker
 localdocker:
@@ -51,6 +52,5 @@ localdocker:
 	# docker build -t livepeerbinary:debian -f Dockerfile.debian .
 	# Manually build our context... this is hacky but docker refuses to support symlinks
 	# or selectable .dockerignore files
-	tar ch --exclude=.git . | docker build --build-arg BUILD_TAGS=$(BUILD_TAGS) -t livepeerbinary:debian -f docker/Dockerfile.debian -
+	tar ch --exclude=.git . | docker build --build-arg BUILD_TAGS="$(BUILD_TAGS)" -t livepeerbinary:debian -f docker/Dockerfile.debian -
 	rm .git.describe
-

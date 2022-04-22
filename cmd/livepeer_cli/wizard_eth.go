@@ -7,8 +7,7 @@ import (
 
 func (w *wizard) setMaxGasPrice() {
 	fmt.Printf("Current maximum gas price: %v\n", w.maxGasPrice())
-	fmt.Printf("Enter new maximum gas price in Wei (enter \"0\" for no maximum gas price)")
-	amount := w.readBigInt()
+	amount := w.readBigInt("Enter new maximum gas price in Wei (enter \"0\" for no maximum gas price)")
 
 	val := url.Values{
 		"amount": {fmt.Sprintf("%v", amount.String())},
@@ -19,8 +18,7 @@ func (w *wizard) setMaxGasPrice() {
 
 func (w *wizard) setMinGasPrice() {
 	fmt.Printf("Current minimum gas price: %v\n", w.minGasPrice())
-	fmt.Printf("Enter new minimum gas price in Wei")
-	minGasPrice := w.readBigInt()
+	minGasPrice := w.readBigInt("Enter new minimum gas price in Wei")
 
 	val := url.Values{
 		"minGasPrice": {fmt.Sprintf("%v", minGasPrice.String())},

@@ -2,8 +2,6 @@ package core
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"sort"
 	"testing"
 	"time"
@@ -130,18 +128,17 @@ func TestCapability_CompatibleBitstring(t *testing.T) {
 }
 
 // We need this in order to call `NvidiaTranscoder::Transcode()` properly
-func setupWorkDir() (string, func()) {
-	tmp, _ := ioutil.TempDir("", "")
+func setupWorkDir(t *testing.T) (string, func()) {
+	tmp := t.TempDir()
 	WorkDir = tmp
 	cleanup := func() {
 		WorkDir = ""
-		defer os.RemoveAll(tmp)
 	}
 	return tmp, cleanup
 }
 
 func TestCapability_TranscoderCapabilities(t *testing.T) {
-	tmpdir, cleanup := setupWorkDir()
+	tmpdir, cleanup := setupWorkDir(t)
 	defer cleanup()
 
 	// nvidia test

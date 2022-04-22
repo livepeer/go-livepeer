@@ -201,10 +201,7 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 
 	winProb := r.winProb(faceValue)
 
-	ticketExpirationParams := &TicketExpirationParams{
-		CreationRound:          r.tm.LastInitializedRound().Int64(),
-		CreationRoundBlockHash: r.tm.LastInitializedL1BlockHash(),
-	}
+	ticketExpirationParams := r.ticketExpirationsParams()
 
 	recipientRand := r.rand(seed, sender, faceValue, winProb, expirationL1Block, price, ticketExpirationParams)
 	recipientRandHash := crypto.Keccak256Hash(ethcommon.LeftPadBytes(recipientRand.Bytes(), uint256Size))
@@ -219,6 +216,23 @@ func (r *recipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*Tic
 		PricePerPixel:     price,
 		ExpirationParams:  ticketExpirationParams,
 	}, nil
+}
+
+func (r *recipient) ticketExpirationsParams() *TicketExpirationParams {
+	round := r.tm.LastInitializedRound().Int64()
+	roundBlockHash := r.tm.LastInitializedL1BlockHash()
+
+	// Because of a bug in Arbitrum, some L1 blocks have zero block hashes
+	// In that case, try to use the previous round block instead
+	if roundBlockHash == [32]byte{} {
+		round--
+		roundBlockHash = r.tm.PreLastInitializedL1BlockHash()
+	}
+
+	return &TicketExpirationParams{
+		CreationRound:          round,
+		CreationRoundBlockHash: roundBlockHash,
+	}
 }
 
 func (r *recipient) txCost() *big.Int {

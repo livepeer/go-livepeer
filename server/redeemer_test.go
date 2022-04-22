@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -61,9 +59,7 @@ func TestRedeemerServer_Start(t *testing.T) {
 	url, err := url.ParseRequestURI("https://127.0.0.1:8935")
 	require.Nil(err)
 
-	tmpdir, err := ioutil.TempDir("", "")
-	require.Nil(err)
-	defer os.Remove(tmpdir)
+	tmpdir := t.TempDir()
 
 	errCh := make(chan error)
 	go func() {
@@ -851,6 +847,7 @@ func (s *stubSenderManager) Clear(addr ethcommon.Address) {
 type stubTimeManager struct {
 	round              *big.Int
 	blkHash            [32]byte
+	preBlkHash         [32]byte
 	transcoderPoolSize *big.Int
 	lastSeenBlock      *big.Int
 
@@ -864,6 +861,10 @@ func (m *stubTimeManager) LastInitializedRound() *big.Int {
 
 func (m *stubTimeManager) LastInitializedL1BlockHash() [32]byte {
 	return m.blkHash
+}
+
+func (m *stubTimeManager) PreLastInitializedL1BlockHash() [32]byte {
+	return m.preBlkHash
 }
 
 func (m *stubTimeManager) GetTranscoderPoolSize() *big.Int {

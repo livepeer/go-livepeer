@@ -89,21 +89,21 @@ An example of a full JSON configuration:
         "bitrate": 5000000,
         "fps": 30000,
         "fpsDen": 1001,
-        "profile": H264High,
-        "gop": "2",
+        "profile": "H264High",
+        "gop": "2"
     },{
         "name": "webrtc-720p",
         "width": 1280,
         "height": 720,
         "bitrate": 1500000,
-        "profile": H264ConstrainedHigh,
+        "profile": "H264ConstrainedHigh"
     },{
         "name":"highlight-reel",
         "width":160,
         "height":120,
         "bitrate":100000,
-        "fps": "0.1",
-        "gop":"intra",
+        "fps": 1,
+        "gop":"intra"
     }
 ]
 ```

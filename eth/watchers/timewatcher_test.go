@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"fmt"
+	"github.com/livepeer/go-livepeer/eth/contracts"
 	"math/big"
 	"testing"
 	"time"
@@ -21,15 +22,20 @@ func TestSetAndGet_LastInitializedRound_LastInitializedBlockHash(t *testing.T) {
 	round := big.NewInt(5)
 	var hash [32]byte
 	copy(hash[:], "hello world")
+	var preHash [32]byte
+	copy(preHash[:], "hey hey hey")
 	num := big.NewInt(10)
-	tw.setLastInitializedRound(round, hash, num)
+	tw.setLastInitializedRound(round, hash, preHash, num)
 	assert.Equal(tw.lastInitializedRound, round)
 	assert.Equal(tw.lastInitializedL1BlockHash, hash)
+	assert.Equal(tw.preLastInitializedL1BlockHash, preHash)
 
 	r := tw.LastInitializedRound()
 	assert.Equal(r, round)
 	h := tw.LastInitializedL1BlockHash()
 	assert.Equal(h, hash)
+	ph := tw.PreLastInitializedL1BlockHash()
+	assert.Equal(ph, preHash)
 	assert.Equal(tw.CurrentRoundStartL1Block(), num)
 }
 
@@ -106,10 +112,14 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 	assert.EqualError(err, expErr)
 	lpEth.Errors["GetTranscoderPoolSize"] = nil
 
+	preHash := ethcommon.HexToHash("bar")
+	lpEth.BlockHashForRoundMap = map[int64]common.Hash{0: preHash, 1: hash}
 	tw, err = NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	assert.Nil(err)
 	bh := tw.LastInitializedL1BlockHash()
 	assert.Equal(hash, common.BytesToHash(bh[:]))
+	pbh := tw.PreLastInitializedL1BlockHash()
+	assert.Equal(preHash, common.BytesToHash(pbh[:]))
 	assert.Equal(round, tw.LastInitializedRound())
 	assert.Equal(size, tw.GetTranscoderPoolSize())
 	assert.Equal(block, tw.LastSeenL1Block())
@@ -120,6 +130,8 @@ func TestTimeWatcher_NewTimeWatcher(t *testing.T) {
 	assert.Nil(err)
 	bh = tw.LastInitializedL1BlockHash()
 	assert.Equal(hash, common.BytesToHash(bh[:]))
+	pbh = tw.PreLastInitializedL1BlockHash()
+	assert.Equal(preHash, common.BytesToHash(pbh[:]))
 	assert.Equal(round, tw.LastInitializedRound())
 	assert.Equal(size, tw.GetTranscoderPoolSize())
 	assert.Equal(big.NewInt(0), tw.LastSeenL1Block())
@@ -199,7 +211,7 @@ func TestTimeWatcher_WatchAndStop(t *testing.T) {
 }
 
 func TestTimeWatcher_HandleLog(t *testing.T) {
-	lpEth := &eth.StubClient{}
+	lpEth := &eth.StubClient{Round: big.NewInt(2)}
 	watcher := &stubBlockWatcher{}
 	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
 	require.Nil(t, err)
@@ -212,8 +224,74 @@ func TestTimeWatcher_HandleLog(t *testing.T) {
 
 	err = tw.handleLog(log)
 	assert.Nil(err)
-	assert.Nil(tw.LastInitializedRound())
+	assert.Equal(big.NewInt(2), tw.LastInitializedRound())
 	assert.Equal([32]byte{}, tw.LastInitializedL1BlockHash())
+}
+
+func TestTimeWatcher_HandleDecodedLog(t *testing.T) {
+	assert := assert.New(t)
+
+	lpEth := &eth.StubClient{
+		Round: big.NewInt(2),
+		BlockHashForRoundMap: map[int64]common.Hash{
+			1: ethcommon.BytesToHash([]byte("one")),
+			2: ethcommon.BytesToHash([]byte("two")),
+			3: ethcommon.BytesToHash([]byte("three")),
+			4: ethcommon.BytesToHash([]byte("four")),
+			5: ethcommon.BytesToHash([]byte("five")),
+			6: ethcommon.BytesToHash([]byte("six")),
+		},
+	}
+	watcher := &stubBlockWatcher{}
+	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, lpEth)
+	require.Nil(t, err)
+
+	var hash [32]byte
+	var preHash [32]byte
+	var nr contracts.RoundsManagerNewRound
+
+	// Test remove log, data refreshed from eth client
+	log := newStubBaseLog()
+	log.Removed = true
+	lpEth.Round = big.NewInt(3)
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(3), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[3].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], lpEth.BlockHashForRoundMap[2].Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
+
+	// Test add log with subsequent round
+	log.Removed = false
+	currentHash := ethcommon.BytesToHash([]byte("last"))
+	tw.lastInitializedL1BlockHash = currentHash
+	nr.Round = big.NewInt(4)
+	nr.BlockHash = lpEth.BlockHashForRoundMap[4]
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(4), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[4].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], currentHash.Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
+
+	// Test add log with not subsequent round
+	nr.Round = big.NewInt(6)
+	nr.BlockHash = lpEth.BlockHashForRoundMap[6]
+
+	err = tw.handleDecodedLog(log, nr)
+
+	assert.Nil(err)
+	assert.Equal(big.NewInt(6), tw.LastInitializedRound())
+	copy(hash[:], lpEth.BlockHashForRoundMap[6].Bytes())
+	assert.Equal(hash, tw.LastInitializedL1BlockHash())
+	copy(preHash[:], lpEth.BlockHashForRoundMap[5].Bytes())
+	assert.Equal(preHash, tw.PreLastInitializedL1BlockHash())
 }
 
 func TestLastSeenBlock(t *testing.T) {
@@ -232,7 +310,7 @@ func TestHandleBlockNum(t *testing.T) {
 		latestHeader: &blockwatch.MiniHeader{L1BlockNumber: big.NewInt(1)},
 	}
 
-	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})
+	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{Round: big.NewInt(2)})
 	assert.Nil(err)
 	header := defaultMiniHeader()
 	header.L1BlockNumber = big.NewInt(10)
@@ -255,7 +333,7 @@ func TestSubscribeBlocks(t *testing.T) {
 		latestHeader: &blockwatch.MiniHeader{L1BlockNumber: big.NewInt(1)},
 	}
 
-	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})
+	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{Round: big.NewInt(2)})
 	assert.Nil(err)
 	header := defaultMiniHeader()
 	header.L1BlockNumber = big.NewInt(10)
@@ -283,7 +361,7 @@ func TestSubscribeRounds(t *testing.T) {
 		latestHeader: &blockwatch.MiniHeader{L1BlockNumber: big.NewInt(1)},
 	}
 
-	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{})
+	tw, err := NewTimeWatcher(stubRoundsManagerAddr, watcher, &eth.StubClient{Round: big.NewInt(2)})
 	assert.Nil(err)
 	header := defaultMiniHeader()
 	newRoundEvent := newStubNewRoundLog()

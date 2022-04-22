@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"io"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"testing"
@@ -41,12 +40,7 @@ func sha1sums(t *testing.T, cert, key string) ([]byte, []byte, error) {
 
 func TestRPCCert(t *testing.T) {
 	url, _ := url.Parse("https://livepeer.org")
-	wd, err := ioutil.TempDir("", t.Name())
-	if err != nil {
-		t.Error("Could not get tempdir ", err)
-		return
-	}
-	defer os.RemoveAll(wd)
+	wd := t.TempDir()
 	cf, kf, err := getCert(url, wd)
 	if err != nil {
 		t.Error("Could not get cert/key ", err)

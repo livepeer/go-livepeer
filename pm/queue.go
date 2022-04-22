@@ -164,8 +164,11 @@ func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {
 }
 
 func isNonRetryableTicketErr(err error) bool {
-	// The latter check depends on logic in eth.client.CheckTx()
-	return err == errIsUsedTicket || strings.Contains(err.Error(), "transaction failed")
+	return err == errIsUsedTicket ||
+		// Depends on logic in eth.client.CheckTx()
+		strings.Contains(err.Error(), "transaction failed") ||
+		// Arbitrum L2 happens to return zero as the L1 block hash which results in this non-retryable error
+		strings.Contains(err.Error(), "ticket creationRound does not have a block hash")
 }
 
 func (q *ticketQueue) isRecipientActive(addr ethcommon.Address) bool {

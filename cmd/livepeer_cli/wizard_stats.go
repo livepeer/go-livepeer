@@ -294,6 +294,10 @@ func (w *wizard) getProtocolParameters() (lpTypes.ProtocolParameters, error) {
 		return lpTypes.ProtocolParameters{}, err
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return lpTypes.ProtocolParameters{}, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
+	}
+
 	defer resp.Body.Close()
 
 	result, err := ioutil.ReadAll(resp.Body)
@@ -314,6 +318,10 @@ func (w *wizard) getContractAddresses() (map[string]common.Address, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/contractAddresses", w.host, w.httpPort))
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
 	}
 
 	defer resp.Body.Close()

@@ -26,12 +26,13 @@ import (
 //	* Last Seen Block Number
 type TimeWatcher struct {
 	// state
-	mu                         sync.RWMutex
-	lastInitializedRound       *big.Int
-	lastInitializedL1BlockHash [32]byte
-	currentRoundStartL1Block   *big.Int
-	transcoderPoolSize         *big.Int
-	lastSeenL1Block            *big.Int
+	mu                            sync.RWMutex
+	lastInitializedRound          *big.Int
+	lastInitializedL1BlockHash    [32]byte
+	preLastInitializedL1BlockHash [32]byte
+	currentRoundStartL1Block      *big.Int
+	transcoderPoolSize            *big.Int
+	lastSeenL1Block               *big.Int
 
 	// last initialized round number subscription feeds
 	roundSubFeed  event.Feed
@@ -70,11 +71,15 @@ func NewTimeWatcher(roundsManagerAddr ethcommon.Address, watcher BlockWatcher, l
 	if err != nil {
 		return nil, fmt.Errorf("error fetching initial lastInitializedL1BlockHash value err=%q", err)
 	}
+	pbh, err := tw.lpEth.BlockHashForRound(prevRound(lr))
+	if err != nil {
+		return nil, fmt.Errorf("error fetching initial preLastInitializedL1BlockHash value err=%q", err)
+	}
 	num, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
 		return nil, fmt.Errorf("error fetching current round start block err=%q", err)
 	}
-	tw.setLastInitializedRound(lr, bh, num)
+	tw.setLastInitializedRound(lr, bh, pbh, num)
 
 	lastSeenBlock, err := tw.watcher.GetLatestBlock()
 	if err != nil {
@@ -102,11 +107,18 @@ func (tw *TimeWatcher) LastInitializedRound() *big.Int {
 	return tw.lastInitializedRound
 }
 
-// LastInitializedBlockHash returns the blockhash of the block the last round was initiated in
+// LastInitializedL1BlockHash returns the blockhash of the L1 block the last round was initiated in
 func (tw *TimeWatcher) LastInitializedL1BlockHash() [32]byte {
 	tw.mu.RLock()
 	defer tw.mu.RUnlock()
 	return tw.lastInitializedL1BlockHash
+}
+
+// PreLastInitializedL1BlockHash returns the blockhash of the L1 block for the round proceeding the last initialized round
+func (tw *TimeWatcher) PreLastInitializedL1BlockHash() [32]byte {
+	tw.mu.RLock()
+	defer tw.mu.RUnlock()
+	return tw.preLastInitializedL1BlockHash
 }
 
 func (tw *TimeWatcher) CurrentRoundStartL1Block() *big.Int {
@@ -115,11 +127,12 @@ func (tw *TimeWatcher) CurrentRoundStartL1Block() *big.Int {
 	return tw.currentRoundStartL1Block
 }
 
-func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte, startBlk *big.Int) {
+func (tw *TimeWatcher) setLastInitializedRound(round *big.Int, hash [32]byte, preHash [32]byte, startBlk *big.Int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
 	tw.lastInitializedRound = round
 	tw.lastInitializedL1BlockHash = hash
+	tw.preLastInitializedL1BlockHash = preHash
 	tw.currentRoundStartL1Block = startBlk
 }
 
@@ -235,6 +248,10 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		return fmt.Errorf("unable to decode event: %v", err)
 	}
 
+	return tw.handleDecodedLog(log, nr)
+}
+
+func (tw *TimeWatcher) handleDecodedLog(log types.Log, nr contracts.RoundsManagerNewRound) error {
 	roundStartL1Block, err := tw.lpEth.CurrentRoundStartBlock()
 	if err != nil {
 		return err
@@ -248,9 +265,22 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 		if err != nil {
 			return err
 		}
-		tw.setLastInitializedRound(lr, bh, roundStartL1Block)
+		pbh, err := tw.lpEth.BlockHashForRound(prevRound(lr))
+		if err != nil {
+			return err
+		}
+		tw.setLastInitializedRound(lr, bh, pbh, roundStartL1Block)
 	} else {
-		tw.setLastInitializedRound(nr.Round, nr.BlockHash, roundStartL1Block)
+		var pbh [32]byte
+		if nr.Round.Cmp(big.NewInt(0).Add(tw.lastInitializedRound, big.NewInt(1))) == 0 {
+			pbh = tw.lastInitializedL1BlockHash
+		} else {
+			pbh, err = tw.lpEth.BlockHashForRound(prevRound(nr.Round))
+			if err != nil {
+				return err
+			}
+		}
+		tw.setLastInitializedRound(nr.Round, nr.BlockHash, pbh, roundStartL1Block)
 	}
 
 	// Get the active transcoder pool size when we receive a NewRound event
@@ -263,4 +293,8 @@ func (tw *TimeWatcher) handleLog(log types.Log) error {
 	tw.roundSubFeed.Send(log)
 
 	return nil
+}
+
+func prevRound(lr *big.Int) *big.Int {
+	return big.NewInt(0).Sub(lr, big.NewInt(1))
 }
