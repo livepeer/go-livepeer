@@ -18,7 +18,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jaypipes/ghw v0.7.0
 	github.com/livepeer/livepeer-data v0.4.11
-	github.com/livepeer/lpms v0.0.0-20220322090848-7c772da19b33
+	github.com/livepeer/lpms v0.0.0-20220420001659-1d700dd80073
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -44,4 +44,3 @@ require (
 	google.golang.org/grpc v1.38.0
 	pgregory.net/rapid v0.4.0
 )
-

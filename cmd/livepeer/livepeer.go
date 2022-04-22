@@ -210,6 +210,11 @@ func main() {
 		return
 	}
 
+	if *netint != "" && *nvidia != "" {
+		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
+		return
+	}
+
 	type NetworkConfig struct {
 		ethController string
 		minGasPrice   int64
