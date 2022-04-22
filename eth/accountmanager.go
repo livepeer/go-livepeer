@@ -39,7 +39,7 @@ type accountManager struct {
 	keyStore *keystore.KeyStore
 }
 
-func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainID *big.Int) (AccountManager, error) {
+func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainID *big.Int, passphrase string) (AccountManager, error) {
 	keyStore := keystore.NewKeyStore(keystoreDir, keystore.StandardScryptN, keystore.StandardScryptP)
 
 	acctExists := keyStore.HasAddress(accountAddr)
@@ -50,14 +50,22 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainI
 	if numAccounts == 0 || ((accountAddr != ethcommon.Address{}) && !acctExists) {
 		glog.Infof("No Ethereum account found. Creating a new account")
 		glog.Infof("This process will create a new Ethereum account for this Livepeer node")
-		glog.Infof("Please enter a passphrase to encrypt the Private Keystore file for the Ethereum account.")
-		glog.Infof("This process will ask for this passphrase every time it is launched")
-		glog.Infof("(no characters will appear in Terminal when the passphrase is entered)")
 
-		// Account does not exist yet, set it up
-		acct, err = createAccount(keyStore)
-		if err != nil {
-			return nil, err
+		if passphrase == "" {
+			glog.Infof("Please enter a passphrase to encrypt the Private Keystore file for the Ethereum account.")
+			glog.Infof("This process will ask for this passphrase every time it is launched")
+			glog.Infof("(no characters will appear in Terminal when the passphrase is entered)")
+
+			// Account does not exist yet, set it up
+			acct, err = createAccount(keyStore)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			acct, err = keyStore.NewAccount(passphrase)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		glog.V(common.SHORT).Infof("Found existing ETH account")

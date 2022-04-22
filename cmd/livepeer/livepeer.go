@@ -686,7 +686,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		defer gpm.Stop()
 
-		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*cfg.ethAcctAddr), keystoreDir, chainID)
+		am, err := eth.NewAccountManager(ethcommon.HexToAddress(*cfg.ethAcctAddr), keystoreDir, chainID, *cfg.ethPassword)
 		if err != nil {
 			glog.Errorf("Error creating Ethereum account manager: %v", err)
 			return
