@@ -17,11 +17,6 @@ import (
 
 const maxFutureRound = int64(math.MaxInt64)
 
-type OrchestratorStakeCachingResult struct {
-	address ethcommon.Address
-	err     error
-}
-
 type OrchestratorWatcher struct {
 	store   common.OrchestratorStore
 	dec     *EventDecoder
