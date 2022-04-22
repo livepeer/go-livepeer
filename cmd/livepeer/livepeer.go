@@ -562,7 +562,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if accel != ffmpeg.Software {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
 			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
-			if err!=nil {
+			if err != nil {
 				glog.Fatalf("Error unsupported acceleration: %v", err)
 			}
 			// Get a list of device ids
@@ -581,7 +581,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
-			if accel==ffmpeg.Nvidia && *cfg.sceneClassificationModelPath != "" {
+			if accel == ffmpeg.Nvidia && *cfg.sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *cfg.sceneClassificationModelPath
 				core.DetectorProfile = &detectorProfile
