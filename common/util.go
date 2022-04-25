@@ -455,9 +455,9 @@ func detectNvidiaDevices() ([]string, error) {
 	return devices, nil
 }
 
-func ParseNvidiaDevices(nvidia string) ([]string, error) {
-	if nvidia == "all" {
+func ParseAccelDevices(devices string, acceleration ffmpeg.Acceleration) ([]string, error) {
+	if acceleration == ffmpeg.Nvidia && devices == "all" {
 		return detectNvidiaDevices()
 	}
-	return strings.Split(nvidia, ","), nil
+	return strings.Split(devices, ","), nil
 }

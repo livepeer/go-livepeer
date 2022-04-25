@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2348 Support Netint transcoding hardware (@cyberj0g)
 - \#2289 Add timeouts to ETH client (@leszko)
 - \#2282 Add checksums and gpg signature support with binary releases. (@hjpotter92)
 - \#2344 Use T.TempDir to create temporary test directory (@Juneezee)

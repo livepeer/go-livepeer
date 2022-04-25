@@ -95,6 +95,7 @@ type LivepeerConfig struct {
 	maxSessions                  *int
 	currentManifest              *bool
 	nvidia                       *string
+	netint                       *string
 	testTranscoder               *bool
 	sceneClassificationModelPath *string
 	ethAcctAddr                  *string
@@ -225,6 +226,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxSessions := 10
 	defaultCurrentManifest := false
 	defaultNvidia := ""
+	defaultNetint := ""
 	defaultTestTranscoder := true
 	defaultSceneClassificationModelPath := ""
 
@@ -288,6 +290,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		maxSessions:                  &defaultMaxSessions,
 		currentManifest:              &defaultCurrentManifest,
 		nvidia:                       &defaultNvidia,
+		netint:                       &defaultNetint,
 		testTranscoder:               &defaultTestTranscoder,
 		sceneClassificationModelPath: &defaultSceneClassificationModelPath,
 
@@ -357,6 +360,7 @@ func parseLivepeerConfig() LivepeerConfig {
 	cfg.maxSessions = flag.Int("maxSessions", *cfg.maxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number or RTMP streams for Broadcaster, or maximum capacity for transcoder")
 	cfg.currentManifest = flag.Bool("currentManifest", *cfg.currentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	cfg.nvidia = flag.String("nvidia", *cfg.nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
+	cfg.netint = flag.String("netint", *cfg.netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	cfg.testTranscoder = flag.Bool("testTranscoder", *cfg.testTranscoder, "Test Nvidia GPU transcoding at startup")
 	cfg.sceneClassificationModelPath = flag.String("sceneClassificationModelPath", *cfg.sceneClassificationModelPath, "Path to scene classification model")
 
@@ -443,6 +447,11 @@ func updateNilsForUnsetFlags(cfg LivepeerConfig) LivepeerConfig {
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.maxSessions <= 0 {
 		glog.Fatal("-maxSessions must be greater than zero")
+		return
+	}
+
+	if *cfg.netint != "" && *cfg.nvidia != "" {
+		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
 		return
 	}
 
@@ -540,22 +549,39 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	var transcoderCaps []core.Capability
 	if *cfg.transcoder {
 		core.WorkDir = *cfg.datadir
+		accel := ffmpeg.Software
+		var devicesStr string
 		if *cfg.nvidia != "" {
-			// Get a list of device ids
-			devices, err := common.ParseNvidiaDevices(*cfg.nvidia)
+			accel = ffmpeg.Nvidia
+			devicesStr = *cfg.nvidia
+		}
+		if *cfg.netint != "" {
+			accel = ffmpeg.Netint
+			devicesStr = *cfg.netint
+		}
+		if accel != ffmpeg.Software {
+			accelName := ffmpeg.AccelerationNameLookup[accel]
+			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
-				glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *cfg.nvidia, err)
+				glog.Fatalf("Error unsupported acceleration: %v", err)
 			}
-			glog.Infof("Transcoding on these Nvidia GPUs: %v", devices)
-			// Test transcoding with nvidia
+			// Get a list of device ids
+			devices, err := common.ParseAccelDevices(devicesStr, accel)
+			glog.Infof("%v devices: %v", accelName, devices)
+			if err != nil {
+				glog.Fatalf("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
+			}
+			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
+			// Test transcoding with specified device
 			if *cfg.testTranscoder {
-				transcoderCaps, err = core.TestTranscoderCapabilities(devices)
+				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
 				if err != nil {
 					glog.Fatal(err)
+					return
 				}
 			}
 			// FIXME: Short-term hack to pre-load the detection models on every device
-			if *cfg.sceneClassificationModelPath != "" {
+			if accel == ffmpeg.Nvidia && *cfg.sceneClassificationModelPath != "" {
 				detectorProfile := ffmpeg.DSceneAdultSoccer
 				detectorProfile.ModelPath = *cfg.sceneClassificationModelPath
 				core.DetectorProfile = &detectorProfile
@@ -568,7 +594,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 			// Initialize LB transcoder
-			n.Transcoder = core.NewLoadBalancingTranscoder(devices, core.NewNvidiaTranscoder, core.NewNvidiaTranscoderWithDetector)
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf, dtf)
 		} else {
 			// for local software mode, enable all capabilities
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
