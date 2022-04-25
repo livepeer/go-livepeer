@@ -177,7 +177,7 @@ func ethSetup(ethAcctAddr, keystoreDir string, isBroadcaster bool) {
 		return
 	}
 
-	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, chainID)
+	am, err := eth.NewAccountManager(ethcommon.HexToAddress(ethAcctAddr), keystoreDir, chainID, passphrase)
 	if err != nil {
 		glog.Errorf("Error creating Ethereum account manager: %v", err)
 		return

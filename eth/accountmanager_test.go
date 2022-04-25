@@ -87,7 +87,7 @@ func TestAccountManager(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestEmptyPassphrase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestSign(t *testing.T) {
 	a, err := ks.NewAccount("")
 	require.Nil(err)
 
-	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777), "")
 	require.Nil(err)
 
 	_, err = am.Sign([]byte("foo"))
@@ -169,7 +169,7 @@ func TestSignTypedData(t *testing.T) {
 	a, err := ks.NewAccount("")
 	require.Nil(err)
 
-	am, err := NewAccountManager(a.Address, dir, big.NewInt(777))
+	am, err := NewAccountManager(a.Address, dir, big.NewInt(777), "")
 	require.Nil(err)
 
 	am.Unlock("")
