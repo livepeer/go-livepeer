@@ -8,43 +8,35 @@ on:
 
 jobs:
   test:
+    name: Test the livepeer project
     runs-on: ubuntu-18.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Check out code
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
-          lfs: 'true'
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v3
         with:
-          go-version: '1.17.6'
-
-      - name: Install protobuf
-        run: |
-          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          go-version: 1.17
 
       - name: Cache go modules
         id: cache-go-mod
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+          path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/compiled
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
@@ -71,19 +63,25 @@ jobs:
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         run: ./install_ffmpeg.sh
 
+      - name: Install protobuf
+        run: |
+          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       - name: go fmt
         run: |
+          echo "PKG_CONFIG_PATH=${HOME}/compiled/lib/pkgconfig" >> $GITHUB_ENV
           go fmt ./...
           git diff --exit-code
 
       - name: Lint
-        run: |
-          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.39.0
-          golangci-lint run --disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.39.0
+          args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
 
       - name: Run tests
-        shell: bash
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
           ./test.sh
