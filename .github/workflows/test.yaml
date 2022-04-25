@@ -2,13 +2,15 @@ name: Trigger test suite
 
 on:
   pull_request:
+    branches:
+      - master
   push:
     branches:
       - master
 
 jobs:
   test:
-    name: Test the livepeer project
+    name: Run tests defined for the project
     runs-on: ubuntu-18.04
     steps:
       - name: Check out code
@@ -46,11 +48,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update \
-            && sudo apt-get install -y software-properties-common curl apt-transport-https \
+            && sudo apt-get install -yqq software-properties-common curl apt-transport-https \
             && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
             && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
             && sudo apt-get update \
-            && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
+            && sudo apt-get -yqq install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
 
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
@@ -67,7 +69,7 @@ jobs:
         run: |
           go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -yqq protobuf-compiler
 
       - name: go fmt
         run: |
@@ -81,7 +83,14 @@ jobs:
           version: v1.39.0
           args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
           ./test.sh
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./cover.out
+          name: go-livepeer
+          verbose: true

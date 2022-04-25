@@ -13,6 +13,7 @@
 - \#2344 Use T.TempDir to create temporary test directory (@Juneezee)
 - \#2353 Codesign and notarize macOS binaries to be allowed to run without warnings on apple devices (@hjpotter92)
 - \#2351 Refactor livepeer.go to enable running Livepeer node from the code (@leszko)
+- \#2372 Upload test coverage reports to codecov (@hjpotter92)
 
 #### Broadcaster
 - \#2309 Add dynamic timeout for the orchestrator discovery (@leszko)
