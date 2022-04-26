@@ -173,9 +173,6 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 }
 
 func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
-	ow.roundMu.Lock()
-	defer ow.roundMu.Unlock()
-
 	round, err := ow.lpEth.CurrentRound()
 	if err != nil {
 		return err
@@ -186,22 +183,16 @@ func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
 		return err
 	}
 
-	wg := &sync.WaitGroup{}
-
 	for _, o := range orchs {
-		wg.Add(1)
-		go ow.cacheOrchestratorStake(ethcommon.HexToAddress(o.EthereumAddr), round, wg)
+		go ow.cacheOrchestratorStake(ethcommon.HexToAddress(o.EthereumAddr), round)
 	}
-
-	wg.Wait()
 
 	return nil
 }
 
-func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int, wg *sync.WaitGroup) error {
+func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) error {
 	var err error
 
-	defer wg.Done()
 	defer func() {
 		if err != nil {
 			glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
