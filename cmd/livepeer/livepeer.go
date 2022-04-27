@@ -1274,7 +1274,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
-			server.StartTranscodeServer(orch, *cfg.httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
+			server.StartTranscodeServer(orch, *cfg.httpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
 			tc <- struct{}{}
 		}()
 

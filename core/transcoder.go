@@ -23,6 +23,7 @@ import (
 
 type Transcoder interface {
 	Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error)
+	EndSession(sessionId string)
 }
 
 type LocalTranscoder struct {
@@ -71,6 +72,10 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	}
 
 	return resToTranscodeData(ctx, res, opts)
+}
+
+func (lt* LocalTranscoder) EndSession(sessionId string) {
+	// no-op for software transcoder
 }
 
 func NewLocalTranscoder(workDir string) Transcoder {
@@ -153,6 +158,10 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	}
 
 	return resToTranscodeData(ctx, res, out)
+}
+
+func (nv* NvidiaTranscoder) EndSession(sessionId string) {
+	nv.Stop()
 }
 
 type transcodeTestParams struct {

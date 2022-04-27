@@ -26,6 +26,10 @@ type Router struct {
 	srv  *grpc.Server
 }
 
+func (r *Router) EndSession(ctx context.Context, request *net.EndSessionRequest) (*net.EndSessionResponse, error) {
+	panic("implement me")
+}
+
 func NewRouter(uris []*url.URL) *Router {
 	return &Router{uris: uris}
 }

@@ -7,6 +7,7 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
   rpc Ping(PingPong) returns (PingPong);
 }
 
@@ -23,6 +24,20 @@ message PingPong {
 
 }
 
+// sent by Broadcaster to Orchestrator to terminate the transcoding session and free resources (used for verification sessions)
+message EndSessionRequest {
+  // Id of transcoding session to end
+  string session_id = 1;
+
+  // Ethereum address of the broadcaster
+  bytes address = 2;
+
+  // Broadcaster's signature over its address
+  bytes sig   = 3;
+}
+
+message EndSessionResponse {
+}
 
 // This request is sent by the broadcaster in `GetTranscoder` to request
 // information on which transcoder to use.

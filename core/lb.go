@@ -39,6 +39,16 @@ type LoadBalancingTranscoder struct {
 	idx      int // Ensures a non-tapered work distribution
 }
 
+func (lb *LoadBalancingTranscoder) EndSession(sessionId string) {
+	if session, exists := lb.sessions[sessionId]; exists {
+		session.transcoder.Stop()
+		close(session.done)
+		clog.V(common.DEBUG).Infof(context.TODO(), "LB: Transcode session id=%s teared down", session.key)
+	} else {
+		clog.V(common.DEBUG).Infof(context.TODO(), "LB: Transcode session id=%s already finished", session.key)
+	}
+}
+
 func NewLoadBalancingTranscoder(devices []string, newTranscoderFn newTranscoderFn,
 	newTranscoderWithDetectorFn newTranscoderWithDetectorFn) Transcoder {
 	return &LoadBalancingTranscoder{

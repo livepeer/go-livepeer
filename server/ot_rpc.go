@@ -128,10 +128,15 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 			return err
 		}
 		wg.Add(1)
-		go func() {
-			runTranscode(n, orchAddr, httpc, notify)
-			wg.Done()
-		}()
+		if notify.SegData != nil && notify.SegData.AuthToken != nil && len(notify.SegData.AuthToken.SessionId) > 0 && len(notify.Url) == 0 {
+			// session teardown signal
+			n.Transcoder.EndSession(notify.SegData.AuthToken.SessionId);
+		} else {
+			go func() {
+				runTranscode(n, orchAddr, httpc, notify)
+				wg.Done()
+			}()
+		}
 	}
 }
 

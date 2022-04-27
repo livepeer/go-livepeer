@@ -958,7 +958,24 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 	return nil, ErrNoTranscodersAvailable
 }
 
-// compleStreamSessions end a stream session for a remote transcoder and decrements its laod
+// ends transcoding session and releases resources
+func (rtm *RemoteTranscoderManager) EndSession(sessionId string) {
+	// session may be already terminated by timeout
+	if sess, exists := rtm.streamSessions[sessionId]; exists {
+		// send NotifySegment with empty URL to signal session teardown
+		// xxx get valid auth token?
+		segData := &net.SegData{
+			AuthToken: &net.AuthToken{SessionId: sessionId},
+		}
+		msg := &net.NotifySegment{
+			SegData: segData,
+		}
+		_ = sess.stream.Send(msg)
+		rtm.completeStreamSession(sessionId);
+	}
+}
+
+// completeStreamSessions end a stream session for a remote transcoder and decrements its laod
 // caller should hold the mutex lock
 func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 	t, ok := rtm.streamSessions[sessionId]

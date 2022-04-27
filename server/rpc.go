@@ -154,6 +154,11 @@ type lphttp struct {
 	orchestrator Orchestrator
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
+	node		 *core.LivepeerNode
+}
+
+func (h *lphttp) EndSession(ctx context.Context, request *net.EndSessionRequest) (*net.EndSessionResponse, error) {
+	return endSession(h.node, h.orchestrator, request)
 }
 
 // grpc methods
@@ -175,12 +180,13 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
 		orchRPC:      s,
 		transRPC:     mux,
+		node: n,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
@@ -260,6 +266,26 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	return r, nil
 }
 
+// EndSession - the broadcaster calls EndSession to tear down sessions used for verification only once
+func EndSession(ctx context.Context, sess *BroadcastSession) (error) {
+	uri, err := url.Parse(sess.Transcoder())
+	if err != nil {
+		return err
+	}
+	c, conn, err := startOrchestratorClient(ctx, uri)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	req, err := genEndSessionRequest(sess.Broadcaster, sess)
+	_, err = c.EndSession(ctx, req)
+	if err != nil {
+		return errors.Wrapf(err, "Could not end orchestrator session orch=%v", sess.Transcoder())
+	}
+	return nil
+}
+
 func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.OrchestratorClient, *grpc.ClientConn, error) {
 	clog.V(common.DEBUG).Infof(ctx, "Connecting RPC to uri=%v", uri)
 	conn, err := grpc.Dial(uri.Host,
@@ -283,6 +309,14 @@ func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) 
 	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig}, nil
 }
 
+func genEndSessionRequest(b common.Broadcaster, sess *BroadcastSession) (*net.EndSessionRequest, error) {
+	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
+	if err != nil {
+		return nil, err
+	}
+	return &net.EndSessionRequest{Address: b.Address().Bytes(), Sig: sig, SessionId: sess.PMSessionID}, nil
+}
+
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
 	addr := ethcommon.BytesToAddress(req.Address)
 	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
@@ -295,6 +329,21 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 
 	// currently, orchestrator == transcoder
 	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+}
+
+func endSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndSessionRequest) (*net.EndSessionResponse, error) {
+	addr := ethcommon.BytesToAddress(req.Address)
+	if err := verifyOrchestratorReq(orch, addr, req.Sig); err != nil {
+		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
+	}
+
+	if _, err := authenticateBroadcaster(addr.Hex()); err != nil {
+		return nil, fmt.Errorf("authentication failed: %v", err)
+	}
+
+	node.TranscoderManager.EndSession(req.SessionId)
+
+	return &net.EndSessionResponse{}, nil
 }
 
 func getPriceInfo(orch Orchestrator, addr ethcommon.Address) (*net.PriceInfo, error) {
