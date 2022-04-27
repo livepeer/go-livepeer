@@ -5,14 +5,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/livepeer/go-livepeer/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,8 +50,9 @@ type ChunkLatency struct {
 }
 
 type TransferLatency struct {
-	Chunks []ChunkLatency
-	Start  time.Time
+	Chunks        []ChunkLatency
+	Start         time.Time
+	LastChunkTime time.Time
 }
 
 func (l *TransferLatency) TotalTimeBytes() (bytes int, duration time.Duration) {
@@ -88,8 +92,9 @@ type TranscodingLatency struct {
 	Checkpoints []TranscodingLatencyCheckpoint
 }
 
-func calculateTranscodingLatency(t *testing.T, sending, receiving TransferLatency) (r TranscodingLatency) {
+func calculateTranscodingLatency(t *testing.T, sending, receiving *TransferLatency) (r *TranscodingLatency) {
 	totalRecvBytes, _ := receiving.TotalTimeBytes()
+	r = &TranscodingLatency{}
 
 	recvTimestamp := receiving.Start
 	recvBytes := int(0)
@@ -119,76 +124,93 @@ func min(a, b int) int {
 
 type BreakOperation bool
 
-type SegmentHTTPPublisher struct {
-	t            *testing.T
-	sample       SampleSegment
-	hostname     string
-	port         int
-	inputData    []byte
-	url          string
-	body         *io.PipeWriter
-	httpResponse *http.Response
+type SegmentWebsocketPublisher struct {
+	t              *testing.T
+	sample         SampleSegment
+	hostname       string
+	port           int
+	inputData      []byte
+	url            url.URL
+	ws             *websocket.Conn
+	httpResponse   *http.Response
+	results        map[string]*TransferLatency
+	selectedResult *TransferLatency
 	// Using channels to signal send&recv goroutine completion
 	sendingErrorChannel chan error
 	receiveErrorChannel chan error
 	// `sendTiming` & `recvTiming` are used by main goroutine and sending/receiving goroutines.
 	// channels above ensure usage is sequential so we don't need mutexes
-	sendTiming TransferLatency
-	recvTiming TransferLatency
+	sendTiming   TransferLatency
+	receiveStart time.Time
+	// recvTiming TransferLatency
 }
 
-func (p *SegmentHTTPPublisher) init() {
-	p.url = fmt.Sprintf("http://%s:%d/live/%s/%d.ts", p.hostname, p.port, manifestID, p.sample.Index)
+func (p *SegmentWebsocketPublisher) init() {
+	p.selectedResult = nil
+	p.results = make(map[string]*TransferLatency)
+	p.url = url.URL{Scheme: "ws", Host: fmt.Sprintf("%s:%d", p.hostname, p.port), Path: fmt.Sprintf("/wslive/%s/%d.ts", manifestID, p.sample.Index)}
 	p.sendingErrorChannel, p.receiveErrorChannel = make(chan error), make(chan error)
 }
-func (p *SegmentHTTPPublisher) readInput() {
+func (p *SegmentWebsocketPublisher) readInput() {
 	var err error
 	p.inputData, err = ioutil.ReadFile(p.sample.Path)
 	require.NoError(p.t, err, "failed to read sample file %s", p.sample.Path)
 }
-func (p *SegmentHTTPPublisher) sendHttpRequest() {
-	client := &http.Client{
-		Timeout: p.sample.Duration * 2 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives:  true,
-			DisableCompression: true,
-		},
-	}
-	var readEndOfPipe *io.PipeReader
-	readEndOfPipe, p.body = io.Pipe()
-	request, err := http.NewRequest("POST", p.url, readEndOfPipe)
-	assert.NoError(p.t, err, "failed http.NewRequest %s", p.url)
-	request.Close = true
-	request.ContentLength = -1
-	request.TransferEncoding = append(request.TransferEncoding, "chunked")
-	request.Header.Add("Content-Type", "video/mp2t")
-	request.Header.Add("Accept", "multipart/mixed")
-
-	p.httpResponse, err = client.Do(request)
-	assert.NoError(p.t, err, "failed client.Do %s", p.url)
+func (p *SegmentWebsocketPublisher) connectWebsocket() {
+	var err error
+	p.ws, p.httpResponse, err = websocket.DefaultDialer.Dial(p.url.String(), nil)
+	require.NoError(p.t, err, "failed ws connect %v", p.url)
+	require.NotNil(p.t, p.ws)
 }
 
-func (p *SegmentHTTPPublisher) recvRoutine() {
-	defer p.httpResponse.Body.Close()
-	p.recvTiming.Start = time.Now()
-	lastChunkStartTs := p.recvTiming.Start
-	chunk := make([]byte, 16384)
+func (p *SegmentWebsocketPublisher) recvRoutine() {
+	require.NotNil(p.t, p.ws)
+	// make sure we close socket
+	defer p.ws.Close()
+	// make sure we release test goroutine
+	defer close(p.receiveErrorChannel)
+	p.receiveStart = time.Now()
+	// Receive messages in a loop.
+	// TextMessage is json encoded. Prepares state for next BinaryMessage, for ex. signal end of transmission
 	for {
-		byteCount, err := p.httpResponse.Body.Read(chunk)
-		if err != nil || byteCount == 0 {
-			assert.Greater(p.t, len(p.recvTiming.Chunks), 0, "transcoding refused")
-			fmt.Printf("> recv ended with %v chunks=%d\n", err, len(p.recvTiming.Chunks))
-			if err == io.EOF {
-				p.receiveErrorChannel <- nil
-			} else {
-				p.receiveErrorChannel <- err
+		messageType, byteData, err := p.ws.ReadMessage()
+		// Note: connection may break outside lab conditions
+		assert.NoError(p.t, err, "ws.ReadMessage() %v", err)
+		if messageType == websocket.TextMessage {
+			// Text message type preceeds binary chunks and sets context for it
+			message := server.PushControlMessage{}
+			err := json.Unmarshal(byteData, &message)
+			assert.NoError(p.t, err, "failed json decode on websocket.TextMessage %v", err)
+			switch message.Stage {
+			case server.PushStageResult:
+				// select indicated result
+				result, ok := p.results[message.Description]
+				if !ok {
+					result = &TransferLatency{}
+					result.Start = p.receiveStart
+					result.LastChunkTime = result.Start
+					p.results[message.Description] = result
+				}
+				p.selectedResult = result
+			case server.PushStageEof:
+				// all done
+				return
+			case server.PushStageError:
+				p.receiveErrorChannel <- fmt.Errorf("error: %s", message.Description)
+				return
 			}
-			return
+			continue
 		}
-		now := time.Now()
-		duration := now.Sub(lastChunkStartTs)
-		lastChunkStartTs = now
-		p.recvTiming.Chunks = append(p.recvTiming.Chunks, ChunkLatency{byteCount, duration})
+		// Is it possible to recv PingMessage,PongMessage,CloseMessage?
+		if messageType == websocket.BinaryMessage {
+			assert.NotNil(p.t, p.selectedResult, "Protocol error: server must PushStageResult before binary message")
+			// we do not process byteData in our test
+			now := time.Now()
+			duration := now.Sub(p.selectedResult.LastChunkTime)
+			p.selectedResult.LastChunkTime = now
+			p.selectedResult.Chunks = append(p.selectedResult.Chunks, ChunkLatency{len(byteData), duration})
+			continue
+		}
 	}
 }
 
@@ -199,22 +221,14 @@ type pushChunkContext struct {
 	sentSize         int
 }
 
-func (p *SegmentHTTPPublisher) pushChunk(c *pushChunkContext) BreakOperation {
+func (p *SegmentWebsocketPublisher) pushChunk(c *pushChunkContext) BreakOperation {
 	var chunkSize int = min(4096, len(p.inputData))
-	var toSend int = chunkSize
-	for {
-		if toSend <= 0 {
-			break
-		}
-		bytesSent, err := p.body.Write(p.inputData[:toSend])
-		p.inputData = p.inputData[bytesSent:]
-		toSend -= bytesSent
-		c.sentSize += bytesSent
-		if err != nil {
-			fmt.Printf("> sending error=%v \n", err)
-			return true
-		}
-	}
+	// When sending we send binary chunks and signal eof with json message
+	err := p.ws.WriteMessage(websocket.BinaryMessage, p.inputData[:chunkSize])
+	assert.NoError(p.t, err, "sending error")
+	// websocket always sends entire message
+	p.inputData = p.inputData[chunkSize:]
+	c.sentSize += chunkSize
 
 	now := time.Now()
 	duration := now.Sub(c.lastChunkStartTs)
@@ -225,12 +239,8 @@ func (p *SegmentHTTPPublisher) pushChunk(c *pushChunkContext) BreakOperation {
 	uploadedTime := toSeconds(p.sample.Duration) * float64(c.sentSize) / float64(c.originalSize)
 	if timeToSleep := uploadedTime - realtimeSpent; timeToSleep > 0 {
 		amount := fromSeconds(timeToSleep)
-		// fmt.Printf("> sleeping=%v %v realtime=%v uploadtime=%v\n", timeToSleep, amount, realtimeSpent, uploadedTime)
 		time.Sleep(amount)
 	}
-	// else {
-	// 	fmt.Printf("> NOT sleeping realtime=%v uploadtime=%v \n", realtimeSpent, uploadedTime)
-	// }
 	if diff := uploadedTime - c.lastPrintedTime; diff > 1.0 {
 		// print progress to show test is not stuck
 		c.lastPrintedTime = uploadedTime
@@ -238,22 +248,24 @@ func (p *SegmentHTTPPublisher) pushChunk(c *pushChunkContext) BreakOperation {
 	}
 	return false
 }
-func (p *SegmentHTTPPublisher) sendRoutine() {
-	defer p.body.Close()
+func (p *SegmentWebsocketPublisher) sendRoutine() {
+	defer close(p.sendingErrorChannel)
+	require.NotNil(p.t, p.ws)
 	p.sendTiming.Start = time.Now()
 	c := &pushChunkContext{len(p.inputData), p.sendTiming.Start, 0, 0}
 	for {
 		if p.pushChunk(c) || len(p.inputData) == 0 {
 			fmt.Printf("> all data sent \n")
+			p.ws.WriteJSON(server.PushControlMessage{Stage: server.PushStageEof})
 			p.sendingErrorChannel <- nil
 			break
 		}
 	}
 }
-func (p *SegmentHTTPPublisher) Push() TranscodingLatency {
+func (p *SegmentWebsocketPublisher) Push() map[string]*TranscodingLatency {
 	p.init()
 	p.readInput()
-	p.sendHttpRequest()
+	p.connectWebsocket()
 	go p.sendRoutine()
 	go p.recvRoutine()
 	// wait for HTTP transaction complete
@@ -263,12 +275,16 @@ func (p *SegmentHTTPPublisher) Push() TranscodingLatency {
 	assert.NoError(p.t, sendingError)
 	assert.NoError(p.t, receiveError)
 	// return latency measurements
-	return calculateTranscodingLatency(p.t, p.sendTiming, p.recvTiming)
+	results := make(map[string]*TranscodingLatency)
+	for name, recvTiming := range p.results {
+		results[name] = calculateTranscodingLatency(p.t, &p.sendTiming, recvTiming)
+	}
+	return results
 }
 
-func minimalLatency(l *TranscodingLatency) (latencyValue float64) {
+func minimalLatency(l *TranscodingLatency, resultName string) (latencyValue float64) {
 	for _, checkpoint := range l.Checkpoints {
-		// // fmt.Printf(" latency %v ms; bytes=%v \n", checkpoint.Milliseconds, checkpoint.ByteCount)
+		fmt.Printf(" [%s] latency %v ms; bytes=%v \n", resultName, checkpoint.Milliseconds, checkpoint.ByteCount)
 		if latencyValue < checkpoint.Milliseconds {
 			latencyValue = checkpoint.Milliseconds
 		}
@@ -326,9 +342,15 @@ func TestIntegration_TranscodingLatency(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	for _, sample := range sampleSegments {
-		publisher := SegmentHTTPPublisher{t: t, sample: sample, hostname: "127.0.0.1", port: 18936}
-		latency := publisher.Push()
-		latencyValue := minimalLatency(&latency)
-		fmt.Printf(" latency %v ms; segment-duration=%v \n", latencyValue, sample.Duration)
+		publisher := SegmentWebsocketPublisher{t: t, sample: sample, hostname: "127.0.0.1", port: 18936}
+		latencyResults := publisher.Push()
+		worstLatency := float64(0)
+		for resultName, latencies := range latencyResults {
+			latencyValue := minimalLatency(latencies, resultName)
+			if latencyValue > worstLatency {
+				worstLatency = latencyValue
+			}
+		}
+		fmt.Printf(" latency %v ms; segment-duration=%v \n", worstLatency, sample.Duration)
 	}
 }

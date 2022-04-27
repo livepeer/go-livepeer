@@ -4,7 +4,6 @@ Package server is the place we integrate the Livepeer node with the LPMS media s
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,9 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
-	"mime/multipart"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"os"
 	"path"
@@ -25,6 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/drivers"
@@ -177,7 +176,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
-		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
+		opts.HttpMux.HandleFunc("/wslive/", ls.HandleWsPush)
 	}
 	opts.HttpMux.HandleFunc("/recordings/", ls.HandleRecordings)
 	return ls, nil
@@ -700,43 +699,66 @@ func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVide
 
 type BreakOperation bool
 
-// HandlePush processes request for HTTP ingest
-func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
-	errorOut := func(status int, s string, params ...interface{}) {
-		httpErr := fmt.Sprintf(s, params...)
-		glog.Error(httpErr)
-		http.Error(w, httpErr, status)
-	}
+const (
+	PushStageEof    string = "EOF"
+	PushStageError         = "ERROR"
+	PushStageResult        = "Result"
+)
 
-	start := time.Now()
-	if r.Method != "POST" && r.Method != "PUT" {
-		errorOut(http.StatusMethodNotAllowed, `http push request wrong method=%s url=%s host=%s`, r.Method, r.URL, r.Host)
-		return
-	}
+type PushControlMessage struct {
+	Stage       string
+	Description string
+}
+
+var wsupgrader websocket.Upgrader = websocket.Upgrader{
+	ReadBufferSize:  16384,
+	WriteBufferSize: 16384,
+}
+
+func (s *LivepeerServer) HandleWsPush(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	remoteAddr := getRemoteAddr(r)
-	clog.Infof(ctx, "[latency] Start push request at url=%s addr=%s", r.URL.String(), remoteAddr)
-
-	boundary := common.RandName()
-	accept := r.Header.Get("Accept")
-	if accept == "multipart/mixed" {
-		contentType := "multipart/mixed; boundary=" + boundary
-		w.Header().Set("Content-Type", contentType)
-	}
-	w.WriteHeader(http.StatusOK)
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	body, err := common.ReadAtMost(r.Body, common.MaxSegSize)
+	ws, err := wsupgrader.Upgrade(w, r, nil)
 	if err != nil {
-		errorOut(http.StatusInternalServerError, `Error reading http request body: %s`, err.Error())
+		if _, ok := err.(websocket.HandshakeError); !ok {
+			glog.Error(err)
+		}
 		return
 	}
-	r.Body.Close()
+	defer ws.Close()
+	start := time.Now()
+	errorOut := func(s string, params ...interface{}) {
+		httpErr := fmt.Sprintf(s, params...)
+		clog.Errorf(ctx, httpErr)
+		ws.WriteJSON(PushControlMessage{Stage: PushStageError, Description: httpErr})
+	}
 
+	remoteAddr := getRemoteAddr(r)
+	glog.Infof("[latency] Start ws push at url=%s addr=%s", r.URL.String(), remoteAddr)
+
+	// read entire media file
+	body := []byte{}
+	for {
+		messageType, chunk, err := ws.ReadMessage()
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		if messageType == websocket.TextMessage {
+			message := PushControlMessage{}
+			err = json.Unmarshal(chunk, &message)
+			if err != nil {
+				glog.Error(err)
+				continue
+			}
+			if message.Stage == PushStageEof {
+				break
+			}
+		}
+		if messageType == websocket.BinaryMessage {
+			body = append(body, chunk[:]...)
+		}
+	}
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
-
 	// Determine the input format the request is claiming to have
 	ext := path.Ext(r.URL.Path)
 	format := common.ProfileExtensionFormat(ext)
@@ -744,22 +766,17 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		// ffmpeg sends us a m3u8 as well, so ignore
 		// Alternatively, reject m3u8s explicitly and take any other type
 		// TODO also look at use content-type
-		errorOut(http.StatusBadRequest, `ignoring file extension: %s`, ext)
+		errorOut("ignoring file extension=%s", ext)
 		return
 	}
-
 	mid := parseManifestID(r.URL.Path)
 	if mid != "" {
 		ctx = clog.AddManifestID(ctx, string(mid))
 	}
 	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
-
-	clog.Infof(ctx, "[latency] Received push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
-		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
-
 	now := time.Now()
 	if mid == "" {
-		errorOut(http.StatusBadRequest, "Bad URL url=%s", r.URL)
+		errorOut("Bad URL url=%s", r.URL)
 		return
 	}
 	s.connectionLock.RLock()
@@ -783,7 +800,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	status, _, vcodecStr, pixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
 	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
-		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
+		errorOut("Error getting codec info url=%s", r.URL)
 		return
 	}
 
@@ -794,7 +811,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[vcodecStr]
 		vcodec = &vcodecVal
 		if !ok {
-			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", vcodecStr)
+			errorOut("Unknown input stream codec=%s", vcodecStr)
 			return
 		}
 	}
@@ -803,7 +820,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		appData := (createRTMPStreamIDHandler(ctx, s))(r.URL)
 		if appData == nil {
-			errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
+			errorOut("Could not create stream ID: url=%s", r.URL)
 			return
 		}
 		params := streamParams(appData)
@@ -842,7 +859,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
-				errorOut(http.StatusInternalServerError, "http push error url=%s err=%q", r.URL, err)
+				errorOut("http push error url=%s err=%q", r.URL, err)
 				return
 			} // else we continue with the old cxn
 		} else {
@@ -949,25 +966,14 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	// Do the transcoding!
 	urls, err := processSegment(ctx, cxn, seg)
 	if err != nil {
-		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
 			status = http.StatusUnprocessableEntity
 		}
-		errorOut(status, "http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
+		errorOut("http push error processing segment url=%s manifestID=%s err=%q", r.URL, mid, err)
 		return
-	}
-	select {
-	case <-r.Context().Done():
-		// HTTP request already timed out
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut1(ctx)
-		}
-		return
-	default:
 	}
 	if len(urls) == 0 {
-		clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
-		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
+		errorOut("No sessions available name=%s url=%s", fname, r.URL)
 		return
 	}
 	renditionData := make([][]byte, len(urls))
@@ -983,80 +989,31 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	clog.Infof(ctx, "Finished transcoding push request at url=%s took=%s", r.URL.String(), time.Since(now))
 
-	if accept != "multipart/mixed" {
-		return
-	}
-	mw := multipart.NewWriter(w)
-	var fw io.Writer
-	for i, url := range urls {
-		mw.SetBoundary(boundary)
-		var typ, ext string
-		length := len(renditionData[i])
-		if length == 0 {
-			typ, ext, length = "application/vnd+livepeer.uri", ".txt", len(url)
-		} else {
-			format := cxn.params.Profiles[i].Format
-			ext, err = common.ProfileFormatExtension(format)
-			if err != nil {
-				clog.Errorf(ctx, "Unknown extension for format err=%q", err)
-				break
-			}
-			typ, err = common.ProfileFormatMimeType(format)
-			if err != nil {
-				clog.Errorf(ctx, "Unknown mime type for format url=%s err=%q ", r.URL, err)
-			}
-		}
-		profile := cxn.params.Profiles[i].Name
-		fname := fmt.Sprintf(`"%s_%d%s"`, profile, seq, ext)
-		hdrs := textproto.MIMEHeader{
-			"Content-Type":        {typ + "; name=" + fname},
-			"Content-Length":      {strconv.Itoa(length)},
-			"Content-Disposition": {"attachment; filename=" + fname},
-			"Rendition-Name":      {profile},
-		}
-		fw, err = mw.CreatePart(hdrs)
+	for i, _ := range urls {
+		format := cxn.params.Profiles[i].Format
+		ext, err = common.ProfileFormatExtension(format)
 		if err != nil {
-			clog.Errorf(ctx, "Could not create multipart part err=%q", err)
+			errorOut("Unknown extension for format err=%q", err)
 			break
 		}
-		if len(renditionData[i]) > 0 {
-			_, err = io.Copy(fw, bytes.NewBuffer(renditionData[i]))
-			if err != nil {
-				break
-			}
-		} else {
-			_, err = fw.Write([]byte(url))
-			if err != nil {
-				break
-			}
+		profile := cxn.params.Profiles[i].Name
+		resultName := fmt.Sprintf(`"%s_%d%s"`, profile, seq, ext)
+		ws.WriteJSON(PushControlMessage{Stage: PushStageResult, Description: resultName})
+		if len(renditionData[i]) <= 0 {
+			// TODO: When can this happen? When returning urls[i] instead media?
+			continue
 		}
-	}
-	if err == nil {
-		err = mw.Close()
-	}
-	if err != nil {
-		clog.Errorf(ctx, "Error sending transcoded response url=%s err=%q", r.URL.String(), err)
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2(ctx)
+		err = ws.WriteMessage(websocket.BinaryMessage, renditionData[i])
+		if err != nil {
+			errorOut("WriteMessage media err=%q", err)
+			return
 		}
-		return
-	}
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
 	}
 	roundtripTime := time.Since(start)
-	select {
-	case <-r.Context().Done():
-		// HTTP request already timed out
-		if monitor.Enabled {
-			monitor.HTTPClientTimedOut2(ctx)
-		}
-		return
-	default:
-	}
 	if monitor.Enabled {
 		monitor.SegmentFullyProcessed(ctx, seg.Duration, roundtripTime.Seconds())
 	}
+	ws.WriteJSON(PushControlMessage{Stage: PushStageEof})
 }
 
 // getPlaylistsFromStore finds all the json playlist files belonging to the provided manifests
