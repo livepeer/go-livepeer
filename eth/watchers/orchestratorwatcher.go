@@ -12,7 +12,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/contracts"
-	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 )
 
 const maxFutureRound = int64(math.MaxInt64)
@@ -191,32 +190,25 @@ func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
 }
 
 func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) error {
-	var err error
-
-	defer func() {
-		if err != nil {
-			glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
-		}
-	}()
-
-	var ep *lpTypes.TokenPools
-	ep, err = ow.lpEth.GetTranscoderEarningsPoolForRound(addr, round)
+	ep, err := ow.lpEth.GetTranscoderEarningsPoolForRound(addr, round)
 	if err != nil {
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
 		return err
 	}
 
-	var stakeFp int64
-	stakeFp, err = common.BaseTokenAmountToFixed(ep.TotalStake)
+	stakeFp, err := common.BaseTokenAmountToFixed(ep.TotalStake)
 	if err != nil {
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
 		return err
 	}
 
-	if err = ow.store.UpdateOrch(
+	if err := ow.store.UpdateOrch(
 		&common.DBOrch{
 			EthereumAddr: addr.Hex(),
 			Stake:        stakeFp,
 		},
 	); err != nil {
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
 		return err
 	}
 
