@@ -189,17 +189,17 @@ func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
 	return nil
 }
 
-func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) error {
+func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) {
 	ep, err := ow.lpEth.GetTranscoderEarningsPoolForRound(addr, round)
 	if err != nil {
 		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
-		return err
+		return
 	}
 
 	stakeFp, err := common.BaseTokenAmountToFixed(ep.TotalStake)
 	if err != nil {
 		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
-		return err
+		return
 	}
 
 	if err := ow.store.UpdateOrch(
@@ -209,8 +209,8 @@ func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, ro
 		},
 	); err != nil {
 		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
-		return err
+		return
 	}
 
-	return nil
+	return
 }
