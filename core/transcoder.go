@@ -23,7 +23,7 @@ import (
 
 type Transcoder interface {
 	Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error)
-	EndSession(sessionId string)
+	EndTranscodingSession(sessionId string)
 }
 
 type LocalTranscoder struct {
@@ -74,7 +74,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	return resToTranscodeData(ctx, res, opts)
 }
 
-func (lt* LocalTranscoder) EndSession(sessionId string) {
+func (lt* LocalTranscoder) EndTranscodingSession(sessionId string) {
 	// no-op for software transcoder
 }
 
@@ -126,6 +126,10 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	return resToTranscodeData(ctx, res, out)
 }
 
+func (lt *LocalTranscoder) Stop() {
+	//no-op for software transcoder
+}
+
 func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
@@ -160,8 +164,12 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	return resToTranscodeData(ctx, res, out)
 }
 
-func (nv* NvidiaTranscoder) EndSession(sessionId string) {
+func (nv* NvidiaTranscoder) EndTranscodingSession(sessionId string) {
 	nv.Stop()
+}
+
+func (nt* NetintTranscoder) EndTranscodingSession(sessionId string) {
+	nt.Stop()
 }
 
 type transcodeTestParams struct {

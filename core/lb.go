@@ -40,9 +40,11 @@ type LoadBalancingTranscoder struct {
 }
 
 func (lb *LoadBalancingTranscoder) EndTranscodingSession(sessionId string) {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
 	if session, exists := lb.sessions[sessionId]; exists {
-		session.transcoder.Stop()
-		close(session.done)
+		// signal transcode loop finish for this session
+		close(session.stop)
 		clog.V(common.DEBUG).Infof(context.TODO(), "LB: Transcode session id=%s teared down", session.key)
 	} else {
 		clog.V(common.DEBUG).Infof(context.TODO(), "LB: Transcode session id=%s already finished", session.key)
@@ -112,6 +114,7 @@ func (lb *LoadBalancingTranscoder) createSession(ctx context.Context, md *SegTra
 		transcoder:  lpmsSession,
 		key:         key,
 		done:        make(chan struct{}),
+		stop:        make(chan struct{}),
 		sender:      make(chan *transcoderParams, maxSegmentChannels),
 		makeContext: transcodeLoopContext,
 	}
@@ -169,7 +172,10 @@ type transcoderSession struct {
 	key        string
 
 	sender      chan *transcoderParams
+	// channel to handle Orchestrator error or shutdown during transcoding
 	done        chan struct{}
+	// channel to signal transcoding loop stop, done channel is not used when not transcoding
+	stop		chan struct{}
 	makeContext func() (context.Context, context.CancelFunc)
 }
 
@@ -186,6 +192,10 @@ func (sess *transcoderSession) loop(logCtx context.Context) {
 	for {
 		ctx, cancel := sess.makeContext()
 		select {
+		case <-sess.stop:
+			// Terminate the session after a period of inactivity
+			clog.V(common.DEBUG).Infof(logCtx, "LB: Transcode loop stopped for key=%s", sess.key)
+			return
 		case <-ctx.Done():
 			// Terminate the session after a period of inactivity
 			clog.V(common.DEBUG).Infof(logCtx, "LB: Transcode loop timed out for key=%s", sess.key)
