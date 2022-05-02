@@ -158,6 +158,7 @@ type lphttp struct {
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
+	glog.Infof("EndTranscodingSession called")
 	return endTranscodingSession(h.node, h.orchestrator, request)
 }
 
@@ -266,7 +267,7 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	return r, nil
 }
 
-// EndSession - the broadcaster calls EndOrchestratorSession to tear down sessions used for verification only once
+// EndSession - the broadcaster calls EndTranscodingSession to tear down sessions used for verification only once
 func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) (error) {
 	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
@@ -310,7 +311,7 @@ func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) 
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
-	return &net.EndTranscodingSessionRequest{Address: sess.Broadcaster.Address().Bytes(), AuthToken: sess.OrchestratorInfo.AuthToken}, nil
+	return &net.EndTranscodingSessionRequest{AuthToken: sess.OrchestratorInfo.AuthToken}, nil
 }
 
 func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.OrchestratorInfo, error) {
@@ -332,7 +333,7 @@ func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.
 	if !bytes.Equal(verifyToken.Token, req.AuthToken.Token) {
 		return nil, fmt.Errorf("Invalid auth token")
 	}
-	node.EndTranscodingSession(req.SessionId)
+	node.EndTranscodingSession(req.AuthToken.SessionId)
 	return &net.EndTranscodingSessionResponse{}, nil
 }
 

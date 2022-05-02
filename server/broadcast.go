@@ -458,7 +458,15 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) ([]*Bro
 	return sessions, false, verified
 }
 
-func (bsm *BroadcastSessionsManager) cleanup() {
+func (bsm *BroadcastSessionsManager) cleanup(ctx context.Context) {
+	// send tear down signals to each orchestrator session to free resources
+	for _, sess:=range bsm.untrustedPool.sessMap {
+		bsm.completeSession(ctx, sess, true)
+	}
+	for _, sess:=range bsm.trustedPool.sessMap {
+		bsm.completeSession(ctx, sess, true)
+	}
+
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.finished = true
@@ -598,7 +606,8 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 // the caller needs to ensure bsm.sessLock is acquired before calling this.
 func (bsm *BroadcastSessionsManager) completeSessionUnsafe(ctx context.Context, sess *BroadcastSession, tearDown bool) {
 	if tearDown {
-		EndTranscodingSession(ctx, sess)
+		err := EndTranscodingSession(ctx, sess)
+		clog.Errorf(ctx, "Error completing transcoding session: %q", err)
 	}
 	if sess.OrchestratorScore == common.Score_Untrusted {
 		bsm.untrustedPool.completeSession(sess)

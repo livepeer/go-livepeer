@@ -26,14 +26,8 @@ message PingPong {
 
 // sent by Broadcaster to Orchestrator to terminate the transcoding session and free resources (used for verification sessions)
 message EndTranscodingSessionRequest {
-  // Id of transcoding session to end
-  string session_id = 1;
-
-  // Ethereum address of the broadcaster
-  bytes address = 2;
-
   // Data for transcoding authentication
-  AuthToken auth_token   = 3;
+  AuthToken auth_token   = 1;
 }
 
 message EndTranscodingSessionResponse {
