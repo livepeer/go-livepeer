@@ -598,7 +598,7 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 // the caller needs to ensure bsm.sessLock is acquired before calling this.
 func (bsm *BroadcastSessionsManager) completeSessionUnsafe(ctx context.Context, sess *BroadcastSession, tearDown bool) {
 	if tearDown {
-		EndSession(ctx, sess)
+		EndTranscodingSession(ctx, sess)
 	}
 	if sess.OrchestratorScore == common.Score_Untrusted {
 		bsm.untrustedPool.completeSession(sess)

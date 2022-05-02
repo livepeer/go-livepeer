@@ -39,7 +39,7 @@ type LoadBalancingTranscoder struct {
 	idx      int // Ensures a non-tapered work distribution
 }
 
-func (lb *LoadBalancingTranscoder) EndSession(sessionId string) {
+func (lb *LoadBalancingTranscoder) EndTranscodingSession(sessionId string) {
 	if session, exists := lb.sessions[sessionId]; exists {
 		session.transcoder.Stop()
 		close(session.done)
