@@ -50,6 +50,10 @@ func (st *stubTranscoder) Transcode(ctx context.Context, md *core.SegTranscoding
 	return testRemoteTranscoderResults, nil
 }
 
+func (st *stubTranscoder) EndTranscodingSession(sessionId string) {
+
+}
+
 // Tests that `runTranscode` actually calls transcoders `Transcoder` function,
 // sends results back by HTTP, and doesn't panic if it can't contact orchestrator
 func TestRemoteTranscoder_Profiles(t *testing.T) {

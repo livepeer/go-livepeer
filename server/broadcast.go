@@ -460,10 +460,10 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) ([]*Bro
 
 func (bsm *BroadcastSessionsManager) cleanup(ctx context.Context) {
 	// send tear down signals to each orchestrator session to free resources
-	for _, sess:=range bsm.untrustedPool.sessMap {
+	for _, sess := range bsm.untrustedPool.sessMap {
 		bsm.completeSession(ctx, sess, true)
 	}
-	for _, sess:=range bsm.trustedPool.sessMap {
+	for _, sess := range bsm.trustedPool.sessMap {
 		bsm.completeSession(ctx, sess, true)
 	}
 

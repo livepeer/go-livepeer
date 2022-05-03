@@ -71,7 +71,7 @@ func PixelFormatNone() ffmpeg.PixelFormat {
 }
 
 // For HTTP push watchdog
-var httpPushTimeout = 10 * time.Second
+var httpPushTimeout = 60 * time.Second
 var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 	sleepDur := time.Duration(int64(float64(httpPushTimeout) * 0.9))
 	return context.WithTimeout(context.Background(), sleepDur)
@@ -838,7 +838,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				// TODO try to re-use old HLS playlist?
 				clog.Warningf(ctx, "Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
 					oldStreamID, mid, params.ManifestID)
-				removeRTMPStream(ctx, s, oldStreamID)
+				removeRTMPStream(context.TODO(), s, oldStreamID)
 			}
 		} else {
 			s.connectionLock.RUnlock()
@@ -876,7 +876,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {
-						_ = removeRTMPStream(ctx, s, extmid)
+						_ = removeRTMPStream(context.TODO(), s, extmid)
 						return true
 					}
 					return false

@@ -154,7 +154,7 @@ type lphttp struct {
 	orchestrator Orchestrator
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
-	node		 *core.LivepeerNode
+	node         *core.LivepeerNode
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -187,7 +187,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		orchestrator: orch,
 		orchRPC:      s,
 		transRPC:     mux,
-		node: n,
+		node:         n,
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
@@ -268,7 +268,7 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 }
 
 // EndSession - the broadcaster calls EndTranscodingSession to tear down sessions used for verification only once
-func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) (error) {
+func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
 	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
 		return err

@@ -74,7 +74,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	return resToTranscodeData(ctx, res, opts)
 }
 
-func (lt* LocalTranscoder) EndTranscodingSession(sessionId string) {
+func (lt *LocalTranscoder) EndTranscodingSession(sessionId string) {
 	// no-op for software transcoder
 }
 
@@ -164,11 +164,11 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	return resToTranscodeData(ctx, res, out)
 }
 
-func (nv* NvidiaTranscoder) EndTranscodingSession(sessionId string) {
+func (nv *NvidiaTranscoder) EndTranscodingSession(sessionId string) {
 	nv.Stop()
 }
 
-func (nt* NetintTranscoder) EndTranscodingSession(sessionId string) {
+func (nt *NetintTranscoder) EndTranscodingSession(sessionId string) {
 	nt.Stop()
 }
 
