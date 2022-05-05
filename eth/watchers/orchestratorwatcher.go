@@ -53,6 +53,10 @@ func (ow *OrchestratorWatcher) Watch() {
 	sub := ow.watcher.Subscribe(blockSink)
 	defer sub.Unsubscribe()
 
+	if err := ow.handleRoundEvent(); err != nil {
+		glog.Errorf("error handling current round: %v", err)
+	}
+
 	for {
 		select {
 		case <-ow.quit:
@@ -61,9 +65,9 @@ func (ow *OrchestratorWatcher) Watch() {
 			glog.Error(err)
 		case block := <-blockSink:
 			go ow.handleBlockEvents(block)
-		case round := <-roundSink:
+		case _ = <-roundSink:
 			go func() {
-				if err := ow.handleRoundEvent(round); err != nil {
+				if err := ow.handleRoundEvent(); err != nil {
 					glog.Errorf("error handling new round event: %v", err)
 				}
 			}()
@@ -171,7 +175,7 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 	)
 }
 
-func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
+func (ow *OrchestratorWatcher) handleRoundEvent() error {
 	round, err := ow.lpEth.CurrentRound()
 	if err != nil {
 		return err
