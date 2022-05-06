@@ -192,7 +192,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	checkPixelFormat := func(constValue int, expected []Capability) bool {
 		streamParams := &StreamParameters{Codec: ffmpeg.H264, PixelFormat: ffmpeg.PixelFormat{RawValue: constValue}}
-		jobCaps, err := JobCapabilities(streamParams)
+		jobCaps, err := JobCapabilities(streamParams, nil)
 		ret := assert.Nil(err)
 		expectedCaps := &Capabilities{bitstring: NewCapabilityString(expected)}
 		ret = assert.Equal(jobCaps, expectedCaps, "failed decode capability check") && ret
