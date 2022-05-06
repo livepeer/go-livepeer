@@ -353,6 +353,20 @@ type BroadcastSessionsManager struct {
 	verifiedSession *BroadcastSession
 }
 
+func (bsm *BroadcastSessionsManager) isVerificationEnabled() bool {
+	return bsm.VerificationFreq > 0
+}
+
+func (bsm *BroadcastSessionsManager) shouldRunVerification(sessions []*BroadcastSession) bool {
+	if bsm.verifiedSession == nil {
+		return false
+	}
+	if !includesSession(sessions, bsm.verifiedSession) {
+		return false
+	}
+	return common.RandomUintUnder(bsm.VerificationFreq) == 0
+}
+
 func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
@@ -417,22 +431,21 @@ func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 }
 
 // selects number of sessions to use according to current algorithm
-func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) ([]*BroadcastSession, bool, bool) {
+func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*BroadcastSession, calcPerceptualHash bool, verified bool) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
-	var verified bool
 
-	if bsm.VerificationFreq > 0 {
+	if bsm.isVerificationEnabled() {
 		// Select 1 trusted O and 2 untrusted Os
-		sessions := bsm.trustedPool.selectSessions(ctx, 1)
-		untrustedSessions := bsm.untrustedPool.selectSessions(ctx, 2)
-		sessions = append(sessions, untrustedSessions...)
+		sessions := append(
+			bsm.trustedPool.selectSessions(ctx, 1),
+			bsm.untrustedPool.selectSessions(ctx, 2)...,
+		)
 
 		// Only return the last verified session if:
 		// - It is present in the 3 sessions returned by the selector
 		// - With probability 1 - 1/VerificationFrequency
-		if bsm.verifiedSession != nil && includesSession(sessions, bsm.verifiedSession) &&
-			common.RandomUintUnder(bsm.VerificationFreq) > 0 {
+		if bsm.shouldRunVerification(sessions) {
 			clog.V(common.DEBUG).Infof(ctx, "Reusing verified orch=%v", bsm.verifiedSession.OrchestratorInfo.Transcoder)
 			verified = true
 			// Mark remaining unused sessions returned by selector as complete

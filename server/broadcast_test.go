@@ -1714,3 +1714,48 @@ func TestCollectResults(t *testing.T) {
 	// the first result should always come from the verified session
 	assert.Equal(untrustedSessVerified, untrustedResults[0].Session)
 }
+
+func TestVerifcationEnabledWhenFreqGreaterThanZero(t *testing.T) {
+	b := BroadcastSessionsManager{}
+	require.False(t, b.isVerificationEnabled())
+
+	b.VerificationFreq = 1
+	require.True(t, b.isVerificationEnabled())
+}
+
+func TestVerifcationDoesntRunWhenNoVerifiedSessionPresent(t *testing.T) {
+	b := BroadcastSessionsManager{
+		VerificationFreq: 1,
+	}
+	require.False(t, b.shouldRunVerification(nil))
+
+	b.verifiedSession = &BroadcastSession{
+		LatencyScore: 1.23,
+	}
+
+	require.False(t, b.shouldRunVerification([]*BroadcastSession{}))
+}
+
+func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
+	b := BroadcastSessionsManager{
+		VerificationFreq: 5, // Run approximately 1 in 5 times
+	}
+
+	var verifiedSession = &BroadcastSession{
+		LatencyScore: 1.23,
+	}
+
+	b.verifiedSession = verifiedSession
+
+	var shouldRunCount int
+	for i := 0; i < 10000; i++ {
+		if b.shouldRunVerification([]*BroadcastSession{verifiedSession}) {
+			shouldRunCount++
+		}
+	}
+
+	// Difficult to test a random function, so we just check that it's in
+	// the ball park of what we'd expect (1 in 5 of 10,000 tries)
+	require.Greater(t, shouldRunCount, 1000)
+	require.Less(t, shouldRunCount, 3000)
+}
