@@ -98,7 +98,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Netint, md.DetectorProfiles)...)
 	}
