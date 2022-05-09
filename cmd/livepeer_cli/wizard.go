@@ -307,7 +307,7 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 
 	defer resp.Body.Close()
 	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil || string(result) == "" {
+	if err != nil {
 		return "", false
 	}
 
