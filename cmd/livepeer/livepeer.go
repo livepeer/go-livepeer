@@ -162,6 +162,7 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
+	extendTimeouts()
 
 	cfg = updateNilsForUnsetFlags(cfg)
 
@@ -1498,4 +1499,16 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	}
 
 	return nil
+}
+
+// extendTimeouts extends transcoding timeouts for the testing purpose.
+// This functionality is intended for Stream Tester to avoid timing out while measuring orchestrator performance.
+func extendTimeouts() {
+	if os.Getenv("LP_EXTEND_TIMEOUTS") == "true" {
+		// Make all timeouts 8s for the common segment durations
+		common.SegUploadTimeoutMultiplier = 4.0
+		common.SegmentUploadTimeout = 8 * time.Second
+		common.HTTPDialTimeout = 8 * time.Second
+		common.SegHttpPushTimeoutMultiplier = 4.0
+	}
 }
