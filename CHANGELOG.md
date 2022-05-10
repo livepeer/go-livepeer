@@ -4,11 +4,11 @@
 
 *May 11 2022*
 
-TODO: Release description
+This release includes support for Netint transcoding hardware, dynamic timeouts for Orchestrator discovery, protection against rounds with a zero block hash and a number of small Orchestrator bug fixes.
 
 ### Breaking Changes 🚨🚨
 
-TODO: Breaking Changes
+None
 
 ### Features ⚒
 
