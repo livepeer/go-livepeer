@@ -51,6 +51,7 @@ TODO: Breaking Changes
 - [#2284](https://github.com/livepeer/go-livepeer/pull/2284) Fix issue with not redeeming tickets by Redeemer (@leszko)
 - [#2352](https://github.com/livepeer/go-livepeer/pull/2352) Fix standalone orchestrator not crashing under UnrecoverableError (@leszko)
 - [#2359](https://github.com/livepeer/go-livepeer/pull/2359) Fix redeeming tickets with zero block hash (@leszko)
+- [#2390](https://github.com/livepeer/go-livepeer/pull/2390) Fix Orchestrator registration error when we receive an empty HTTP body (@leszko)
 
 #### Transcoder
 - N/A
