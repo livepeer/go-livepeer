@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -235,6 +236,17 @@ func testAccelTranscode(device string, tf func(device string) TranscoderSession,
 
 // Test which capabilities transcoder supports
 func TestTranscoderCapabilities(devices []string, tf func(device string) TranscoderSession) (caps []Capability, fatalError error) {
+	// disable logging, unless verbosity is set
+	vFlag := flag.Lookup("v").Value.String()
+	detailsMsg := ""
+	if vFlag == "" {
+		detailsMsg = ", set verbosity level to see more details"
+		logLevel := ffmpeg.FfmpegGetLogLevel()
+		defer ffmpeg.FfmpegSetLogLevel(logLevel)
+		ffmpeg.FfmpegSetLogLevel(0)
+		ffmpeg.LogTranscodeErrors = false
+		defer func() { ffmpeg.LogTranscodeErrors = true }()
+	}
 	fatalError = nil
 	transcodeWithSample(func(params *transcodeTestParams) continueLoop {
 		if !params.TestAvailable {
@@ -264,7 +276,7 @@ func TestTranscoderCapabilities(devices []string, tf func(device string) Transco
 		for _, device := range devices {
 			outputProduced, outputValid, err := testAccelTranscode(device, tf, params.SegmentPath, params.OutProfile, 4)
 			if err != nil {
-				glog.Infof("%s %q is not supported on device %s, see other error messages for details", params.Kind(), params.Name(), device)
+				glog.Infof("%s %q is not supported on device %s%s", params.Kind(), params.Name(), device, detailsMsg)
 				// likely means capability is not supported, don't check on other devices
 				transcodingFailed()
 				return fatalError == nil
