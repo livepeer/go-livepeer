@@ -23,7 +23,6 @@ None
 
 #### Broadcaster
 - [#2309](https://github.com/livepeer/go-livepeer/pull/2309) Add dynamic timeout for the orchestrator discovery (@leszko)
-- [#2337](https://github.com/livepeer/go-livepeer/pull/2337) Fix dynamic discovery timeout to not retry sending requests, but wait for the same request to complete (@leszko)
 
 #### Orchestrator
 - [#2362](https://github.com/livepeer/go-livepeer/pull/2362) Backdate tickets by one round if the block hash for the current round is 0 (@leszko)
@@ -41,7 +40,6 @@ None
 - [#2346](https://github.com/livepeer/go-livepeer/pull/2346) Fix syntax errors in example JSON (@thomshutt)
 
 #### Broadcaster
-- [#2296](https://github.com/livepeer/go-livepeer/pull/2296) Increase orchestrator discovery timeout from `500ms` to `1` (@leszko)
 - [#2291](https://github.com/livepeer/go-livepeer/pull/2291) Calling video comparison to improve the security strength (@oscar-davids)
 - [#2326](https://github.com/livepeer/go-livepeer/pull/2326) Split Auth/Webhook functionality into its own file (@thomshutt)
 - [#2357](https://github.com/livepeer/go-livepeer/pull/2357) Begin accepting auth header (from Mist) and have it override callback URL values (@thomshutt)
