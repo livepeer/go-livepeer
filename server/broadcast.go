@@ -525,7 +525,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		}
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
 		if monitor.Enabled {
-			monitor.FastVerificationDone(ctx)
+			monitor.FastVerificationDone(ctx, untrustedResult.Session.Address())
 		}
 		if err != nil {
 			clog.Errorf(ctx, "error comparing perceptual hashes from url=%s err=%q",
@@ -563,7 +563,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
 			if monitor.Enabled {
-				monitor.FastVerificationFailed(ctx)
+				monitor.FastVerificationFailed(ctx, untrustedResult.Session.Address())
 			}
 		}
 	}
