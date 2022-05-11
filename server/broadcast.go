@@ -517,18 +517,19 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 	// verify untrusted hashes
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
+		ouri := untrustedResult.Session.Transcoder()
 		untrustedHash, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
-			err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
+			err = fmt.Errorf("error uri=%s downloading perceptual hash from url=%s err=%w", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 			return nil, nil, err
 		}
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
 		if monitor.Enabled {
-			monitor.FastVerificationDone(ctx, untrustedResult.Session.Address())
+			monitor.FastVerificationDone(ctx, ouri)
 		}
 		if err != nil {
-			clog.Errorf(ctx, "error comparing perceptual hashes from url=%s err=%q",
+			clog.Errorf(ctx, "error uri=%s comparing perceptual hashes from url=%s err=%q", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		}
 		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v",
@@ -539,13 +540,13 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			// download untrusted video segment
 			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
-				err = fmt.Errorf("error downloading segment from url=%s err=%w",
+				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				return nil, nil, err
 			}
 			vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
 			if err != nil {
-				clog.Errorf(ctx, "error comparing video from url=%s err=%q",
+				clog.Errorf(ctx, "error uri=%s comparing video from url=%s err=%q", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				return nil, nil, err
 			}
@@ -563,7 +564,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
 			if monitor.Enabled {
-				monitor.FastVerificationFailed(ctx, untrustedResult.Session.Address())
+				monitor.FastVerificationFailed(ctx, ouri)
 			}
 		}
 	}
