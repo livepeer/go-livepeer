@@ -437,7 +437,7 @@ func detectNvidiaDevices() ([]string, error) {
 	nvidiaCardCount := 0
 	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
 	for _, card := range gpu.GraphicsCards {
-		if re.MatchString(card.DeviceInfo.Vendor.Name) {
+		if card.DeviceInfo != nil && re.MatchString(card.DeviceInfo.Vendor.Name) {
 			nvidiaCardCount += 1
 		}
 	}
