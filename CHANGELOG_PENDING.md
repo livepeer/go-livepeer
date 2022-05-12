@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2383 Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
 
 #### Broadcaster
 
