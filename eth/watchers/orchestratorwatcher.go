@@ -53,10 +53,6 @@ func (ow *OrchestratorWatcher) Watch() {
 	sub := ow.watcher.Subscribe(blockSink)
 	defer sub.Unsubscribe()
 
-	if err := ow.handleRoundEvent(); err != nil {
-		glog.Errorf("error handling current round: %v", err)
-	}
-
 	for {
 		select {
 		case <-ow.quit:
