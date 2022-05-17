@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/clog"
 	lpnet "github.com/livepeer/go-livepeer/net"
@@ -76,7 +77,7 @@ var PerStreamMetrics bool
 var ExposeClientIP bool
 
 // Enable per orchestrator metrics (uri, address)
-var PerOerchestratorMetrics bool
+var PerOerchestratorMetrics bool = true
 
 var NodeID string
 
@@ -234,6 +235,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kVerified = tag.MustNewKey("verified")
 	census.kClientIP = tag.MustNewKey("client_ip")
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
+	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -845,7 +847,7 @@ func manifestIDTagAndOrchInfo(orchInfo lpnet.OrchestratorInfo, ctx context.Conte
 		others = append(
 			others,
 			tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
-			tag.Insert(census.kOrchestratorAddress, string(orchInfo.GetAddress())),
+			tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
 		)
 	}
 	return others
