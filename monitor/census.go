@@ -77,7 +77,7 @@ var PerStreamMetrics bool
 var ExposeClientIP bool
 
 // Enable per orchestrator metrics (uri, address)
-var PerOerchestratorMetrics bool = true
+var PerOrchestratorMetrics bool
 
 var NodeID string
 
@@ -344,7 +344,7 @@ func InitCensus(nodeType NodeType, version string) {
 		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
 	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
-	if PerOerchestratorMetrics {
+	if PerOrchestratorMetrics {
 		baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
 		baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
 	}
@@ -843,7 +843,7 @@ func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 func manifestIDTagAndOrchInfo(orchInfo lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	others = manifestIDTag(ctx, others...)
 
-	if PerOerchestratorMetrics {
+	if PerOrchestratorMetrics {
 		others = append(
 			others,
 			tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
