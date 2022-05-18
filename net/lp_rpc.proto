@@ -221,6 +221,16 @@ message SegData {
   // [EXPERIMENTAL]
   // Detector profiles to use
   repeated DetectorProfile detector_profiles = 36;
+
+  string inputStreamUrl = 37;
+
+  string outputStreamUrl = 38;
+
+  string videoCodec = 39;
+
+  int32 pixelFormat = 40;
+
+  repeated string outputProfileUrls = 41;
 }
 
 message VideoProfile {

@@ -50,14 +50,13 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		Accel: ffmpeg.Software,
 	}
 	profiles := md.Profiles
-	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash)
+	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md)
 	if md.DetectorEnabled {
 		opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
 	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
-
 	res, err := ffmpeg.Transcode3(in, opts)
 	if err != nil {
 		return nil, err
@@ -71,7 +70,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(ctx, res, opts)
+	return resToTranscodeData(ctx, res, opts, md)
 }
 
 func NewLocalTranscoder(workDir string) Transcoder {
@@ -98,7 +97,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Netint, md.DetectorProfiles)...)
 	}
@@ -119,7 +118,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(ctx, res, out)
+	return resToTranscodeData(ctx, res, out, nil)
 }
 
 func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
@@ -132,7 +131,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
 	}
@@ -153,7 +152,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(ctx, res, out)
+	return resToTranscodeData(ctx, res, out, nil)
 }
 
 type transcodeTestParams struct {
@@ -430,7 +429,7 @@ func parseURI(uri string) (string, uint64, error) {
 	return mid, seqNo, err
 }
 
-func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions) (*TranscodeData, error) {
+func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts []ffmpeg.TranscodeOptions, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	if len(res.Encoded) != len(opts) {
 		return nil, errors.New("lengths of results and options different")
 	}
@@ -442,27 +441,31 @@ func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts 
 	for i := range opts {
 		if opts[i].Detector == nil {
 			oname := opts[i].Oname
-			o, err := ioutil.ReadFile(oname)
-			if err != nil {
-				clog.Errorf(ctx, "Cannot read transcoded output for name=%s", oname)
-				return nil, err
-			}
-			// Extract perceptual hash if calculated
-			var s []byte = nil
-			if opts[i].CalcSign {
-				sigfile := oname + ".bin"
-				s, err = ioutil.ReadFile(sigfile)
+			if md.OutputStreamUrl == "" {
+				o, err := ioutil.ReadFile(oname)
 				if err != nil {
-					clog.Errorf(ctx, "Cannot read perceptual hash at name=%s", sigfile)
+					clog.Errorf(ctx, "Cannot read transcoded output for name=%s", oname)
 					return nil, err
 				}
-				err = os.Remove(sigfile)
-				if err != nil {
-					clog.Errorf(ctx, "Cannot delete perceptual hash after reading name=%s", sigfile)
+				// Extract perceptual hash if calculated
+				var s []byte = nil
+				if opts[i].CalcSign {
+					sigfile := oname + ".bin"
+					s, err = ioutil.ReadFile(sigfile)
+					if err != nil {
+						clog.Errorf(ctx, "Cannot read perceptual hash at name=%s", sigfile)
+						return nil, err
+					}
+					err = os.Remove(sigfile)
+					if err != nil {
+						clog.Errorf(ctx, "Cannot delete perceptual hash after reading name=%s", sigfile)
+					}
 				}
+				segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})
+				os.Remove(oname)
+			} else {
+				segments = append(segments, &TranscodedSegmentData{Pixels: res.Encoded[i].Pixels, Url: oname})
 			}
-			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})
-			os.Remove(oname)
 		} else {
 			detections = append(detections, res.Encoded[i].DetectData)
 		}
@@ -475,15 +478,26 @@ func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts 
 	}, nil
 }
 
-func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool) []ffmpeg.TranscodeOptions {
+func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, md *SegTranscodingMetadata) []ffmpeg.TranscodeOptions {
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
+		var oname string
+		var muxerOpts ffmpeg.ComponentOptions
+		audioCodec := "copy"
+		if md.InputStreamUrl != "" {
+			oname = md.OutputProfileUrls[i]
+			muxerOpts = ffmpeg.ComponentOptions{Name: "flv"}
+			audioCodec = "aac"
+		} else {
+			oname = fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName())
+		}
 		o := ffmpeg.TranscodeOptions{
-			Oname:        fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName()),
+			Oname:        oname,
 			Profile:      profiles[i],
 			Accel:        accel,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			CalcSign:     calcPHash,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: audioCodec},
+			CalcSign:     md.CalcPerceptualHash,
+			Muxer:        muxerOpts,
 		}
 		opts[i] = o
 	}

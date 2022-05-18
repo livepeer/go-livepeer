@@ -51,6 +51,11 @@ func (s *StreamParameters) StreamID() string {
 }
 
 type SegTranscodingMetadata struct {
+	InputStreamUrl string
+	OutputStreamUrl string
+	OutputProfileUrls []string
+	VideoCodec ffmpeg.VideoCodec
+	PixelFormat ffmpeg.PixelFormat
 	ManifestID         ManifestID
 	Fname              string
 	Seq                int64
@@ -126,6 +131,11 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		CalcPerceptualHash: md.CalcPerceptualHash,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
+		VideoCodec:  "h264",
+		PixelFormat: 0,
+		InputStreamUrl: md.InputStreamUrl,
+		OutputStreamUrl: md.OutputStreamUrl,
+		OutputProfileUrls: md.OutputProfileUrls,
 	}
 
 	// If all outputs are mpegts, use the older SegData.FullProfiles field

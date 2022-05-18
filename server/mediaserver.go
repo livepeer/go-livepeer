@@ -113,6 +113,16 @@ func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
 }
 
 type authWebhookResponse struct {
+	// Stream URL of Mist. If specified, segments won't be downloaded and the URL will be passed directly to Transcoder
+	InputStreamUrl string `json:"inputUrl"`
+	// Output stream URL of Mist.
+	OutputStreamUrl string `json:"outputUrl"`
+	// Video codec of the segment.
+	VideoCodec string `json:"videoCodec"`
+	// Pixel format of the segment.
+	PixelFormat int `json:"pixelFormat"`
+	// Segment duration in ms
+	Duration             int      `json:"duration"`
 	ManifestID           string   `json:"manifestID"`
 	StreamID             string   `json:"streamID"`
 	SessionID            string   `json:"sessionID"`
@@ -793,14 +803,23 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
-	status, _, vcodecStr, pixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
-	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
-	if err != nil {
-		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
-		return
-	}
-
+	var isZeroFrame bool
+	var pixelFormat ffmpeg.PixelFormat
+	var vcodecStr string
 	var vcodec *ffmpeg.VideoCodec
+	if authHeaderConfig != nil && authHeaderConfig.InputStreamUrl != "" {
+		isZeroFrame = authHeaderConfig.VideoCodec == ""
+		pixelFormat = ffmpeg.PixelFormat{authHeaderConfig.PixelFormat}
+		vcodecStr = authHeaderConfig.VideoCodec
+	} else {
+		var status ffmpeg.CodecStatus
+		status, _, vcodecStr, pixelFormat, err = ffmpeg.GetCodecInfoBytes(body)
+		isZeroFrame = status == ffmpeg.CodecStatusNeedsBypass
+		if err != nil {
+			errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
+			return
+		}
+	}
 	if len(vcodecStr) == 0 {
 		clog.Warningf(ctx, "Couldn't detect input video stream codec")
 	} else {
@@ -924,18 +943,28 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = clog.AddSeqNo(ctx, seq)
 
-	duration, err := strconv.Atoi(r.Header.Get("Content-Duration"))
-	if err != nil {
-		duration = 2000
-		glog.Info("Missing duration; filling in a default of 2000ms")
+	var duration int
+	if authHeaderConfig.Duration > 0 {
+		duration = authHeaderConfig.Duration
+	} else
+	{
+		duration, err = strconv.Atoi(r.Header.Get("Content-Duration"))
+		if err != nil {
+			duration = 2000
+			glog.Info("Missing duration; filling in a default of 2000ms")
+		}
 	}
 
 	seg := &stream.HLSSegment{
-		Data:        body,
-		Name:        fname,
-		SeqNo:       seq,
-		Duration:    float64(duration) / 1000.0,
-		IsZeroFrame: isZeroFrame,
+		Data:            body,
+		Name:            fname,
+		SeqNo:           seq,
+		Duration:        float64(duration) / 1000.0,
+		IsZeroFrame:     isZeroFrame,
+		InputStreamUrl:  authHeaderConfig.InputStreamUrl,
+		OutputStreamUrl: authHeaderConfig.OutputStreamUrl,
+		VideoCodec:      *vcodec,
+		PixelFormat:     pixelFormat,
 	}
 
 	// Kick watchdog periodically so session doesn't time out during long transcodes
@@ -958,6 +987,17 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+
+	// generate output URIs and return them before transcoding
+	for _, v := range cxn.params.Profiles {
+		name := fmt.Sprintf("%s/%s/%d%s", seg.OutputStreamUrl, v.Name, seg.SeqNo, ext)
+		seg.OutputProfileUrls = append(seg.OutputProfileUrls, name)
+		w.Write([]byte(name + "\n"))
+	}
+
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 
 	// Do the transcoding!
 	urls, err := processSegment(ctx, cxn, seg)

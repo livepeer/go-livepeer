@@ -511,5 +511,9 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		DetectorEnabled:    segData.DetectorEnabled,
 		DetectorProfiles:   detectorProfs,
 		CalcPerceptualHash: segData.CalcPerceptualHash,
+		VideoCodec: ffmpeg.H264,
+		InputStreamUrl: segData.InputStreamUrl,
+		OutputStreamUrl: segData.OutputStreamUrl,
+		OutputProfileUrls: segData.OutputProfileUrls,
 	}, nil
 }

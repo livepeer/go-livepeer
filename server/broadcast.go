@@ -743,7 +743,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	segDurMs := getSegDurMsString(seg)
 
 	hasZeroVideoFrame := seg.IsZeroFrame
-	if ros != nil && !hasZeroVideoFrame {
+	if ros != nil && !hasZeroVideoFrame && seg.InputStreamUrl == "" {
 		go func() {
 			now := time.Now()
 			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
@@ -1115,7 +1115,10 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			cond.L.Unlock()
 		}()
 
-		bos := sess.BroadcasterOS
+		//bos := sess.BroadcasterOS
+		// temporary disable all verification logic
+		var bos drivers.OSSession
+
 		profile := sess.Params.Profiles[i]
 
 		bros := cpl.GetRecordOSSession()

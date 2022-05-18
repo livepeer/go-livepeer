@@ -394,6 +394,7 @@ type TranscodedSegmentData struct {
 	Data   []byte
 	PHash  []byte // Perceptual hash data (maybe nil)
 	Pixels int64  // Encoded pixels
+	Url    string
 }
 
 type SegChanData struct {
@@ -513,38 +514,43 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 			return terr(err)
 		}
 	}
-	// Create input file from segment. Removed after claiming complete or error
-	fname := path.Join(n.WorkDir, inName)
-	fnamep = &fname
-	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
-		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
-		return terr(err)
-	}
-
-	// Check if there's a transcoder available
-	if n.Transcoder == nil {
-		return terr(ErrTranscoderAvail)
-	}
-	transcoder := n.Transcoder
-
 	var url string
+	transcoder := n.Transcoder
 	_, isRemote := transcoder.(*RemoteTranscoderManager)
-	// Small optimization: serve from disk for local transcoding
-	if !isRemote {
-		url = fname
-	} else if config.OS.IsExternal() && config.OS.IsOwn(seg.Name) {
-		// We're using a remote TC and segment is already in our own OS
-		// Incurs an additional download for topologies with T on local network!
-		url = seg.Name
+	if md.InputStreamUrl != "" {
+		url = md.InputStreamUrl
 	} else {
-		// Need to store segment in our local OS
-		var err error
-		name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
-		url, err = config.LocalOS.SaveData(ctx, name, seg.Data, nil, 0)
-		if err != nil {
+		// Create input file from segment. Removed after claiming complete or error
+		fname := path.Join(n.WorkDir, inName)
+		fnamep = &fname
+		if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
+			clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 			return terr(err)
 		}
-		seg.Name = url
+		defer os.Remove(fname)
+
+		// Check if there's a transcoder available
+		if n.Transcoder == nil {
+			return terr(ErrTranscoderAvail)
+		}
+
+		// Small optimization: serve from disk for local transcoding
+		if !isRemote {
+			url = fname
+		} else if config.OS.IsExternal() && config.OS.IsOwn(seg.Name) {
+			// We're using a remote TC and segment is already in our own OS
+			// Incurs an additional download for topologies with T on local network!
+			url = seg.Name
+		} else {
+			// Need to store segment in our local OS
+			var err error
+			name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
+			url, err = config.LocalOS.SaveData(ctx, name, seg.Data, nil, 0)
+			if err != nil {
+				return terr(err)
+			}
+			seg.Name = url
+		}
 	}
 	md.Fname = url
 
@@ -577,7 +583,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	segHashes := make([][]byte, len(tSegments))
 
 	for i := range md.Profiles {
-		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
+		if tSegments[i].Url == "" && (tSegments[i].Data == nil || len(tSegments[i].Data) < 25) {
 			clog.Errorf(ctx, "Cannot find transcoded segment for bytes=%d", len(tSegments[i].Data))
 			return terr(fmt.Errorf("ZeroSegments"))
 		}
@@ -591,7 +597,6 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
-	os.Remove(fname)
 	tr.OS = config.OS
 	tr.TranscodeData = tData
 

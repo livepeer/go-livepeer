@@ -199,10 +199,15 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		}
 		name := fmt.Sprintf("%s/%d%s", segData.Profiles[i].Name, segData.Seq, ext)
 		// The use of := here is probably a bug?!?
-		uri, err := res.OS.SaveData(ctx, name, res.TranscodeData.Segments[i].Data, nil, 0)
-		if err != nil {
-			clog.Errorf(ctx, "Could not upload segment")
-			break
+		var uri string
+		if res.TranscodeData.Segments[i].Url=="" {
+			uri, err = res.OS.SaveData(ctx, name, res.TranscodeData.Segments[i].Data, nil, 0)
+			if err != nil {
+				clog.Errorf(ctx, "Could not upload segment")
+				break
+			}
+		} else {
+			uri = res.TranscodeData.Segments[i].Url
 		}
 		pixels += res.TranscodeData.Segments[i].Pixels
 		d := &net.TranscodedSegmentData{
@@ -666,6 +671,11 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment, calcPerceptualH
 		DetectorEnabled:    detectorEnabled,
 		DetectorProfiles:   detectorProfiles,
 		CalcPerceptualHash: calcPerceptualHash,
+		InputStreamUrl: seg.InputStreamUrl,
+		OutputStreamUrl: seg.OutputStreamUrl,
+		VideoCodec: seg.VideoCodec,
+		PixelFormat: seg.PixelFormat,
+		OutputProfileUrls: seg.OutputProfileUrls,
 	}
 	sig, err := sess.Broadcaster.Sign(md.Flatten())
 	if err != nil {
