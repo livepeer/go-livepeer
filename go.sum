@@ -651,6 +651,8 @@ github.com/livepeer/lpms v0.0.0-20220420001659-1d700dd80073 h1:1NxBmwq89Ts93DTIW
 github.com/livepeer/lpms v0.0.0-20220420001659-1d700dd80073/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/lpms v0.0.0-20220511111552-8c3294063536 h1:6r5lKRKVo7Ow1sz5HuQjyP8HXXHZ7pgltWStxn9Wu8s=
 github.com/livepeer/lpms v0.0.0-20220511111552-8c3294063536/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/livepeer/lpms v0.0.0-20220518160926-8104f934fb58 h1:nffC+HG9RodxySx5kDaH7/nYltRr0mSchdIxyJaeM20=
+github.com/livepeer/lpms v0.0.0-20220518160926-8104f934fb58/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
 github.com/livepeer/m3u8 v0.11.1/go.mod h1:IUqAtwWPAG2CblfQa4SVzTQoDcEMPyfNOaBSxqHMS04=
 github.com/magiconair/properties v1.8.5 h1:b6kJs+EmPFMYGkow9GiUyCyOvIwYetYJ3fSaWak/Gls=
