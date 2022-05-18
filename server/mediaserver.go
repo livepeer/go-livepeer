@@ -784,7 +784,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		mid = intmid
 	}
 	cxn, exists := s.rtmpConnections[mid]
-	clog.Infof(ctx, "rtmpConnections: %v", rtmpConnection{})
+	clog.Infof(ctx, "rtmpConnections: %v", s.rtmpConnections)
 	if monitor.Enabled {
 		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
