@@ -755,14 +755,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "fast_verification_done",
 			Measure:     census.mFastVerificationDone,
 			Description: "Number of fast verifications done",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "fast_verification_failed",
 			Measure:     census.mFastVerificationFailed,
 			Description: "Number of fast verifications failed",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -1617,16 +1617,18 @@ func fracwei2gwei(wei *big.Rat) float64 {
 	return floatWei / gweiConversionFactor
 }
 
-func FastVerificationDone(ctx context.Context) {
+func FastVerificationDone(ctx context.Context, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx), census.mFastVerificationDone.M(1)); err != nil {
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationDone.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
 
-func FastVerificationFailed(ctx context.Context) {
+func FastVerificationFailed(ctx context.Context, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx), census.mFastVerificationFailed.M(1)); err != nil {
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
