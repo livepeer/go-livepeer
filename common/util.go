@@ -26,10 +26,19 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+// HTTPDialTimeout timeout used to establish an HTTP connection between nodes
+var HTTPDialTimeout = 2 * time.Second
+
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
-// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment
+// SegHttpPushTimeoutMultiplier used in the HTTP connection for pushing the segment
+var SegHttpPushTimeoutMultiplier = 4.0
+
+// SegUploadTimeoutMultiplier used in HTTP connection for uploading the segment
+var SegUploadTimeoutMultiplier = 0.5
+
+// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment duration is not defined
 var SegmentUploadTimeout = 2 * time.Second
 
 // Max Segment Duration
