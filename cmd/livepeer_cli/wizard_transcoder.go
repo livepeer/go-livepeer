@@ -284,3 +284,19 @@ func (w *wizard) showVoteChoices() {
 func flipPerc(perc *big.Int) *big.Int {
 	return new(big.Int).Sub(hundredPercent, perc)
 }
+
+func (w *wizard) setMaxFaceValue() {
+	mfv := big.NewInt(0)
+	mfv = w.readBigInt("Enter the max ticket face value in wei")
+	data := url.Values{
+		"maxfacevalue": {fmt.Sprintf("%v", mfv.String())},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxFaceValue", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf("Ticket max face value set")
+		return
+	} else {
+		fmt.Printf("Error setting max face value: %v", result)
+		return
+	}
+}

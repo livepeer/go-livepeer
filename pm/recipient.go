@@ -48,6 +48,9 @@ type Recipient interface {
 
 	// EV returns the recipients EV requirement for a ticket as configured on startup
 	EV() *big.Rat
+	
+	//Set ticket faceValue upper limit
+    SetMaxFaceValue(maxfacevalue *big.Int)
 }
 
 // TicketParamsConfig contains config information for a recipient to determine
@@ -80,7 +83,8 @@ type recipient struct {
 
 	addr   ethcommon.Address
 	secret [32]byte
-
+	maxfacevalue *big.Int
+	
 	senderNonces map[string]*struct {
 		nonce           uint32
 		expirationBlock *big.Int
@@ -118,6 +122,7 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		tm:     tm,
 		addr:   addr,
 		secret: secret,
+		maxfacevalue: big.NewInt(0),
 		senderNonces: make(map[string]*struct {
 			nonce           uint32
 			expirationBlock *big.Int
@@ -235,6 +240,10 @@ func (r *recipient) ticketExpirationsParams() *TicketExpirationParams {
 	}
 }
 
+func (r *recipient) SetMaxFaceValue(maxfacevalue *big.Int) {
+	r.maxfacevalue = maxfacevalue
+}
+
 func (r *recipient) txCost() *big.Int {
 	gasPrice := big.NewInt(0)
 	// Fetch current gasprice from cache through gasPrice monitor
@@ -269,7 +278,13 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		// Set faceValue = maxFloat
 		faceValue = maxFloat
 	}
-
+	
+	if r.maxfacevalue.Cmp(big.NewInt(0)) > 0 {
+		//if faceValue > maxfacevalue, set faceValue=maxfacevalue
+		if r.maxfacevalue.Cmp(faceValue) < 0 {
+			faceValue = r.maxfacevalue
+		}
+	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve
 	}
