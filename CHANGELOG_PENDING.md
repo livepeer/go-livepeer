@@ -10,6 +10,7 @@
 - \#2383 Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
 
 #### Broadcaster
+- \#2392 Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
 
 #### Orchestrator
 

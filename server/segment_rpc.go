@@ -37,9 +37,6 @@ const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
 
-const segUploadTimeoutMultiplier = 0.5
-const segHttpPushTimeoutMultiplier = 4.0
-
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
@@ -48,14 +45,12 @@ var errEncoder = errors.New("unrecognized video codec")
 var errDuration = errors.New("invalid duration")
 var errCapCompat = errors.New("incompatible capabilities")
 
-var dialTimeout = 2 * time.Second
-
 var tlsConfig = &tls.Config{InsecureSkipVerify: true}
 var httpClient = &http.Client{
 	Transport: &http.Transport{
 		TLSClientConfig: tlsConfig,
 		DialTLSContext: func(ctx context.Context, network, addr string) (gonet.Conn, error) {
-			cctx, cancel := context.WithTimeout(ctx, dialTimeout)
+			cctx, cancel := context.WithTimeout(ctx, common.HTTPDialTimeout)
 			defer cancel()
 
 			tlsDialer := &tls.Dialer{Config: tlsConfig}
@@ -472,12 +467,12 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	// timeout for the whole HTTP call: segment upload, transcoding, reading response
 	httpTimeout := common.HTTPTimeout
 	// set a minimum timeout to accommodate transport / processing overhead
-	paddedDur := segHttpPushTimeoutMultiplier * seg.Duration
+	paddedDur := common.SegHttpPushTimeoutMultiplier * seg.Duration
 	if paddedDur > httpTimeout.Seconds() {
 		httpTimeout = time.Duration(paddedDur * float64(time.Second))
 	}
 	// timeout for the segment upload, until HTTP returns OK 200
-	uploadTimeout := time.Duration(segUploadTimeoutMultiplier * seg.Duration * float64(time.Second))
+	uploadTimeout := time.Duration(common.SegUploadTimeoutMultiplier * seg.Duration * float64(time.Second))
 	if uploadTimeout <= 0 {
 		uploadTimeout = common.SegmentUploadTimeout
 	}
