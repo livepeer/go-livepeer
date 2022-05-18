@@ -142,19 +142,30 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	timeout := getOrchestratorsCutoffTimeout
 	timer := time.NewTimer(timeout)
 
+	clog.Infof(ctx, "Start fetching orch info numAvailableOrchs=%d len(infos)=%d numOrchestrators=%d",
+		numAvailableOrchs, len(infos), numOrchestrators)
+
 	for nbResp < numAvailableOrchs && len(infos) < numOrchestrators && !timedOut {
+		clog.Infof(ctx, "Fetching orch info nbResp=%d, numAvailableOrchs=%d len(infos)=%d numOrchestrators=%d timedOut=%t",
+			nbResp, numAvailableOrchs, len(infos), numOrchestrators, timedOut)
 		select {
 		case info := <-infoCh:
+			clog.Infof(ctx, "Received info %v", info)
 			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
+				clog.Infof(ctx, "Penalty == 0")
 				infos = append(infos, info)
 			} else {
+				clog.Infof(ctx, "Penalty")
 				heap.Push(suspendedInfos, &suspension{info, penalty})
 			}
 			nbResp++
-		case <-errCh:
+		case err := <-errCh:
+			clog.Infof(ctx, "Error err=%v", err)
 			nbResp++
 		case <-timer.C:
+			clog.Infof(ctx, "timer.C")
 			if len(infos) > 0 {
+				clog.Infof(ctx, "len(infos) > 0")
 				timedOut = true
 			}
 
@@ -164,11 +175,13 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			if timeout > maxGetOrchestratorCutoffTimeout {
 				timeout = maxGetOrchestratorCutoffTimeout
 			}
-			clog.V(common.DEBUG).Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
+			clog.Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
 		case <-ctx.Done():
+			clog.Infof(ctx, "<-ctx.Done()")
 			timedOut = true
 		}
 	}
+	clog.Infof(ctx, "cancel()")
 	cancel()
 
 	if len(infos) < numOrchestrators {
