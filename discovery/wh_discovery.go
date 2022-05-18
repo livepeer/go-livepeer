@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -60,6 +61,8 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 		return nil, err
 	}
 
+	fmt.Printf("### webhookPool response %v\n", body)
+
 	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
 	if hash == w.responseHash {
 		w.mu.Lock()
@@ -73,6 +76,8 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("### webhookPool deserialized info%v\n", infos)
 
 	// pool = NewOrchestratorPool(w.bcast, addrs)
 	pool = &orchestratorPool{infos: infos, bcast: w.bcast}
@@ -106,6 +111,7 @@ func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
 		size = w.pool.SizeWith(scorePred)
 	}
 	w.mu.RUnlock()
+	fmt.Printf("### WebhookPool SizeWith: %d\n", size)
 	return size
 }
 

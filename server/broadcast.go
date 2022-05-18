@@ -368,6 +368,7 @@ func (bsm *BroadcastSessionsManager) shouldRunVerification(sessions []*Broadcast
 }
 
 func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
+	clog.Infof(ctx, "### NewSessionManager")
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
 		trustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreAtLeast(common.Score_Trusted)))
@@ -375,7 +376,9 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	}
 	maxInflight := common.HTTPTimeout.Seconds() / SegLen.Seconds()
 	trustedNumOrchs := int(math.Min(trustedPoolSize, maxInflight*2))
+	clog.Infof(ctx, "### Trusted Num Orchs: %v", trustedNumOrchs)
 	untrustedNumOrchs := int(untrustedPoolSize)
+	clog.Infof(ctx, "### Untrusted Num Orchs: %v", untrustedNumOrchs)
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
