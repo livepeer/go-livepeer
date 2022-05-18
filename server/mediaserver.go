@@ -476,6 +476,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 
 func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat) (*rtmpConnection, error) {
 	ctx = clog.Clone(context.Background(), ctx)
+	clog.Infof(ctx, "registerConnection")
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
 	if params == nil {
@@ -719,6 +720,7 @@ type BreakOperation bool
 
 // HandlePush processes request for HTTP ingest
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
+	clog.Infof(r.Context(), "### HandlePush")
 	errorOut := func(status int, s string, params ...interface{}) {
 		httpErr := fmt.Sprintf(s, params...)
 		glog.Error(httpErr)
@@ -772,14 +774,17 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	if mid == "" {
+		clog.Infof(ctx, "Bad URL")
 		errorOut(http.StatusBadRequest, "Bad URL url=%s", r.URL)
 		return
 	}
 	s.connectionLock.RLock()
 	if intmid, exists := s.internalManifests[mid]; exists {
+		clog.Infof(ctx, "mid = intmid")
 		mid = intmid
 	}
 	cxn, exists := s.rtmpConnections[mid]
+	clog.Infof(ctx, "rtmpConnections: %v", rtmpConnection{})
 	if monitor.Enabled {
 		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
@@ -787,6 +792,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	s.connectionLock.RUnlock()
 	ctx = clog.AddManifestID(ctx, string(mid))
 	if exists && cxn != nil {
+		clog.Infof(ctx, "exists && cxn != nil")
 		s.connectionLock.Lock()
 		cxn.lastUsed = now
 		s.connectionLock.Unlock()
@@ -814,6 +820,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 
 	// Check for presence and register if a fresh cxn
 	if !exists {
+		clog.Infof(ctx, "!exists")
 		appData := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
 		if appData == nil {
 			errorOut(http.StatusInternalServerError, "Could not create stream ID: url=%s", r.URL)
@@ -910,6 +917,8 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			s.connectionLock.Unlock()
 			mid = cxn.mid
 		}
+	} else {
+		clog.Infof(ctx, "exists")
 	}
 	ctx = clog.AddManifestID(ctx, string(mid))
 	defer func(now time.Time) {
