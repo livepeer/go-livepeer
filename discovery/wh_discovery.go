@@ -17,8 +17,6 @@ import (
 	"github.com/golang/glog"
 )
 
-var whRefreshInterval = 1 * time.Minute
-
 type webhookResponse struct {
 	Address string  `json:"address,omitempty"`
 	Score   float32 `json:"score,omitempty"`
@@ -50,7 +48,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	w.mu.RUnlock()
 
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
-	if time.Since(lastReq) < whRefreshInterval {
+	if time.Since(lastReq) < common.WebhookDiscoveryRefreshInterval {
 		return pool.GetInfos(), nil
 	}
 
