@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -25,12 +26,24 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
-// S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
-const S3_POLICY_EXPIRE_IN_HOURS = 24
-
-var saveTimeout = 10 * time.Second
+const (
+	// S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
+	S3_POLICY_EXPIRE_IN_HOURS = 24
+	// defaultSaveTimeout is used on save ops when no custom timeout is provided.
+	defaultSaveTimeout = 10 * time.Second
+	// uploaderConcurrency controls how many parts to upload in parallel when
+	// saving a file to S3. Will only make a difference for large files (not small
+	// video segments), since we use a big part size.
+	uploaderConcurrency = 8
+	// uploderPartSize is the size of the parts that will be uploaded to the
+	// S3-compatible service. Fine-tuned for Storj (chunk size of 64MB) and Google
+	// Cloud Storage (also improves performance). Can make this configurable in
+	// the future for optimized support of other storage providers.
+	uploaderPartSize = 63 * 1024 * 1024
+)
 
 /* S3OS S3 backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
@@ -43,6 +56,7 @@ type s3OS struct {
 	awsAccessKeyID     string
 	awsSecretAccessKey string
 	s3svc              *s3.S3
+	s3sess             *session.Session
 	useFullAPI         bool
 }
 
@@ -58,6 +72,7 @@ type s3Session struct {
 	storageType net.OSInfo_StorageType
 	fields      map[string]string
 	s3svc       *s3.S3
+	s3sess      *session.Session
 }
 
 func s3Host(bucket string) string {
@@ -78,7 +93,7 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
-func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) (OSDriver, error) {
 	glog.Infof("Creating S3 with region %s bucket %s", region, bucket)
 	os := &s3OS{
 		host:               s3Host(bucket),
@@ -89,15 +104,22 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 		useFullAPI:         useFullAPI,
 	}
 	if os.awsAccessKeyID != "" {
+		var err error
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
-		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		os.s3svc = s3.New(session.New(), cfg)
+		cfg := aws.NewConfig().
+			WithRegion(os.region).
+			WithCredentials(creds)
+		os.s3sess, err = session.NewSession(cfg)
+		if err != nil {
+			return nil, err
+		}
+		os.s3svc = s3.New(os.s3sess)
 	}
-	return os
+	return os, nil
 }
 
 // NewCustomS3Driver for creating S3-compatible stores other than S3 itself
-func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, useFullAPI bool) (OSDriver, error) {
 	glog.Infof("using custom s3 with url: %s, bucket %s region %s use full API %v", host, bucket, region, useFullAPI)
 	os := &s3OS{
 		host:               host,
@@ -111,13 +133,20 @@ func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, 
 		os.host += "/" + bucket
 	}
 	if os.awsAccessKeyID != "" {
+		var err error
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
-		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		cfg = cfg.WithEndpoint(host)
-		cfg = cfg.WithS3ForcePathStyle(true)
-		os.s3svc = s3.New(session.New(), cfg)
+		cfg := aws.NewConfig().
+			WithRegion(os.region).
+			WithCredentials(creds).
+			WithEndpoint(host).
+			WithS3ForcePathStyle(true)
+		os.s3sess, err = session.NewSession(cfg)
+		if err != nil {
+			return nil, err
+		}
+		os.s3svc = s3.New(os.s3sess)
 	}
-	return os
+	return os, nil
 }
 
 func (os *s3OS) NewSession(path string) OSSession {
@@ -136,6 +165,7 @@ func (os *s3OS) NewSession(path string) OSSession {
 	}
 	if os.useFullAPI {
 		sess.s3svc = os.s3svc
+		sess.s3sess = os.s3sess
 	}
 	sess.fields = s3GetFields(sess)
 	return sess
@@ -208,7 +238,7 @@ func (s3pi *s3pageInfo) listFiles() error {
 			Name:         *cont.Key,
 			ETag:         *cont.ETag,
 			LastModified: *cont.LastModified,
-			Size:         *cont.Size,
+			Size:         cont.Size,
 		}
 		s3pi.files = append(s3pi.files, fi)
 	}
@@ -264,7 +294,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	res.LastModified = *resp.LastModified
 	res.ETag = *resp.ETag
 	res.Name = name
-	res.Size = *resp.ContentLength
+	res.Size = resp.ContentLength
 	if len(resp.Metadata) > 0 {
 		res.Metadata = make(map[string]string, len(resp.Metadata))
 		for k, v := range resp.Metadata {
@@ -274,7 +304,7 @@ func (os *s3Session) ReadData(ctx context.Context, name string) (*FileInfoReader
 	return res, nil
 }
 
-func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	now := time.Now()
 	bucket := aws.String(os.bucket)
 	keyname := aws.String(os.key + "/" + name)
@@ -285,32 +315,40 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data []byte, 
 			metadata[k] = aws.String(v)
 		}
 	}
-	contentType := aws.String(os.getContentType(name, data))
+	data, contentType, err := os.peekContentType(name, data)
+	if err != nil {
+		return "", err
+	}
 
-	params := &s3.PutObjectInput{
-		Bucket:        bucket,  // Required
-		Key:           keyname, // Required
-		Metadata:      metadata,
-		Body:          bytes.NewReader(data),
-		ContentType:   contentType,
-		ContentLength: aws.Int64(int64(len(data))),
+	uploader := s3manager.NewUploader(os.s3sess, func(u *s3manager.Uploader) {
+		u.Concurrency = uploaderConcurrency
+		u.PartSize = uploaderPartSize
+		u.RequestOptions = append(u.RequestOptions, request.WithLogLevel(aws.LogDebug))
+	})
+	params := &s3manager.UploadInput{
+		Bucket:      bucket,
+		Key:         keyname,
+		Metadata:    metadata,
+		Body:        data,
+		ContentType: aws.String(contentType),
 	}
 	if timeout == 0 {
-		timeout = saveTimeout
+		timeout = defaultSaveTimeout
 	}
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
-	resp, err := os.s3svc.PutObjectWithContext(ctx, params, request.WithLogLevel(aws.LogDebug))
+	resp, err := uploader.UploadWithContext(ctx, params)
 	cancel()
 	if err != nil {
 		return "", err
 	}
-	clog.Infof(ctx, "resp: %s", resp.String())
-	uri := os.getAbsURL(*keyname)
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 %s bytes=%v dur=%s", uri, len(data), time.Since(now))
-	return uri, err
+
+	clog.Infof(ctx, "resp: %+v", resp)
+	url := os.getAbsURL(*keyname)
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s dur=%s", url, time.Since(now))
+	return url, nil
 }
 
-func (os *s3Session) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *s3Session) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.s3svc != nil {
 		return os.saveDataPut(ctx, name, data, meta, timeout)
 	}
@@ -324,11 +362,10 @@ func (os *s3Session) SaveData(ctx context.Context, name string, data []byte, met
 		clog.Errorf(ctx, "Save S3 error err=%q", err)
 		return "", err
 	}
+
 	url := os.getAbsURL(path)
-
-	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s bytes=%d took=%s", tentativeURL, len(data), time.Since(started))
-
-	return url, err
+	clog.V(common.VERBOSE).Infof(ctx, "Saved to S3 url=%s dur=%s", tentativeURL, time.Since(started))
+	return url, nil
 }
 
 func (os *s3Session) getAbsURL(path string) string {
@@ -353,19 +390,26 @@ func (os *s3Session) GetInfo() *net.OSInfo {
 	return oi
 }
 
-func (os *s3Session) getContentType(fileName string, buffer []byte) string {
+func (os *s3Session) peekContentType(fileName string, data io.Reader) (*bufio.Reader, string, error) {
+	bufData := bufio.NewReaderSize(data, 4096)
+	firstBytes, err := bufData.Peek(512)
+	if err != nil && err != io.EOF {
+		return nil, "", err
+	}
 	ext := path.Ext(fileName)
 	fileType, err := common.TypeByExtension(ext)
 	if err != nil {
-		fileType = http.DetectContentType(buffer)
+		fileType = http.DetectContentType(firstBytes)
 	}
-	return fileType
+	return bufData, fileType, nil
 }
 
 // if s3 storage is not our own, we are saving data into it using POST request
-func (os *s3Session) postData(ctx context.Context, fileName string, buffer []byte, meta map[string]string, timeout time.Duration) (string, error) {
-	fileBytes := bytes.NewReader(buffer)
-	fileType := os.getContentType(fileName, buffer)
+func (os *s3Session) postData(ctx context.Context, fileName string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
+	data, fileType, err := os.peekContentType(fileName, data)
+	if err != nil {
+		return "", err
+	}
 	path, fileName := path.Split(path.Join(os.key, fileName))
 	fields := map[string]string{
 		"acl":          "public-read",
@@ -380,7 +424,7 @@ func (os *s3Session) postData(ctx context.Context, fileName string, buffer []byt
 	if !strings.Contains(postURL, os.bucket) {
 		postURL += "/" + os.bucket
 	}
-	req, cancel, err := newfileUploadRequest(ctx, postURL, fields, fileBytes, fileName, timeout)
+	req, cancel, err := newfileUploadRequest(ctx, postURL, fields, data, fileName, timeout)
 	if err != nil {
 		clog.Errorf(ctx, "err=%q", err)
 		return "", err
@@ -472,7 +516,7 @@ func newfileUploadRequest(ctx context.Context, uri string, params map[string]str
 		return nil, nil, err
 	}
 	if timeout == 0 {
-		timeout = saveTimeout
+		timeout = defaultSaveTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	req, err := http.NewRequestWithContext(ctx, "POST", uri, body)

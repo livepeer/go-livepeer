@@ -1,9 +1,14 @@
 package drivers
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"io/ioutil"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // waitForQueueToClear used in tests
@@ -30,7 +35,7 @@ func TestOverwriteQueueShouldCallSave(t *testing.T) {
 	data1 := []byte("data01")
 
 	var meta map[string]string
-	mos.On("SaveData", "f1", data1, meta, timeout).Return("not used", nil).Once()
+	mos.On("SaveData", "f1", dataReader(data1), meta, timeout).Return("not used", nil).Once()
 
 	oq.Save(data1)
 	oq.waitForQueueToClear(5 * time.Second)
@@ -47,9 +52,9 @@ func TestOverwriteQueueShouldRetry(t *testing.T) {
 	data1 := []byte("data01")
 
 	var meta map[string]string
-	mos.On("SaveData", "f1", data1, meta, timeout).Return("not used", errors.New("no1")).Once()
+	mos.On("SaveData", "f1", dataReader(data1), meta, timeout).Return("not used", errors.New("no1")).Once()
 	timeout = time.Duration(float64(timeout) * timeoutMultiplier)
-	mos.On("SaveData", "f1", data1, meta, timeout).Return("not used", nil).Once()
+	mos.On("SaveData", "f1", dataReader(data1), meta, timeout).Return("not used", nil).Once()
 
 	oq.Save(data1)
 	oq.waitForQueueToClear(5 * time.Second)
@@ -68,8 +73,8 @@ func TestOverwriteQueueShouldUseLastValue(t *testing.T) {
 	data3 := []byte("data03")
 
 	var meta map[string]string
-	mos.On("SaveData", "f1", dataw1, meta, timeout).Return("not used", nil).Once()
-	mos.On("SaveData", "f1", data3, meta, timeout).Return("not used", nil).Once()
+	mos.On("SaveData", "f1", dataReader(dataw1), meta, timeout).Return("not used", nil).Once()
+	mos.On("SaveData", "f1", dataReader(data3), meta, timeout).Return("not used", nil).Once()
 
 	mos.waitForCh = true
 	oq.Save(dataw1)
@@ -83,4 +88,12 @@ func TestOverwriteQueueShouldUseLastValue(t *testing.T) {
 	mos.AssertNotCalled(t, "SaveData", "f1", data2, meta, timeout)
 	oq.StopAfter(0)
 	time.Sleep(10 * time.Millisecond)
+}
+
+func dataReader(expected []byte) interface{} {
+	return mock.MatchedBy(func(r io.Reader) bool {
+		data, err := ioutil.ReadAll(r)
+		_, seekErr := r.(*bytes.Reader).Seek(0, 0)
+		return err == nil && bytes.Equal(data, expected) && seekErr == nil
+	})
 }

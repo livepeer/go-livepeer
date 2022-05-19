@@ -1,7 +1,6 @@
 package drivers
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -153,7 +152,7 @@ func (os *gsSession) createClient() error {
 	return nil
 }
 
-func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, meta map[string]string, timeout time.Duration) (string, error) {
+func (os *gsSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
 	if os.useFullAPI {
 		if os.client == nil {
 			if err := os.createClient(); err != nil {
@@ -164,7 +163,7 @@ func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, met
 		objh := os.client.Bucket(os.bucket).Object(keyname)
 		clog.V(common.VERBOSE).Infof(ctx, "Saving to GS %s/%s", os.bucket, keyname)
 		if timeout == 0 {
-			timeout = saveTimeout
+			timeout = defaultSaveTimeout
 		}
 		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 		defer cancel()
@@ -175,8 +174,12 @@ func (os *gsSession) SaveData(ctx context.Context, name string, data []byte, met
 		for k, v := range meta {
 			wr.Metadata[k] = v
 		}
-		wr.ContentType = os.getContentType(name, data)
-		_, err := io.Copy(wr, bytes.NewReader(data))
+		data, contentType, err := os.peekContentType(name, data)
+		if err != nil {
+			return "", err
+		}
+		wr.ContentType = contentType
+		_, err = io.Copy(wr, data)
 		err2 := wr.Close()
 		if err != nil {
 			return "", err
@@ -240,7 +243,7 @@ func (gspi *gsPageInfo) listFiles() error {
 				Name:         attrs.Name,
 				ETag:         attrs.Etag,
 				LastModified: attrs.Updated,
-				Size:         attrs.Size,
+				Size:         &attrs.Size,
 			}
 			gspi.files = append(gspi.files, fi)
 		}
@@ -303,7 +306,7 @@ func (os *gsSession) ReadData(ctx context.Context, name string) (*FileInfoReader
 	}
 	res := &FileInfoReader{}
 	res.Name = name
-	res.Size = attrs.Size
+	res.Size = &attrs.Size
 	res.ETag = attrs.Etag
 	res.LastModified = attrs.Updated
 	if len(attrs.Metadata) > 0 {

@@ -763,7 +763,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			}
 		}()
 	}
-	uri, err := cpl.GetOSSession().SaveData(ctx, name, seg.Data, nil, 0)
+	uri, err := cpl.GetOSSession().SaveData(ctx, name, bytes.NewReader(seg.Data), nil, 0)
 	if err != nil {
 		clog.Errorf(ctx, "Error saving segment err=%q", err)
 		if monitor.Enabled {
@@ -795,7 +795,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 				return nil, err
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			uri, err := cpl.GetOSSession().SaveData(ctx, name, seg.Data, nil, 0)
+			uri, err := cpl.GetOSSession().SaveData(ctx, name, bytes.NewReader(seg.Data), nil, 0)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving segment err=%q", err)
 				if monitor.Enabled {
@@ -1049,7 +1049,7 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 	sess.lock.RUnlock()
 	if ios != nil {
 		// XXX handle case when orch expects direct upload
-		uri, err := ios.SaveData(ctx, name, seg.Data, nil, 0)
+		uri, err := ios.SaveData(ctx, name, bytes.NewReader(seg.Data), nil, 0)
 		if err != nil {
 			clog.Errorf(ctx, "Error saving segment to OS manifestID=%v nonce=%d seqNo=%d err=%q", cxn.mid, cxn.nonce, seg.SeqNo, err)
 			if monitor.Enabled {
@@ -1168,7 +1168,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 				return
 			}
 			name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
-			newURL, err := bos.SaveData(ctx, name, data, nil, 0)
+			newURL, err := bos.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 			if err != nil {
 				switch err.Error() {
 				case "Session ended":
@@ -1311,7 +1311,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 				// Hence, trim the /stream/<manifestID> prefix if it exists.
 				pfx := fmt.Sprintf("/stream/%s/", sess.Params.ManifestID)
 				uri := strings.TrimPrefix(accepted.URIs[i], pfx)
-				_, err := sess.BroadcasterOS.SaveData(context.TODO(), uri, data, nil, 0)
+				_, err := sess.BroadcasterOS.SaveData(context.TODO(), uri, bytes.NewReader(data), nil, 0)
 				if err != nil {
 					return err
 				}

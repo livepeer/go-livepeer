@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -540,7 +541,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		// Need to store segment in our local OS
 		var err error
 		name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
-		url, err = config.LocalOS.SaveData(ctx, name, seg.Data, nil, 0)
+		url, err = config.LocalOS.SaveData(ctx, name, bytes.NewReader(seg.Data), nil, 0)
 		if err != nil {
 			return terr(err)
 		}

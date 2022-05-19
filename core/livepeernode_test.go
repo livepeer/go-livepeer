@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/big"
@@ -132,7 +133,7 @@ func TestServiceURIChange(t *testing.T) {
 
 	drivers.NodeStorage = drivers.NewMemoryDriver(n.GetServiceURI())
 	sesh := drivers.NodeStorage.NewSession("testpath")
-	savedUrl, err := sesh.SaveData(context.TODO(), "testdata1", []byte{0, 0, 0}, nil, 0)
+	savedUrl, err := sesh.SaveData(context.TODO(), "testdata1", bytes.NewReader([]byte{0, 0, 0}), nil, 0)
 	require.Nil(err)
 	assert.Equal("test://testurl.com/stream/testpath/testdata1", savedUrl)
 
@@ -140,7 +141,7 @@ func TestServiceURIChange(t *testing.T) {
 	newUrl, err := url.Parse("test://newurl.com")
 	n.SetServiceURI(newUrl)
 	require.Nil(err)
-	furl, err := sesh.SaveData(context.TODO(), "testdata2", []byte{0, 0, 0}, nil, 0)
+	furl, err := sesh.SaveData(context.TODO(), "testdata2", bytes.NewReader([]byte{0, 0, 0}), nil, 0)
 	require.Nil(err)
 	assert.Equal("test://newurl.com/stream/testpath/testdata2", furl)
 
@@ -148,7 +149,7 @@ func TestServiceURIChange(t *testing.T) {
 	secondUrl, err := url.Parse("test://secondurl.com")
 	n.SetServiceURI(secondUrl)
 	require.Nil(err)
-	surl, err := sesh.SaveData(context.TODO(), "testdata3", []byte{0, 0, 0}, nil, 0)
+	surl, err := sesh.SaveData(context.TODO(), "testdata3", bytes.NewReader([]byte{0, 0, 0}), nil, 0)
 	require.Nil(err)
 	assert.Equal("test://secondurl.com/stream/testpath/testdata3", surl)
 }
