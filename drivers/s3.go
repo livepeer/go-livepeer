@@ -29,10 +29,21 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
-// S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
-const S3_POLICY_EXPIRE_IN_HOURS = 24
-
-var saveTimeout = 10 * time.Second
+const (
+	// S3_POLICY_EXPIRE_IN_HOURS how long access rights given to other node will be valid
+	S3_POLICY_EXPIRE_IN_HOURS = 24
+	// defaultSaveTimeout is used on save ops when no custom timeout is provided.
+	defaultSaveTimeout = 10 * time.Second
+	// uploaderConcurrency controls how many parts to upload in parallel when
+	// saving a file to S3. Will only make a difference for large files (not small
+	// video segments), since we use a big part size.
+	uploaderConcurrency = 8
+	// uploderPartSize is the size of the parts that will be uploaded to the
+	// S3-compatible service. Fine-tuned for Storj (chunk size of 64MB) and Google
+	// Cloud Storage (also improves performance). Can make this configurable in
+	// the future for optimized support of other storage providers.
+	uploaderPartSize = 63 * 1024 * 1024
+)
 
 /* S3OS S3 backed object storage driver. For own storage access key and access key secret
    should be specified. To give to other nodes access to own S3 storage so called 'POST' policy
@@ -310,8 +321,8 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reade
 	}
 
 	uploader := s3manager.NewUploader(os.s3sess, func(u *s3manager.Uploader) {
-		u.Concurrency = 8
-		u.PartSize = 63 * 1024 * 1024
+		u.Concurrency = uploaderConcurrency
+		u.PartSize = uploaderPartSize
 		u.RequestOptions = append(u.RequestOptions, request.WithLogLevel(aws.LogDebug))
 	})
 	params := &s3manager.UploadInput{
@@ -322,7 +333,7 @@ func (os *s3Session) saveDataPut(ctx context.Context, name string, data io.Reade
 		ContentType: aws.String(contentType),
 	}
 	if timeout == 0 {
-		timeout = saveTimeout
+		timeout = defaultSaveTimeout
 	}
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 	resp, err := uploader.UploadWithContext(ctx, params)
@@ -505,7 +516,7 @@ func newfileUploadRequest(ctx context.Context, uri string, params map[string]str
 		return nil, nil, err
 	}
 	if timeout == 0 {
-		timeout = saveTimeout
+		timeout = defaultSaveTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	req, err := http.NewRequestWithContext(ctx, "POST", uri, body)

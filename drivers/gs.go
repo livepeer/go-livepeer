@@ -163,7 +163,7 @@ func (os *gsSession) SaveData(ctx context.Context, name string, data io.Reader, 
 		objh := os.client.Bucket(os.bucket).Object(keyname)
 		clog.V(common.VERBOSE).Infof(ctx, "Saving to GS %s/%s", os.bucket, keyname)
 		if timeout == 0 {
-			timeout = saveTimeout
+			timeout = defaultSaveTimeout
 		}
 		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 		defer cancel()
