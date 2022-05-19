@@ -341,10 +341,8 @@ func InitCensus(nodeType NodeType, version string) {
 		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
 	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
-	if Enabled {
-		baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
-		baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
-	}
+	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
+	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
 
 	views := []*view.View{
 		{
@@ -840,13 +838,12 @@ func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 func manifestIDTagAndOrchInfo(orchInfo lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	others = manifestIDTag(ctx, others...)
 
-	if Enabled {
-		others = append(
-			others,
-			tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
-			tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
-		)
-	}
+	others = append(
+		others,
+		tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
+		tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
+	)
+
 	return others
 }
 
