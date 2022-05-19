@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"net/url"
@@ -77,6 +78,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 
 	numAvailableOrchs := len(linfos)
+	fmt.Printf("discovery.GetOrchestrators => numAvailableOrchs: %v, numOrchestrators: %v\n", numAvailableOrchs, numOrchestrators)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 
 	// The following allows us to avoid capability check for jobs that only

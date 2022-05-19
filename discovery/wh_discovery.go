@@ -53,7 +53,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < whRefreshInterval {
 		fmt.Printf("### getInfo => webhook taken from the from cache: %v\n", pool.GetInfos())
-		return pool.GetInfos(), nil
+		//return pool.GetInfos(), nil
 	}
 
 	// retrive addrs from webhook if time since lastRequest is more than the refresh interval
@@ -108,6 +108,7 @@ func (w *webhookPool) Size() int {
 }
 
 func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
+	w.GetInfos()
 	var size int
 	w.mu.RLock()
 	if w.pool != nil {
@@ -121,10 +122,12 @@ func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
 func (w *webhookPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
 
-	_, err := w.getInfos()
+	i, err := w.getInfos()
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("wh_discovery.GetOrchestrators => getInfos: %v\n", i)
 
 	w.mu.RLock()
 	defer w.mu.RUnlock()
