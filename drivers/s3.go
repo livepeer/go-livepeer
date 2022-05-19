@@ -82,7 +82,7 @@ func newS3Session(info *net.S3OSInfo) OSSession {
 	return sess
 }
 
-func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI bool) (OSDriver, error) {
 	glog.Infof("Creating S3 with region %s bucket %s", region, bucket)
 	os := &s3OS{
 		host:               s3Host(bucket),
@@ -93,16 +93,22 @@ func NewS3Driver(region, bucket, accessKey, accessKeySecret string, useFullAPI b
 		useFullAPI:         useFullAPI,
 	}
 	if os.awsAccessKeyID != "" {
+		var err error
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
-		cfg := aws.NewConfig().WithRegion(os.region).WithCredentials(creds)
-		os.s3sess = session.New(cfg)
+		cfg := aws.NewConfig().
+			WithRegion(os.region).
+			WithCredentials(creds)
+		os.s3sess, err = session.NewSession(cfg)
+		if err != nil {
+			return nil, err
+		}
 		os.s3svc = s3.New(os.s3sess)
 	}
-	return os
+	return os, nil
 }
 
 // NewCustomS3Driver for creating S3-compatible stores other than S3 itself
-func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, useFullAPI bool) OSDriver {
+func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, useFullAPI bool) (OSDriver, error) {
 	glog.Infof("using custom s3 with url: %s, bucket %s region %s use full API %v", host, bucket, region, useFullAPI)
 	os := &s3OS{
 		host:               host,
@@ -116,16 +122,20 @@ func NewCustomS3Driver(host, bucket, region, accessKey, accessKeySecret string, 
 		os.host += "/" + bucket
 	}
 	if os.awsAccessKeyID != "" {
+		var err error
 		creds := credentials.NewStaticCredentials(os.awsAccessKeyID, os.awsSecretAccessKey, "")
 		cfg := aws.NewConfig().
 			WithRegion(os.region).
 			WithCredentials(creds).
 			WithEndpoint(host).
 			WithS3ForcePathStyle(true)
-		os.s3sess = session.New(cfg)
+		os.s3sess, err = session.NewSession(cfg)
+		if err != nil {
+			return nil, err
+		}
 		os.s3svc = s3.New(os.s3sess)
 	}
-	return os
+	return os, nil
 }
 
 func (os *s3OS) NewSession(path string) OSSession {

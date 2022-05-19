@@ -1336,7 +1336,9 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	pl := &stubPlaylistManager{manifestID: mid}
 	// drivers.S3BUCKET = "livepeer"
 	S3BUCKET := "livepeer"
-	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
+	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", false)
+	assert.Nil(err)
+	mem := driver.NewSession(string(mid))
 	assert.NotNil(mem)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1368,7 +1370,7 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	defer func() { downloadSeg = oldDownloadSeg }()
 	downloadSeg = func(ctx context.Context, url string) ([]byte, error) { return []byte("foo"), nil }
 
-	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.Equal(verification.ErrTampered, err)
 	assert.Empty(pl.uri) // sanity check that no insertion happened
 
@@ -1386,7 +1388,9 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
 	S3BUCKET := "livepeer"
-	mem := drivers.NewS3Driver("", S3BUCKET, "", "", false).NewSession(string(mid))
+	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", false)
+	assert.Nil(err)
+	mem := driver.NewSession(string(mid))
 	assert.NotNil(mem)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1414,7 +1418,7 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	oldDownloadSeg := downloadSeg
 	defer func() { downloadSeg = oldDownloadSeg }()
 	downloadSeg = func(ctx context.Context, url string) ([]byte, error) { return nil, errors.New("some error") }
-	_, _, err := transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
+	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier)
 	assert.EqualError(err, "some error")
 	_, ok := cxn.sessManager.trustedPool.sessMap[sess.OrchestratorInfo.GetTranscoder()]
 	assert.False(ok)
