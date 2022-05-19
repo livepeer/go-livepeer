@@ -41,6 +41,9 @@ var SegUploadTimeoutMultiplier = 0.5
 // SegmentUploadTimeout timeout used in HTTP connections for uploading the segment duration is not defined
 var SegmentUploadTimeout = 2 * time.Second
 
+// WebhookDiscoveryRefreshInterval defines for long the Webhook Discovery values should be cached
+var WebhookDiscoveryRefreshInterval = 1 * time.Minute
+
 // Max Segment Duration
 var MaxDuration = (5 * time.Minute)
 
