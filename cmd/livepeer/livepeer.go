@@ -122,7 +122,6 @@ type LivepeerConfig struct {
 	monitor                      *bool
 	metricsPerStream             *bool
 	metricsExposeClientIP        *bool
-	metricsPerOrchestrator       *bool
 	metadataQueueUri             *string
 	metadataAmqpExchange         *string
 	metadataPublishTimeout       *time.Duration
@@ -252,7 +251,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRedeemerAddr := ""
 	defaultMonitor := false
 	defaultMetricsPerStream := false
-	defaultMetricsPerOrchestraror := false
 	defaultMetricsExposeClientIP := false
 	defaultMetadataQueueUri := ""
 	defaultMetadataAmqpExchange := "lp_golivepeer_metadata"
@@ -317,7 +315,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		monitor:                &defaultMonitor,
 		metricsPerStream:       &defaultMetricsPerStream,
 		metricsExposeClientIP:  &defaultMetricsExposeClientIP,
-		metricsPerOrchestrator: &defaultMetricsPerOrchestraror,
 		metadataQueueUri:       &defaultMetadataQueueUri,
 		metadataAmqpExchange:   &defaultMetadataAmqpExchange,
 		metadataPublishTimeout: &defaultMetadataPublishTimeout,
@@ -399,7 +396,6 @@ func parseLivepeerConfig() LivepeerConfig {
 	cfg.monitor = flag.Bool("monitor", *cfg.monitor, "Set to true to send performance metrics")
 	cfg.metricsPerStream = flag.Bool("metricsPerStream", *cfg.metricsPerStream, "Set to true to group performance metrics per stream")
 	cfg.metricsExposeClientIP = flag.Bool("metricsClientIP", *cfg.metricsExposeClientIP, "Set to true to expose client's IP in metrics")
-	cfg.metricsPerOrchestrator = flag.Bool("metricsPerOrchestrator", *cfg.metricsPerOrchestrator, "Set to true to group performance metrics per orchestrator")
 	cfg.metadataQueueUri = flag.String("metadataQueueUri", *cfg.metadataQueueUri, "URI for message broker to send operation metadata")
 	cfg.metadataAmqpExchange = flag.String("metadataAmqpExchange", *cfg.metadataAmqpExchange, "Name of AMQP exchange to send operation metadata")
 	cfg.metadataPublishTimeout = flag.Duration("metadataPublishTimeout", *cfg.metadataPublishTimeout, "Max time to wait in background for publishing operation metadata events")
@@ -610,7 +606,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		lpmon.Enabled = true
 		lpmon.PerStreamMetrics = *cfg.metricsPerStream
 		lpmon.ExposeClientIP = *cfg.metricsExposeClientIP
-		lpmon.PerOrchestratorMetrics = *cfg.metricsPerOrchestrator
 		nodeType := lpmon.Default
 		switch n.NodeType {
 		case core.BroadcasterNode:
