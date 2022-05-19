@@ -52,6 +52,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
 	if time.Since(lastReq) < whRefreshInterval {
+		fmt.Printf("### getInfo => webhook taken from the from cache: %v\n", pool.GetInfos())
 		return pool.GetInfos(), nil
 	}
 
@@ -71,6 +72,8 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 		w.mu.Unlock()
 		return pool.GetInfos(), nil
 	}
+
+	fmt.Printf("### getInfos => pool: %v\n", pool)
 
 	infos, err := deserializeWebhookJSON(body)
 	if err != nil {
