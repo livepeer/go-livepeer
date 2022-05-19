@@ -98,6 +98,9 @@ func (w *webhookPool) Size() int {
 }
 
 func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
+	// Refresh pool
+	w.GetInfos()
+
 	var size int
 	w.mu.RLock()
 	if w.pool != nil {
