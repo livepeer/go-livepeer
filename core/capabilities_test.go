@@ -183,7 +183,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	// Use a rapid check to facilitate this.
 
 	checkSuccess := func(params *StreamParameters, caps []Capability) bool {
-		jobCaps, err := JobCapabilities(params)
+		jobCaps, err := JobCapabilities(params, nil)
 		ret := assert.Nil(err)
 		expectedCaps := &Capabilities{bitstring: NewCapabilityString(caps)}
 		ret = assert.Equal(expectedCaps, jobCaps) && ret
@@ -192,7 +192,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	checkPixelFormat := func(constValue int, expected []Capability) bool {
 		streamParams := &StreamParameters{Codec: ffmpeg.H264, PixelFormat: ffmpeg.PixelFormat{RawValue: constValue}}
-		jobCaps, err := JobCapabilities(streamParams)
+		jobCaps, err := JobCapabilities(streamParams, nil)
 		ret := assert.Nil(err)
 		expectedCaps := &Capabilities{bitstring: NewCapabilityString(expected)}
 		ret = assert.Equal(jobCaps, expectedCaps, "failed decode capability check") && ret
@@ -272,18 +272,18 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	// check error case with format
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capFormatConv, err)
 
 	// check error case with profiles
 	params.Profiles = []ffmpeg.VideoProfile{{Profile: -1}}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capProfileConv, err)
 
 	// check error case with storage
 	params.Profiles = nil
 	params.OS = &stubOS{storageType: -1}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capStorageConv, err)
 }
 

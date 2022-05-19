@@ -218,9 +218,21 @@ message SegData {
   // Transcoding profiles to use. Supersedes `fullProfiles2` field
   repeated VideoProfile fullProfiles3 = 35;
 
+  // Transcoding parameters specific to this segment
+  SegParameters segment_parameters = 37;
+
   // [EXPERIMENTAL]
   // Detector profiles to use
   repeated DetectorProfile detector_profiles = 36;
+}
+
+message SegParameters {
+  // Start timestamp from which to start encoding
+  // Milliseconds, from start of the file
+  uint64 from = 1;
+  // Skip all frames after that timestamp
+  // Milliseconds, from start of the file
+  uint64 to = 2;
 }
 
 message VideoProfile {

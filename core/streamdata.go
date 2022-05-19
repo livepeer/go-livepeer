@@ -50,6 +50,11 @@ func (s *StreamParameters) StreamID() string {
 	return string(s.ManifestID) + "/" + s.RtmpKey
 }
 
+type SegmentParameters struct {
+	From time.Duration
+	To   time.Duration
+}
+
 type SegTranscodingMetadata struct {
 	ManifestID         ManifestID
 	Fname              string
@@ -63,6 +68,7 @@ type SegTranscodingMetadata struct {
 	DetectorEnabled    bool
 	DetectorProfiles   []ffmpeg.DetectorProfile
 	CalcPerceptualHash bool
+	SegmentParameters  *SegmentParameters
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -126,6 +132,12 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		CalcPerceptualHash: md.CalcPerceptualHash,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),
+	}
+	if md.SegmentParameters != nil {
+		segData.SegmentParameters = &net.SegParameters{
+			From: uint64(md.SegmentParameters.From.Milliseconds()),
+			To:   uint64(md.SegmentParameters.To.Milliseconds()),
+		}
 	}
 
 	// If all outputs are mpegts, use the older SegData.FullProfiles field

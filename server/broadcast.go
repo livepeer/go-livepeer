@@ -714,7 +714,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 	return sessions, nil
 }
 
-func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSegment) ([]string, error) {
+func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSegment, segPar *core.SegmentParameters) ([]string, error) {
 
 	rtmpStrm := cxn.stream
 	nonce := cxn.nonce
@@ -828,7 +828,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
 		var info *data.TranscodeAttemptInfo
-		urls, info, err = transcodeSegment(ctx, cxn, seg, name, sv)
+		urls, info, err = transcodeSegment(ctx, cxn, seg, name, sv, segPar)
 		attempts = append(attempts, *info)
 		if err == nil {
 			break
@@ -873,7 +873,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 }
 
 func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSegment, name string,
-	verifier *verification.SegmentVerifier) ([]string, *data.TranscodeAttemptInfo, error) {
+	verifier *verification.SegmentVerifier, segPar *core.SegmentParameters) ([]string, *data.TranscodeAttemptInfo, error) {
 
 	var urls []string
 	info := &data.TranscodeAttemptInfo{}
@@ -919,7 +919,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		// cxn.sessManager.pushSegInFlight(sess, seg)
 		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
-		res, err = SubmitSegment(ctx, sess.Clone(), seg, nonce, calcPerceptualHash, verified)
+		res, err = SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, verified)
 		if err != nil || res == nil {
 			if isNonRetryableError(err) {
 				cxn.sessManager.completeSession(sess)
@@ -1000,7 +1000,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			}
 			// cxn.sessManager.pushSegInFlight(sess, seg)
 			sess.pushSegInFlight(seg2)
-			go submitSegment(ctx, sess, seg2, nonce, calcPerceptualHash, resc)
+			go submitSegment(ctx, sess, seg2, segPar, nonce, calcPerceptualHash, resc)
 			submittedCount++
 		}
 		if submittedCount == 0 {
@@ -1030,8 +1030,10 @@ type SubmitResult struct {
 	Err             error
 }
 
-func submitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
-	res, err := SubmitSegment(ctx, sess.Clone(), seg, nonce, calcPerceptualHash, false)
+func submitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.SegmentParameters,
+	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
+
+	res, err := SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, false)
 	resc <- &SubmitResult{
 		Session:         sess,
 		TranscodeResult: res,
