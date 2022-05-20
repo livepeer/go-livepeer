@@ -43,12 +43,20 @@ var transcodeLoopContext = func() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), transcodeLoopTimeout)
 }
 
+//work allocation method for connected transcoders
+const (
+	EqualLoad = 0
+	TimeToTranscode = 1
+	Priority = 2
+)
+
 // Transcoder / orchestrator RPC interface implementation
 type orchestrator struct {
 	address ethcommon.Address
 	node    *LivepeerNode
 	rm      common.RoundsManager
 	secret  []byte
+	transcoderselectionmethod int
 }
 
 func (orch *orchestrator) ServiceURI() *url.URL {
@@ -691,6 +699,8 @@ type RemoteTranscoder struct {
 	addr         string
 	capacity     int
 	load         int
+	ppns         float64
+	priority     int
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -764,11 +774,16 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		segmentLen := 0
+		took := time.Since(start)
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
+			rt.ppns = float64(chanData.TranscodeData.Pixels) / float64(took)
+			if lpmon.Enabled {
+				lpmon.SetTranscoderPPNS(rt.addr, rt.ppns)
+			}
 		}
 		clog.InfofErr(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v",
-			rt.addr, segmentLen, taskID, fname, time.Since(start), chanData.Err)
+			rt.addr, segmentLen, taskID, fname, took, chanData.Err)
 		return chanData.TranscodeData, chanData.Err
 	}
 }
@@ -780,6 +795,8 @@ func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_Regis
 		capacity:     capacity,
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
+		ppns:         1,
+		priority:     1,
 	}
 }
 
@@ -792,12 +809,13 @@ func NewRemoteTranscoderManager() *RemoteTranscoderManager {
 		taskMutex: &sync.RWMutex{},
 		taskChans: make(map[int64]TranscoderChan),
 
+		sortMethod: EqualLoad,
+		
 		streamSessions: make(map[string]*RemoteTranscoder),
 	}
 }
 
 type byLoadFactor []*RemoteTranscoder
-
 func loadFactor(r *RemoteTranscoder) float64 {
 	return float64(r.load) / float64(r.capacity)
 }
@@ -806,6 +824,25 @@ func (r byLoadFactor) Len() int      { return len(r) }
 func (r byLoadFactor) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
 func (r byLoadFactor) Less(i, j int) bool {
 	return loadFactor(r[j]) < loadFactor(r[i]) // sort descending
+}
+
+type byPriority []*RemoteTranscoder
+func priority(r *RemoteTranscoder) int {
+	return r.priority
+}
+func (r byPriority) Len() int      { return len(r) }
+func (r byPriority) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r byPriority) Less(i, j int) bool {
+	return priority(r[i]) < priority(r[j]) // sort descending (higher priority selected first)
+}
+type byTranscodeTime []*RemoteTranscoder
+func transcodeTime(r *RemoteTranscoder) float64 {
+	return r.ppns
+}
+func (r byTranscodeTime) Len() int      { return len(r) }
+func (r byTranscodeTime) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
+func (r byTranscodeTime) Less(i, j int) bool {
+	return transcodeTime(r[i]) < transcodeTime(r[j]) // sort descending (pixels per second-higher is faster)
 }
 
 type RemoteTranscoderManager struct {
@@ -817,9 +854,21 @@ type RemoteTranscoderManager struct {
 	taskMutex *sync.RWMutex
 	taskChans map[int64]TranscoderChan
 	taskCount int64
-
+	sortMethod int
 	// Map for keeping track of sessions and their respective transcoders
 	streamSessions map[string]*RemoteTranscoder
+}
+
+func (rtm *RemoteTranscoderManager) Sort() {
+	if rtm.sortMethod == EqualLoad {
+		sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	} 
+	if rtm.sortMethod == TimeToTranscode {
+		sort.Sort(byTranscodeTime(rtm.remoteTranscoders))
+	}
+	if rtm.sortMethod == Priority {
+		sort.Sort(byPriority(rtm.remoteTranscoders))
+	}
 }
 
 // RegisteredTranscodersCount returns number of registered transcoders
@@ -855,7 +904,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
-	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	rtm.Sort()
 	var totalLoad, totalCapacity, liveTranscodersNum int
 	if monitor.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
@@ -863,6 +912,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.RTmutex.Unlock()
 	if monitor.Enabled {
 		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+		monitor.SetTranscoderStats(transcoder.addr, transcoder.load, transcoder.capacity, float64(2))
 	}
 
 	<-transcoder.eof
@@ -876,6 +926,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.RTmutex.Unlock()
 	if monitor.Enabled {
 		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+		monitor.SetTranscoderStats(transcoder.addr, int(0), int(0), float64(0))
 	}
 }
 
@@ -917,7 +968,9 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 		for i := len(rtm.remoteTranscoders) - 1; i >= 0; i-- {
 			// no capabilities = default capabilities, all transcoders must support them
 			if caps == nil || caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) {
-				return i
+				if rtm.remoteTranscoders[i].load < rtm.remoteTranscoders[i].capacity {
+					return i
+				}
 			}
 		}
 		return -1
@@ -943,15 +996,18 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 			continue
 		}
 		if !sessionExists {
-			if currentTranscoder.load == currentTranscoder.capacity {
-				// Head of queue is at capacity, so the rest must be too. Exit early
+			if rtm.transcodersAtCapacity() {
+				// transcoders are at capacity. Exit early
 				return nil, ErrNoTranscodersAvailable
 			}
 
 			// Assinging transcoder to session for future use
 			rtm.streamSessions[sessionId] = currentTranscoder
 			currentTranscoder.load++
-			sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+			if monitor.Enabled {
+				monitor.SetTranscoderLoad(currentTranscoder.addr, currentTranscoder.load)
+			}
+			rtm.Sort()
 		}
 		return currentTranscoder, nil
 	}
@@ -967,7 +1023,10 @@ func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 		return
 	}
 	t.load--
-	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	if monitor.Enabled {
+		monitor.SetTranscoderLoad(t.addr, t.load)
+	}
+	rtm.Sort()
 	delete(rtm.streamSessions, sessionId)
 }
 
@@ -979,6 +1038,16 @@ func (rtm *RemoteTranscoderManager) totalLoadAndCapacity() (int, int, int) {
 		capacity += t.capacity
 	}
 	return load, capacity, len(rtm.liveTranscoders)
+}
+
+// Caller of this function should hold RTmutex lock
+func (rtm *RemoteTranscoderManager) transcodersAtCapacity() bool {
+	var load, capacity int
+	for _, t := range rtm.liveTranscoders {
+		load += t.load
+		capacity += t.capacity
+	}
+	return load == capacity
 }
 
 // Transcode does actual transcoding using remote transcoder from the pool

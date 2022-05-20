@@ -1382,6 +1382,92 @@ func isL1Network(db ChainIdGetter) (bool, error) {
 	return chainId.Int64() == MainnetChainId || chainId.Int64() == RinkebyChainId, err
 }
 
+//set remote transcoder info
+func (s *LivepeerServer) setTranscoderSortMethodHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			m := r.FormValue("transcodersortmethod")
+			if m != "" {
+				mi, err := strconv.Atoi(m)
+				if err == nil {
+					s.LivepeerNode.SetTranscoderSortMethod(mi)
+					glog.Infof("transcoder sort method set to %v", m)
+					respondOk(w, []byte("transcoder sort method set"))
+				}
+			} else {
+				glog.Error("Need to set transcodersortmethod")
+				respond400(w, "Need to set transcodersortmethod")
+				return
+			}
+
+		}
+	})
+}
+
+func (s *LivepeerServer) setTranscoderCapacityHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			t := r.FormValue("t_uri")
+			c := r.FormValue("capacity")
+			if t != "" && c != "" {
+				ci, err := strconv.Atoi(c)
+				if err == nil {
+					s.LivepeerNode.SetTranscoderCapacity(t, ci)
+					glog.Infof("transcoder %t capacity set to %c", t, c)
+					respondOk(w, []byte("capacity set"))
+				}
+			} else {
+				glog.Error("Need to set transcoder uri (t_uri) and (capacity)")
+				respond400(w, "Need to set transcoder uri (t_uri) and (capacity)")
+			}
+
+		}
+	})
+}
+
+func (s *LivepeerServer) setTranscoderPriorityHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			t := r.FormValue("t_uri")
+			p := r.FormValue("priority")
+			if t != "" && p != "" {
+				pi, err := strconv.Atoi(p)
+				if err == nil {
+					s.LivepeerNode.SetTranscoderPriority(t, pi)
+					glog.Infof("transcoder %t priority set to %p", t, p)
+					respondOk(w, []byte("priority set"))
+				}
+			} else {
+				glog.Error("Need to set transcoder uri (t_uri) and (priority)")
+				respond400(w, "Need to set transcoder uri (t_uri) and (priority)")
+			}
+
+		}
+	})
+}
+
+func (s *LivepeerServer) setMaxSessionsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			ms := r.FormValue("maxsessions")
+			if ms != "" {
+				msi, err := strconv.Atoi(ms)
+				if err == nil {
+					//update livepeernode
+					s.LivepeerNode.SetMaxSessions(msi)
+					glog.Infof("max sessions set to %s", ms)
+					respondOk(w, []byte("max sessions set"))
+				}
+			} else {
+				glog.Error("Need to set maxsessions")
+				respond400(w, "need to set maxsessions")
+				return
+			}
+
+		}
+	})
+}
+
 // Helpers
 func respondOk(w http.ResponseWriter, msg []byte) {
 	w.WriteHeader(http.StatusOK)

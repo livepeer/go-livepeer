@@ -49,7 +49,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/orchestratorInfo", s.orchestratorInfoHandler(client))
 	mux.Handle("/IsOrchestrator", s.isOrchestratorHandler())
 	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
-
+	mux.Handle("/setMaxSessions", s.setMaxSessionsHandler())
 	// Broadcast / Transcoding config
 	mux.Handle("/setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
 	mux.Handle("/getBroadcastConfig", getBroadcastConfigHandler())
@@ -111,6 +111,11 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/getLogLevel", getLogLevelHandler())
 	mux.Handle("/debug", s.debugHandler())
 
+	//set remote transcoder info
+	mux.Handle("/setTranscoderSortMethod", s.setTranscoderSortMethodHandler())
+	mux.Handle("/setTranscoderCapacity", s.setTranscoderCapacityHandler())
+	mux.Handle("/setTranscoderPriority", s.setTranscoderPriorityHandler())
+	
 	// Metrics
 	if monitor.Enabled {
 		mux.Handle("/metrics", monitor.Exporter)
