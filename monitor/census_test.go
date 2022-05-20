@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,7 +62,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
-	SegmentFullyTranscoded(context.Background(), 1, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 1, 1, "ps", "", &lpnet.OrchestratorInfo{})
 	if sr := census.successRate(); sr != 1 {
 		t.Fatalf("Success rate should be 1, not %f", sr)
 	}
@@ -73,7 +74,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 	SegmentEmerged(context.TODO(), 1, 3, 3, 1)
 	SegmentTranscodeFailed(context.TODO(), SegmentTranscodeErrorSessionEnded, 1, 3, fmt.Errorf("some"), true)
 	SegmentEmerged(context.TODO(), 1, 4, 3, 1)
-	SegmentFullyTranscoded(context.Background(), 1, 4, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 1, 4, "ps", "", &lpnet.OrchestratorInfo{})
 	if sr := census.successRate(); sr != 0.75 {
 		t.Fatalf("Success rate should be 0.75, not %f", sr)
 	}
@@ -84,7 +85,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 
 	StreamCreated("h1", 2)
 	SegmentEmerged(context.TODO(), 2, 1, 3, 1)
-	SegmentFullyTranscoded(context.Background(), 2, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 2, 1, "ps", "", &lpnet.OrchestratorInfo{})
 	SegmentEmerged(context.TODO(), 2, 2, 3, 1)
 	StreamEnded(context.TODO(), 2)
 	if len(census.success) != 1 {
@@ -110,7 +111,7 @@ func TestLastSegmentTimeout(t *testing.T) {
 
 	StreamCreated("h3", 3)
 	SegmentEmerged(context.TODO(), 3, 1, 3, 1)
-	SegmentFullyTranscoded(context.Background(), 3, 1, "ps", "")
+	SegmentFullyTranscoded(context.Background(), 3, 1, "ps", "", &lpnet.OrchestratorInfo{})
 	SegmentEmerged(context.TODO(), 3, 2, 3, 1)
 	StreamEnded(context.TODO(), 3)
 	if len(census.success) != 1 {
