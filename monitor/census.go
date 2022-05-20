@@ -835,7 +835,7 @@ func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	return others
 }
 
-func manifestIDTagAndOrchInfo(orchInfo lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
+func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	others = manifestIDTag(ctx, others...)
 
 	others = append(
@@ -1338,7 +1338,7 @@ func (cen *censusMetricsCounter) sendSuccess() {
 	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
-func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError, orchInfo lpnet.OrchestratorInfo) {
+func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError, orchInfo *lpnet.OrchestratorInfo) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	rctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
