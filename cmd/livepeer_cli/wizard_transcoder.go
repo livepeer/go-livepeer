@@ -35,13 +35,14 @@ func myHostPort() string {
 	// 	http://whatismyipaddress.com/api
 	// 	http://ipinfo.io/ip
 	ip := strings.TrimSpace(httpGet("https://api.ipify.org/?format=text"))
-	return ip + ":" + defaultRPCPort
+	return "https://" + ip + ":" + defaultRPCPort
 }
 
 func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string) {
 	var (
 		blockRewardCut float64
 		feeCut         float64
+		addr           string
 	)
 
 	orch, _, err := w.getOrchestratorInfo()
@@ -66,13 +67,16 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 	fmt.Printf("Enter the price for %d pixels in Wei (required) ", pixelsPerUnit)
 	pricePerUnit := w.readDefaultInt(0)
 
-	addr := myHostPort()
+	if orch.ServiceURI == "" {
+		addr = myHostPort()
+	} else {
+		addr = orch.ServiceURI
+	}
 	fmt.Printf("Enter the public host:port of node (default: %v)", addr)
 	serviceURI := w.readStringAndValidate(func(in string) (string, error) {
 		if "" == in {
 			in = addr
 		}
-		in = "https://" + in
 		uri, err := url.ParseRequestURI(in)
 		if err != nil {
 			return "", err
@@ -166,6 +170,12 @@ func (w *wizard) activateOrchestrator() {
 }
 
 func (w *wizard) setOrchestratorConfig() {
+
+	if w.offchain {
+		fmt.Println("Cannot set Orchestrator config in off-chain mode")
+		return
+	}
+
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 
 	val := w.getOrchestratorConfigFormValues()
