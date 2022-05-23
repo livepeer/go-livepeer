@@ -6,7 +6,7 @@
 
 This release removes special handling for single frame segments from the previous release that was causing transcoding issues with certain types of content.
 
-It also introduces a number of fixes around making the Stream Tester more reliable.
+It also introduces a number of fixes around making the Stream Tester more reliable and a CLI fix to choose more logical default address.
 
 ### Breaking Changes 🚨🚨
 
@@ -22,9 +22,11 @@ None
 - \#2392 Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
 - \#2413 Fix Webhook discovery, refresh pool before getting pool size (@leszko)
 
-
 ### Orchestrator
 - \##2423 Revert problematic single segment fix (@thomshutt)
+
+### CLI
+- \#2416 Use the O's currently registered Service URI as default address (@emranemran)
 
 ## v0.5.30
 
