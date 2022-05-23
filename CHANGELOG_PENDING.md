@@ -21,6 +21,7 @@
 ### Bug Fixes 🐞
 
 #### CLI
+- \#2416 Use the O's currently registered Service URI as default address (@emranemran)
 
 #### General
 
