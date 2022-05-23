@@ -545,7 +545,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			if err != nil {
 				if monitor.Enabled {
 					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVGeneralError)
 				}
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -557,7 +556,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				if monitor.Enabled {
 					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVGeneralError)
 				}
 				return nil, nil, err
 			}
@@ -577,9 +575,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
-			if monitor.Enabled {
-				monitor.FastVerificationFailed(ctx, ouri, monitor.FVGeneralError)
-			}
 		}
 	}
 

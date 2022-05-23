@@ -70,12 +70,10 @@ const (
 )
 
 const (
-	//general type fail of fast verification
-	FVGeneralError = iota
 	//mpeg7-sign comparison fail of fast verification
-	FVType1Error
+	FVType1Error = 1
 	//video comparison fail of fast verification
-	FVType2Error
+	FVType2Error = 2
 )
 
 // Enabled true if metrics was enabled in command line
