@@ -170,6 +170,9 @@ type (
 		mFastVerificationFailed                 *stats.Int64Measure
 		mFastVerificationEnabledCurrentSessions *stats.Int64Measure
 		mFastVerificationUsingCurrentSessions   *stats.Int64Measure
+		mFastVerificationSucceed                *stats.Int64Measure
+		mFastVerificationType1Failed            *stats.Int64Measure
+		mFastVerificationType2Failed            *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -310,6 +313,9 @@ func InitCensus(nodeType NodeType, version string) {
 		"Number of currently transcoded streams that have fast verification enabled", "tot")
 	census.mFastVerificationUsingCurrentSessions = stats.Int64("fast_verification_using_current_sessions_total",
 		"Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator", "tot")
+	census.mFastVerificationSucceed = stats.Int64("fast_verification_succeed", "FastVerificationSucceed", "tot")
+	census.mFastVerificationType1Failed = stats.Int64("fast_verification_type1_failed", "FastVerification Mpeg7-Sign Comparison Failed", "tot")
+	census.mFastVerificationType2Failed = stats.Int64("fast_verification_type2_failed", "FastVerification Video Comparison Failed", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -786,6 +792,27 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "fast_verification_succeed",
+			Measure:     census.mFastVerificationSucceed,
+			Description: "Number of fast verifications succeed",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "fast_verification_type1_failed",
+			Measure:     census.mFastVerificationType1Failed,
+			Description: "Number of fast verifications mpeg7-sign comparison failed",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "fast_verification_type2_failed",
+			Measure:     census.mFastVerificationType2Failed,
+			Description: "Number of fast verifications video comparison failed",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			Aggregation: view.Count(),
 		},
 	}
 
@@ -1648,6 +1675,27 @@ func FastVerificationFailed(ctx context.Context, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
 		census.mFastVerificationFailed.M(1)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+func FastVerificationSucceed(ctx context.Context, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationSucceed.M(1)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+func FastVerificationType1Failed(ctx context.Context, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationType1Failed.M(1)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+func FastVerificationType2Failed(ctx context.Context, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationType2Failed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
