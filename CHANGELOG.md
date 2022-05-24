@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.5.31
+
+*May 23 2022*
+
+This release removes special handling for single frame segments from the previous release that was causing transcoding issues with certain types of content.
+
+It also introduces a number of fixes around making the Stream Tester more reliable and a CLI fix to choose more logical default address.
+
+### Breaking Changes 🚨🚨
+
+None
+
+### Features ⚒
+
+#### General
+- \#2383 Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
+- \#2223 Refactor `drivers` package as a reusable and more performant lib (@victorges)
+
+#### Broadcaster
+- \#2392 Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
+- \#2413 Fix Webhook discovery, refresh pool before getting pool size (@leszko)
+
+### Orchestrator
+- \##2423 Revert problematic single segment fix (@thomshutt)
+
+### CLI
+- \#2416 Use the O's currently registered Service URI as default address (@emranemran)
+
 ## v0.5.30
 
 *May 11 2022*
