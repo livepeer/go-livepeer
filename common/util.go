@@ -441,18 +441,38 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 }
 
 func detectNvidiaDevices() ([]string, error) {
+	nvidiaCardCount := 0
+	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
+
 	gpu, err := ghw.GPU()
 	if err != nil {
 		return nil, err
 	}
 
-	nvidiaCardCount := 0
-	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
-	for _, card := range gpu.GraphicsCards {
-		if card.DeviceInfo != nil && re.MatchString(card.DeviceInfo.Vendor.Name) {
-			nvidiaCardCount += 1
+	if len(gpu.GraphicsCards) != 0 {
+		for _, card := range gpu.GraphicsCards {
+			if card.DeviceInfo != nil && re.MatchString(card.DeviceInfo.Vendor.Name) {
+				nvidiaCardCount += 1
+			}
+		}
+	} else { // on VMs gpu.GraphicsCards may be empty
+		rePCI := regexp.MustCompile("(?i)display controller")
+
+		pci, err := ghw.PCI()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, device := range pci.ListDevices() {
+			// Make sure that the current device is a graphics card.
+			// On some VMs driver may be misreported as vfio-pci, try to rely on device.Class.Name with a "Display controller"
+			// See: https://github.com/jaypipes/ghw/issues/314#issuecomment-1113334378
+			if device.Vendor != nil && re.MatchString(device.Vendor.Name) && (re.MatchString(device.Driver) || rePCI.MatchString(device.Class.Name)) {
+				nvidiaCardCount += 1
+			}
 		}
 	}
+
 	if nvidiaCardCount == 0 {
 		return nil, errors.New("no devices found with vendor name 'Nvidia'")
 	}
