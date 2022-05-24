@@ -527,6 +527,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 		equal, err := ffmpeg.CompareSignatureByBuffer(trustedHash, untrustedHash)
 		if monitor.Enabled {
 			monitor.FastVerificationDone(ctx, ouri)
+			if !equal || err != nil {
+				monitor.FastVerificationFailed(ctx, ouri, monitor.FVType1Error)
+			}
 		}
 		if err != nil {
 			clog.Errorf(ctx, "error uri=%s comparing perceptual hashes from url=%s err=%q", ouri,
@@ -540,6 +543,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			// download untrusted video segment
 			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
+				if monitor.Enabled {
+					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				}
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				return nil, nil, err
@@ -548,7 +554,13 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			if err != nil {
 				clog.Errorf(ctx, "error uri=%s comparing video from url=%s err=%q", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+				if monitor.Enabled {
+					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				}
 				return nil, nil, err
+			}
+			if monitor.Enabled && !vequal {
+				monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
 			}
 		}
 		if vequal && equal {
@@ -563,9 +575,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			return untrustedResult.Session, untrustedResult.TranscodeResult, untrustedResult.Err
 		} else {
 			sessionsToSuspend = append(sessionsToSuspend, untrustedResult.Session)
-			if monitor.Enabled {
-				monitor.FastVerificationFailed(ctx, ouri)
-			}
 		}
 	}
 
