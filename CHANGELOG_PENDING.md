@@ -9,6 +9,7 @@
 #### General
 
 #### Broadcaster
+- \#2327 Parallelize handling events in Orchestrator Watcher (@red-0ne)
 
 #### Orchestrator
 
