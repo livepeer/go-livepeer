@@ -94,8 +94,10 @@ if [[ "${GCLOUD_KEY:-}" == "" ]]; then
 fi
 
 # https://stackoverflow.com/a/44751929/990590
-bucket=build.livepeer.live
-resource="/${bucket}/${VERSION_AND_NETWORK}/${FILE}"
+BUCKET="build.livepeer.live"
+PROJECT="go-livepeer"
+BUCKET_PATH="${PROJECT}/${VERSION_AND_NETWORK}/${FILE}"
+resource="/${BUCKET}/${BUCKET_PATH}"
 contentType="application/x-compressed-tar"
 dateValue="$(date -R)"
 stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
@@ -119,6 +121,6 @@ echo "upload done"
 
 curl -X POST --fail -s \
   -H "Content-Type: application/json" \
-  -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/$VERSION_AND_NETWORK/${FILE}\nSHA256:\n${FILE_SHA256}\"}" \
+  -d "{\"content\": \"Build succeeded ✅\nBranch: $BRANCH\nPlatform: $PLATFORM-$ARCH\nLast commit: $(git log -1 --pretty=format:'%s by %an')\nhttps://build.livepeer.live/${BUCKET_PATH}\nSHA256:\n${FILE_SHA256}\"}" \
   $DISCORD_URL
 echo "done"

@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2429 Binaries are uploaded to gcp cloud storage following the new directory structure (@hjpotter92)
 
 #### Broadcaster
 
