@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	Netint                       *string
 	TestTranscoder               *bool
 	SceneClassificationModelPath *string
+	DetectContent                *bool
 	EthAcctAddr                  *string
 	EthPassword                  *string
 	EthKeystorePath              *string
@@ -146,7 +147,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNvidia := ""
 	defaultNetint := ""
 	defaultTestTranscoder := true
-	defaultSceneClassificationModelPath := ""
+	defaultDetectContent := false
+	defaultSceneClassificationModelPath := "tasmodel.pb"
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -211,6 +213,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Netint:                       &defaultNetint,
 		TestTranscoder:               &defaultTestTranscoder,
 		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
+		DetectContent:                &defaultDetectContent,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -387,18 +390,27 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					glog.Fatal(err)
 					return
 				}
+			} else {
+				// no capability test was run, assume default capabilities
+				transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
 			}
-			// FIXME: Short-term hack to pre-load the detection models on every device
-			if accel == ffmpeg.Nvidia && *cfg.SceneClassificationModelPath != "" {
-				detectorProfile := ffmpeg.DSceneAdultSoccer
-				detectorProfile.ModelPath = *cfg.SceneClassificationModelPath
-				core.DetectorProfile = &detectorProfile
-				for _, d := range devices {
-					tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
-					if err != nil {
-						glog.Fatalf("Could not initialize detector")
+			// initialize Tensorflow runtime on each device to reduce delay when creating new transcoding session
+			if accel == ffmpeg.Nvidia && *cfg.DetectContent {
+				if _, err := os.Stat(*cfg.SceneClassificationModelPath); err == nil {
+					detectorProfile := ffmpeg.DSceneAdultSoccer
+					detectorProfile.ModelPath = *cfg.SceneClassificationModelPath
+					core.DetectorProfile = &detectorProfile
+					for _, d := range devices {
+						tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
+						if err != nil {
+							glog.Fatalf("Could not initialize content detector")
+						}
+						defer tc.Stop()
 					}
-					defer tc.Stop()
+					// add SceneClassification capability
+					transcoderCaps = append(transcoderCaps, core.Capability_SceneClassification)
+				} else {
+					glog.Fatalf("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
 				}
 			}
 			// Initialize LB transcoder
@@ -1008,11 +1020,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
-
-		if *cfg.SceneClassificationModelPath != "" {
-			// Only enable experimental capabilities if scene classification model is actually loaded
-			transcoderCaps = append(transcoderCaps, core.ExperimentalCapabilities()...)
-		}
 		if !*cfg.Transcoder && n.OrchSecret == "" {
 			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
