@@ -13,9 +13,6 @@ An on-chain workflow testing tool that supports the following:
 docker pull livepeer/geth-with-livepeer-protocol:confluence
 docker run -p 8545:8545 -p 8546:8546 --name geth-with-livepeer-protocol livepeer/geth-with-livepeer-protocol:confluence
 
-# To pull a specific architecture (amd64 or arm64):
-# docker pull --platform linux/arm64 livepeer/geth-with-livepeer-protocol:confluence
-# docker pull --platform linux/amd64 livepeer/geth-with-livepeer-protocol:confluence
 
 ```
 
