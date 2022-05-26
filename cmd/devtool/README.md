@@ -13,9 +13,6 @@ An on-chain workflow testing tool that supports the following:
 docker pull livepeer/geth-with-livepeer-protocol:confluence
 docker run -p 8545:8545 -p 8546:8546 --name geth-with-livepeer-protocol livepeer/geth-with-livepeer-protocol:confluence
 
-# Mac M1 ONLY
-# docker pull darkdragon/geth-with-livepeer-protocol:streamflow
-# docker run -p 8545:8545 -p 8546:8546 --name geth-with-livepeer-protocol darkdragon/geth-with-livepeer-protocol:streamflow
 
 ```
 
