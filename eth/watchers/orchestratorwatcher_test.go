@@ -205,4 +205,13 @@ func TestOrchWatcher_HandleRoundEvent_CacheOrchestratorStake(t *testing.T) {
 	errorLogsAfter = glog.Stats.Error.Lines()
 	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
 	stubStore.updateErr = nil
+
+	// Common.BaseTokenAmountToFixed() error
+	errorLogsBefore = glog.Stats.Error.Lines()
+	lpEth.TotalStake = nil
+	tw.sink <- newRoundEvent
+	time.Sleep(20 * time.Millisecond)
+	errorLogsAfter = glog.Stats.Error.Lines()
+	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
+	lpEth.TotalStake = expStake
 }

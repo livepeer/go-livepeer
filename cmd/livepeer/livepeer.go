@@ -50,7 +50,7 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
-	extendTimeouts()
+	streamTesterMode()
 
 	cfg = updateNilsForUnsetFlags(cfg)
 
@@ -202,14 +202,17 @@ func updateNilsForUnsetFlags(cfg starter.LivepeerConfig) starter.LivepeerConfig 
 	return res
 }
 
-// extendTimeouts extends transcoding timeouts for the testing purpose.
+// streamTesterMode extends transcoding timeouts and disable caching for the testing purpose.
 // This functionality is intended for Stream Tester to avoid timing out while measuring orchestrator performance.
-func extendTimeouts() {
-	if boolVal, _ := strconv.ParseBool(os.Getenv("LP_EXTEND_TIMEOUTS")); boolVal {
+func streamTesterMode() {
+	if boolVal, _ := strconv.ParseBool(os.Getenv("LP_IS_ORCH_TESTER")); boolVal {
 		// Make all timeouts 8s for the common segment durations
 		common.SegUploadTimeoutMultiplier = 4.0
 		common.SegmentUploadTimeout = 8 * time.Second
 		common.HTTPDialTimeout = 8 * time.Second
 		common.SegHttpPushTimeoutMultiplier = 4.0
+
+		// Disable caching for Orchestrator Discovery Webhook
+		common.WebhookDiscoveryRefreshInterval = 0
 	}
 }

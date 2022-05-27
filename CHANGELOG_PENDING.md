@@ -7,11 +7,10 @@
 ### Features ⚒
 
 #### General
-- \#2383 Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
-- \#2223 Refactor `drivers` package as a reusable and more performant lib (@victorges)
+- \#2429 Binaries are uploaded to gcp cloud storage following the new directory structure (@hjpotter92)
 
 #### Broadcaster
-- \#2392 Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
+- \#2327 Parallelize handling events in Orchestrator Watcher (@red-0ne)
 
 #### Orchestrator
 
