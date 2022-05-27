@@ -20,6 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/jaypipes/ghw"
+	"github.com/jaypipes/ghw/pkg/gpu"
+	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -440,30 +442,53 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 	return b, err
 }
 
-func detectNvidiaDevices() ([]string, error) {
-	nvidiaCardCount := 0
-	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
-
+func getGPU() ([]*gpu.GraphicsCard, error) {
 	gpu, err := ghw.GPU()
+
 	if err != nil {
 		return nil, err
 	}
 
-	if len(gpu.GraphicsCards) != 0 {
-		for _, card := range gpu.GraphicsCards {
+	return gpu.GraphicsCards, nil
+}
+
+func getPCI() ([]*pci.Device, error) {
+	pci, err := ghw.PCI()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pci.ListDevices(), nil
+}
+
+var GetGPU = getGPU
+var GetPCI = getPCI
+
+func detectNvidiaDevices() ([]string, error) {
+	nvidiaCardCount := 0
+	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
+
+	cards, err := GetGPU()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cards) != 0 {
+		for _, card := range cards {
 			if card.DeviceInfo != nil && re.MatchString(card.DeviceInfo.Vendor.Name) {
 				nvidiaCardCount += 1
 			}
 		}
 	} else { // on VMs gpu.GraphicsCards may be empty
-		rePCI := regexp.MustCompile("(?i)display controller")
+		rePCI := regexp.MustCompile("(?i)display ?controller")
 
-		pci, err := ghw.PCI()
+		pci, err := GetPCI()
 		if err != nil {
 			return nil, err
 		}
 
-		for _, device := range pci.ListDevices() {
+		for _, device := range pci {
 			// Make sure that the current device is a graphics card.
 			// On some VMs driver may be misreported as vfio-pci, try to rely on device.Class.Name with a "Display controller"
 			// See: https://github.com/jaypipes/ghw/issues/314#issuecomment-1113334378

@@ -9,6 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jaypipes/ghw"
+	"github.com/jaypipes/ghw/pkg/gpu"
+	"github.com/jaypipes/ghw/pkg/pci"
+	"github.com/jaypipes/pcidb"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -347,4 +351,100 @@ func TestRatPriceInfo(t *testing.T) {
 	priceInfo, err = RatPriceInfo(&net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 2})
 	assert.Nil(err)
 	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
+}
+
+func TestParseAccelDevices(t *testing.T) {
+	assert := assert.New(t)
+	stubHardware := &StubHardware{}
+
+	originGetGPU := GetGPU
+	originGetPCI := GetPCI
+
+	GetGPU = stubHardware.getGPU
+	GetPCI = stubHardware.getPCI
+
+	// Test available GPU cards
+	for i := 0; i < 3; i++ {
+		stubHardware.GPU = append(stubHardware.GPU, &gpu.GraphicsCard{
+			DeviceInfo: &ghw.PCIDevice{
+				Vendor: &pcidb.Vendor{
+					Name: "--Nvidia Corp",
+				},
+			},
+		})
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 3)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+	assert.Equal(ids[2], "2")
+
+	stubHardware.GPU = nil
+	stubHardware.PCI = nil
+
+	// Test failed GPU probing and correct driver name
+	for i := 0; i < 2; i++ {
+		stubHardware.PCI = append(stubHardware.PCI, &pci.Device{
+			Vendor: &pcidb.Vendor{
+				Name: "--Nvidia Corp",
+			},
+			Driver: "nvidia",
+		})
+	}
+
+	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 2)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+
+	stubHardware.GPU = nil
+	stubHardware.PCI = nil
+
+	// Test failed GPU probing and wrong driver name
+	for i := 0; i < 4; i++ {
+		stubHardware.PCI = append(stubHardware.PCI, &pci.Device{
+			Vendor: &pcidb.Vendor{
+				Name: "--Nvidia Corp",
+			},
+			Class: &pcidb.Class{
+				Name: "Display Controller",
+			},
+		})
+	}
+
+	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 4)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+	assert.Equal(ids[2], "2")
+	assert.Equal(ids[3], "3")
+
+	stubHardware.GPU = nil
+	stubHardware.PCI = nil
+
+	// Test failed detection
+	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.NotNil(err)
+	assert.Equal(len(ids), 0)
+
+	stubHardware.GPU = nil
+	stubHardware.PCI = nil
+
+	// Test custom selection
+	ids, err = ParseAccelDevices("0,3,1", ffmpeg.Nvidia)
+	assert.Equal(len(ids), 3)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "3")
+	assert.Equal(ids[2], "1")
+
+	GetGPU = originGetGPU
+	GetPCI = originGetPCI
 }
