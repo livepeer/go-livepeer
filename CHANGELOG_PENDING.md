@@ -19,6 +19,7 @@
 ### Bug Fixes 🐞
 
 #### CLI
+- \#2438 Add new menu option to gracefully exit livepeer_cli (@emranemran)
 
 #### General
 
