@@ -562,7 +562,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			if monitor.Enabled && !vequal {
 				monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
 			}
-      clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v",
+			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal)
 		}
