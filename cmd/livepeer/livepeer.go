@@ -7,13 +7,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
-	"github.com/livepeer/go-livepeer/common"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
 	"time"
+
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
+	"github.com/livepeer/go-livepeer/common"
 
 	"github.com/livepeer/livepeer-data/pkg/mistconnector"
 	"github.com/peterbourgon/ff/v3"
@@ -163,7 +164,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.MetadataPublishTimeout = flag.Duration("metadataPublishTimeout", *cfg.MetadataPublishTimeout, "Max time to wait in background for publishing operation metadata events")
 
 	// Storage:
-	cfg.Datadir = flag.String("datadir", *cfg.Datadir, "Directory that data is stored in")
+	flag.StringVar(cfg.Datadir, "datadir", *cfg.Datadir, "[Deprecated] Directory that data is stored in")
+	flag.StringVar(cfg.Datadir, "dataDir", *cfg.Datadir, "Directory that data is stored in")
 	cfg.Objectstore = flag.String("objectStore", *cfg.Objectstore, "url of primary object store")
 	cfg.Recordstore = flag.String("recordStore", *cfg.Recordstore, "url of object store for recordings")
 
