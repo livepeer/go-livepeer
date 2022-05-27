@@ -16,8 +16,10 @@ core/test_segment.go:
 	core/test_segment.sh core/test_segment.go
 
 version=$(shell cat VERSION)
+PRODUCT_RELEASE=$(shell ./print_version.sh)
 
-ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(shell ./print_version.sh)
+ldflags := -X github.com/livepeer/go-livepeer/core.LivepeerVersion=$(PRODUCT_RELEASE)
+
 cgo_cflags :=
 cgo_ldflags :=
 
