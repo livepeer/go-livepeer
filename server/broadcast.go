@@ -931,6 +931,8 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			}
 			return nil, info, err
 		}
+		fmt.Println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+		fmt.Println(res)
 		// [EXPERIMENTAL] send content detection results to callback webhook
 		// for now use detection only in common path
 		if DetectionWebhookURL != nil && len(res.Detections) > 0 {

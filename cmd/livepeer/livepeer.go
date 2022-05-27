@@ -22,6 +22,8 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 )
 
+var ProductRelease string
+
 func main() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
@@ -70,6 +72,7 @@ func main() {
 		fmt.Printf("Golang runtime version: %s %s\n", runtime.Compiler, runtime.Version())
 		fmt.Printf("Architecture: %s\n", runtime.GOARCH)
 		fmt.Printf("Operating system: %s\n", runtime.GOOS)
+		fmt.Printf("Release version: %s\n", ProductRelease)
 		return
 	}
 
