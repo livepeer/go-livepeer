@@ -353,27 +353,26 @@ func TestRatPriceInfo(t *testing.T) {
 	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
 }
 
-func TestParseAccelDevices(t *testing.T) {
+func TestParseAccessDevices_Gpu(t *testing.T) {
 	assert := assert.New(t)
-	stubHardware := &StubHardware{}
 
-	originGetGPU := GetGPU
-	originGetPCI := GetPCI
+	originGetGPU := getGPU
+	originGetPCI := getPCI
 
-	GetGPU = stubHardware.getGPU
-	GetPCI = stubHardware.getPCI
-
-	// Test available GPU cards
-	for i := 0; i < 3; i++ {
-		stubHardware.GPU = append(stubHardware.GPU, &gpu.GraphicsCard{
-			DeviceInfo: &ghw.PCIDevice{
-				Vendor: &pcidb.Vendor{
-					Name: "--Nvidia Corp",
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		gpus := []*gpu.GraphicsCard{}
+		for i := 0; i < 3; i++ {
+			gpus = append(gpus, &gpu.GraphicsCard{
+				DeviceInfo: &ghw.PCIDevice{
+					Vendor: &pcidb.Vendor{
+						Name: "--Nvidia Corp",
+					},
 				},
-			},
-		})
-	}
+			})
+		}
 
+		return gpus, nil
+	}
 	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
 
 	assert.Nil(err)
@@ -382,42 +381,71 @@ func TestParseAccelDevices(t *testing.T) {
 	assert.Equal(ids[1], "1")
 	assert.Equal(ids[2], "2")
 
-	stubHardware.GPU = nil
-	stubHardware.PCI = nil
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
 
-	// Test failed GPU probing and correct driver name
-	for i := 0; i < 2; i++ {
-		stubHardware.PCI = append(stubHardware.PCI, &pci.Device{
-			Vendor: &pcidb.Vendor{
-				Name: "--Nvidia Corp",
-			},
-			Driver: "nvidia",
-		})
+func TestParseAccessDevices_GpuFailedProbing(t *testing.T) {
+	assert := assert.New(t)
+
+	originGetGPU := getGPU
+	originGetPCI := getPCI
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
 	}
 
-	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+	getPCI = func() ([]*pci.Device, error) {
+		pcis := []*pci.Device{}
+		for i := 0; i < 2; i++ {
+			pcis = append(pcis, &pci.Device{
+				Vendor: &pcidb.Vendor{
+					Name: "--Nvidia Corp",
+				},
+				Driver: "nvidia",
+			})
+		}
+		return pcis, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
 
 	assert.Nil(err)
 	assert.Equal(len(ids), 2)
 	assert.Equal(ids[0], "0")
 	assert.Equal(ids[1], "1")
 
-	stubHardware.GPU = nil
-	stubHardware.PCI = nil
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
 
-	// Test failed GPU probing and wrong driver name
-	for i := 0; i < 4; i++ {
-		stubHardware.PCI = append(stubHardware.PCI, &pci.Device{
-			Vendor: &pcidb.Vendor{
-				Name: "--Nvidia Corp",
-			},
-			Class: &pcidb.Class{
-				Name: "Display Controller",
-			},
-		})
+func TestParseAccelDevices_WrongDriver(t *testing.T) {
+	assert := assert.New(t)
+
+	originGetGPU := getGPU
+	originGetPCI := getPCI
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
 	}
 
-	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+	getPCI = func() ([]*pci.Device, error) {
+		pcis := []*pci.Device{}
+		for i := 0; i < 4; i++ {
+			pcis = append(pcis, &pci.Device{
+				Vendor: &pcidb.Vendor{
+					Name: "--Nvidia Corp",
+				},
+				Class: &pcidb.Class{
+					Name: "Display Controller",
+				},
+			})
+		}
+
+		return pcis, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
 
 	assert.Nil(err)
 	assert.Equal(len(ids), 4)
@@ -426,25 +454,25 @@ func TestParseAccelDevices(t *testing.T) {
 	assert.Equal(ids[2], "2")
 	assert.Equal(ids[3], "3")
 
-	stubHardware.GPU = nil
-	stubHardware.PCI = nil
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
 
-	// Test failed detection
-	ids, err = ParseAccelDevices("all", ffmpeg.Nvidia)
+func TestParseAccelDevices_FailedDetection(t *testing.T) {
+	assert := assert.New(t)
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
 
 	assert.NotNil(err)
 	assert.Equal(len(ids), 0)
+}
 
-	stubHardware.GPU = nil
-	stubHardware.PCI = nil
+func TestParseAccelDevices_CustomSelection(t *testing.T) {
+	assert := assert.New(t)
 
-	// Test custom selection
-	ids, err = ParseAccelDevices("0,3,1", ffmpeg.Nvidia)
+	ids, _ := ParseAccelDevices("0,3,1", ffmpeg.Nvidia)
 	assert.Equal(len(ids), 3)
 	assert.Equal(ids[0], "0")
 	assert.Equal(ids[1], "3")
 	assert.Equal(ids[2], "1")
-
-	GetGPU = originGetGPU
-	GetPCI = originGetPCI
 }

@@ -442,7 +442,7 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 	return b, err
 }
 
-func getGPU() ([]*gpu.GraphicsCard, error) {
+func getGPUDefault() ([]*gpu.GraphicsCard, error) {
 	gpu, err := ghw.GPU()
 
 	if err != nil {
@@ -452,7 +452,7 @@ func getGPU() ([]*gpu.GraphicsCard, error) {
 	return gpu.GraphicsCards, nil
 }
 
-func getPCI() ([]*pci.Device, error) {
+func getPCIDefault() ([]*pci.Device, error) {
 	pci, err := ghw.PCI()
 
 	if err != nil {
@@ -462,14 +462,14 @@ func getPCI() ([]*pci.Device, error) {
 	return pci.ListDevices(), nil
 }
 
-var GetGPU = getGPU
-var GetPCI = getPCI
+var getGPU = getGPUDefault
+var getPCI = getPCIDefault
 
 func detectNvidiaDevices() ([]string, error) {
 	nvidiaCardCount := 0
 	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
 
-	cards, err := GetGPU()
+	cards, err := getGPU()
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +483,7 @@ func detectNvidiaDevices() ([]string, error) {
 	} else { // on VMs gpu.GraphicsCards may be empty
 		rePCI := regexp.MustCompile("(?i)display ?controller")
 
-		pci, err := GetPCI()
+		pci, err := getPCI()
 		if err != nil {
 			return nil, err
 		}
