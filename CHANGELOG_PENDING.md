@@ -18,6 +18,7 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
+- \#2339 Fix failing `-nvidia all` flag on VM (red-0ne)
 
 #### CLI
 
