@@ -60,8 +60,8 @@ jobs:
             docker tag current-build livepeer/go-livepeer:${TAG}-linux
             docker push livepeer/go-livepeer:${TAG}-linux
             # Manifest step is optional in case the Windows build hasn't finished yet
-            docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
-            docker manifest push livepeer/go-livepeer:${TAG} || true
+            docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows
+            docker manifest push livepeer/go-livepeer:${TAG}
           done
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
