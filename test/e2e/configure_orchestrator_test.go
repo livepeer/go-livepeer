@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 )
@@ -23,22 +24,35 @@ func TestConfigureOrchestrator(t *testing.T) {
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	o := startAndRegisterOrchestrator(t, geth)
-	waitForNextRound(t, o.dev.Client)
-
 	// when
-	cfg := &OrchestratorConfig{
-		PricePerUnit:   2,
-		PixelsPerUnit:  12,
-		BlockRewardCut: 25.0,
-		FeeShare:       55.0,
-		ServiceURI:     "127.0.0.1:18545",
-	}
-	configureOrchestrator(o, cfg)
-	waitForNextRound(t, o.dev.Client)
+	o := startAndRegisterOrchestrator(t, geth)
+	lpEth := o.dev.Client
+	waitForNextRound(t, lpEth)
+	initializeRound(o)
 
 	// then
-	assertOrchestratorConfigured(t, o, cfg)
+	//assertOrchestratorRegisteredAndActivated(t, lpEth)
+
+	// when
+	//deactivateOrchestrator(o)
+	//waitForNextRound(t, lpEth)
+
+	// then
+	//assertOrchestratorDeactivated(t, o)
+
+	//// when
+	//cfg := &OrchestratorConfig{
+	//	PricePerUnit:   2,
+	//	PixelsPerUnit:  12,
+	//	BlockRewardCut: 25.0,
+	//	FeeShare:       55.0,
+	//	ServiceURI:     "127.0.0.1:18545",
+	//}
+	//configureOrchestrator(o, cfg)
+	//waitForNextRound(t, o.dev.Client)
+
+	//// then
+	//assertOrchestratorConfigured(t, o, cfg)
 }
 
 func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
@@ -57,20 +71,36 @@ func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
 
 	defer o.stop()
 	<-o.ready
+	return o
 
+	//val := url.Values{
+	//	"pricePerUnit":   {fmt.Sprintf("%d", pricePerUnit)},
+	//	"pixelsPerUnit":  {fmt.Sprintf("%d", pixelsPerUnit)},
+	//	"blockRewardCut": {fmt.Sprintf("%v", rewardCut)},
+	//	"feeShare":       {fmt.Sprintf("%v", feeShare)},
+	//	"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
+	//	"amount":         {fmt.Sprintf("%d", lptStake)},
+	//}
+
+	//for {
+	//	if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
+	//		return o
+	//	}
+	//	time.Sleep(200 * time.Millisecond)
+	//}
+}
+
+func deactivateOrchestrator(o *livepeer) {
 	val := url.Values{
-		"pricePerUnit":   {fmt.Sprintf("%d", pricePerUnit)},
-		"pixelsPerUnit":  {fmt.Sprintf("%d", pixelsPerUnit)},
-		"blockRewardCut": {fmt.Sprintf("%v", rewardCut)},
-		"feeShare":       {fmt.Sprintf("%v", feeShare)},
-		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
-		"amount":         {fmt.Sprintf("%d", lptStake)},
+		"amount": {fmt.Sprintf("%d", lptStake)},
 	}
 
 	for {
-		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
-			return o
+		r, ok := httpPostWithParams(fmt.Sprintf("http://%s/unbond", *o.cfg.CliAddr), val)
+		if ok {
+			return
 		}
+		glog.Errorf("wating to unbind %v %v", r, ok)
 		time.Sleep(200 * time.Millisecond)
 	}
 }
@@ -90,6 +120,25 @@ func configureOrchestrator(o *livepeer, cfg *OrchestratorConfig) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+func initializeRound(o *livepeer) {
+	//val := url.Values{}
+	//httpPostWithParams(fmt.Sprintf("http://%s/initializeRound", *o.cfg.CliAddr), val)
+	o.dev.InitializeRound()
+}
+
+func assertOrchestratorDeactivated(t *testing.T, o *livepeer) {
+	require := require.New(t)
+
+	transPool, err := o.dev.Client.TranscoderPool()
+	trans, errTrans := o.dev.Client.GetTranscoder(o.dev.Client.Account().Address)
+
+	require.NoError(err)
+	require.NoError(errTrans)
+	require.Len(transPool, 0)
+	require.Equal(0, trans.Active)
+
 }
 
 func assertOrchestratorConfigured(t *testing.T, o *livepeer, cfg *OrchestratorConfig) {
