@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -58,7 +59,7 @@ func main() {
 		return nil
 	}
 	app.Version = core.LivepeerVersion
-	// flag.Parse()
+	flag.Parse()
 	app.Run(os.Args)
 }
 

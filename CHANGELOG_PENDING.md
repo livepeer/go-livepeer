@@ -23,6 +23,7 @@
 
 #### CLI
 - \#2438 Add new menu option to gracefully exit livepeer_cli (@emranemran)
+- \#2186 Fix the "ERROR: logging before flag.Parse" warning when any option is selected (@emranemran)
 
 #### General
 
