@@ -124,7 +124,7 @@ else
     kill $pid
 
     # check custom datadir with a network
-    run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
+    run_lp -broadcaster -dataDir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
     [ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included
     kill $pid
 
