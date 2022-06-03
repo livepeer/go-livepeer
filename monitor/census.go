@@ -779,7 +779,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "fast_verification_failed",
 			Measure:     census.mFastVerificationFailed,
 			Description: "Number of fast verifications failed",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kFVErrorType}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
