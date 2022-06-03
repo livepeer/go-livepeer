@@ -149,7 +149,7 @@ func createTranscoderRunScript(ethAcctAddr, dataDir, serviceHost string) {
 	args := []string{
 		"./livepeer",
 		"-v 99",
-		fmt.Sprintf("-datadir ./%s", dataDir),
+		fmt.Sprintf("-dataDir ./%s", dataDir),
 		"-orchSecret secre",
 		fmt.Sprintf("-orchAddr %s:%d", serviceHost, mediaPort),
 		fmt.Sprintf("-cliAddr %s:%d", serviceHost, cliPort),
@@ -164,7 +164,7 @@ func createRunScript(ethController string, dataDir, serviceHost string, cfg devt
 		"./livepeer",
 		"-v 99",
 		"-ethController " + ethController,
-		"-datadir ./" + dataDir,
+		"-dataDir ./" + dataDir,
 		"-ethAcctAddr " + cfg.Account,
 		"-ethUrl " + cfg.Endpoint,
 		"-ethPassword \"\"",

@@ -45,7 +45,7 @@ kill $pid
 [ ! -d "$CUSTOM_DATADIR" ]
 
 # check custom datadir without a network (offchain)
-run_lp -broadcaster -datadir "$CUSTOM_DATADIR"
+run_lp -broadcaster -dataDir "$CUSTOM_DATADIR"
 [ -d "$CUSTOM_DATADIR" ]
 [ ! -d  "$CUSTOM_DATADIR"/offchain ] # sanity check that network isn't included
 kill $pid
@@ -124,7 +124,7 @@ else
     kill $pid
 
     # check custom datadir with a network
-    run_lp -broadcaster -datadir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
+    run_lp -broadcaster -dataDir "$CUSTOM_DATADIR" -network rinkeby $ETH_ARGS
     [ ! -d  "$CUSTOM_DATADIR"/rinkeby ] # sanity check that network isn't included
     kill $pid
 
