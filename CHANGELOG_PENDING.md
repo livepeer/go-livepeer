@@ -22,6 +22,7 @@
 - \#2339 Fix failing `-nvidia all` flag on VM (red-0ne)
 
 #### CLI
+- \#2438 Add new menu option to gracefully exit livepeer_cli (@emranemran)
 
 #### General
 
