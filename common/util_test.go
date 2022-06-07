@@ -458,15 +458,6 @@ func TestParseAccelDevices_WrongDriver(t *testing.T) {
 	getPCI = originGetPCI
 }
 
-func TestParseAccelDevices_FailedDetection(t *testing.T) {
-	assert := assert.New(t)
-
-	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
-
-	assert.NotNil(err)
-	assert.Equal(len(ids), 0)
-}
-
 func TestParseAccelDevices_CustomSelection(t *testing.T) {
 	assert := assert.New(t)
 
