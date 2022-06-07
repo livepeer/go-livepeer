@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -259,6 +261,14 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	// add detections
+	detectData, err := json.Marshal(tData.Detections)
+	if err != nil {
+		clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
+			notify.TaskId, notify.Url, err)
+		return
+	}
+	req.Header.Set("Detections", string(detectData))
 	pixels := int64(0)
 	if tData != nil {
 		pixels = tData.Pixels
@@ -343,6 +353,19 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// read detection data - only scene classification is supported
+	var detections []ffmpeg.DetectData
+	var sceneDetections []ffmpeg.SceneClassificationData
+	err = json.Unmarshal([]byte(r.Header.Get("Detections")), &sceneDetections)
+	if err != nil {
+		glog.Error("Could not parse detection data ", err)
+		http.Error(w, "Invalid detection data", http.StatusBadRequest)
+		return
+	}
+	for _, sd:=range sceneDetections {
+		detections = append(detections, sd)
+	}
+
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -409,6 +432,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		res.TranscodeData = &core.TranscodeData{
 			Segments: segments,
 			Pixels:   decodedPixels,
+			Detections: detections,
 		}
 		dlDur := time.Since(start)
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
