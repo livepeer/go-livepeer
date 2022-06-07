@@ -548,9 +548,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 
 	data, err = ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
-	
-	fmt.Println("YYYYYY")
-	fmt.Println(data)
 
 	if err != nil {
 		clog.Errorf(ctx, "Unable to read response body for segment orch=%s err=%q", ti.Transcoder, err)
@@ -628,10 +625,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 
 	clog.Infof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
 		seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
-
-	fmt.Println("ZZZZ")
-	fmt.Println(tdata)
-	fmt.Println(tr.Info)
 
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,

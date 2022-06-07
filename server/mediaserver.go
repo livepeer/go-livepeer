@@ -147,10 +147,10 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		WorkDir:      lpNode.WorkDir,
 		HttpMux:      http.NewServeMux(),
 		HttpDebugHeaders:    vidplayer.VidPlayerDebug {
-			DebugEnabled: true,
+			DebugEnabled:    true,
 			LivepeerVersion: core.LivepeerVersion,
-//			OrchEthAddress: lpNode.NodeType.String(), 
-			NodeEthAddress: nodeEthAddr, 
+			NodeType:        lpNode.NodeType.String(), 
+			NodeEthAddress:  nodeEthAddr, 
 		},
 	}
 	switch lpNode.NodeType {
@@ -1348,11 +1348,9 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		if ext == ".ts" {
 			contentType, _ := common.TypeByExtension(".ts")
 			w.Header().Set("Content-Type", contentType)
-			w.Header().Set("blah-blah-ts", "1")
 		} else {
 			w.Header().Set("Cache-Control", "max-age=5")
 			w.Header().Set("Content-Type", "application/x-mpegURL")
-			w.Header().Set("blah-blah-no-ts", "2")
 		}
 		w.Header().Set("Connection", "keep-alive")
 		startWrite := time.Now()
