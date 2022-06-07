@@ -362,7 +362,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid detection data", http.StatusBadRequest)
 		return
 	}
-	for _, sd:=range sceneDetections {
+	for _, sd := range sceneDetections {
 		detections = append(detections, sd)
 	}
 
@@ -430,8 +430,8 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		res.TranscodeData = &core.TranscodeData{
-			Segments: segments,
-			Pixels:   decodedPixels,
+			Segments:   segments,
+			Pixels:     decodedPixels,
 			Detections: detections,
 		}
 		dlDur := time.Since(start)
