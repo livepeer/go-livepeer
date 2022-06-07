@@ -151,7 +151,7 @@ func TestDBOrchestratorPoolCacheSize(t *testing.T) {
 	sender := &pm.MockSender{}
 	node := &core.LivepeerNode{
 		Database: dbh,
-		Eth:      &eth.StubClient{},
+		Eth:      &eth.StubClient{TotalStake: big.NewInt(0)},
 		Sender:   sender,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -210,7 +210,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 
 	node := &core.LivepeerNode{
 		Database: dbh,
-		Eth:      &eth.StubClient{},
+		Eth:      &eth.StubClient{TotalStake: big.NewInt(0)},
 	}
 	// LastInitializedRound() will ensure the stub orch is always returned from the DB
 	rm := &stubRoundsManager{round: big.NewInt(100)}
@@ -264,7 +264,7 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 
 	node := &core.LivepeerNode{
 		Database: dbh,
-		Eth:      &eth.StubClient{},
+		Eth:      &eth.StubClient{TotalStake: big.NewInt(0)},
 	}
 	// LastInitializedRound() will ensure the stub orch is always returned from the DB
 	rm := &stubRoundsManager{round: big.NewInt(100)}

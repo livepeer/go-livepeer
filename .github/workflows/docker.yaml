@@ -51,10 +51,12 @@ jobs:
           # livepeer/go-livepeer:BRANCH_NAME and livepeer/go-livepeer:VERSION_STRING. Both are useful
           # to pull from in different contexts.
           # Our Docker tag name should be our branch name with just alphanums
-          BRANCH_TAG="$(echo $GHA_REF | sed 's/refs\/heads\///' | sed 's/\//-/g' | tr -cd '[:alnum:]_-')"
+          BRANCH_TAG="$(echo $GHA_REF | sed -e 's:refs/heads/::; s:/:-:g' | tr -cd '[:alnum:]_-')"
           VERSION_TAG=$(./print_version.sh)
           docker build -t current-build -f docker/Dockerfile.release-linux .
-          for TAG in $BRANCH_TAG $VERSION_TAG; do
+          LATEST_TAG=""
+          if [[ "$GITHUB_REF_NAME" == "master" ]]; then LATEST_TAG="latest"; fi
+          for TAG in $BRANCH_TAG $VERSION_TAG $LATEST_TAG; do
             docker tag current-build livepeer/go-livepeer:${TAG}-linux
             docker push livepeer/go-livepeer:${TAG}-linux
             # Manifest step is optional in case the Windows build hasn't finished yet

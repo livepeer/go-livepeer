@@ -110,6 +110,10 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Sign a message", invoke: w.signMessage},
 		{desc: "Sign typed data", invoke: w.signTypedData},
 		{desc: "Vote in a poll", invoke: w.vote, orchestrator: true},
+		{desc: "Exit", invoke: func() {
+			fmt.Println("Goodbye, my friend")
+			os.Exit(0)
+		}},
 	}
 	return options
 }

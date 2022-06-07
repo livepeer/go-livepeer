@@ -69,6 +69,13 @@ const (
 	segTypeRec     = "recorded" // segment in the stream for which recording is enabled
 )
 
+const (
+	//mpeg7-sign comparison fail of fast verification
+	FVType1Error = 1
+	//video comparison fail of fast verification
+	FVType2Error = 2
+)
+
 // Enabled true if metrics was enabled in command line
 var Enabled bool
 var PerStreamMetrics bool
@@ -102,6 +109,7 @@ type (
 		kClientIP                     tag.Key
 		kOrchestratorURI              tag.Key
 		kOrchestratorAddress          tag.Key
+		kFVErrorType                  tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -233,6 +241,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kClientIP = tag.MustNewKey("client_ip")
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
 	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
+	census.kFVErrorType = tag.MustNewKey("fverror_type")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -770,7 +779,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "fast_verification_failed",
 			Measure:     census.mFastVerificationFailed,
 			Description: "Number of fast verifications failed",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kFVErrorType}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -1644,9 +1653,10 @@ func FastVerificationDone(ctx context.Context, uri string) {
 	}
 }
 
-func FastVerificationFailed(ctx context.Context, uri string) {
+func FastVerificationFailed(ctx context.Context, uri string, errtype int) {
+	serrtype := strconv.Itoa(errtype)
 	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri), tag.Insert(census.kFVErrorType, serrtype)),
 		census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}

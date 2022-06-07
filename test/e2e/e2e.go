@@ -28,7 +28,7 @@ type gethContainer struct {
 func setupGeth(t *testing.T) *gethContainer {
 	ctx := context.TODO()
 	req := testcontainers.ContainerRequest{
-		Image:        "livepeer/geth-with-livepeer-protocol:streamflow",
+		Image:        "livepeer/geth-with-livepeer-protocol:confluence",
 		ExposedPorts: []string{"8546/tcp", "8545/tcp"},
 	}
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
