@@ -146,7 +146,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		RtmpDisabled: true,
 		WorkDir:      lpNode.WorkDir,
 		HttpMux:      http.NewServeMux(),
-		HttpDebugHeaders:    vidplayer.VidPlayerDebug {
+		HttpDebug:    vidplayer.VidPlayerDebug {
 			DebugEnabled:    true,
 			LivepeerVersion: core.LivepeerVersion,
 			NodeType:        lpNode.NodeType.String(), 
