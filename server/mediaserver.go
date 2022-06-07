@@ -137,6 +137,10 @@ type authWebhookResponse struct {
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
+	var nodeEthAddr string = "n/a"
+	if lpNode.Eth != nil {
+		nodeEthAddr = lpNode.Eth.Account().Address.String()
+	}
 	opts := lpmscore.LPMSOpts{
 		RtmpAddr:     rtmpAddr,
 		RtmpDisabled: true,
@@ -145,7 +149,8 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		HttpDebugHeaders:    vidplayer.VidPlayerDebug {
 			DebugEnabled: true,
 			LivepeerVersion: core.LivepeerVersion,
-			OrchEthAddress: "blah", 
+//			OrchEthAddress: lpNode.NodeType.String(), 
+			NodeEthAddress: nodeEthAddr, 
 		},
 	}
 	switch lpNode.NodeType {
