@@ -622,7 +622,7 @@ func unbondHandler(client eth.LivepeerEthClient) http.Handler {
 			respond500(w, err.Error())
 			return
 		}
-		respondOk(w, nil)
+		respondOk(w, tx.Hash().Bytes())
 	}))
 }
 
