@@ -559,12 +559,26 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 				}
 				return nil, nil, err
 			}
-			if monitor.Enabled && !vequal {
-				monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+			if !vequal {
+				if monitor.Enabled {
+					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				}
+				if drivers.FailSaveEnabled() {
+					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts")
+				}
+
 			}
 			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal)
+		} else {
+			if drivers.FailSaveEnabled() {
+				if drivers.FailSaveEnabled() {
+					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash")
+				}
+			}
 		}
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
