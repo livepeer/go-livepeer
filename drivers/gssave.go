@@ -35,7 +35,7 @@ func SetCreds(bucket, creds string) {
 
 	info, err := os.Stat(creds)
 	glog.Infof("bucket %s creds %s is not ex %v is dir %v", bucket, creds, os.IsNotExist(err), info != nil && info.IsDir())
-	if !os.IsNotExist(err) && !info.IsDir() {
+	if info != nil && !os.IsNotExist(err) && !info.IsDir() {
 		t, _ := ioutil.ReadFile(creds)
 		credsJSON = string(t)
 		return
