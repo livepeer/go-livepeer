@@ -9,11 +9,23 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/core"
+
+	"io/ioutil"
+	"math/big"
+	"net"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -118,6 +130,8 @@ type LivepeerConfig struct {
 	Datadir                      *string
 	Objectstore                  *string
 	Recordstore                  *string
+	FVfailGsBucket               *string
+	FVfailGsKey                  *string
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
@@ -341,6 +355,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err = os.MkdirAll(*cfg.Datadir, 0755); err != nil {
 			glog.Errorf("Error creating datadir: %v", err)
 		}
+	}
+
+	//Set Gs bucket for fast verification fail case
+	if *cfg.FVfailGsBucket != "" && *cfg.FVfailGsKey != "" {
+		drivers.SetCreds(*cfg.FVfailGsBucket, *cfg.FVfailGsKey)
 	}
 
 	//Set up DB
