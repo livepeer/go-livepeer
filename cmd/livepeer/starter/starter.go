@@ -185,6 +185,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultObjectstore := ""
 	defaultRecordstore := ""
 
+	// Fast Verification GS bucket:
+	defaultFVfailGsBucket := ""
+	defaultFVfailGsKey := ""
+
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
@@ -248,6 +252,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Datadir:     &defaultDatadir,
 		Objectstore: &defaultObjectstore,
 		Recordstore: &defaultRecordstore,
+
+		// Fast Verification GS bucket:
+		FVfailGsBucket: &defaultFVfailGsBucket,
+		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
 		AuthWebhookURL:      &defaultAuthWebhookURL,
