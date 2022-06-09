@@ -280,7 +280,6 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 	
 	if r.maxfacevalue.Cmp(big.NewInt(0)) > 0 {
-		//if faceValue > maxfacevalue, set faceValue=maxfacevalue
 		if r.maxfacevalue.Cmp(faceValue) < 0 {
 			faceValue = r.maxfacevalue
 		}

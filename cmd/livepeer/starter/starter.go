@@ -728,7 +728,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
-				glog.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue)
+				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
 				return
 			} else {
 				n.SetMaxFaceValue(mfv)

@@ -533,6 +533,8 @@ func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 			} else {
 				respond400(w, "need to set 'maxfacevalue'")
 			}
+		} else {
+			respond400(w, "node must be orchestrator node to set maxfacevalue")
 		}
 	})
 }
