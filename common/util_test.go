@@ -353,6 +353,22 @@ func TestRatPriceInfo(t *testing.T) {
 	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
 }
 
+func TestParseAccelDevices_FailedDetection(t *testing.T) {
+	assert := assert.New(t)
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
+	}
+	getPCI = func() ([]*pci.Device, error) {
+		return []*pci.Device{}, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.NotNil(err)
+	assert.Equal(len(ids), 0)
+}
+
 func TestParseAccessDevices_Gpu(t *testing.T) {
 	assert := assert.New(t)
 
@@ -456,15 +472,6 @@ func TestParseAccelDevices_WrongDriver(t *testing.T) {
 
 	getGPU = originGetGPU
 	getPCI = originGetPCI
-}
-
-func TestParseAccelDevices_FailedDetection(t *testing.T) {
-	assert := assert.New(t)
-
-	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
-
-	assert.NotNil(err)
-	assert.Equal(len(ids), 0)
 }
 
 func TestParseAccelDevices_CustomSelection(t *testing.T) {

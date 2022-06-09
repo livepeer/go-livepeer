@@ -23,6 +23,8 @@
 
 #### CLI
 - \#2438 Add new menu option to gracefully exit livepeer_cli (@emranemran)
+- \#2431 New flag to enable content detection on Nvidia Transcoder: `-detectContent`. When set, Transcoder will initialize Tensorflow runtime on each Nvidia GPU, and will run an additional Detector profile, if requested by the transcoding job.
+
 
 #### General
 
