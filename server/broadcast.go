@@ -569,9 +569,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 				}
 
 			}
-			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v",
+			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal)
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
 		} else {
 			if drivers.FailSaveEnabled() {
 				if drivers.FailSaveEnabled() {
