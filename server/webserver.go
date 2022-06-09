@@ -61,8 +61,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	// Orchestrator registration/activation
 	mux.Handle("/activateOrchestrator", mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI"))
 	mux.Handle("/setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
-	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(),"maxfacevalue"))
-	
+	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
+
 	// Bond, withdraw, reward
 	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))
 	mux.Handle("/rebond", mustHaveFormParams(rebondHandler(client), "unbondingLockId"))

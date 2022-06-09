@@ -140,7 +140,7 @@ func TestOrchestratorInfoHandler_Success(t *testing.T) {
 func TestSetMaxFaceValueHandler(t *testing.T) {
 	assert := assert.New(t)
 	s := stubOrchestratorWithRecipient(t)
-	
+
 	handler := s.setMaxFaceValueHandler()
 	status, _ := postForm(handler, url.Values{
 		"maxfacevalue": {"10000000000000000"},
@@ -151,25 +151,25 @@ func TestSetMaxFaceValueHandler(t *testing.T) {
 func TestSetMaxFaceValueHandler_WrongVariableSet(t *testing.T) {
 	assert := assert.New(t)
 	s := stubOrchestratorWithRecipient(t)
-	
+
 	handler := s.setMaxFaceValueHandler()
 	status, body := postForm(handler, url.Values{
 		"facevalue": {"10000000000000000"},
 	})
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Equal("need to set 'maxfacevalue'",body)
+	assert.Equal("need to set 'maxfacevalue'", body)
 }
 
 func TestSetMaxFaceValueHandler_WrongValueSet(t *testing.T) {
 	assert := assert.New(t)
 	s := stubOrchestratorWithRecipient(t)
-	
+
 	handler := s.setMaxFaceValueHandler()
 	status, body := postForm(handler, url.Values{
 		"maxfacevalue": {"test"},
 	})
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Equal("maxfacevalue not set to number",body)
+	assert.Equal("maxfacevalue not set to number", body)
 }
 
 // Broadcast / Transcoding config

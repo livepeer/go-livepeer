@@ -733,7 +733,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else {
 				n.SetMaxFaceValue(mfv)
 			}
-			
+
 		}
 
 		if n.NodeType == core.BroadcasterNode {
