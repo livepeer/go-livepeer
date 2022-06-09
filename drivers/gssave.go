@@ -17,7 +17,6 @@ import (
 	"google.golang.org/api/option"
 )
 
-// const fullURL = "https://console.cloud.google.com/storage/browser/fastverifyfaildata/media_b452968_3.ts"
 const fullURL = "https://console.cloud.google.com/storage/browser/"
 
 // FailSaveBucketName name of the bucket to save FV faild segments to
@@ -35,7 +34,7 @@ func SetCreds(bucket, creds string) {
 
 	info, err := os.Stat(creds)
 	glog.Infof("bucket %s creds %s is not ex %v is dir %v", bucket, creds, os.IsNotExist(err), info != nil && info.IsDir())
-	if info != nil && !os.IsNotExist(err) && !info.IsDir() {
+	if err == nil && !info.IsDir() {
 		t, _ := ioutil.ReadFile(creds)
 		credsJSON = string(t)
 		return
