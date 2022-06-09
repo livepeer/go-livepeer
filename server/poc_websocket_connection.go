@@ -120,7 +120,15 @@ func (c *TranscodingConnection) processMessage() (BreakOperation, error) {
 	case MpegtsChunk:
 		// update segment wide hash:
 		c.segmentHash.Append(message.Bytes)
-		// // fmt.Printf(" < %d hash=%x\n", message.Info.SequenceNumber, c.segmentHash.GetHash())
+		// // fmt.Printf(" < %d hash=%x\n", message.Info.SequenceNumber, c.segmentHash.GetHash()) why this causes panic ?
+
+		// Check frame signature:
+		frameSignatureValid := Notary.CheckMediaDataSignature(message.Bytes, message.Signature)
+		if !frameSignatureValid {
+			fmt.Printf("error: frame signature problem! sn=%d bytes=%d \n", message.Info.SequenceNumber, message.Info.BytesProduced)
+			return true, fmt.Errorf("frame signature problem")
+		}
+
 		// stream to ffmpeg
 		// fmt.Printf("ffmpeg push %d\n", len(message.Bytes))
 		if err := c.pushMedia(message.Bytes); err != nil {
