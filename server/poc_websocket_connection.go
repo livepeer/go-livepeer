@@ -149,15 +149,10 @@ func (c *TranscodingConnection) processMessage() (BreakOperation, error) {
 			// For some reason upstream calculated wrong hash on same bytes we have!
 			fmt.Printf("warn: hash mismatch %x should be %x\n", string(message.Hash), string(calculatedHash))
 		}
-		calculatedSignature, err := Notary.SignMediaData(calculatedHash)
-		if err != nil {
-			fmt.Printf("warn: signature calculation error %v\n", err)
-			return true, err
-		}
-		signatureProblem := !bytes.Equal(calculatedSignature, message.Signature)
-		if signatureProblem {
+		segmentSignatureValid := Notary.CheckMediaDataSignature(calculatedHash, message.Signature)
+		if !segmentSignatureValid {
 			// Take security measures: firewall this ip or similar
-			return true, fmt.Errorf("Signature problem %x should be %x", message.Signature, calculatedSignature)
+			return true, fmt.Errorf("Segment signature problem sn=%d bytes=%d", message.SequenceNumber, message.BytesProduced)
 		}
 		// Start new hash calculation now
 		c.segmentHash = &StreamingHash{}
