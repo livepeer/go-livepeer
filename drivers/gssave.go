@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 
 	"cloud.google.com/go/storage"
 	"github.com/golang/glog"
@@ -106,19 +107,26 @@ func SavePairData2GS(trusturi string, data1 []byte, untrusturi string, data2 []b
 	pairstr := strconv.Itoa(rand.Int()) + "-"
 	fileName1 := pairstr + trustpurl.Host + "-trust-" + suffix
 	fileName2 := pairstr + untrustpurl.Host + "-untrust-" + suffix
-	fu, err := Save2GS(fileName1, data1)
-	if err != nil {
-		glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
-		return err
-	} else {
-		glog.Infof("Segment name=%s saved to url=%s", fileName1, fu)
-	}
-	fu2, err := Save2GS(fileName2, data2)
-	if err != nil {
-		glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
-		return err
-	} else {
-		glog.Infof("Segment name=%s saved to url=%s", fileName2, fu2)
-	}
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		fu, err := Save2GS(fileName1, data1)
+		if err != nil {
+			glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
+		} else {
+			glog.Infof("Segment name=%s saved to url=%s", fileName1, fu)
+		}
+	}()
+	go func() {
+		defer wait.Done()
+		fu2, err := Save2GS(fileName2, data2)
+		if err != nil {
+			glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
+		} else {
+			glog.Infof("Segment name=%s saved to url=%s", fileName2, fu2)
+		}
+	}()
+	wait.Wait()
 	return nil
 }
