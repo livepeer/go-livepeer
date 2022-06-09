@@ -2,12 +2,13 @@ package e2e
 
 import (
 	"fmt"
-	"github.com/livepeer/go-livepeer/eth"
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRegisterOrchestrator(t *testing.T) {
