@@ -4,7 +4,7 @@
 
 *June 9 2022*
 
-This release removes special handling for single frame segments from the previous release that was causing transcoding issues with certain types of content.
+This release adds new content detection feature for Nvidia Transcoders that can be run if requested by transcoding job.
 It also includes some CLI bug fixes.
 
 ### Breaking Changes 🚨🚨
