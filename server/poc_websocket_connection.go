@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,11 +35,12 @@ type ResultSendingState struct {
 }
 
 type TranscodingConnection struct {
-	connection *websocket.Conn
-	outputs    EncodedOutputList
-	firstFrame MpegtsChunk
-	transcoder *ffmpeg.PipedTranscoding
-	sending    ResultSendingState
+	connection  *websocket.Conn
+	outputs     EncodedOutputList
+	firstFrame  MpegtsChunk
+	transcoder  *ffmpeg.PipedTranscoding
+	sending     ResultSendingState
+	segmentHash *StreamingHash
 }
 
 func (c *TranscodingConnection) Close() {
@@ -93,7 +95,7 @@ func (c *TranscodingConnection) readFromOutput(output *EncodedOutput, ended chan
 			fmt.Printf("ffmpeg %d output EOF\n", myIndex)
 			break
 		}
-		fmt.Printf("< ffmpeg %d output got %d\n", myIndex, byteCount)
+		// fmt.Printf("< ffmpeg %d output got %d\n", myIndex, byteCount)
 		if err != nil {
 			var closeErr *fs.PathError
 			if errors.As(err, &closeErr) {
@@ -111,24 +113,68 @@ func (c *TranscodingConnection) readFromOutput(output *EncodedOutput, ended chan
 	}
 }
 
+// Get message received over the wire and take action on each message we support.
+func (c *TranscodingConnection) processMessage() (BreakOperation, error) {
+	_message := recvMessage(c.connection)
+	switch message := _message.(type) {
+	case MpegtsChunk:
+		// update segment wide hash:
+		c.segmentHash.Append(message.Bytes)
+		// // fmt.Printf(" < %d hash=%x\n", message.Info.SequenceNumber, c.segmentHash.GetHash())
+		// stream to ffmpeg
+		// fmt.Printf("ffmpeg push %d\n", len(message.Bytes))
+		if err := c.pushMedia(message.Bytes); err != nil {
+			fmt.Printf("transcoder write error: %v\n", err)
+			return true, err
+		}
+		return false, nil
+	case error:
+		fmt.Printf("protocol error: %v\n", message)
+		return true, message
+	case EndOfInput:
+		return true, nil
+	case VirtualSegmentBoundary:
+		// check entire segment signature
+		calculatedHash := c.segmentHash.GetHash()
+		hashProblem := !bytes.Equal(calculatedHash, message.Hash)
+		if hashProblem {
+			// For some reason upstream calculated wrong hash on same bytes we have!
+			fmt.Printf("warn: hash mismatch %x should be %x\n", string(message.Hash), string(calculatedHash))
+		}
+		calculatedSignature, err := Notary.SignMediaData(calculatedHash)
+		if err != nil {
+			fmt.Printf("warn: signature calculation error %v\n", err)
+			return true, err
+		}
+		signatureProblem := !bytes.Equal(calculatedSignature, message.Signature)
+		if signatureProblem {
+			// Take security measures: firewall this ip or similar
+			return true, fmt.Errorf("Signature problem %x should be %x", message.Signature, calculatedSignature)
+		}
+		// Start new hash calculation now
+		c.segmentHash = &StreamingHash{}
+		c.segmentHash.Init()
+		fmt.Printf("# Segment signature valid ! sn=%d bytes=%d\n", message.SequenceNumber, message.BytesProduced)
+		return false, nil
+	default:
+		// `recvMessage()` skips unknown messages. Here we raise error - you forgot to implement a case above.
+		return true, fmt.Errorf("Code problem: missing switch case for new message")
+	}
+}
+
+// Loop over message processing call
 func (c *TranscodingConnection) readIntoFfmpegLoop() error {
 	// Make sure we close input pipe
 	defer c.transcoder.WriteClose()
-	var frame MpegtsChunk = c.firstFrame
+	// var frame MpegtsChunk = c.firstFrame
 	for {
 		// Recv next frame
-		if err := recvMpegtsChunk(&frame, c.connection); err != nil {
-			if err == EndOfInputError {
-				break
-			}
-			fmt.Printf("protocol error: %v\n", err)
+		breakOperation, err := c.processMessage()
+		if err != nil {
 			return err
 		}
-		// stream to ffmpeg
-		fmt.Printf("ffmpeg push %d\n", len(frame.Bytes))
-		if err := c.pushMedia(frame.Bytes); err != nil {
-			fmt.Printf("transcoder write error: %v\n", err)
-			return err
+		if breakOperation {
+			break
 		}
 	}
 	fmt.Printf(" # TranscodingConnection input completed\n")
@@ -189,6 +235,10 @@ func (c *TranscodingConnection) RunUntilCompletion() error {
 
 // Runs all logic to prepare for media stream, including validation
 func (c *TranscodingConnection) Handshake(r *http.Request) error {
+	// Prepare for first segment hash
+	c.segmentHash = &StreamingHash{}
+	c.segmentHash.Init()
+
 	// payment ticket and other info about encoding job would be received now
 
 	// We expect Mist to give us output profile info. Here we just hardcode some profiles.
@@ -198,25 +248,34 @@ func (c *TranscodingConnection) Handshake(r *http.Request) error {
 
 	// After all setup & administration logic receive first frame of data.
 	// We can use first frame to calculate job pricing, placement, etc.
-	if err := recvMpegtsChunk(&c.firstFrame, c.connection); err != nil {
-		fmt.Printf("protocol error: %v", err)
-		return err
+	_message := recvMessage(c.connection)
+	switch message := _message.(type) {
+	case MpegtsChunk:
+		c.firstFrame = message
+		c.segmentHash.Append(message.Bytes)
+		// We get MediaFormatInfo over wire and if we want to verify it:
+		if err := verifyMediaMetadata(&message); err != nil {
+			return err
+		}
+
+		// todo: check peer enc signature
+		if !Notary.CheckMediaDataSignature(message.Bytes, message.Signature) {
+			return fmt.Errorf("Bad signature, failing early on frame %d", message.Info.SequenceNumber)
+		}
+
+		// Create transcoding "session" coupled to websocket connection.
+		// This new kind of session lasts exactly as websocket connection.
+		c.transcoder = &(ffmpeg.PipedTranscoding{})
+		c.transcoder.SetInput(ffmpeg.TranscodeOptionsIn{Accel: ffmpeg.Nvidia})
+		c.transcoder.SetOutputs(c.outputs.GetOptions())
+		c.outputs.AssignPipes(c.transcoder.GetOutputs())
+
+		// We are good.
+		return nil
+	case error:
+		fmt.Printf("protocol error: %v", message)
+		return message
+	default:
+		return fmt.Errorf("protocol error: unexpected message %v", message)
 	}
-
-	// We get MediaFormatInfo over wire and if we want to verify it:
-	if err := verifyMediaMetadata(&c.firstFrame); err != nil {
-		return err
-	}
-
-	// todo: check peer enc signature
-
-	// Create transcoding "session" coupled to websocket connection.
-	// This new kind of session lasts exactly as websocket connection.
-	c.transcoder = &(ffmpeg.PipedTranscoding{})
-	c.transcoder.SetInput(ffmpeg.TranscodeOptionsIn{Accel: ffmpeg.Nvidia})
-	c.transcoder.SetOutputs(c.outputs.GetOptions())
-	c.outputs.AssignPipes(c.transcoder.GetOutputs())
-
-	// We are good.
-	return nil
 }

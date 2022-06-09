@@ -64,15 +64,7 @@ type SegmentInfo struct {
 	DurationMs          int  // This is duration of current virtual-segment. Next segment boundary(.FirstFrameInSegment==true) shall reset this.
 	SequenceNumber      int  // incremented for each new MpegtsChunk sent.
 	BytesProduced       int  // Total sum of bytes in current virtual-segment.
-	FirstFrameInSegment bool // true when this MpegtsChunk starts new virtual segment boundary.
-}
-
-//
-// Sent as input to transcoding, json encoded
-type MpegtsChunk struct {
-	Bytes  []byte `json:"-"` // this field is not marshaled as json, its sent as ws binary message.
-	Info   SegmentInfo
-	Format MediaFormatInfo
+	FirstFrameInSegment bool // true when this MpegtsChunk starts new virtual segment boundary. `VirtualSegmentBoundary` message should precede this message unless this is first frame of transcoding job.
 }
 
 // Common part for all messages.
@@ -81,19 +73,42 @@ type MessageHeader struct {
 	Id string
 }
 
-var EndOfInputError error = fmt.Errorf("End of input")
+//
+// Sent as input to transcoding, json encoded
+type MpegtsChunk struct {
+	MessageHeader
+	Bytes     []byte `json:"-"` // this field is not marshaled as json, its sent as ws binary message.
+	Info      SegmentInfo
+	Format    MediaFormatInfo
+	Signature []byte // will be encoded as a Base64 string
+}
+
+func (c *MpegtsChunk) SignalFirstFrameInSegment() {
+	c.Info.FirstFrameInSegment = true
+}
+
+type VirtualSegmentBoundary struct {
+	MessageHeader
+	Signature      []byte
+	Hash           []byte
+	SequenceNumber int
+	BytesProduced  int
+}
+
+type EndOfInput struct {
+	MessageHeader
+}
 
 //
-// Expects JSON encoded info then binary data.
-// Reacts to `EndOfInput` message and skips all unknown messages.
-func recvMpegtsChunk(chunk *MpegtsChunk, connection *websocket.Conn) error {
+// Returns actual message struct. Use switch statement on returned type. Skips all unknown text messages.
+func recvMessage(connection *websocket.Conn) interface{} {
 	for {
 		mt, bytes, err := connection.ReadMessage()
 		if err != nil {
 			return err
 		}
 		if mt != websocket.TextMessage {
-			return fmt.Errorf("recvMpegtsChunk: expected text message")
+			return fmt.Errorf("recvMessage: expected text message")
 		}
 		var header MessageHeader
 		err = json.Unmarshal(bytes, &header)
@@ -101,28 +116,41 @@ func recvMpegtsChunk(chunk *MpegtsChunk, connection *websocket.Conn) error {
 			return err
 		}
 
-		// check which message we got
-		if header.Id != "MpegtsChunk" {
-			if header.Id == "EndOfInput" {
-				return EndOfInputError
+		// Use a switch to unmarshal different messages:
+		switch header.Id {
+		case "MpegtsChunk":
+			// Common data path:
+			message := MpegtsChunk{}
+			err = json.Unmarshal(bytes, &message)
+			if err != nil {
+				return err
 			}
-			fmt.Printf("skipping unknown message %s\n", header.Id)
+			mt, bytes, err = connection.ReadMessage()
+			if err != nil {
+				return err
+			}
+			if mt != websocket.BinaryMessage {
+				return fmt.Errorf("recvMessage: expected binary message")
+			}
+			message.Bytes = bytes
+			return message
+		case "EndOfInput":
+			message := EndOfInput{}
+			var err = json.Unmarshal(bytes, &message)
+			if err != nil {
+				return err
+			}
+			return message
+		case "VirtualSegmentBoundary":
+			message := VirtualSegmentBoundary{}
+			var err = json.Unmarshal(bytes, &message)
+			if err != nil {
+				return err
+			}
+			return message
+		default:
 			// may be message from future version of protocol, skip it
 			continue
 		}
-
-		err = json.Unmarshal(bytes, chunk)
-		if err != nil {
-			return err
-		}
-		mt, bytes, err = connection.ReadMessage()
-		if err != nil {
-			return err
-		}
-		if mt != websocket.BinaryMessage {
-			return fmt.Errorf("recvMpegtsChunk: expected binary message")
-		}
-		chunk.Bytes = bytes
-		return nil
 	}
 }

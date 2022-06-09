@@ -69,7 +69,7 @@ func (o *MistOutputMultiplexer) Init() {
 
 func (o *MistOutputMultiplexer) Append(t *testing.T, bytes []byte) {
 	require.NotNil(t, o.currentFile)
-	fmt.Printf("< Mist storing %d bytes\n", len(bytes))
+	// fmt.Printf("< Mist storing %d bytes\n", len(bytes))
 	// Just write to open file. Allow for short writes.
 	for len(bytes) > 0 {
 		written, err := o.currentFile.File.Write(bytes)
@@ -82,7 +82,7 @@ func (o *MistOutputMultiplexer) Select(t *testing.T, selected *SelectOutput) {
 	// If this is same output as current selected one, do nothing.
 	// Same check happens on Node side so this should not happen in practice.
 	if o.currentOutput != selected {
-		fmt.Printf("< Mist receiving %s %d\n", selected.Name, selected.Index)
+		// fmt.Printf("< Mist receiving %s %d\n", selected.Name, selected.Index)
 		outputFile, exist := o.outputs[selected.Index]
 		if !exist {
 			// Node is signaling new output. We see it for the first time. Create new output.
@@ -176,28 +176,24 @@ func (m *MistMockup) Run(t *testing.T) {
 	// We create first frame with format given by the test code.
 	// Format is not changed at any time later in this test.
 	chunk := MpegtsChunk{Format: m.inputFormat}
-	chunk.Info.FirstFrameInSegment = true
-	chunk.Bytes = m.nextChunk()
-	err = m.socket.Send(&chunk)
-	require.NoError(t, err)
-	fmt.Printf("> Mist sent first chunk \n")
+	chunk.SignalFirstFrameInSegment() // This is always required for first chunk. Should be in .Init() ?
 
-	chunk.Info.FirstFrameInSegment = false
-	for len(m.inputData) > 0 {
-		time.Sleep(fakeRealtimeInterval * time.Millisecond) // fake realtime
-		// Real Mist server would update all metadata.
-		// For transcoder operation only media bytes are *required*. For our pixel & price
-		//   calculation we depend on metadata. Transcoder node would double check using ffmpeg.
-		chunk.Info.SequenceNumber += 1
-		chunk.Info.BytesProduced += len(chunk.Bytes)
+	for i := 0; len(m.inputData) > 0; i++ {
 		chunk.Bytes = m.nextChunk()
-		fmt.Printf("> Mist sent %d chunk size=%d\n", chunk.Info.SequenceNumber, len(chunk.Bytes))
-
+		// fmt.Printf("> Mist sending %d chunk size=%d\n", chunk.Info.SequenceNumber, len(chunk.Bytes))
 		err = m.socket.Send(&chunk)
 		require.NoError(t, err)
+		// fake realtime
+		time.Sleep(fakeRealtimeInterval * time.Millisecond)
+		// Introduce some virtual segment boundaries. This is artificial as this testing code does not do this on keyframe boundaries.
+		// Real Mist would segment on keyframes, in turn aligning specified segments and encoded outputs
+		if i%7 == 6 {
+			// Decide next chunk starts new virtual segment
+			chunk.SignalFirstFrameInSegment()
+		}
 	}
 
-	m.socket.SendJobEnd()
+	m.socket.SendJobEnd(&chunk)
 
 	// Wait for .recvRoutine() to complete
 	<-m.recvEndSignal
