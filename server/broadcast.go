@@ -535,9 +535,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			clog.Errorf(ctx, "error uri=%s comparing perceptual hashes from url=%s err=%q", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		}
-		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v",
+		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v saveenable=%v",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
-			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
+			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal, drivers.FailSaveEnabled())
 		vequal := false
 		if equal {
 			// download untrusted video segment
