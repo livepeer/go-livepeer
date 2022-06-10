@@ -21,6 +21,9 @@ None
 #### Broadcaster
 - [#2327](https://github.com/livepeer/go-livepeer/pull/2327) Parallelize handling events in Orchestrator Watcher (@red-0ne)
 
+#### Orchestrator
+- [#2290](https://github.com/livepeer/go-livepeer/pull/2290) Allow orchestrator to set max ticket faceValue (@0xB79)
+
 ### Bug Fixes 🐞
 - [#2339](https://github.com/livepeer/go-livepeer/pull/2339) Fix failing `-nvidia all` flag on VM (@red-0ne)
 

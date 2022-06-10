@@ -11,7 +11,6 @@
 #### Broadcaster
 
 #### Orchestrator
-- \#2290 Allow orchestrator to set max ticket faceValue (@0xB79)
 
 #### Transcoder
 
