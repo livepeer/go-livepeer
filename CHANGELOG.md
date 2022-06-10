@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.5.32
+
+*June 9 2022*
+
+This release adds new content detection feature for Nvidia Transcoders that can be run if requested by transcoding job.
+It also includes some CLI bug fixes.
+
+### Breaking Changes 🚨🚨
+
+None
+
+### Features ⚒
+
+#### General
+- [#2429](https://github.com/livepeer/go-livepeer/pull/2429) Binaries are uploaded to gcp cloud storage following the new directory structure (@hjpotter92)
+- [#2437](https://github.com/livepeer/go-livepeer/pull/2437) Make CLI flag casing consistent for dataDir flag (@thomshutt)
+- [#2440](https://github.com/livepeer/go-livepeer/pull/2440) Create and push `go-livepeer:latest` tagged images to dockerhub (@hjpotter92)
+
+#### Broadcaster
+- [#2327](https://github.com/livepeer/go-livepeer/pull/2327) Parallelize handling events in Orchestrator Watcher (@red-0ne)
+
+#### Orchestrator
+- [#2290](https://github.com/livepeer/go-livepeer/pull/2290) Allow orchestrator to set max ticket faceValue (@0xB79)
+
+### Bug Fixes 🐞
+- [#2339](https://github.com/livepeer/go-livepeer/pull/2339) Fix failing `-nvidia all` flag on VM (@red-0ne)
+
+#### CLI
+- [#2438](https://github.com/livepeer/go-livepeer/pull/2438) Add new menu option to gracefully exit livepeer_cli (@emranemran)
+- [#2431](https://github.com/livepeer/go-livepeer/pull/2431) New flag to enable content detection on Nvidia Transcoder: `-detectContent`. When set, Transcoder will initialize Tensorflow runtime on each Nvidia GPU, and will run an additional Detector profile, if requested by the transcoding job.(@cyberj0g)
+
 ## v0.5.31
 
 *May 23 2022*
@@ -15,18 +46,18 @@ None
 ### Features ⚒
 
 #### General
-- \#2383 Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
-- \#2223 Refactor `drivers` package as a reusable and more performant lib (@victorges)
+- [#2383](https://github.com/livepeer/go-livepeer/pull/2383) Add E2E Tests for checking Livepeer on-chain interactions (@leszko)
+- [#2223](https://github.com/livepeer/go-livepeer/pull/2223) Refactor `drivers` package as a reusable and more performant lib (@victorges)
 
 #### Broadcaster
-- \#2392 Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
-- \#2413 Fix Webhook discovery, refresh pool before getting pool size (@leszko)
+- [#2392](https://github.com/livepeer/go-livepeer/pull/2392) Add LP_EXTEND_TIMEOUTS env variable to extend timeouts for Stream Tester (@leszko)
+- [#2413](https://github.com/livepeer/go-livepeer/pull/2413) Fix Webhook discovery, refresh pool before getting pool size (@leszko)
 
 ### Orchestrator
-- \##2423 Revert problematic single segment fix (@thomshutt)
+- [#](https://github.com/livepeer/go-livepeer/pull/)#2423 Revert problematic single segment fix (@thomshutt)
 
 ### CLI
-- \#2416 Use the O's currently registered Service URI as default address (@emranemran)
+- [#2416](https://github.com/livepeer/go-livepeer/pull/2416) Use the O's currently registered Service URI as default address (@emranemran)
 
 ## v0.5.30
 
