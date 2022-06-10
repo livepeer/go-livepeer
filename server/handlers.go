@@ -3,6 +3,14 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/cenkalti/backoff"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -15,13 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
-	"math/big"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const MainnetChainId = 1
@@ -110,6 +111,12 @@ func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) h
 func (s *LivepeerServer) isOrchestratorHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
+	})
+}
+
+func (s *LivepeerServer) isRedeemerHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.RedeemerNode)))
 	})
 }
 

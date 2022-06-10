@@ -120,12 +120,14 @@ func (w *wizard) initializeOptions() []wizardOpt {
 }
 
 func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
+	isOrchestratorOrRedeemer := w.orchestrator || w.isRedeemer()
+	println("isOrchestratorOrRedeemer", isOrchestratorOrRedeemer)
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
 		if opt.testnet && !w.testnet {
 			continue
 		}
-		if !opt.orchestrator && !opt.notOrchestrator || w.orchestrator && opt.orchestrator || !w.orchestrator && opt.notOrchestrator {
+		if !opt.orchestrator && !opt.notOrchestrator || isOrchestratorOrRedeemer && opt.orchestrator || !isOrchestratorOrRedeemer && opt.notOrchestrator {
 			filtered = append(filtered, opt)
 		}
 	}
