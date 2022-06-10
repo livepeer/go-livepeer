@@ -4,10 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -16,6 +12,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"

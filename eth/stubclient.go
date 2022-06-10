@@ -323,7 +323,9 @@ func (e *StubClient) Rebond(*big.Int) (*types.Transaction, error) { return nil, 
 func (e *StubClient) RebondFromUnbonded(common.Address, *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
-func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) { return nil, nil }
+func (e *StubClient) Unbond(*big.Int) (*types.Transaction, error) {
+	return types.NewTx(&types.DynamicFeeTx{}), nil
+}
 func (e *StubClient) WithdrawStake(*big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
