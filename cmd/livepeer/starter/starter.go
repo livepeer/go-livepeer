@@ -98,6 +98,7 @@ type LivepeerConfig struct {
 	MaxGasPrice                  *int
 	InitializeRound              *bool
 	TicketEV                     *string
+	MaxFaceValue                 *string
 	MaxTicketEV                  *string
 	DepositMultiplier            *int
 	PricePerUnit                 *int
@@ -163,6 +164,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultEthController := ""
 	defaultInitializeRound := false
 	defaultTicketEV := "1000000000000"
+	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
@@ -228,6 +230,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		EthController:          &defaultEthController,
 		InitializeRound:        &defaultInitializeRound,
 		TicketEV:               &defaultTicketEV,
+		MaxFaceValue:           &defaultMaxFaceValue,
 		MaxTicketEV:            &defaultMaxTicketEV,
 		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
@@ -717,7 +720,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			sm.Start()
 			defer sm.Stop()
 
-			cfg := pm.TicketParamsConfig{
+			tcfg := pm.TicketParamsConfig{
 				EV:               ev,
 				RedeemGas:        redeemGas,
 				TxCostMultiplier: txCostMultiplier,
@@ -729,12 +732,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				gpm,
 				sm,
 				timeWatcher,
-				cfg,
+				tcfg,
 			)
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
+			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
+			if mfv == nil {
+				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
+				return
+			} else {
+				n.SetMaxFaceValue(mfv)
+			}
+
 		}
 
 		if n.NodeType == core.BroadcasterNode {

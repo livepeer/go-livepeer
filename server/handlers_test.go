@@ -137,6 +137,41 @@ func TestOrchestratorInfoHandler_Success(t *testing.T) {
 	assert.Equal(trans, info.Transcoder)
 }
 
+func TestSetMaxFaceValueHandler(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, _ := postForm(handler, url.Values{
+		"maxfacevalue": {"10000000000000000"},
+	})
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestSetMaxFaceValueHandler_WrongVariableSet(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, body := postForm(handler, url.Values{
+		"facevalue": {"10000000000000000"},
+	})
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("need to set 'maxfacevalue'", body)
+}
+
+func TestSetMaxFaceValueHandler_WrongValueSet(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, body := postForm(handler, url.Values{
+		"maxfacevalue": {"test"},
+	})
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("maxfacevalue not set to number", body)
+}
+
 // Broadcast / Transcoding config
 func TestSetBroadcastConfigHandler_MissingPricePerUnitError(t *testing.T) {
 	assert := assert.New(t)
@@ -1453,6 +1488,15 @@ func dummyHandler() http.Handler {
 
 func stubServer() *LivepeerServer {
 	n, _ := core.NewLivepeerNode(nil, "", nil)
+	return &LivepeerServer{
+		LivepeerNode: n,
+	}
+}
+
+func stubOrchestratorWithRecipient(t *testing.T) *LivepeerServer {
+	n, _ := core.NewLivepeerNode(nil, "", nil)
+	n.NodeType = core.OrchestratorNode
+	n.Recipient = &pm.MockRecipient{}
 	return &LivepeerServer{
 		LivepeerNode: n,
 	}

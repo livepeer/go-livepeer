@@ -138,6 +138,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.EthController = flag.String("ethController", *cfg.EthController, "Protocol smart contract address")
 	cfg.InitializeRound = flag.Bool("initializeRound", *cfg.InitializeRound, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
 	cfg.TicketEV = flag.String("ticketEV", *cfg.TicketEV, "The expected value for PM tickets")
+	cfg.MaxFaceValue = flag.String("maxFaceValue", *cfg.MaxFaceValue, "set max ticket face value in WEI")
 	// Broadcaster max acceptable ticket EV
 	cfg.MaxTicketEV = flag.String("maxTicketEV", *cfg.MaxTicketEV, "The maximum acceptable expected value for PM tickets")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue

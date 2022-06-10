@@ -517,6 +517,28 @@ func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI 
 	return nil
 }
 
+func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			maxfacevalue := r.FormValue("maxfacevalue")
+			if maxfacevalue != "" {
+				mfv, success := new(big.Int).SetString(maxfacevalue, 10)
+				if success {
+					s.LivepeerNode.SetMaxFaceValue(mfv)
+					respondOk(w, []byte("ticket max face value set"))
+					glog.Infof("Max ticket face value set to: %v", maxfacevalue)
+				} else {
+					respond400(w, "maxfacevalue not set to number")
+				}
+			} else {
+				respond400(w, "need to set 'maxfacevalue'")
+			}
+		} else {
+			respond400(w, "node must be orchestrator node to set maxfacevalue")
+		}
+	})
+}
+
 // Bond, withdraw, reward
 func bondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
