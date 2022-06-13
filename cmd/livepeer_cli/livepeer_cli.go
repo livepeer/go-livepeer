@@ -52,6 +52,7 @@ func main() {
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.orchestrator = w.isOrchestrator()
+		w.redeemer = w.isRedeemer()
 		w.checkNet()
 		w.run()
 
@@ -67,6 +68,7 @@ type wizard struct {
 	httpPort     string
 	host         string
 	orchestrator bool
+	redeemer     bool
 	testnet      bool
 	offchain     bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
@@ -120,8 +122,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 }
 
 func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
-	isOrchestratorOrRedeemer := w.orchestrator || w.isRedeemer()
-	println("isOrchestratorOrRedeemer", isOrchestratorOrRedeemer)
+	isOrchestratorOrRedeemer := w.orchestrator || w.redeemer
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
 		if opt.testnet && !w.testnet {
