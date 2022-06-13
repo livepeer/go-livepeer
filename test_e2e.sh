@@ -2,4 +2,4 @@
 
 set -eux
 
-go test $(go list ./... | grep 'test/e2e') --timeout 10m
+go test $(go list ./... | grep 'test/e2e') --timeout 15m
