@@ -17,6 +17,7 @@
 ### Bug Fixes 🐞
 
 #### CLI
+- \#2456 cli: Show O rather than B options when -redeemer flag set (@thomshutt)
 
 #### General
 

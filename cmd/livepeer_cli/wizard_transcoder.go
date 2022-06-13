@@ -28,6 +28,11 @@ func (w *wizard) isOrchestrator() bool {
 	return isT == "true"
 }
 
+func (w *wizard) isRedeemer() bool {
+	isT := httpGet(fmt.Sprintf("http://%v:%v/IsRedeemer", w.host, w.httpPort))
+	return isT == "true"
+}
+
 func myHostPort() string {
 	// TODO Fall back to try other services if this one fails. Ask a peer?
 	// 	http://myexternalip.com

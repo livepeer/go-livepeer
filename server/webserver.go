@@ -3,6 +3,7 @@ package server
 import (
 	"flag"
 	"net/http"
+
 	// pprof adds handlers to default mux via `init()`
 	_ "net/http/pprof"
 
@@ -47,6 +48,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/currentBlock", currentBlockHandler(db))
 	mux.Handle("/orchestratorInfo", s.orchestratorInfoHandler(client))
 	mux.Handle("/IsOrchestrator", s.isOrchestratorHandler())
+	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
 
 	// Broadcast / Transcoding config
 	mux.Handle("/setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
