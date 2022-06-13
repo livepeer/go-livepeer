@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -13,12 +14,15 @@ import (
 
 func TestRegisterOrchestrator(t *testing.T) {
 	// given
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	o := startOrchestrator(t, geth)
-	lpEth := o.dev.Client
+	o := startOrchestrator(t, geth, ctx)
 	defer o.stop()
+	lpEth := o.dev.Client
 	<-o.ready
 
 	// when
@@ -26,14 +30,14 @@ func TestRegisterOrchestrator(t *testing.T) {
 	waitForNextRound(t, lpEth)
 
 	// then
-	assertOrchestratorRegisteredAndActivated(t, lpEth)
+	requireOrchestratorRegisteredAndActivated(t, lpEth)
 }
 
-func startOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
+func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context) *livepeer {
 	lpCfg := lpCfg()
 	lpCfg.Orchestrator = boolPointer(true)
 	lpCfg.Transcoder = boolPointer(true)
-	return startLivepeer(t, lpCfg, geth)
+	return startLivepeer(t, lpCfg, geth, ctx)
 }
 
 const (
@@ -62,7 +66,7 @@ func registerOrchestrator(o *livepeer) {
 	}
 }
 
-func assertOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient) {
+func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient) {
 	require := require.New(t)
 
 	transPool, err := lpEth.TranscoderPool()

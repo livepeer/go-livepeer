@@ -4,11 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
-	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
-	"github.com/livepeer/go-livepeer/eth"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -16,6 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // Start Geth Docker container helpers
@@ -100,7 +101,7 @@ func lpCfg() starter.LivepeerConfig {
 	return cfg
 }
 
-func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer) *livepeer {
+func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer, ctx context.Context) *livepeer {
 	datadir := t.TempDir()
 	keystoreDir := filepath.Join(datadir, "keystore")
 	acc := devtool.CreateKey(keystoreDir)
@@ -124,7 +125,7 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	lpCfg.EthAcctAddr = &devCfg.Account
 
 	go func() {
-		starter.StartLivepeer(context.TODO(), lpCfg)
+		starter.StartLivepeer(ctx, lpCfg)
 	}()
 
 	ready := make(chan struct{})

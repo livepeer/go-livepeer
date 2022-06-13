@@ -14,15 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoveOrchestrator(t *testing.T) {
+func TestRemoveMOrchestrator(t *testing.T) {
 	// given
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
 	// when
-	o := startAndRegisterOrchestrator(t, geth)
-	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
+	o := startAndRegisterOrchestrator(t, geth, ctx)
 	defer o.stop()
+
+	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
 
 	waitForNextRound(t, o.dev.Client)
 	o.dev.InitializeRound()
@@ -32,7 +36,7 @@ func TestRemoveOrchestrator(t *testing.T) {
 	waitForNextRound(t, o.dev.Client)
 	o.dev.InitializeRound()
 
-	assertOrchestratorDeactivated(t, o)
+	requireOrchestratorDeactivated(t, o)
 
 	lock, _ := o.dev.Client.GetDelegatorUnbondingLock(o.dev.Client.Account().Address, lockId)
 
@@ -64,7 +68,7 @@ func deactivateOrchestrator(o *livepeer) *big.Int {
 	for {
 		txHash, ok := httpPostWithParams(fmt.Sprintf("http://%s/unbond", *o.cfg.CliAddr), val)
 		if ok {
-			receipt, err := o.dev.Client.Backend().TransactionReceipt(context.TODO(), ethcommon.BytesToHash([]byte(txHash)))
+			receipt, err := o.dev.Client.Backend().TransactionReceipt(context.Background(), ethcommon.BytesToHash([]byte(txHash)))
 			if err == nil {
 				abi, err := contracts.BondingManagerMetaData.GetAbi()
 				if err == nil {
@@ -87,7 +91,7 @@ func assertOrchestratorRemoved(t *testing.T, o *livepeer, oldBalance *big.Int) {
 	require.Equal(diff.Sub(balance, oldBalance), big.NewInt(lptStake))
 }
 
-func assertOrchestratorDeactivated(t *testing.T, o *livepeer) {
+func requireOrchestratorDeactivated(t *testing.T, o *livepeer) {
 	require := require.New(t)
 
 	transPool, err := o.dev.Client.TranscoderPool()

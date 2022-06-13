@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"testing"
@@ -20,17 +21,20 @@ type OrchestratorConfig struct {
 
 func TestConfigureOrchestrator(t *testing.T) {
 	// given
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
 	// when
-	o := startAndRegisterOrchestrator(t, geth)
+	o := startAndRegisterOrchestrator(t, geth, ctx)
 	defer o.stop()
 
 	waitForNextRound(t, o.dev.Client)
 	o.dev.InitializeRound()
 
-	assertOrchestratorRegisteredAndActivated(t, o.dev.Client)
+	requireOrchestratorRegisteredAndActivated(t, o.dev.Client)
 
 	claimRewards(o)
 
@@ -51,7 +55,7 @@ func TestConfigureOrchestrator(t *testing.T) {
 	assertOrchestratorConfigured(t, o, cfg)
 }
 
-func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
+func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context) *livepeer {
 	const (
 		pricePerUnit  = 1
 		pixelsPerUnit = 10
@@ -62,7 +66,7 @@ func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
 	lpCfg := lpCfg()
 	lpCfg.Orchestrator = boolPointer(true)
 	lpCfg.Transcoder = boolPointer(true)
-	o := startLivepeer(t, lpCfg, geth)
+	o := startLivepeer(t, lpCfg, geth, ctx)
 
 	<-o.ready
 
