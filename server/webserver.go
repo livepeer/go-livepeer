@@ -115,7 +115,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setTranscoderSortMethod", s.setTranscoderSortMethodHandler())
 	mux.Handle("/setTranscoderCapacity", s.setTranscoderCapacityHandler())
 	mux.Handle("/setTranscoderPriority", s.setTranscoderPriorityHandler())
-	
+
 	// Metrics
 	if monitor.Enabled {
 		mux.Handle("/metrics", monitor.Exporter)

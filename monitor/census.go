@@ -134,6 +134,7 @@ type (
 		mTranscoderLoad               *stats.Int64Measure
 		mTranscoderCap                *stats.Int64Measure
 		mTranscoderPPNS               *stats.Float64Measure
+		mTranscoderRealtimeRatio      *stats.Float64Measure
 		mTranscoderPriority           *stats.Int64Measure
 		mTranscoderSortMethod         *stats.Int64Measure
 		mSuccessRate                  *stats.Float64Measure
@@ -284,6 +285,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTranscoderLoad = stats.Int64("transcoder_load", "Load of each transcoder", "tot")
 	census.mTranscoderCap = stats.Int64("transcoder_capacity", "Capacity of each transcoder", "tot")
 	census.mTranscoderPPNS = stats.Float64("transcoder_ppns", "Transcoder pixels processed per nanosecond", "tot")
+	census.mTranscoderRealtimeRatio = stats.Float64("transcoder_segment_transcoded_realtime_ratio", "Ratio of source segment duration / transcode time as measured by orchestrator", "rat")
 	census.mTranscoderPriority = stats.Int64("transcoder_priority", "Transcoder priority set by orchestrator", "tot")
 	census.mTranscoderSortMethod = stats.Int64("transcoder_sort_method", "Transcoder sort method", "tot")
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
@@ -671,6 +673,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "transcoder_ppns",
 			Measure:     census.mTranscoderPPNS,
 			Description: "Transcoder pixels processed per second",
+			TagKeys:     append([]tag.Key{census.kTranscoderURI}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "transcoder_realtime_ratio",
+			Measure:     census.mTranscoderRealtimeRatio,
+			Description: "Ratio of source segment duration / transcode time as measured on orchestrator",
 			TagKeys:     append([]tag.Key{census.kTranscoderURI}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
@@ -1171,8 +1180,12 @@ func SetTranscoderPPNS(t_uri string, ppns float64) {
 	stats.RecordWithTags(census.ctx, manifestIDTag(census.ctx, tag.Insert(census.kTranscoderURI, t_uri)), census.mTranscoderPPNS.M(ppns))
 }
 
+func SetTranscoderRealtimeRatio(t_uri string, rtr float64) {
+	stats.RecordWithTags(census.ctx, manifestIDTag(census.ctx, tag.Insert(census.kTranscoderURI, t_uri)), census.mTranscoderRealtimeRatio.M(rtr))
+}
+
 func SetTranscoderLoad(t_uri string, load int) {
-		stats.RecordWithTags(census.ctx, manifestIDTag(census.ctx, tag.Insert(census.kTranscoderURI, t_uri)), census.mTranscoderLoad.M(int64(load)))
+	stats.RecordWithTags(census.ctx, manifestIDTag(census.ctx, tag.Insert(census.kTranscoderURI, t_uri)), census.mTranscoderLoad.M(int64(load)))
 }
 
 func SetTranscoderPriority(t_uri string, priority int) {
