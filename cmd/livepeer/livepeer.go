@@ -10,12 +10,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"time"
 
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
-	"github.com/livepeer/go-livepeer/common"
-
 	"github.com/livepeer/livepeer-data/pkg/mistconnector"
 	"github.com/peterbourgon/ff/v3"
 
@@ -51,7 +48,6 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
-	streamTesterMode()
 
 	cfg = updateNilsForUnsetFlags(cfg)
 
@@ -204,19 +200,4 @@ func updateNilsForUnsetFlags(cfg starter.LivepeerConfig) starter.LivepeerConfig 
 	}
 
 	return res
-}
-
-// streamTesterMode extends transcoding timeouts and disable caching for the testing purpose.
-// This functionality is intended for Stream Tester to avoid timing out while measuring orchestrator performance.
-func streamTesterMode() {
-	if boolVal, _ := strconv.ParseBool(os.Getenv("LP_IS_ORCH_TESTER")); boolVal {
-		// Make all timeouts 8s for the common segment durations
-		common.SegUploadTimeoutMultiplier = 4.0
-		common.SegmentUploadTimeout = 8 * time.Second
-		common.HTTPDialTimeout = 8 * time.Second
-		common.SegHttpPushTimeoutMultiplier = 4.0
-
-		// Disable caching for Orchestrator Discovery Webhook
-		common.WebhookDiscoveryRefreshInterval = 0
-	}
 }

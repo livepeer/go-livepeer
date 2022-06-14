@@ -9,6 +9,7 @@
 #### General
 
 #### Broadcaster
+- \#2462 cmd: Delete temporary env variable LP_IS_ORCH_TESTER (@leszko)
 
 #### Orchestrator
 
