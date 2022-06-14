@@ -73,11 +73,11 @@ type livepeer struct {
 
 func lpCfg() starter.LivepeerConfig {
 	mu.Lock()
-	serviceAddr := fmt.Sprintf("127.0.0.1:%d", httpPort)
+	serviceAddr := fmt.Sprintf("localhost:%d", httpPort)
 	httpPort++
-	cliAddr := fmt.Sprintf("127.0.0.1:%d", cliPort)
+	cliAddr := fmt.Sprintf("localhost:%d", cliPort)
 	cliPort++
-	rtmpAddr := fmt.Sprintf("127.0.0.1:%d", rtmpPort)
+	rtmpAddr := fmt.Sprintf("localhost:%d", rtmpPort)
 	rtmpPort++
 	mu.Unlock()
 
@@ -201,4 +201,16 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 	}
 
 	return string(result), resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
+func httpGet(url string) string {
+	resp, _ := http.Get(url)
+
+	defer resp.Body.Close()
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil || string(result) == "" {
+		return ""
+	}
+	return string(result)
+
 }

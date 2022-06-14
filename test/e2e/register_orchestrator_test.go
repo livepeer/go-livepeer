@@ -30,8 +30,13 @@ func TestRegisterOrchestrator(t *testing.T) {
 
 func startOrchestrator(t *testing.T, geth *gethContainer) *livepeer {
 	lpCfg := lpCfg()
+	MaxFaceValue := big.NewInt(1000000).String()
+	TicketEV := big.NewInt(1000000).String()
 	lpCfg.Orchestrator = boolPointer(true)
 	lpCfg.Transcoder = boolPointer(true)
+	lpCfg.Redeemer = boolPointer(true)
+	lpCfg.MaxFaceValue = &MaxFaceValue
+	lpCfg.TicketEV = &TicketEV
 	return startLivepeer(t, lpCfg, geth)
 }
 
@@ -49,7 +54,7 @@ func registerOrchestrator(o *livepeer) {
 		"pixelsPerUnit":  {fmt.Sprintf("%d", pixelsPerUnit)},
 		"blockRewardCut": {fmt.Sprintf("%v", rewardCut)},
 		"feeShare":       {fmt.Sprintf("%v", feeShare)},
-		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
+		"serviceURI":     {fmt.Sprintf("http://%s", *o.cfg.HttpAddr)},
 		"amount":         {fmt.Sprintf("%d", lptStake)},
 	}
 
