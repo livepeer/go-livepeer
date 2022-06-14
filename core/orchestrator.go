@@ -849,6 +849,7 @@ type RemoteTranscoder struct {
 	capacity     int
 	load         int
 	ppns         float64
+	rtr          float64
 	priority     int
 }
 
@@ -925,11 +926,14 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	case chanData := <-taskChan:
 		segmentLen := 0
 		took := time.Since(start)
+		ftook := float64(took)
 		if chanData.TranscodeData != nil {
 			segmentLen = len(chanData.TranscodeData.Segments)
-			rt.ppns = float64(chanData.TranscodeData.Pixels) / float64(took)
+			rt.ppns = float64(chanData.TranscodeData.Pixels) / ftook
+			rt.rtr = float64(md.Duration) / ftook
 			if lpmon.Enabled {
 				lpmon.SetTranscoderPPNS(rt.addr, rt.ppns)
+				lpmon.SetTranscoderRealtimeRatio(rt.addr, rt.rtr)
 			}
 		}
 		clog.InfofErr(logCtx, "Successfully received results from remote transcoder=%s segments=%d taskId=%d fname=%s dur=%v",
