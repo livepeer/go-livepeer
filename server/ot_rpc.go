@@ -265,7 +265,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 
 	pixels := int64(0)
 	// add detections
-	if tData != nil {
+	if tData != nil && len(tData.Detections) > 0 {
 		detectData, err := json.Marshal(tData.Detections)
 		if err != nil {
 			clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
