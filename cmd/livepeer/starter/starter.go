@@ -744,6 +744,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			} else {
 				n.SetMaxFaceValue(mfv)
+				glog.Infof("Ticket max face value set to: %v", *cfg.MaxFaceValue)
 			}
 
 		}
