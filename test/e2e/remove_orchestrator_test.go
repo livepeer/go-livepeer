@@ -2,56 +2,67 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
-	ethcommon "github.com/ethereum/go-ethereum/common"
-
-	"github.com/livepeer/go-livepeer/eth/contracts"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoveMOrchestrator(t *testing.T) {
-	// given
+func TestRemoveOrchestrator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	// when
-	o := startAndRegisterOrchestrator(t, geth, ctx)
+	o := startOrchestrator(t, geth, ctx)
 	defer o.stop()
+
+	lpEth := o.dev.Client
+	<-o.ready
+
+	initialCfg := OrchestratorConfig{
+		PricePerUnit:   1,
+		PixelsPerUnit:  10,
+		BlockRewardCut: 30.0,
+		FeeShare:       50.0,
+		LptStake:       50,
+	}
 
 	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
 
-	waitForNextRound(t, o.dev.Client)
+	// when
+	registerOrchestrator(o, &initialCfg)
+	waitForNextRound(t, lpEth)
 	o.dev.InitializeRound()
 
-	lockId := deactivateOrchestrator(o)
+	deactivateOrchestrator(o, big.NewInt(initialCfg.LptStake))
 
-	waitForNextRound(t, o.dev.Client)
+	waitForNextRound(t, lpEth)
 	o.dev.InitializeRound()
 
-	requireOrchestratorDeactivated(t, o)
-
-	lock, _ := o.dev.Client.GetDelegatorUnbondingLock(o.dev.Client.Account().Address, lockId)
+	lock := getUnbondingLock(o)
 
 	waitUntilRound(lock.WithdrawRound, o, t)
 
-	withdrawStake(o, lockId)
+	withdrawStake(o, big.NewInt(lock.ID))
 
 	// then
-	assertOrchestratorRemoved(t, o, balance)
+	assertOrchestratorRemoved(t, o, big.NewInt(lock.ID))
+	assertStakeWithdrawn(t, o, balance)
 }
 
-func waitUntilRound(round *big.Int, o *livepeer, t *testing.T) {
+func waitUntilRound(round int64, o *livepeer, t *testing.T) {
 	for {
 		current, _ := o.dev.Client.CurrentRound()
-		if current.Cmp(round) == 0 {
+		if current.Cmp(big.NewInt(round)) == 0 {
 			return
 		}
 
@@ -60,35 +71,42 @@ func waitUntilRound(round *big.Int, o *livepeer, t *testing.T) {
 	}
 }
 
-func deactivateOrchestrator(o *livepeer) *big.Int {
+func deactivateOrchestrator(o *livepeer, initialStake *big.Int) {
 	val := url.Values{
-		"amount": {fmt.Sprintf("%d", lptStake)},
+		"amount": {fmt.Sprintf("%d", initialStake)},
 	}
 
 	for {
-		txHash, ok := httpPostWithParams(fmt.Sprintf("http://%s/unbond", *o.cfg.CliAddr), val)
-		if ok {
-			receipt, err := o.dev.Client.Backend().TransactionReceipt(context.Background(), ethcommon.BytesToHash([]byte(txHash)))
-			if err == nil {
-				abi, err := contracts.BondingManagerMetaData.GetAbi()
-				if err == nil {
-					event := new(contracts.BondingManagerUnbond)
-					log := receipt.Logs[2]
-					abi.UnpackIntoInterface(event, "Unbond", log.Data)
-					return event.UnbondingLockId
-				}
-			}
+		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/unbond", *o.cfg.CliAddr), val); ok {
+			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 }
 
-func assertOrchestratorRemoved(t *testing.T, o *livepeer, oldBalance *big.Int) {
+func getUnbondingLock(o *livepeer) common.DBUnbondingLock {
+	response, _ := http.Get(fmt.Sprintf("http://%s/unbondingLocks", *o.cfg.CliAddr))
+	defer response.Body.Close()
+
+	payload, _ := ioutil.ReadAll(response.Body)
+
+	var unbondingLocks = []common.DBUnbondingLock{}
+	json.Unmarshal(payload, &unbondingLocks)
+	return unbondingLocks[0]
+}
+
+func assertOrchestratorRemoved(t *testing.T, o *livepeer, lockId *big.Int) {
 	require := require.New(t)
 
-	var diff big.Int
+	lock, _ := o.dev.Client.GetDelegatorUnbondingLock(o.dev.Client.Account().Address, lockId)
+	require.Equal(0, lock.Amount.Cmp(big.NewInt(0)))
+}
+
+func assertStakeWithdrawn(t *testing.T, o *livepeer, oldBalance *big.Int) {
+	require := require.New(t)
+
 	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
-	require.Equal(diff.Sub(balance, oldBalance), big.NewInt(lptStake))
+	require.Equal(0, balance.Cmp(oldBalance))
 }
 
 func requireOrchestratorDeactivated(t *testing.T, o *livepeer) {

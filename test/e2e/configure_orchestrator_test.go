@@ -11,14 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type OrchestratorConfig struct {
-	PricePerUnit   int
-	PixelsPerUnit  int
-	BlockRewardCut float64
-	FeeShare       float64
-	ServiceURI     string
-}
-
 func TestConfigureOrchestrator(t *testing.T) {
 	// given
 	ctx, cancel := context.WithCancel(context.Background())
@@ -27,18 +19,30 @@ func TestConfigureOrchestrator(t *testing.T) {
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	// when
-	o := startAndRegisterOrchestrator(t, geth, ctx)
+	o := startOrchestrator(t, geth, ctx)
 	defer o.stop()
 
-	waitForNextRound(t, o.dev.Client)
-	o.dev.InitializeRound()
+	lpEth := o.dev.Client
+	<-o.ready
 
-	requireOrchestratorRegisteredAndActivated(t, o.dev.Client)
+	initialCfg := OrchestratorConfig{
+		PricePerUnit:   1,
+		PixelsPerUnit:  10,
+		BlockRewardCut: 30.0,
+		FeeShare:       50.0,
+		LptStake:       50,
+	}
+
+	// when
+	registerOrchestrator(o, &initialCfg)
+	waitForNextRound(t, lpEth)
+	o.dev.InitializeRound() // remove?
+
+	requireOrchestratorRegisteredAndActivated(t, lpEth, &initialCfg)
 
 	claimRewards(o)
 
-	cfg := &OrchestratorConfig{
+	newCfg := &OrchestratorConfig{
 		PricePerUnit:   2,
 		PixelsPerUnit:  12,
 		BlockRewardCut: 25.0,
@@ -46,45 +50,13 @@ func TestConfigureOrchestrator(t *testing.T) {
 		ServiceURI:     "127.0.0.1:18545",
 	}
 
-	configureOrchestrator(o, cfg)
+	configureOrchestrator(o, newCfg)
 
-	waitForNextRound(t, o.dev.Client)
+	waitForNextRound(t, lpEth)
 	o.dev.InitializeRound()
 
 	// then
-	assertOrchestratorConfigured(t, o, cfg)
-}
-
-func startAndRegisterOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context) *livepeer {
-	const (
-		pricePerUnit  = 1
-		pixelsPerUnit = 10
-		rewardCut     = 30.0
-		feeShare      = 50.0
-	)
-
-	lpCfg := lpCfg()
-	lpCfg.Orchestrator = boolPointer(true)
-	lpCfg.Transcoder = boolPointer(true)
-	o := startLivepeer(t, lpCfg, geth, ctx)
-
-	<-o.ready
-
-	val := url.Values{
-		"pricePerUnit":   {fmt.Sprintf("%d", pricePerUnit)},
-		"pixelsPerUnit":  {fmt.Sprintf("%d", pixelsPerUnit)},
-		"blockRewardCut": {fmt.Sprintf("%v", rewardCut)},
-		"feeShare":       {fmt.Sprintf("%v", feeShare)},
-		"serviceURI":     {fmt.Sprintf("http://%v", &o.cfg.HttpAddr)},
-		"amount":         {fmt.Sprintf("%d", lptStake)},
-	}
-
-	for {
-		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
-			return o
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	assertOrchestratorConfigured(t, o, newCfg)
 }
 
 func claimRewards(o *livepeer) {

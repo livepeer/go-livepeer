@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -70,6 +71,15 @@ type livepeer struct {
 	dev   *devtool.Devtool
 	cfg   *starter.LivepeerConfig
 	ready chan struct{}
+}
+
+type OrchestratorConfig struct {
+	PricePerUnit   int64
+	PixelsPerUnit  int64
+	BlockRewardCut float64
+	FeeShare       float64
+	LptStake       int64
+	ServiceURI     string
 }
 
 func lpCfg() starter.LivepeerConfig {
@@ -143,6 +153,46 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	}()
 
 	return &livepeer{dev: &dev, cfg: &lpCfg, ready: ready}
+}
+
+func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient, params *OrchestratorConfig) {
+	require := require.New(t)
+
+	transPool, err := lpEth.TranscoderPool()
+
+	require.NoError(err)
+	require.Len(transPool, 1)
+	trans := transPool[0]
+	require.True(trans.Active)
+	require.Equal("Registered", trans.Status)
+	require.Equal(big.NewInt(params.LptStake), trans.DelegatedStake)
+	require.Equal(eth.FromPerc(params.FeeShare), trans.FeeShare)
+	require.Equal(eth.FromPerc(params.BlockRewardCut), trans.RewardCut)
+}
+
+func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context) *livepeer {
+	lpCfg := lpCfg()
+	lpCfg.Orchestrator = boolPointer(true)
+	lpCfg.Transcoder = boolPointer(true)
+	return startLivepeer(t, lpCfg, geth, ctx)
+}
+
+func registerOrchestrator(o *livepeer, params *OrchestratorConfig) {
+	val := url.Values{
+		"pricePerUnit":   {fmt.Sprintf("%d", params.PricePerUnit)},
+		"pixelsPerUnit":  {fmt.Sprintf("%d", params.PixelsPerUnit)},
+		"blockRewardCut": {fmt.Sprintf("%v", params.BlockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", params.FeeShare)},
+		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
+		"amount":         {fmt.Sprintf("%d", params.LptStake)},
+	}
+
+	for {
+		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 func (l *livepeer) stop() {
