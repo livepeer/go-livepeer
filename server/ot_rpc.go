@@ -265,14 +265,16 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 
 	pixels := int64(0)
 	// add detections
-	if tData != nil && len(tData.Detections) > 0 {
-		detectData, err := json.Marshal(tData.Detections)
-		if err != nil {
-			clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
-				notify.TaskId, notify.Url, err)
-			return
+	if tData != nil {
+		if len(tData.Detections) > 0 {
+			detectData, err := json.Marshal(tData.Detections)
+			if err != nil {
+				clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
+					notify.TaskId, notify.Url, err)
+				return
+			}
+			req.Header.Set("Detections", string(detectData))
 		}
-		req.Header.Set("Detections", string(detectData))
 		pixels = tData.Pixels
 	}
 	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
