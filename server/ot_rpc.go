@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -21,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
@@ -357,14 +358,17 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 	// read detection data - only scene classification is supported
 	var detections []ffmpeg.DetectData
 	var sceneDetections []ffmpeg.SceneClassificationData
-	err = json.Unmarshal([]byte(r.Header.Get("Detections")), &sceneDetections)
-	if err != nil {
-		glog.Error("Could not parse detection data ", err)
-		http.Error(w, "Invalid detection data", http.StatusBadRequest)
-		return
-	}
-	for _, sd := range sceneDetections {
-		detections = append(detections, sd)
+	var detectionsHeader = r.Header.Get("Detections")
+	if len(detectionsHeader) > 0 {
+		err = json.Unmarshal([]byte(detectionsHeader), &sceneDetections)
+		if err != nil {
+			glog.Error("Could not parse detection data ", err)
+			http.Error(w, "Invalid detection data", http.StatusBadRequest)
+			return
+		}
+		for _, sd := range sceneDetections {
+			detections = append(detections, sd)
+		}
 	}
 
 	var res core.RemoteTranscoderResult
