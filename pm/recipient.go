@@ -26,9 +26,9 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 200 gwei
+// Hardcode to 1 gwei
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(200), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(1), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
@@ -302,9 +302,10 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
 	// Use || here for lazy evaluation. If the first clause is true we ignore the second clause.
 	if !(faceValue.Cmp(txCost) >= 0 || faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) >= 0) {
+		glog.Errorf("Ticket face value less than transaction cost: fv %v txcost %v gasprice %v txavg %v maxfloat %v multiplier %v", faceValue, txCost, r.gpm.GasPrice(), r.txCostWithGasPrice(avgGasPrice), maxFloat, r.cfg.TxCostMultiplier)
 		return nil, errInsufficientSenderReserve
 	}
-
+	
 	return faceValue, nil
 }
 
