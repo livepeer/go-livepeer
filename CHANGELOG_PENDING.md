@@ -11,6 +11,7 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#2465 server: Don't fail to get Transcode Results if Detections header missing
 
 #### Transcoder
 

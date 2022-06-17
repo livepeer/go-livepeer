@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -21,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
@@ -265,13 +266,15 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	pixels := int64(0)
 	// add detections
 	if tData != nil {
-		detectData, err := json.Marshal(tData.Detections)
-		if err != nil {
-			clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
-				notify.TaskId, notify.Url, err)
-			return
+		if len(tData.Detections) > 0 {
+			detectData, err := json.Marshal(tData.Detections)
+			if err != nil {
+				clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
+					notify.TaskId, notify.Url, err)
+				return
+			}
+			req.Header.Set("Detections", string(detectData))
 		}
-		req.Header.Set("Detections", string(detectData))
 		pixels = tData.Pixels
 	}
 	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
@@ -357,14 +360,17 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 	// read detection data - only scene classification is supported
 	var detections []ffmpeg.DetectData
 	var sceneDetections []ffmpeg.SceneClassificationData
-	err = json.Unmarshal([]byte(r.Header.Get("Detections")), &sceneDetections)
-	if err != nil {
-		glog.Error("Could not parse detection data ", err)
-		http.Error(w, "Invalid detection data", http.StatusBadRequest)
-		return
-	}
-	for _, sd := range sceneDetections {
-		detections = append(detections, sd)
+	var detectionsHeader = r.Header.Get("Detections")
+	if len(detectionsHeader) > 0 {
+		err = json.Unmarshal([]byte(detectionsHeader), &sceneDetections)
+		if err != nil {
+			glog.Error("Could not parse detection data ", err)
+			http.Error(w, "Invalid detection data", http.StatusBadRequest)
+			return
+		}
+		for _, sd := range sceneDetections {
+			detections = append(detections, sd)
+		}
 	}
 
 	var res core.RemoteTranscoderResult
