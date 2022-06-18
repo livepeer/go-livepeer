@@ -110,6 +110,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Sign a message", invoke: w.signMessage},
 		{desc: "Sign typed data", invoke: w.signTypedData},
 		{desc: "Vote in a poll", invoke: w.vote, orchestrator: true},
+		{desc: "Set max ticket face value", invoke: w.setMaxFaceValue, orchestrator: true},
 	}
 	return options
 }

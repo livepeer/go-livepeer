@@ -128,6 +128,7 @@ func main() {
 	maxGasPrice := flag.Int("maxGasPrice", 0, "Maximum gas price (priority fee + base fee) for ETH transactions in wei, 40 Gwei = 40000000000")
 	ethController := flag.String("ethController", "", "Protocol smart contract address")
 	initializeRound := flag.Bool("initializeRound", false, "Set to true if running as a transcoder and the node should automatically initialize new rounds")
+	maxFaceValue := flag.String("maxFaceValue", "1000000000000", "The max faceValue for PM tickets")
 	ticketEV := flag.String("ticketEV", "1000000000000", "The expected value for PM tickets")
 	// Broadcaster max acceptable ticket EV
 	maxTicketEV := flag.String("maxTicketEV", "3000000000000", "The maximum acceptable expected value for PM tickets")
@@ -677,6 +678,19 @@ func main() {
 				timeWatcher,
 				cfg,
 			)
+			mfv, _ := new(big.Int).SetString(*maxFaceValue, 10)
+			if ev == nil {
+				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *maxFaceValue))
+				return
+			}
+
+			if ev.Cmp(big.NewInt(0)) < 0 {
+				panic(fmt.Errorf("-maxFaceValue must be greater than 0, but %v provided. Restart the node with a different valid value for -maxFaceValue", *maxFaceValue))
+				return
+			}
+			n.SetMaxFaceValue(mfv)
+			glog.Infof("Ticket max face value set to %v",*maxFaceValue)
+			
 			if err != nil {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return

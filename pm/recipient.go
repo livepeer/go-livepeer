@@ -26,9 +26,9 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 200 gwei
+// Hardcode to 1 gwei
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(200), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(1), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
@@ -48,6 +48,9 @@ type Recipient interface {
 
 	// EV returns the recipients EV requirement for a ticket as configured on startup
 	EV() *big.Rat
+	
+	//Set ticket faceValue upper limit
+	SetMaxFaceValue(maxfacevalue *big.Int)
 }
 
 // TicketParamsConfig contains config information for a recipient to determine
@@ -80,6 +83,7 @@ type recipient struct {
 
 	addr   ethcommon.Address
 	secret [32]byte
+	maxfacevalue *big.Int
 
 	senderNonces map[string]*struct {
 		nonce           uint32
@@ -118,6 +122,7 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		tm:     tm,
 		addr:   addr,
 		secret: secret,
+		maxfacevalue: big.NewInt(0),
 		senderNonces: make(map[string]*struct {
 			nonce           uint32
 			expirationBlock *big.Int
@@ -256,6 +261,12 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		faceValue = maxFloat
 	}
 
+	if r.maxfacevalue.Cmp(big.NewInt(0)) > 0 {
+		if r.maxfacevalue.Cmp(faceValue) < 0 {
+			faceValue = r.maxfacevalue
+		}
+	}
+
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve
 	}
@@ -352,6 +363,10 @@ func (r *recipient) updateSenderNonce(rand *big.Int, ticket *Ticket) error {
 // EV Returns the required ticket EV for a recipient
 func (r *recipient) EV() *big.Rat {
 	return new(big.Rat).SetFrac(r.cfg.EV, big.NewInt(1))
+}
+
+func (r *recipient) SetMaxFaceValue(maxfacevalue *big.Int) {
+	r.maxfacevalue = maxfacevalue
 }
 
 func (r *recipient) senderNoncesCleanupLoop() {

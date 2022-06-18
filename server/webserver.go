@@ -454,6 +454,23 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		}
 
 	})
+	
+	mux.HandleFunc("/setMaxFaceValue", func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			maxfacevalue := r.FormValue("maxfacevalue")
+			if maxfacevalue != "" {
+				mfv, success := new(big.Int).SetString(maxfacevalue,10)
+				if success {
+					s.LivepeerNode.SetMaxFaceValue(mfv)
+					respondOk(w, []byte("ticket max face value set"))
+				} else {
+					respondWith400(w,"maxfacevalue not set to number")
+				}
+			} else {
+				respondWith400(w, "need to set 'maxfacevalue'")
+			}
+		}
+	})
 
 	//Bond some amount of tokens to an orchestrator.
 	mux.HandleFunc("/bond", func(w http.ResponseWriter, r *http.Request) {

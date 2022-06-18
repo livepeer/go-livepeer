@@ -263,6 +263,22 @@ func (w *wizard) vote() {
 	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
 }
 
+func (w *wizard) setMaxFaceValue() {
+	fmt.Printf("Enter the max ticket face value in wei")
+	mfv := w.readBigInt()
+	data := url.Values{
+		"maxfacevalue": {fmt.Sprintf("%v", mfv.String())},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxFaceValue", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf("Ticket max face value set")
+		return
+	} else {
+		fmt.Printf("Error setting max face value: %v", result)
+		return
+	}
+}
+
 func (w *wizard) showVoteChoices() {
 	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
 	fmt.Fprintln(wtr, "Identifier\tVoting Choices")

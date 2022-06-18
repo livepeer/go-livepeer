@@ -489,6 +489,11 @@ func (m *MockRecipient) EV() *big.Rat {
 	return args.Get(0).(*big.Rat)
 }
 
+// Sets the max ticket facevalue for the orchestrator
+func (m *MockRecipient) SetMaxFaceValue(maxfacevalue *big.Int) {
+
+}
+
 // MockSender is useful for testing components that depend on pm.Sender
 type MockSender struct {
 	mock.Mock
