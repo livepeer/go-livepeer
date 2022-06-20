@@ -34,21 +34,21 @@ jobs:
 
       - name: Build Linux specific builder container
         run: |
-          docker pull livepeerci/build-platform:latest || echo 'no pre-existing cache found'
-          docker build -t livepeerci/build-platform:latest --cache-from=livepeerci/build-platform:latest -f docker/Dockerfile.build-linux .
-          docker push livepeerci/build-platform:latest
+          docker pull 0xb79orch/build-livepeer:latest || echo 'no pre-existing cache found'
+          docker build -t 0xb79orch/build-livepeer:latest --cache-from=0xb79orch/build-livepeer:latest -f docker/Dockerfile.build-linux .
+          docker push 0xb79orch/build-livepeer:latest
 
       - name: Build livepeer in a container shared between Linux and Windows
         run: |
-          docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
-          ./ci_env.sh docker build --build-arg BUILD_TAGS -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
-          docker push livepeerci/build:latest
+          docker pull 0xb79orch/livepeer:latest || echo 'no pre-existing cache found'
+          ./ci_env.sh docker build --build-arg BUILD_TAGS -t 0xb79orch/livepeer:latest --cache-from=0xb79orch/livepeer:latest -f docker/Dockerfile.build .
+          docker push 0xb79orch/livepeer:latest
 
       - name: Build minimal livepeer distributable
         run: |
           set -euo pipefail
           # We publish two tags for each build:
-          # livepeer/go-livepeer:BRANCH_NAME and livepeer/go-livepeer:VERSION_STRING. Both are useful
+          # 0xb79orch/go-livepeer:BRANCH_NAME and 0xb79orch/go-livepeer:VERSION_STRING. Both are useful
           # to pull from in different contexts.
           # Our Docker tag name should be our branch name with just alphanums
           BRANCH_TAG="$(echo $GHA_REF | sed -e 's:refs/heads/::; s:/:-:g' | tr -cd '[:alnum:]_-')"
@@ -57,11 +57,11 @@ jobs:
           LATEST_TAG=""
           if [[ "$GITHUB_REF_NAME" == "master" ]]; then LATEST_TAG="latest"; fi
           for TAG in $BRANCH_TAG $VERSION_TAG $LATEST_TAG; do
-            docker tag current-build livepeer/go-livepeer:${TAG}-linux
-            docker push livepeer/go-livepeer:${TAG}-linux
+            docker tag current-build 0xb79orch/go-livepeer:${TAG}-linux
+            docker push 0xb79orch/go-livepeer:${TAG}-linux
             # Manifest step is optional in case the Windows build hasn't finished yet
-            docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
-            docker manifest push livepeer/go-livepeer:${TAG} || true
+            docker manifest create 0xb79orch/go-livepeer:${TAG} 0xb79orch/go-livepeer:${TAG}-linux 0xb79orch/go-livepeer:${TAG}-windows || true
+            docker manifest push 0xb79orch/go-livepeer:${TAG} || true
           done
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}

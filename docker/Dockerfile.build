@@ -3,7 +3,7 @@
 # Don't mess with WORKDIR if you can avoid it, as it's different on Windows/Linux. Use relative
 # paths instead.
 
-FROM livepeerci/build-platform:latest
+FROM 0xb79orch/livepeer:latest
 
 ARG BUILD_TAGS
 ENV BUILD_TAGS ${BUILD_TAGS}
