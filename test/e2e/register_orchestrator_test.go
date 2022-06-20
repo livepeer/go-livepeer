@@ -13,8 +13,9 @@ func TestRegisterOrchestrator(t *testing.T) {
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	o := startOrchestrator(t, geth, ctx)
+	o := startOrchestrator(t, geth, ctx, nil)
 	defer o.stop()
+
 	lpEth := o.dev.Client
 	<-o.ready
 

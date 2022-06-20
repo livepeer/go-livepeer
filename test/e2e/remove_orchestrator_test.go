@@ -12,17 +12,19 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 )
 
 func TestRemoveOrchestrator(t *testing.T) {
+	//given
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	o := startOrchestrator(t, geth, ctx)
+	o := startOrchestrator(t, geth, ctx, nil)
 	defer o.stop()
 
 	lpEth := o.dev.Client
@@ -41,16 +43,16 @@ func TestRemoveOrchestrator(t *testing.T) {
 	// when
 	registerOrchestrator(o, &initialCfg)
 	waitForNextRound(t, lpEth)
-	o.dev.InitializeRound()
+	waitUntilRoundInitialized(t, lpEth)
 
 	deactivateOrchestrator(o, big.NewInt(initialCfg.LptStake))
 
-	waitForNextRound(t, lpEth)
-	o.dev.InitializeRound()
-
 	lock := getUnbondingLock(o)
 
-	waitUntilRound(lock.WithdrawRound, o, t)
+	waitUntilRound(lock.WithdrawRound, lpEth, t)
+	// round is not initialized when o is not in the next active set, so we do it here
+	lpEth.InitializeRound()
+	waitUntilRoundInitialized(t, lpEth)
 
 	withdrawStake(o, big.NewInt(lock.ID))
 
@@ -59,15 +61,15 @@ func TestRemoveOrchestrator(t *testing.T) {
 	assertStakeWithdrawn(t, o, balance)
 }
 
-func waitUntilRound(round int64, o *livepeer, t *testing.T) {
+func waitUntilRound(round int64, lpEth eth.LivepeerEthClient, t *testing.T) {
 	for {
-		current, _ := o.dev.Client.CurrentRound()
-		if current.Cmp(big.NewInt(round)) == 0 {
+		current_round, err := lpEth.CurrentRound()
+		require.NoError(t, err)
+
+		if current_round.Cmp(big.NewInt(round)) == 0 {
 			return
 		}
-
-		waitForNextRound(t, o.dev.Client)
-		o.dev.InitializeRound()
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

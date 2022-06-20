@@ -112,25 +112,34 @@ func lpCfg() starter.LivepeerConfig {
 }
 
 func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer, ctx context.Context) *livepeer {
-	datadir := t.TempDir()
-	keystoreDir := filepath.Join(datadir, "keystore")
-	acc := devtool.CreateKey(keystoreDir)
 	devCfg := devtool.NewDevtoolConfig()
+
+	var newAcct = *lpCfg.EthAcctAddr == ""
+	if newAcct {
+		datadir := t.TempDir()
+		keystoreDir := filepath.Join(datadir, "keystore")
+		devCfg.Account = devtool.CreateKey(keystoreDir)
+		devCfg.KeystoreDir = keystoreDir
+		lpCfg.Datadir = &datadir
+	} else {
+		devCfg.Account = *lpCfg.EthAcctAddr
+		devCfg.KeystoreDir = filepath.Join(*lpCfg.Datadir, "keystore")
+	}
+
 	devCfg.Endpoint = geth.URI
-	devCfg.Account = acc
-	devCfg.KeystoreDir = keystoreDir
 
 	dev, err := devtool.Init(devCfg)
 	require.NoError(t, err)
 
-	err = dev.RequestTokens()
-	require.NoError(t, err)
+	if newAcct {
+		err = dev.RequestTokens()
+		require.NoError(t, err)
+	}
 
 	err = dev.InitializeRound()
 	require.NoError(t, err)
 
 	lpCfg.EthUrl = &geth.URI
-	lpCfg.Datadir = &datadir
 	lpCfg.EthController = &dev.EthController
 	lpCfg.EthAcctAddr = &devCfg.Account
 
@@ -170,11 +179,16 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerE
 	require.Equal(eth.FromPerc(params.BlockRewardCut), trans.RewardCut)
 }
 
-func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context) *livepeer {
-	lpCfg := lpCfg()
-	lpCfg.Orchestrator = boolPointer(true)
-	lpCfg.Transcoder = boolPointer(true)
-	return startLivepeer(t, lpCfg, geth, ctx)
+func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context, cfg *starter.LivepeerConfig) *livepeer {
+	var lpConf starter.LivepeerConfig
+	if cfg == nil {
+		lpConf = lpCfg()
+		lpConf.Orchestrator = boolPointer(true)
+		lpConf.Transcoder = boolPointer(true)
+	} else {
+		lpConf = *cfg
+	}
+	return startLivepeer(t, lpConf, geth, ctx)
 }
 
 func registerOrchestrator(o *livepeer, params *OrchestratorConfig) {
@@ -215,7 +229,24 @@ func waitForNextRound(t *testing.T, lpEth eth.LivepeerEthClient) {
 	}
 }
 
+func waitUntilRoundInitialized(t *testing.T, lpEth eth.LivepeerEthClient) {
+	for {
+		initialized, err := lpEth.CurrentRoundInitialized()
+		require.NoError(t, err)
+
+		if initialized == true {
+			return
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func boolPointer(b bool) *bool {
+	return &b
+}
+
+func stringPointer(b string) *string {
 	return &b
 }
 

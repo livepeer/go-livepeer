@@ -3,10 +3,12 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +21,7 @@ func TestConfigureOrchestrator(t *testing.T) {
 	geth := setupGeth(t)
 	defer terminateGeth(t, geth)
 
-	o := startOrchestrator(t, geth, ctx)
+	o := startOrchestrator(t, geth, ctx, nil)
 	defer o.stop()
 
 	lpEth := o.dev.Client
@@ -36,10 +38,11 @@ func TestConfigureOrchestrator(t *testing.T) {
 	// when
 	registerOrchestrator(o, &initialCfg)
 	waitForNextRound(t, lpEth)
-	o.dev.InitializeRound() // remove?
-
 	requireOrchestratorRegisteredAndActivated(t, lpEth, &initialCfg)
 
+	<-o.ready
+
+	waitUntilOrchestratorIsConfigurable(t, lpEth)
 	claimRewards(o)
 
 	newCfg := &OrchestratorConfig{
@@ -49,11 +52,9 @@ func TestConfigureOrchestrator(t *testing.T) {
 		FeeShare:       55.0,
 		ServiceURI:     "127.0.0.1:18545",
 	}
+	glog.Errorf("done waiting for configurabilitry")
 
 	configureOrchestrator(o, newCfg)
-
-	waitForNextRound(t, lpEth)
-	o.dev.InitializeRound()
 
 	// then
 	assertOrchestratorConfigured(t, o, newCfg)
@@ -82,6 +83,30 @@ func configureOrchestrator(o *livepeer, cfg *OrchestratorConfig) {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func waitUntilOrchestratorIsConfigurable(t *testing.T, lpEth eth.LivepeerEthClient) {
+	require := require.New(t)
+
+	for {
+		active, err := lpEth.IsActiveTranscoder()
+		require.NoError(err)
+
+		initialized, err := lpEth.CurrentRoundInitialized()
+		require.NoError(err)
+
+		t, err := lpEth.GetTranscoder(lpEth.Account().Address)
+		require.NoError(err)
+		rewardCalled := t.LastRewardRound.Cmp(big.NewInt(0)) > 0
+
+		glog.Errorf("active %v, initialized %v, rewardCalled %v", active, initialized, rewardCalled)
+		if active && initialized && rewardCalled {
+			time.Sleep(2 * time.Second)
+			return
+		}
+
+		time.Sleep(2 * time.Second)
 	}
 }
 
