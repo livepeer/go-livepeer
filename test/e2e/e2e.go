@@ -4,11 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
-	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
-	"github.com/livepeer/go-livepeer/eth"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -16,6 +11,12 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // Start Geth Docker container helpers
@@ -25,8 +26,7 @@ type gethContainer struct {
 	webServerURI string
 }
 
-func setupGeth(t *testing.T) *gethContainer {
-	ctx := context.TODO()
+func setupGeth(t *testing.T, ctx context.Context) *gethContainer {
 	req := testcontainers.ContainerRequest{
 		Image:        "livepeer/geth-with-livepeer-protocol:confluence",
 		ExposedPorts: []string{"8546/tcp", "8545/tcp"},
@@ -52,8 +52,8 @@ func setupGeth(t *testing.T) *gethContainer {
 	return &gethContainer{Container: container, URI: uri, webServerURI: webServerUri}
 }
 
-func terminateGeth(t *testing.T, geth *gethContainer) {
-	err := geth.Terminate(context.TODO())
+func terminateGeth(t *testing.T, geth *gethContainer, ctx context.Context) {
+	err := geth.Terminate(ctx)
 	require.NoError(t, err)
 }
 
@@ -73,11 +73,11 @@ type livepeer struct {
 
 func lpCfg() starter.LivepeerConfig {
 	mu.Lock()
-	serviceAddr := fmt.Sprintf("localhost:%d", httpPort)
+	serviceAddr := fmt.Sprintf("127.0.0.1:%d", httpPort)
 	httpPort++
-	cliAddr := fmt.Sprintf("localhost:%d", cliPort)
+	cliAddr := fmt.Sprintf("127.0.0.1:%d", cliPort)
 	cliPort++
-	rtmpAddr := fmt.Sprintf("localhost:%d", rtmpPort)
+	rtmpAddr := fmt.Sprintf("127.0.0.1:%d", rtmpPort)
 	rtmpPort++
 	mu.Unlock()
 
@@ -100,7 +100,7 @@ func lpCfg() starter.LivepeerConfig {
 	return cfg
 }
 
-func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer) *livepeer {
+func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer, ctx context.Context) *livepeer {
 	datadir := t.TempDir()
 	keystoreDir := filepath.Join(datadir, "keystore")
 	acc := devtool.CreateKey(keystoreDir)
@@ -124,7 +124,7 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	lpCfg.EthAcctAddr = &devCfg.Account
 
 	go func() {
-		starter.StartLivepeer(context.TODO(), lpCfg)
+		starter.StartLivepeer(ctx, lpCfg)
 	}()
 
 	ready := make(chan struct{})
@@ -201,16 +201,4 @@ func httpPostWithParamsHeaders(url string, val url.Values, headers map[string]st
 	}
 
 	return string(result), resp.StatusCode >= 200 && resp.StatusCode < 300
-}
-
-func httpGet(url string) string {
-	resp, _ := http.Get(url)
-
-	defer resp.Body.Close()
-	result, err := ioutil.ReadAll(resp.Body)
-	if err != nil || string(result) == "" {
-		return ""
-	}
-	return string(result)
-
 }
