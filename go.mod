@@ -41,3 +41,5 @@ require (
 	google.golang.org/grpc v1.38.0
 	pgregory.net/rapid v0.4.0
 )
+
+replace github.com/ethereum/go-ethereum v1.10.17 => github.com/OffchainLabs/go-ethereum v0.0.0-20220618201649-b37353cfcd4e
