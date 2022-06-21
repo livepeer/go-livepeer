@@ -17,6 +17,8 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
+
+- \#2466 bugfix: rendition resolution fix for portrait input videos; Min resolution applied for Nvidia hardware (@AlexKordic)
 - \#338 lpms: Add exception handling code for importing a binary signature (@oscar_davids)
 
 #### CLI
