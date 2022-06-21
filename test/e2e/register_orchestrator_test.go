@@ -11,26 +11,14 @@ func TestRegisterOrchestrator(t *testing.T) {
 	defer cancel()
 
 	geth := setupGeth(t, ctx)
-	defer terminateGeth(t, geth, ctx)
+	defer terminateGeth(t, ctx, geth)
 
-	o := startOrchestrator(t, geth, ctx, nil)
+	o := startOrchestratorWithNewAccount(t, ctx, geth)
 	defer o.stop()
 
-	lpEth := o.dev.Client
-	<-o.ready
-
-	oParams := OrchestratorConfig{
-		PricePerUnit:   1,
-		PixelsPerUnit:  10,
-		BlockRewardCut: 30.0,
-		FeeShare:       50.0,
-		LptStake:       50,
-	}
-
 	// when
-	registerOrchestrator(o, &oParams)
-	waitForNextRound(t, lpEth)
+	registerOrchestrator(t, o)
 
 	// then
-	requireOrchestratorRegisteredAndActivated(t, lpEth, &oParams)
+	requireOrchestratorRegisteredAndActivated(t, o.dev.Client)
 }

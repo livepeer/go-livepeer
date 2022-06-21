@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 )
@@ -19,65 +18,29 @@ func TestConfigureOrchestrator(t *testing.T) {
 	defer cancel()
 
 	geth := setupGeth(t, ctx)
-	defer terminateGeth(t, geth, ctx)
+	defer terminateGeth(t, ctx, geth)
 
-	firstRunCtx, firstRunCancel := context.WithCancel(context.Background())
-	o := startOrchestrator(t, geth, firstRunCtx, nil)
+	oCtx, oCancel := context.WithCancel(context.Background())
+	o := startOrchestratorWithNewAccount(t, oCtx, geth)
+	registerOrchestrator(t, o)
 
-	lpEth := o.dev.Client
-	<-o.ready
-
-	initialCfg := OrchestratorConfig{
-		PricePerUnit:   1,
-		PixelsPerUnit:  10,
-		BlockRewardCut: 30.0,
-		FeeShare:       50.0,
-		LptStake:       50,
-	}
-
-	// when
-	registerOrchestrator(o, &initialCfg)
-	waitForNextRound(t, lpEth)
-
-	firstRunCancel()
-	o.stop()
-
-	sameAcct := starter.LivepeerConfig{EthAcctAddr: o.cfg.EthAcctAddr, Datadir: o.cfg.Datadir}
-	o = startOrchestrator(t, geth, ctx, &sameAcct)
+	// orchestrator needs to restart in order to be able to process rewards, so configuration is unlocked
+	o = restartOrchestrator(t, ctx, oCancel, geth, o)
 	defer o.stop()
 
-	lpEth = o.dev.Client
-	<-o.ready
+	waitUntilOrchestratorIsConfigurable(t, o.dev.Client)
 
-	waitUntilOrchestratorIsConfigurable(t, lpEth)
-
-	newCfg := &OrchestratorConfig{
-		PricePerUnit:   2,
-		PixelsPerUnit:  12,
-		BlockRewardCut: 25.0,
-		FeeShare:       55.0,
-		ServiceURI:     "127.0.0.1:18545",
-	}
-
+	// when
 	configureOrchestrator(o, newCfg)
 
 	// then
 	assertOrchestratorConfigured(t, o, newCfg)
 }
 
-func configureOrchestrator(o *livepeer, cfg *OrchestratorConfig) {
-	val := url.Values{
-		"blockRewardCut": {fmt.Sprintf("%v", cfg.BlockRewardCut)},
-		"feeShare":       {fmt.Sprintf("%v", cfg.FeeShare)},
-		"serviceURI":     {fmt.Sprintf("http://%v", cfg.ServiceURI)},
-	}
-
-	for {
-		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/setOrchestratorConfig", *o.cfg.CliAddr), val); ok {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+func restartOrchestrator(t *testing.T, ctx context.Context, cancel context.CancelFunc, geth *gethContainer, o *livepeer) *livepeer {
+	o.stop()
+	cancel()
+	return startOrchestratorWithExistingAccount(t, ctx, geth, o.cfg.EthAcctAddr, o.cfg.Datadir)
 }
 
 func waitUntilOrchestratorIsConfigurable(t *testing.T, lpEth eth.LivepeerEthClient) {
@@ -95,7 +58,6 @@ func waitUntilOrchestratorIsConfigurable(t *testing.T, lpEth eth.LivepeerEthClie
 		rewardCalled := t.LastRewardRound.Cmp(big.NewInt(0)) > 0
 
 		if active && initialized && rewardCalled {
-			time.Sleep(2 * time.Second)
 			return
 		}
 
@@ -103,7 +65,22 @@ func waitUntilOrchestratorIsConfigurable(t *testing.T, lpEth eth.LivepeerEthClie
 	}
 }
 
-func assertOrchestratorConfigured(t *testing.T, o *livepeer, cfg *OrchestratorConfig) {
+func configureOrchestrator(o *livepeer, cfg *orchestratorConfig) {
+	val := url.Values{
+		"blockRewardCut": {fmt.Sprintf("%v", cfg.BlockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", cfg.FeeShare)},
+		"serviceURI":     {fmt.Sprintf("http://%v", cfg.ServiceURI)},
+	}
+
+	for {
+		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/setOrchestratorConfig", *o.cfg.CliAddr), val); ok {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func assertOrchestratorConfigured(t *testing.T, o *livepeer, cfg *orchestratorConfig) {
 	require := require.New(t)
 
 	transPool, err := o.dev.Client.TranscoderPool()

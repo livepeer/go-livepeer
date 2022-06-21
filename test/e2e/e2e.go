@@ -53,7 +53,7 @@ func setupGeth(t *testing.T, ctx context.Context) *gethContainer {
 	return &gethContainer{Container: container, URI: uri, webServerURI: webServerUri}
 }
 
-func terminateGeth(t *testing.T, geth *gethContainer, ctx context.Context) {
+func terminateGeth(t *testing.T, ctx context.Context, geth *gethContainer) {
 	err := geth.Terminate(ctx)
 	require.NoError(t, err)
 }
@@ -72,13 +72,29 @@ type livepeer struct {
 	ready chan struct{}
 }
 
-type OrchestratorConfig struct {
+type orchestratorConfig struct {
 	PricePerUnit   int64
 	PixelsPerUnit  int64
 	BlockRewardCut float64
 	FeeShare       float64
 	LptStake       int64
 	ServiceURI     string
+}
+
+var initialCfg = orchestratorConfig{
+	PricePerUnit:   1,
+	PixelsPerUnit:  10,
+	BlockRewardCut: 30.0,
+	FeeShare:       50.0,
+	LptStake:       50,
+}
+
+var newCfg = &orchestratorConfig{
+	PricePerUnit:   2,
+	PixelsPerUnit:  12,
+	BlockRewardCut: 25.0,
+	FeeShare:       55.0,
+	ServiceURI:     "127.0.0.1:18545",
 }
 
 func lpCfg() starter.LivepeerConfig {
@@ -163,7 +179,7 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	return &livepeer{dev: &dev, cfg: &lpCfg, ready: ready}
 }
 
-func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient, params *OrchestratorConfig) {
+func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient) {
 	require := require.New(t)
 
 	transPool, err := lpEth.TranscoderPool()
@@ -173,38 +189,53 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerE
 	trans := transPool[0]
 	require.True(trans.Active)
 	require.Equal("Registered", trans.Status)
-	require.Equal(big.NewInt(params.LptStake), trans.DelegatedStake)
-	require.Equal(eth.FromPerc(params.FeeShare), trans.FeeShare)
-	require.Equal(eth.FromPerc(params.BlockRewardCut), trans.RewardCut)
+	require.Equal(big.NewInt(initialCfg.LptStake), trans.DelegatedStake)
+	require.Equal(eth.FromPerc(initialCfg.FeeShare), trans.FeeShare)
+	require.Equal(eth.FromPerc(initialCfg.BlockRewardCut), trans.RewardCut)
 }
 
-func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context, cfg *starter.LivepeerConfig) *livepeer {
+func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
 	lpConf := lpCfg()
 	lpConf.Orchestrator = boolPointer(true)
 	lpConf.Transcoder = boolPointer(true)
-	if cfg != nil {
-		lpConf.EthAcctAddr = cfg.EthAcctAddr
-		lpConf.Datadir = cfg.Datadir
-	}
-	return startLivepeer(t, lpConf, geth, ctx)
+
+	o := startLivepeer(t, lpConf, geth, ctx)
+	<-o.ready
+
+	return o
 }
 
-func registerOrchestrator(o *livepeer, params *OrchestratorConfig) {
+func startOrchestratorWithExistingAccount(t *testing.T, ctx context.Context, geth *gethContainer, ethAcct *string, datadir *string) *livepeer {
+	lpConf := lpCfg()
+	lpConf.Orchestrator = boolPointer(true)
+	lpConf.Transcoder = boolPointer(true)
+
+	lpConf.EthAcctAddr = ethAcct
+	lpConf.Datadir = datadir
+
+	o := startLivepeer(t, lpConf, geth, ctx)
+	<-o.ready
+	return o
+}
+
+func registerOrchestrator(t *testing.T, o *livepeer) {
 	val := url.Values{
-		"pricePerUnit":   {fmt.Sprintf("%d", params.PricePerUnit)},
-		"pixelsPerUnit":  {fmt.Sprintf("%d", params.PixelsPerUnit)},
-		"blockRewardCut": {fmt.Sprintf("%v", params.BlockRewardCut)},
-		"feeShare":       {fmt.Sprintf("%v", params.FeeShare)},
+		"pricePerUnit":   {fmt.Sprintf("%d", initialCfg.PricePerUnit)},
+		"pixelsPerUnit":  {fmt.Sprintf("%d", initialCfg.PixelsPerUnit)},
+		"blockRewardCut": {fmt.Sprintf("%v", initialCfg.BlockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", initialCfg.FeeShare)},
 		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
-		"amount":         {fmt.Sprintf("%d", params.LptStake)},
+		"amount":         {fmt.Sprintf("%d", initialCfg.LptStake)},
 	}
 
 	for {
 		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
+			waitForNextRound(t, o.dev.Client)
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+
 }
 
 func (l *livepeer) stop() {

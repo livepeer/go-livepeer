@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
@@ -22,43 +23,29 @@ func TestRemoveOrchestrator(t *testing.T) {
 	defer cancel()
 
 	geth := setupGeth(t, ctx)
-	defer terminateGeth(t, geth, ctx)
+	defer terminateGeth(t, ctx, geth)
 
-	o := startOrchestrator(t, geth, ctx, nil)
+	o := startOrchestratorWithNewAccount(t, ctx, geth)
 	defer o.stop()
 
-	lpEth := o.dev.Client
-	<-o.ready
-
-	initialCfg := OrchestratorConfig{
-		PricePerUnit:   1,
-		PixelsPerUnit:  10,
-		BlockRewardCut: 30.0,
-		FeeShare:       50.0,
-		LptStake:       50,
-	}
-
-	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
+	registerOrchestrator(t, o)
+	waitUntilRoundInitialized(t, o.dev.Client)
 
 	// when
-	registerOrchestrator(o, &initialCfg)
-	waitForNextRound(t, lpEth)
-	waitUntilRoundInitialized(t, lpEth)
-
 	deactivateOrchestrator(o, big.NewInt(initialCfg.LptStake))
 
-	lock := getUnbondingLock(o)
-
-	waitUntilRound(lock.WithdrawRound, lpEth, t)
-	// round is not initialized when o is not in the next active set, so we do it here
-	lpEth.InitializeRound()
-	waitUntilRoundInitialized(t, lpEth)
-
-	withdrawStake(o, big.NewInt(lock.ID))
-
 	// then
-	assertOrchestratorRemoved(t, o, big.NewInt(lock.ID))
-	assertStakeWithdrawn(t, o, balance)
+	assertOrchestratorRemoved(t, o)
+
+	//balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
+	//waitUntilRound(lock.WithdrawRound, o.dev.Client, t)
+	//// round is not initialized when o is not in the next active set, so we do it here
+	//o.dev.Client.InitializeRound()
+	//waitUntilRoundInitialized(t, o.dev.Client)
+
+	//withdrawStake(o, big.NewInt(lock.ID))
+
+	//assertStakeWithdrawn(t, o, balance)
 }
 
 func waitUntilRound(round int64, lpEth eth.LivepeerEthClient, t *testing.T) {
@@ -77,6 +64,8 @@ func deactivateOrchestrator(o *livepeer, initialStake *big.Int) {
 	val := url.Values{
 		"amount": {fmt.Sprintf("%d", initialStake)},
 	}
+
+	glog.Errorf("deactivate orchestrator")
 
 	for {
 		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/unbond", *o.cfg.CliAddr), val); ok {
@@ -97,11 +86,12 @@ func getUnbondingLock(o *livepeer) common.DBUnbondingLock {
 	return unbondingLocks[0]
 }
 
-func assertOrchestratorRemoved(t *testing.T, o *livepeer, lockId *big.Int) {
+func assertOrchestratorRemoved(t *testing.T, o *livepeer) {
 	require := require.New(t)
 
-	lock, _ := o.dev.Client.GetDelegatorUnbondingLock(o.dev.Client.Account().Address, lockId)
-	require.Equal(0, lock.Amount.Cmp(big.NewInt(0)))
+	lock := getUnbondingLock(o)
+	require.Equal(0, lock.Amount.Cmp(big.NewInt(initialCfg.LptStake)))
+	require.Equal(o.dev.Client.Account().Address, lock.Delegator)
 }
 
 func assertStakeWithdrawn(t *testing.T, o *livepeer, oldBalance *big.Int) {
