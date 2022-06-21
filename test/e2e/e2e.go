@@ -27,8 +27,7 @@ type gethContainer struct {
 	webServerURI string
 }
 
-func setupGeth(t *testing.T) *gethContainer {
-	ctx := context.TODO()
+func setupGeth(t *testing.T, ctx context.Context) *gethContainer {
 	req := testcontainers.ContainerRequest{
 		Image:        "livepeer/geth-with-livepeer-protocol:confluence",
 		ExposedPorts: []string{"8546/tcp", "8545/tcp"},
@@ -54,8 +53,8 @@ func setupGeth(t *testing.T) *gethContainer {
 	return &gethContainer{Container: container, URI: uri, webServerURI: webServerUri}
 }
 
-func terminateGeth(t *testing.T, geth *gethContainer) {
-	err := geth.Terminate(context.TODO())
+func terminateGeth(t *testing.T, geth *gethContainer, ctx context.Context) {
+	err := geth.Terminate(ctx)
 	require.NoError(t, err)
 }
 
@@ -180,13 +179,12 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerE
 }
 
 func startOrchestrator(t *testing.T, geth *gethContainer, ctx context.Context, cfg *starter.LivepeerConfig) *livepeer {
-	var lpConf starter.LivepeerConfig
-	if cfg == nil {
-		lpConf = lpCfg()
-		lpConf.Orchestrator = boolPointer(true)
-		lpConf.Transcoder = boolPointer(true)
-	} else {
-		lpConf = *cfg
+	lpConf := lpCfg()
+	lpConf.Orchestrator = boolPointer(true)
+	lpConf.Transcoder = boolPointer(true)
+	if cfg != nil {
+		lpConf.EthAcctAddr = cfg.EthAcctAddr
+		lpConf.Datadir = cfg.Datadir
 	}
 	return startLivepeer(t, lpConf, geth, ctx)
 }

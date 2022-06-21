@@ -21,8 +21,8 @@ func TestRemoveOrchestrator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	geth := setupGeth(t)
-	defer terminateGeth(t, geth)
+	geth := setupGeth(t, ctx)
+	defer terminateGeth(t, geth, ctx)
 
 	o := startOrchestrator(t, geth, ctx, nil)
 	defer o.stop()
@@ -109,19 +109,6 @@ func assertStakeWithdrawn(t *testing.T, o *livepeer, oldBalance *big.Int) {
 
 	balance, _ := o.dev.Client.BalanceOf(o.dev.Client.Account().Address)
 	require.Equal(0, balance.Cmp(oldBalance))
-}
-
-func requireOrchestratorDeactivated(t *testing.T, o *livepeer) {
-	require := require.New(t)
-
-	transPool, err := o.dev.Client.TranscoderPool()
-	trans, errTrans := o.dev.Client.GetTranscoder(o.dev.Client.Account().Address)
-
-	require.NoError(err)
-	require.NoError(errTrans)
-	require.Len(transPool, 0)
-	require.Equal(false, trans.Active)
-	require.Equal("Not Registered", trans.Status)
 }
 
 func withdrawStake(o *livepeer, lockId *big.Int) {

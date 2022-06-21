@@ -15,14 +15,10 @@ var vFlag *glog.Level = flag.Lookup("v").Value.(*glog.Level)
 
 // StartCliWebserver starts web server for CLI
 // blocks until exit
-func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
-	mux := s.cliWebServerHandlers(bindAddr)
-	srv := &http.Server{
-		Addr:    bindAddr,
-		Handler: mux,
-	}
-
-	glog.Info("CLI server listening on ", bindAddr)
+func (s *LivepeerServer) StartCliWebserver(srv *http.Server) {
+	mux := s.cliWebServerHandlers(srv.Addr)
+	srv.Handler = mux
+	glog.Info("CLI server listening on ", srv.Addr)
 	err := srv.ListenAndServe()
 	glog.Error(err)
 }

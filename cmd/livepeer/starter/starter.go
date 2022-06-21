@@ -4,11 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/core"
 	"os"
 	"os/user"
 	"time"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/core"
+
+	"io/ioutil"
+	"math/big"
+	"net"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -28,13 +37,6 @@ import (
 	"github.com/livepeer/go-livepeer/verification"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
-	"io/ioutil"
-	"math/big"
-	"net"
-	"net/http"
-	"net/url"
-	"path/filepath"
-	"strings"
 )
 
 var (
@@ -1082,8 +1084,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
 
+	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
-		s.StartCliWebserver(*cfg.CliAddr)
+		s.StartCliWebserver(srv)
 		close(wc)
 	}()
 	if n.NodeType != core.RedeemerNode {
@@ -1160,6 +1163,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Infof("MediaServer Done()")
 		return
 	case <-ctx.Done():
+		srv.Shutdown(ctx)
 		return
 	}
 }

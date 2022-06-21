@@ -102,7 +102,8 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		// port++
 		// this one really starts server (without a way to shut it down)
 		cliUrl := fmt.Sprintf("127.0.0.1:%d", port)
-		go S.StartCliWebserver(cliUrl)
+		srv := &http.Server{Addr: cliUrl}
+		go S.StartCliWebserver(srv)
 		port++
 		// sometimes LivepeerServer needs time  to start
 		// esp if this is the only test in the suite being run (eg, via `-run)
@@ -134,7 +135,10 @@ func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
 		go S.StartMediaServer(ctx, "127.0.0.1:9080")
-		go S.StartCliWebserver("127.0.0.1:9938")
+		go func() {
+			srv := &http.Server{Addr: "127.0.0.1:9938"}
+			S.StartCliWebserver(srv)
+		}()
 	}
 	return S, cancel
 }

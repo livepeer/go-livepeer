@@ -10,8 +10,8 @@ func TestRegisterOrchestrator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	geth := setupGeth(t)
-	defer terminateGeth(t, geth)
+	geth := setupGeth(t, ctx)
+	defer terminateGeth(t, geth, ctx)
 
 	o := startOrchestrator(t, geth, ctx, nil)
 	defer o.stop()

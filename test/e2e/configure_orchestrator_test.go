@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 )
@@ -18,11 +18,11 @@ func TestConfigureOrchestrator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	geth := setupGeth(t)
-	defer terminateGeth(t, geth)
+	geth := setupGeth(t, ctx)
+	defer terminateGeth(t, geth, ctx)
 
-	o := startOrchestrator(t, geth, ctx, nil)
-	defer o.stop()
+	firstRunCtx, firstRunCancel := context.WithCancel(context.Background())
+	o := startOrchestrator(t, geth, firstRunCtx, nil)
 
 	lpEth := o.dev.Client
 	<-o.ready
@@ -38,12 +38,18 @@ func TestConfigureOrchestrator(t *testing.T) {
 	// when
 	registerOrchestrator(o, &initialCfg)
 	waitForNextRound(t, lpEth)
-	requireOrchestratorRegisteredAndActivated(t, lpEth, &initialCfg)
 
+	firstRunCancel()
+	o.stop()
+
+	sameAcct := starter.LivepeerConfig{EthAcctAddr: o.cfg.EthAcctAddr, Datadir: o.cfg.Datadir}
+	o = startOrchestrator(t, geth, ctx, &sameAcct)
+	defer o.stop()
+
+	lpEth = o.dev.Client
 	<-o.ready
 
 	waitUntilOrchestratorIsConfigurable(t, lpEth)
-	claimRewards(o)
 
 	newCfg := &OrchestratorConfig{
 		PricePerUnit:   2,
@@ -52,23 +58,11 @@ func TestConfigureOrchestrator(t *testing.T) {
 		FeeShare:       55.0,
 		ServiceURI:     "127.0.0.1:18545",
 	}
-	glog.Errorf("done waiting for configurabilitry")
 
 	configureOrchestrator(o, newCfg)
 
 	// then
 	assertOrchestratorConfigured(t, o, newCfg)
-}
-
-func claimRewards(o *livepeer) {
-	val := url.Values{}
-
-	for {
-		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/reward", *o.cfg.CliAddr), val); ok {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
 }
 
 func configureOrchestrator(o *livepeer, cfg *OrchestratorConfig) {
@@ -100,7 +94,6 @@ func waitUntilOrchestratorIsConfigurable(t *testing.T, lpEth eth.LivepeerEthClie
 		require.NoError(err)
 		rewardCalled := t.LastRewardRound.Cmp(big.NewInt(0)) > 0
 
-		glog.Errorf("active %v, initialized %v, rewardCalled %v", active, initialized, rewardCalled)
 		if active && initialized && rewardCalled {
 			time.Sleep(2 * time.Second)
 			return
