@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#1333 Display git-sha in startup logging (@emranemran)
 
 #### Broadcaster
 - \#2462 cmd: Delete temporary env variable LP_IS_ORCH_TESTER (@leszko)

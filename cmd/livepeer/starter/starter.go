@@ -1138,6 +1138,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Infof("**Livepeer Running in Redeemer Mode**")
 	}
 
+	glog.Infof("Livepeer Node version: %v", core.LivepeerVersion)
+
 	select {
 	case err := <-watcherErr:
 		glog.Error(err)
