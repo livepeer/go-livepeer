@@ -286,6 +286,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			ethController: "0x9ceC649179e2C7Ab91688271bcD09fb707b3E574",
 			redeemGas:     redeemGasL2,
 		},
+		"arbitrum-nitro-devnet": {
+			ethController: "0x3Cfa0Be6195dbCA98A2849d1162561FD878589Dd",
+			redeemGas:     redeemGasL2,
+		},
 		"mainnet": {
 			ethController: "0xf96d54e490317c557a967abfa5d6e33006be69b3",
 			minGasPrice:   int64(params.GWei),

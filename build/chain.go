@@ -10,6 +10,8 @@ const (
 	Dev SupportedChains = iota
 	// Rinkeby is the Ethereum Rinkeby or Arbitrum Testnet test network chain
 	Rinkeby
+	// Arbitrum Nitro Devnet
+	NitroDevnet
 	// Mainnet is the Ethereum or Arbitrum main network chain
 	Mainnet
 )
@@ -17,6 +19,8 @@ const (
 // ChainSupported returns whether the node can connect to the chain with the given ID
 func ChainSupported(chainID int64) bool {
 	switch chainID {
+	case 421612:
+		return NitroDevnet <= HighestChain
 	case 4, 421611:
 		return Rinkeby <= HighestChain
 	case 1, 42161:
