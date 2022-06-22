@@ -7,7 +7,9 @@
 ### Features ⚒
 
 #### General
+<<<<<<< HEAD
 - \#1333 Display git-sha in startup logging (@emranemran)
+- \#2443 Add e2e tests for O configuration and resignation (@red-0ne)
 
 #### Broadcaster
 - \#2462 cmd: Delete temporary env variable LP_IS_ORCH_TESTER (@leszko)
