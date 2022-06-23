@@ -95,3 +95,4 @@ jobs:
           files: ./cover.out
           name: go-livepeer
           verbose: true
+          gcov_ignore: ./eth/stubclient.go

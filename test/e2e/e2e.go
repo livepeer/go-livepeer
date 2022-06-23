@@ -4,18 +4,20 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
-	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
-	"github.com/livepeer/go-livepeer/eth"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
+	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
+	"github.com/livepeer/go-livepeer/eth"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // Start Geth Docker container helpers
@@ -25,8 +27,7 @@ type gethContainer struct {
 	webServerURI string
 }
 
-func setupGeth(t *testing.T) *gethContainer {
-	ctx := context.TODO()
+func setupGeth(t *testing.T, ctx context.Context) *gethContainer {
 	req := testcontainers.ContainerRequest{
 		Image:        "livepeer/geth-with-livepeer-protocol:confluence",
 		ExposedPorts: []string{"8546/tcp", "8545/tcp"},
@@ -52,8 +53,8 @@ func setupGeth(t *testing.T) *gethContainer {
 	return &gethContainer{Container: container, URI: uri, webServerURI: webServerUri}
 }
 
-func terminateGeth(t *testing.T, geth *gethContainer) {
-	err := geth.Terminate(context.TODO())
+func terminateGeth(t *testing.T, ctx context.Context, geth *gethContainer) {
+	err := geth.Terminate(ctx)
 	require.NoError(t, err)
 }
 
@@ -69,6 +70,31 @@ type livepeer struct {
 	dev   *devtool.Devtool
 	cfg   *starter.LivepeerConfig
 	ready chan struct{}
+}
+
+type orchestratorConfig struct {
+	PricePerUnit   int64
+	PixelsPerUnit  int64
+	BlockRewardCut float64
+	FeeShare       float64
+	LptStake       int64
+	ServiceURI     string
+}
+
+var initialCfg = orchestratorConfig{
+	PricePerUnit:   1,
+	PixelsPerUnit:  10,
+	BlockRewardCut: 30.0,
+	FeeShare:       50.0,
+	LptStake:       50,
+}
+
+var newCfg = &orchestratorConfig{
+	PricePerUnit:   2,
+	PixelsPerUnit:  12,
+	BlockRewardCut: 25.0,
+	FeeShare:       55.0,
+	ServiceURI:     "127.0.0.1:18545",
 }
 
 func lpCfg() starter.LivepeerConfig {
@@ -100,31 +126,40 @@ func lpCfg() starter.LivepeerConfig {
 	return cfg
 }
 
-func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer) *livepeer {
-	datadir := t.TempDir()
-	keystoreDir := filepath.Join(datadir, "keystore")
-	acc := devtool.CreateKey(keystoreDir)
+func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContainer, ctx context.Context) *livepeer {
 	devCfg := devtool.NewDevtoolConfig()
+
+	var newAcct = *lpCfg.EthAcctAddr == ""
+	if newAcct {
+		datadir := t.TempDir()
+		keystoreDir := filepath.Join(datadir, "keystore")
+		devCfg.Account = devtool.CreateKey(keystoreDir)
+		devCfg.KeystoreDir = keystoreDir
+		lpCfg.Datadir = &datadir
+	} else {
+		devCfg.Account = *lpCfg.EthAcctAddr
+		devCfg.KeystoreDir = filepath.Join(*lpCfg.Datadir, "keystore")
+	}
+
 	devCfg.Endpoint = geth.URI
-	devCfg.Account = acc
-	devCfg.KeystoreDir = keystoreDir
 
 	dev, err := devtool.Init(devCfg)
 	require.NoError(t, err)
 
-	err = dev.RequestTokens()
-	require.NoError(t, err)
+	if newAcct {
+		err = dev.RequestTokens()
+		require.NoError(t, err)
+	}
 
 	err = dev.InitializeRound()
 	require.NoError(t, err)
 
 	lpCfg.EthUrl = &geth.URI
-	lpCfg.Datadir = &datadir
 	lpCfg.EthController = &dev.EthController
 	lpCfg.EthAcctAddr = &devCfg.Account
 
 	go func() {
-		starter.StartLivepeer(context.TODO(), lpCfg)
+		starter.StartLivepeer(ctx, lpCfg)
 	}()
 
 	ready := make(chan struct{})
@@ -142,6 +177,65 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	}()
 
 	return &livepeer{dev: &dev, cfg: &lpCfg, ready: ready}
+}
+
+func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient) {
+	require := require.New(t)
+
+	transPool, err := lpEth.TranscoderPool()
+
+	require.NoError(err)
+	require.Len(transPool, 1)
+	trans := transPool[0]
+	require.True(trans.Active)
+	require.Equal("Registered", trans.Status)
+	require.Equal(big.NewInt(initialCfg.LptStake), trans.DelegatedStake)
+	require.Equal(eth.FromPerc(initialCfg.FeeShare), trans.FeeShare)
+	require.Equal(eth.FromPerc(initialCfg.BlockRewardCut), trans.RewardCut)
+}
+
+func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
+	lpConf := lpCfg()
+	lpConf.Orchestrator = boolPointer(true)
+	lpConf.Transcoder = boolPointer(true)
+
+	o := startLivepeer(t, lpConf, geth, ctx)
+	<-o.ready
+
+	return o
+}
+
+func startOrchestratorWithExistingAccount(t *testing.T, ctx context.Context, geth *gethContainer, ethAcct *string, datadir *string) *livepeer {
+	lpConf := lpCfg()
+	lpConf.Orchestrator = boolPointer(true)
+	lpConf.Transcoder = boolPointer(true)
+
+	lpConf.EthAcctAddr = ethAcct
+	lpConf.Datadir = datadir
+
+	o := startLivepeer(t, lpConf, geth, ctx)
+	<-o.ready
+	return o
+}
+
+func registerOrchestrator(t *testing.T, o *livepeer) {
+	val := url.Values{
+		"pricePerUnit":   {fmt.Sprintf("%d", initialCfg.PricePerUnit)},
+		"pixelsPerUnit":  {fmt.Sprintf("%d", initialCfg.PixelsPerUnit)},
+		"blockRewardCut": {fmt.Sprintf("%v", initialCfg.BlockRewardCut)},
+		"feeShare":       {fmt.Sprintf("%v", initialCfg.FeeShare)},
+		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
+		"amount":         {fmt.Sprintf("%d", initialCfg.LptStake)},
+	}
+
+	for {
+		if _, ok := httpPostWithParams(fmt.Sprintf("http://%s/activateOrchestrator", *o.cfg.CliAddr), val); ok {
+			waitForNextRound(t, o.dev.Client)
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
 }
 
 func (l *livepeer) stop() {
@@ -164,7 +258,24 @@ func waitForNextRound(t *testing.T, lpEth eth.LivepeerEthClient) {
 	}
 }
 
+func waitUntilRoundInitialized(t *testing.T, lpEth eth.LivepeerEthClient) {
+	for {
+		initialized, err := lpEth.CurrentRoundInitialized()
+		require.NoError(t, err)
+
+		if initialized == true {
+			return
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func boolPointer(b bool) *bool {
+	return &b
+}
+
+func stringPointer(b string) *string {
 	return &b
 }
 

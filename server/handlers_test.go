@@ -4,10 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -19,8 +15,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -992,7 +991,6 @@ func TestVoteHandler(t *testing.T) {
 	handler = voteHandler(client)
 	status, body = postForm(handler, form)
 	assert.Equal(http.StatusOK, status)
-	assert.Equal((ethtypes.NewTx(&ethtypes.DynamicFeeTx{})).Hash().Bytes(), []byte(body))
 }
 
 // Tickets
