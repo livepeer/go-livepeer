@@ -16,17 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/core"
-
-	"io/ioutil"
-	"math/big"
-	"net"
-	"net/http"
-	"net/url"
-	"path/filepath"
-	"strings"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
