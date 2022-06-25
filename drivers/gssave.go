@@ -100,33 +100,38 @@ func Save2GS(fileName string, data []byte) (string, error) {
 	return fullURL + FailSaveBucketName + "/" + obj.ObjectName(), nil
 }
 
-func SavePairData2GS(trusturi string, data1 []byte, untrusturi string, data2 []byte, suffix string) error {
+func SavePairData2GS(trusturi string, data1 []byte, untrusturi string, data2 []byte, suffix string, src []byte) error {
 
+	fnames := make([]string, 0)
+	datas := make([][]byte, 0)
 	trustpurl, _ := url.Parse(trusturi)
 	untrustpurl, _ := url.Parse(untrusturi)
 	pairstr := strconv.Itoa(rand.Int()) + "-"
 	fileName1 := pairstr + trustpurl.Host + "-trust-" + suffix
 	fileName2 := pairstr + untrustpurl.Host + "-untrust-" + suffix
+	fnames = append(fnames, fileName1)
+	fnames = append(fnames, fileName2)
+	datas = append(datas, data1)
+	datas = append(datas, data2)
+	if src != nil {
+		fnames = append(fnames, pairstr+"-source.ts")
+		datas = append(datas, src)
+	}
+
 	var wait sync.WaitGroup
-	wait.Add(2)
-	go func() {
+	wait.Add(len(fnames))
+	dlfunc := func(fname string, data []byte) {
 		defer wait.Done()
-		fu, err := Save2GS(fileName1, data1)
+		fu, err := Save2GS(fname, data)
 		if err != nil {
 			glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
 		} else {
-			glog.Infof("Segment name=%s saved to url=%s", fileName1, fu)
+			glog.Infof("Segment name=%s saved to url=%s", fname, fu)
 		}
-	}()
-	go func() {
-		defer wait.Done()
-		fu2, err := Save2GS(fileName2, data2)
-		if err != nil {
-			glog.Infof("Error saving to GS bucket=%s, err=%v", FailSaveBucketName, err)
-		} else {
-			glog.Infof("Segment name=%s saved to url=%s", fileName2, fu2)
-		}
-	}()
+	}
+	for i, name := range fnames {
+		go dlfunc(name, datas[i])
+	}
 	wait.Wait()
 	return nil
 }

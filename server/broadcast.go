@@ -480,7 +480,7 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.untrustedPool.cleanup()
 }
 
-func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitResultsCh chan *SubmitResult,
+func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *stream.HLSSegment, submitResultsCh chan *SubmitResult,
 	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
 	trustedResult, untrustedResults, err := bsm.collectResults(submitResultsCh, submittedCount)
@@ -565,7 +565,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 				}
 				if drivers.FailSaveEnabled() {
 					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
-						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts")
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
 				}
 
 			}
@@ -576,7 +576,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			if drivers.FailSaveEnabled() {
 				if drivers.FailSaveEnabled() {
 					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
-						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash")
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
 				}
 			}
 		}
@@ -1033,7 +1033,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			return nil, info, fmt.Errorf("error: not submitted anything")
 		}
 
-		sess, results, err := cxn.sessManager.chooseResults(ctx, resc, submittedCount)
+		sess, results, err := cxn.sessManager.chooseResults(ctx, seg, resc, submittedCount)
 		if err != nil {
 			clog.Errorf(ctx, "Error choosing results: err=%q", err)
 			return nil, info, err
