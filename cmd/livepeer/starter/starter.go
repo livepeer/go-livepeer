@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"math/big"
-	"net"
-	"net/http"
-	"net/url"
 
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"io/ioutil"
+	"math/big"
+	"net"
+	"net/http"
+	"net/url"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
