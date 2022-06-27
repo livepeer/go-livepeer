@@ -1350,7 +1350,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var manifests []string
-	if len(resp.PreviousSessions) > 0 {
+	if resp != nil && len(resp.PreviousSessions) > 0 {
 		manifests = append(resp.PreviousSessions, manifestID)
 	} else {
 		manifests = []string{manifestID}
@@ -1481,7 +1481,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
 		if mpl != nil {
-			mainJspl.AddSegmentsToMPL(manifests, track, mpl, resp.RecordObjectStoreURL)
+			osUrl := ""
+			if resp != nil {
+				osUrl = resp.RecordObjectStoreURL
+			}
+			mainJspl.AddSegmentsToMPL(manifests, track, mpl, osUrl)
 			// check (debug code)
 			startSeq := mpl.Segments[0].SeqId
 			for _, seg := range mpl.Segments[1:] {
