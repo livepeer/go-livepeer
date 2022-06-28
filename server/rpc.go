@@ -175,7 +175,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -191,7 +191,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
-		return // XXX return error
+		return err
 	}
 
 	glog.Info("Listening for RPC on ", bind)
@@ -202,7 +202,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		//ReadTimeout:  HTTPTimeout,
 		//WriteTimeout: HTTPTimeout,
 	}
-	srv.ListenAndServeTLS(cert, key)
+	return srv.ListenAndServeTLS(cert, key)
 }
 
 // CheckOrchestratorAvailability - the broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator

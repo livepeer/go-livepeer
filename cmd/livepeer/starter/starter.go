@@ -1068,7 +1068,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	//Set up the media server
 	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
-		glog.Fatal("Error creating Livepeer server err=", err)
+		glog.Fatalf("Error creating Livepeer server: err=%q", err)
 	}
 
 	ec := make(chan error)
@@ -1101,7 +1101,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
-			server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
+			if err != nil {
+				glog.Fatalf("Error starting Transcoder node: err=%q", err)
+			}
 			tc <- struct{}{}
 		}()
 
