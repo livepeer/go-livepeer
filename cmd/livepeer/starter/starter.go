@@ -83,7 +83,6 @@ type LivepeerConfig struct {
 	CurrentManifest              *bool
 	Nvidia                       *string
 	Netint                       *string
-	TestTranscoder               *bool
 	SceneClassificationModelPath *string
 	DetectContent                *bool
 	EthAcctAddr                  *string
@@ -147,7 +146,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
-	defaultTestTranscoder := true
 	defaultDetectContent := false
 	defaultSceneClassificationModelPath := "tasmodel.pb"
 
@@ -213,7 +211,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:              &defaultCurrentManifest,
 		Nvidia:                       &defaultNvidia,
 		Netint:                       &defaultNetint,
-		TestTranscoder:               &defaultTestTranscoder,
 		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
 		DetectContent:                &defaultDetectContent,
 
@@ -387,15 +384,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
 			// Test transcoding with specified device
-			if *cfg.TestTranscoder {
-				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
-				if err != nil {
-					glog.Fatal(err)
-					return
-				}
-			} else {
-				// no capability test was run, assume default capabilities
-				transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
+			transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
+			if err != nil {
+				glog.Fatal(err)
+				return
 			}
 			// initialize Tensorflow runtime on each device to reduce delay when creating new transcoding session
 			if accel == ffmpeg.Nvidia && *cfg.DetectContent {
