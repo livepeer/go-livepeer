@@ -817,7 +817,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
-	status, mediaFormat, err := ffmpeg.GetCodecInfoBytes(body)
+	status, _, mvcodec, mpixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
 	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
 		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
@@ -825,13 +825,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var vcodec *ffmpeg.VideoCodec
-	if len(mediaFormat.Vcodec) == 0 {
+	if len(mvcodec) == 0 {
 		clog.Warningf(ctx, "Couldn't detect input video stream codec")
 	} else {
-		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[mediaFormat.Vcodec]
+		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[mvcodec]
 		vcodec = &vcodecVal
 		if !ok {
-			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", mediaFormat.Vcodec)
+			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", mvcodec)
 			return
 		}
 	}
@@ -875,7 +875,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, segPar)
+		cxn, err = s.registerConnection(ctx, st, vcodec, mpixelFormat, segPar)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
