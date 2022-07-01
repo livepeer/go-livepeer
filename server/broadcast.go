@@ -480,7 +480,7 @@ func (bsm *BroadcastSessionsManager) cleanup() {
 	bsm.untrustedPool.cleanup()
 }
 
-func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitResultsCh chan *SubmitResult,
+func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *stream.HLSSegment, submitResultsCh chan *SubmitResult,
 	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
 	trustedResult, untrustedResults, err := bsm.collectResults(submitResultsCh, submittedCount)
@@ -535,9 +535,9 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 			clog.Errorf(ctx, "error uri=%s comparing perceptual hashes from url=%s err=%q", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		}
-		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v",
+		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v saveenable=%v",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
-			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal)
+			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal, drivers.FailSaveEnabled())
 		vequal := false
 		if equal {
 			// download untrusted video segment
@@ -559,12 +559,27 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, submitRe
 				}
 				return nil, nil, err
 			}
-			if monitor.Enabled && !vequal {
-				monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+			if !vequal {
+				if monitor.Enabled {
+					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				}
+				if drivers.FailSaveEnabled() {
+					go func() {
+						drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
+							untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
+					}()
+				}
+
 			}
-			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v",
+			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal)
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
+
+		} else if drivers.FailSaveEnabled() {
+			go func() {
+				drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
+					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
+			}()
 		}
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
@@ -1019,7 +1034,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			return nil, info, fmt.Errorf("error: not submitted anything")
 		}
 
-		sess, results, err := cxn.sessManager.chooseResults(ctx, resc, submittedCount)
+		sess, results, err := cxn.sessManager.chooseResults(ctx, seg, resc, submittedCount)
 		if err != nil {
 			clog.Errorf(ctx, "Error choosing results: err=%q", err)
 			return nil, info, err

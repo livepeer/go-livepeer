@@ -118,6 +118,8 @@ type LivepeerConfig struct {
 	Datadir                      *string
 	Objectstore                  *string
 	Recordstore                  *string
+	FVfailGsBucket               *string
+	FVfailGsKey                  *string
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
@@ -185,6 +187,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultObjectstore := ""
 	defaultRecordstore := ""
 
+	// Fast Verification GS bucket:
+	defaultFVfailGsBucket := ""
+	defaultFVfailGsKey := ""
+
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
@@ -250,6 +256,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Datadir:     &defaultDatadir,
 		Objectstore: &defaultObjectstore,
 		Recordstore: &defaultRecordstore,
+
+		// Fast Verification GS bucket:
+		FVfailGsBucket: &defaultFVfailGsBucket,
+		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
 		AuthWebhookURL:      &defaultAuthWebhookURL,
@@ -341,6 +351,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err = os.MkdirAll(*cfg.Datadir, 0755); err != nil {
 			glog.Errorf("Error creating datadir: %v", err)
 		}
+	}
+
+	//Set Gs bucket for fast verification fail case
+	if *cfg.FVfailGsBucket != "" && *cfg.FVfailGsKey != "" {
+		drivers.SetCreds(*cfg.FVfailGsBucket, *cfg.FVfailGsKey)
 	}
 
 	//Set up DB
