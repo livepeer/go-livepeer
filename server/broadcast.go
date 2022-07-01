@@ -564,8 +564,10 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
 				}
 				if drivers.FailSaveEnabled() {
-					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
-						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
+					go func() {
+						drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
+							untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
+					}()
 				}
 
 			}
@@ -574,8 +576,10 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
 
 		} else if drivers.FailSaveEnabled() {
-			drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
+			go func() {
+				drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
+					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
+			}()
 		}
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
