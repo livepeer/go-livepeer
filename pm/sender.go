@@ -158,7 +158,7 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 
 	currentBuffer := new(big.Int).Sub(ticketParams.ExpirationBlock, latestL1Block).Int64()
 	if currentBuffer <= paramsExpiryBuffer {
-		return ErrTicketParamsExpired
+		return fmt.Errorf("expirationBlock=%v latestL1Block=%v err=%v", ticketParams.ExpirationBlock.Int64(), latestL1Block.Int64(), ErrTicketParamsExpired)
 	}
 
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
