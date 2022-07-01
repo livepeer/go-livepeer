@@ -41,7 +41,6 @@ func TestWatcher(t *testing.T) {
 	for i := 0; i < fakeClient.NumberOfTimesteps(); i++ {
 		scenarioLabel := fakeClient.GetScenarioLabel()
 
-		err := watcher.pollNextBlock()
 		require.NoError(t, err)
 
 		retainedBlocks, err := watcher.InspectRetainedBlocks()
