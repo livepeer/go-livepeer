@@ -168,8 +168,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.Recordstore = flag.String("recordStore", *cfg.Recordstore, "url of object store for recordings")
 
 	// Fast Verification GS bucket:
-	cfg.FVfailGsBucket = flag.String("FVfailGsbucket", *cfg.FVfailGsBucket, "Google storage bucket for storing segments for fast verification")
-	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Storage private key file name or key itself (in json format)")
+	cfg.FVfailGsBucket = flag.String("FVfailGsbucket", *cfg.FVfailGsBucket, "Google Cloud Storage bucket for storing segments, which failed fast verification")
+	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Cloud Storage private key file name or key in JSON format for accessing FVfailGsBucket")
 	// API
 	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
 	cfg.OrchWebhookURL = flag.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")

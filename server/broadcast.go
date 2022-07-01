@@ -572,13 +572,10 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
-		} else {
-			if drivers.FailSaveEnabled() {
-				if drivers.FailSaveEnabled() {
-					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
-						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
-				}
-			}
+
+		} else if drivers.FailSaveEnabled() {
+			drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
+				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
 		}
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
