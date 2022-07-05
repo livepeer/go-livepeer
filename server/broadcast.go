@@ -1250,6 +1250,24 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	if monitor.Enabled {
 		monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
 	}
+	//check audio missing
+	vmissing := false
+	_, srcinfo, _ := ffmpeg.GetCodecInfoBytes(seg.Data)
+	for _, data := range segData {
+		_, resinfo, _ := ffmpeg.GetCodecInfoBytes(data)
+		if srcinfo.Vcodec != resinfo.Vcodec {
+			vmissing = true
+			break
+		}
+		if srcinfo.Height > 0 && resinfo.Height <= 0 {
+			vmissing = true
+			break
+		}
+	}
+	if vmissing {
+		ffmpeg.FfmpegSetLogLevel(56)
+	}
+	fmt.Printf("lost video stream = %v\n", vmissing)
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
