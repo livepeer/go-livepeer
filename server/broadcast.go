@@ -1264,9 +1264,6 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			break
 		}
 	}
-	if vmissing {
-		ffmpeg.FfmpegSetLogLevel(56)
-	}
 	fmt.Printf("lost video stream = %v\n", vmissing)
 
 	if verifier != nil {
