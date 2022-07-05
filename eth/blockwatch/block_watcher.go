@@ -87,6 +87,9 @@ func New(config Config) *Watcher {
 
 // BackfillEvents finds missed events and sends them to event subscribers.
 // It blocks until it is done backfilling or the given context is canceled.
+// Note that the latest block is never backfilled here from logs. It will be polled separately in syncToLatestBlock().
+// The reason for that is that we always need to propagate events from the latest block even if it does not contain
+// events which are filtered out during the backfilling process.
 func (w *Watcher) BackfillEvents(ctx context.Context) error {
 	events, err := w.getMissedEventsToBackfill(ctx)
 	if err != nil {
@@ -149,13 +152,169 @@ func (w *Watcher) InspectRetainedBlocks() ([]*MiniHeader, error) {
 func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 	w.Lock()
 	defer w.Unlock()
-	return w.BackfillEvents(ctx)
+
+	if err := w.BackfillEvents(ctx); err != nil {
+		return err
+	}
+
+	newestHeader, err := w.client.HeaderByNumber(nil)
+	if err != nil {
+		return err
+	}
+
+	lastSeenHeader, err := w.stack.Peek()
+	if err != nil {
+		return err
+	}
+
+	if lastSeenHeader == nil {
+		return w.pollNextBlock()
+	}
+
+	for i := lastSeenHeader.Number; i.Cmp(newestHeader.Number) < 0; i = i.Add(i, big.NewInt(1)) {
+		if err := w.pollNextBlock(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// getMissedEventsToBackfill finds missed events that might have occured while the node was
-// offline. It does this by comparing the last block stored with the latest block discoverable via RPC.
-// If the stored block is older then the latest block, it batch fetches the events for missing blocks,
+// pollNextBlock polls for the next block header to be added to the block stack.
+// If there are no blocks on the stack, it fetches the first block at the specified
+// `startBlockDepth` supplied at instantiation.
+func (w *Watcher) pollNextBlock() error {
+	var nextBlockNumber *big.Int
+	latestHeader, err := w.stack.Peek()
+	if err != nil {
+		return err
+	}
+	if latestHeader == nil {
+		if w.startBlockDepth == rpc.LatestBlockNumber {
+			nextBlockNumber = nil // Fetch latest block
+		} else {
+			nextBlockNumber = big.NewInt(int64(w.startBlockDepth))
+		}
+	} else {
+		nextBlockNumber = big.NewInt(0).Add(latestHeader.Number, big.NewInt(1))
+	}
+	nextHeader, err := w.client.HeaderByNumber(nextBlockNumber)
+	if err != nil {
+		if err == ethereum.NotFound {
+			return nil // Noop and wait next polling interval
+		}
+		return err
+	}
+
+	events := []*Event{}
+	events, err = w.buildCanonicalChain(nextHeader, events)
+	// Even if an error occurred, we still want to emit the events gathered since we might have
+	// popped blocks off the Stack and they won't be re-added
+	if len(events) != 0 {
+		w.blockFeed.Send(w.enrichWithL1(events))
+	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Watcher) buildCanonicalChain(nextHeader *MiniHeader, events []*Event) ([]*Event, error) {
+	latestHeader, err := w.stack.Peek()
+	if err != nil {
+		return nil, err
+	}
+	// Is the stack empty or is it the next block?
+	if latestHeader == nil || nextHeader.Parent == latestHeader.Hash {
+		nextHeader, err := w.addLogs(nextHeader)
+		if err != nil {
+			// Due to block re-orgs & Ethereum node services load-balancing requests across multiple nodes
+			// a block header might be returned, but when fetching it's logs, an "unknown block" error is
+			// returned. This is expected to happen sometimes, and we simply return the events gathered so
+			// far and pick back up where we left off on the next polling interval.
+			if isUnknownBlockErr(err) {
+				glog.V(5).Infof("missing logs for blockNumber=%v - fetching on next polling interval", nextHeader.Number)
+				return events, nil
+			}
+			return events, err
+		}
+		err = w.stack.Push(nextHeader)
+		if err != nil {
+			return events, err
+		}
+		events = append(events, &Event{
+			Type:        Added,
+			BlockHeader: nextHeader,
+		})
+		return events, nil
+	}
+
+	// Pop latestHeader from the stack. We already have a reference to it.
+	if _, err := w.stack.Pop(); err != nil {
+		return events, err
+	}
+	events = append(events, &Event{
+		Type:        Removed,
+		BlockHeader: latestHeader,
+	})
+
+	nextParentHeader, err := w.client.HeaderByHash(nextHeader.Parent)
+	if err != nil {
+		if err == ethereum.NotFound {
+			glog.V(5).Infof("block header not found blockHash=%v - fetching on next polling interval", nextHeader.Parent.Hex())
+			// Noop and wait next polling interval. We remove the popped blocks
+			// and refetch them on the next polling interval.
+			return events, nil
+		}
+		return events, err
+	}
+	events, err = w.buildCanonicalChain(nextParentHeader, events)
+	if err != nil {
+		return events, err
+	}
+	nextHeader, err = w.addLogs(nextHeader)
+	if err != nil {
+		// Due to block re-orgs & Ethereum node services load-balancing requests across multiple nodes
+		// a block header might be returned, but when fetching it's logs, an "unknown block" error is
+		// returned. This is expected to happen sometimes, and we simply return the events gathered so
+		// far and pick back up where we left off on the next polling interval.
+		if isUnknownBlockErr(err) {
+			glog.V(5).Infof("missing logs for blockNumber=%v - fetching on next polling interval", nextHeader.Number)
+			return events, nil
+		}
+		return events, err
+	}
+	err = w.stack.Push(nextHeader)
+	if err != nil {
+		return events, err
+	}
+	events = append(events, &Event{
+		Type:        Added,
+		BlockHeader: nextHeader,
+	})
+
+	return events, nil
+}
+
+func (w *Watcher) addLogs(header *MiniHeader) (*MiniHeader, error) {
+	if !w.withLogs {
+		return header, nil
+	}
+	logs, err := w.client.FilterLogs(ethereum.FilterQuery{
+		BlockHash: &header.Hash,
+		Topics:    [][]common.Hash{w.topics},
+	})
+	if err != nil {
+		return header, err
+	}
+	header.Logs = logs
+	return header, nil
+}
+
+// getMissedEventsToBackfill finds missed events that might have occurred since the last block polling.
+// It does this by comparing the last block stored with the latest block discoverable via RPC.
+// If the stored block is older than the latest block, it batch-fetches the events for missing blocks,
 // re-sets the stored blocks and returns the block events found.
+// Note that the latest block is never backfilled, and will be polled separately during in syncToLatestBlock().
 func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, error) {
 	events := []*Event{}
 
@@ -174,7 +333,9 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 	if err != nil {
 		return events, err
 	}
-	latestBlockNum := int(latestBlock.Number.Int64())
+
+	// Latest block will be polled separately in syncToLatestBlock(), so it's not backfilled.
+	preLatestBlockNum := int(latestBlock.Number.Int64()) - 1
 
 	if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
@@ -184,11 +345,11 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 		return events, nil
 	}
 
-	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed <= 0 {
+	if blocksElapsed = preLatestBlockNum - startBlockNum; blocksElapsed <= 0 {
 		return events, nil
 	}
 
-	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, latestBlockNum)
+	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, preLatestBlockNum)
 	if furthestBlockProcessed > latestRetainedBlockNum {
 		// If we have processed blocks further then the latestRetainedBlock in the DB, we
 		// want to remove all blocks from the DB and insert the furthestBlockProcessed
@@ -488,4 +649,16 @@ func (w *Watcher) enrichWithL1BlockNumber(header *MiniHeader) (*MiniHeader, erro
 	}
 	header.L1BlockNumber = fetchedBlock.L1BlockNumber
 	return header, nil
+}
+
+func isUnknownBlockErr(err error) bool {
+	// Geth error
+	if err.Error() == "unknown block" {
+		return true
+	}
+	// Parity error
+	if err.Error() == "One of the blocks specified in filter (fromBlock, toBlock or blockHash) cannot be found" {
+		return true
+	}
+	return false
 }
