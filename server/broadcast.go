@@ -1262,7 +1262,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			fileName1 := savedir + pairstr + "src.ts"
 			fileName2 := savedir + pairstr + "dst.ts"
 			ioutil.WriteFile(fileName1, seg.Data, 0664)
-			ioutil.WriteFile(fileName2, seg.Data, 0664)
+			ioutil.WriteFile(fileName2, data, 0664)
 			break
 		}
 	}
