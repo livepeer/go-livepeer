@@ -1252,15 +1252,17 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	}
 	//check audio missing
 	vmissing := false
+	savedir := "/home/gpu/tmp/"
 	_, srcinfo, _ := ffmpeg.GetCodecInfoBytes(seg.Data)
 	for _, data := range segData {
 		_, resinfo, _ := ffmpeg.GetCodecInfoBytes(data)
-		if srcinfo.Vcodec != resinfo.Vcodec {
-			vmissing = true
-			break
-		}
 		if srcinfo.Height > 0 && resinfo.Height <= 0 {
 			vmissing = true
+			pairstr := strconv.Itoa(rand.Int()) + "-"
+			fileName1 := savedir + pairstr + "src.ts"
+			fileName2 := savedir + pairstr + "dst.ts"
+			ioutil.WriteFile(fileName1, seg.Data, 0664)
+			ioutil.WriteFile(fileName2, seg.Data, 0664)
 			break
 		}
 	}
