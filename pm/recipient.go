@@ -26,9 +26,9 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 200 gwei
+// Hardcode to 3 gwei
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(140), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(3), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
