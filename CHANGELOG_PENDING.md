@@ -34,5 +34,6 @@
 
 #### Orchestrator
 - \#2493 cmd: Fix reward flag (@leszko)
+- \#2481 Lower `avgGasPrice` to prevent dropping streams during the gas price spikes (@leszko)
 
 #### Transcoder
