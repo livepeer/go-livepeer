@@ -28,7 +28,7 @@ var evMultiplier = big.NewInt(100)
 
 // Hardcode to 200 gwei
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(200), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(140), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
@@ -300,8 +300,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// because there is a good chance that the current gasPrice will come back down by the time a winning ticket is received
 	// and needs to be redeemed.
 	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
-	// Use || here for lazy evaluation. If the first clause is true we ignore the second clause.
-	if !(faceValue.Cmp(txCost) >= 0 || faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) >= 0) {
+	if faceValue.Cmp(txCost) < 0 && faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) < 0 {
 		return nil, errInsufficientSenderReserve
 	}
 
