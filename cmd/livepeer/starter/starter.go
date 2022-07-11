@@ -879,10 +879,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Backfill events that the node has missed since its last seen block. This method will block
 		// and the node will not continue setup until it finishes
-		if err := blockWatcher.BackfillEventsIfNeeded(blockWatchCtx); err != nil {
+		glog.Infof("Backfilling block events (this can take a while)...\n")
+		if err := blockWatcher.BackfillEvents(blockWatchCtx); err != nil {
 			glog.Errorf("Failed to backfill events: %v", err)
 			return
 		}
+		glog.Info("Done backfilling block events")
 
 		blockWatcherErr := make(chan error, 1)
 		go func() {
