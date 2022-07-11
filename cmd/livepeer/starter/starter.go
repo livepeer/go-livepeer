@@ -846,6 +846,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else {
 				reward = false
 			}
+		} else {
+			reward = *cfg.Reward
 		}
 
 		if reward {

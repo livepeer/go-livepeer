@@ -33,5 +33,6 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#2493 cmd: Fix reward flag (@leszko)
 
 #### Transcoder
