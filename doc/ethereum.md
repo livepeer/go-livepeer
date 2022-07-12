@@ -46,3 +46,10 @@ The following options can be used to set the min gas price to `<MIN_GAS_PRICE>`,
 - Start the node with `-minGasPrice <MIN_GAS_PRICE>`
 - `curl localhost:7935/setMinGasPrice?minGasPrice=<MIN_GAS_PRICE>`
 - Run `livepeer_cli` and select the set min gas price option
+
+### Known edge-cases
+A known edge-case that affects the initialization of new rounds occurs when the L2 block-rate is significantly slower than the L1 block-rate. This may result in:
+- go-livepeer not attempting to initialize a new round based on the expected `roundLength` interval - which is based on L1 block values
+- go-livepeer attempting to redeem a winning ticket after it already expired due to the block-rate difference between L1 and L2
+
+The issue is described in depth [here](https://github.com/livepeer/internal-project-tracking/issues/383)
