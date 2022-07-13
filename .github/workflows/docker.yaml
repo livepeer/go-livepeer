@@ -32,18 +32,6 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASS }}
 
-      - name: Build Linux specific builder container
-        run: |
-          docker pull livepeerci/build-platform:latest || echo 'no pre-existing cache found'
-          docker build -t livepeerci/build-platform:latest --cache-from=livepeerci/build-platform:latest -f docker/Dockerfile.build-linux .
-          docker push livepeerci/build-platform:latest
-
-      - name: Build livepeer in a container shared between Linux and Windows
-        run: |
-          docker pull livepeerci/build:latest || echo 'no pre-existing cache found'
-          ./ci_env.sh docker build --build-arg BUILD_TAGS -t livepeerci/build:latest --cache-from=livepeerci/build:latest -f docker/Dockerfile.build .
-          docker push livepeerci/build:latest
-
       - name: Build minimal livepeer distributable
         run: |
           set -euo pipefail
@@ -53,15 +41,17 @@ jobs:
           # Our Docker tag name should be our branch name with just alphanums
           BRANCH_TAG="$(echo $GHA_REF | sed -e 's:refs/heads/::; s:/:-:g' | tr -cd '[:alnum:]_-')"
           VERSION_TAG=$(./print_version.sh)
-          docker build -t current-build -f docker/Dockerfile.release-linux .
-          LATEST_TAG=""
-          if [[ "$GITHUB_REF_NAME" == "master" ]]; then LATEST_TAG="latest"; fi
-          for TAG in $BRANCH_TAG $VERSION_TAG $LATEST_TAG; do
-            docker tag current-build livepeer/go-livepeer:${TAG}-linux
-            docker push livepeer/go-livepeer:${TAG}-linux
-            # Manifest step is optional in case the Windows build hasn't finished yet
-            docker manifest create livepeer/go-livepeer:${TAG} livepeer/go-livepeer:${TAG}-linux livepeer/go-livepeer:${TAG}-windows || true
-            docker manifest push livepeer/go-livepeer:${TAG} || true
-          done
+          TAGS="--tag=livepeer/go-livepeer:$BRANCH_TAG --tag=livepeer/go-livepeer:$VERSION_TAG"
+          if [[ "$GITHUB_REF_NAME" == "master" ]]; then
+            TAGS="$TAGS --tag=livepeer/go-livepeer:latest";
+          fi
+          docker buildx create --use
+          docker buildx build \
+            --platform=linux/amd64,linux/arm64 \
+            --cache-from type=registry,ref=livepeerci/build \
+            --cache-to   type=registry,ref=livepeerci/build,mode=max \
+            $TAGS \
+            -f docker/Dockerfile \
+            --push .
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
