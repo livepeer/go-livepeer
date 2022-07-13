@@ -12,6 +12,11 @@ jobs:
   linux:
     name: Build linux binaries
     runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        arch:
+          - amd64
+          - arm64
     steps:
       - name: Check out code
         uses: actions/checkout@v3
@@ -20,6 +25,11 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set build environment
+        run: |
+          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
       - name: Set up go
         id: go
@@ -32,36 +42,37 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-${{ matrix.arch }}-go-
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v2.1.5
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-ffmpeg
+            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
 
       - name: Cache binaries
         uses: actions/cache@v2.1.5
         with:
           path: ~/build
-          key: ${{ runner.os }}-binaries-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
 
       - name: Install dependencies
         run: |
           sudo apt-get update \
             && sudo apt-get install -y software-properties-common curl apt-transport-https \
             && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-            && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
+            && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
             && sudo apt-get update \
-            && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
+            && sudo apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross
 
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
       - name: Install go modules
         if: steps.cache-go-mod.outputs.cache-hit != 'true'
@@ -75,17 +86,17 @@ jobs:
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
           ./ci_env.sh make
-          rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
 
       - name: Upload build
-        run: cp ~/build/* . && ./upload_build.sh
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}
+        run: ./upload_build.sh
 
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master

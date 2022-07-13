@@ -12,7 +12,17 @@ EXTRA_FFMPEG_FLAGS=""
 
 if [[ "$ARCH" == "arm64" && "$UNAME" == "Darwin" ]]; then
   # Detect Apple Silicon
-  IS_M1=1
+  IS_ARM64=1
+fi
+
+if [[ "$ARCH" == "x86_64" && "$UNAME" == "Linux" && "${GOARCH:-}" == "arm64" ]]; then
+  echo "cross-compiling linux-arm64"
+  export CC="clang --sysroot=/usr/aarch64-linux-gnu"
+  EXTRA_CFLAGS="--target=aarch64-linux-gnu $EXTRA_CFLAGS"
+  EXTRA_LDFLAGS="--target=aarch64-linux-gnu $EXTRA_LDFLAGS"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang --sysroot=/usr/aarch64-linux-gnu"
+  HOST_OS="--host=aarch64-linux-gnu"
+  IS_ARM64=1
 fi
 
 if [[ "$ARCH" == "x86_64" && "$UNAME" == "Darwin" && "${GOARCH:-}" == "arm64" ]]; then
@@ -21,9 +31,9 @@ if [[ "$ARCH" == "x86_64" && "$UNAME" == "Darwin" && "${GOARCH:-}" == "arm64" ]]
   EXTRA_LDFLAGS="$EXTRA_LDFLAGS --target=arm64-apple-macos11"
   HOST_OS="--host=aarch64-darwin"
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile"
-  IS_M1=1
+  IS_ARM64=1
 fi
-echo "Arch $ARCH ${IS_M1:+(Apple Silicon)}"
+echo "Arch $ARCH ${IS_ARM64:+(ARM64)}"
 
 # Windows (MSYS2) needs a few tweaks
 if [[ "$UNAME" == *"MSYS"* ]]; then
@@ -58,7 +68,7 @@ if [[ "$UNAME" != "Darwin" ]]; then
   fi
 fi
 
-if [[ "$UNAME" != *"MSYS"* && ! $IS_M1 ]]; then
+if [[ "$UNAME" != *"MSYS"* && ! $IS_ARM64 ]]; then
   if [[ ! -e "$ROOT/nasm-2.14.02" ]]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
@@ -77,14 +87,14 @@ fi
 if [[ ! -e "$ROOT/x264" ]]; then
   git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
-  if [[ $IS_M1 ]]; then
+  if [[ $IS_ARM64 ]]; then
     # newer git master, compiles on Apple Silicon
     git checkout 66a5bc1bd1563d8227d5d18440b525a09bcf17ca
   else
     # older git master, does not compile on Apple Silicon
     git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
   fi
-  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS"
+  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS" || cat "$ROOT/x264/config.log"
   make -j$NPROC
   make -j$NPROC install-lib-static
 fi

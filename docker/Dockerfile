@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ubuntu:20.04 as build
+FROM --platform=$BUILDPLATFORM ubuntu:18.04 as build
 
 ARG TARGETARCH
 ENV GOARCH=$TARGETARCH
@@ -13,12 +13,14 @@ RUN apt-get update \
   && curl https://dl.google.com/go/go1.17.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
   && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
   && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
+  && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+  && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
   && apt-get update \
-  && apt-get -y install clang-10 clang-tools-10 lld-10 build-essential pkg-config autoconf sudo git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross
+  && apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross
 
-RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-10 30 \
-  && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-10 30 \
-  && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-10 30
+RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+  && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+  && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
 RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
     curl -L https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-amd64 -o /usr/bin/grpc_health_probe && \
