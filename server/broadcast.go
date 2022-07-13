@@ -1251,13 +1251,27 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
 	}
 	//check audio missing
-	vmissing := false
+	matching := true
 	savedir := "/home/gpu/tmp/"
-	_, srcinfo, _ := ffmpeg.GetCodecInfoBytes(seg.Data)
+
+	srcinfo, _ := ffmpeg.GetMatchInfoByBuffer(seg.Data)
 	for _, data := range segData {
-		_, resinfo, _ := ffmpeg.GetCodecInfoBytes(data)
-		if srcinfo.Height > 0 && resinfo.Height <= 0 {
-			vmissing = true
+		if data == nil {
+			continue
+		}
+		resinfo, _ := ffmpeg.GetMatchInfoByBuffer(data)
+
+		if len(srcinfo.AudioMd5Sum) != len(resinfo.AudioMd5Sum) {
+			matching = false
+		}
+		for i := 0; matching && i < len(srcinfo.AudioMd5Sum); i++ {
+			if srcinfo.AudioMd5Sum[i] != resinfo.AudioMd5Sum[i] {
+				matching = false
+				break
+			}
+		}
+
+		if !matching {
 			pairstr := strconv.Itoa(rand.Int()) + "-"
 			fileName1 := savedir + pairstr + "src.ts"
 			fileName2 := savedir + pairstr + "dst.ts"
@@ -1266,7 +1280,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 			break
 		}
 	}
-	fmt.Printf("lost video stream = %v\n", vmissing)
+	fmt.Printf("matched audio stream = %v\n", matching)
 
 	if verifier != nil {
 		// verify potentially can change content of segURLs
