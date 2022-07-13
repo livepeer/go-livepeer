@@ -722,6 +722,10 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			bcastOS = bcastOS.OS().NewSession(pfx)
 		}
 
+		oinfo := n.OrchestratorPool.GetInfo(tinfo.Transcoder)
+		if oinfo.URL == nil {
+			return nil, errors.New("cannot get orchestrator info")
+		}
 		session := &BroadcastSession{
 			Broadcaster:       core.NewBroadcaster(n),
 			Params:            params,
@@ -733,7 +737,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			Balances:          n.Balances,
 			Balance:           balance,
 			lock:              &sync.RWMutex{},
-			OrchestratorScore: n.OrchestratorPool.GetInfo(tinfo.Transcoder).Score, // todo: use score from OrchestratorLocalInfo
+			OrchestratorScore: oinfo.Score,
 		}
 
 		sessions = append(sessions, session)

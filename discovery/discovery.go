@@ -105,7 +105,6 @@ func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
 			}
 		}
 	}
-	// TODO: indicate error
 	return res
 }
 
