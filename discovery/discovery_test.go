@@ -47,6 +47,45 @@ func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
 	assert.EqualError(err, "could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 }
 
+func TestResolveURL(t *testing.T) {
+	// set mock resolver
+	hostLookupFnBak := hostLookupFn
+	defer func() { hostLookupFn = hostLookupFnBak }()
+	hostLookupFn = func(host string) (addrs []string, err error) {
+		if host == "error" {
+			return []string{}, errors.New("Mock resolver error")
+		}
+		return []string{"1.1.1.1", "aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa"}, nil
+	}
+	url, _ := url.Parse("https://example.com:5555")
+	urls := ResolveURL(url)
+	// check results length
+	assert.Equal(t, 2, len(urls))
+	// check first ip
+	assert.Equal(t, urls[0].String(), "https://1.1.1.1:5555")
+	// second ip
+	assert.Equal(t, urls[1].String(), "https://aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:5555")
+
+	// test no port
+	url, _ = url.Parse("https://example.com")
+	urls = ResolveURL(url)
+	assert.Equal(t, 2, len(urls))
+	assert.Equal(t, urls[0].Port(), "")
+	assert.Equal(t, urls[1].Port(), "")
+
+	// test localhost
+	url, _ = url.Parse("https://localhost")
+	urls = ResolveURL(url)
+	assert.Equal(t, 1, len(urls))
+	assert.Equal(t, urls[0].String(), "https://127.0.0.1")
+
+	// test resolve error
+	url, _ = url.Parse("https://error:5555")
+	urls = ResolveURL(url)
+	assert.Equal(t, 1, len(urls))
+	assert.Equal(t, urls[0].String(), "https://error:5555")
+}
+
 func TestDeadLock(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)

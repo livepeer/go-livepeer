@@ -6,7 +6,9 @@ import (
 	"errors"
 	"math"
 	"math/rand"
+	net2 "net"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -23,6 +25,7 @@ var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
 var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
+var hostLookupFn = net2.LookupHost
 
 type orchestratorPool struct {
 	infos []common.OrchestratorLocalInfo
@@ -55,14 +58,54 @@ func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 	return o.infos
 }
 
+func ResolveURL(urlToResolve *url.URL) []*url.URL {
+	resolvedUrls := make([]*url.URL, 0, 1)
+	hostPort := strings.Split(urlToResolve.Host, ":")
+	if net2.ParseIP(hostPort[0]) == nil {
+		// handle localhost - won't work for custom hosts entry!
+		var addrs []string
+		var err error
+		if strings.ToLower(hostPort[0]) == "localhost" {
+			addrs = []string{"127.0.0.1"}
+		} else {
+			addrs, err = hostLookupFn(hostPort[0])
+		}
+		if err != nil {
+			clog.Errorf(context.TODO(), "Couldn't resolve domain for URL %s, check local DNS settings. Discovery may not work properly.", urlToResolve.String())
+			return append(resolvedUrls, urlToResolve)
+		}
+		for _, addr := range addrs {
+			newUrl, _ := url.Parse(urlToResolve.String())
+			if len(hostPort) == 2 {
+				newUrl.Host = addr + ":" + hostPort[1]
+			} else {
+				newUrl.Host = addr
+			}
+			resolvedUrls = append(resolvedUrls, newUrl)
+		}
+	} else {
+		// already ip, do nothing
+		return append(resolvedUrls, urlToResolve)
+	}
+	return resolvedUrls
+}
+
 func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
 	var res common.OrchestratorLocalInfo
+	queryUrl, _ := url.Parse(uri)
+	resolvedUrls := ResolveURL(queryUrl)
 	for _, info := range o.infos {
-		if info.URL.String() == uri {
-			res = info
-			break
+		oResolvedUrls := ResolveURL(info.URL)
+		for _, oUrl := range oResolvedUrls {
+			for _, queryUrl := range resolvedUrls {
+				if oUrl.String() == queryUrl.String() {
+					res = info
+					break
+				}
+			}
 		}
 	}
+	// TODO: indicate error
 	return res
 }
 
