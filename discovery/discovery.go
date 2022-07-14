@@ -60,16 +60,8 @@ func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 }
 
 func ResolveURL(urlToResolve *url.URL) []*url.URL {
-	resolvedUrls := make([]*url.URL, 0, 0)
-	// check if there's a port in host, for ipv6 it's after ]
-	v6PortSplit := strings.Split(urlToResolve.Host, "]")
-	hasPort := strings.Count(v6PortSplit[len(v6PortSplit)-1], ":") == 1
-	host, port := "", ""
-	if hasPort {
-		host, port, _ = net2.SplitHostPort(urlToResolve.Host)
-	} else {
-		host, port = urlToResolve.Host, ""
-	}
+	var resolvedUrls []*url.URL
+	host, port := urlToResolve.Hostname(), urlToResolve.Port()
 	if net2.ParseIP(host) == nil {
 		// handle localhost - won't work for custom hosts entry!
 		var addrs []string
@@ -81,7 +73,7 @@ func ResolveURL(urlToResolve *url.URL) []*url.URL {
 			addrs, err = hostLookupFn(host)
 		}
 		if err != nil {
-			clog.Errorf(context.TODO(), "Couldn't resolve domain for URL %s, check local DNS settings. Discovery may not work properly.", urlToResolve.String())
+			glog.Errorf("Couldn't resolve domain for URL %s, check local DNS settings", urlToResolve.String())
 			return append(resolvedUrls, urlToResolve)
 		}
 		for _, addr := range addrs {
@@ -110,10 +102,14 @@ func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
 	queryUrl, _ := url.Parse(uri)
 	resolvedUrls := ResolveURL(queryUrl)
 	for _, info := range o.infos {
-		oResolvedUrls := ResolveURL(info.URL)
-		for _, oUrl := range oResolvedUrls {
-			for _, queryUrl := range resolvedUrls {
-				if oUrl.String() == queryUrl.String() {
+		// shortcut for backward compatibility
+		if info.URL.String() == uri {
+			res = info
+			break
+		}
+		for _, oUrl := range ResolveURL(info.URL) {
+			for _, qUrl := range resolvedUrls {
+				if oUrl.String() == qUrl.String() {
 					res = info
 					break
 				}
