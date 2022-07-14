@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	net2 "net"
@@ -59,16 +60,26 @@ func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 }
 
 func ResolveURL(urlToResolve *url.URL) []*url.URL {
-	resolvedUrls := make([]*url.URL, 0, 1)
-	hostPort := strings.Split(urlToResolve.Host, ":")
-	if net2.ParseIP(hostPort[0]) == nil {
+	resolvedUrls := make([]*url.URL, 0, 0)
+	// check if there's a port in host, for ipv6 it's after ]
+	v6PortSplit := strings.Split(urlToResolve.Host, "]")
+	hasPort := strings.Count(v6PortSplit[len(v6PortSplit)-1], ":") == 1
+	host, port := "", ""
+	if hasPort {
+		host, port, _ = net2.SplitHostPort(urlToResolve.Host)
+	} else {
+		host, port = urlToResolve.Host, ""
+	}
+	isV6 := strings.Count(host, ":") > 0
+	if net2.ParseIP(host) == nil {
 		// handle localhost - won't work for custom hosts entry!
 		var addrs []string
 		var err error
-		if strings.ToLower(hostPort[0]) == "localhost" {
-			addrs = []string{"127.0.0.1"}
+		if strings.ToLower(host) == "localhost" {
+			// ipv6 addr may be abbreviated or not
+			addrs = []string{"127.0.0.1", "::1", "0000:0000:0000:0000:0000:0000:0000:0001"}
 		} else {
-			addrs, err = hostLookupFn(hostPort[0])
+			addrs, err = hostLookupFn(host)
 		}
 		if err != nil {
 			clog.Errorf(context.TODO(), "Couldn't resolve domain for URL %s, check local DNS settings. Discovery may not work properly.", urlToResolve.String())
@@ -76,15 +87,20 @@ func ResolveURL(urlToResolve *url.URL) []*url.URL {
 		}
 		for _, addr := range addrs {
 			newUrl, _ := url.Parse(urlToResolve.String())
-			if len(hostPort) == 2 {
-				newUrl.Host = addr + ":" + hostPort[1]
+			if port != "" {
+				// enclose ipv6 into brackets
+				if isV6 {
+					newUrl.Host = fmt.Sprintf("[%s]:%s", addr, port)
+				} else {
+					newUrl.Host = fmt.Sprintf("%s:%s", addr, port)
+				}
 			} else {
 				newUrl.Host = addr
 			}
 			resolvedUrls = append(resolvedUrls, newUrl)
 		}
 	} else {
-		// already ip, do nothing
+		// already ip or error, do nothing
 		return append(resolvedUrls, urlToResolve)
 	}
 	return resolvedUrls

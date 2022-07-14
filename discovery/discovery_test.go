@@ -4,15 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"math"
-	"math/big"
-	"net/url"
-	"runtime"
-	"strconv"
-	"sync"
-	"testing"
-	"time"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -26,6 +17,15 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"math"
+	"math/big"
+	"net/url"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
 )
 
 func TestNewDBOrchestratorPoolCache_NilEthClient_ReturnsError(t *testing.T) {
@@ -55,35 +55,53 @@ func TestResolveURL(t *testing.T) {
 		if host == "error" {
 			return []string{}, errors.New("Mock resolver error")
 		}
+		if strings.Count(host, ":") > 0 {
+			// invalid characters in host
+			return []string{}, errors.New("Invalid characters in host")
+		}
 		return []string{"1.1.1.1", "aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa"}, nil
 	}
-	url, _ := url.Parse("https://example.com:5555")
-	urls := ResolveURL(url)
+	srcUrl, _ := url.Parse("https://example.com:5555")
+	urls := ResolveURL(srcUrl)
 	// check results length
-	assert.Equal(t, 2, len(urls))
+	assert.Equal(t, len(urls), 2)
 	// check first ip
-	assert.Equal(t, urls[0].String(), "https://1.1.1.1:5555")
+	assert.Equal(t, "https://1.1.1.1:5555", urls[0].String())
 	// second ip
-	assert.Equal(t, urls[1].String(), "https://aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:5555")
+	assert.Equal(t, "https://aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:5555", urls[1].String())
 
 	// test no port
-	url, _ = url.Parse("https://example.com")
-	urls = ResolveURL(url)
+	srcUrl, _ = url.Parse("https://example.com")
+	urls = ResolveURL(srcUrl)
 	assert.Equal(t, 2, len(urls))
-	assert.Equal(t, urls[0].Port(), "")
-	assert.Equal(t, urls[1].Port(), "")
+	assert.Equal(t, "", urls[0].Port())
+	assert.Equal(t, "", urls[1].Port())
 
-	// test localhost
-	url, _ = url.Parse("https://localhost")
-	urls = ResolveURL(url)
-	assert.Equal(t, 1, len(urls))
-	assert.Equal(t, urls[0].String(), "https://127.0.0.1")
+	// test localhost both ipv4 and ipv6
+	srcUrl, _ = url.Parse("https://localhost")
+	urls = ResolveURL(srcUrl)
+	assert.Equal(t, 3, len(urls))
+	assert.Equal(t, "https://127.0.0.1", urls[0].String())
+	assert.Equal(t, "https://::1", urls[1].String())
+	assert.Equal(t, "https://0000:0000:0000:0000:0000:0000:0000:0001", urls[2].String())
 
 	// test resolve error
-	url, _ = url.Parse("https://error:5555")
-	urls = ResolveURL(url)
+	srcUrl, _ = url.Parse("https://error:5555")
+	urls = ResolveURL(srcUrl)
 	assert.Equal(t, 1, len(urls))
-	assert.Equal(t, urls[0].String(), "https://error:5555")
+	assert.Equal(t, "https://error:5555", urls[0].String())
+
+	// test wrong domain
+	srcUrl, _ = url.Parse("https://error:5555:1233")
+	urls = ResolveURL(srcUrl)
+	assert.Equal(t, 1, len(urls))
+	assert.Equal(t, "https://error:5555:1233", urls[0].String())
+
+	// test ipv6 port handling
+	srcUrl, _ = url.Parse("https://[1000:2000:3000:4000:5000:6000:7000:8001]:5555")
+	urls = ResolveURL(srcUrl)
+	assert.Equal(t, 1, len(urls))
+	assert.Equal(t, "https://[1000:2000:3000:4000:5000:6000:7000:8001]:5555", urls[0].String())
 }
 
 func TestDeadLock(t *testing.T) {
