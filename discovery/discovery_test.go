@@ -61,14 +61,15 @@ func TestResolveURL(t *testing.T) {
 		}
 		return []string{"1.1.1.1", "aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa"}, nil
 	}
+
 	srcUrl, _ := url.Parse("https://example.com:5555")
 	urls := ResolveURL(srcUrl)
 	// check results length
 	assert.Equal(t, len(urls), 2)
-	// check first ip
+	// check ipv4 with port
 	assert.Equal(t, "https://1.1.1.1:5555", urls[0].String())
-	// second ip
-	assert.Equal(t, "https://aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:5555", urls[1].String())
+	// check ipv6 with port
+	assert.Equal(t, "https://[aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa:aaaa]:5555", urls[1].String())
 
 	// test no port
 	srcUrl, _ = url.Parse("https://example.com")
@@ -97,7 +98,7 @@ func TestResolveURL(t *testing.T) {
 	assert.Equal(t, 1, len(urls))
 	assert.Equal(t, "https://error:5555:1233", urls[0].String())
 
-	// test ipv6 port handling
+	// test ipv6 port handling - no resolve
 	srcUrl, _ = url.Parse("https://[1000:2000:3000:4000:5000:6000:7000:8001]:5555")
 	urls = ResolveURL(srcUrl)
 	assert.Equal(t, 1, len(urls))

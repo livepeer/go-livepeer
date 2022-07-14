@@ -70,7 +70,6 @@ func ResolveURL(urlToResolve *url.URL) []*url.URL {
 	} else {
 		host, port = urlToResolve.Host, ""
 	}
-	isV6 := strings.Count(host, ":") > 0
 	if net2.ParseIP(host) == nil {
 		// handle localhost - won't work for custom hosts entry!
 		var addrs []string
@@ -89,7 +88,7 @@ func ResolveURL(urlToResolve *url.URL) []*url.URL {
 			newUrl, _ := url.Parse(urlToResolve.String())
 			if port != "" {
 				// enclose ipv6 into brackets
-				if isV6 {
+				if strings.Count(addr, ":") > 0 {
 					newUrl.Host = fmt.Sprintf("[%s]:%s", addr, port)
 				} else {
 					newUrl.Host = fmt.Sprintf("%s:%s", addr, port)
