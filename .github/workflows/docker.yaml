@@ -13,45 +13,42 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-20.04
     steps:
-      - name: Check out code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          # Check https://github.com/livepeer/go-livepeer/pull/1891
-          # for ref value discussion
-          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
 
-      - name: Set global environment variables
-        run: |
-          echo "PKG_CONFIG_PATH=/root/compiled/lib/pkgconfig" >> $GITHUB_ENV
-          echo "GOPATH=/go" >> $GITHUB_ENV
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-      - name: DockerHub login
-        uses: docker/login-action@v1
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASS }}
 
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: livepeer/go-livepeer
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=sha
+            type=sha,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value={{date 'YYYYMMDDHHmmss'}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.pull_request.head.ref }}
+
       - name: Build minimal livepeer distributable
-        run: |
-          set -euo pipefail
-          # We publish two tags for each build:
-          # livepeer/go-livepeer:BRANCH_NAME and livepeer/go-livepeer:VERSION_STRING. Both are useful
-          # to pull from in different contexts.
-          # Our Docker tag name should be our branch name with just alphanums
-          BRANCH_TAG="$(echo $GHA_REF | sed -e 's:refs/heads/::; s:/:-:g' | tr -cd '[:alnum:]_-')"
-          VERSION_TAG=$(./print_version.sh)
-          TAGS="--tag=livepeer/go-livepeer:$BRANCH_TAG --tag=livepeer/go-livepeer:$VERSION_TAG"
-          if [[ "$GITHUB_REF_NAME" == "master" ]]; then
-            TAGS="$TAGS --tag=livepeer/go-livepeer:latest";
-          fi
-          docker buildx create --use
-          docker buildx build \
-            --platform=linux/amd64,linux/arm64 \
-            --cache-from type=registry,ref=livepeerci/build \
-            --cache-to   type=registry,ref=livepeerci/build,mode=max \
-            $TAGS \
-            -f docker/Dockerfile \
-            --push .
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+        uses: docker/build-push-action@v3
+        with:
+          platforms: linux/amd64, linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          file: 'docker/Dockerfile'
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=livepeerci/build
+          cache-to: type=registry,ref=livepeerci/build,mode=max

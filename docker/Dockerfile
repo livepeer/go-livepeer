@@ -26,11 +26,12 @@ RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
     curl -L https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-amd64 -o /usr/bin/grpc_health_probe && \
     chmod +x /usr/bin/grpc_health_probe
 
-ENV GOPATH /go
-RUN mkdir -p /go
-WORKDIR /build
+ENV GOPATH=/go GO_BUILD_DIR=/build/ GOFLAGS="-mod=readonly"
 
-RUN curl -LO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
+WORKDIR /src
+
+RUN mkdir -p /go \
+    && curl -LO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
 
 ARG BUILD_TAGS
 ENV BUILD_TAGS ${BUILD_TAGS}
@@ -41,31 +42,27 @@ RUN ./install_ffmpeg.sh
 RUN GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0
 RUN go get -v github.com/jstemmer/go-junit-report
 
-ENV GOFLAGS "-mod=readonly"
-
 COPY go.mod go.mod
 COPY go.sum go.sum
 RUN go mod download
 
 COPY . .
+
 RUN make livepeer livepeer_cli livepeer_bench livepeer_router
 
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
 
-ENTRYPOINT ["/usr/bin/livepeer"]
-
 # this is needed to access GPU inside Docker Swarm
 ENV NVIDIA_DRIVER_CAPABILITIES=all
 
-COPY --from=build /build/livepeer /usr/bin/livepeer
-COPY --from=build /build/livepeer_cli /usr/bin/livepeer_cli
-COPY --from=build /build/livepeer_bench /usr/bin/livepeer_bench
-COPY --from=build /build/livepeer_router /usr/bin/livepeer_router
+COPY --from=build /build/ /usr/bin/
 COPY --from=build /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
 
-COPY --from=build /build/tasmodel.pb /tasmodel.pb
+COPY --from=build /src/tasmodel.pb /tasmodel.pb
 
 COPY --from=build /usr/share/misc/pci.ids /usr/share/misc/pci.ids
 
 # Configure linker
 RUN ldconfig
+
+ENTRYPOINT ["/usr/bin/livepeer"]
