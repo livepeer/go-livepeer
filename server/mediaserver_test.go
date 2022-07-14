@@ -175,7 +175,8 @@ func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 }
 
 func (d *stubDiscovery) GetInfo(uri string) common.OrchestratorLocalInfo {
-	var res common.OrchestratorLocalInfo
+	url, _ := url.Parse(uri)
+	res := common.OrchestratorLocalInfo{URL: url}
 	return res
 }
 
