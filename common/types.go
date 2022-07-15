@@ -59,6 +59,30 @@ type OrchestratorLocalInfo struct {
 	Score float32
 }
 
+// combines B's local metadata about O with info received from this O
+type OrchestratorDescriptor struct {
+	LocalInfo  *OrchestratorLocalInfo
+	RemoteInfo *net.OrchestratorInfo
+}
+
+type OrchestratorDescriptors []OrchestratorDescriptor
+
+func (ds OrchestratorDescriptors) GetRemoteInfos() []*net.OrchestratorInfo {
+	var ois []*net.OrchestratorInfo
+	for _, d := range ds {
+		ois = append(ois, d.RemoteInfo)
+	}
+	return ois
+}
+
+func FromRemoteInfos(infos []*net.OrchestratorInfo) OrchestratorDescriptors {
+	var ods OrchestratorDescriptors
+	for _, oi := range infos {
+		ods = append(ods, OrchestratorDescriptor{nil, oi})
+	}
+	return ods
+}
+
 func (u *OrchestratorLocalInfo) MarshalJSON() ([]byte, error) {
 	type Alias OrchestratorLocalInfo
 	return json.Marshal(&struct {
@@ -72,10 +96,8 @@ func (u *OrchestratorLocalInfo) MarshalJSON() ([]byte, error) {
 
 type ScorePred = func(float32) bool
 type OrchestratorPool interface {
-	// GetInfo gets info for specific orchestrator
-	GetInfo(uri string) OrchestratorLocalInfo
 	GetInfos() []OrchestratorLocalInfo
-	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) ([]*net.OrchestratorInfo, error)
+	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) (OrchestratorDescriptors, error)
 	Size() int
 	SizeWith(ScorePred) int
 }

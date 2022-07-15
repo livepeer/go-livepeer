@@ -55,24 +55,13 @@ func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 	return o.infos
 }
 
-func (o *orchestratorPool) GetInfo(uri string) common.OrchestratorLocalInfo {
-	var res common.OrchestratorLocalInfo
-	for _, info := range o.infos {
-		if info.URL.String() == uri {
-			res = info
-			break
-		}
-	}
-	return res
-}
-
 func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
-	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
-	linfos := make([]common.OrchestratorLocalInfo, 0, len(o.infos))
-	for _, info := range o.infos {
-		if scorePred(info.Score) {
-			linfos = append(linfos, info)
+	linfos := make([]*common.OrchestratorLocalInfo, 0, len(o.infos))
+	for i, _ := range o.infos {
+		if scorePred(o.infos[i].Score) {
+			linfos = append(linfos, &o.infos[i])
 		}
 	}
 
@@ -105,56 +94,53 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	getOrchInfo := func(ctx context.Context, uri *url.URL, infoCh chan *net.OrchestratorInfo, errCh chan error) {
-		info, err := serverGetOrchInfo(ctx, o.bcast, uri)
+	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
+		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL)
 		if err == nil && isCompatible(info) {
-			infoCh <- info
+			od.RemoteInfo = info
+			infoCh <- od
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
 			clog.Errorf(ctx, "err=%q", err)
 			if monitor.Enabled {
-				monitor.LogDiscoveryError(ctx, uri.String(), err.Error())
+				monitor.LogDiscoveryError(ctx, od.LocalInfo.URL.String(), err.Error())
 			}
 		}
 		errCh <- err
 	}
 
-	// Shuffle into new slice to avoid mutating underlying data
-	uris := make([]*url.URL, numAvailableOrchs)
-	for i, j := range rand.Perm(numAvailableOrchs) {
-		uris[i] = linfos[j].URL
-	}
-
-	var infos []*net.OrchestratorInfo
+	var ods common.OrchestratorDescriptors
 	suspendedInfos := newSuspensionQueue()
 	timedOut := false
 	nbResp := 0
-	infoCh := make(chan *net.OrchestratorInfo, numAvailableOrchs)
+	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
-	for _, uri := range uris {
-		go getOrchInfo(ctx, uri, infoCh, errCh)
+
+	// Shuffle and create O descriptor
+	for _, i := range rand.Perm(numAvailableOrchs) {
+		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
 	}
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
 	timeout := getOrchestratorsCutoffTimeout
 	timer := time.NewTimer(timeout)
 
-	for nbResp < numAvailableOrchs && len(infos) < numOrchestrators && !timedOut {
+	for nbResp < numAvailableOrchs && len(ods) < numOrchestrators && !timedOut {
 		select {
-		case info := <-infoCh:
-			if penalty := suspender.Suspended(info.Transcoder); penalty == 0 {
-				infos = append(infos, info)
+		case od := <-odCh:
+			if penalty := suspender.Suspended(od.RemoteInfo.Transcoder); penalty == 0 {
+				ods = append(ods, od)
 			} else {
-				heap.Push(suspendedInfos, &suspension{info, penalty})
+				heap.Push(suspendedInfos, &suspension{od.RemoteInfo, &od, penalty})
 			}
 			nbResp++
 		case <-errCh:
 			nbResp++
 		case <-timer.C:
-			if len(infos) > 0 {
+			if len(ods) > 0 {
 				timedOut = true
 			}
 
@@ -171,17 +157,17 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 	cancel()
 
-	if len(infos) < numOrchestrators {
-		diff := numOrchestrators - len(infos)
+	if len(ods) < numOrchestrators {
+		diff := numOrchestrators - len(ods)
 		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {
-			info := heap.Pop(suspendedInfos).(*suspension).orch
-			infos = append(infos, info)
+			od := heap.Pop(suspendedInfos).(*suspension).od
+			ods = append(ods, *od)
 		}
 	}
 
 	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
-		len(infos), nbResp, len(uris), timedOut)
-	return infos, nil
+		len(ods), nbResp, len(linfos), timedOut)
+	return ods, nil
 }
 
 func (o *orchestratorPool) Size() int {
