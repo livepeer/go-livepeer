@@ -724,7 +724,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 		}
 
 		var oScore float32
-		if od.LocalInfo!=nil {
+		if od.LocalInfo != nil {
 			oScore = od.LocalInfo.Score
 		}
 		session := &BroadcastSession{
