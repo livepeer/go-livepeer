@@ -1,0 +1,68 @@
+FROM --platform=$BUILDPLATFORM ubuntu:18.04 as build
+
+ARG TARGETARCH
+ENV GOARCH=$TARGETARCH
+
+ENV PATH "/usr/local/go/bin:/go/bin:${PATH}"
+ENV PKG_CONFIG_PATH "/root/compiled/lib/pkgconfig"
+ENV CPATH /usr/local/cuda/include
+ENV LIBRARY_PATH /usr/local/cuda/lib64
+
+RUN apt-get update \
+  && apt-get install -y software-properties-common curl apt-transport-https \
+  && curl https://dl.google.com/go/go1.17.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
+  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
+  && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs)  stable" \
+  && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+  && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
+  && apt-get update \
+  && apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross
+
+RUN update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+  && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+  && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
+
+RUN GRPC_HEALTH_PROBE_VERSION=v0.3.6 && \
+    curl -L https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-amd64 -o /usr/bin/grpc_health_probe && \
+    chmod +x /usr/bin/grpc_health_probe
+
+ENV GOPATH=/go GO_BUILD_DIR=/build/ GOFLAGS="-mod=readonly"
+
+WORKDIR /src
+
+RUN mkdir -p /go \
+    && curl -LO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
+
+ARG BUILD_TAGS
+ENV BUILD_TAGS ${BUILD_TAGS}
+
+COPY ./install_ffmpeg.sh ./install_ffmpeg.sh
+RUN ./install_ffmpeg.sh
+
+RUN GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0
+RUN go get -v github.com/jstemmer/go-junit-report
+
+COPY go.mod go.mod
+COPY go.sum go.sum
+RUN go mod download
+
+COPY . .
+
+RUN make livepeer livepeer_cli livepeer_bench livepeer_router
+
+FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
+
+# this is needed to access GPU inside Docker Swarm
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+COPY --from=build /build/ /usr/bin/
+COPY --from=build /usr/bin/grpc_health_probe /usr/bin/grpc_health_probe
+
+COPY --from=build /src/tasmodel.pb /tasmodel.pb
+
+COPY --from=build /usr/share/misc/pci.ids /usr/share/misc/pci.ids
+
+# Configure linker
+RUN ldconfig
+
+ENTRYPOINT ["/usr/bin/livepeer"]
