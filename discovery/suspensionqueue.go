@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"container/heap"
+	"github.com/livepeer/go-livepeer/common"
 
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -12,6 +13,7 @@ type suspensionQueue []*suspension
 // A suspension is the item we manage in the priority queue.
 type suspension struct {
 	orch    *net.OrchestratorInfo
+	od      *common.OrchestratorDescriptor
 	penalty int
 }
 

@@ -96,23 +96,8 @@ func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
 	return infos
 }
 
-func (dbo *DBOrchestratorPoolCache) GetInfo(uri string) common.OrchestratorLocalInfo {
-	uris, _ := dbo.getURLs()
-	res := common.OrchestratorLocalInfo{
-		Score: common.Score_Untrusted,
-	}
-
-	for _, uri_ := range uris {
-		if uri_.String() == uri {
-			res.URL = uri_
-			break
-		}
-	}
-	return res
-}
-
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
-	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	uris, err := dbo.getURLs()
 	if err != nil || len(uris) <= 0 {

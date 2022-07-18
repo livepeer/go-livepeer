@@ -174,13 +174,8 @@ func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 	return nil
 }
 
-func (d *stubDiscovery) GetInfo(uri string) common.OrchestratorLocalInfo {
-	var res common.OrchestratorLocalInfo
-	return res
-}
-
 func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
-	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
@@ -192,7 +187,7 @@ func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus commo
 		err = d.getOrchError
 		d.lock.Unlock()
 	}
-	return d.infos, err
+	return common.FromRemoteInfos(d.infos), err
 }
 
 func (d *stubDiscovery) Size() int {

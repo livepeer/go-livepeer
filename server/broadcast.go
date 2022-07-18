@@ -673,8 +673,9 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 		return nil, errDiscovery
 	}
 
-	tinfos, err := n.OrchestratorPool.GetOrchestrators(ctx, count, sus, params.Capabilities, scorePred)
-	if len(tinfos) <= 0 {
+	ods, err := n.OrchestratorPool.GetOrchestrators(ctx, count, sus, params.Capabilities, scorePred)
+
+	if len(ods) <= 0 {
 		clog.InfofErr(ctx, "No orchestrators found; not transcoding", err)
 		return nil, errNoOrchs
 	}
@@ -684,48 +685,52 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 	var sessions []*BroadcastSession
 
-	for _, tinfo := range tinfos {
+	for _, od := range ods {
 		var (
 			sessionID    string
 			balance      Balance
 			ticketParams *pm.TicketParams
 		)
 
-		if tinfo.AuthToken == nil {
-			clog.Errorf(ctx, "Missing auth token orch=%v", tinfo.Transcoder)
+		if od.RemoteInfo.AuthToken == nil {
+			clog.Errorf(ctx, "Missing auth token orch=%v", od.RemoteInfo.Transcoder)
 			continue
 		}
 
 		if n.Sender != nil {
-			if tinfo.TicketParams == nil {
-				clog.Errorf(ctx, "Missing ticket params orch=%v", tinfo.Transcoder)
+			if od.RemoteInfo.TicketParams == nil {
+				clog.Errorf(ctx, "Missing ticket params orch=%v", od.RemoteInfo.Transcoder)
 				continue
 			}
 
-			ticketParams = pmTicketParams(tinfo.TicketParams)
+			ticketParams = pmTicketParams(od.RemoteInfo.TicketParams)
 			sessionID = n.Sender.StartSession(*ticketParams)
 
 			if n.Balances != nil {
-				balance = core.NewBalance(ticketParams.Recipient, core.ManifestID(tinfo.AuthToken.SessionId), n.Balances)
+				balance = core.NewBalance(ticketParams.Recipient, core.ManifestID(od.RemoteInfo.AuthToken.SessionId), n.Balances)
 			}
 		}
 
 		var orchOS drivers.OSSession
-		if len(tinfo.Storage) > 0 {
-			orchOS = drivers.NewSession(tinfo.Storage[0])
+		if len(od.RemoteInfo.Storage) > 0 {
+			orchOS = drivers.NewSession(od.RemoteInfo.Storage[0])
 		}
 
 		bcastOS := params.OS
 		if bcastOS.IsExternal() {
 			// Give each O its own OS session to prevent front running uploads
-			pfx := fmt.Sprintf("%v/%v", params.ManifestID, tinfo.AuthToken.SessionId)
+			pfx := fmt.Sprintf("%v/%v", params.ManifestID, od.RemoteInfo.AuthToken.SessionId)
 			bcastOS = bcastOS.OS().NewSession(pfx)
 		}
 
+		var oScore float32
+		if od.LocalInfo != nil {
+			oScore = od.LocalInfo.Score
+		}
 		session := &BroadcastSession{
 			Broadcaster:       core.NewBroadcaster(n),
 			Params:            params,
-			OrchestratorInfo:  tinfo,
+			OrchestratorInfo:  od.RemoteInfo,
 			OrchestratorOS:    orchOS,
 			BroadcasterOS:     bcastOS,
 			Sender:            n.Sender,
@@ -733,7 +738,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			Balances:          n.Balances,
 			Balance:           balance,
 			lock:              &sync.RWMutex{},
-			OrchestratorScore: n.OrchestratorPool.GetInfo(tinfo.Transcoder).Score, // todo: use score from OrchestratorLocalInfo
+			OrchestratorScore: oScore,
 		}
 
 		sessions = append(sessions, session)
