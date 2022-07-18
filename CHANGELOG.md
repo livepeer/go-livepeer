@@ -2,7 +2,13 @@
 
 ## v0.5.33
 
+*July 18 2022*
+
+This release contains optimisations to speed up the block backfill process, a number of fixes for transcoding bugs and a switch to using a lower `avgGasPrice` to prevent dropping streams during gas price spikes.
+
 ### Breaking Changes 🚨🚨
+
+None
 
 ### Features ⚒
 
@@ -15,7 +21,7 @@
 - [#2462](https://github.com/livepeer/go-livepeer/pull/2462) cmd: Delete temporary env variable LP_IS_ORCH_TESTER (@leszko)
 
 #### Orchestrator
-- [#2465](https://github.com/livepeer/go-livepeer/pull/2465) server: Don't fail to get Transcode Results if Detections header missing
+- [#2465](https://github.com/livepeer/go-livepeer/pull/2465) server: Don't fail to get Transcode Results if Detections header missing (@thomshutt)
 
 #### Transcoder
 
