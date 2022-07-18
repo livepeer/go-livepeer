@@ -13,6 +13,19 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-20.04
     steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Get build tags
+        id: build-tag
+        run: |
+          ./ci_env.sh
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
@@ -38,13 +51,14 @@ jobs:
             type=sha,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value={{date 'YYYYMMDDHHmmss'}}
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.event.pull_request.head.ref }}
 
       - name: Build minimal livepeer distributable
         uses: docker/build-push-action@v3
         with:
+          build-args: |
+            BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
           platforms: linux/amd64, linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
