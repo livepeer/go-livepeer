@@ -15,6 +15,9 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -177,6 +180,11 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 // XXX do something about the implicit start of the http mux? this smells
 func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool) error {
 	s := grpc.NewServer()
+	reflection.Register(s)
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(s, healthServer)
+
 	lp := lphttp{
 		orchestrator: orch,
 		orchRPC:      s,
