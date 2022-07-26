@@ -1,8 +1,10 @@
 FROM --platform=$BUILDPLATFORM	ubuntu:18.04	as	build
 
 ARG	TARGETARCH
+ARG GOOS
 
 ENV	GOARCH="$TARGETARCH" \
+	GOOS="$GOOS" \
 	PATH="/usr/local/go/bin:/go/bin:${PATH}" \
 	PKG_CONFIG_PATH="/root/compiled/lib/pkgconfig" \
 	CPATH="/usr/local/cuda/include" \
@@ -16,7 +18,7 @@ RUN	apt update \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=amd64] https://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
 	&& apt update \
-	&& apt -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross
+	&& apt -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
