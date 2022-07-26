@@ -12,15 +12,25 @@ RELEASES_DIR="${BASE_DIR}/${RELEASES_DIR:-releases}/"
 
 mkdir -p "$RELEASES_DIR"
 
-if [[ $(uname) == *"MSYS"* ]]; then
+if [[ "${GOOS:-}" != "" ]]; then
+  PLATFORM="$GOOS"
+elif [[ $(uname) == *"MSYS"* ]]; then
   PLATFORM="windows"
-  EXT=".exe"
 else
   PLATFORM=$(uname | tr '[:upper:]' '[:lower:]')
-  EXT=""
-  if [[ -n "${RELEASE_TAG:-}" ]]; then
-    PLATFORM="$PLATFORM-$RELEASE_TAG"
-  fi
+fi
+
+EXT=""
+if [[ "$PLATFORM" == "windows" ]]; then
+  EXT=".exe"
+fi
+if [[ "$PLATFORM" != "linux" ]] && [[ "$PLATFORM" != "darwin" ]] && [[ "$PLATFORM" != "windows" ]]; then
+  echo "Unknown/unsupported platform: $PLATFORM"
+  exit 1
+fi
+
+if [[ -n "${RELEASE_TAG:-}" ]]; then
+  PLATFORM="$PLATFORM-$RELEASE_TAG"
 fi
 
 ARCH="$(uname -m)"
