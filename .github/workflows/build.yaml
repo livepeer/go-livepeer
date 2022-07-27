@@ -10,13 +10,18 @@ on:
 
 jobs:
   linux:
-    name: Build linux binaries
+    name: Build binaries
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        arch:
-          - amd64
-          - arm64
+        include:
+          - arch: amd64
+            os: linux
+          - arch: arm64
+            os: linux
+          - arch: amd64
+            os: windows
+
     steps:
       - name: Check out code
         uses: actions/checkout@v3
@@ -29,6 +34,7 @@ jobs:
       - name: Set build environment
         run: |
           echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.os }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
       - name: Set up go
@@ -42,24 +48,24 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-go-
+            ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-go-
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v2.1.5
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg
+            ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-ffmpeg-
 
       - name: Cache binaries
         uses: actions/cache@v2.1.5
         with:
           path: ~/build
-          key: ${{ runner.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
 
       - name: Install dependencies
         run: |
@@ -68,7 +74,7 @@ jobs:
             && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
             && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
             && sudo apt-get update \
-            && sudo apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross
+            && sudo apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
 
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
@@ -204,59 +210,6 @@ jobs:
           name: release-artifacts
           path: releases/
 
-  windows:
-    name: Build windows binaries
-    runs-on: windows-latest
-    steps:
-      - name: configure git line endings
-        run: git config --global core.autocrlf false
-
-      - name: Check out code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          # Check https://github.com/livepeer/go-livepeer/pull/1891
-          # for ref value discussion
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Setup Msys2 environment
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-
-      - name: Prepare mingw64 environment
-        shell: msys2 {0}
-        run: ./prepare_mingw64.sh
-
-      - name: Build ffmpeg
-        shell: msys2 {0}
-        run: ./install_ffmpeg.sh
-      # For some reason the next step sometimes cannot find protoc
-      # - name: Install protoc
-      #   uses: arduino/setup-protoc@v1
-      # We do not just run `make` because it would also require protoc
-      # Due to the issue described above with finding protoc, for now we just specify the individual binaries
-
-      - name: Build binaries
-        shell: msys2 {0}
-        run: ./ci_env.sh make livepeer livepeer_cli livepeer_bench livepeer_router
-
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        shell: msys2 {0}
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
-
-      - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@master
-        with:
-          name: release-artifacts
-          path: releases/
-
   linux-tensorflow:
     name: Build binaries for linux using tensorflow
     runs-on: ubuntu-18.04
@@ -346,7 +299,7 @@ jobs:
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
           GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
           DISCORD_URL: ${{ secrets.DISCORD_URL }}
-          RELEASE_TAG: 'tensorflow'
+          RELEASE_TAG: "tensorflow"
 
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@master

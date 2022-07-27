@@ -39,6 +39,13 @@ ifeq ($(uname_s),Linux)
 	endif
 endif
 
+pkg_config_libdir :=
+ifeq ($(uname_s),Linux)
+	ifeq ($(GOOS),windows)
+		cc = x86_64-w64-mingw32-gcc
+	endif
+endif
+
 .PHONY: livepeer
 livepeer:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -tags "$(BUILD_TAGS)" -ldflags="$(ldflags)" cmd/livepeer/*.go
