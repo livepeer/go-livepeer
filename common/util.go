@@ -40,8 +40,8 @@ var SegHttpPushTimeoutMultiplier = 4.0
 // SegUploadTimeoutMultiplier used in HTTP connection for uploading the segment
 var SegUploadTimeoutMultiplier = 0.5
 
-// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment duration is not defined
-var SegmentUploadTimeout = 2 * time.Second
+// MinSegmentUploadTimeout defines the minimum timeout enforced for uploading a segment to orchestrators
+var MinSegmentUploadTimeout = 2 * time.Second
 
 // WebhookDiscoveryRefreshInterval defines for long the Webhook Discovery values should be cached
 var WebhookDiscoveryRefreshInterval = 1 * time.Minute

@@ -1962,23 +1962,23 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 		},
 	}
 	buf, err := proto.Marshal(tr)
+	assert.Nil(err)
 
-	headerTimeout := 0 * time.Millisecond
-	bodyTimeout := 0 * time.Millisecond
+	headerDelay := 0 * time.Millisecond
+	bodyDelay := 0 * time.Millisecond
 	ts, mux := stubTLSServer()
 	var lock sync.Mutex
 	defer ts.Close()
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
 		lock.Lock()
-		ht := headerTimeout
+		hd, bd := headerDelay, bodyDelay
 		lock.Unlock()
-		time.Sleep(ht)
+
+		time.Sleep(hd)
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		lock.Lock()
-		bt := bodyTimeout
-		lock.Unlock()
-		time.Sleep(bt)
+
+		time.Sleep(bd)
 		w.Write(buf)
 	})
 
@@ -1996,17 +1996,30 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	defer func() { common.HTTPTimeout = oldTimeout }()
 	common.HTTPTimeout = 0
 
+	oldUploadTimeout := common.MinSegmentUploadTimeout
+	defer func() { common.MinSegmentUploadTimeout = oldUploadTimeout }()
+	common.MinSegmentUploadTimeout = 100 * time.Millisecond
+
 	// time out header
 	lock.Lock()
-	headerTimeout = 500 * time.Millisecond
+	headerDelay = 500 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(context.Background(), sess, seg, nil, 0, false, true)
+	assert.NotNil(err)
+	assert.Contains(err.Error(), "header timeout")
 	assert.Contains(err.Error(), "context canceled")
+
+	// should enforce minimum segment upload timeout
+	lock.Lock()
+	headerDelay = 50 * time.Millisecond
+	lock.Unlock()
+	_, err = SubmitSegment(context.Background(), sess, seg, nil, 0, false, true)
+	assert.Nil(err)
 
 	// time out body
 	lock.Lock()
-	headerTimeout = 0
-	bodyTimeout = 500 * time.Millisecond
+	headerDelay = 0
+	bodyDelay = 500 * time.Millisecond
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
 	assert.NotNil(err)
@@ -2014,16 +2027,16 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 
 	// sanity check, again
 	lock.Lock()
-	bodyTimeout = 0
+	bodyDelay = 0
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
 	assert.Nil(err)
 
-	// sanity check default timeouts with a bodyTimeout > seg.Duration
+	// sanity check default timeouts with a bodyDelay > seg.Duration
 	common.HTTPTimeout = 1 * time.Second
 	lock.Lock()
-	bodyTimeout = 500 * time.Millisecond
-	assert.Greater(common.HTTPTimeout.Milliseconds(), bodyTimeout.Milliseconds())
+	bodyDelay = 500 * time.Millisecond
+	assert.Greater(common.HTTPTimeout.Milliseconds(), bodyDelay.Milliseconds())
 	lock.Unlock()
 	seg.Duration = 0.0 // missing duration
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
@@ -2040,7 +2053,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	// ensure default timeout triggers
 	common.HTTPTimeout = 10 * time.Millisecond
 	lock.Lock()
-	assert.Greater(bodyTimeout.Milliseconds(), common.HTTPTimeout.Milliseconds())
+	assert.Greater(bodyDelay.Milliseconds(), common.HTTPTimeout.Milliseconds())
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
 	assert.Equal("body timeout: context deadline exceeded", err.Error())
