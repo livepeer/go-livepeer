@@ -17,7 +17,7 @@ require (
 	github.com/jaypipes/ghw v0.9.0
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/livepeer-data v0.4.11
-	github.com/livepeer/lpms v0.0.0-20220718125908-35888364c28e
+	github.com/livepeer/lpms v0.0.0-20220728084527-dacf4ac6ff13
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/olekukonko/tablewriter v0.0.5
