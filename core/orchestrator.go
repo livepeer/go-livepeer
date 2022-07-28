@@ -1035,6 +1035,13 @@ func (rtm *RemoteTranscoderManager) Sort() {
 	}
 }
 
+// TranscoderSortMethod returns method node sorts transcoders by
+func (rtm *RemoteTranscoderManager) TranscoderSortMethod() int {
+	rtm.RTmutex.Lock()
+	defer rtm.RTmutex.Unlock()
+	return rtm.sortMethod
+}
+
 // RegisteredTranscodersCount returns number of registered transcoders
 func (rtm *RemoteTranscoderManager) RegisteredTranscodersCount() int {
 	rtm.RTmutex.Lock()
@@ -1047,7 +1054,7 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 	rtm.RTmutex.Lock()
 	res := make([]common.RemoteTranscoderInfo, 0, len(rtm.liveTranscoders))
 	for _, transcoder := range rtm.liveTranscoders {
-		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity})
+		res = append(res, common.RemoteTranscoderInfo{Address: transcoder.addr, Capacity: transcoder.capacity, Priority: transcoder.priority, RTR: transcoder.rtr, PPNS: transcoder.ppns})
 	}
 	rtm.RTmutex.Unlock()
 	return res
