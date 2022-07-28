@@ -54,7 +54,7 @@ ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	docker.io/livepeer/cuda-base:latest
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
