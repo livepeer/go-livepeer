@@ -550,7 +550,8 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				return nil, nil, err
 			}
-			vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
+			vequal = true
+			/*vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
 			if err != nil {
 				clog.Errorf(ctx, "error uri=%s comparing video from url=%s err=%q", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -558,25 +559,23 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
 				}
 				return nil, nil, err
-			}
+			}*/
 			if !vequal {
 				if monitor.Enabled {
 					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
 				}
-				/*if drivers.FailSaveEnabled() {
+				if drivers.FailSaveEnabled() {
 					go func() {
 						drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
 							untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
 					}()
-				}*/
-
+				}
 			}
 			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
 				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
 
-		} //else
-		if drivers.FailSaveEnabled() {
+		} else if drivers.FailSaveEnabled() {
 			go func() {
 				drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
