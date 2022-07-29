@@ -507,12 +507,12 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		return nil, nil, err
 	}
 	// download trusted video segment
-	trustedSegm, err := drivers.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+	/*trustedSegm, err := drivers.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 	if err != nil {
 		err = fmt.Errorf("error downloading segment from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 		return nil, nil, err
-	}
+	}*/
 
 	// verify untrusted hashes
 	var sessionsToSuspend []*BroadcastSession
@@ -538,49 +538,50 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		clog.Infof(ctx, "Hashes from url=%s and url=%s are equal=%v saveenable=%v",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl,
 			untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, equal, drivers.FailSaveEnabled())
-		vequal := false
-		if equal {
-			// download untrusted video segment
-			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
-			if err != nil {
-				if monitor.Enabled {
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+		vequal := true
+		/*
+			if equal {
+				// download untrusted video segment
+				untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+				if err != nil {
+					if monitor.Enabled {
+						monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+					}
+					err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+					return nil, nil, err
 				}
-				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
-					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
-				return nil, nil, err
-			}
-			vequal = true
-			/*vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
-			if err != nil {
-				clog.Errorf(ctx, "error uri=%s comparing video from url=%s err=%q", ouri,
-					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
-				if monitor.Enabled {
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				vequal, err = ffmpeg.CompareVideoByBuffer(trustedSegm, untrustedSegm)
+				if err != nil {
+					clog.Errorf(ctx, "error uri=%s comparing video from url=%s err=%q", ouri,
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
+					if monitor.Enabled {
+						monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+					}
+					return nil, nil, err
 				}
-				return nil, nil, err
-			}*/
-			if !vequal {
-				if monitor.Enabled {
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+				if !vequal {
+					if monitor.Enabled {
+						monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
+					}
+					if drivers.FailSaveEnabled() {
+						go func() {
+							drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
+								untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
+						}()
+					}
 				}
-				if drivers.FailSaveEnabled() {
-					go func() {
-						drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedSegm,
-							untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedSegm, "phase2.ts", seg.Data)
-					}()
-				}
-			}
-			clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
-				trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
-				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
+				clog.Infof(ctx, "Video comparison from url=%s and url=%s are equal=%v saveenable=%v",
+					trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url,
+					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, vequal, drivers.FailSaveEnabled())
 
-		} else if drivers.FailSaveEnabled() {
-			go func() {
-				drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
-					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
-			}()
-		}
+			} else if drivers.FailSaveEnabled() {
+				go func() {
+					drivers.SavePairData2GS(trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, trustedHash,
+						untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, untrustedHash, "phase1.hash", nil)
+				}()
+			}
+		*/
 		if vequal && equal {
 			// stick to this verified orchestrator for further segments.
 			if untrustedResult.Err == nil {
