@@ -543,9 +543,6 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 			// download untrusted video segment
 			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
-				if monitor.Enabled {
-					monitor.FastVerificationFailed(ctx, ouri, monitor.FVType2Error)
-				}
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
 				return nil, nil, err
