@@ -1029,13 +1029,13 @@ func requestTokensHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		backend := client.Backend()
-		blk, err := backend.BlockByNumber(r.Context(), nil)
+		h, err := backend.HeaderByNumber(r.Context(), nil)
 		if err != nil {
 			respond500(w, fmt.Sprintf("Unable to get latest block: %v", err))
 			return
 		}
 
-		now := int64(blk.Time())
+		now := int64(h.Time)
 		if nextValidRequest.Int64() != 0 && nextValidRequest.Int64() > now {
 			respond500(w, fmt.Sprintf("Error requesting tokens from faucet: can only request tokens once every hour, please wait %v more minutes", (nextValidRequest.Int64()-now)/60))
 			return
