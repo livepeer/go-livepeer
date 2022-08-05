@@ -2,6 +2,7 @@ package starter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -123,6 +124,8 @@ type LivepeerConfig struct {
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
+	PricePerBroadcaster          *string
+	FreeStream                   *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -196,6 +199,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchWebhookURL := ""
 	defaultDetectionWebhookURL := ""
 
+	defaultpricePerBroadcaster := ""
+	defaultFreeStream := ""
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -265,6 +271,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AuthWebhookURL:      &defaultAuthWebhookURL,
 		OrchWebhookURL:      &defaultOrchWebhookURL,
 		DetectionWebhookURL: &defaultDetectionWebhookURL,
+
+		PricePerBroadcaster: &defaultpricePerBroadcaster,
+		FreeStream:          &defaultFreeStream,
 	}
 }
 
@@ -694,8 +703,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.PricePerUnit < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
 			}
-			n.SetBasePrice(big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
+			n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
+
+			if *cfg.PricePerBroadcaster != "" {
+				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+				for _, p := range ppb {
+					n.SetBasePrice(p.EthAddress, p.Price)
+					glog.Infof("Price: %v set for broadcaster %v", p.Price.RatString(), p.EthAddress)
+				}
+			}
+
+			if *cfg.FreeStream != "" {
+				n.SetBasePrice(*cfg.FreeStream, big.NewRat(0, 1))
+				glog.Infof("Price: 0 set for broadcaster %v", *cfg.FreeStream)
+			}
 
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
 
@@ -1350,4 +1372,32 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	}
 
 	return nil
+}
+
+type setBroadcasterPrice struct {
+	EthAddress string
+	Price      *big.Rat
+}
+
+func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
+	var pricesSet core.BroadcasterPrices
+	prices, _ := common.GetPass(broadcasterPrices)
+
+	err := json.Unmarshal([]byte(prices), &pricesSet)
+
+	if err != nil {
+		glog.Errorf("broadcaster prices could not be parsed")
+		return nil
+	}
+
+	var bPrices []setBroadcasterPrice
+	for _, ps := range pricesSet.Prices {
+		var p setBroadcasterPrice
+		p.EthAddress = ps.EthAddress
+		p.Price = big.NewRat(ps.PricePerUnit, ps.PixelsPerUnit)
+
+		bPrices = append(bPrices, p)
+	}
+
+	return bPrices
 }

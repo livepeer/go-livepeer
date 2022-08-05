@@ -305,3 +305,36 @@ func (w *wizard) setMaxFaceValue() {
 		return
 	}
 }
+
+func (w *wizard) setPriceForBroadcaster() {
+	fmt.Println("Enter the eth address of the broadcaster")
+	ethaddr := w.readStringAndValidate(func(in string) (string, error) {
+		if "" == in {
+			return "", fmt.Errorf("no broadcaster eth address input")
+		}
+		if in[0:2] != "0x" || len(in) != 42 {
+			return "", fmt.Errorf("broadcaster eth address input not in correct format")
+		}
+
+		return in, nil
+	})
+
+	fmt.Println("Enter price per unit:")
+	price := w.readDefaultInt(0)
+	fmt.Println("Enter pixels per unit:")
+	pixels := w.readDefaultInt(1)
+	data := url.Values{
+		"pricePerUnit":       {fmt.Sprintf("%v", strconv.Itoa(price))},
+		"pixelsPerUnit":      {fmt.Sprintf("%v", strconv.Itoa(pixels))},
+		"broadcasterEthAddr": {fmt.Sprintf("%v", ethaddr)},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForBroadcaster", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf("Price for broadcaster %v set to %v gwei per %v pixels", ethaddr, price, pixels)
+		return
+	} else {
+		fmt.Printf("Error setting price for broadcaster: %v", result)
+		return
+	}
+
+}
