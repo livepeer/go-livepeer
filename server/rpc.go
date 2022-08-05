@@ -19,9 +19,9 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-tools/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/patrickmn/go-cache"
@@ -336,7 +336,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 
 	if os != nil {
 		if os.IsExternal() {
-			tr.Storage = []*net.OSInfo{os.GetInfo()}
+			tr.Storage = []*net.OSInfo{core.ToNetOSInfo(os.GetInfo())}
 		} else {
 			os.EndSession()
 		}

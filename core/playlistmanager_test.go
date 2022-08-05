@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-tools/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/m3u8"
 	"github.com/stretchr/testify/assert"

@@ -22,7 +22,7 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/livepeer/go-livepeer/net"

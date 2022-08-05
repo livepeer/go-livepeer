@@ -22,11 +22,11 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/data"
 	"github.com/livepeer/livepeer-data/pkg/event"
 
@@ -48,7 +48,7 @@ var MetadataQueue event.Producer
 var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
-var downloadSeg = drivers.GetSegmentData
+var downloadSeg = core.GetSegmentData
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -500,14 +500,14 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	segmToCheckIndex := rand.Intn(len(trustedResult.TranscodeResult.Segments))
 
 	// download trusted hashes
-	trustedHash, err := drivers.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	trustedHash, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 	if err != nil {
 		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		return nil, nil, err
 	}
 	// download trusted video segment
-	trustedSegm, err := drivers.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+	trustedSegm, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 	if err != nil {
 		err = fmt.Errorf("error downloading segment from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -518,7 +518,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
 		ouri := untrustedResult.Session.Transcoder()
-		untrustedHash, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+		untrustedHash, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
 			err = fmt.Errorf("error uri=%s downloading perceptual hash from url=%s err=%w", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -541,7 +541,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		vequal := false
 		if equal {
 			// download untrusted video segment
-			untrustedSegm, err := drivers.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+			untrustedSegm, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -710,7 +710,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 
 		var orchOS drivers.OSSession
 		if len(od.RemoteInfo.Storage) > 0 {
-			orchOS = drivers.NewSession(od.RemoteInfo.Storage[0])
+			orchOS = drivers.NewSession(core.FromNetOsInfo(od.RemoteInfo.Storage[0]))
 		}
 
 		bcastOS := params.OS
@@ -1009,7 +1009,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		// Ensure perceptual hash is generated if we ask for it
 		if calcPerceptualHash {
 			segmToCheckIndex := rand.Intn(len(res.Segments))
-			segHash, err := drivers.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
+			segHash, err := core.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
 			if err != nil || len(segHash) <= 0 {
 				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 					res.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -1377,7 +1377,7 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 	sess.OrchestratorInfo = oInfo
 
 	if len(oInfo.Storage) > 0 {
-		sess.OrchestratorOS = drivers.NewSession(oInfo.Storage[0])
+		sess.OrchestratorOS = drivers.NewSession(core.FromNetOsInfo(oInfo.Storage[0]))
 	}
 
 	if sess.Sender != nil && oInfo.TicketParams != nil {

@@ -25,7 +25,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/discovery"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
@@ -33,6 +32,7 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
 )

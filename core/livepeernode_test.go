@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/drivers"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

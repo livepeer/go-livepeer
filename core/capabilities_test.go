@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/stretchr/testify/assert"
@@ -388,11 +388,11 @@ type stubOS struct {
 	storageType int32
 }
 
-func (os *stubOS) GetInfo() *net.OSInfo {
+func (os *stubOS) GetInfo() *drivers.OSInfo {
 	if os.storageType == stubOSMagic {
 		return nil
 	}
-	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
+	return &drivers.OSInfo{StorageType: drivers.OSInfo_StorageType(os.storageType)}
 }
 func (os *stubOS) EndSession() {}
 func (os *stubOS) SaveData(context.Context, string, io.Reader, map[string]string, time.Duration) (string, error) {

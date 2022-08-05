@@ -34,7 +34,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -165,7 +164,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
 		return
 	}
-	data, err := drivers.GetSegmentData(ctx, notify.Url)
+	data, err := core.GetSegmentData(ctx, notify.Url)
 	if err != nil {
 		clog.Errorf(ctx, "Transcoder cannot get segment from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)

@@ -17,7 +17,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
@@ -143,7 +142,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		uri = string(data)
 		clog.V(common.DEBUG).Infof(ctx, "Start getting segment from url=%s", uri)
 		start := time.Now()
-		data, err = drivers.GetSegmentData(ctx, uri)
+		data, err = core.GetSegmentData(ctx, uri)
 		took := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Getting segment from url=%s took=%s bytes=%d", uri, took, len(data))
 		if err != nil {
@@ -638,7 +637,7 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.Se
 	// Send credentials for our own storage
 	var storage *net.OSInfo
 	if bos := sess.BroadcasterOS; bos != nil && bos.IsExternal() {
-		storage = bos.GetInfo()
+		storage = core.ToNetOSInfo(bos.GetInfo())
 	}
 
 	detectorProfiles := []ffmpeg.DetectorProfile{}

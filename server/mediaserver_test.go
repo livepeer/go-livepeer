@@ -25,8 +25,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -662,13 +662,13 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert.NotNil(params.OS)
 	assert.True(params.OS.IsExternal())
 	osinfo := params.OS.GetInfo()
-	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
-	assert.Equal("http://object.store/path", osinfo.GetS3Info().Host)
+	assert.Equal(int32(net.OSInfo_S3), int32(osinfo.StorageType))
+	assert.Equal("http://object.store/path", osinfo.S3Info.Host)
 	assert.NotNil(params.RecordOS)
 	assert.True(params.RecordOS.IsExternal())
 	osinfo = params.RecordOS.GetInfo()
-	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
-	assert.Equal("http://record.store", osinfo.GetS3Info().Host)
+	assert.Equal(int32(net.OSInfo_S3), int32(osinfo.StorageType))
+	assert.Equal("http://record.store", osinfo.S3Info.Host)
 
 	// set scene classification detector profiles
 	ts18 := makeServer(`{"manifestID":"a", "detection": {"freq": 5, "sampleRate": 10, "sceneClassification": [{"name": "soccer"}]}}`)
@@ -1159,14 +1159,14 @@ func TestRegisterConnection(t *testing.T) {
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
-	driver, err := drivers.NewS3Driver("", "", "", "", false)
+	driver, err := drivers.NewS3Driver("", "", "", "", "", false)
 	assert.Nil(err)
 	storage := driver.NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
 	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Nil(err)
 	assert.Equal(storage, cxn.params.OS)
-	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
+	assert.Equal(int32(net.OSInfo_S3), int32(cxn.params.OS.GetInfo().StorageType))
 	assert.Equal(cxn.params.OS, cxn.pl.GetOSSession())
 
 	// check for capabilities
