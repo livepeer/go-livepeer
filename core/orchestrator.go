@@ -51,6 +51,18 @@ type orchestrator struct {
 	secret  []byte
 }
 
+//Format of broadcasterPrices json
+//{"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
+type BroadcasterPrices struct {
+	Prices []broadcasterPrice `json:"broadcasters"`
+}
+
+type broadcasterPrice struct {
+	EthAddress    string `json:"ethaddress"`
+	PricePerUnit  int64  `json:"priceperunit"`
+	PixelsPerUnit int64  `json:"pixelsperunit"`
+}
+
 func (orch *orchestrator) ServiceURI() *url.URL {
 	return orch.node.GetServiceURI()
 }
@@ -272,7 +284,12 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) {
-	basePrice := orch.node.GetBasePrice()
+	basePrice := orch.node.GetBasePrice(sender.String())
+
+	if basePrice == nil {
+		basePrice = orch.node.GetBasePrice("default")
+	}
+	glog.Infof("Price of %v gwei sent to broadcaster %v", basePrice.RatString(), sender.String())
 
 	if !orch.node.AutoAdjustPrice {
 		return basePrice, nil

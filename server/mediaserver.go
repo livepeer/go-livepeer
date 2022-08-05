@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
@@ -1611,6 +1612,8 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 		OrchestratorPool:      []string{},
 		RegisteredTranscoders: []common.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,
+		BroadcasterPrices:     make(map[string]*big.Rat),
+		NodeType:              s.LivepeerNode.NodeType.String(),
 	}
 	for k, v := range s.internalManifests {
 		res.InternalManifests[string(k)] = string(v)
@@ -1625,6 +1628,9 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 		for _, info := range infos {
 			res.OrchestratorPool = append(res.OrchestratorPool, info.URL.String())
 		}
+	}
+	if s.LivepeerNode.NodeType.String() == "orchestrator" {
+		res.BroadcasterPrices = s.LivepeerNode.GetBasePrices()
 	}
 	return res
 }

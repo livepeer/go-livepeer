@@ -113,6 +113,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Sign typed data", invoke: w.signTypedData},
 		{desc: "Vote in a poll", invoke: w.vote, orchestrator: true},
 		{desc: "Set max ticket face value", invoke: w.setMaxFaceValue, orchestrator: true},
+		{desc: "Set price for broadcaster", invoke: w.setPriceForBroadcaster, orchestrator: true},
 		{desc: "Exit", invoke: func() {
 			fmt.Println("Goodbye, my friend")
 			os.Exit(0)
