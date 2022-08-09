@@ -166,7 +166,8 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 
 	for i := 0; i < count && retry; i++ {
 		out, err = remoteCall()
-		if err != nil && (err.Error() == "EOF" || err.Error() == "tls: use of closed connection") {
+		if err != nil && isRetryableRemoteCallError(err) {
+			glog.Error(err)
 			glog.V(4).Infof("Retrying call to remote ethereum node")
 		} else {
 			retry = false
@@ -174,6 +175,21 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 	}
 
 	return out, err
+}
+
+func isRetryableRemoteCallError(err error) bool {
+	retryableRemoteCallErrors := []string{
+		"EOF",
+		"tls: use of closed connection",
+	}
+
+	for _, errStr := range retryableRemoteCallErrors {
+		if strings.HasPrefix(err.Error(), errStr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func makeABIMap() map[string]*abi.ABI {
