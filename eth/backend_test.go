@@ -107,3 +107,45 @@ func TestIsRetryableRemoteCallError(t *testing.T) {
 
 	assert.False(isRetryableRemoteCallError(errors.New("not retryable")))
 }
+
+func TestRetryRemoteCall(t *testing.T) {
+	assert := assert.New(t)
+
+	// Reduce time between retries
+	oldRemoteCallRetrySleep := remoteCallRetrySleep
+	defer func() { remoteCallRetrySleep = oldRemoteCallRetrySleep }()
+	remoteCallRetrySleep = 100 * time.Millisecond
+
+	// The number of calls to remoteCall
+	var numCalls int
+	// The call that should succeed
+	callSuccess := 1
+	remoteCall := func() ([]byte, error) {
+		numCalls++
+
+		if numCalls == callSuccess {
+			return []byte{}, nil
+		}
+
+		return nil, errors.New("EOF")
+	}
+
+	b := &backend{}
+
+	for i := 0; i < maxRemoteCallRetries; i++ {
+		numCalls = 0
+		callSuccess = i + 1
+
+		out, err := b.retryRemoteCall(remoteCall)
+		assert.Nil(err)
+		assert.Equal([]byte{}, out)
+		assert.Equal(callSuccess, numCalls)
+	}
+
+	numCalls = 0
+	callSuccess = maxRemoteCallRetries + 1
+	out, err := b.retryRemoteCall(remoteCall)
+	assert.EqualError(err, "EOF")
+	assert.Equal([]byte(nil), out)
+	assert.Equal(maxRemoteCallRetries, numCalls)
+}

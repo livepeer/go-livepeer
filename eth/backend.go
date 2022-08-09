@@ -33,6 +33,9 @@ var abis = []string{
 
 var abiMap = makeABIMap()
 
+var maxRemoteCallRetries = 6
+var remoteCallRetrySleep = 1 * time.Second
+
 type Backend interface {
 	ethereum.ChainStateReader
 	ethereum.TransactionReader
@@ -162,10 +165,9 @@ func (b *backend) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 }
 
 func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte, err error) {
-	count := 3    // consider making this a package-level global constant
 	retry := true // consider making this a package-level global constant
 
-	for i := 0; i < count && retry; i++ {
+	for i := 0; i < maxRemoteCallRetries && retry; i++ {
 		out, err = remoteCall()
 		if err != nil && isRetryableRemoteCallError(err) {
 			glog.V(4).Infof("Retrying call to remote ethereum node err=%v", err)
@@ -173,7 +175,7 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 			// more difficult to propagate the result from the call if the remote call is successful because
 			// the backoff functions can only return a single error type.
 			// So, to keep things simple just sleep here for 1 second before trying again.
-			time.Sleep(1 * time.Second)
+			time.Sleep(remoteCallRetrySleep)
 		} else {
 			retry = false
 		}
