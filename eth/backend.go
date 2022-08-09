@@ -181,6 +181,7 @@ func isRetryableRemoteCallError(err error) bool {
 	retryableRemoteCallErrors := []string{
 		"EOF",
 		"tls: use of closed connection",
+		"unsupported block number",
 	}
 
 	for _, errStr := range retryableRemoteCallErrors {

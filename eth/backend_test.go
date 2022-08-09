@@ -102,6 +102,8 @@ func TestIsRetryableRemoteCallError(t *testing.T) {
 	assert.True(isRetryableRemoteCallError(errors.New("EOF a")))
 	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection")))
 	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection a")))
+	assert.True(isRetryableRemoteCallError(errors.New("unsupported block number")))
+	assert.True(isRetryableRemoteCallError(errors.New("unsupported block number a")))
 
 	assert.False(isRetryableRemoteCallError(errors.New("not retryable")))
 }
