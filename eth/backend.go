@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -169,6 +170,11 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 		if err != nil && isRetryableRemoteCallError(err) {
 			glog.Error(err)
 			glog.V(4).Infof("Retrying call to remote ethereum node")
+			// We could use the backoff package to configure an exponential backoff here, but it makes it
+			// more difficult to propagate the result from the call if the remote call is successful because
+			// the backoff functions can only return a single error type.
+			// So, to keep things simple just sleep here for 1 second before trying again.
+			time.Sleep(1 * time.Second)
 		} else {
 			retry = false
 		}
