@@ -168,8 +168,7 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 	for i := 0; i < count && retry; i++ {
 		out, err = remoteCall()
 		if err != nil && isRetryableRemoteCallError(err) {
-			glog.Error(err)
-			glog.V(4).Infof("Retrying call to remote ethereum node")
+			glog.V(4).Infof("Retrying call to remote ethereum node err=%v", err)
 			// We could use the backoff package to configure an exponential backoff here, but it makes it
 			// more difficult to propagate the result from the call if the remote call is successful because
 			// the backoff functions can only return a single error type.
