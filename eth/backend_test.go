@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"log"
 	"math/big"
 	"testing"
@@ -92,4 +93,15 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	nonceLockAfter := bi.(*backend).nonceManager.getNonceLock(fromAddress)
 
 	assert.Equal(t, nonceLockBefore.nonce, nonceLockAfter.nonce)
+}
+
+func TestIsRetryableRemoteCallError(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.True(isRetryableRemoteCallError(errors.New("EOF")))
+	assert.True(isRetryableRemoteCallError(errors.New("EOF a")))
+	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection")))
+	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection a")))
+
+	assert.False(isRetryableRemoteCallError(errors.New("not retryable")))
 }
