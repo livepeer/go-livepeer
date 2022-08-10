@@ -34,7 +34,7 @@ var abis = []string{
 var abiMap = makeABIMap()
 
 var maxRemoteCallRetries = 6
-var remoteCallRetrySleep = 1 * time.Second
+var remoteCallRetrySleep = 500 * time.Millisecond
 
 type Backend interface {
 	ethereum.ChainStateReader
@@ -174,8 +174,9 @@ func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte
 			// We could use the backoff package to configure an exponential backoff here, but it makes it
 			// more difficult to propagate the result from the call if the remote call is successful because
 			// the backoff functions can only return a single error type.
-			// So, to keep things simple just sleep here for 1 second before trying again.
-			time.Sleep(remoteCallRetrySleep)
+			// So, we manually implement a simple linear backoff here instead
+			// 500ms, 1s, 1.5s, etc.
+			time.Sleep(time.Duration(i+1) * remoteCallRetrySleep)
 		} else {
 			retry = false
 		}
