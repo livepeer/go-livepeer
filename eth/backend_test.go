@@ -114,7 +114,7 @@ func TestRetryRemoteCall(t *testing.T) {
 	// Reduce time between retries
 	oldRemoteCallRetrySleep := remoteCallRetrySleep
 	defer func() { remoteCallRetrySleep = oldRemoteCallRetrySleep }()
-	remoteCallRetrySleep = 100 * time.Millisecond
+	remoteCallRetrySleep = 50 * time.Millisecond
 
 	// The number of calls to remoteCall
 	var numCalls int
@@ -130,13 +130,27 @@ func TestRetryRemoteCall(t *testing.T) {
 		return nil, errors.New("EOF")
 	}
 
+	calcExpSleepTime := func(retries int) time.Duration {
+		total := time.Duration(0)
+		for i := 0; i < retries; i++ {
+			total = total + (time.Duration(i+1) * remoteCallRetrySleep)
+		}
+		return total
+	}
+
 	b := &backend{}
 
 	for i := 0; i < maxRemoteCallRetries; i++ {
 		numCalls = 0
 		callSuccess = i + 1
 
+		expSleepTime := calcExpSleepTime(i)
+
+		startTime := time.Now()
 		out, err := b.retryRemoteCall(remoteCall)
+		endTime := time.Now()
+
+		assert.GreaterOrEqual(endTime.Sub(startTime), expSleepTime)
 		assert.Nil(err)
 		assert.Equal([]byte{}, out)
 		assert.Equal(callSuccess, numCalls)
@@ -144,7 +158,14 @@ func TestRetryRemoteCall(t *testing.T) {
 
 	numCalls = 0
 	callSuccess = maxRemoteCallRetries + 1
+
+	expSleepTime := calcExpSleepTime(maxRemoteCallRetries)
+
+	startTime := time.Now()
 	out, err := b.retryRemoteCall(remoteCall)
+	endTime := time.Now()
+
+	assert.GreaterOrEqual(endTime.Sub(startTime), expSleepTime)
 	assert.EqualError(err, "EOF")
 	assert.Equal([]byte(nil), out)
 	assert.Equal(maxRemoteCallRetries, numCalls)
