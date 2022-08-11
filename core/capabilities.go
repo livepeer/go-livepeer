@@ -6,8 +6,8 @@ import (
 
 	"sync"
 
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -527,11 +527,11 @@ func storageToCapability(os drivers.OSSession) (Capability, error) {
 		return Capability_Unused, nil // unused
 	}
 	switch os.GetInfo().StorageType {
-	case net.OSInfo_S3:
+	case drivers.OSInfo_S3:
 		return Capability_StorageS3, nil
-	case net.OSInfo_GOOGLE:
+	case drivers.OSInfo_GOOGLE:
 		return Capability_StorageGCS, nil
-	case net.OSInfo_DIRECT:
+	case drivers.OSInfo_DIRECT:
 		return Capability_StorageDirect, nil
 	}
 	return Capability_Invalid, capStorageConv

@@ -17,10 +17,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/verification"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/data"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -187,7 +187,7 @@ func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reade
 }
 func (s *stubOSSession) EndSession() {
 }
-func (s *stubOSSession) GetInfo() *net.OSInfo {
+func (s *stubOSSession) GetInfo() *drivers.OSInfo {
 	return nil
 }
 func (s *stubOSSession) IsExternal() bool {
@@ -1088,7 +1088,7 @@ func TestUpdateSession(t *testing.T) {
 	updateSession(sess, res)
 	assert.Equal(info, *sess.OrchestratorInfo)
 	// Check that BroadcastSession.OrchestratorOS is updated when len(info.Storage) > 0
-	assert.Equal(info.Storage[0], sess.OrchestratorOS.GetInfo())
+	assert.Equal(info.Storage[0], core.ToNetOSInfo(sess.OrchestratorOS.GetInfo()))
 	// Check that a new PM session is not created because BroadcastSession.Sender = nil
 	assert.Equal("foo", sess.PMSessionID)
 	assert.Equal(info.Transcoder, sess.Transcoder())
@@ -1336,7 +1336,7 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 	pl := &stubPlaylistManager{manifestID: mid}
 	// drivers.S3BUCKET = "livepeer"
 	S3BUCKET := "livepeer"
-	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", false)
+	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", "", false)
 	assert.Nil(err)
 	mem := driver.NewSession(string(mid))
 	assert.NotNil(mem)
@@ -1388,7 +1388,7 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 	mid := core.ManifestID("foo")
 	pl := &stubPlaylistManager{manifestID: mid}
 	S3BUCKET := "livepeer"
-	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", false)
+	driver, err := drivers.NewS3Driver("", S3BUCKET, "", "", "", false)
 	assert.Nil(err)
 	mem := driver.NewSession(string(mid))
 	assert.NotNil(mem)
