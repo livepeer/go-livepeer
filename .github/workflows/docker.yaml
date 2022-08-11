@@ -12,6 +12,9 @@ jobs:
   build:
     name: Docker image generation
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      packages: write
+      contents: read
     runs-on: ubuntu-20.04
     steps:
       - name: Check out code
