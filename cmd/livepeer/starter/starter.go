@@ -972,7 +972,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			defer cancel()
 			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher)
 			if err != nil {
-				glog.Errorf("Could not create orchestrator pool with DB cache: %v", err)
+				glog.Fatalf("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
 			n.OrchestratorPool = dbOrchPoolCache
