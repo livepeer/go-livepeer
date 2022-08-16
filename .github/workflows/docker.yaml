@@ -1,4 +1,4 @@
-name: Docker Build
+name: Docker build
 
 on:
   pull_request:
@@ -10,7 +10,11 @@ on:
 
 jobs:
   build:
+    name: Docker image generation
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      packages: write
+      contents: read
     runs-on: ubuntu-20.04
     steps:
       - name: Check out code
@@ -20,6 +24,12 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions-ecosystem/action-regex-match@v2
+        id: match-tag
+        with:
+          text: ${{ github.ref_name }}
+          regex: '^(main|master|v[0-9]+\.\d+\.\d+)$'
 
       - name: Get build tags
         id: build-tag
@@ -38,11 +48,20 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASS }}
 
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: livepeer/go-livepeer
+          images: |
+            livepeer/go-livepeer
+            ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -54,15 +73,35 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.event.pull_request.head.ref }}
 
-      - name: Build minimal livepeer distributable
+      - name: Build and push livepeer builder
+        if: ${{ steps.match-tag.outputs.match != '' }}
         uses: docker/build-push-action@v3
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
           platforms: linux/amd64
           push: true
+          tags: |
+            livepeerci/build:latest
+            ghcr.io/${{ github.repository }}:builder
+          file: 'docker/Dockerfile'
+          target: build
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push livepeer docker image
+        uses: docker/build-push-action@v3
+        with:
+          build-args: |
+            BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
+          # linux/arm64 is disabled until
+          # <https://github.com/livepeer/go-livepeer/issues/2545> gets
+          # resolved
+          platforms: linux/amd64
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           file: 'docker/Dockerfile'
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=livepeerci/build
-          cache-to: type=registry,ref=livepeerci/build,mode=max
+          cache-from: type=registry,ref=livepeerci/build:cache
+          cache-to: type=registry,ref=livepeerci/build:cache,mode=max
