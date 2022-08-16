@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -50,7 +51,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		Accel: ffmpeg.Software,
 	}
 	profiles := md.Profiles
-	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash)
+	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
 		opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
 	}
@@ -102,7 +103,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Netint, md.DetectorProfiles)...)
 	}
@@ -140,7 +141,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash)
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
 	}
@@ -252,6 +253,17 @@ func testAccelTranscode(device string, tf func(device string) TranscoderSession,
 
 // Test which capabilities transcoder supports
 func TestTranscoderCapabilities(devices []string, tf func(device string) TranscoderSession) (caps []Capability, fatalError error) {
+	// disable logging, unless verbosity is set
+	vFlag := flag.Lookup("v").Value.String()
+	detailsMsg := ""
+	if vFlag == "" {
+		detailsMsg = ", set verbosity level to see more details"
+		logLevel := ffmpeg.FfmpegGetLogLevel()
+		defer ffmpeg.FfmpegSetLogLevel(logLevel)
+		ffmpeg.FfmpegSetLogLevel(0)
+		ffmpeg.LogTranscodeErrors = false
+		defer func() { ffmpeg.LogTranscodeErrors = true }()
+	}
 	fatalError = nil
 	transcodeWithSample(func(params *transcodeTestParams) continueLoop {
 		if !params.TestAvailable {
@@ -281,7 +293,7 @@ func TestTranscoderCapabilities(devices []string, tf func(device string) Transco
 		for _, device := range devices {
 			outputProduced, outputValid, err := testAccelTranscode(device, tf, params.SegmentPath, params.OutProfile, 4)
 			if err != nil {
-				glog.Infof("%s %q is not supported on device %s, see other error messages for details", params.Kind(), params.Name(), device)
+				glog.Infof("%s %q is not supported on device %s%s", params.Kind(), params.Name(), device, detailsMsg)
 				// likely means capability is not supported, don't check on other devices
 				transcodingFailed()
 				return fatalError == nil
@@ -480,7 +492,9 @@ func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts 
 	}, nil
 }
 
-func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool) []ffmpeg.TranscodeOptions {
+func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.VideoProfile, calcPHash bool,
+	segPar *SegmentParameters) []ffmpeg.TranscodeOptions {
+
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
@@ -489,6 +503,10 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 			Accel:        accel,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			CalcSign:     calcPHash,
+		}
+		if segPar != nil {
+			o.From = segPar.From
+			o.To = segPar.To
 		}
 		opts[i] = o
 	}

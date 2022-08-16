@@ -3,6 +3,14 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/cenkalti/backoff"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -15,13 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
-	"math/big"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const MainnetChainId = 1
@@ -110,6 +111,12 @@ func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) h
 func (s *LivepeerServer) isOrchestratorHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.OrchestratorNode)))
+	})
+}
+
+func (s *LivepeerServer) isRedeemerHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, []byte(fmt.Sprintf("%v", s.LivepeerNode.NodeType == core.RedeemerNode)))
 	})
 }
 
@@ -515,6 +522,28 @@ func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI 
 	s.LivepeerNode.SetServiceURI(parsedURI)
 
 	return nil
+}
+
+func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			maxfacevalue := r.FormValue("maxfacevalue")
+			if maxfacevalue != "" {
+				mfv, success := new(big.Int).SetString(maxfacevalue, 10)
+				if success {
+					s.LivepeerNode.SetMaxFaceValue(mfv)
+					respondOk(w, []byte("ticket max face value set"))
+					glog.Infof("Max ticket face value set to: %v", maxfacevalue)
+				} else {
+					respond400(w, "maxfacevalue not set to number")
+				}
+			} else {
+				respond400(w, "need to set 'maxfacevalue'")
+			}
+		} else {
+			respond400(w, "node must be orchestrator node to set maxfacevalue")
+		}
+	})
 }
 
 // Bond, withdraw, reward
@@ -1000,13 +1029,13 @@ func requestTokensHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		backend := client.Backend()
-		blk, err := backend.BlockByNumber(r.Context(), nil)
+		h, err := backend.HeaderByNumber(r.Context(), nil)
 		if err != nil {
 			respond500(w, fmt.Sprintf("Unable to get latest block: %v", err))
 			return
 		}
 
-		now := int64(blk.Time())
+		now := int64(h.Time)
 		if nextValidRequest.Int64() != 0 && nextValidRequest.Int64() > now {
 			respond500(w, fmt.Sprintf("Error requesting tokens from faucet: can only request tokens once every hour, please wait %v more minutes", (nextValidRequest.Int64()-now)/60))
 			return

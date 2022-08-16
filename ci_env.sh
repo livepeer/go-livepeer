@@ -24,8 +24,8 @@ NETWORK_BRANCHES="dev rinkeby"
 branch=""
 if [[ "${TRAVIS_BRANCH:-}" != "" ]]; then
   branch="$TRAVIS_BRANCH"
-elif [[ "${GHA_REF:-}" != "" ]]; then
-  branch="$(echo $GHA_REF | sed 's/refs\/heads\///')"
+elif [[ "${GITHUB_REF_NAME:-}" != "" ]]; then
+  branch="$GITHUB_REF_NAME"
 fi
 
 # By default we build with mainnet support
@@ -54,5 +54,7 @@ export BUILD_TAGS="$HIGHEST_CHAIN_TAG"
 if [[ $generatedVersion != $definedVersion ]]; then
   export BUILD_TAGS="${BUILD_TAGS},experimental"
 fi
+
+echo "::set-output name=build-tags::${BUILD_TAGS}"
 
 exec "$@"

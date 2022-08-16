@@ -1,17 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 )
@@ -62,15 +64,15 @@ func TestRecordingHandler(t *testing.T) {
 	profile := ffmpeg.P144p25fps16x9
 	jpl.InsertHLSSegment(&profile, 1, "sess1/testNode/P144p25fps16x9/1.ts", 2100)
 	bjpl, _ := json.Marshal(jpl)
-	msess1.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
+	msess1.SaveData(context.TODO(), "testNode/playlist_1.json", bytes.NewReader(bjpl), nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 2, "sess2/testNode/P144p25fps16x9/2.ts", 2100)
 	bjpl, _ = json.Marshal(jpl)
-	msess2.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
+	msess2.SaveData(context.TODO(), "testNode/playlist_2.json", bytes.NewReader(bjpl), nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 1, "sess3/testNode/P144p25fps16x9/3.ts", 2100)
 	bjpl, _ = json.Marshal(jpl)
-	msess3.SaveData(context.TODO(), "testNode/playlist_3.json", bjpl, nil, 0)
+	msess3.SaveData(context.TODO(), "testNode/playlist_3.json", bytes.NewReader(bjpl), nil, 0)
 
 	resp = makeReq("GET", "/recordings/sess3/P144p25fps16x9.m3u8")
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -123,7 +125,7 @@ func TestRecording(t *testing.T) {
 
 	mos := drivers.TestMemoryStorages["recstore4"]
 	msess := mos.NewSession("sess1")
-	msess.SaveData(context.TODO(), "testNode/source/1.ts", []byte("segmentdata"), nil, 0)
+	msess.SaveData(context.TODO(), "testNode/source/1.ts", strings.NewReader("segmentdata"), nil, 0)
 
 	resp = makeReq("GET", "/live/sess1/testNode/source/1.ts")
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -136,12 +138,12 @@ func TestRecording(t *testing.T) {
 	jpl.InsertHLSSegment(&profile, 1, "testNode/P144p25fps16x9/1.ts", 2100)
 	bjpl, err := json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
+	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bytes.NewReader(bjpl), nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 2, "testNode/P144p25fps16x9/2.ts", 2100)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
+	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bytes.NewReader(bjpl), nil, 0)
 
 	resp = makeReq("GET", "/live/sess1/index.m3u8")
 	body, _ = ioutil.ReadAll(resp.Body)
@@ -172,12 +174,12 @@ func TestRecording(t *testing.T) {
 	jpl.InsertHLSSegment(&profile, 3, "testNode/P144p25fps16x9/3.ts", 2100)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bjpl, nil, 0)
+	msess.SaveData(context.TODO(), "testNode/playlist_1.json", bytes.NewReader(bjpl), nil, 0)
 	jpl = core.NewJSONPlaylist()
 	jpl.InsertHLSSegment(&profile, 4, "testNode/P144p25fps16x9/4.ts", 2450)
 	bjpl, err = json.Marshal(jpl)
 	assert.Nil(err)
-	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bjpl, nil, 0)
+	msess.SaveData(context.TODO(), "testNode/playlist_2.json", bytes.NewReader(bjpl), nil, 0)
 	resp = makeReq("GET", "/live/sess2/P144p25fps16x9.m3u8?finalize=false")
 	body, _ = ioutil.ReadAll(resp.Body)
 	resp.Body.Close()

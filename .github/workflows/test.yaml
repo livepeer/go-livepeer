@@ -87,6 +87,7 @@ jobs:
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
           ./test.sh
+          ./test_e2e.sh
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
@@ -94,3 +95,4 @@ jobs:
           files: ./cover.out
           name: go-livepeer
           verbose: true
+          gcov_ignore: ./eth/stubclient.go

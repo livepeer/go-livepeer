@@ -8,11 +8,34 @@ ROOT="${1:-$HOME}"
 NPROC=${NPROC:-$(nproc)}
 EXTRA_CFLAGS=""
 EXTRA_LDFLAGS=""
+EXTRA_X264_FLAGS=""
 EXTRA_FFMPEG_FLAGS=""
 
 if [[ "$ARCH" == "arm64" && "$UNAME" == "Darwin" ]]; then
   # Detect Apple Silicon
-  IS_M1=1
+  IS_ARM64=1
+fi
+
+if [[ "$ARCH" == "x86_64" && "$UNAME" == "Linux" && "${GOARCH:-}" == "arm64" ]]; then
+  echo "cross-compiling linux-arm64"
+  export CC="clang --sysroot=/usr/aarch64-linux-gnu"
+  EXTRA_CFLAGS="--target=aarch64-linux-gnu $EXTRA_CFLAGS"
+  EXTRA_LDFLAGS="--target=aarch64-linux-gnu $EXTRA_LDFLAGS"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang --sysroot=/usr/aarch64-linux-gnu"
+  HOST_OS="--host=aarch64-linux-gnu"
+  IS_ARM64=1
+fi
+
+if [[ "$ARCH" == "x86_64" && "$UNAME" == "Linux" && "${GOOS:-}" == "windows" ]]; then
+  echo "cross-compiling windows-amd64"
+  EXTRA_CFLAGS="-L/usr/x86_64-w64-mingw32/lib -I/usr/x86_64-w64-mingw32/include  $EXTRA_CFLAGS"
+  EXTRA_LDFLAGS="-L/usr/x86_64-w64-mingw32/lib $EXTRA_LDFLAGS"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=x86_64 --enable-cross-compile --cross-prefix=x86_64-w64-mingw32- --target-os=mingw64 --sysroot=/usr/x86_64-w64-mingw32"
+  EXTRA_X264_FLAGS="$EXTRA_X264_FLAGS --cross-prefix=x86_64-w64-mingw32- --sysroot=/usr/x86_64-w64-mingw32"
+  HOST_OS="--host=mingw64"
+  # Workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=967969
+  export PKG_CONFIG_LIBDIR="/usr/local/x86_64-w64-mingw32/lib/pkgconfig"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --pkg-config=$(which pkg-config)"
 fi
 
 if [[ "$ARCH" == "x86_64" && "$UNAME" == "Darwin" && "${GOARCH:-}" == "arm64" ]]; then
@@ -21,9 +44,9 @@ if [[ "$ARCH" == "x86_64" && "$UNAME" == "Darwin" && "${GOARCH:-}" == "arm64" ]]
   EXTRA_LDFLAGS="$EXTRA_LDFLAGS --target=arm64-apple-macos11"
   HOST_OS="--host=aarch64-darwin"
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile"
-  IS_M1=1
+  IS_ARM64=1
 fi
-echo "Arch $ARCH ${IS_M1:+(Apple Silicon)}"
+echo "Arch $ARCH ${IS_ARM64:+(ARM64)}"
 
 # Windows (MSYS2) needs a few tweaks
 if [[ "$UNAME" == *"MSYS"* ]]; then
@@ -52,13 +75,13 @@ if [[ "$UNAME" != "Darwin" ]]; then
   if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
     cd $ROOT/nv-codec-headers
-    git checkout 250292dd20af60edc6e0d07f1d6e489a2f8e1c44
+    git checkout n9.1.23.1
     make -e PREFIX="$ROOT/compiled"
     make install -e PREFIX="$ROOT/compiled"
   fi
 fi
 
-if [[ "$UNAME" != *"MSYS"* && ! $IS_M1 ]]; then
+if [[ "$UNAME" != *"MSYS"* && ! $IS_ARM64 ]]; then
   if [[ ! -e "$ROOT/nasm-2.14.02" ]]; then
     # sudo apt-get -y install asciidoc xmlto # this fails :(
     cd "$ROOT"
@@ -77,14 +100,14 @@ fi
 if [[ ! -e "$ROOT/x264" ]]; then
   git clone http://git.videolan.org/git/x264.git "$ROOT/x264"
   cd "$ROOT/x264"
-  if [[ $IS_M1 ]]; then
+  if [[ $IS_ARM64 ]]; then
     # newer git master, compiles on Apple Silicon
     git checkout 66a5bc1bd1563d8227d5d18440b525a09bcf17ca
   else
     # older git master, does not compile on Apple Silicon
     git checkout 545de2ffec6ae9a80738de1b2c8cf820249a2530
   fi
-  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS"
+  ./configure --prefix="$ROOT/compiled" --enable-pic --enable-static ${HOST_OS:-} --disable-cli --extra-cflags="$EXTRA_CFLAGS" --extra-asflags="$EXTRA_CFLAGS" --extra-ldflags="$EXTRA_LDFLAGS" --disable-asm $EXTRA_X264_FLAGS || (cat $ROOT/x264/config.log && exit 1)
   make -j$NPROC
   make -j$NPROC install-lib-static
 fi
@@ -150,7 +173,7 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout c0dcf5491814e0b0503180087d9e5e997f51b367
+  git checkout dd7e5c34e75fcb8ed79e0798d190d523e11ce60b
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libx264 --enable-gpl \
     --enable-protocol=rtmp,file,pipe \

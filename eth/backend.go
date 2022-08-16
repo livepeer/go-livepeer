@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -31,6 +32,9 @@ var abis = []string{
 }
 
 var abiMap = makeABIMap()
+
+var maxRemoteCallRetries = 6
+var remoteCallRetrySleep = 500 * time.Millisecond
 
 type Backend interface {
 	ethereum.ChainStateReader
@@ -161,19 +165,40 @@ func (b *backend) PendingCallContract(ctx context.Context, msg ethereum.CallMsg)
 }
 
 func (b *backend) retryRemoteCall(remoteCall func() ([]byte, error)) (out []byte, err error) {
-	count := 3    // consider making this a package-level global constant
 	retry := true // consider making this a package-level global constant
 
-	for i := 0; i < count && retry; i++ {
+	for i := 0; i < maxRemoteCallRetries && retry; i++ {
 		out, err = remoteCall()
-		if err != nil && (err.Error() == "EOF" || err.Error() == "tls: use of closed connection") {
-			glog.V(4).Infof("Retrying call to remote ethereum node")
+		if err != nil && isRetryableRemoteCallError(err) {
+			glog.V(4).Infof("Retrying call to remote ethereum node err=%v", err)
+			// We could use the backoff package to configure an exponential backoff here, but it makes it
+			// more difficult to propagate the result from the call if the remote call is successful because
+			// the backoff functions can only return a single error type.
+			// So, we manually implement a simple linear backoff here instead
+			// 500ms, 1s, 1.5s, etc.
+			time.Sleep(time.Duration(i+1) * remoteCallRetrySleep)
 		} else {
 			retry = false
 		}
 	}
 
 	return out, err
+}
+
+func isRetryableRemoteCallError(err error) bool {
+	retryableRemoteCallErrors := []string{
+		"EOF",
+		"tls: use of closed connection",
+		"unsupported block number",
+	}
+
+	for _, errStr := range retryableRemoteCallErrors {
+		if strings.HasPrefix(err.Error(), errStr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func makeABIMap() map[string]*abi.ABI {

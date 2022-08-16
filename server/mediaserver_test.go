@@ -25,8 +25,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	lpmscore "github.com/livepeer/lpms/core"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
@@ -102,7 +102,8 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		// port++
 		// this one really starts server (without a way to shut it down)
 		cliUrl := fmt.Sprintf("127.0.0.1:%d", port)
-		go S.StartCliWebserver(cliUrl)
+		srv := &http.Server{Addr: cliUrl}
+		go S.StartCliWebserver(srv)
 		port++
 		// sometimes LivepeerServer needs time  to start
 		// esp if this is the only test in the suite being run (eg, via `-run)
@@ -134,7 +135,10 @@ func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
 		go S.StartMediaServer(ctx, "127.0.0.1:9080")
-		go S.StartCliWebserver("127.0.0.1:9938")
+		go func() {
+			srv := &http.Server{Addr: "127.0.0.1:9938"}
+			S.StartCliWebserver(srv)
+		}()
 	}
 	return S, cancel
 }
@@ -170,13 +174,8 @@ func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 	return nil
 }
 
-func (d *stubDiscovery) GetInfo(uri string) common.OrchestratorLocalInfo {
-	var res common.OrchestratorLocalInfo
-	return res
-}
-
 func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
-	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	if d.waitGetOrch != nil {
 		<-d.waitGetOrch
@@ -188,7 +187,7 @@ func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus commo
 		err = d.getOrchError
 		d.lock.Unlock()
 	}
-	return d.infos, err
+	return common.FromRemoteInfos(d.infos), err
 }
 
 func (d *stubDiscovery) Size() int {
@@ -663,13 +662,13 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	assert.NotNil(params.OS)
 	assert.True(params.OS.IsExternal())
 	osinfo := params.OS.GetInfo()
-	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
-	assert.Equal("http://object.store/path", osinfo.GetS3Info().Host)
+	assert.Equal(int32(net.OSInfo_S3), int32(osinfo.StorageType))
+	assert.Equal("http://object.store/path", osinfo.S3Info.Host)
 	assert.NotNil(params.RecordOS)
 	assert.True(params.RecordOS.IsExternal())
 	osinfo = params.RecordOS.GetInfo()
-	assert.Equal(net.OSInfo_S3, osinfo.GetStorageType())
-	assert.Equal("http://record.store", osinfo.GetS3Info().Host)
+	assert.Equal(int32(net.OSInfo_S3), int32(osinfo.StorageType))
+	assert.Equal("http://record.store", osinfo.S3Info.Host)
 
 	// set scene classification detector profiles
 	ts18 := makeServer(`{"manifestID":"a", "detection": {"freq": 5, "sampleRate": 10, "sceneClassification": [{"name": "soccer"}]}}`)
@@ -1134,13 +1133,13 @@ func TestRegisterConnection(t *testing.T) {
 
 	// Should return an error if missing node storage
 	drivers.NodeStorage = nil
-	_, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	_, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Equal(err, errStorage)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 
 	// normal success case
 	rand.Seed(123)
-	cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.NotNil(cxn)
 	assert.Nil(err)
 
@@ -1156,31 +1155,33 @@ func TestRegisterConnection(t *testing.T) {
 	assert.NotNil(cxn.params.Capabilities)
 
 	// Should return an error if creating another cxn with the same mid
-	_, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	_, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Equal(err, errAlreadyExists)
 
 	// Check for params with an existing OS assigned
-	storage := drivers.NewS3Driver("", "", "", "", false).NewSession("")
+	driver, err := drivers.NewS3Driver("", "", "", "", "", false)
+	assert.Nil(err)
+	storage := driver.NewSession("")
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), OS: storage})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Nil(err)
 	assert.Equal(storage, cxn.params.OS)
-	assert.Equal(net.OSInfo_S3, cxn.params.OS.GetInfo().StorageType)
+	assert.Equal(int32(net.OSInfo_S3), int32(cxn.params.OS.GetInfo().StorageType))
 	assert.Equal(cxn.params.OS, cxn.pl.GetOSSession())
 
 	// check for capabilities
 	profiles := []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Nil(err)
-	job, err := core.JobCapabilities(streamParams(strm.AppData()))
+	job, err := core.JobCapabilities(streamParams(strm.AppData()), nil)
 	assert.Nil(err)
 	assert.Equal(job, cxn.params.Capabilities)
 
 	// check for capabilities with codec specified
 	inCodec := ffmpeg.H264
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone())
+	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone(), nil)
 	assert.Nil(err)
 	assert.True(core.NewCapabilities([]core.Capability{core.Capability_H264}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
 	assert.False(core.NewCapabilities([]core.Capability{core.Capability_HEVC_Decode}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
@@ -1188,7 +1189,7 @@ func TestRegisterConnection(t *testing.T) {
 	inCodec = ffmpeg.H265
 	profiles[0].Encoder = ffmpeg.H265
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone())
+	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone(), nil)
 	assert.Nil(err)
 	assert.True(core.NewCapabilities([]core.Capability{
 		core.Capability_HEVC_Decode,
@@ -1198,7 +1199,7 @@ func TestRegisterConnection(t *testing.T) {
 	// check for capabilities: exit with an invalid cap
 	profiles[0].Format = -1
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
-	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+	cxn, err = s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 	assert.Nil(cxn)
 	assert.Equal("capability: unknown format", err.Error())
 	// TODO test with non-legacy capabilities once we have some
@@ -1213,7 +1214,7 @@ func TestRegisterConnection(t *testing.T) {
 			name := fmt.Sprintf("%v_%v", t.Name(), i)
 			mid := core.SplitStreamIDString(name).ManifestID
 			strm := stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: mid})
-			cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone())
+			cxn, err := s.registerConnection(context.TODO(), strm, nil, PixelFormatNone(), nil)
 
 			assert.Nil(err)
 			assert.NotNil(cxn)

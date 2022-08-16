@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -18,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -26,9 +29,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/vidplayer"
 )
@@ -1654,7 +1657,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	sess3.OrchestratorScore = common.Score_Untrusted
 
 	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess3, sess2}, false)
-	bsm.VerificationFreq = 1
+	bsm.VerificationFreq = math.MaxInt
 	assert.Equal(0, bsm.untrustedPool.sus.count)
 	// hack: stop pool from refreshing
 	bsm.untrustedPool.refreshing = true
@@ -1924,4 +1927,90 @@ func TestPush_MultiSessionVideoCompare(t *testing.T) {
 	assert.Equal(uint64(12), cxn.sourceBytes)
 	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
 	assert.Equal(0, bsm.untrustedPool.sus.count)
+}
+
+func TestPush_Slice(t *testing.T) {
+	// assert http request body error returned
+	assert := assert.New(t)
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/10.ts", nil)
+	req.Header.Set("Content-Slice-From", "100")
+	req.Header.Set("Content-Slice-To", "10")
+	s.HandlePush(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	require.Nil(t, err)
+	assert.Equal(http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(string(body), "Invalid slice config from=100ms to=10ms")
+}
+
+func TestPush_SlicePass(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	orch := &mockOrchestrator{}
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
+	s, cancel := setupServerWithCancel()
+	defer serverCleanup(s)
+	defer cancel()
+	// Create stub server
+	ts, mux := stubTLSServer()
+	defer ts.Close()
+
+	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		seg := r.Header.Get(segmentHeader)
+		md, _, err := verifySegCreds(context.TODO(), orch, seg, ethcommon.Address{})
+		require.NoError(err)
+		require.NotNil(md)
+		require.NotNil(md.SegmentParameters)
+		require.Equal(100*time.Millisecond, md.SegmentParameters.From)
+		require.Equal(200*time.Millisecond, md.SegmentParameters.To)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("test"))
+	})
+
+	sess := StubBroadcastSession(ts.URL)
+	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	sess.Params.ManifestID = "mani"
+	bsm := bsmWithSessList([]*BroadcastSession{sess})
+
+	url, _ := url.ParseRequestURI("test://some.host")
+	osd := drivers.NewMemoryDriver(url)
+	osSession := osd.NewSession("testPath")
+
+	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
+
+	cxn := &rtmpConnection{
+		mid:         core.ManifestID("mani"),
+		nonce:       7,
+		pl:          pl,
+		profile:     &ffmpeg.P144p30fps16x9,
+		sessManager: bsm,
+		params: &core.StreamParameters{
+			Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9},
+			Detection: core.DetectionConfig{
+				SelectedClassNames: []string{"adult"},
+			},
+		},
+	}
+
+	s.rtmpConnections["mani"] = cxn
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani/18.ts", nil)
+	req.Header.Set("Accept", "multipart/mixed")
+	req.Header.Set("Content-Slice-From", "100")
+	req.Header.Set("Content-Slice-To", "200")
+	s.HandlePush(w, req)
+	resp := w.Result()
+	defer resp.Body.Close()
+	assert.Equal(http.StatusServiceUnavailable, resp.StatusCode)
 }

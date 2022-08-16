@@ -52,6 +52,7 @@ func main() {
 			in:       bufio.NewReader(os.Stdin),
 		}
 		w.orchestrator = w.isOrchestrator()
+		w.redeemer = w.isRedeemer()
 		w.checkNet()
 		w.run()
 
@@ -67,6 +68,7 @@ type wizard struct {
 	httpPort     string
 	host         string
 	orchestrator bool
+	redeemer     bool
 	testnet      bool
 	offchain     bool
 	in           *bufio.Reader // Wrapper around stdin to allow reading user input
@@ -110,17 +112,23 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Sign a message", invoke: w.signMessage},
 		{desc: "Sign typed data", invoke: w.signTypedData},
 		{desc: "Vote in a poll", invoke: w.vote, orchestrator: true},
+		{desc: "Set max ticket face value", invoke: w.setMaxFaceValue, orchestrator: true},
+		{desc: "Exit", invoke: func() {
+			fmt.Println("Goodbye, my friend")
+			os.Exit(0)
+		}},
 	}
 	return options
 }
 
 func (w *wizard) filterOptions(options []wizardOpt) []wizardOpt {
+	isOrchestratorOrRedeemer := w.orchestrator || w.redeemer
 	filtered := make([]wizardOpt, 0, len(options))
 	for _, opt := range options {
 		if opt.testnet && !w.testnet {
 			continue
 		}
-		if !opt.orchestrator && !opt.notOrchestrator || w.orchestrator && opt.orchestrator || !w.orchestrator && opt.notOrchestrator {
+		if !opt.orchestrator && !opt.notOrchestrator || isOrchestratorOrRedeemer && opt.orchestrator || !isOrchestratorOrRedeemer && opt.notOrchestrator {
 			filtered = append(filtered, opt)
 		}
 	}

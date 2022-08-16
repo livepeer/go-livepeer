@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -21,11 +22,11 @@ import (
 
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-tools/drivers"
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
@@ -540,7 +541,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		// Need to store segment in our local OS
 		var err error
 		name := fmt.Sprintf("%d.tempfile", seg.SeqNo)
-		url, err = config.LocalOS.SaveData(ctx, name, seg.Data, nil, 0)
+		url, err = config.LocalOS.SaveData(ctx, name, bytes.NewReader(seg.Data), nil, 0)
 		if err != nil {
 			return terr(err)
 		}
@@ -618,7 +619,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 	los := drivers.NodeStorage.NewSession(md.AuthToken.SessionId)
 
 	// determine appropriate OS to use
-	os := drivers.NewSession(md.OS)
+	os := drivers.NewSession(FromNetOsInfo(md.OS))
 	if os == nil {
 		// no preference (or unknown pref), so use our own
 		os = los

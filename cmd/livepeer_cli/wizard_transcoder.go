@@ -28,6 +28,11 @@ func (w *wizard) isOrchestrator() bool {
 	return isT == "true"
 }
 
+func (w *wizard) isRedeemer() bool {
+	isT := httpGet(fmt.Sprintf("http://%v:%v/IsRedeemer", w.host, w.httpPort))
+	return isT == "true"
+}
+
 func myHostPort() string {
 	// TODO Fall back to try other services if this one fails. Ask a peer?
 	// 	http://myexternalip.com
@@ -35,13 +40,14 @@ func myHostPort() string {
 	// 	http://whatismyipaddress.com/api
 	// 	http://ipinfo.io/ip
 	ip := strings.TrimSpace(httpGet("https://api.ipify.org/?format=text"))
-	return ip + ":" + defaultRPCPort
+	return "https://" + ip + ":" + defaultRPCPort
 }
 
 func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string) {
 	var (
 		blockRewardCut float64
 		feeCut         float64
+		addr           string
 	)
 
 	orch, _, err := w.getOrchestratorInfo()
@@ -66,13 +72,16 @@ func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string)
 	fmt.Printf("Enter the price for %d pixels in Wei (required) ", pixelsPerUnit)
 	pricePerUnit := w.readDefaultInt(0)
 
-	addr := myHostPort()
+	if orch.ServiceURI == "" {
+		addr = myHostPort()
+	} else {
+		addr = orch.ServiceURI
+	}
 	fmt.Printf("Enter the public host:port of node (default: %v)", addr)
 	serviceURI := w.readStringAndValidate(func(in string) (string, error) {
 		if "" == in {
 			in = addr
 		}
-		in = "https://" + in
 		uri, err := url.ParseRequestURI(in)
 		if err != nil {
 			return "", err
@@ -166,6 +175,12 @@ func (w *wizard) activateOrchestrator() {
 }
 
 func (w *wizard) setOrchestratorConfig() {
+
+	if w.offchain {
+		fmt.Println("Cannot set Orchestrator config in off-chain mode")
+		return
+	}
+
 	fmt.Printf("Current token balance: %v\n", w.getTokenBalance())
 
 	val := w.getOrchestratorConfigFormValues()
@@ -273,4 +288,20 @@ func (w *wizard) showVoteChoices() {
 
 func flipPerc(perc *big.Int) *big.Int {
 	return new(big.Int).Sub(hundredPercent, perc)
+}
+
+func (w *wizard) setMaxFaceValue() {
+	mfv := big.NewInt(0)
+	mfv = w.readBigInt("Enter the max ticket face value in wei")
+	data := url.Values{
+		"maxfacevalue": {fmt.Sprintf("%v", mfv.String())},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxFaceValue", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf("Ticket max face value set")
+		return
+	} else {
+		fmt.Printf("Error setting max face value: %v", result)
+		return
+	}
 }

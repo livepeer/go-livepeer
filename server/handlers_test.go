@@ -4,10 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth/types"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -19,8 +15,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -135,6 +134,41 @@ func TestOrchestratorInfoHandler_Success(t *testing.T) {
 	assert.Equal(http.StatusOK, status)
 	assert.Equal(price, info.PriceInfo)
 	assert.Equal(trans, info.Transcoder)
+}
+
+func TestSetMaxFaceValueHandler(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, _ := postForm(handler, url.Values{
+		"maxfacevalue": {"10000000000000000"},
+	})
+	assert.Equal(http.StatusOK, status)
+}
+
+func TestSetMaxFaceValueHandler_WrongVariableSet(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, body := postForm(handler, url.Values{
+		"facevalue": {"10000000000000000"},
+	})
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("need to set 'maxfacevalue'", body)
+}
+
+func TestSetMaxFaceValueHandler_WrongValueSet(t *testing.T) {
+	assert := assert.New(t)
+	s := stubOrchestratorWithRecipient(t)
+
+	handler := s.setMaxFaceValueHandler()
+	status, body := postForm(handler, url.Values{
+		"maxfacevalue": {"test"},
+	})
+	assert.Equal(http.StatusBadRequest, status)
+	assert.Equal("maxfacevalue not set to number", body)
 }
 
 // Broadcast / Transcoding config
@@ -957,7 +991,6 @@ func TestVoteHandler(t *testing.T) {
 	handler = voteHandler(client)
 	status, body = postForm(handler, form)
 	assert.Equal(http.StatusOK, status)
-	assert.Equal((ethtypes.NewTx(&ethtypes.DynamicFeeTx{})).Hash().Bytes(), []byte(body))
 }
 
 // Tickets
@@ -1453,6 +1486,15 @@ func dummyHandler() http.Handler {
 
 func stubServer() *LivepeerServer {
 	n, _ := core.NewLivepeerNode(nil, "", nil)
+	return &LivepeerServer{
+		LivepeerNode: n,
+	}
+}
+
+func stubOrchestratorWithRecipient(t *testing.T) *LivepeerServer {
+	n, _ := core.NewLivepeerNode(nil, "", nil)
+	n.NodeType = core.OrchestratorNode
+	n.Recipient = &pm.MockRecipient{}
 	return &LivepeerServer{
 		LivepeerNode: n,
 	}

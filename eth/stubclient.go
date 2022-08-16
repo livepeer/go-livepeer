@@ -353,11 +353,7 @@ func (e *StubClient) GetTranscoderEarningsPoolForRound(addr common.Address, roun
 		return &lpTypes.TokenPools{}, e.TranscoderPoolError
 	}
 
-	totalStake := big.NewInt(0)
-	if e.TotalStake != nil {
-		totalStake = e.TotalStake
-	}
-	return &lpTypes.TokenPools{TotalStake: totalStake}, nil
+	return &lpTypes.TokenPools{TotalStake: e.TotalStake}, nil
 }
 func (e *StubClient) TranscoderPool() ([]*lpTypes.Transcoder, error) {
 	return e.Orchestrators, e.TranscoderPoolError

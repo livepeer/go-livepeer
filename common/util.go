@@ -20,17 +20,31 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/jaypipes/ghw"
+	"github.com/jaypipes/ghw/pkg/gpu"
+	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/peer"
 )
 
+// HTTPDialTimeout timeout used to establish an HTTP connection between nodes
+var HTTPDialTimeout = 2 * time.Second
+
 // HTTPTimeout timeout used in HTTP connections between nodes
 var HTTPTimeout = 8 * time.Second
 
-// SegmentUploadTimeout timeout used in HTTP connections for uploading the segment
-var SegmentUploadTimeout = 2 * time.Second
+// SegHttpPushTimeoutMultiplier used in the HTTP connection for pushing the segment
+var SegHttpPushTimeoutMultiplier = 4.0
+
+// SegUploadTimeoutMultiplier used in HTTP connection for uploading the segment
+var SegUploadTimeoutMultiplier = 0.5
+
+// MinSegmentUploadTimeout defines the minimum timeout enforced for uploading a segment to orchestrators
+var MinSegmentUploadTimeout = 2 * time.Second
+
+// WebhookDiscoveryRefreshInterval defines for long the Webhook Discovery values should be cached
+var WebhookDiscoveryRefreshInterval = 1 * time.Minute
 
 // Max Segment Duration
 var MaxDuration = (5 * time.Minute)
@@ -428,19 +442,62 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 	return b, err
 }
 
-func detectNvidiaDevices() ([]string, error) {
+func getGPUDefault() ([]*gpu.GraphicsCard, error) {
 	gpu, err := ghw.GPU()
+
 	if err != nil {
 		return nil, err
 	}
 
+	return gpu.GraphicsCards, nil
+}
+
+func getPCIDefault() ([]*pci.Device, error) {
+	pci, err := ghw.PCI()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pci.ListDevices(), nil
+}
+
+var getGPU = getGPUDefault
+var getPCI = getPCIDefault
+
+func detectNvidiaDevices() ([]string, error) {
 	nvidiaCardCount := 0
 	re := regexp.MustCompile("(?i)nvidia") // case insensitive match
-	for _, card := range gpu.GraphicsCards {
-		if re.MatchString(card.DeviceInfo.Vendor.Name) {
-			nvidiaCardCount += 1
+
+	cards, err := getGPU()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(cards) != 0 {
+		for _, card := range cards {
+			if card.DeviceInfo != nil && re.MatchString(card.DeviceInfo.Vendor.Name) {
+				nvidiaCardCount += 1
+			}
+		}
+	} else { // on VMs gpu.GraphicsCards may be empty
+		rePCI := regexp.MustCompile("(?i)display ?controller")
+
+		pci, err := getPCI()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, device := range pci {
+			// Make sure that the current device is a graphics card.
+			// On some VMs driver may be misreported as vfio-pci, try to rely on device.Class.Name with a "Display controller"
+			// See: https://github.com/jaypipes/ghw/issues/314#issuecomment-1113334378
+			if device.Vendor != nil && re.MatchString(device.Vendor.Name) && (re.MatchString(device.Driver) || rePCI.MatchString(device.Class.Name)) {
+				nvidiaCardCount += 1
+			}
 		}
 	}
+
 	if nvidiaCardCount == 0 {
 		return nil, errors.New("no devices found with vendor name 'Nvidia'")
 	}

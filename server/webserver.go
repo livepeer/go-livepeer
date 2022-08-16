@@ -3,6 +3,7 @@ package server
 import (
 	"flag"
 	"net/http"
+
 	// pprof adds handlers to default mux via `init()`
 	_ "net/http/pprof"
 
@@ -14,14 +15,9 @@ var vFlag *glog.Level = flag.Lookup("v").Value.(*glog.Level)
 
 // StartCliWebserver starts web server for CLI
 // blocks until exit
-func (s *LivepeerServer) StartCliWebserver(bindAddr string) {
-	mux := s.cliWebServerHandlers(bindAddr)
-	srv := &http.Server{
-		Addr:    bindAddr,
-		Handler: mux,
-	}
-
-	glog.Info("CLI server listening on ", bindAddr)
+func (s *LivepeerServer) StartCliWebserver(srv *http.Server) {
+	srv.Handler = s.cliWebServerHandlers(srv.Addr)
+	glog.Info("CLI server listening on ", srv.Addr)
 	err := srv.ListenAndServe()
 	glog.Error(err)
 }
@@ -47,6 +43,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/currentBlock", currentBlockHandler(db))
 	mux.Handle("/orchestratorInfo", s.orchestratorInfoHandler(client))
 	mux.Handle("/IsOrchestrator", s.isOrchestratorHandler())
+	mux.Handle("/IsRedeemer", s.isRedeemerHandler())
 
 	// Broadcast / Transcoding config
 	mux.Handle("/setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
@@ -61,6 +58,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	// Orchestrator registration/activation
 	mux.Handle("/activateOrchestrator", mustHaveFormParams(s.activateOrchestratorHandler(client), "blockRewardCut", "feeShare", "pricePerUnit", "pixelsPerUnit", "serviceURI"))
 	mux.Handle("/setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
+	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
 
 	// Bond, withdraw, reward
 	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))

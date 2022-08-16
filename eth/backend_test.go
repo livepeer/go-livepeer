@@ -3,6 +3,7 @@ package eth
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"log"
 	"math/big"
 	"testing"
@@ -92,4 +93,80 @@ func TestSendTransaction_SendErr_DontUpdateNonce(t *testing.T) {
 	nonceLockAfter := bi.(*backend).nonceManager.getNonceLock(fromAddress)
 
 	assert.Equal(t, nonceLockBefore.nonce, nonceLockAfter.nonce)
+}
+
+func TestIsRetryableRemoteCallError(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.True(isRetryableRemoteCallError(errors.New("EOF")))
+	assert.True(isRetryableRemoteCallError(errors.New("EOF a")))
+	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection")))
+	assert.True(isRetryableRemoteCallError(errors.New("tls: use of closed connection a")))
+	assert.True(isRetryableRemoteCallError(errors.New("unsupported block number")))
+	assert.True(isRetryableRemoteCallError(errors.New("unsupported block number a")))
+
+	assert.False(isRetryableRemoteCallError(errors.New("not retryable")))
+}
+
+func TestRetryRemoteCall(t *testing.T) {
+	assert := assert.New(t)
+
+	// Reduce time between retries
+	oldRemoteCallRetrySleep := remoteCallRetrySleep
+	defer func() { remoteCallRetrySleep = oldRemoteCallRetrySleep }()
+	remoteCallRetrySleep = 50 * time.Millisecond
+
+	// The number of calls to remoteCall
+	var numCalls int
+	// The call that should succeed
+	callSuccess := 1
+	remoteCall := func() ([]byte, error) {
+		numCalls++
+
+		if numCalls == callSuccess {
+			return []byte{}, nil
+		}
+
+		return nil, errors.New("EOF")
+	}
+
+	calcExpSleepTime := func(retries int) time.Duration {
+		total := time.Duration(0)
+		for i := 0; i < retries; i++ {
+			total = total + (time.Duration(i+1) * remoteCallRetrySleep)
+		}
+		return total
+	}
+
+	b := &backend{}
+
+	for i := 0; i < maxRemoteCallRetries; i++ {
+		numCalls = 0
+		callSuccess = i + 1
+
+		expSleepTime := calcExpSleepTime(i)
+
+		startTime := time.Now()
+		out, err := b.retryRemoteCall(remoteCall)
+		endTime := time.Now()
+
+		assert.GreaterOrEqual(endTime.Sub(startTime), expSleepTime)
+		assert.Nil(err)
+		assert.Equal([]byte{}, out)
+		assert.Equal(callSuccess, numCalls)
+	}
+
+	numCalls = 0
+	callSuccess = maxRemoteCallRetries + 1
+
+	expSleepTime := calcExpSleepTime(maxRemoteCallRetries)
+
+	startTime := time.Now()
+	out, err := b.retryRemoteCall(remoteCall)
+	endTime := time.Now()
+
+	assert.GreaterOrEqual(endTime.Sub(startTime), expSleepTime)
+	assert.EqualError(err, "EOF")
+	assert.Equal([]byte(nil), out)
+	assert.Equal(maxRemoteCallRetries, numCalls)
 }

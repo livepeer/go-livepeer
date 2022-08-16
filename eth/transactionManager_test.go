@@ -35,6 +35,9 @@ func (stm *stubTransactionSenderReader) TransactionByHash(ctx context.Context, t
 }
 
 func (stm *stubTransactionSenderReader) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
+	if stm.receipt == nil {
+		return nil, ethereum.NotFound
+	}
 	return stm.receipt, stm.err["TransactionReceipt"]
 }
 

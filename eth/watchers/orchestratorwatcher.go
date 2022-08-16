@@ -61,9 +61,9 @@ func (ow *OrchestratorWatcher) Watch() {
 			glog.Error(err)
 		case block := <-blockSink:
 			go ow.handleBlockEvents(block)
-		case round := <-roundSink:
+		case _ = <-roundSink:
 			go func() {
-				if err := ow.handleRoundEvent(round); err != nil {
+				if err := ow.handleRoundEvent(); err != nil {
 					glog.Errorf("error handling new round event: %v", err)
 				}
 			}()
@@ -171,10 +171,7 @@ func (ow *OrchestratorWatcher) handleTranscoderDeactivated(log types.Log) error 
 	)
 }
 
-func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
-	ow.roundMu.Lock()
-	defer ow.roundMu.Unlock()
-
+func (ow *OrchestratorWatcher) handleRoundEvent() error {
 	round, err := ow.lpEth.CurrentRound()
 	if err != nil {
 		return err
@@ -186,23 +183,23 @@ func (ow *OrchestratorWatcher) handleRoundEvent(log types.Log) error {
 	}
 
 	for _, o := range orchs {
-		if err := ow.cacheOrchestratorStake(ethcommon.HexToAddress(o.EthereumAddr), round); err != nil {
-			glog.Errorf("could not cache stake update for orchestrator %v and round %v", o.EthereumAddr, round)
-		}
+		go ow.cacheOrchestratorStake(ethcommon.HexToAddress(o.EthereumAddr), round)
 	}
 
 	return nil
 }
 
-func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) error {
+func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, round *big.Int) {
 	ep, err := ow.lpEth.GetTranscoderEarningsPoolForRound(addr, round)
 	if err != nil {
-		return err
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
+		return
 	}
 
 	stakeFp, err := common.BaseTokenAmountToFixed(ep.TotalStake)
 	if err != nil {
-		return err
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
+		return
 	}
 
 	if err := ow.store.UpdateOrch(
@@ -211,8 +208,9 @@ func (ow *OrchestratorWatcher) cacheOrchestratorStake(addr ethcommon.Address, ro
 			Stake:        stakeFp,
 		},
 	); err != nil {
-		return err
+		glog.Errorf("could not cache stake update for orchestrator %v and round %v", addr, round)
+		return
 	}
 
-	return nil
+	return
 }

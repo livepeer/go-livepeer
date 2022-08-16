@@ -26,9 +26,9 @@ var paramsExpiryBuffer = int64(1)
 
 var evMultiplier = big.NewInt(100)
 
-// Hardcode to 200 gwei
+// Hardcode to 3 gwei
 // TODO: Replace this hardcoded value by dynamically determining the average gas price during a period of time
-var avgGasPrice = new(big.Int).Mul(big.NewInt(200), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
+var avgGasPrice = new(big.Int).Mul(big.NewInt(3), new(big.Int).Exp(big.NewInt(10), big.NewInt(9), nil))
 
 // Recipient is an interface which describes an object capable
 // of receiving tickets
@@ -48,6 +48,9 @@ type Recipient interface {
 
 	// EV returns the recipients EV requirement for a ticket as configured on startup
 	EV() *big.Rat
+
+	//Set ticket faceValue upper limit
+	SetMaxFaceValue(maxfacevalue *big.Int)
 }
 
 // TicketParamsConfig contains config information for a recipient to determine
@@ -78,8 +81,9 @@ type recipient struct {
 	sm     SenderMonitor
 	tm     TimeManager
 
-	addr   ethcommon.Address
-	secret [32]byte
+	addr         ethcommon.Address
+	secret       [32]byte
+	maxfacevalue *big.Int
 
 	senderNonces map[string]*struct {
 		nonce           uint32
@@ -111,13 +115,14 @@ func NewRecipient(addr ethcommon.Address, broker Broker, val Validator, gpm GasP
 // automatically generate a random secret
 func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator, gpm GasPriceMonitor, sm SenderMonitor, tm TimeManager, secret [32]byte, cfg TicketParamsConfig) Recipient {
 	return &recipient{
-		broker: broker,
-		val:    val,
-		gpm:    gpm,
-		sm:     sm,
-		tm:     tm,
-		addr:   addr,
-		secret: secret,
+		broker:       broker,
+		val:          val,
+		gpm:          gpm,
+		sm:           sm,
+		tm:           tm,
+		addr:         addr,
+		secret:       secret,
+		maxfacevalue: big.NewInt(0),
 		senderNonces: make(map[string]*struct {
 			nonce           uint32
 			expirationBlock *big.Int
@@ -235,6 +240,10 @@ func (r *recipient) ticketExpirationsParams() *TicketExpirationParams {
 	}
 }
 
+func (r *recipient) SetMaxFaceValue(maxfacevalue *big.Int) {
+	r.maxfacevalue = maxfacevalue
+}
+
 func (r *recipient) txCost() *big.Int {
 	gasPrice := big.NewInt(0)
 	// Fetch current gasprice from cache through gasPrice monitor
@@ -270,6 +279,11 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 		faceValue = maxFloat
 	}
 
+	if r.maxfacevalue.Cmp(big.NewInt(0)) > 0 {
+		if r.maxfacevalue.Cmp(faceValue) < 0 {
+			faceValue = r.maxfacevalue
+		}
+	}
 	if faceValue.Cmp(r.cfg.EV) < 0 {
 		return nil, errInsufficientSenderReserve
 	}
@@ -286,8 +300,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	// because there is a good chance that the current gasPrice will come back down by the time a winning ticket is received
 	// and needs to be redeemed.
 	// For now, avgGasPrice is hardcoded. See the comment for avgGasPrice for TODO information.
-	// Use || here for lazy evaluation. If the first clause is true we ignore the second clause.
-	if !(faceValue.Cmp(txCost) >= 0 || faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) >= 0) {
+	if faceValue.Cmp(txCost) < 0 && faceValue.Cmp(r.txCostWithGasPrice(avgGasPrice)) < 0 {
 		return nil, errInsufficientSenderReserve
 	}
 

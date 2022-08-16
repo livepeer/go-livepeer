@@ -11,13 +11,9 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/net"
-
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/common"
 )
-
-var whRefreshInterval = 1 * time.Minute
 
 type webhookResponse struct {
 	Address string  `json:"address,omitempty"`
@@ -50,7 +46,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	w.mu.RUnlock()
 
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
-	if time.Since(lastReq) < whRefreshInterval {
+	if time.Since(lastReq) < common.WebhookDiscoveryRefreshInterval {
 		return pool.GetInfos(), nil
 	}
 
@@ -91,15 +87,14 @@ func (w *webhookPool) GetInfos() []common.OrchestratorLocalInfo {
 	return infos
 }
 
-func (w *webhookPool) GetInfo(uri string) common.OrchestratorLocalInfo {
-	return w.pool.GetInfo(uri)
-}
-
 func (w *webhookPool) Size() int {
 	return len(w.GetInfos())
 }
 
 func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
+	// Refresh pool
+	w.GetInfos()
+
 	var size int
 	w.mu.RLock()
 	if w.pool != nil {
@@ -110,7 +105,7 @@ func (w *webhookPool) SizeWith(scorePred common.ScorePred) int {
 }
 
 func (w *webhookPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
-	scorePred common.ScorePred) ([]*net.OrchestratorInfo, error) {
+	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	_, err := w.getInfos()
 	if err != nil {

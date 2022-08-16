@@ -85,10 +85,12 @@ func New(config Config) *Watcher {
 	return bs
 }
 
-// BackfillEventsIfNeeded finds missed events that might have occured while the
-// node was offline and sends them to event subscribers. It blocks until
-// it is done backfilling or the given context is canceled.
-func (w *Watcher) BackfillEventsIfNeeded(ctx context.Context) error {
+// BackfillEvents finds missed events and sends them to event subscribers.
+// It blocks until it is done backfilling or the given context is canceled.
+// Note that the latest block is never backfilled here from logs. It will be polled separately in syncToLatestBlock().
+// The reason for that is that we always need to propagate events from the latest block even if it does not contain
+// events which are filtered out during the backfilling process.
+func (w *Watcher) BackfillEvents(ctx context.Context) error {
 	events, err := w.getMissedEventsToBackfill(ctx)
 	if err != nil {
 		return err
@@ -117,7 +119,7 @@ func (w *Watcher) Watch(ctx context.Context) error {
 			ticker.Stop()
 			return nil
 		case <-ticker.C:
-			if err := w.syncToLatestBlock(); err != nil {
+			if err := w.syncToLatestBlock(ctx); err != nil {
 				glog.Errorf("blockwatch.Watcher error encountered - trying again on next polling interval err=%q", err)
 			}
 		}
@@ -147,9 +149,14 @@ func (w *Watcher) InspectRetainedBlocks() ([]*MiniHeader, error) {
 	return w.stack.Inspect()
 }
 
-func (w *Watcher) syncToLatestBlock() error {
+func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 	w.Lock()
 	defer w.Unlock()
+
+	if err := w.BackfillEvents(ctx); err != nil {
+		return err
+	}
+
 	newestHeader, err := w.client.HeaderByNumber(nil)
 	if err != nil {
 		return err
@@ -303,10 +310,11 @@ func (w *Watcher) addLogs(header *MiniHeader) (*MiniHeader, error) {
 	return header, nil
 }
 
-// getMissedEventsToBackfill finds missed events that might have occured while the node was
-// offline. It does this by comparing the last block stored with the latest block discoverable via RPC.
-// If the stored block is older then the latest block, it batch fetches the events for missing blocks,
+// getMissedEventsToBackfill finds missed events that might have occurred since the last block polling.
+// It does this by comparing the last block stored with the latest block discoverable via RPC.
+// If the stored block is older than the latest block, it batch-fetches the events for missing blocks,
 // re-sets the stored blocks and returns the block events found.
+// Note that the latest block is never backfilled, and will be polled separately during in syncToLatestBlock().
 func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, error) {
 	events := []*Event{}
 
@@ -325,7 +333,9 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 	if err != nil {
 		return events, err
 	}
-	latestBlockNum := int(latestBlock.Number.Int64())
+
+	// Latest block will be polled separately in syncToLatestBlock(), so it's not backfilled.
+	preLatestBlockNum := int(latestBlock.Number.Int64()) - 1
 
 	if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
@@ -335,14 +345,11 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 		return events, nil
 	}
 
-	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed <= 0 {
+	if blocksElapsed = preLatestBlockNum - startBlockNum; blocksElapsed <= 0 {
 		return events, nil
 	}
 
-	glog.Infof("Backfilling block events (this can take a while)...\n")
-	glog.Infof("Start block: %v		 End block: %v		Blocks elapsed: %v\n", startBlockNum, startBlockNum+blocksElapsed, blocksElapsed)
-
-	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, latestBlockNum)
+	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, preLatestBlockNum)
 	if furthestBlockProcessed > latestRetainedBlockNum {
 		// If we have processed blocks further then the latestRetainedBlock in the DB, we
 		// want to remove all blocks from the DB and insert the furthestBlockProcessed
@@ -396,7 +403,6 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 				BlockHeader: blockHeader,
 			})
 		}
-		glog.Info("Done backfilling block events")
 		return events, nil
 	}
 	return events, nil
@@ -558,7 +564,7 @@ func (w *Watcher) getSubBlockRanges(from, to, rangeSize int) []*blockRange {
 const infuraTooManyResultsErrMsg = "query returned more than 10000 results"
 
 func (w *Watcher) filterLogsRecursively(from, to int, allLogs []types.Log) ([]types.Log, error) {
-	glog.Infof("fetching block logs from=%v to=%v", from, to)
+	glog.V(6).Infof("Polling blocks from=%v to=%v", from, to)
 	numBlocks := to - from
 	topics := [][]common.Hash{}
 	if len(w.topics) > 0 {

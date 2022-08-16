@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type stubTranscoder struct {
@@ -140,6 +141,108 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 
 		i++
 	}
+}
+
+func TestTranscodeResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
+	var l lphttp
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
+}
+
+func TestTranscodeResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "BAD CREDENTIALS")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
+}
+
+func TestTranscodeResults_ErrorsWhenContentTypeMissing(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusUnsupportedMediaType, w.Code)
+	require.Contains(t, w.Body.String(), "mime: no media type")
+}
+
+func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "video/mp4")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "Invalid Task ID")
+}
+
+func TestTranscodeResults_DoesNotErrorWhenSceneDetectionHeaderMissing(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "video/mp4")
+	r.Header.Set("TaskId", "123")
+	r.Header.Set("Pixels", "1")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestTranscodeResults_ErrorsWhenPixelsHeaderMissing(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "video/mp4")
+	r.Header.Set("TaskId", "123")
+
+	l.TranscodeResults(w, r)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "Invalid Pixels")
 }
 
 func TestRemoteTranscoder_FullProfiles(t *testing.T) {

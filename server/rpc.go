@@ -19,9 +19,9 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-tools/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 	"github.com/patrickmn/go-cache"
@@ -181,7 +181,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -198,7 +198,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
-		return // XXX return error
+		return err
 	}
 
 	glog.Info("Listening for RPC on ", bind)
@@ -209,7 +209,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		//ReadTimeout:  HTTPTimeout,
 		//WriteTimeout: HTTPTimeout,
 	}
-	srv.ListenAndServeTLS(cert, key)
+	return srv.ListenAndServeTLS(cert, key)
 }
 
 // CheckOrchestratorAvailability - the broadcaster calls CheckOrchestratorAvailability which invokes Ping on the orchestrator
@@ -376,7 +376,7 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 
 	if os != nil {
 		if os.IsExternal() {
-			tr.Storage = []*net.OSInfo{os.GetInfo()}
+			tr.Storage = []*net.OSInfo{core.ToNetOSInfo(os.GetInfo())}
 		} else {
 			os.EndSession()
 		}
@@ -538,6 +538,13 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		}
 		detectorProfs = append(detectorProfs, detectorProfile)
 	}
+	var segPar *core.SegmentParameters
+	if segData.SegmentParameters != nil {
+		segPar = &core.SegmentParameters{
+			From: time.Duration(segData.SegmentParameters.From) * time.Millisecond,
+			To:   time.Duration(segData.SegmentParameters.To) * time.Millisecond,
+		}
+	}
 
 	return &core.SegTranscodingMetadata{
 		ManifestID:         core.ManifestID(segData.ManifestId),
@@ -551,5 +558,6 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		DetectorEnabled:    segData.DetectorEnabled,
 		DetectorProfiles:   detectorProfs,
 		CalcPerceptualHash: segData.CalcPerceptualHash,
+		SegmentParameters:  segPar,
 	}, nil
 }

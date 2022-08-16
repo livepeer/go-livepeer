@@ -2,13 +2,14 @@ package core
 
 import (
 	"context"
+	"io"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/stretchr/testify/assert"
@@ -182,7 +183,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 	// Use a rapid check to facilitate this.
 
 	checkSuccess := func(params *StreamParameters, caps []Capability) bool {
-		jobCaps, err := JobCapabilities(params)
+		jobCaps, err := JobCapabilities(params, nil)
 		ret := assert.Nil(err)
 		expectedCaps := &Capabilities{bitstring: NewCapabilityString(caps)}
 		ret = assert.Equal(expectedCaps, jobCaps) && ret
@@ -191,7 +192,7 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	checkPixelFormat := func(constValue int, expected []Capability) bool {
 		streamParams := &StreamParameters{Codec: ffmpeg.H264, PixelFormat: ffmpeg.PixelFormat{RawValue: constValue}}
-		jobCaps, err := JobCapabilities(streamParams)
+		jobCaps, err := JobCapabilities(streamParams, nil)
 		ret := assert.Nil(err)
 		expectedCaps := &Capabilities{bitstring: NewCapabilityString(expected)}
 		ret = assert.Equal(jobCaps, expectedCaps, "failed decode capability check") && ret
@@ -271,18 +272,18 @@ func TestCapability_JobCapabilities(t *testing.T) {
 
 	// check error case with format
 	params.Profiles = []ffmpeg.VideoProfile{{Format: -1}}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capFormatConv, err)
 
 	// check error case with profiles
 	params.Profiles = []ffmpeg.VideoProfile{{Profile: -1}}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capProfileConv, err)
 
 	// check error case with storage
 	params.Profiles = nil
 	params.OS = &stubOS{storageType: -1}
-	_, err = JobCapabilities(params)
+	_, err = JobCapabilities(params, nil)
 	assert.Equal(capStorageConv, err)
 }
 
@@ -387,14 +388,14 @@ type stubOS struct {
 	storageType int32
 }
 
-func (os *stubOS) GetInfo() *net.OSInfo {
+func (os *stubOS) GetInfo() *drivers.OSInfo {
 	if os.storageType == stubOSMagic {
 		return nil
 	}
-	return &net.OSInfo{StorageType: net.OSInfo_StorageType(os.storageType)}
+	return &drivers.OSInfo{StorageType: drivers.OSInfo_StorageType(os.storageType)}
 }
 func (os *stubOS) EndSession() {}
-func (os *stubOS) SaveData(context.Context, string, []byte, map[string]string, time.Duration) (string, error) {
+func (os *stubOS) SaveData(context.Context, string, io.Reader, map[string]string, time.Duration) (string, error) {
 	return "", nil
 }
 func (os *stubOS) IsExternal() bool      { return false }

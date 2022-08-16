@@ -9,6 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jaypipes/ghw"
+	"github.com/jaypipes/ghw/pkg/gpu"
+	"github.com/jaypipes/ghw/pkg/pci"
+	"github.com/jaypipes/pcidb"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -347,4 +351,135 @@ func TestRatPriceInfo(t *testing.T) {
 	priceInfo, err = RatPriceInfo(&net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 2})
 	assert.Nil(err)
 	assert.Zero(priceInfo.Cmp(big.NewRat(7, 2)))
+}
+
+func TestParseAccelDevices_FailedDetection(t *testing.T) {
+	assert := assert.New(t)
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
+	}
+	getPCI = func() ([]*pci.Device, error) {
+		return []*pci.Device{}, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.NotNil(err)
+	assert.Equal(len(ids), 0)
+}
+
+func TestParseAccessDevices_Gpu(t *testing.T) {
+	assert := assert.New(t)
+
+	originGetGPU := getGPU
+	originGetPCI := getPCI
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		gpus := []*gpu.GraphicsCard{}
+		for i := 0; i < 3; i++ {
+			gpus = append(gpus, &gpu.GraphicsCard{
+				DeviceInfo: &ghw.PCIDevice{
+					Vendor: &pcidb.Vendor{
+						Name: "--Nvidia Corp",
+					},
+				},
+			})
+		}
+
+		return gpus, nil
+	}
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 3)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+	assert.Equal(ids[2], "2")
+
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
+
+func TestParseAccessDevices_GpuFailedProbing(t *testing.T) {
+	assert := assert.New(t)
+
+	originGetGPU := getGPU
+	originGetPCI := getPCI
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
+	}
+
+	getPCI = func() ([]*pci.Device, error) {
+		pcis := []*pci.Device{}
+		for i := 0; i < 2; i++ {
+			pcis = append(pcis, &pci.Device{
+				Vendor: &pcidb.Vendor{
+					Name: "--Nvidia Corp",
+				},
+				Driver: "nvidia",
+			})
+		}
+		return pcis, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 2)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
+
+func TestParseAccelDevices_WrongDriver(t *testing.T) {
+	assert := assert.New(t)
+
+	originGetGPU := getGPU
+	originGetPCI := getPCI
+
+	getGPU = func() ([]*gpu.GraphicsCard, error) {
+		return []*gpu.GraphicsCard{}, nil
+	}
+
+	getPCI = func() ([]*pci.Device, error) {
+		pcis := []*pci.Device{}
+		for i := 0; i < 4; i++ {
+			pcis = append(pcis, &pci.Device{
+				Vendor: &pcidb.Vendor{
+					Name: "--Nvidia Corp",
+				},
+				Class: &pcidb.Class{
+					Name: "Display Controller",
+				},
+			})
+		}
+
+		return pcis, nil
+	}
+
+	ids, err := ParseAccelDevices("all", ffmpeg.Nvidia)
+
+	assert.Nil(err)
+	assert.Equal(len(ids), 4)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "1")
+	assert.Equal(ids[2], "2")
+	assert.Equal(ids[3], "3")
+
+	getGPU = originGetGPU
+	getPCI = originGetPCI
+}
+
+func TestParseAccelDevices_CustomSelection(t *testing.T) {
+	assert := assert.New(t)
+
+	ids, _ := ParseAccelDevices("0,3,1", ffmpeg.Nvidia)
+	assert.Equal(len(ids), 3)
+	assert.Equal(ids[0], "0")
+	assert.Equal(ids[1], "3")
+	assert.Equal(ids[2], "1")
 }

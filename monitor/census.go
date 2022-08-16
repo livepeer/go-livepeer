@@ -10,8 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/clog"
+	lpnet "github.com/livepeer/go-livepeer/net"
 
 	"contrib.go.opencensus.io/exporter/prometheus"
 	rprom "github.com/prometheus/client_golang/prometheus"
@@ -67,6 +69,13 @@ const (
 	segTypeRec     = "recorded" // segment in the stream for which recording is enabled
 )
 
+const (
+	//mpeg7-sign comparison fail of fast verification
+	FVType1Error = 1
+	//video comparison fail of fast verification
+	FVType2Error = 2
+)
+
 // Enabled true if metrics was enabled in command line
 var Enabled bool
 var PerStreamMetrics bool
@@ -99,6 +108,8 @@ type (
 		kVerified                     tag.Key
 		kClientIP                     tag.Key
 		kOrchestratorURI              tag.Key
+		kOrchestratorAddress          tag.Key
+		kFVErrorType                  tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -229,6 +240,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kVerified = tag.MustNewKey("verified")
 	census.kClientIP = tag.MustNewKey("client_ip")
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
+	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
+	census.kFVErrorType = tag.MustNewKey("fverror_type")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -326,6 +339,7 @@ func InitCensus(nodeType NodeType, version string) {
 	baseTagsWithManifestID := baseTags
 	baseTagsWithEthAddr := baseTags
 	baseTagsWithManifestIDAndEthAddr := baseTags
+	baseTagsWithOrchInfo := baseTags
 	if PerStreamMetrics {
 		baseTagsWithManifestID = []tag.Key{census.kNodeID, census.kNodeType, census.kManifestID}
 		baseTagsWithEthAddr = []tag.Key{census.kNodeID, census.kNodeType, census.kSender}
@@ -335,6 +349,9 @@ func InitCensus(nodeType NodeType, version string) {
 	if ExposeClientIP {
 		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
+	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
+	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
+	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
 
 	views := []*view.View{
 		{
@@ -474,7 +491,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_transcoded_unprocessed_total",
 			Measure:     census.mSegmentTranscodedUnprocessed,
 			Description: "Raw number of segments successfully transcoded.",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestIDAndOrchInfo...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -488,7 +505,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "segment_transcoded_all_appeared_total",
 			Measure:     census.mSegmentTranscodedAllAppeared,
 			Description: "SegmentTranscodedAllAppeared",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestIDAndOrchInfo...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -516,7 +533,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "transcode_overall_latency_seconds",
 			Measure:     census.mTranscodeOverallLatency,
 			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
-			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithManifestID...),
+			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithOrchInfo...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
 		{
@@ -755,14 +772,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "fast_verification_done",
 			Measure:     census.mFastVerificationDone,
 			Description: "Number of fast verifications done",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
 			Name:        "fast_verification_failed",
 			Measure:     census.mFastVerificationFailed,
 			Description: "Number of fast verifications failed",
-			TagKeys:     baseTagsWithManifestID,
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kFVErrorType}, baseTagsWithManifestID...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -807,7 +824,6 @@ func InitCensus(nodeType NodeType, version string) {
 		go census.timeoutWatcher(ctx)
 	}
 	Exporter = pe
-
 	// init metrics values
 	SetTranscodersNumberAndLoad(0, 0, 0)
 }
@@ -825,6 +841,18 @@ func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	if PerStreamMetrics {
 		others = append(others, tag.Insert(census.kManifestID, clog.GetManifestID(ctx)))
 	}
+	return others
+}
+
+func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
+	others = manifestIDTag(ctx, others...)
+
+	others = append(
+		others,
+		tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
+		tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
+	)
+
 	return others
 }
 
@@ -1319,7 +1347,7 @@ func (cen *censusMetricsCounter) sendSuccess() {
 	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
-func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError) {
+func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError, orchInfo *lpnet.OrchestratorInfo) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	rctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
@@ -1332,7 +1360,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 		if errCode == "" {
 			latency := time.Since(st)
 			if err := stats.RecordWithTags(rctx,
-				manifestIDTag(ctx), census.mTranscodeOverallLatency.M(latency.Seconds())); err != nil {
+				manifestIDTagAndOrchInfo(orchInfo, ctx), census.mTranscodeOverallLatency.M(latency.Seconds())); err != nil {
 				clog.Errorf(ctx, "Error recording metrics err=%q", err)
 			}
 		}
@@ -1340,7 +1368,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 	}
 	if errCode == "" {
 		if err := stats.RecordWithTags(rctx,
-			manifestIDTag(ctx), census.mSegmentTranscodedAllAppeared.M(1)); err != nil {
+			manifestIDTagAndOrchInfo(orchInfo, ctx), census.mSegmentTranscodedAllAppeared.M(1)); err != nil {
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
 	}
@@ -1348,7 +1376,7 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 	census.countSegmentTranscoded(nonce, seqNo, failed)
 	if !failed {
 		if err := stats.RecordWithTags(rctx,
-			manifestIDTag(ctx), census.mSegmentTranscodedUnprocessed.M(1)); err != nil {
+			manifestIDTagAndOrchInfo(orchInfo, ctx), census.mSegmentTranscodedUnprocessed.M(1)); err != nil {
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
 	}
@@ -1617,16 +1645,19 @@ func fracwei2gwei(wei *big.Rat) float64 {
 	return floatWei / gweiConversionFactor
 }
 
-func FastVerificationDone(ctx context.Context) {
+func FastVerificationDone(ctx context.Context, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx), census.mFastVerificationDone.M(1)); err != nil {
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri)),
+		census.mFastVerificationDone.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
 
-func FastVerificationFailed(ctx context.Context) {
+func FastVerificationFailed(ctx context.Context, uri string, errtype int) {
+	serrtype := strconv.Itoa(errtype)
 	if err := stats.RecordWithTags(census.ctx,
-		manifestIDTag(ctx), census.mFastVerificationFailed.M(1)); err != nil {
+		manifestIDTag(ctx, tag.Insert(census.kOrchestratorURI, uri), tag.Insert(census.kFVErrorType, serrtype)),
+		census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }

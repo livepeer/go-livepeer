@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-tools/drivers"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
@@ -67,7 +67,7 @@ var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 var SelectRandFreq float64
 
 func PixelFormatNone() ffmpeg.PixelFormat {
-	return ffmpeg.PixelFormat{ffmpeg.PixelFormatNone}
+	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
 }
 
 // For HTTP push watchdog
@@ -407,7 +407,7 @@ func streamParams(d stream.AppData) *core.StreamParameters {
 func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) (err error) {
 
-		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, PixelFormatNone())
+		cxn, err := s.registerConnection(context.Background(), rtmpStrm, nil, PixelFormatNone(), nil)
 		if err != nil {
 			return err
 		}
@@ -432,7 +432,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 						monitor.StreamStarted(nonce)
 					}
 				}
-				go processSegment(context.Background(), cxn, seg)
+				go processSegment(context.Background(), cxn, seg, nil)
 			})
 
 			segOptions := segmenter.SegmenterOptions{
@@ -474,7 +474,7 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 	}
 }
 
-func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat) (*rtmpConnection, error) {
+func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream.RTMPVideoStream, actualStreamCodec *ffmpeg.VideoCodec, pixelFormat ffmpeg.PixelFormat, segPar *core.SegmentParameters) (*rtmpConnection, error) {
 	ctx = clog.Clone(context.Background(), ctx)
 	// Set up the connection tracking
 	params := streamParams(rtmpStrm.AppData())
@@ -501,7 +501,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	}
 	params.PixelFormat = pixelFormat
 
-	caps, err := core.JobCapabilities(params)
+	caps, err := core.JobCapabilities(params, segPar)
 	if err != nil {
 		return nil, err
 	}
@@ -767,8 +767,32 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	remoteAddr := getRemoteAddr(r)
 	ctx = clog.AddVal(ctx, clog.ClientIP, remoteAddr)
 
-	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s", r.URL.String(), r.UserAgent(), remoteAddr, len(body),
-		r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"))
+	sliceFromStr := r.Header.Get("Content-Slice-From")
+	sliceToStr := r.Header.Get("Content-Slice-To")
+
+	clog.Infof(ctx, "Got push request at url=%s ua=%s addr=%s bytes=%d dur=%s resolution=%s slice-from=%s slice-to=%s", r.URL.String(), r.UserAgent(),
+		remoteAddr, len(body), r.Header.Get("Content-Duration"), r.Header.Get("Content-Resolution"), sliceFromStr, sliceToStr)
+	var sliceFromDur time.Duration
+	if valMs, err := strconv.ParseUint(sliceFromStr, 10, 64); err == nil {
+		sliceFromDur = time.Duration(valMs) * time.Millisecond
+	}
+	var sliceToDur time.Duration
+	if valMs, err := strconv.ParseUint(sliceToStr, 10, 64); err == nil {
+		sliceToDur = time.Duration(valMs) * time.Millisecond
+	}
+	var segPar *core.SegmentParameters
+	if sliceFromDur > 0 || sliceToDur > 0 {
+		if sliceFromDur > 0 && sliceToDur > 0 && sliceFromDur > sliceToDur {
+			httpErr := fmt.Sprintf(`Invalid slice config from=%s to=%s`, sliceFromDur, sliceToDur)
+			clog.Errorf(ctx, httpErr)
+			http.Error(w, httpErr, http.StatusBadRequest)
+			return
+		}
+		segPar = &core.SegmentParameters{
+			From: sliceFromDur,
+			To:   sliceToDur,
+		}
+	}
 
 	now := time.Now()
 	if mid == "" {
@@ -793,7 +817,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		ctx = clog.AddNonce(ctx, cxn.nonce)
 	}
 
-	status, _, vcodecStr, pixelFormat, err := ffmpeg.GetCodecInfoBytes(body)
+	status, mediaFormat, err := ffmpeg.GetCodecInfoBytes(body)
 	isZeroFrame := status == ffmpeg.CodecStatusNeedsBypass
 	if err != nil {
 		errorOut(http.StatusUnprocessableEntity, "Error getting codec info url=%s", r.URL)
@@ -801,13 +825,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var vcodec *ffmpeg.VideoCodec
-	if len(vcodecStr) == 0 {
+	if len(mediaFormat.Vcodec) == 0 {
 		clog.Warningf(ctx, "Couldn't detect input video stream codec")
 	} else {
-		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[vcodecStr]
+		vcodecVal, ok := ffmpeg.FfmpegNameToVideoCodec[mediaFormat.Vcodec]
 		vcodec = &vcodecVal
 		if !ok {
-			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", vcodecStr)
+			errorOut(http.StatusUnprocessableEntity, "Unknown input stream codec=%s", mediaFormat.Vcodec)
 			return
 		}
 	}
@@ -851,7 +875,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec, pixelFormat)
+		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, segPar)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
@@ -960,7 +984,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Do the transcoding!
-	urls, err := processSegment(ctx, cxn, seg)
+	urls, err := processSegment(ctx, cxn, seg, segPar)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
@@ -1326,7 +1350,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var manifests []string
-	if len(resp.PreviousSessions) > 0 {
+	if resp != nil && len(resp.PreviousSessions) > 0 {
 		manifests = append(resp.PreviousSessions, manifestID)
 	} else {
 		manifests = []string{manifestID}
@@ -1438,7 +1462,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			mainJspl.AddSegmentsToMPL(manifests, trackName, mpl, resp.RecordObjectStoreURL)
 			fileName := trackName + ".m3u8"
 			nows := time.Now()
-			_, err = sess.SaveData(ctx, fileName, mpl.Encode().Bytes(), nil, 0)
+			_, err = sess.SaveData(ctx, fileName, mpl.Encode(), nil, 0)
 			clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", fileName, time.Since(nows))
 			if err != nil {
 				clog.Errorf(ctx, "Error saving finalized json playlist to store err=%q", err)
@@ -1447,7 +1471,7 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 			}
 		}
 		nows := time.Now()
-		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode().Bytes(), nil, 0)
+		_, err = sess.SaveData(ctx, "index.m3u8", masterPList.Encode(), nil, 0)
 		clog.V(common.VERBOSE).Infof(ctx, "Saving playlist fileName=%s took=%s", "index.m3u8", time.Since(nows))
 		if err != nil {
 			clog.Errorf(ctx, "Error saving playlist to store err=%q", err)
@@ -1457,7 +1481,11 @@ func (s *LivepeerServer) HandleRecordings(w http.ResponseWriter, r *http.Request
 	} else if !returnMasterPlaylist {
 		mpl := mediaLists[track]
 		if mpl != nil {
-			mainJspl.AddSegmentsToMPL(manifests, track, mpl, resp.RecordObjectStoreURL)
+			osUrl := ""
+			if resp != nil {
+				osUrl = resp.RecordObjectStoreURL
+			}
+			mainJspl.AddSegmentsToMPL(manifests, track, mpl, osUrl)
 			// check (debug code)
 			startSeq := mpl.Segments[0].SeqId
 			for _, seg := range mpl.Segments[1:] {

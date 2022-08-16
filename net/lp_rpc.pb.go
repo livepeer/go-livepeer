@@ -971,6 +971,8 @@ type SegData struct {
 	FullProfiles2 []*VideoProfile `protobuf:"bytes,34,rep,name=fullProfiles2,proto3" json:"fullProfiles2,omitempty"`
 	// Transcoding profiles to use. Supersedes `fullProfiles2` field
 	FullProfiles3 []*VideoProfile `protobuf:"bytes,35,rep,name=fullProfiles3,proto3" json:"fullProfiles3,omitempty"`
+	// Transcoding parameters specific to this segment
+	SegmentParameters *SegParameters `protobuf:"bytes,37,opt,name=segment_parameters,json=segmentParameters,proto3" json:"segment_parameters,omitempty"`
 	// [EXPERIMENTAL]
 	// Detector profiles to use
 	DetectorProfiles     []*DetectorProfile `protobuf:"bytes,36,rep,name=detector_profiles,json=detectorProfiles,proto3" json:"detector_profiles,omitempty"`
@@ -1102,11 +1104,69 @@ func (m *SegData) GetFullProfiles3() []*VideoProfile {
 	return nil
 }
 
+func (m *SegData) GetSegmentParameters() *SegParameters {
+	if m != nil {
+		return m.SegmentParameters
+	}
+	return nil
+}
+
 func (m *SegData) GetDetectorProfiles() []*DetectorProfile {
 	if m != nil {
 		return m.DetectorProfiles
 	}
 	return nil
+}
+
+type SegParameters struct {
+	// Start timestamp from which to start encoding
+	// Milliseconds, from start of the file
+	From uint64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
+	// Skip all frames after that timestamp
+	// Milliseconds, from start of the file
+	To                   uint64   `protobuf:"varint,2,opt,name=to,proto3" json:"to,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *SegParameters) Reset()         { *m = SegParameters{} }
+func (m *SegParameters) String() string { return proto.CompactTextString(m) }
+func (*SegParameters) ProtoMessage()    {}
+func (*SegParameters) Descriptor() ([]byte, []int) {
+	return fileDescriptor_034e29c79f9ba827, []int{12}
+}
+
+func (m *SegParameters) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_SegParameters.Unmarshal(m, b)
+}
+func (m *SegParameters) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_SegParameters.Marshal(b, m, deterministic)
+}
+func (m *SegParameters) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SegParameters.Merge(m, src)
+}
+func (m *SegParameters) XXX_Size() int {
+	return xxx_messageInfo_SegParameters.Size(m)
+}
+func (m *SegParameters) XXX_DiscardUnknown() {
+	xxx_messageInfo_SegParameters.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SegParameters proto.InternalMessageInfo
+
+func (m *SegParameters) GetFrom() uint64 {
+	if m != nil {
+		return m.From
+	}
+	return 0
+}
+
+func (m *SegParameters) GetTo() uint64 {
+	if m != nil {
+		return m.To
+	}
+	return 0
 }
 
 type VideoProfile struct {
@@ -2001,6 +2061,7 @@ func init() {
 	proto.RegisterType((*SceneClassificationProfile)(nil), "net.SceneClassificationProfile")
 	proto.RegisterType((*DetectorProfile)(nil), "net.DetectorProfile")
 	proto.RegisterType((*SegData)(nil), "net.SegData")
+	proto.RegisterType((*SegParameters)(nil), "net.SegParameters")
 	proto.RegisterType((*VideoProfile)(nil), "net.VideoProfile")
 	proto.RegisterType((*TranscodedSegmentData)(nil), "net.TranscodedSegmentData")
 	proto.RegisterType((*SceneClassificationData)(nil), "net.SceneClassificationData")

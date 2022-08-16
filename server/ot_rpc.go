@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livepeer/lpms/ffmpeg"
+
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
 	"golang.org/x/net/http2"
@@ -31,7 +34,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/drivers"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 )
@@ -167,7 +169,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
 		return
 	}
-	data, err := drivers.GetSegmentData(ctx, notify.Url)
+	data, err := core.GetSegmentData(ctx, notify.Url)
 	if err != nil {
 		clog.Errorf(ctx, "Transcoder cannot get segment from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
@@ -264,8 +266,19 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+
 	pixels := int64(0)
+	// add detections
 	if tData != nil {
+		if len(tData.Detections) > 0 {
+			detectData, err := json.Marshal(tData.Detections)
+			if err != nil {
+				clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
+					notify.TaskId, notify.Url, err)
+				return
+			}
+			req.Header.Set("Detections", string(detectData))
+		}
 		pixels = tData.Pixels
 	}
 	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
@@ -348,6 +361,22 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// read detection data - only scene classification is supported
+	var detections []ffmpeg.DetectData
+	var sceneDetections []ffmpeg.SceneClassificationData
+	var detectionsHeader = r.Header.Get("Detections")
+	if len(detectionsHeader) > 0 {
+		err = json.Unmarshal([]byte(detectionsHeader), &sceneDetections)
+		if err != nil {
+			glog.Error("Could not parse detection data ", err)
+			http.Error(w, "Invalid detection data", http.StatusBadRequest)
+			return
+		}
+		for _, sd := range sceneDetections {
+			detections = append(detections, sd)
+		}
+	}
+
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -412,8 +441,9 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		res.TranscodeData = &core.TranscodeData{
-			Segments: segments,
-			Pixels:   decodedPixels,
+			Segments:   segments,
+			Pixels:     decodedPixels,
+			Detections: detections,
 		}
 		dlDur := time.Since(start)
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
