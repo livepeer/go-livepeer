@@ -95,7 +95,7 @@ jobs:
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
-          # linux/amd64 is disabled until
+          # linux/arm64 is disabled until
           # <https://github.com/livepeer/go-livepeer/issues/2545> gets
           # resolved
           platforms: linux/amd64
