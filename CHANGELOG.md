@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.34
+
+*August 16 2022*
+
+This release fixes issues with short segments timing out at the upload stage and with `unsupported block number` errors. It also contains a change to prepare for the upcoming Arbitrum Nitro migration.
+
+### Breaking Changes 🚨🚨
+None
+
+#### General
+- [#2550](https://github.com/livepeer/go-livepeer/pull/2550) Fix requesting LPT from faucet after the Nitro migration (@leszko)
+- [#2563](https://github.com/livepeer/go-livepeer/pull/2563) Fix unsupported block number errors (@yondonfu)
+
+#### Broadcaster
+- [#2541](https://github.com/livepeer/go-livepeer/pull/2541) Enforce a minimum timeout for segment upload (@victorges)
+
+
 ## v0.5.33
 
 *July 18 2022*
