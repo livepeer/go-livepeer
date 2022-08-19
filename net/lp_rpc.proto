@@ -7,6 +7,7 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
+  rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
   rpc Ping(PingPong) returns (PingPong);
 }
 
@@ -23,6 +24,14 @@ message PingPong {
 
 }
 
+// sent by Broadcaster to Orchestrator to terminate the transcoding session and free resources (used for verification sessions)
+message EndTranscodingSessionRequest {
+  // Data for transcoding authentication
+  AuthToken auth_token   = 1;
+}
+
+message EndTranscodingSessionResponse {
+}
 
 // This request is sent by the broadcaster in `GetTranscoder` to request
 // information on which transcoder to use.

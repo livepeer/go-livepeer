@@ -36,6 +36,10 @@ func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder 
 	return &StubTranscoder{Profiles: profiles}
 }
 
+func (t *StubTranscoder) EndTranscodingSession(sessionId string) {
+
+}
+
 func (t *StubTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error) {
 	if t.FailTranscode {
 		return nil, ErrTranscode

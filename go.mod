@@ -39,4 +39,3 @@ require (
 	google.golang.org/grpc v1.47.0
 	pgregory.net/rapid v0.4.0
 )
-

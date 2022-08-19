@@ -1120,7 +1120,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
-			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
 			if err != nil {
 				glog.Fatalf("Error starting Transcoder node: err=%q", err)
 			}

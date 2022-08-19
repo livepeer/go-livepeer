@@ -26,6 +26,11 @@ type Router struct {
 	srv  *grpc.Server
 }
 
+func (r *Router) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
+	// shouldn't ever be called on Router
+	return &net.EndTranscodingSessionResponse{}, nil
+}
+
 func NewRouter(uris []*url.URL) *Router {
 	return &Router{uris: uris}
 }

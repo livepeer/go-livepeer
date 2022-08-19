@@ -71,7 +71,7 @@ func PixelFormatNone() ffmpeg.PixelFormat {
 }
 
 // For HTTP push watchdog
-var httpPushTimeout = 1 * time.Minute
+var httpPushTimeout = 60 * time.Second
 var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 	sleepDur := time.Duration(int64(float64(httpPushTimeout) * 0.9))
 	return context.WithTimeout(context.Background(), sleepDur)
@@ -550,7 +550,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		s.connectionLock.Unlock()
-		cxn.sessManager.cleanup()
+		cxn.sessManager.cleanup(nil)
 		return oldCxn, errAlreadyExists
 	}
 	s.rtmpConnections[mid] = cxn
@@ -596,7 +596,7 @@ func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.Manife
 		return errUnknownStream
 	}
 	cxn.stream.Close()
-	cxn.sessManager.cleanup()
+	cxn.sessManager.cleanup(ctx)
 	cxn.pl.Cleanup()
 	clog.Infof(ctx, "Ended stream with manifestID=%s external manifestID=%s", intmid, extmid)
 	delete(s.rtmpConnections, intmid)
@@ -862,7 +862,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 				// TODO try to re-use old HLS playlist?
 				clog.Warningf(ctx, "Ending streamID=%v as new streamID=%s with same manifestID=%s has arrived",
 					oldStreamID, mid, params.ManifestID)
-				removeRTMPStream(ctx, s, oldStreamID)
+				removeRTMPStream(context.TODO(), s, oldStreamID)
 			}
 		} else {
 			s.connectionLock.RUnlock()
@@ -900,7 +900,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 					}
 					s.connectionLock.RUnlock()
 					if time.Since(lastUsed) > httpPushTimeout {
-						_ = removeRTMPStream(ctx, s, extmid)
+						_ = removeRTMPStream(context.TODO(), s, extmid)
 						return true
 					}
 					return false
