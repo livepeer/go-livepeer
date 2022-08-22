@@ -14,6 +14,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jaypipes/ghw v0.9.0
 	github.com/jaypipes/pcidb v1.0.0
+	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/livepeer/go-tools v0.0.0-20220805063103-76df6beb6506
 	github.com/livepeer/livepeer-data v0.4.11
 	github.com/livepeer/lpms v0.0.0-20220607083849-cf66c9aaf389
