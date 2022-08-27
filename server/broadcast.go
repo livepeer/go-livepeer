@@ -1024,6 +1024,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		urls, err = downloadResults(ctx, cxn, seg, sess, res, verifier)
 		return urls, info, err
 	} else {
+		clog.Infof(ctx, "Trying to choose session from sessions=%d", len(sessions))
 		resc := make(chan *SubmitResult, len(sessions))
 		submittedCount := 0
 		for _, sess := range sessions {
