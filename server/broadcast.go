@@ -459,6 +459,7 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 		}
 
 		// Return selected sessions
+		clog.Infof(ctx, "selectSessions true %v %v", verified, len(sessions))
 		return sessions, true, verified
 	}
 
@@ -467,7 +468,7 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 	if len(sessions) == 0 {
 		sessions = bsm.trustedPool.selectSessions(ctx, 1)
 	}
-
+	clog.Infof(ctx, "selectSessions false %v %v", verified, len(sessions))
 	return sessions, false, verified
 }
 
