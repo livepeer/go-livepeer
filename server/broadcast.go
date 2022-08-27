@@ -441,7 +441,7 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 			bsm.trustedPool.selectSessions(ctx, 1),
 			bsm.untrustedPool.selectSessions(ctx, 2)...,
 		)
-
+		clog.Infof(ctx, "selectSessions count %v", verified, len(sessions))
 		// Only return the last verified session if:
 		// - It is present in the 3 sessions returned by the selector
 		// - With probability 1 - 1/VerificationFrequency
