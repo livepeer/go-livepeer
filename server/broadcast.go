@@ -489,6 +489,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	submittedCount int) (*BroadcastSession, *ReceivedTranscodeResult, error) {
 
 	trustedResult, untrustedResults, err := bsm.collectResults(submitResultsCh, submittedCount)
+	clog.Infof(ctx, "Trying to choose result %v, %d", trustedResult, len(untrustedResults))
 
 	if trustedResult == nil {
 		// no results from trusted orch, using anything
