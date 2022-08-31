@@ -115,6 +115,18 @@ func (b *backend) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
 }
 
 func (b *backend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	chainID, err := b.Client.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Arbitrum chains that use sequencers prioritize txs first-come first-serve so tips are ignored
+	// Set the tip to 0 to avoid overestimating the gas fee for txs
+	// https://developer.offchainlabs.com/arbos/gas/#tips-in-l2
+	if isArbitrumChainID(chainID) {
+		return big.NewInt(0), nil
+	}
+
 	// This runs the max gas price check against the value returned by eth_gasPrice which should be priority fee + base fee.
 	// We may use the returned value later on to derive the priority fee if the eth_maxPriorityFeePerGas method is not supported.
 	gasPrice, err := b.SuggestGasPrice(ctx)
@@ -245,4 +257,24 @@ func newTxLog(tx *types.Transaction) (txLog, error) {
 		method: method.Name,
 		inputs: strings.TrimSpace(txParamsString),
 	}, nil
+}
+
+func isArbitrumChainID(chainID *big.Int) bool {
+	// https://developer.offchainlabs.com/public-chains
+	arbitrumChainIDs := []int64{
+		// Arbitrum One (Mainnet)
+		42161,
+		// Arbitrum Rinkeby
+		421611,
+		// Arbitrum Goerli
+		421613,
+	}
+
+	for _, id := range arbitrumChainIDs {
+		if chainID.Cmp(big.NewInt(id)) == 0 {
+			return true
+		}
+	}
+
+	return false
 }
