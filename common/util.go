@@ -35,11 +35,11 @@ var HTTPDialTimeout = 2 * time.Second
 var HTTPTimeout = 8 * time.Second
 
 // SegHttpPushTimeoutMultiplier used in the HTTP connection for pushing the segment
-var SegHttpPushTimeoutMultiplier = 4.0
+var SegHttpPushTimeoutMultiplier = 6.0
 
 // SegUploadTimeoutMultiplier used in HTTP connection for uploading the segment
 //var SegUploadTimeoutMultiplier = 0.5
-var SegUploadTimeoutMultiplier = 1.0
+var SegUploadTimeoutMultiplier = 2.0
 
 // MinSegmentUploadTimeout defines the minimum timeout enforced for uploading a segment to orchestrators
 var MinSegmentUploadTimeout = 2 * time.Second
