@@ -39,23 +39,23 @@ type session struct {
 }
 
 type sender struct {
-	signer            Signer
-	timeManager       TimeManager
-	senderManager     SenderManager
-	maxEV             *big.Rat
-	depositMultiplier int
+	signer        Signer
+	timeManager   TimeManager
+	senderManager SenderManager
+	maxEV         *big.Rat
+	maxFaceValue  *big.Int
 
 	sessions sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, depositMultiplier int) Sender {
+func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, maxFaceValue *big.Int) Sender {
 	return &sender{
-		signer:            signer,
-		timeManager:       timeManager,
-		senderManager:     senderManager,
-		maxEV:             maxEV,
-		depositMultiplier: depositMultiplier,
+		signer:        signer,
+		timeManager:   timeManager,
+		senderManager: senderManager,
+		maxEV:         maxEV,
+		maxFaceValue:  maxFaceValue,
 	}
 }
 
@@ -184,9 +184,10 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxEV.FloatString(5))
 	}
 
-	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))
-	if ticketParams.FaceValue.Cmp(maxFaceValue) > 0 {
-		return fmt.Errorf("ticket faceValue %v > max faceValue %v", ticketParams.FaceValue, maxFaceValue)
+	// If maxFaceValue = 0, allow any faceValue
+	// If maxFaceValue > 0, check faceValue in ticket params against maxFaceValue
+	if s.maxFaceValue.Cmp(big.NewInt(0)) > 0 && ticketParams.FaceValue.Cmp(s.maxFaceValue) > 0 {
+		return fmt.Errorf("ticket faceValue %v > max faceValue %v", ticketParams.FaceValue, s.maxFaceValue)
 	}
 
 	return nil

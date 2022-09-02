@@ -108,11 +108,11 @@ func TestSender_ValidateSender(t *testing.T) {
 		WithdrawRound: big.NewInt(0),
 	}
 	s := &sender{
-		signer:            am,
-		timeManager:       tm,
-		senderManager:     sm,
-		maxEV:             big.NewRat(100, 1),
-		depositMultiplier: 2,
+		signer:        am,
+		timeManager:   tm,
+		senderManager: sm,
+		maxEV:         big.NewRat(100, 1),
+		maxFaceValue:  big.NewInt(50000),
 	}
 
 	// Sender's (withdraw round + 1 = current round)
@@ -227,13 +227,15 @@ func TestCreateTicketBatch_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	assert.EqualError(err, "no sender deposit")
 
 	sm.info[senderAddr].Deposit = big.NewInt(1)
-	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(0))
+	sender.maxFaceValue = big.NewInt(1)
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, big.NewInt(1))
 	_, err = sender.CreateTicketBatch(sessionID, 1)
 	assert.EqualError(err, expErrStr)
 
 	sm.info[senderAddr].Deposit = big.NewInt(2224)
 
 	// Check that faceValue is acceptable for a single ticket
+	sender.maxFaceValue = big.NewInt(0)
 	_, err = sender.CreateTicketBatch(sessionID, 1)
 	assert.Nil(err)
 
@@ -478,14 +480,13 @@ func TestValidateTicketParams_FaceValueTooHigh_ReturnsError(t *testing.T) {
 	err := sender.ValidateTicketParams(ticketParams)
 	assert.EqualError(err, "no sender deposit")
 
-	// Test when deposit / depositMultiplier < faceValue
+	// Test when maxFaceValue < faceValue
 	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
-	sender.depositMultiplier = 5
-	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sender.maxFaceValue = big.NewInt(1000)
 
-	ticketParams.FaceValue = new(big.Int).Add(maxFaceValue, big.NewInt(1))
-	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, maxFaceValue)
+	ticketParams.FaceValue = new(big.Int).Add(sender.maxFaceValue, big.NewInt(1))
+	expErrStr := maxFaceValueErrStr(ticketParams.FaceValue, sender.maxFaceValue)
 	err = sender.ValidateTicketParams(ticketParams)
 	assert.EqualError(err, expErrStr)
 }
@@ -512,7 +513,7 @@ func TestValidateTicketParams_ExpiredParams_ReturnsError(t *testing.T) {
 	sm := sender.senderManager.(*stubSenderManager)
 	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
-	sender.depositMultiplier = 2
+	sender.maxFaceValue = big.NewInt(150)
 
 	sender.timeManager.(*stubTimeManager).lastSeenBlock = big.NewInt(100)
 
@@ -542,7 +543,7 @@ func TestValidateTicketParams_GetSenderInfoError(t *testing.T) {
 	sm := sender.senderManager.(*stubSenderManager)
 	sm.err = errors.New("GetSenderInfo error")
 	sender.maxEV = big.NewRat(100, 1)
-	sender.depositMultiplier = 2
+	sender.maxFaceValue = big.NewInt(0)
 
 	ticketParams := defaultTicketParams(t, RandAddress())
 	err := sender.ValidateTicketParams(&ticketParams)
@@ -560,11 +561,10 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	sm := sender.senderManager.(*stubSenderManager)
 	sm.info[senderAddr].Deposit = big.NewInt(300)
 	sender.maxEV = big.NewRat(100, 1)
-	sender.depositMultiplier = 2
-	maxFaceValue := new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sender.maxFaceValue = big.NewInt(150)
 
 	ticketParams := defaultTicketParams(t, RandAddress())
-	ticketParams.FaceValue = new(big.Int).Sub(maxFaceValue, big.NewInt(1))
+	ticketParams.FaceValue = new(big.Int).Sub(sender.maxFaceValue, big.NewInt(1))
 	ticketParams.WinProb = new(big.Int).Div(maxWinProb, big.NewInt(2))
 
 	err := sender.ValidateTicketParams(&ticketParams)
@@ -576,9 +576,9 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// faceValue = 201 - 1 = 200
 	// ev = 200 * .5 = 100
 	sm.info[senderAddr].Deposit = big.NewInt(402)
-	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sender.maxFaceValue = big.NewInt(201)
 
-	ticketParams.FaceValue = new(big.Int).Sub(maxFaceValue, big.NewInt(1))
+	ticketParams.FaceValue = new(big.Int).Sub(sender.maxFaceValue, big.NewInt(1))
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.Nil(t, err)
 
@@ -588,9 +588,9 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// faceValue = 199
 	// ev = 199 * .5 = 99.5
 	sm.info[senderAddr].Deposit = big.NewInt(399)
-	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sender.maxFaceValue = big.NewInt(199)
 
-	ticketParams.FaceValue = maxFaceValue
+	ticketParams.FaceValue = sender.maxFaceValue
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.Nil(t, err)
 
@@ -600,9 +600,9 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	// faceValue = 200
 	// ev = 200 * .5 = 100
 	sm.info[senderAddr].Deposit = big.NewInt(400)
-	maxFaceValue = new(big.Int).Div(sm.info[senderAddr].Deposit, big.NewInt(int64(sender.depositMultiplier)))
+	sender.maxFaceValue = big.NewInt(200)
 
-	ticketParams.FaceValue = maxFaceValue
+	ticketParams.FaceValue = sender.maxFaceValue
 	err = sender.ValidateTicketParams(&ticketParams)
 	assert.Nil(t, err)
 }
@@ -621,7 +621,7 @@ func defaultSender(t *testing.T) *sender {
 		Reserve:       &ReserveInfo{FundsRemaining: big.NewInt(10)},
 		WithdrawRound: big.NewInt(0),
 	}
-	s := NewSender(am, tm, sm, big.NewRat(100, 1), 2)
+	s := NewSender(am, tm, sm, big.NewRat(100, 1), big.NewInt(0))
 	return s.(*sender)
 }
 

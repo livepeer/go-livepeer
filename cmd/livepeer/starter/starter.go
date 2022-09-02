@@ -100,7 +100,6 @@ type LivepeerConfig struct {
 	TicketEV                     *string
 	MaxFaceValue                 *string
 	MaxTicketEV                  *string
-	DepositMultiplier            *int
 	PricePerUnit                 *int
 	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
@@ -168,7 +167,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTicketEV := "1000000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
-	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
@@ -238,7 +236,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TicketEV:               &defaultTicketEV,
 		MaxFaceValue:           &defaultMaxFaceValue,
 		MaxTicketEV:            &defaultMaxTicketEV,
-		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
@@ -773,10 +770,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("-maxTicketEV must not be negative, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
 			}
 
-			if *cfg.DepositMultiplier <= 0 {
-				panic(fmt.Errorf("-depositMultiplier must be greater than 0, but %v provided. Restart the node with a valid value for -depositMultiplier", *cfg.DepositMultiplier))
-			}
-
 			// Fetch and cache broadcaster on-chain info
 			info, err := senderWatcher.GetSenderInfo(n.Eth.Account().Address)
 			if err != nil {
@@ -786,7 +779,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Broadcaster Deposit: ", eth.FormatUnits(info.Deposit, "ETH"))
 			glog.Info("Broadcaster Reserve: ", eth.FormatUnits(info.Reserve.FundsRemaining, "ETH"))
 
-			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, *cfg.DepositMultiplier)
+			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
+			if mfv == nil {
+				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
+			}
+
+			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, mfv)
 
 			if *cfg.PixelsPerUnit <= 0 {
 				// Can't divide by 0
