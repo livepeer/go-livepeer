@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 )
@@ -66,6 +67,11 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RUnlock()
 	}
 	return context.WithValue(parentCtx, clogContextKey, newCmap)
+}
+
+func WithTimeout(parentCtx, logCtx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx := Clone(parentCtx, logCtx)
+	return context.WithTimeout(ctx, timeout)
 }
 
 func AddManifestID(ctx context.Context, val string) context.Context {

@@ -613,8 +613,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 		// no preference (or unknown pref), so use our own
 		os = los
 	}
-
-	config := transcodeConfig{
+	n.StorageConfig = &transcodeConfig{
 		OS:      os,
 		LocalOS: los,
 	}
@@ -624,32 +623,53 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 			ctx, cancel := context.WithTimeout(context.Background(), transcodeLoopTimeout)
 			select {
 			case <-ctx.Done():
-				// timeout; clean up goroutine here
-				os.EndSession()
-				los.EndSession()
-				// check to avoid nil pointer caused by garbage collection while this go routine is still running
-				if n.TranscoderManager != nil {
-					n.TranscoderManager.RTmutex.Lock()
-					n.TranscoderManager.completeStreamSession(md.AuthToken.SessionId)
-					n.TranscoderManager.RTmutex.Unlock()
-				}
 				clog.V(common.DEBUG).Infof(logCtx, "Segment loop timed out; closing ")
-				n.segmentMutex.Lock()
-				mid := ManifestID(md.AuthToken.SessionId)
-				if _, ok := n.SegmentChans[mid]; ok {
-					close(n.SegmentChans[mid])
-					delete(n.SegmentChans, mid)
-					lpmon.CurrentSessions(len(n.SegmentChans))
-				}
-				n.segmentMutex.Unlock()
+				n.endTranscodingSession(md.AuthToken.SessionId, logCtx)
 				return
 			case chanData := <-segChan:
-				chanData.res <- n.transcodeSeg(chanData.ctx, config, chanData.seg, chanData.md)
+				// nil means channel is closed by endTranscodingSession called by B
+				if chanData != nil {
+					chanData.res <- n.transcodeSeg(chanData.ctx, *n.StorageConfig, chanData.seg, chanData.md)
+				}
 			}
 			cancel()
 		}
 	}()
 	return nil
+}
+
+func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Context) {
+	// timeout; clean up goroutine here
+	if n.StorageConfig != nil {
+		n.StorageConfig.OS.EndSession()
+		n.StorageConfig.LocalOS.EndSession()
+	}
+	// check to avoid nil pointer caused by garbage collection while this go routine is still running
+	if n.TranscoderManager != nil {
+		n.TranscoderManager.RTmutex.Lock()
+		// send empty segment to signal transcoder internal session teardown if session exist
+		if sess, exists := n.TranscoderManager.streamSessions[sessionId]; exists {
+			segData := &net.SegData{
+				AuthToken: &net.AuthToken{SessionId: sessionId},
+			}
+			msg := &net.NotifySegment{
+				SegData: segData,
+			}
+			_ = sess.stream.Send(msg)
+		}
+		n.TranscoderManager.completeStreamSession(sessionId)
+		n.TranscoderManager.RTmutex.Unlock()
+	}
+	n.segmentMutex.Lock()
+	mid := ManifestID(sessionId)
+	if _, ok := n.SegmentChans[mid]; ok {
+		close(n.SegmentChans[mid])
+		delete(n.SegmentChans, mid)
+		if lpmon.Enabled {
+			lpmon.CurrentSessions(len(n.SegmentChans))
+		}
+	}
+	n.segmentMutex.Unlock()
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
@@ -937,7 +957,16 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 	return nil, ErrNoTranscodersAvailable
 }
 
-// compleStreamSessions end a stream session for a remote transcoder and decrements its laod
+// ends transcoding session and releases resources
+func (node *LivepeerNode) EndTranscodingSession(sessionId string) {
+	node.endTranscodingSession(sessionId, context.TODO())
+}
+
+func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {
+	panic("shouldn't be called on RemoteTranscoderManager")
+}
+
+// completeStreamSessions end a stream session for a remote transcoder and decrements its load
 // caller should hold the mutex lock
 func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 	t, ok := rtm.streamSessions[sessionId]

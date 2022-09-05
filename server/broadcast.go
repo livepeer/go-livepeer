@@ -40,6 +40,8 @@ var maxDurationSec = common.MaxDuration.Seconds()
 // Max threshold for # of broadcast sessions under which we will refresh the session list
 var maxRefreshSessionsThreshold = 8.0
 
+var recordSegmentsMaxTimeout = 1 * time.Minute
+
 var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
@@ -445,7 +447,7 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 			// Mark remaining unused sessions returned by selector as complete
 			remaining := removeSessionFromList(sessions, bsm.verifiedSession)
 			for _, sess := range remaining {
-				bsm.completeSessionUnsafe(sess)
+				bsm.completeSessionUnsafe(ctx, sess, true)
 			}
 			sessions = []*BroadcastSession{bsm.verifiedSession}
 		} else if bsm.verifiedSession != nil && !includesSession(sessions, bsm.verifiedSession) {
@@ -465,7 +467,15 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 	return sessions, false, verified
 }
 
-func (bsm *BroadcastSessionsManager) cleanup() {
+func (bsm *BroadcastSessionsManager) cleanup(ctx context.Context) {
+	// send tear down signals to each orchestrator session to free resources
+	for _, sess := range bsm.untrustedPool.sessMap {
+		bsm.completeSession(ctx, sess, true)
+	}
+	for _, sess := range bsm.trustedPool.sessMap {
+		bsm.completeSession(ctx, sess, true)
+	}
+
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.finished = true
@@ -611,7 +621,7 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 		if res.Err != nil {
 			err = res.Err
 			if isNonRetryableError(err) {
-				bsm.completeSession(res.Session)
+				bsm.completeSession(context.TODO(), res.Session, false)
 			} else {
 				bsm.suspendAndRemoveOrch(res.Session)
 			}
@@ -622,7 +632,11 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 }
 
 // the caller needs to ensure bsm.sessLock is acquired before calling this.
-func (bsm *BroadcastSessionsManager) completeSessionUnsafe(sess *BroadcastSession) {
+func (bsm *BroadcastSessionsManager) completeSessionUnsafe(ctx context.Context, sess *BroadcastSession, tearDown bool) {
+	if tearDown {
+		err := EndTranscodingSession(ctx, sess)
+		clog.Errorf(ctx, "Error completing transcoding session: %q", err)
+	}
 	if sess.OrchestratorScore == common.Score_Untrusted {
 		bsm.untrustedPool.completeSession(sess)
 	} else if sess.OrchestratorScore == common.Score_Trusted {
@@ -632,10 +646,10 @@ func (bsm *BroadcastSessionsManager) completeSessionUnsafe(sess *BroadcastSessio
 	}
 }
 
-func (bsm *BroadcastSessionsManager) completeSession(sess *BroadcastSession) {
+func (bsm *BroadcastSessionsManager) completeSession(ctx context.Context, sess *BroadcastSession, tearDown bool) {
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
-	bsm.completeSessionUnsafe(sess)
+	bsm.completeSessionUnsafe(ctx, sess, tearDown)
 }
 
 func (bsm *BroadcastSessionsManager) sessionVerified(sess *BroadcastSession) {
@@ -761,8 +775,10 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	hasZeroVideoFrame := seg.IsZeroFrame
 	if ros != nil && !hasZeroVideoFrame {
 		go func() {
+			ctx, cancel := clog.WithTimeout(context.Background(), ctx, recordSegmentsMaxTimeout)
+			defer cancel()
 			now := time.Now()
-			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 2)
+			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 3)
 			took := time.Since(now)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%q",
@@ -921,7 +937,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		res, err = SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, verified)
 		if err != nil || res == nil {
 			if isNonRetryableError(err) {
-				cxn.sessManager.completeSession(sess)
+				cxn.sessManager.completeSession(ctx, sess, false)
 				return nil, info, err
 			}
 			cxn.sessManager.suspendAndRemoveOrch(sess)
@@ -1014,7 +1030,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		for _, usedSession := range sessions {
 			if usedSession != sess {
 				// return session that we're not using
-				cxn.sessManager.completeSession(usedSession)
+				cxn.sessManager.completeSession(ctx, usedSession, true)
 			}
 		}
 
@@ -1140,11 +1156,13 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 
 		if bros != nil {
 			go func() {
+				ctx, cancel := clog.WithTimeout(context.Background(), ctx, recordSegmentsMaxTimeout)
+				defer cancel()
 				ext, _ := common.ProfileFormatExtension(profile.Format)
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := getSegDurMsString(seg)
 				now := time.Now()
-				uri, err := drivers.SaveRetried(ctx, bros, name, data, map[string]string{"duration": segDurMs}, 2)
+				uri, err := drivers.SaveRetried(ctx, bros, name, data, map[string]string{"duration": segDurMs}, 3)
 				took := time.Since(now)
 				if err != nil {
 					clog.Errorf(ctx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%q", nonce, cxn.mid, name, err)
@@ -1212,7 +1230,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		return nil, dlErr
 	}
 	updateSession(sess, res)
-	cxn.sessManager.completeSession(sess)
+	cxn.sessManager.completeSession(ctx, sess, false)
 
 	downloadDur := time.Since(dlStart)
 	monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)
