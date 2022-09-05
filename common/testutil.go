@@ -82,7 +82,7 @@ func (s *StubServerStream) Send(n *net.NotifySegment) error {
 func IgnoreRoutines() []goleak.Option {
 	// goleak works by making list of all running goroutines and reporting error if it finds any
 	// this list tells goleak to ignore these goroutines - we're not interested in these particular goroutines
-	funcs2ignore := []string{"github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
+	funcs2ignore := []string{"time.Sleep", "github.com/golang/glog.(*loggingT).flushDaemon", "go.opencensus.io/stats/view.(*worker).start",
 		"github.com/rjeczalik/notify.(*recursiveTree).dispatch", "github.com/rjeczalik/notify._Cfunc_CFRunLoopRun", "github.com/ethereum/go-ethereum/metrics.(*meterArbiter).tick",
 		"github.com/ethereum/go-ethereum/consensus/ethash.(*Ethash).remote", "github.com/ethereum/go-ethereum/core.(*txSenderCacher).cache",
 		"internal/poll.runtime_pollWait", "github.com/livepeer/go-livepeer/core.(*RemoteTranscoderManager).Manage", "github.com/livepeer/lpms/core.(*LPMS).Start",

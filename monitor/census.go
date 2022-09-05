@@ -801,6 +801,10 @@ func InitCensus(nodeType NodeType, version string) {
 		},
 	}
 
+	// Unregister any views that have already been registered so that we don't break when re-registering
+	// (i.e during unit tests)
+	view.Unregister(views...)
+
 	// Register the views
 	if err := view.Register(views...); err != nil {
 		glog.Fatalf("Failed to register views: %v", err)
