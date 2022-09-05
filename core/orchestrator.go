@@ -665,9 +665,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	if _, ok := n.SegmentChans[mid]; ok {
 		close(n.SegmentChans[mid])
 		delete(n.SegmentChans, mid)
-		if lpmon.Enabled {
-			lpmon.CurrentSessions(len(n.SegmentChans))
-		}
+		lpmon.CurrentSessions(len(n.SegmentChans))
 	}
 	n.segmentMutex.Unlock()
 }
