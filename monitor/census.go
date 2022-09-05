@@ -210,10 +210,14 @@ type (
 // Exporter Prometheus exporter that handles `/metrics` endpoint
 var Exporter *prometheus.Exporter
 
-var census censusMetricsCounter
+var census censusMetricsCounter = censusMetricsCounter{}
 
 // used in unit tests
 var unitTestMode bool
+
+func init() {
+	InitCensus(Default, "0")
+}
 
 func InitCensus(nodeType NodeType, version string) {
 	census = censusMetricsCounter{
@@ -1499,6 +1503,9 @@ func Reserve(sender string, reserve *big.Int) {
 }
 
 func MaxTranscodingPrice(maxPrice *big.Rat) {
+	if maxPrice == nil {
+		return
+	}
 	floatWei, ok := maxPrice.Float64()
 	if ok {
 		if err := stats.RecordWithTags(census.ctx,

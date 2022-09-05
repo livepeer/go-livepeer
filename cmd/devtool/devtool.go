@@ -3,14 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
 )
 
 var (
@@ -170,7 +171,6 @@ func createRunScript(ethController string, dataDir, serviceHost string, cfg devt
 		"-ethPassword \"\"",
 		"-network=devenv",
 		"-blockPollingInterval 1",
-		"-monitor=false",
 		"-currentManifest=true",
 		fmt.Sprintf("-cliAddr %s:%d", serviceHost, cliPort),
 		fmt.Sprintf("-httpAddr %s:%d", serviceHost, mediaPort),
