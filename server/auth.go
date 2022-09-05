@@ -53,9 +53,7 @@ func authenticateStream(authURL *url.URL, incomingRequestURL string) (*authWebho
 
 	took := time.Since(started)
 	glog.Infof("Stream authentication for authURL=%s url=%s dur=%s", authURL, incomingRequestURL, took)
-	if monitor.Enabled {
-		monitor.AuthWebhookFinished(took)
-	}
+	monitor.AuthWebhookFinished(took)
 
 	return &authResp, nil
 }

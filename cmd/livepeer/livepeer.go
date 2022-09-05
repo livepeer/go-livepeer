@@ -154,7 +154,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	// Reward service
 	cfg.Reward = flag.Bool("reward", false, "Set to true to run a reward service")
 	// Metrics & logging:
-	cfg.Monitor = flag.Bool("monitor", *cfg.Monitor, "Set to true to send performance metrics")
 	cfg.MetricsPerStream = flag.Bool("metricsPerStream", *cfg.MetricsPerStream, "Set to true to group performance metrics per stream")
 	cfg.MetricsExposeClientIP = flag.Bool("metricsClientIP", *cfg.MetricsExposeClientIP, "Set to true to expose client's IP in metrics")
 	cfg.MetadataQueueUri = flag.String("metadataQueueUri", *cfg.MetadataQueueUri, "URI for message broker to send operation metadata")

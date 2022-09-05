@@ -48,11 +48,9 @@ func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGa
 	if minGasPrice != nil {
 		minGasP = minGasPrice
 	}
-	if monitor.Enabled {
-		monitor.MinGasPrice(minGasP)
-		if maxGasPrice != nil {
-			monitor.MaxGasPrice(maxGasPrice)
-		}
+	monitor.MinGasPrice(minGasP)
+	if maxGasPrice != nil {
+		monitor.MaxGasPrice(maxGasPrice)
 	}
 
 	return &GasPriceMonitor{
@@ -80,10 +78,7 @@ func (gpm *GasPriceMonitor) SetMinGasPrice(minGasPrice *big.Int) {
 	gpm.gasPriceMu.Lock()
 	defer gpm.gasPriceMu.Unlock()
 	gpm.minGasPrice = minGasPrice
-
-	if monitor.Enabled {
-		monitor.MinGasPrice(minGasPrice)
-	}
+	monitor.MinGasPrice(minGasPrice)
 }
 
 func (gpm *GasPriceMonitor) MinGasPrice() *big.Int {
@@ -159,10 +154,7 @@ func (gpm *GasPriceMonitor) SetMaxGasPrice(gp *big.Int) {
 	gpm.gasPriceMu.Lock()
 	defer gpm.gasPriceMu.Unlock()
 	gpm.maxGasPrice = gp
-
-	if monitor.Enabled {
-		monitor.MaxGasPrice(gp)
-	}
+	monitor.MaxGasPrice(gp)
 }
 
 func (gpm *GasPriceMonitor) MaxGasPrice() *big.Int {
@@ -179,10 +171,7 @@ func (gpm *GasPriceMonitor) fetchAndUpdateGasPrice(ctx context.Context) error {
 
 	if gasPrice.Cmp(gpm.minGasPrice) >= 0 {
 		gpm.updateGasPrice(gasPrice)
-
-		if monitor.Enabled {
-			monitor.SuggestedGasPrice(gasPrice)
-		}
+		monitor.SuggestedGasPrice(gasPrice)
 	}
 
 	return nil

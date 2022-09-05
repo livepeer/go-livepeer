@@ -295,9 +295,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	uploadDur := time.Since(uploadStart)
 	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
 
-	if monitor.Enabled {
-		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur, "")
-	}
+	monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur, "")
 }
 
 // Orchestrator gRPC
@@ -443,10 +441,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		dlDur := time.Since(start)
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
 
-		if monitor.Enabled {
-			monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
-		}
-
+		monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
 		orch.TranscoderResults(tid, &res)
 	}
 	if res.Err != nil {

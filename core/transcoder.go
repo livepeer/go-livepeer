@@ -63,7 +63,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		return nil, err
 	}
 
-	if monitor.Enabled && parseErr == nil {
+	if parseErr == nil {
 		// This will run only when fname is actual URL and contains seqNo in it.
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
@@ -111,7 +111,7 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		return nil, err
 	}
 
-	if monitor.Enabled && parseErr == nil {
+	if parseErr == nil {
 		// This will run only when fname is actual URL and contains seqNo in it.
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
@@ -145,7 +145,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		return nil, err
 	}
 
-	if monitor.Enabled && parseErr == nil {
+	if parseErr == nil {
 		// This will run only when fname is actual URL and contains seqNo in it.
 		// When orchestrator works as transcoder, `fname` will be relative path to file in local
 		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will

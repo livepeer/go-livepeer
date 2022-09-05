@@ -77,7 +77,6 @@ const (
 )
 
 // Enabled true if metrics was enabled in command line
-var Enabled bool
 var PerStreamMetrics bool
 
 // ExposeClientIP if true then Orchestrator exposes Broadcaster's IP address in metrics

@@ -109,7 +109,6 @@ type LivepeerConfig struct {
 	Redeemer                     *bool
 	RedeemerAddr                 *string
 	Reward                       *bool
-	Monitor                      *bool
 	MetricsPerStream             *bool
 	MetricsExposeClientIP        *bool
 	MetadataQueueUri             *string
@@ -175,7 +174,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
-	defaultMonitor := false
 	defaultMetricsPerStream := false
 	defaultMetricsExposeClientIP := false
 	defaultMetadataQueueUri := ""
@@ -245,7 +243,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
-		Monitor:                &defaultMonitor,
 		MetricsPerStream:       &defaultMetricsPerStream,
 		MetricsExposeClientIP:  &defaultMetricsExposeClientIP,
 		MetadataQueueUri:       &defaultMetadataQueueUri,
@@ -463,26 +460,24 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	hn, _ := os.Hostname()
 	lpmon.NodeID += hn
 
-	if *cfg.Monitor {
-		if *cfg.MetricsExposeClientIP {
-			*cfg.MetricsPerStream = true
-		}
-		lpmon.Enabled = true
-		lpmon.PerStreamMetrics = *cfg.MetricsPerStream
-		lpmon.ExposeClientIP = *cfg.MetricsExposeClientIP
-		nodeType := lpmon.Default
-		switch n.NodeType {
-		case core.BroadcasterNode:
-			nodeType = lpmon.Broadcaster
-		case core.OrchestratorNode:
-			nodeType = lpmon.Orchestrator
-		case core.TranscoderNode:
-			nodeType = lpmon.Transcoder
-		case core.RedeemerNode:
-			nodeType = lpmon.Redeemer
-		}
-		lpmon.InitCensus(nodeType, core.LivepeerVersion)
+	// Initialize Monitoring
+	if *cfg.MetricsExposeClientIP {
+		*cfg.MetricsPerStream = true
 	}
+	lpmon.PerStreamMetrics = *cfg.MetricsPerStream
+	lpmon.ExposeClientIP = *cfg.MetricsExposeClientIP
+	nodeType := lpmon.Default
+	switch n.NodeType {
+	case core.BroadcasterNode:
+		nodeType = lpmon.Broadcaster
+	case core.OrchestratorNode:
+		nodeType = lpmon.Orchestrator
+	case core.TranscoderNode:
+		nodeType = lpmon.Transcoder
+	case core.RedeemerNode:
+		nodeType = lpmon.Redeemer
+	}
+	lpmon.InitCensus(nodeType, core.LivepeerVersion)
 
 	watcherErr := make(chan error)
 	serviceErr := make(chan error)
@@ -933,9 +928,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	core.MaxSessions = *cfg.MaxSessions
-	if lpmon.Enabled {
-		lpmon.MaxSessions(core.MaxSessions)
-	}
+	lpmon.MaxSessions(core.MaxSessions)
 
 	if *cfg.AuthWebhookURL != "" {
 		parsedUrl, err := validateURL(*cfg.AuthWebhookURL)
