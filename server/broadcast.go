@@ -1229,7 +1229,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	if dlErr != nil {
 		return nil, dlErr
 	}
-	updateSession(sess, res)
+	updatedSession := updateSession(sess, res)
 	cxn.sessManager.completeSession(ctx, sess, false)
 
 	downloadDur := time.Since(dlStart)
@@ -1256,7 +1256,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		}
 	}
 
-	monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode, sess.OrchestratorInfo)
+	monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(updatedSession.Params.Profiles), errCode, updatedSession.OrchestratorInfo)
 
 	clog.V(common.DEBUG).Infof(ctx, "Successfully validated segment")
 	return segURLs, nil
@@ -1340,14 +1340,14 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 }
 
 // Return an updated copy of the given session using the received transcode result
-func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
+func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) BroadcastSession {
 	sess.lock.Lock()
 	defer sess.lock.Unlock()
 	sess.LatencyScore = res.LatencyScore
 
 	if res.Info == nil {
 		// Return early if we do not need to update OrchestratorInfo
-		return
+		return *sess
 	}
 
 	oInfo := res.Info
@@ -1372,6 +1372,8 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 				core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 		}
 	}
+
+	return *sess
 }
 
 func refreshSession(ctx context.Context, sess *BroadcastSession) error {
