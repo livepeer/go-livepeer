@@ -370,6 +370,30 @@ func (c *client) transactOpts() *bind.TransactOpts {
 
 	opts.Context = newEthRpcContext()
 
+	// If GasFeeCap is nil then one of the following will be true:
+	// - A dynamic tx will be created by BoundContract and GasFeeCap will automatically be set.
+	// - A legacy tx will be created by BoundContract in which case the GasFeeCap field is not used.
+	if opts.GasFeeCap == nil {
+		return &opts
+	}
+
+	// If GasFeeCap is non-nil ensure that we adjust it to be min(gasPriceEstimate, current GasFeeCap).
+	gasPriceEstimate := opts.GasFeeCap
+	head, err := c.backend.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		glog.Errorf("failed to calculate gas price estimate - defaulting to using GasFeeCap = maxGasPrice")
+	} else {
+		gasPriceEstimate = new(big.Int).Mul(head.BaseFee, big.NewInt(2))
+	}
+	// Setting GasFeeCap > gasPriceEstimate is detrimental to the user because the user account will need at least gas * GasFeeCap in their balance
+	// to pay for the tx when they only need gas * gasPriceEstimate. GasFeeCap is initially going to be set to the maxGasPrice specified by the user which
+	// they expect to be the maximum gas price they will ever pay. So, a user might set maxGasPrice to 100 gwei as a safety precaution even if the average gas price
+	// is 0.1 gwei. In this case, the gasPriceEstimate would be 0.1 * 2 = 0.2 gwei (multiplied by 2 to add a buffer). So, the user account would need 500x more funds
+	// in its balance if its GasFeeCap is set to the maxGasPrice.
+	if opts.GasFeeCap.Cmp(gasPriceEstimate) > 0 {
+		opts.GasFeeCap = gasPriceEstimate
+	}
+
 	return &opts
 }
 
