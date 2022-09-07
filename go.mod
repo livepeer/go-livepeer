@@ -16,7 +16,7 @@ require (
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/go-tools v0.0.0-20220805063103-76df6beb6506
 	github.com/livepeer/livepeer-data v0.4.11
-	github.com/livepeer/lpms v0.0.0-20220728084527-dacf4ac6ff13
+	github.com/livepeer/lpms v0.0.0-20220711101026-ae24b7a15dcd
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.11.0
 	github.com/olekukonko/tablewriter v0.0.5
