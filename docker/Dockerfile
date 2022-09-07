@@ -54,7 +54,7 @@ ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
