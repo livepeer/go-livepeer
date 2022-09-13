@@ -550,7 +550,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		s.connectionLock.Unlock()
-		cxn.sessManager.cleanup(nil)
+		cxn.sessManager.cleanup(context.Background())
 		return oldCxn, errAlreadyExists
 	}
 	s.rtmpConnections[mid] = cxn
