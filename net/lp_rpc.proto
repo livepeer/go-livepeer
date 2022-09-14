@@ -23,7 +23,6 @@ message PingPong {
 
 }
 
-
 // This request is sent by the broadcaster in `GetTranscoder` to request
 // information on which transcoder to use.
 message OrchestratorRequest {
