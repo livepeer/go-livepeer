@@ -576,14 +576,14 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// success, populate other fields and mark connection initialized
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
-	sessionsNumber := len(s.rtmpConnections)
 
 	// connection is ready, only monitoring below
 	close(cxn.initializing)
 
-	// need lock because of a loop in countStreamsWithFastVerificationEnabled
+	// need lock to access rtmpConnections
 	s.connectionLock.RLock()
 	defer s.connectionLock.RUnlock()
+	sessionsNumber := len(s.rtmpConnections)
 	fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 
 	if monitor.Enabled {
