@@ -582,7 +582,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	s.serverLock.Unlock()
-	
+
 	// connection is ready, only monitoring below
 	close(cxn.initializing)
 
