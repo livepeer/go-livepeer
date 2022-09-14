@@ -78,7 +78,7 @@ var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 }
 
 type rtmpConnection struct {
-	initialized     bool
+	initializing    chan error
 	mid             core.ManifestID
 	nonce           uint64
 	stream          stream.RTMPVideoStream
@@ -93,7 +93,15 @@ type rtmpConnection struct {
 
 func (s *LivepeerServer) getActiveRtmpConnectionUnsafe(mid core.ManifestID) (*rtmpConnection, bool) {
 	cxn, exists := s.rtmpConnections[mid]
-	return cxn, exists && cxn.initialized
+	if exists {
+		if cxn.initializing != nil {
+			err := <-cxn.initializing
+			if err != nil {
+				return nil, false
+			}
+		}
+	}
+	return cxn, exists
 }
 
 type LivepeerServer struct {
@@ -526,28 +534,29 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// first, initialize connection without SessionManager, which creates O and T sessions, and may leave
 	// connectionLock locked for significant amount of time
 	cxn := &rtmpConnection{
-		mid:      mid,
-		nonce:    params.Nonce,
-		stream:   rtmpStrm,
-		pl:       playlist,
-		profile:  &vProfile,
-		params:   params,
-		lastUsed: time.Now(),
+		mid:          mid,
+		initializing: make(chan error),
+		nonce:        params.Nonce,
+		stream:       rtmpStrm,
+		pl:           playlist,
+		profile:      &vProfile,
+		params:       params,
+		lastUsed:     time.Now(),
 	}
-
 	s.connectionLock.Lock()
-	oldCxn, exists := s.rtmpConnections[mid]
+	oldCxn, exists := s.getActiveRtmpConnectionUnsafe(mid)
 	if exists {
 		// We can only have one concurrent stream per ManifestID
 		s.connectionLock.Unlock()
 		return oldCxn, errAlreadyExists
 	}
 	s.rtmpConnections[mid] = cxn
+	// do not obtain this lock again while initializing channel is open, it will cause deadlock if other goroutine already obtained the lock and called getActiveRtmpConnectionUnsafe()
 	s.connectionLock.Unlock()
 
-	// delete uninitialized connection, in case of panic in the code below
+	// delete uninitialized connection in case of error
 	defer func() {
-		if !cxn.initialized {
+		if <-cxn.initializing != nil {
 			s.connectionLock.Lock()
 			delete(s.rtmpConnections, mid)
 			s.connectionLock.Unlock()
@@ -568,7 +577,9 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
 	sessionsNumber := len(s.rtmpConnections)
-	cxn.initialized = true
+
+	// connection is ready, only monitoring below
+	close(cxn.initializing)
 
 	// need lock because of a loop in countStreamsWithFastVerificationEnabled
 	s.connectionLock.RLock()
