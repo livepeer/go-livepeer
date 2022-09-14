@@ -966,7 +966,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			}
 			cxn.sessManager.suspendAndRemoveOrch(sess)
 			if res == nil && err == nil {
-				err = errors.New("empty response")
+				err = errors.New("empty response 12")
 			}
 			return nil, info, err
 		}
