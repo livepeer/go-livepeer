@@ -120,6 +120,7 @@ type LivepeerServer struct {
 	lastManifestID    core.ManifestID
 	context           context.Context
 	connectionLock    *sync.RWMutex
+	serverLock        *sync.RWMutex
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -186,6 +187,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	}
 	server := lpmscore.New(&opts)
 	ls := &LivepeerServer{RTMPSegmenter: server, LPMS: server, LivepeerNode: lpNode, HTTPMux: opts.HttpMux, connectionLock: &sync.RWMutex{},
+		serverLock:              &sync.RWMutex{},
 		rtmpConnections:         make(map[core.ManifestID]*rtmpConnection),
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
@@ -571,12 +573,16 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	selFactory := func() BroadcastSessionsSelector {
 		return NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)
 	}
+
+	// safe, because other coroutines should be waiting on initializing channel
 	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params, selFactory)
 
-	// success, populate other fields and mark connection initialized
+	// populate fields and signal initializing channel
+	s.serverLock.Lock()
 	s.lastManifestID = mid
 	s.lastHLSStreamID = hlsStrmID
-
+	s.serverLock.Unlock()
+	
 	// connection is ready, only monitoring below
 	close(cxn.initializing)
 
