@@ -78,7 +78,7 @@ var httpPushResetTimer = func() (context.Context, context.CancelFunc) {
 }
 
 type rtmpConnection struct {
-	initializing    chan error
+	initializing    chan struct{}
 	mid             core.ManifestID
 	nonce           uint64
 	stream          stream.RTMPVideoStream
@@ -95,10 +95,7 @@ func (s *LivepeerServer) getActiveRtmpConnectionUnsafe(mid core.ManifestID) (*rt
 	cxn, exists := s.rtmpConnections[mid]
 	if exists {
 		if cxn.initializing != nil {
-			err := <-cxn.initializing
-			if err != nil {
-				return nil, false
-			}
+			<-cxn.initializing
 		}
 	}
 	return cxn, exists
@@ -537,7 +534,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// connectionLock locked for significant amount of time
 	cxn := &rtmpConnection{
 		mid:          mid,
-		initializing: make(chan error),
+		initializing: make(chan struct{}),
 		nonce:        params.Nonce,
 		stream:       rtmpStrm,
 		pl:           playlist,
@@ -556,15 +553,6 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// do not obtain this lock again while initializing channel is open, it will cause deadlock if other goroutine already obtained the lock and called getActiveRtmpConnectionUnsafe()
 	s.connectionLock.Unlock()
 
-	// delete uninitialized connection in case of error
-	defer func() {
-		if <-cxn.initializing != nil {
-			s.connectionLock.Lock()
-			delete(s.rtmpConnections, mid)
-			s.connectionLock.Unlock()
-		}
-	}()
-
 	// initialize session manager
 	var stakeRdr stakeReader
 	if s.LivepeerNode.Eth != nil {
@@ -574,7 +562,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		return NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)
 	}
 
-	// safe, because other coroutines should be waiting on initializing channel
+	// safe, because other goroutines should be waiting on initializing channel
 	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params, selFactory)
 
 	// populate fields and signal initializing channel
