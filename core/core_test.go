@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
+	"runtime"
 	"testing"
 	"time"
 
@@ -152,6 +153,39 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 
 	segChan = getSegChan(n, mid)
 	assert.Nil(segChan)
+}
+
+func TestTranscodeLoop_CleanupForBroadcasterEndTranscodingSession(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	oldTranscodeLoopTimeout := transcodeLoopTimeout
+	defer func() { transcodeLoopTimeout = oldTranscodeLoopTimeout }()
+	transcodeLoopTimeout = 100 * time.Millisecond
+
+	tmp := t.TempDir()
+
+	ffmpeg.InitFFmpeg()
+	n, _ := NewLivepeerNode(&eth.StubClient{}, tmp, nil)
+	n.Transcoder = NewLocalTranscoder(tmp)
+
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
+	mid := ManifestID(md.AuthToken.SessionId)
+
+	ss := StubSegment()
+	_, err := n.sendToTranscodeLoop(context.TODO(), md, ss)
+	require.Nil(err)
+	require.NotNil(getSegChan(n, mid))
+
+	startRoutines := runtime.NumGoroutine()
+
+	n.endTranscodingSession(md.AuthToken.SessionId, context.TODO())
+	waitForTranscoderLoopTimeout(n, mid)
+
+	endRoutines := runtime.NumGoroutine()
+
+	assert.Equal(endRoutines, startRoutines-1)
 }
 
 func waitForTranscoderLoopTimeout(n *LivepeerNode, m ManifestID) {
