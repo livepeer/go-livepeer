@@ -637,11 +637,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 				clog.V(common.DEBUG).Infof(logCtx, "Segment loop timed out; closing ")
 				n.endTranscodingSession(md.AuthToken.SessionId, logCtx)
 				return
-			case chanData := <-segChan:
-				// nil means channel is closed by endTranscodingSession called by B
-				if chanData != nil {
-					chanData.res <- n.transcodeSeg(chanData.ctx, *n.StorageConfig, chanData.seg, chanData.md)
+			case chanData, ok := <-segChan:
+				// Check if channel was closed due to endTranscodingSession being called by B
+				if !ok {
+					cancel()
+					return
 				}
+				chanData.res <- n.transcodeSeg(chanData.ctx, *n.StorageConfig, chanData.seg, chanData.md)
 			}
 			cancel()
 		}
