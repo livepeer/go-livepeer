@@ -824,7 +824,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		mid = intmid
 	}
 	cxn, exists := s.getActiveRtmpConnectionUnsafe(mid)
-	if monitor.Enabled && exists {
+	if monitor.Enabled && exists && cxn != nil {
 		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
 	}
