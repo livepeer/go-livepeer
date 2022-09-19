@@ -9,65 +9,72 @@ on:
       - "v*"
 
 jobs:
-  linux:
-    name: Build binaries
-    runs-on: ubuntu-18.04
+  build:
+    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.platform.os }}
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            os: linux
-          - arch: arm64
-            os: linux
-          - arch: amd64
-            os: windows
+        arch:
+          - arm64
+          - amd64
+        platform:
+          - name: linux
+            os: ubuntu-18.04
+          - name: windows
+            os: ubuntu-18.04
+          - name: darwin
+            os: macos-latest
+        exclude:
+          - platform:
+              name: windows
+            arch: arm64
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.0.2
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set build environment
-        run: |
-          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "GOOS=${{ matrix.os }}" >> $GITHUB_ENV
-          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
-
       - name: Set up go
         id: go
         uses: actions/setup-go@v3
         with:
           go-version: 1.17
-
-      - name: Cache go modules
-        id: cache-go-mod
-        uses: actions/cache@v2.1.5
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-go-
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-ffmpeg-
+            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
 
       - name: Cache binaries
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/build
-          key: ${{ runner.os }}-${{ matrix.os }}-${{ matrix.arch }}-binaries-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-binaries-${{ github.sha }}
+
+      - name: Set build environment
+        run: |
+          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
+          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
       - name: Install dependencies
+        if: matrix.platform.name == 'darwin'
+        run: brew install coreutils
+
+      - name: Install dependencies
+        if: matrix.platform.name != 'darwin'
         run: |
           sudo apt-get update \
             && sudo apt-get install -y software-properties-common curl apt-transport-https \
@@ -81,89 +88,7 @@ jobs:
             && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
       - name: Install go modules
-        if: steps.cache-go-mod.outputs.cache-hit != 'true'
-        run: go mod download
-
-      - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: ./install_ffmpeg.sh
-
-      - name: Build binaries
-        run: |
-          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
-
-      - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@master
-        with:
-          name: release-artifacts
-          path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
-
-  macos:
-    name: Build MacOS binaries
-    strategy:
-      matrix:
-        arch:
-          - amd64
-          - arm64
-    runs-on: macos-latest
-    steps:
-      - name: Set build environment
-        run: |
-          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
-
-      - name: Check out code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          # Check https://github.com/livepeer/go-livepeer/pull/1891
-          # for ref value discussion
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Set up go
-        id: go
-        uses: actions/setup-go@v3
-        with:
-          go-version: 1.17
-
-      - name: Cache go modules
-        id: cache-go-mod
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-${{ matrix.arch }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-go-
-
-      - name: Cache ffmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v3
-        with:
-          path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-ffmpeg-
-
-      - name: Install dependencies
-        run: brew install coreutils
-
-      - name: Install go modules
-        if: steps.cache-go-mod.outputs.cache-hit != 'true'
+        if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
@@ -184,7 +109,7 @@ jobs:
           regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
-        if: ${{ steps.match-tag.outputs.match != '' }}
+        if: steps.match-tag.outputs.match != '' && matrix.platform.name == 'darwin'
         uses: livepeer/action-gh-codesign-apple@latest
         with:
           developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
@@ -210,12 +135,15 @@ jobs:
           name: release-artifacts
           path: releases/
 
+      - name: Notify new build upload
+        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
+
   linux-tensorflow:
     name: Build binaries for linux using tensorflow
     runs-on: ubuntu-18.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.0.2
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -309,3 +237,58 @@ jobs:
 
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
+
+  upload:
+    name: Upload artifacts to google bucket
+    permissions:
+      contents: "read"
+      id-token: "write"
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - linux-tensorflow
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: release-artifacts
+          path: releases/
+
+      - name: Generate sha256 checksum and gpg signatures for release artifacts
+        uses: livepeer/action-gh-checksum-and-gpg-sign@latest
+        with:
+          artifacts-dir: releases
+          release-name: ${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}
+          gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
+          gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
+
+      - name: Generate branch manifest
+        id: branch-manifest
+        uses: livepeer/branch-manifest-action@latest
+        with:
+          project-name: livepeer
+          bucket-key: ${{ github.event.repository.name }}
+          use-prefix: false
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v0
+        with:
+          workload_identity_provider: ${{ secrets.CI_GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.CI_GOOGLE_SERVICE_ACCOUNT }}
+
+      - name: Upload release archives to Google Cloud
+        id: upload-archives
+        uses: google-github-actions/upload-cloud-storage@v0
+        with:
+          path: "releases"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
+          parent: false
+
+      - name: Upload branch manifest file
+        id: upload-manifest
+        uses: google-github-actions/upload-cloud-storage@v0
+        with:
+          path: ${{ steps.branch-manifest.outputs.manifest-file }}
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/"
+          parent: false
