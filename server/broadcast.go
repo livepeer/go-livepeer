@@ -1030,12 +1030,12 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		}
 		// Ensure perceptual hash is generated if we ask for it
 		if calcPerceptualHash {
-			segmToCheckIndex := rand.Intn(len(res.Segments))
 			segcount := len(res.Segments)
 			if segcount == 0 {
 				err = fmt.Errorf("error transcoding: no transcoded segments in the response from %s", sess.Transcoder())
 				return nil, info, err
 			}
+			segmToCheckIndex := rand.Intn(len(res.Segments))
 			segHash, err := core.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
 			if err != nil || len(segHash) <= 0 {
 				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
