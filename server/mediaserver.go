@@ -575,8 +575,8 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	close(cxn.initializing)
 
 	// need lock to access rtmpConnections
-	s.connectionLock.Lock()
-	defer s.connectionLock.Unlock()
+	s.connectionLock.RLock()
+	defer s.connectionLock.RUnlock()
 	sessionsNumber := len(s.rtmpConnections)
 	fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 
@@ -819,7 +819,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		errorOut(http.StatusBadRequest, "Bad URL url=%s", r.URL)
 		return
 	}
-	s.connectionLock.Lock()
+	s.connectionLock.RLock()
 	if intmid, exists := s.internalManifests[mid]; exists {
 		mid = intmid
 	}
@@ -828,7 +828,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		fastVerificationEnabled, fastVerificationUsing := countStreamsWithFastVerificationEnabled(s.rtmpConnections)
 		monitor.FastVerificationEnabledAndUsingCurrentSessions(fastVerificationEnabled, fastVerificationUsing)
 	}
-	s.connectionLock.Unlock()
+	s.connectionLock.RUnlock()
 	ctx = clog.AddManifestID(ctx, string(mid))
 	if exists && cxn != nil {
 		s.connectionLock.Lock()
