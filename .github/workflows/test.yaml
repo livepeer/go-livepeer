@@ -1,12 +1,19 @@
 name: Trigger test suite
 
 on:
+  pull_request_target:
+    branches:
+      - master
   pull_request:
     branches:
       - master
   push:
     branches:
       - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -26,15 +33,9 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 1.17
-
-      - name: Cache go modules
-        id: cache-go-mod
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
@@ -58,7 +59,7 @@ jobs:
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
       - name: Install go modules
-        if: steps.cache-go-mod.outputs.cache-hit != 'true'
+        if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
@@ -93,6 +94,42 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           files: ./cover.out
-          name: go-livepeer
+          name: ${{ github.event.repository.name }}
           verbose: true
           gcov_ignore: ./eth/stubclient.go
+
+  codeql:
+    name: Perform CodeQL analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v1
+        with:
+          languages: go
+
+      # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
+      # If this step fails, then you should remove it and run the build manually (see below)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v1
+
+      # ℹ️ Command-line programs to run using the OS shell.
+      # 📚 https://git.io/JvXDl
+
+      # ✏️ If the Autobuild fails above, remove it and uncomment the following three lines
+      #    and modify them (or add more) to build your code if your project
+      #    uses a compiled language
+
+      #- run: |
+      #   make bootstrap
+      #   make release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v1
