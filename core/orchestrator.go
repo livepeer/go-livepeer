@@ -624,10 +624,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 		// no preference (or unknown pref), so use our own
 		os = los
 	}
-	n.StorageConfig = &transcodeConfig{
+	storageConfig := transcodeConfig{
 		OS:      os,
 		LocalOS: los,
 	}
+	n.storageMutex.Lock()
+	n.StorageConfigs[md.AuthToken.SessionId] = &storageConfig
+	n.storageMutex.Unlock()
 	go func() {
 		for {
 			// XXX make context timeout configurable
@@ -643,7 +646,7 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 					cancel()
 					return
 				}
-				chanData.res <- n.transcodeSeg(chanData.ctx, *n.StorageConfig, chanData.seg, chanData.md)
+				chanData.res <- n.transcodeSeg(chanData.ctx, storageConfig, chanData.seg, chanData.md)
 			}
 			cancel()
 		}
@@ -653,10 +656,13 @@ func (n *LivepeerNode) transcodeSegmentLoop(logCtx context.Context, md *SegTrans
 
 func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Context) {
 	// timeout; clean up goroutine here
-	if n.StorageConfig != nil {
-		n.StorageConfig.OS.EndSession()
-		n.StorageConfig.LocalOS.EndSession()
+	n.storageMutex.Lock()
+	if storage, exists := n.StorageConfigs[sessionId]; exists {
+		storage.OS.EndSession()
+		storage.LocalOS.EndSession()
+		delete(n.StorageConfigs, sessionId)
 	}
+	n.storageMutex.Unlock()
 	// check to avoid nil pointer caused by garbage collection while this go routine is still running
 	if n.TranscoderManager != nil {
 		n.TranscoderManager.RTmutex.Lock()
