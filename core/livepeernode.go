@@ -85,13 +85,13 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Thread safety for config fields
-	mu sync.RWMutex
-	// Transcoder private fields
-	priceInfo      *big.Rat
-	serviceURI     url.URL
-	segmentMutex   *sync.RWMutex
+	mu             sync.RWMutex
 	StorageConfigs map[string]*transcodeConfig
 	storageMutex   *sync.RWMutex
+	// Transcoder private fields
+	priceInfo    *big.Rat
+	serviceURI   url.URL
+	segmentMutex *sync.RWMutex
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
