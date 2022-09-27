@@ -11,14 +11,14 @@ ENV	GOARCH="$TARGETARCH" \
 	LIBRARY_PATH="/usr/local/cuda/lib64"
 
 RUN	apt update \
-	&& apt install -y software-properties-common curl apt-transport-https \
+	&& apt install -yqq software-properties-common curl apt-transport-https \
 	&& curl https://dl.google.com/go/go1.17.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=amd64] https://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
 	&& apt update \
-	&& apt -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64
+	&& apt -yqq install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
@@ -54,12 +54,16 @@ ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime AS livepeer-amd64-base
+
+FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
+
+FROM livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
-COPY --from=build	/build/	/usr/bin/
-COPY --from=build	/usr/bin/grpc_health_probe	/usr/bin/grpc_health_probe
+COPY --from=build	/build/	/usr/local/bin/
+COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 
