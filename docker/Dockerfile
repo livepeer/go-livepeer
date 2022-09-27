@@ -54,9 +54,9 @@ ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.2-cudnn7-runtime AS livepeer-amd64-base
 
-FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
+FROM --platform=$TARGETPLATFORM nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
 
 FROM livepeer-${TARGETARCH}-base
 
