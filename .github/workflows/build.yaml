@@ -160,15 +160,9 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: 1.17
-
-      - name: Cache go modules
-        id: cache-go-mod
-        uses: actions/cache@v2.1.5
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
@@ -203,7 +197,7 @@ jobs:
             && sudo ldconfig
 
       - name: Install go modules
-        if: steps.cache-go-mod.outputs.cache-hit != 'true'
+        if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
