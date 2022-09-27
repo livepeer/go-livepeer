@@ -85,12 +85,13 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Thread safety for config fields
-	mu sync.RWMutex
+	mu             sync.RWMutex
+	StorageConfigs map[string]*transcodeConfig
+	storageMutex   *sync.RWMutex
 	// Transcoder private fields
-	priceInfo     *big.Rat
-	serviceURI    url.URL
-	segmentMutex  *sync.RWMutex
-	StorageConfig *transcodeConfig
+	priceInfo    *big.Rat
+	serviceURI   url.URL
+	segmentMutex *sync.RWMutex
 }
 
 //NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -104,6 +105,8 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		SegmentChans:    make(map[ManifestID]SegmentChan),
 		segmentMutex:    &sync.RWMutex{},
 		Capabilities:    &Capabilities{capacities: map[Capability]int{}},
+		StorageConfigs:  make(map[string]*transcodeConfig),
+		storageMutex:    &sync.RWMutex{},
 	}, nil
 }
 
