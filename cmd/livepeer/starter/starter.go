@@ -709,8 +709,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.PricePerBroadcaster != "" {
 				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
 				for _, p := range ppb {
-					n.SetBasePrice(p.EthAddress, p.Price)
-					glog.Infof("Price: %v set for broadcaster %v", p.Price.RatString(), p.EthAddress)
+					price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+					n.SetBasePrice(p.EthAddress, price)
+					glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
 				}
 			}
 
@@ -1374,13 +1375,20 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-type setBroadcasterPrice struct {
-	EthAddress string
-	Price      *big.Rat
+//Format of broadcasterPrices json
+//{"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
+type BroadcasterPrices struct {
+	Prices []BroadcasterPrice `json:"broadcasters"`
 }
 
-func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
-	var pricesSet core.BroadcasterPrices
+type BroadcasterPrice struct {
+	EthAddress    string `json:"ethaddress"`
+	PricePerUnit  int64  `json:"priceperunit"`
+	PixelsPerUnit int64  `json:"pixelsperunit"`
+}
+
+func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
+	var pricesSet BroadcasterPrices
 	prices, _ := common.GetPass(broadcasterPrices)
 
 	err := json.Unmarshal([]byte(prices), &pricesSet)
@@ -1390,14 +1398,5 @@ func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
 		return nil
 	}
 
-	var bPrices []setBroadcasterPrice
-	for _, ps := range pricesSet.Prices {
-		var p setBroadcasterPrice
-		p.EthAddress = ps.EthAddress
-		p.Price = big.NewRat(ps.PricePerUnit, ps.PixelsPerUnit)
-
-		bPrices = append(bPrices, p)
-	}
-
-	return bPrices
+	return pricesSet.Prices
 }

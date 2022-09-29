@@ -51,18 +51,6 @@ type orchestrator struct {
 	secret  []byte
 }
 
-//Format of broadcasterPrices json
-//{"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
-type BroadcasterPrices struct {
-	Prices []broadcasterPrice `json:"broadcasters"`
-}
-
-type broadcasterPrice struct {
-	EthAddress    string `json:"ethaddress"`
-	PricePerUnit  int64  `json:"priceperunit"`
-	PixelsPerUnit int64  `json:"pixelsperunit"`
-}
-
 func (orch *orchestrator) ServiceURI() *url.URL {
 	return orch.node.GetServiceURI()
 }
