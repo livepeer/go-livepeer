@@ -492,7 +492,12 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 	}
 
 	s.LivepeerNode.SetBasePrice(broadcasterEthAddr, big.NewRat(pricePerUnit, pixelsPerUnit))
-	glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	if broadcasterEthAddr == "default" {
+		glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	} else {
+		glog.Infof("Price per pixel set to %d wei for %d pixels for broadcaster %s\n", pricePerUnit, pixelsPerUnit, broadcasterEthAddr)
+	}
+
 	return nil
 }
 
@@ -555,11 +560,10 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 
 			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr)
 			if err == nil {
-				respondOk(w, []byte(fmt.Sprintf("Price set for broadcaster %v", broadcasterEthAddr)))
+				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for broadcaster %s\n", pricePerUnitStr, pixelsPerUnitStr, broadcasterEthAddr)))
 			} else {
 				respond400(w, err.Error())
 			}
-			glog.Infof("Price set for broadcaster %v", broadcasterEthAddr)
 		} else {
 			respond400(w, "Node must be orchestrator node to set price for broadcaster")
 		}
