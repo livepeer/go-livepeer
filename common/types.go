@@ -37,7 +37,6 @@ type NodeStatus struct {
 	RegisteredTranscoders       []RemoteTranscoderInfo
 	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
 	BroadcasterPrices           map[string]*big.Rat
-	NodeType                    string
 	// xxx add transcoder's version here
 }
 
