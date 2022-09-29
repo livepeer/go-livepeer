@@ -1,7 +1,10 @@
-### Breaking Changes 🚨🚨
-None
+# Unreleased Changes
 
-#### CLI
+## vX.X
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
 
 #### General
 - [#2583](https://github.com/livepeer/go-livepeer/pull/2583) eth: Set tx GasFeeCap to min(gasPriceEstimate, current GasFeeCap) (@yondonfu)
@@ -16,3 +19,5 @@ None
 - [#2592](https://github.com/livepeer/go-livepeer/pull/2592) Enable Orchestrator to set pricing by broadcaster ETH address
 
 #### Transcoder
+
+### Bug Fixes 🐞
