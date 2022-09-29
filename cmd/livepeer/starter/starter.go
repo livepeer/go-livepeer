@@ -1374,12 +1374,12 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-type setBroadcasterPrice struct {
+type BroadcasterPrice struct {
 	EthAddress string
 	Price      *big.Rat
 }
 
-func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
+func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	var pricesSet core.BroadcasterPrices
 	prices, _ := common.ReadFromFile(broadcasterPrices)
 
@@ -1390,9 +1390,9 @@ func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
 		return nil
 	}
 
-	var bPrices []setBroadcasterPrice
+	var bPrices []BroadcasterPrice
 	for _, ps := range pricesSet.Prices {
-		var p setBroadcasterPrice
+		var p BroadcasterPrice
 		p.EthAddress = ps.EthAddress
 		p.Price = big.NewRat(ps.PricePerUnit, ps.PixelsPerUnit)
 
