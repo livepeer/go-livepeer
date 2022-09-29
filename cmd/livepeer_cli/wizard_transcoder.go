@@ -307,7 +307,7 @@ func (w *wizard) setMaxFaceValue() {
 }
 
 func (w *wizard) setPriceForBroadcaster() {
-	fmt.Println("Enter the eth address of the broadcaster")
+	fmt.Println("Enter the ETH address of the broadcaster")
 	ethaddr := w.readStringAndValidate(func(in string) (string, error) {
 		if "" == in {
 			return "", fmt.Errorf("no broadcaster eth address input")
