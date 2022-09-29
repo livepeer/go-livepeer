@@ -6,10 +6,10 @@ import (
 	"os"
 )
 
-// GetPass attempts to read a file for a password at the supplied location.
+// ReadFromFile attempts to read a file at the supplied location.
 // If it fails, then the original supplied string will be returned to the caller.
 // A valid string will always be returned, regardless of whether an error occurred.
-func GetPass(s string) (string, error) {
+func ReadFromFile(s string) (string, error) {
 	info, err := os.Stat(s)
 	if os.IsNotExist(err) {
 		// If the supplied string is not a path to a file,

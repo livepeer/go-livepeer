@@ -91,9 +91,9 @@ func NewAccountManager(accountAddr ethcommon.Address, keystoreDir string, chainI
 func (am *accountManager) Unlock(pass string) error {
 	var err error
 
-	// We don't care if GetPass() returns an error.
+	// We don't care if ReadFromFile() returns an error.
 	// The string it returns will always be valid.
-	passphrase, _ := common.GetPass(pass)
+	passphrase, _ := common.ReadFromFile(pass)
 
 	err = am.keyStore.Unlock(am.account, passphrase)
 	if err != nil {

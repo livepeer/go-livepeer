@@ -381,7 +381,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	if *cfg.OrchSecret != "" {
-		n.OrchSecret, _ = common.GetPass(*cfg.OrchSecret)
+		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
 	}
 
 	var transcoderCaps []core.Capability
@@ -1381,7 +1381,7 @@ type setBroadcasterPrice struct {
 
 func getBroadcasterPrices(broadcasterPrices string) []setBroadcasterPrice {
 	var pricesSet core.BroadcasterPrices
-	prices, _ := common.GetPass(broadcasterPrices)
+	prices, _ := common.ReadFromFile(broadcasterPrices)
 
 	err := json.Unmarshal([]byte(prices), &pricesSet)
 
