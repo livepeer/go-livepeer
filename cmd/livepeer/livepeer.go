@@ -176,7 +176,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
 
 	cfg.PricePerBroadcaster = flag.String("pricePerBroadcaster", *cfg.PricePerBroadcaster, `json list of price per broadcaster. Example: {"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1},{"ethaddress":"address2","priceperunit":1200,"pixelsperunit":1}]}`)
-	cfg.FreeStream = flag.String("freeStream", *cfg.FreeStream, "eth address for broadcaster to provide free stream to")
 
 	return cfg
 }

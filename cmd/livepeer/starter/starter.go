@@ -125,7 +125,6 @@ type LivepeerConfig struct {
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
 	PricePerBroadcaster          *string
-	FreeStream                   *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -200,7 +199,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultDetectionWebhookURL := ""
 
 	defaultpricePerBroadcaster := ""
-	defaultFreeStream := ""
 
 	return LivepeerConfig{
 		// Network & Addresses:
@@ -273,7 +271,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		DetectionWebhookURL: &defaultDetectionWebhookURL,
 
 		PricePerBroadcaster: &defaultpricePerBroadcaster,
-		FreeStream:          &defaultFreeStream,
 	}
 }
 
@@ -713,11 +710,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					n.SetBasePrice(p.EthAddress, price)
 					glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
 				}
-			}
-
-			if *cfg.FreeStream != "" {
-				n.SetBasePrice(*cfg.FreeStream, big.NewRat(0, 1))
-				glog.Infof("Price: 0 set for broadcaster %v", *cfg.FreeStream)
 			}
 
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
