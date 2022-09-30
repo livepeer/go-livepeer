@@ -507,7 +507,12 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		// no results from untrusted orch, just using trusted ones
 		return trustedResult.Session, trustedResult.TranscodeResult, trustedResult.Err
 	}
-	segmToCheckIndex := rand.Intn(len(trustedResult.TranscodeResult.Segments))
+	segmcount := len(trustedResult.TranscodeResult.Segments)
+	if segmcount == 0 {
+		err = fmt.Errorf("error transcoding: no transcoded segments in the response from %s", trustedResult.Session.Transcoder())
+		return nil, nil, err
+	}
+	segmToCheckIndex := rand.Intn(segmcount)
 
 	// download trusted hashes
 	trustedHash, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
@@ -1025,7 +1030,12 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		}
 		// Ensure perceptual hash is generated if we ask for it
 		if calcPerceptualHash {
-			segmToCheckIndex := rand.Intn(len(res.Segments))
+			segmcount := len(res.Segments)
+			if segmcount == 0 {
+				err = fmt.Errorf("error transcoding: no transcoded segments in the response from %s", sess.Transcoder())
+				return nil, info, err
+			}
+			segmToCheckIndex := rand.Intn(segmcount)
 			segHash, err := core.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
 			if err != nil || len(segHash) <= 0 {
 				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",

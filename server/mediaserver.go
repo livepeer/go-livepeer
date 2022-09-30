@@ -594,7 +594,7 @@ func countStreamsWithFastVerificationEnabled(rtmpConnections map[core.ManifestID
 	for _, cxn := range rtmpConnections {
 		if cxn.params.VerificationFreq > 0 {
 			enabled++
-			if cxn.sessManager.usingVerified() {
+			if cxn.sessManager != nil && cxn.sessManager.usingVerified() {
 				using++
 			}
 		}

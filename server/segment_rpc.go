@@ -196,7 +196,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		segData := bytes.NewReader(res.TranscodeData.Segments[i].Data)
 		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
 		if err != nil {
-			clog.Errorf(ctx, "Could not upload segment")
+			clog.Errorf(ctx, "Could not upload segment err=%q", err)
 			break
 		}
 		pixels += res.TranscodeData.Segments[i].Pixels
@@ -210,7 +210,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 			pHashData := bytes.NewReader(res.TranscodeData.Segments[i].PHash)
 			pHashUri, err := res.OS.SaveData(ctx, pHashFile, pHashData, nil, 0)
 			if err != nil {
-				clog.Errorf(ctx, "Could not upload segment perceptual hash")
+				clog.Errorf(ctx, "Could not upload segment perceptual hash err=%q", err)
 				break
 			}
 			d.PerceptualHashUrl = pHashUri
