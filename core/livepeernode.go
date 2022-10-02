@@ -88,9 +88,9 @@ type LivepeerNode struct {
 	StorageConfigs map[string]*transcodeConfig
 	storageMutex   *sync.RWMutex
 	// Transcoder private fields
-	priceInfo     map[string]*big.Rat
-	serviceURI    url.URL
-	segmentMutex  *sync.RWMutex
+	priceInfo    map[string]*big.Rat
+	serviceURI   url.URL
+	segmentMutex *sync.RWMutex
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
