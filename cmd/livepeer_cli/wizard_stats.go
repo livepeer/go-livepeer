@@ -212,7 +212,7 @@ func (w *wizard) orchestratorStats() {
 
 	b_prices, err := w.getBroadcasterPrices()
 	if err != nil {
-		glog.Errorf("Error getting broadcaster prices", err)
+		glog.Errorf("Error getting broadcaster prices: %v", err)
 	}
 
 	fmt.Println("+------------------+")
