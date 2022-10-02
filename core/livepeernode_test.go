@@ -170,6 +170,7 @@ func TestSetAndGetBasePrice(t *testing.T) {
 	n.SetBasePrice("default", price)
 	assert.Zero(n.priceInfo["default"].Cmp(price))
 	assert.Zero(n.GetBasePrice("default").Cmp(price))
+	assert.Zero(n.GetBasePrices()["default"].Cmp(price))
 
 	addr1 := "0x0000000000000000000000000000000000000000"
 	addr2 := "0x1000000000000000000000000000000000000000"
@@ -180,5 +181,6 @@ func TestSetAndGetBasePrice(t *testing.T) {
 	n.SetBasePrice(addr2, price2)
 	assert.Zero(n.priceInfo[addr1].Cmp(price1))
 	assert.Zero(n.priceInfo[addr2].Cmp(price2))
-
+	assert.Zero(n.GetBasePrices()[addr1].Cmp(price1))
+	assert.Zero(n.GetBasePrices()[addr2].Cmp(price2))
 }
