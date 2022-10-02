@@ -106,6 +106,7 @@ type LivepeerConfig struct {
 	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
+	PricePerBroadcaster          *string
 	BlockPollingInterval         *int
 	Redeemer                     *bool
 	RedeemerAddr                 *string
@@ -124,7 +125,7 @@ type LivepeerConfig struct {
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
-	PricePerBroadcaster          *string
+	
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -246,6 +247,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
+		PricePerBroadcaster: &defaultpricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
@@ -270,7 +272,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchWebhookURL:      &defaultOrchWebhookURL,
 		DetectionWebhookURL: &defaultDetectionWebhookURL,
 
-		PricePerBroadcaster: &defaultpricePerBroadcaster,
 	}
 }
 
