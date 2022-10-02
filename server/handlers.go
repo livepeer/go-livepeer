@@ -475,6 +475,14 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 		return fmt.Errorf("pixelsPerUnit is not a valid integer, provided %v", pixelsPerUnitStr)
 	}
 
+	ok, err = regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", broadcasterEthAddr)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("broadcasterEthAddr is not a valid eth address, provided %v", broadcasterEthAddr)
+	}
+
 	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
 	if err != nil {
 		return fmt.Errorf("error converting pricePerUnit string to int64: %v", err)
