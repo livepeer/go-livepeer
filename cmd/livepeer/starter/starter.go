@@ -174,6 +174,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
+	defaultpricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
@@ -197,8 +198,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
 	defaultDetectionWebhookURL := ""
-
-	defaultpricePerBroadcaster := ""
 
 	return LivepeerConfig{
 		// Network & Addresses:
