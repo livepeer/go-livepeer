@@ -197,7 +197,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	return ls, nil
 }
 
-//StartMediaServer starts the LPMS server
+// StartMediaServer starts the LPMS server
 func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) error {
 	glog.V(common.SHORT).Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
 
@@ -240,7 +240,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	}
 }
 
-//RTMP Publish Handlers
+// RTMP Publish Handlers
 func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookResponseOverride *authWebhookResponse) func(url *url.URL) (strmID stream.AppData) {
 	return func(url *url.URL) (strmID stream.AppData) {
 		//Check HTTP header for ManifestID
@@ -634,7 +634,7 @@ func removeRTMPStream(ctx context.Context, s *LivepeerServer, extmid core.Manife
 
 //End RTMP Publish Handlers
 
-//HLS Play Handlers
+// HLS Play Handlers
 func getHLSMasterPlaylistHandler(s *LivepeerServer) func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 	return func(url *url.URL) (*m3u8.MasterPlaylist, error) {
 		var manifestID core.ManifestID
@@ -717,7 +717,7 @@ func getHLSSegmentHandler(s *LivepeerServer) func(url *url.URL) ([]byte, error) 
 
 //End HLS Play Handlers
 
-//Start RTMP Play Handlers
+// Start RTMP Play Handlers
 func getRTMPStreamHandler(s *LivepeerServer) func(url *url.URL) (stream.RTMPVideoStream, error) {
 	return func(url *url.URL) (stream.RTMPVideoStream, error) {
 		mid := parseManifestID(url.Path)
@@ -1628,6 +1628,8 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 			res.OrchestratorPool = append(res.OrchestratorPool, info.URL.String())
 		}
 	}
+
+	res.BroadcasterPrices = s.LivepeerNode.GetBasePrices()
 
 	return res
 }

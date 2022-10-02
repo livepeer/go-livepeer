@@ -106,6 +106,7 @@ type LivepeerConfig struct {
 	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
+	PricePerBroadcaster          *string
 	BlockPollingInterval         *int
 	Redeemer                     *bool
 	RedeemerAddr                 *string
@@ -124,7 +125,6 @@ type LivepeerConfig struct {
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
-	PricePerBroadcaster          *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -246,6 +246,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
+		PricePerBroadcaster:    &defaultpricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
@@ -269,8 +270,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AuthWebhookURL:      &defaultAuthWebhookURL,
 		OrchWebhookURL:      &defaultOrchWebhookURL,
 		DetectionWebhookURL: &defaultDetectionWebhookURL,
-
-		PricePerBroadcaster: &defaultpricePerBroadcaster,
 	}
 }
 
@@ -1367,8 +1366,8 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-//Format of broadcasterPrices json
-//{"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
+// Format of broadcasterPrices json
+// {"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
 type BroadcasterPrices struct {
 	Prices []BroadcasterPrice `json:"broadcasters"`
 }
