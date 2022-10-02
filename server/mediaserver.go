@@ -1628,7 +1628,9 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 			res.OrchestratorPool = append(res.OrchestratorPool, info.URL.String())
 		}
 	}
-
+	
+	res.BroadcasterPrices = s.LivepeerNode.GetBasePrices()
+	
 	return res
 }
 
