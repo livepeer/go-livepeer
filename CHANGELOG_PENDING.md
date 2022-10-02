@@ -7,6 +7,18 @@
 ### Features ⚒
 
 #### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
 - [#2583](https://github.com/livepeer/go-livepeer/pull/2583) eth: Set tx GasFeeCap to min(gasPriceEstimate, current GasFeeCap) (@yondonfu)
 - [#2586](https://github.com/livepeer/go-livepeer/pull/2586) Broadcaster: Don't pass a nil context into grpc call or it panics (@thomshutt, @cyberj0g)
 
@@ -19,5 +31,3 @@
 - [#2592](https://github.com/livepeer/go-livepeer/pull/2592) Enable Orchestrator to set pricing by broadcaster ETH address
 
 #### Transcoder
-
-### Bug Fixes 🐞
