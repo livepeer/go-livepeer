@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"bytes"
-	
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
@@ -214,7 +214,7 @@ func (w *wizard) orchestratorStats() {
 	if err != nil {
 		glog.Errorf("Error getting broadcaster prices", err)
 	}
-	
+
 	fmt.Println("+------------------+")
 	fmt.Println("|ORCHESTRATOR STATS|")
 	fmt.Println("+------------------+")
@@ -478,7 +478,7 @@ func (w *wizard) currentBlock() (*big.Int, error) {
 
 func (w *wizard) getBroadcasterPrices() (string, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%v:%v/status", w.host, w.httpPort))
-	
+
 	if err != nil {
 		return "", err
 	}
@@ -488,19 +488,19 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	var status map[string]interface{}
 	err = json.Unmarshal(result, &status)
 	if err != nil {
 		return "", err
 	}
-	
+
 	prices := new(bytes.Buffer)
 	for b, p := range status["BroadcasterPrices"].(map[string]interface{}) {
 		if b != "default" {
 			fmt.Fprintf(prices, "%s: %s per pixel\n", b, p)
 		}
 	}
-	
+
 	return prices.String(), nil
 }

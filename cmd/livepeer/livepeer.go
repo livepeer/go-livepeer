@@ -176,8 +176,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.OrchWebhookURL = flag.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
 	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
 
-
-
 	return cfg
 }
 

@@ -6,7 +6,6 @@ The logical orgnization of the `core` module is as follows:
 livepeernode.go: Main struct definition and code that is common to all node types.
 broadcaster.go: Code that is called only when the node is in broadcaster mode.
 orchestrator.go: Code that is called only when the node is in orchestrator mode.
-
 */
 package core
 
@@ -62,7 +61,7 @@ func (t NodeType) String() string {
 	return str
 }
 
-//LivepeerNode handles videos going in and coming out of the Livepeer network.
+// LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
 	// Common fields
@@ -93,7 +92,7 @@ type LivepeerNode struct {
 	StorageConfig *transcodeConfig
 }
 
-//NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
+// NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
