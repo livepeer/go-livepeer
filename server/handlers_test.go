@@ -563,6 +563,50 @@ func TestSetPriceForBroadcasterHandler(t *testing.T) {
 	assert.NotEqual(b2p, s.LivepeerNode.GetBasePrice("default"))
 }
 
+func TestSetPriceForBroadcasterHandler_NotOrchestrator(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.TranscoderNode
+
+	handler := s.setPriceForBroadcaster()
+
+	status, _ := postForm(handler, url.Values{
+		"pricePerUnit":       {"10"},
+		"pixelsPerUnit":      {"1"},
+		"broadcasterEthAddr": {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status)
+}
+
+func TestSetPriceForBroadcasterHandler_WrongInput(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.TranscoderNode
+
+	handler := s.setPriceForBroadcaster()
+
+	status1, _ := postForm(handler, url.Values{
+		"pricePerUnit":       {"a"},
+		"pixelsPerUnit":      {"1"},
+		"broadcasterEthAddr": {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status1)
+
+	status2, _ := postForm(handler, url.Values{
+		"pricePerUnit":       {"1"},
+		"pixelsPerUnit":      {"a"},
+		"broadcasterEthAddr": {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status2)
+
+	status3, _ := postForm(handler, url.Values{
+		"pricePerUnit":       {"1"},
+		"pixelsPerUnit":      {"1"},
+		"broadcasterEthAddr": {"--------"},
+	})
+	assert.Equal(http.StatusBadRequest, status3)
+}
+
 // Bond, withdraw, reward
 func TestBondHandler(t *testing.T) {
 	assert := assert.New(t)
