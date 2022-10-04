@@ -6,7 +6,6 @@ The logical orgnization of the `core` module is as follows:
 livepeernode.go: Main struct definition and code that is common to all node types.
 broadcaster.go: Code that is called only when the node is in broadcaster mode.
 orchestrator.go: Code that is called only when the node is in orchestrator mode.
-
 */
 package core
 
@@ -15,6 +14,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,7 +61,7 @@ func (t NodeType) String() string {
 	return str
 }
 
-//LivepeerNode handles videos going in and coming out of the Livepeer network.
+// LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
 	// Common fields
@@ -80,7 +80,6 @@ type LivepeerNode struct {
 	Balances          *AddressBalances
 	Capabilities      *Capabilities
 	AutoAdjustPrice   bool
-
 	// Broadcaster public fields
 	Sender pm.Sender
 
@@ -89,12 +88,12 @@ type LivepeerNode struct {
 	StorageConfigs map[string]*transcodeConfig
 	storageMutex   *sync.RWMutex
 	// Transcoder private fields
-	priceInfo    *big.Rat
+	priceInfo    map[string]*big.Rat
 	serviceURI   url.URL
 	segmentMutex *sync.RWMutex
 }
 
-//NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
+// NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
@@ -105,6 +104,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		SegmentChans:    make(map[ManifestID]SegmentChan),
 		segmentMutex:    &sync.RWMutex{},
 		Capabilities:    &Capabilities{capacities: map[Capability]int{}},
+		priceInfo:       make(map[string]*big.Rat),
 		StorageConfigs:  make(map[string]*transcodeConfig),
 		storageMutex:    &sync.RWMutex{},
 	}, nil
@@ -123,16 +123,27 @@ func (n *LivepeerNode) SetServiceURI(newUrl *url.URL) {
 }
 
 // SetBasePrice sets the base price for an orchestrator on the node
-func (n *LivepeerNode) SetBasePrice(price *big.Rat) {
+func (n *LivepeerNode) SetBasePrice(b_eth_addr string, price *big.Rat) {
+	addr := strings.ToLower(b_eth_addr)
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.priceInfo = price
+
+	n.priceInfo[addr] = price
 }
 
 // GetBasePrice gets the base price for an orchestrator
-func (n *LivepeerNode) GetBasePrice() *big.Rat {
+func (n *LivepeerNode) GetBasePrice(b_eth_addr string) *big.Rat {
+	addr := strings.ToLower(b_eth_addr)
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
+	return n.priceInfo[addr]
+}
+
+func (n *LivepeerNode) GetBasePrices() map[string]*big.Rat {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
 	return n.priceInfo
 }
 

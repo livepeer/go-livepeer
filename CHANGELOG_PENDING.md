@@ -28,5 +28,6 @@
 
 #### Orchestrator
 - [#2591](https://github.com/livepeer/go-livepeer/pull/2591) Return from transcode loop if transcode session is ended by B (@yondonfu)
+- [#2592](https://github.com/livepeer/go-livepeer/pull/2592) Enable Orchestrator to set pricing by broadcaster ETH address
 
 #### Transcoder

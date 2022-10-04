@@ -2,6 +2,7 @@ package starter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -105,6 +106,7 @@ type LivepeerConfig struct {
 	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
+	PricePerBroadcaster          *string
 	BlockPollingInterval         *int
 	Redeemer                     *bool
 	RedeemerAddr                 *string
@@ -172,6 +174,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
+	defaultpricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
@@ -242,6 +245,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
+		PricePerBroadcaster:    &defaultpricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
@@ -372,7 +376,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	if *cfg.OrchSecret != "" {
-		n.OrchSecret, _ = common.GetPass(*cfg.OrchSecret)
+		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
 	}
 
 	var transcoderCaps []core.Capability
@@ -694,8 +698,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.PricePerUnit < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
 			}
-			n.SetBasePrice(big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
+			n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
+
+			if *cfg.PricePerBroadcaster != "" {
+				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+				for _, p := range ppb {
+					price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+					n.SetBasePrice(p.EthAddress, price)
+					glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
+				}
+			}
 
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
 
@@ -1350,4 +1363,30 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	}
 
 	return nil
+}
+
+// Format of broadcasterPrices json
+// {"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
+type BroadcasterPrices struct {
+	Prices []BroadcasterPrice `json:"broadcasters"`
+}
+
+type BroadcasterPrice struct {
+	EthAddress    string `json:"ethaddress"`
+	PricePerUnit  int64  `json:"priceperunit"`
+	PixelsPerUnit int64  `json:"pixelsperunit"`
+}
+
+func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
+	var pricesSet BroadcasterPrices
+	prices, _ := common.ReadFromFile(broadcasterPrices)
+
+	err := json.Unmarshal([]byte(prices), &pricesSet)
+
+	if err != nil {
+		glog.Errorf("broadcaster prices could not be parsed")
+		return nil
+	}
+
+	return pricesSet.Prices
 }

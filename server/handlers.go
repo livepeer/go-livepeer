@@ -102,7 +102,7 @@ func (s *LivepeerServer) orchestratorInfoHandler(client eth.LivepeerEthClient) h
 
 		info := orchInfo{
 			Transcoder: t,
-			PriceInfo:  s.LivepeerNode.GetBasePrice(),
+			PriceInfo:  s.LivepeerNode.GetBasePrice("default"),
 		}
 		respondJson(w, info)
 	}))
@@ -291,7 +291,7 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			return
 		}
 
-		if err := s.setOrchestratorPriceInfo(r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
+		if err := s.setOrchestratorPriceInfo("default", r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
 			respond400(w, err.Error())
 			return
 		}
@@ -386,7 +386,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 		pixels := r.FormValue("pixelsPerUnit")
 		price := r.FormValue("pricePerUnit")
 		if pixels != "" && price != "" {
-			if err := s.setOrchestratorPriceInfo(price, pixels); err != nil {
+			if err := s.setOrchestratorPriceInfo("default", price, pixels); err != nil {
 				respond400(w, err.Error())
 				return
 			}
@@ -458,7 +458,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 	}))
 }
 
-func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnitStr string) error {
+func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr string) error {
 	ok, err := regexp.MatchString("^[0-9]+$", pricePerUnitStr)
 	if err != nil {
 		return err
@@ -473,6 +473,14 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnit
 	}
 	if !ok {
 		return fmt.Errorf("pixelsPerUnit is not a valid integer, provided %v", pixelsPerUnitStr)
+	}
+
+	ok, err = regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", broadcasterEthAddr)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("broadcasterEthAddr is not a valid eth address, provided %v", broadcasterEthAddr)
 	}
 
 	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
@@ -491,8 +499,13 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(pricePerUnitStr, pixelsPerUnit
 		return fmt.Errorf("pixels per unit must be greater than 0, provided %d", pixelsPerUnit)
 	}
 
-	s.LivepeerNode.SetBasePrice(big.NewRat(pricePerUnit, pixelsPerUnit))
-	glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	s.LivepeerNode.SetBasePrice(broadcasterEthAddr, big.NewRat(pricePerUnit, pixelsPerUnit))
+	if broadcasterEthAddr == "default" {
+		glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	} else {
+		glog.Infof("Price per pixel set to %d wei for %d pixels for broadcaster %s\n", pricePerUnit, pixelsPerUnit, broadcasterEthAddr)
+	}
+
 	return nil
 }
 
@@ -542,6 +555,25 @@ func (s *LivepeerServer) setMaxFaceValueHandler() http.Handler {
 			}
 		} else {
 			respond400(w, "node must be orchestrator node to set maxfacevalue")
+		}
+	})
+}
+
+func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			pricePerUnitStr := r.FormValue("pricePerUnit")
+			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
+			broadcasterEthAddr := r.FormValue("broadcasterEthAddr")
+
+			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr)
+			if err == nil {
+				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for broadcaster %s\n", pricePerUnitStr, pixelsPerUnitStr, broadcasterEthAddr)))
+			} else {
+				respond400(w, err.Error())
+			}
+		} else {
+			respond400(w, "Node must be orchestrator node to set price for broadcaster")
 		}
 	})
 }
