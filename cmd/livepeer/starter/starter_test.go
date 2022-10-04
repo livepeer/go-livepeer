@@ -89,17 +89,13 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	assert := assert.New(t)
 
 	j := `{"broadcasters":[{"ethaddress":"0x0000000000000000000000000000000000000000","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"0x1000000000000000000000000000000000000000","priceperunit":2000,"pixelsperunit":3}]}`
-	
 
 	prices := getBroadcasterPrices(j)
 	assert.NotNil(prices)
-	assert.Equal(2,len(prices))
 	assert.Equal(2, len(prices))
 
 	price1 := big.NewRat(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
 	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
-	assert.Equal(big.NewRat(1000,1), price1)
-	assert.Equal(big.NewRat(2000,3), price2)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
 }
