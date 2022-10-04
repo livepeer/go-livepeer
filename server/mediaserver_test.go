@@ -37,10 +37,10 @@ import (
 
 var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
 
-//	func setupServer() *LivepeerServer {
-//		s, _ := setupServerWithCancel()
-//		return s
-//	}
+// func setupServer() *LivepeerServer {
+// 	s, _ := setupServerWithCancel()
+// 	return s
+// }
 var port = 10000
 
 // waitForTCP tries to establish TCP connection for a specified time
