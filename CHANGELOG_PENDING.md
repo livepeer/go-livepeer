@@ -19,6 +19,7 @@
 #### CLI
 
 #### General
+- [#2616](https://github.com/livepeer/go-livepeer/pull/2616) cmd: Echo explicitly set config values on node start
 - [#2583](https://github.com/livepeer/go-livepeer/pull/2583) eth: Set tx GasFeeCap to min(gasPriceEstimate, current GasFeeCap) (@yondonfu)
 - [#2586](https://github.com/livepeer/go-livepeer/pull/2586) Broadcaster: Don't pass a nil context into grpc call or it panics (@thomshutt, @cyberj0g)
 
