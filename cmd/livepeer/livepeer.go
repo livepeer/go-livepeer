@@ -59,7 +59,7 @@ func main() {
 	cfgType := vCfg.Type()
 	paramTable := tablewriter.NewWriter(os.Stdout)
 	for i := 0; i < cfgType.NumField(); i++ {
-		if !vDefCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
+		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
 			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
 		}
 	}
