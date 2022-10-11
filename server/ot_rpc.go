@@ -387,7 +387,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		} else {
 			res.Err = fmt.Errorf(string(body))
 		}
-		glog.Errorf("Trascoding error for taskId=%v err=%q", tid, res.Err)
+		glog.Errorf("Transcoding error for taskId=%v err=%q", tid, res.Err)
 		orch.TranscoderResults(tid, &res)
 		return
 	}
