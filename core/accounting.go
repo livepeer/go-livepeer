@@ -74,7 +74,7 @@ func (a *AddressBalances) Credit(addr ethcommon.Address, id ManifestID, amount *
 	a.balancesForAddr(addr).Credit(id, amount)
 }
 
-// Debit substracts an amount from the balance for an address' ManifestID
+// Debit subtracts an amount from the balance for an address' ManifestID
 func (a *AddressBalances) Debit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
 	a.balancesForAddr(addr).Debit(id, amount)
 }
@@ -146,7 +146,7 @@ func (b *Balances) Credit(id ManifestID, amount *big.Rat) {
 	b.balances[id].lastUpdate = time.Now()
 }
 
-// Debit substracts an amount from the balance for a ManifestID
+// Debit subtracts an amount from the balance for a ManifestID
 func (b *Balances) Debit(id ManifestID, amount *big.Rat) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()

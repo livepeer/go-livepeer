@@ -404,7 +404,7 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 		//
 		// TODO(yondonfu): Should ultimately add back only the amount that
 		// was actually successfully redeemed in order to take into account
-		// the case where the ticket was not redeemd for its full face value
+		// the case where the ticket was not redeemed for its full face value
 		// because the reserve was insufficient
 		if err := sm.addFloat(ticket.Ticket.Sender, ticket.Ticket.FaceValue); err != nil {
 			glog.Error(err)

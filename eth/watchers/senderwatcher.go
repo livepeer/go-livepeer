@@ -217,7 +217,7 @@ func (sw *SenderWatcher) handleLog(log types.Log) error {
 				// Draw from reserve
 				diff := new(big.Int).Sub(amount, info.Deposit)
 				info.Deposit = big.NewInt(0)
-				// Substract the difference from the remaining reserve
+				// Subtract the difference from the remaining reserve
 				info.Reserve.FundsRemaining.Sub(info.Reserve.FundsRemaining, diff)
 				// Add the difference to the amount claimed from the reserve in the current round
 				info.Reserve.ClaimedInCurrentRound.Add(info.Reserve.ClaimedInCurrentRound, diff)

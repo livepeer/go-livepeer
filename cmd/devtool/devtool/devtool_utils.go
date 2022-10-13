@@ -240,10 +240,7 @@ func (d *Devtool) InitializeOrchestrator(cfg DevtoolConfig) error {
 	if err := d.InitializeRound(); err != nil {
 		return err
 	}
-	if err := d.RegisterOrchestrator(cfg); err != nil {
-		return err
-	}
-	return nil
+	return d.RegisterOrchestrator(cfg)
 }
 
 func (d *Devtool) RequestTokens() error {

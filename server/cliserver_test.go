@@ -159,7 +159,7 @@ func TestActivateOrchestrator(t *testing.T) {
 	assert.Equal(strings.TrimSpace(string(body)), "strconv.ParseFloat: parsing \"foo\": invalid syntax")
 	form["feeShare"] = []string{"10"}
 
-	// setOrchestratorPriceInfo is tested in webserver_test.go seperately
+	// setOrchestratorPriceInfo is tested in webserver_test.go separately
 
 	// Test no serviceURI
 	form["serviceURI"] = []string{""}

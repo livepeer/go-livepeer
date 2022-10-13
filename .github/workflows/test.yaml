@@ -81,6 +81,14 @@ jobs:
           version: v1.39.0
           args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
 
+      - name: Run Revive Action by building from repository
+        uses: docker://morphy/revive-action:v2
+        with:
+          config: config.toml
+
+      - name: misspell
+        uses: reviewdog/action-misspell@v1
+
       - name: Run tests with coverage
         run: |
           export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig

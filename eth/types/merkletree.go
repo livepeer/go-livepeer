@@ -101,9 +101,8 @@ func buildMerkleTree(hashes []common.Hash) ([]*MerkleTreeNode, *MerkleTreeNode) 
 func combinedHash(first common.Hash, second common.Hash) common.Hash {
 	if hashCmp(first, second) == -1 {
 		return common.BytesToHash(crypto.Keccak256(first.Bytes(), second.Bytes()))
-	} else {
-		return common.BytesToHash(crypto.Keccak256(second.Bytes(), first.Bytes()))
 	}
+	return common.BytesToHash(crypto.Keccak256(second.Bytes(), first.Bytes()))
 }
 
 func checkHashDups(hashes []common.Hash) bool {
@@ -134,9 +133,5 @@ func VerifyProof(rootHash common.Hash, hash common.Hash, proof *MerkleProof) boo
 		}
 	}
 
-	if currHash == rootHash {
-		return true
-	} else {
-		return false
-	}
+	return currHash == rootHash
 }

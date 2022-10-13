@@ -1351,11 +1351,7 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	if expectedChainID == nil {
 		// No chainID stored yet
 		// Store the provided chainID and skip the check
-		if err := dbh.SetChainID(chainID); err != nil {
-			return err
-		}
-
-		return nil
+		return dbh.SetChainID(chainID)
 	}
 
 	if expectedChainID.Cmp(chainID) != 0 {
