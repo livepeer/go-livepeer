@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +59,13 @@ func setupGeth(t *testing.T, ctx context.Context) *gethContainer {
 func terminateGeth(t *testing.T, ctx context.Context, geth *gethContainer) {
 	err := geth.Terminate(ctx)
 	require.NoError(t, err)
+}
+
+func buildLivepeer(assert *assert.Assertions) {
+	// build app
+	build := exec.Command("go", strings.Split("build ../../cmd/livepeer/livepeer.go", " ")...)
+	err := build.Run()
+	assert.NoError(err)
 }
 
 // Start Livepeer helpers
