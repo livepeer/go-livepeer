@@ -7,10 +7,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/olekukonko/tablewriter"
 	"os"
 	"os/signal"
-	"reflect"
 	"runtime"
 	"time"
 
@@ -50,23 +48,8 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
-	cfg = updateNilsForUnsetFlags(cfg)
 
-	// compare current settings with default values, and print the difference
-	defCfg := starter.DefaultLivepeerConfig()
-	vDefCfg := reflect.ValueOf(defCfg)
-	vCfg := reflect.ValueOf(cfg)
-	cfgType := vCfg.Type()
-	paramTable := tablewriter.NewWriter(os.Stdout)
-	for i := 0; i < cfgType.NumField(); i++ {
-		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
-			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
-		}
-	}
-	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
-	paramTable.SetCenterSeparator("*")
-	paramTable.SetColumnSeparator("|")
-	paramTable.Render()
+	cfg = updateNilsForUnsetFlags(cfg)
 
 	if *mistJson {
 		mistconnector.PrintMistConfigJson(
