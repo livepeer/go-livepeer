@@ -50,6 +50,18 @@ func main() {
 	}
 
 	vFlag.Value.Set(*verbosity)
+
+	if *mistJson {
+		mistconnector.PrintMistConfigJson(
+			"livepeer",
+			"Official implementation of the Livepeer video processing protocol. Can play all roles in the network.",
+			"Livepeer",
+			core.LivepeerVersion,
+			flag.CommandLine,
+		)
+		return
+	}
+
 	cfg = updateNilsForUnsetFlags(cfg)
 
 	// compare current settings with default values, and print the difference
@@ -67,17 +79,6 @@ func main() {
 	paramTable.SetCenterSeparator("*")
 	paramTable.SetColumnSeparator("|")
 	paramTable.Render()
-
-	if *mistJson {
-		mistconnector.PrintMistConfigJson(
-			"livepeer",
-			"Official implementation of the Livepeer video processing protocol. Can play all roles in the network.",
-			"Livepeer",
-			core.LivepeerVersion,
-			flag.CommandLine,
-		)
-		return
-	}
 
 	if *version {
 		fmt.Println("Livepeer Node Version: " + core.LivepeerVersion)
