@@ -204,10 +204,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
-		Addr:         bind,
-		Handler:      &lp,
-		ReadTimeout:  HTTPTimeout,
-		WriteTimeout: HTTPTimeout,
+		Addr:        bind,
+		Handler:     &lp,
+		IdleTimeout: HTTPTimeout,
 	}
 	return srv.ListenAndServeTLS(cert, key)
 }
