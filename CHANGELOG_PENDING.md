@@ -30,5 +30,6 @@
 #### Orchestrator
 - [#2591](https://github.com/livepeer/go-livepeer/pull/2591) Return from transcode loop if transcode session is ended by B (@yondonfu)
 - [#2592](https://github.com/livepeer/go-livepeer/pull/2592) Enable Orchestrator to set pricing by broadcaster ETH address
+- [#2628](https://github.com/livepeer/go-livepeer/pull/2628) Use IdleTimeout to prevent hanging HTTP connections when B does not use O (fix "too many files open" error) (@leszko)
 
 #### Transcoder
