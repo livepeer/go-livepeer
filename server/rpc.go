@@ -36,6 +36,7 @@ import (
 
 const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
+const HTTPTimeout = 8 * time.Second
 
 var authTokenValidPeriod = 30 * time.Minute
 var discoveryAuthWebhookCacheCleanup = 5 * time.Minute
@@ -203,11 +204,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
-		Addr:    bind,
-		Handler: &lp,
-		// XXX doesn't handle streaming RPC well; split remote transcoder RPC?
-		//ReadTimeout:  HTTPTimeout,
-		//WriteTimeout: HTTPTimeout,
+		Addr:        bind,
+		Handler:     &lp,
+		IdleTimeout: HTTPTimeout,
 	}
 	return srv.ListenAndServeTLS(cert, key)
 }
