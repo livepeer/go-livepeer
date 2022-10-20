@@ -159,7 +159,6 @@ type lphttp struct {
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
-	glog.Infof("EndTranscodingSession called")
 	return endTranscodingSession(h.node, h.orchestrator, request)
 }
 

@@ -277,7 +277,6 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) 
 	if basePrice == nil {
 		basePrice = orch.node.GetBasePrice("default")
 	}
-	glog.Infof("Price of %v gwei sent to broadcaster %v", basePrice.RatString(), sender.String())
 
 	if !orch.node.AutoAdjustPrice {
 		return basePrice, nil
