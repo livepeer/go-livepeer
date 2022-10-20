@@ -990,6 +990,9 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		// for now use detection only in common path
 		if DetectionWebhookURL != nil && len(res.Detections) > 0 {
 			clog.V(common.DEBUG).Infof(ctx, "Got detection result %v", res.Detections)
+			if monitor.Enabled {
+				monitor.SegSceneClassificationDone(ctx, seg.SeqNo)
+			}
 			go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
 				req := common.DetectionWebhookRequest{ManifestID: string(mid), SeqNo: seqNo}
 				for _, detection := range detections {
@@ -1005,6 +1008,9 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 											Name:        name,
 											Probability: prob,
 										})
+									if monitor.Enabled {
+										monitor.SegSceneClassificationResult(ctx, seg.SeqNo, name, prob)
+									}
 								}
 							}
 						}

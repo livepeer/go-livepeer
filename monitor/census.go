@@ -179,6 +179,11 @@ type (
 		mFastVerificationEnabledCurrentSessions *stats.Int64Measure
 		mFastVerificationUsingCurrentSessions   *stats.Int64Measure
 
+		// Metrics for scene classification
+		kSegClassName     tag.Key
+		mSegmentClassProb *stats.Float64Measure
+		mSceneClassification *stats.Int64Measure
+
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
 		success     map[uint64]*segmentsAverager
@@ -242,6 +247,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
 	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
 	census.kFVErrorType = tag.MustNewKey("fverror_type")
+	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Fatal("Error creating context", err)
@@ -319,6 +325,10 @@ func InitCensus(nodeType NodeType, version string) {
 		"Number of currently transcoded streams that have fast verification enabled", "tot")
 	census.mFastVerificationUsingCurrentSessions = stats.Int64("fast_verification_using_current_sessions_total",
 		"Number of currently transcoded streams that have fast verification enabled and that are using an untrusted orchestrator", "tot")
+
+	// Metrics for scene classification
+	census.mSegmentClassProb = stats.Float64("segment_class_prob", "SegmentClassProb", "tot")
+	census.mSceneClassification = stats.Int64("scene_classification_done", "SceneClassificationDone", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -796,6 +806,22 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
+
+		// Metrics for scene classification
+		{
+			Name:        "segment_scene_class_prob",
+			Measure:     census.mSegmentClassProb,
+			Description: "Current segment scene class probability",
+			TagKeys:     append([]tag.Key{census.kSegClassName}, baseTagsWithManifestID...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "scene_classification_total_segments",
+			Measure:     census.mSceneClassification,
+			Description: "Total segments scene classification ran for",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
+		},
 	}
 
 	// Register the views
@@ -1186,6 +1212,25 @@ func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur tim
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
+
+func SegSceneClassificationResult(ctx context.Context, seqNo uint64, class string, prob float64) {
+	clog.V(logLevel).Infof(ctx, "Logging SegSceneClassificationResult... class=%s prob=%v", class, prob)
+	if err := stats.RecordWithTags(census.ctx,
+		manifestIDTag(ctx, tag.Insert(census.kSegClassName, class)),
+		census.mSegmentClassProb.M(prob)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+
+func SegSceneClassificationDone(ctx context.Context, seqNo uint64) {
+	clog.V(logLevel).Infof(ctx, "Logging SegSceneClassificationDone... seqno=%v", seqNo)
+	if err := stats.RecordWithTags(census.ctx,
+		manifestIDTag(ctx),
+		census.mSceneClassification.M(1)); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+
 
 func HTTPClientTimedOut1(ctx context.Context) {
 	if err := stats.RecordWithTags(census.ctx,
