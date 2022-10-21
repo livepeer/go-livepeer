@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.5.35
+
+*October 21 2022*
+
+This release contains a number of node stability and quality of life improvements.
+
+### Breaking Changes 🚨🚨
+None
+
+#### General
+- [#2616](https://github.com/livepeer/go-livepeer/pull/2616) cmd: Echo explicitly set config values on node start
+- [#2583](https://github.com/livepeer/go-livepeer/pull/2583) eth: Set tx GasFeeCap to min(gasPriceEstimate, current GasFeeCap) (@yondonfu)
+- [#2586](https://github.com/livepeer/go-livepeer/pull/2586) Broadcaster: Don't pass a nil context into grpc call or it panics (@thomshutt, @cyberj0g)
+
+#### Broadcaster
+- [#2573](https://github.com/livepeer/go-livepeer/pull/2573) server: Fix timeout for stream recording background jobs (@victorges)
+- [#2586](https://github.com/livepeer/go-livepeer/pull/2586) Refactor RTMP connection object management to prevent race conditions (@cyberj0g)
+
+#### Orchestrator
+- [#2591](https://github.com/livepeer/go-livepeer/pull/2591) Return from transcode loop if transcode session is ended by B (@yondonfu)
+- [#2592](https://github.com/livepeer/go-livepeer/pull/2592) Enable Orchestrator to set pricing by broadcaster ETH address
+- [#2628](https://github.com/livepeer/go-livepeer/pull/2628) Use IdleTimeout to prevent hanging HTTP connections when B does not use O (fix "too many files open" error) (@leszko)
+
 ## v0.5.34
 
 *August 16 2022*
@@ -178,7 +201,7 @@ None
 
 *February 21 2022*
 
-This release is a fast follow release for v0.5.28 with a few bug fixes including a fix for a nil pointer error when parsing block header logs that could cause the node to crash and a fix for displaying the global LPT supply and participation rate in `livepeer_cli`. 
+This release is a fast follow release for v0.5.28 with a few bug fixes including a fix for a nil pointer error when parsing block header logs that could cause the node to crash and a fix for displaying the global LPT supply and participation rate in `livepeer_cli`.
 
 This release also includes a darwin arm64 build and darwin/linux binaries compiled using Go 1.17.6.
 
@@ -337,7 +360,7 @@ Additional highlights of this release:
 - Support for running fast verification on broadcasters
 - Support for configuring `livepeer` using a file. See [the docs](https://livepeer.org/docs/installation/configuring-livepeer) for instructions on using a configuration file
 - An improvement to the failover behavior in split orchestrator + transcoder setups in the scenario where a transcoder crashes
-- Ensure that the the fee per gas for a transaction never exceeds the value set for `-maxGasPrice` 
+- Ensure that the the fee per gas for a transaction never exceeds the value set for `-maxGasPrice`
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 
@@ -639,7 +662,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 *March 29 2021*
 
-This release includes an important fix for a bug that could cause broadcasters to crash due to missing data in responses from misconfigured orchestrators. We strongly recommend that all broadcaster operators upgrade to this version as soon as possible to access this bug fix. 
+This release includes an important fix for a bug that could cause broadcasters to crash due to missing data in responses from misconfigured orchestrators. We strongly recommend that all broadcaster operators upgrade to this version as soon as possible to access this bug fix.
 
 If you are not a broadcaster operator, then upgrading to this release is not urgent.
 
