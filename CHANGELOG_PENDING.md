@@ -20,6 +20,8 @@
 
 #### General
 
+- \#2635 Fix entrypoint path in built docker images (@hjpotter92)
+
 #### Broadcaster
 
 #### Orchestrator
