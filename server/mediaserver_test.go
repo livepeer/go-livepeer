@@ -1196,6 +1196,16 @@ func TestRegisterConnection(t *testing.T) {
 		core.Capability_HEVC_Encode,
 	}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
 
+	inCodec = ffmpeg.AV1
+	profiles[0].Encoder = ffmpeg.AV1
+	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})
+	cxn, err = s.registerConnection(context.TODO(), strm, &inCodec, PixelFormatNone(), nil)
+	assert.Nil(err)
+	assert.True(core.NewCapabilities([]core.Capability{
+		core.Capability_AV1_Decode,
+		core.Capability_AV1_Encode,
+	}, []core.Capability{}).CompatibleWith(cxn.params.Capabilities.ToNetCapabilities()))
+
 	// check for capabilities: exit with an invalid cap
 	profiles[0].Format = -1
 	strm = stream.NewBasicRTMPVideoStream(&core.StreamParameters{ManifestID: core.RandomManifestID(), Profiles: profiles})

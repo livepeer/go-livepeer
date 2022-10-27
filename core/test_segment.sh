@@ -59,4 +59,8 @@ ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -pix_fmt yuv420p10be -c:v l
   xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }'  >> $FILE
 echo "}" >> $FILE
 
+echo "var testSegment_AV1 = []byte{" >> $FILE
+ffmpeg -f lavfi -i color=white:s=144x144 -vframes 5  -c:v libaom-av1 -f mpegts - | gzip -9 | xxd -i | awk 'NR > 1 { print prev } { prev=$0 } END { ORS=""; print }' >> $FILE
+echo "}" >> $FILE
+
 gofmt -w $FILE
