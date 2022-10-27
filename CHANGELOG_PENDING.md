@@ -25,5 +25,6 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#2639 Increase IdleTimeout for HTTP connections (@leszko)
 
 #### Transcoder

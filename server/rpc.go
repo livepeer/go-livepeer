@@ -36,7 +36,7 @@ import (
 
 const GRPCConnectTimeout = 3 * time.Second
 const GRPCTimeout = 8 * time.Second
-const HTTPTimeout = 8 * time.Second
+const HTTPIdleTimeout = 10 * time.Minute
 
 var authTokenValidPeriod = 30 * time.Minute
 var discoveryAuthWebhookCacheCleanup = 5 * time.Minute
@@ -205,7 +205,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	srv := http.Server{
 		Addr:        bind,
 		Handler:     &lp,
-		IdleTimeout: HTTPTimeout,
+		IdleTimeout: HTTPIdleTimeout,
 	}
 	return srv.ListenAndServeTLS(cert, key)
 }
