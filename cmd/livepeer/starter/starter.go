@@ -84,6 +84,7 @@ type LivepeerConfig struct {
 	CurrentManifest              *bool
 	Nvidia                       *string
 	Netint                       *string
+	Intel                        *string
 	TestTranscoder               *bool
 	SceneClassificationModelPath *string
 	DetectContent                *bool
@@ -151,6 +152,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultIntel := ""
 	defaultTestTranscoder := true
 	defaultDetectContent := false
 	defaultSceneClassificationModelPath := "tasmodel.pb"
@@ -222,6 +224,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:              &defaultCurrentManifest,
 		Nvidia:                       &defaultNvidia,
 		Netint:                       &defaultNetint,
+		Intel:                        &defaultIntel,
 		TestTranscoder:               &defaultTestTranscoder,
 		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
 		DetectContent:                &defaultDetectContent,
@@ -278,8 +281,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		return
 	}
 
-	if *cfg.Netint != "" && *cfg.Nvidia != "" {
-		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
+	configuredCards := 0
+	if *cfg.Netint != "" {
+		configuredCards++
+	}
+	if *cfg.Nvidia != "" {
+		configuredCards++
+	}
+	if *cfg.Intel != "" {
+		configuredCards++
+	}
+	if configuredCards > 1 {
+		glog.Fatal("Only one of the `-netint`, `-intel` and `-nvidia` arguments is allowed, but multiple are specified, this is not supported")
 		return
 	}
 
@@ -391,6 +404,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.Netint != "" {
 			accel = ffmpeg.Netint
 			devicesStr = *cfg.Netint
+		}
+		if *cfg.Intel != "" {
+			accel = ffmpeg.Intel
+			devicesStr = *cfg.Intel
 		}
 		if accel != ffmpeg.Software {
 			accelName := ffmpeg.AccelerationNameLookup[accel]

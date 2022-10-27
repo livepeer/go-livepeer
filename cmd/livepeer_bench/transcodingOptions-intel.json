@@ -1,0 +1,38 @@
+[
+{
+  "name": "240p0",
+  "fps": 0,
+  "bitrate": 250000,
+  "width": 426,
+  "height": 240,
+  "gop": "1",
+  "encoder": "AV1"
+},
+{
+  "name": "360p0",
+  "fps": 0,
+  "bitrate": 800000,
+  "width": 640,
+  "height": 360,
+  "gop": "1",
+  "encoder": "AV1"
+},
+{
+  "name": "480p0",
+  "fps": 0,
+  "bitrate": 1600000,
+  "width": 854,
+  "height": 480,
+  "gop": "1",
+  "encoder": "AV1"
+},
+{
+  "name": "720p0",
+  "fps": 0,
+  "bitrate": 3000000,
+  "width": 1280,
+  "height": 720,
+  "gop": "1",
+  "encoder": "AV1"
+}
+]

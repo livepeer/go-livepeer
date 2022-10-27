@@ -513,6 +513,7 @@ func detectNvidiaDevices() ([]string, error) {
 }
 
 func ParseAccelDevices(devices string, acceleration ffmpeg.Acceleration) ([]string, error) {
+	// TODO: create detectIntelDevices ?
 	if acceleration == ffmpeg.Nvidia && devices == "all" {
 		return detectNvidiaDevices()
 	}

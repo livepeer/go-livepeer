@@ -93,6 +93,45 @@ type NetintTranscoder struct {
 	session *ffmpeg.Transcoder
 }
 
+type IntelTranscoder struct {
+	device  string
+	session *ffmpeg.Transcoder
+}
+
+func (nv *IntelTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
+	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
+	defer recoverFromPanic(&retErr)
+
+	in := &ffmpeg.TranscodeOptionsIn{
+		Fname:  md.Fname,
+		Accel:  ffmpeg.Intel,
+		Device: nv.device,
+	}
+	profiles := md.Profiles
+	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Intel, profiles, md.CalcPerceptualHash, md.SegmentParameters)
+	if md.DetectorEnabled {
+		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Intel, md.DetectorProfiles)...)
+	}
+
+	_, seqNo, parseErr := parseURI(md.Fname)
+	start := time.Now()
+
+	res, err := nv.session.Transcode(in, out)
+	if err != nil {
+		return nil, err
+	}
+
+	if monitor.Enabled && parseErr == nil {
+		// This will run only when fname is actual URL and contains seqNo in it.
+		// When orchestrator works as transcoder, `fname` will be relative path to file in local
+		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
+		// be called in orchestrator.go
+		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
+	}
+
+	return resToTranscodeData(ctx, res, out)
+}
+
 func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
@@ -170,6 +209,10 @@ func (nv *NvidiaTranscoder) EndTranscodingSession(sessionId string) {
 }
 
 func (nt *NetintTranscoder) EndTranscodingSession(sessionId string) {
+	nt.Stop()
+}
+
+func (nt *IntelTranscoder) EndTranscodingSession(sessionId string) {
 	nt.Stop()
 }
 
@@ -397,6 +440,8 @@ func GetTranscoderFactoryByAccel(acceleration ffmpeg.Acceleration) (func(device 
 		return NewNvidiaTranscoder, NewNvidiaTranscoderWithDetector, nil
 	case ffmpeg.Netint:
 		return NewNetintTranscoder, nil, nil
+	case ffmpeg.Intel:
+		return NewIntelTranscoder, nil, nil
 	default:
 		return nil, nil, ffmpeg.ErrTranscoderHw
 	}
@@ -411,6 +456,13 @@ func NewNvidiaTranscoder(gpu string) TranscoderSession {
 
 func NewNetintTranscoder(gpu string) TranscoderSession {
 	return &NetintTranscoder{
+		device:  gpu,
+		session: ffmpeg.NewTranscoder(),
+	}
+}
+
+func NewIntelTranscoder(gpu string) TranscoderSession {
+	return &IntelTranscoder{
 		device:  gpu,
 		session: ffmpeg.NewTranscoder(),
 	}
@@ -431,6 +483,10 @@ func (nv *NvidiaTranscoder) Stop() {
 }
 
 func (nv *NetintTranscoder) Stop() {
+	nv.session.StopTranscoder()
+}
+
+func (nv *IntelTranscoder) Stop() {
 	nv.session.StopTranscoder()
 }
 
