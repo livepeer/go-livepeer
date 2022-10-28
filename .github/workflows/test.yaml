@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.0.2
+        uses: actions/checkout@v3.1.0
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -109,7 +109,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3.1.0
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
