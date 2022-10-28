@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM	ubuntu:18.04	as	build
+FROM --platform=$BUILDPLATFORM	ubuntu:22.04	as	build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
