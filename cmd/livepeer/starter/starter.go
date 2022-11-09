@@ -189,7 +189,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultHttpIngest := true
 
 	// Verification:
-	defaultLocalVerify := true
+	defaultLocalVerify := false
 
 	// Storage:
 	defaultDatadir := ""
@@ -1035,7 +1035,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Disable local verification when running in off-chain mode
 		// To enable, set -localVerify or -verifierURL
-		localVerify := true
+		localVerify := false
 		if cfg.LocalVerify != nil {
 			localVerify = *cfg.LocalVerify
 		}
