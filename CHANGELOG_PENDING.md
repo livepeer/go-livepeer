@@ -21,6 +21,7 @@
 #### General
 
 - \#2635 Fix entrypoint path in built docker images (@hjpotter92)
+- \#2646 Include HttpIngest and LocalVerify in param table on startup (@yondonfu)
 
 #### Broadcaster
 
