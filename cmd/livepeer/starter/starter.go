@@ -1036,12 +1036,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// Disable local verification when running in off-chain mode
 		// To enable, set -localVerify or -verifierURL
 		localVerify := false
-		if cfg.LocalVerify != nil {
-			localVerify = *cfg.LocalVerify
-		}
-		if cfg.LocalVerify == nil && *cfg.Network == "offchain" {
-			localVerify = false
-		}
+		// if cfg.LocalVerify != nil {
+		// 	localVerify = *cfg.LocalVerify
+		// }
+		// if cfg.LocalVerify == nil && *cfg.Network == "offchain" {
+		// 	localVerify = false
+		// }
 
 		if *cfg.VerifierURL != "" {
 			_, err := validateURL(*cfg.VerifierURL)
