@@ -7,12 +7,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/olekukonko/tablewriter"
 	"os"
 	"os/signal"
 	"reflect"
 	"runtime"
 	"time"
+
+	"github.com/olekukonko/tablewriter"
 
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
 	"github.com/livepeer/livepeer-data/pkg/mistconnector"
@@ -119,8 +120,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.OrchAddr = flag.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
 	cfg.VerifierURL = flag.String("verifierUrl", *cfg.VerifierURL, "URL of the verifier to use")
 	cfg.VerifierPath = flag.String("verifierPath", *cfg.VerifierPath, "Path to verifier shared volume")
-	cfg.LocalVerify = flag.Bool("localVerify", true, "Set to true to enable local verification i.e. pixel count and signature verification.")
-	cfg.HttpIngest = flag.Bool("httpIngest", true, "Set to true to enable HTTP ingest")
+	cfg.LocalVerify = flag.Bool("localVerify", *cfg.LocalVerify, "Set to true to enable local verification i.e. pixel count and signature verification.")
+	cfg.HttpIngest = flag.Bool("httpIngest", *cfg.HttpIngest, "Set to true to enable HTTP ingest")
 
 	// Transcoding:
 	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
