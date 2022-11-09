@@ -185,6 +185,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMetadataAmqpExchange := "lp_golivepeer_metadata"
 	defaultMetadataPublishTimeout := 1 * time.Second
 
+	// Ingest:
+	defaultHttpIngest := true
+
+	// Verification:
+	defaultLocalVerify := true
+
 	// Storage:
 	defaultDatadir := ""
 	defaultObjectstore := ""
@@ -255,6 +261,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MetadataQueueUri:       &defaultMetadataQueueUri,
 		MetadataAmqpExchange:   &defaultMetadataAmqpExchange,
 		MetadataPublishTimeout: &defaultMetadataPublishTimeout,
+
+		// Ingest:
+		HttpIngest: &defaultHttpIngest,
+
+		// Verification:
+		LocalVerify: &defaultLocalVerify,
 
 		// Storage:
 		Datadir:     &defaultDatadir,
