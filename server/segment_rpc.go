@@ -479,6 +479,9 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	if uploadTimeout < common.MinSegmentUploadTimeout {
 		uploadTimeout = common.MinSegmentUploadTimeout
 	}
+	if params.SegUploadTimeoutMultiplier > 1 {
+		uploadTimeout = time.Duration(params.SegUploadTimeoutMultiplier) * uploadTimeout
+	}
 
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), httpTimeout)
 	defer cancel()
