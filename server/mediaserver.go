@@ -865,7 +865,9 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params := streamParams(appData)
-		params.SegUploadTimeoutMultiplier = authHeaderConfig.TranscodeTimeoutMultiplier
+		if authHeaderConfig != nil {
+			params.SegUploadTimeoutMultiplier = authHeaderConfig.TranscodeTimeoutMultiplier
+		}
 		params.Resolution = r.Header.Get("Content-Resolution")
 		params.Format = format
 		s.connectionLock.RLock()
