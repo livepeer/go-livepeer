@@ -40,6 +40,9 @@ var maxDurationSec = common.MaxDuration.Seconds()
 // Max threshold for # of broadcast sessions under which we will refresh the session list
 var maxRefreshSessionsThreshold = 8.0
 
+// The delay before submitting another segment for a session when another segment is already in flight
+var pushSegInFlightDelay = 500 * time.Millisecond
+
 var recordSegmentsMaxTimeout = 1 * time.Minute
 
 var Policy *verification.Policy
@@ -455,6 +458,17 @@ func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
 
 func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 	bs.lock.Lock()
+
+	// If there is already a segment in flight for this session, delay submitting this segment
+	// to give the segment in flight additional time to reach the O so that an attached payment
+	// can be processed.
+	// This mechanism is only required while Os require a monotonically increasing senderNonce value
+	// attached to payment tickets. If the montonically increasing senderNonce requirement is lifted then
+	// this delay would no longer be needed.
+	if len(bs.SegsInFlight) > 0 {
+		time.Sleep(pushSegInFlightDelay)
+	}
+
 	bs.SegsInFlight = append(bs.SegsInFlight,
 		SegFlightMetadata{
 			startTime: time.Now(),
