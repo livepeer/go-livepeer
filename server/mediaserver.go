@@ -147,7 +147,7 @@ type authWebhookResponse struct {
 		} `json:"sceneClassification"`
 	} `json:"detection"`
 	VerificationFreq           uint `json:"verificationFreq"`
-	TranscodeTimeoutMultiplier int  `json:"transcodeTimeoutMultiplier"`
+	SegUploadTimeoutMultiplier int  `json:"segUploadTimeoutMultiplier"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -866,7 +866,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 		params := streamParams(appData)
 		if authHeaderConfig != nil {
-			params.SegUploadTimeoutMultiplier = authHeaderConfig.TranscodeTimeoutMultiplier
+			params.SegUploadTimeoutMultiplier = authHeaderConfig.SegUploadTimeoutMultiplier
 		}
 		params.Resolution = r.Header.Get("Content-Resolution")
 		params.Format = format
