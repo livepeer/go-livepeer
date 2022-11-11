@@ -818,19 +818,24 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 		}
 
 		senderParams := make([]*net.TicketSenderParams, len(batch.SenderParams))
+		senderNonces := make([]uint32, len(batch.SenderParams))
 		for i := 0; i < len(senderParams); i++ {
+			senderNonce := batch.SenderParams[i].SenderNonce
 			senderParams[i] = &net.TicketSenderParams{
-				SenderNonce: batch.SenderParams[i].SenderNonce,
+				SenderNonce: senderNonce,
 				Sig:         batch.SenderParams[i].Sig,
 			}
+			senderNonces[i] = senderNonce
 		}
 
 		protoPayment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
-		clog.V(common.VERBOSE).Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
+		clog.V(common.VERBOSE).Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipientRandHash=%v senderNonce=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.Params.ManifestID,
 			sess.OrchestratorInfo.AuthToken.SessionId,
+			batch.RecipientRandHash.Hex(),
+			senderNonces,
 			batch.Recipient.Hex(),
 			eth.FormatUnits(batch.FaceValue, "ETH"),
 			batch.WinProbRat().FloatString(10),
