@@ -146,7 +146,8 @@ type authWebhookResponse struct {
 			Name string `json:"name"`
 		} `json:"sceneClassification"`
 	} `json:"detection"`
-	VerificationFreq uint `json:"verificationFreq"`
+	VerificationFreq           uint `json:"verificationFreq"`
+	TranscodeTimeoutMultiplier int  `json:"transcodeTimeoutMultiplier"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -768,10 +769,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 	r.URL = &url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}
 
-	// See if we need to be more lenient with our timeouts (i.e in the VOD workflow)
-	// We suppress the error because we're happy to end up with 0, which will be treated as "unset" and ignored
-	SegUploadTimeoutMultiplier, _ := strconv.Atoi(r.Header.Get("LP_TIMEOUT_MULTIPLIER"))
-
 	// Determine the input format the request is claiming to have
 	ext := path.Ext(r.URL.Path)
 	format := common.ProfileExtensionFormat(ext)
@@ -868,7 +865,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		params := streamParams(appData)
-		params.SegUploadTimeoutMultiplier = SegUploadTimeoutMultiplier
+		params.SegUploadTimeoutMultiplier = authHeaderConfig.TranscodeTimeoutMultiplier
 		params.Resolution = r.Header.Get("Content-Resolution")
 		params.Format = format
 		s.connectionLock.RLock()
