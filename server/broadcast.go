@@ -51,6 +51,10 @@ var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
 var downloadSeg = core.GetSegmentData
+var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.SegmentParameters,
+	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
+	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
+}
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -359,7 +363,7 @@ func (bsm *BroadcastSessionsManager) isVerificationEnabled() bool {
 	return bsm.VerificationFreq > 0
 }
 
-func (bsm *BroadcastSessionsManager) shouldRunVerification(sessions []*BroadcastSession) bool {
+func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*BroadcastSession) bool {
 	if bsm.verifiedSession == nil {
 		return false
 	}
@@ -447,7 +451,7 @@ func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*
 		// Only return the last verified session if:
 		// - It is present in the 3 sessions returned by the selector
 		// - With probability 1 - 1/VerificationFrequency
-		if bsm.shouldRunVerification(sessions) {
+		if bsm.shouldSkipVerification(sessions) {
 			clog.V(common.DEBUG).Infof(ctx, "Reusing verified orch=%v", bsm.verifiedSession.OrchestratorInfo.Transcoder)
 			verified = true
 			// Mark remaining unused sessions returned by selector as complete
@@ -1056,7 +1060,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			}
 			// cxn.sessManager.pushSegInFlight(sess, seg)
 			sess.pushSegInFlight(seg2)
-			go submitSegment(ctx, sess, seg2, segPar, nonce, calcPerceptualHash, resc)
+			submitMultiSession(ctx, sess, seg2, segPar, nonce, calcPerceptualHash, resc)
 			submittedCount++
 		}
 		if submittedCount == 0 {

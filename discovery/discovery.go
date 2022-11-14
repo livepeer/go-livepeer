@@ -36,8 +36,13 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 		glog.Error("Orchestrator pool does not have any URIs")
 	}
 	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
-	for _, uri := range uris {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+	if len(uris) == 2 {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uris[0], Score: common.Score_Trusted})
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uris[1], Score: common.Score_Untrusted})
+	} else {
+		for _, uri := range uris {
+			infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+		}
 	}
 
 	return &orchestratorPool{infos: infos, bcast: bcast}

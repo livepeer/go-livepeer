@@ -1732,13 +1732,13 @@ func TestVerifcationDoesntRunWhenNoVerifiedSessionPresent(t *testing.T) {
 	b := BroadcastSessionsManager{
 		VerificationFreq: 1,
 	}
-	require.False(t, b.shouldRunVerification(nil))
+	require.False(t, b.shouldSkipVerification(nil))
 
 	b.verifiedSession = &BroadcastSession{
 		LatencyScore: 1.23,
 	}
 
-	require.False(t, b.shouldRunVerification([]*BroadcastSession{}))
+	require.False(t, b.shouldSkipVerification([]*BroadcastSession{}))
 }
 
 func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
@@ -1754,7 +1754,7 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 
 	var shouldRunCount int
 	for i := 0; i < 10000; i++ {
-		if b.shouldRunVerification([]*BroadcastSession{verifiedSession}) {
+		if b.shouldSkipVerification([]*BroadcastSession{verifiedSession}) {
 			shouldRunCount++
 		}
 	}
