@@ -1757,25 +1757,10 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
 	assert.Equal(0, bsm.untrustedPool.sus.count)
 }
-func TestPush_MultiSessionVideoCompare(t *testing.T) {
-	assert := assert.New(t)
-	// need real video data for fast verification
-	segmentgooddata, err := ioutil.ReadFile("../core/test.ts")
-	assert.NoError(err)
-	segmentbaddata, err := ioutil.ReadFile("../core/test2.ts")
-	assert.NoError(err)
-	goodHash, err := ioutil.ReadFile("../core/test.phash")
-	assert.NoError(err)
 
-	// wait for any earlier tests to complete
-	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
-
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	reader := strings.NewReader("InsteadOf.TS")
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
+func createStubTranscoder(transcodedSegData []byte, transcodedSegPhash []byte, tCallback func()) *httptest.Server {
+	// Create stub server
+	ts, mux := stubTLSServer()
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
 		return &net.TranscodeResult{
@@ -1788,101 +1773,45 @@ func TestPush_MultiSessionVideoCompare(t *testing.T) {
 		}
 	}
 
-	// Create stub server
-	ts, mux := stubTLSServer()
-	defer ts.Close()
-
 	segPath := "/transcoded/segment.ts"
 	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100, PerceptualHashUrl: ts.URL + segPath + ".phash"}}
 	tr := dummyRes(tSegData)
-	buf, err := proto.Marshal(tr)
-	require.Nil(t, err)
-
+	buf, _ := proto.Marshal(tr)
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
 	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(segmentgooddata)
+		w.Write(transcodedSegData)
+		if tCallback != nil {
+			tCallback()
+		}
 	})
 	mux.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(goodHash)
+		w.Write(transcodedSegPhash)
 	})
+	return ts
+}
 
-	ts2, mux2 := stubTLSServer()
-	defer ts2.Close()
-	tSegData2 := []*net.TranscodedSegmentData{{Url: ts2.URL + segPath, Pixels: 100, PerceptualHashUrl: ts2.URL + segPath + ".phash"}}
-	tr2 := dummyRes(tSegData2)
-	buf2, err := proto.Marshal(tr2)
-	require.Nil(t, err)
-	mux2.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(buf2)
-	})
-	mux2.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(segmentbaddata)
-	})
-	mux2.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(goodHash)
-	})
+func initServerWithBSM(srv *LivepeerServer, trustedSessList []*BroadcastSession, untrustedSessList []*BroadcastSession, verificationFreq uint) *BroadcastSessionsManager {
+	bsm := bsmWithSessListExt(trustedSessList, untrustedSessList, false)
+	bsm.VerificationFreq = verificationFreq
 
-	ts3, mux3 := stubTLSServer()
-	defer ts3.Close()
-	tSegData3 := []*net.TranscodedSegmentData{{Url: ts3.URL + segPath, Pixels: 100, PerceptualHashUrl: ts3.URL + segPath + ".phash"}}
-	tr3 := dummyRes(tSegData3)
-	buf3, err := proto.Marshal(tr3)
-	require.Nil(t, err)
-	mux3.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-		// delay so it will be chosen second
-		time.Sleep(50 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-		w.Write(buf3)
-	})
-	mux3.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(segmentgooddata)
-	})
-	mux3.HandleFunc(segPath+".phash", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write(goodHash)
-	})
-
-	sess1 := StubBroadcastSession(ts.URL)
-	sess1.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess1.Params.ManifestID = "mani"
-
-	sess2 := StubBroadcastSession(ts2.URL)
-	sess2.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess2.Params.ManifestID = "mani"
-	sess2.OrchestratorScore = common.Score_Untrusted
-
-	sess3 := StubBroadcastSession(ts3.URL)
-	sess3.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess3.Params.ManifestID = "mani"
-	sess3.OrchestratorScore = common.Score_Untrusted
-
-	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess2, sess3}, false)
-	bsm.VerificationFreq = 1
-	assert.Equal(0, bsm.untrustedPool.sus.count)
 	// hack: stop pool from refreshing
 	bsm.untrustedPool.refreshing = true
 
 	url, _ := url.ParseRequestURI("test://some.host")
 	osd := drivers.NewMemoryDriver(url)
 	osSession := osd.NewSession("testPath")
-	sess1.BroadcasterOS = osSession
-	sess2.BroadcasterOS = osSession
-	sess3.BroadcasterOS = osSession
+	for _, sess := range trustedSessList {
+		sess.BroadcasterOS = osSession
+	}
+	for _, sess := range untrustedSessList {
+		sess.BroadcasterOS = osSession
+	}
 
-	oldjpqt := core.JsonPlaylistQuitTimeout
-	defer func() {
-		core.JsonPlaylistQuitTimeout = oldjpqt
-	}()
-	core.JsonPlaylistQuitTimeout = 0 * time.Second
 	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
 
 	cxn := &rtmpConnection{
@@ -1894,14 +1823,151 @@ func TestPush_MultiSessionVideoCompare(t *testing.T) {
 		params:      &core.StreamParameters{Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9}, VerificationFreq: 1},
 	}
 
-	s.rtmpConnections["mani"] = cxn
+	srv.rtmpConnections["mani"] = cxn
+	return bsm
+}
 
+func TestPush_FastVerificationFlow(t *testing.T) {
+	assert := assert.New(t)
+	// need real video data for fast verification
+	segmentgooddata, err := ioutil.ReadFile("../core/test.ts")
+	assert.NoError(err)
+	segmentbaddata, err := ioutil.ReadFile("../core/test2.ts")
+	assert.NoError(err)
+	goodHash, err := ioutil.ReadFile("../core/test.phash")
+	assert.NoError(err)
+
+	// wait for any earlier tests to complete
+	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
+
+	srv, cancel := setupServerWithCancel()
+	defer serverCleanup(srv)
+	defer cancel()
+
+	lastUsedT := ""
+
+	trustedT := createStubTranscoder(segmentgooddata, goodHash, func() { lastUsedT = "trusted" })
+	defer trustedT.Close()
+
+	untrustedTBadSegment := createStubTranscoder(segmentbaddata, goodHash, func() { lastUsedT = "untrustedBadSegment" })
+	defer untrustedTBadSegment.Close()
+
+	untrustedTBadHash := createStubTranscoder(segmentgooddata, []byte{1, 2, 3}, func() { lastUsedT = "untrustedBadHash" })
+	defer untrustedTBadHash.Close()
+
+	untrustedTGood := createStubTranscoder(segmentgooddata, goodHash, func() { lastUsedT = "untrustedGood" })
+	defer untrustedTGood.Close()
+
+	trustedSess := StubBroadcastSession(trustedT.URL)
+	trustedSess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	trustedSess.Params.ManifestID = "mani"
+
+	untrustedSessBadSegment := StubBroadcastSession(untrustedTBadSegment.URL)
+	untrustedSessBadSegment.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	untrustedSessBadSegment.Params.ManifestID = "mani"
+	untrustedSessBadSegment.OrchestratorScore = common.Score_Untrusted
+
+	untrustedSessBadHash := StubBroadcastSession(untrustedTBadHash.URL)
+	untrustedSessBadHash.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	untrustedSessBadHash.Params.ManifestID = "mani"
+	untrustedSessBadHash.OrchestratorScore = common.Score_Untrusted
+
+	untrustedSessGood := StubBroadcastSession(untrustedTGood.URL)
+	untrustedSessGood.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
+	untrustedSessGood.Params.ManifestID = "mani"
+	untrustedSessGood.OrchestratorScore = common.Score_Untrusted
+
+	// submit sequentially to get results ordered same as sessions
+	submitMultiSession = submitSegment
+
+	oldjpqt := core.JsonPlaylistQuitTimeout
+	defer func() {
+		core.JsonPlaylistQuitTimeout = oldjpqt
+	}()
+	core.JsonPlaylistQuitTimeout = 0 * time.Second
+	reader := strings.NewReader("InsteadOf.TS")
+
+	// pass sessions in reverse order because LIFO selector will pick up in reverse order
+	bsm := initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessGood, untrustedSessBadSegment}, 1)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
 	req.Header.Set("Accept", "multipart/mixed")
-	s.HandlePush(w, req)
+	srv.HandlePush(w, req)
 	resp := w.Result()
 	defer resp.Body.Close()
-	assert.Equal(200, resp.StatusCode)
+	// check that untrusted bad session is suspended after first segment, note that if "good" untrusted session is verified first,
+	// "bad" session will never get verified and suspended
+	validateMultipartResponse(assert, resp, 17, 1)
+	assert.Contains(bsm.untrustedPool.sus.list, untrustedTBadSegment.URL)
 
+	// check that untrusted good session is used for next segment
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 18, 1)
+	assert.Equal("untrustedGood", lastUsedT)
+
+	// reinit and check that 'bad hash' session causes suspension as well
+	bsm = initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessGood, untrustedSessBadHash}, 1)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 18, 1)
+	assert.Contains(bsm.untrustedPool.sus.list, untrustedTBadHash.URL)
+
+	// check that trusted session is used, when both untrusted sessions are bad
+	bsm = initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessBadSegment, untrustedSessBadHash}, 1)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 18, 1)
+	// we do not suspend sessions if none of the session from untrusted pool match results of trusted session
+	assert.Equal(0, len(bsm.untrustedPool.sus.list))
+
+	// check that trusted session is used for next segment in the above case
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/19.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 19, 1)
+	assert.Equal("trusted", lastUsedT)
+
+	// check multiple sessions and verification every segment
+	bsm = initServerWithBSM(srv, []*BroadcastSession{trustedSess}, []*BroadcastSession{untrustedSessBadSegment,
+		untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood, untrustedSessGood,
+		untrustedSessGood, untrustedSessGood, untrustedSessGood}, math.MaxUint)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/18.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 18, 1)
+	assert.NotEqual("trusted", lastUsedT)
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/live/mani/19.ts", reader)
+	req.Header.Set("Accept", "multipart/mixed")
+	srv.HandlePush(w, req)
+	resp = w.Result()
+	defer resp.Body.Close()
+	validateMultipartResponse(assert, resp, 19, 1)
+	assert.NotEqual("trusted", lastUsedT)
+}
+
+func validateMultipartResponse(assert *assert.Assertions, resp *http.Response, segNo int, nparts int) {
+	assert.Equal(200, resp.StatusCode)
 	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	assert.Equal("multipart/mixed", mediaType)
 	assert.Nil(err)
@@ -1917,16 +1983,14 @@ func TestPush_MultiSessionVideoCompare(t *testing.T) {
 		assert.Nil(err)
 		assert.Contains(params, "name")
 		assert.Len(params, 1)
-		assert.Equal("P144p25fps16x9_17.ts", params["name"])
-		assert.Equal(`attachment; filename="P144p25fps16x9_17.ts"`, p.Header.Get("Content-Disposition"))
+		name := fmt.Sprintf("P144p25fps16x9_%d.ts", segNo)
+		assert.Equal(name, params["name"])
+		assert.Equal(fmt.Sprintf(`attachment; filename="%s"`, name), p.Header.Get("Content-Disposition"))
 		assert.Equal("P144p25fps16x9", p.Header.Get("Rendition-Name"))
 		assert.Equal("video/mp2t", strings.ToLower(mediaType))
 		i++
 	}
-	assert.Equal(1, i)
-	assert.Equal(uint64(12), cxn.sourceBytes)
-	assert.Contains(bsm.untrustedPool.sus.list, ts2.URL)
-	assert.Equal(0, bsm.untrustedPool.sus.count)
+	assert.Equal(nparts, i)
 }
 
 func TestPush_Slice(t *testing.T) {

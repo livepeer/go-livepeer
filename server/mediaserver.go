@@ -336,7 +336,6 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		} else {
 			profiles = BroadcastJobVideoProfiles
 		}
-
 		sid := parseStreamID(url.Path)
 		extmid := sid.ManifestID
 		if mid == "" {

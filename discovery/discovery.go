@@ -39,7 +39,6 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 	for _, uri := range uris {
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
 	}
-
 	return &orchestratorPool{infos: infos, bcast: bcast}
 }
 
