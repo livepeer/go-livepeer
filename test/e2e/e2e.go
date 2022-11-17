@@ -19,6 +19,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -94,7 +95,7 @@ type orchestratorConfig struct {
 
 var initialCfg = orchestratorConfig{
 	PricePerUnit:   1,
-	PixelsPerUnit:  10,
+	PixelsPerUnit:  1,
 	BlockRewardCut: 30.0,
 	FeeShare:       50.0,
 	LptStake:       50,
@@ -277,6 +278,35 @@ func depositBroadcaster(t *testing.T, b *livepeer, amount *big.Int) {
 
 	require.Zero(info.Deposit.Cmp(amount))
 	require.Zero(info.Reserve.FundsRemaining.Cmp(amount))
+
+	// Ensure that on-chain deposit event handlers have time to process
+	time.Sleep(1 * time.Second)
+}
+
+func pushSegmentsBroadcaster(t *testing.T, b *livepeer, numSegs int) {
+	require := require.New(t)
+
+	mid := common.RandName()
+	for i := 0; i < numSegs; i++ {
+		require.Nil(pushSegmentBroadcaster(b, mid, i))
+	}
+}
+
+func pushSegmentBroadcaster(b *livepeer, manifestID string, seqNo int) error {
+	data, err := ioutil.ReadFile("test.flv")
+	rdr := bytes.NewReader(data)
+
+	resp, err := http.Post(fmt.Sprintf("http://%s/live/%v/%v.ts", *b.cfg.ServiceAddr, manifestID, seqNo), "application/x-www-form-urlencoded", rdr)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("bad status code for push statusCode=%v", resp.StatusCode)
+	}
+
+	return nil
 }
 
 func (l *livepeer) stop() {
