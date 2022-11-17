@@ -18,6 +18,7 @@ eth/protocol
 
 # Our compiled binary
 /livepeer
+/test/e2e/livepeer
 /livepeer_cli
 /livepeer_router
 /livepeer_bench
