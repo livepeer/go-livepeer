@@ -20,5 +20,5 @@ func TestRegisterOrchestrator(t *testing.T) {
 	registerOrchestrator(t, o)
 
 	// then
-	requireOrchestratorRegisteredAndActivated(t, o.dev.Client)
+	requireOrchestratorRegisteredAndActivated(t, o)
 }

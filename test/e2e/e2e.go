@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/livepeer/go-livepeer/cmd/devtool/devtool"
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
@@ -189,10 +190,10 @@ func startLivepeer(t *testing.T, lpCfg starter.LivepeerConfig, geth *gethContain
 	return &livepeer{dev: &dev, cfg: &lpCfg, ready: ready}
 }
 
-func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerEthClient) {
+func requireOrchestratorRegisteredAndActivated(t *testing.T, o *livepeer) {
 	require := require.New(t)
 
-	transPool, err := lpEth.TranscoderPool()
+	transPool, err := o.dev.Client.TranscoderPool()
 
 	require.NoError(err)
 	require.Len(transPool, 1)
@@ -202,6 +203,7 @@ func requireOrchestratorRegisteredAndActivated(t *testing.T, lpEth eth.LivepeerE
 	require.Equal(big.NewInt(initialCfg.LptStake), trans.DelegatedStake)
 	require.Equal(eth.FromPerc(initialCfg.FeeShare), trans.FeeShare)
 	require.Equal(eth.FromPerc(initialCfg.BlockRewardCut), trans.RewardCut)
+	require.Equal(fmt.Sprintf("https://%v", *(o.cfg.ServiceAddr)), trans.ServiceURI)
 }
 
 func startOrchestratorWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
@@ -234,7 +236,7 @@ func registerOrchestrator(t *testing.T, o *livepeer) {
 		"pixelsPerUnit":  {fmt.Sprintf("%d", initialCfg.PixelsPerUnit)},
 		"blockRewardCut": {fmt.Sprintf("%v", initialCfg.BlockRewardCut)},
 		"feeShare":       {fmt.Sprintf("%v", initialCfg.FeeShare)},
-		"serviceURI":     {fmt.Sprintf("http://%v", o.cfg.HttpAddr)},
+		"serviceURI":     {fmt.Sprintf("https://%v", *(o.cfg.HttpAddr))},
 		"amount":         {fmt.Sprintf("%d", initialCfg.LptStake)},
 	}
 
