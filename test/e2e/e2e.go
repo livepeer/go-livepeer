@@ -250,6 +250,35 @@ func registerOrchestrator(t *testing.T, o *livepeer) {
 
 }
 
+func startBroadcasterWithNewAccount(t *testing.T, ctx context.Context, geth *gethContainer) *livepeer {
+	lpConf := lpCfg()
+	lpConf.Broadcaster = boolPointer(true)
+
+	o := startLivepeer(t, lpConf, geth, ctx)
+	<-o.ready
+
+	return o
+}
+
+func depositBroadcaster(t *testing.T, b *livepeer, amount *big.Int) {
+	require := require.New(t)
+
+	val := url.Values{
+		"depositAmount": {amount.String()},
+		"reserveAmount": {amount.String()},
+	}
+
+	_, ok := httpPostWithParams(fmt.Sprintf("http://%s/fundDepositAndReserve", *b.cfg.CliAddr), val)
+	require.True(ok)
+
+	lpEth := b.dev.Client
+	info, err := lpEth.GetSenderInfo(lpEth.Account().Address)
+	require.Nil(err)
+
+	require.Zero(info.Deposit.Cmp(amount))
+	require.Zero(info.Reserve.FundsRemaining.Cmp(amount))
+}
+
 func (l *livepeer) stop() {
 	l.dev.Close()
 }
