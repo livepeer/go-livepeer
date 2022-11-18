@@ -481,6 +481,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	}
 	if params.SegUploadTimeoutMultiplier > 1 {
 		uploadTimeout = time.Duration(params.SegUploadTimeoutMultiplier) * uploadTimeout
+		httpTimeout = time.Duration(params.SegUploadTimeoutMultiplier) * httpTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), httpTimeout)
@@ -550,7 +551,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 
 	data, err = ioutil.ReadAll(resp.Body)
 	tookAllDur := time.Since(start)
-
 	if err != nil {
 		clog.Errorf(ctx, "Unable to read response body for segment orch=%s err=%q", ti.Transcoder, err)
 		if monitor.Enabled {
