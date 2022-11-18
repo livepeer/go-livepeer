@@ -44,7 +44,7 @@ Next, follow [the guide to set up a private ETH network with the Livepeer protoc
 
 ## Contributing
 
-Thanks for your interest in contributing to go-livepeer. There are many ways you can contribute to the project, even non-developers.
+Thanks for your interest in contributing to go-livepeer. There are many ways you can contribute to the project, even for non-developers.
 
 To start, take a few minutes to **[read the "Contributing to go-livepeer" guide](CONTRIBUTING.md)**.
 
