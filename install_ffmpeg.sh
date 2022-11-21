@@ -134,6 +134,30 @@ if [[ "$UNAME" == "Linux" && "${BUILD_TAGS}" == *"debug-video"* ]]; then
   fi
 fi
 
+# WavPack required for Netint Ffmpeg
+if [[ ! -e "$ROOT/WavPack" ]]; then
+  git clone https://github.com/dbry/WavPack "$ROOT/WavPack"
+  cd "$ROOT/WavPack"
+  git checkout 6cf0e243a33011490099814220ee0b1ac31cd0da
+  ./configure --prefix="$ROOT/compiled"
+  make -j$NPROC
+  make -j$NPROC install
+fi
+
+# Netint codec
+if [[ ! -e "$ROOT/libxcoder" ]]; then
+  echo "Please obtain Netint LibXcoder sources and place them to $ROOT/libxcoder!"
+  exit -1
+else
+  if [[ ! -e "$ROOT/libxcoder/bin/libxcoder.a" ]]; then
+    cd $ROOT/libxcoder
+    ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
+    --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
+    make -j$NPROC
+    make -j$NPROC install
+  fi
+fi
+
 DISABLE_FFMPEG_COMPONENTS=""
 EXTRA_FFMPEG_LDFLAGS="$EXTRA_LDFLAGS"
 # all flags which should be present for production build, but should be replaced/removed for debug build
@@ -173,14 +197,14 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout 92c358e21b1616b07a61c634365ed441ee097e8c
+  git checkout 399aed59ec4b5e4ab5cb380120ea9aeae9be0ce1
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
-    --enable-libx264 --enable-gpl \
+    --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
-    --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
+    --enable-filter=drawtext,abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
     --enable-encoder=aac,opus,libx264 \
     --enable-decoder=aac,opus,h264 \
