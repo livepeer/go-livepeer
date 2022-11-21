@@ -204,7 +204,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
-    --enable-filter=drawtext,abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
+    --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
     --enable-encoder=aac,opus,libx264 \
     --enable-decoder=aac,opus,h264 \
