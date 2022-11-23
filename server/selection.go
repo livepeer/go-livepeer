@@ -10,6 +10,8 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 )
 
+const SELECTOR_LATENCY_SCORE_THRESHOLD = 1.0
+
 // BroadcastSessionsSelector selects the next BroadcastSession to use
 type BroadcastSessionsSelector interface {
 	Add(sessions []*BroadcastSession)
