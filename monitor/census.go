@@ -180,8 +180,8 @@ type (
 		mFastVerificationUsingCurrentSessions   *stats.Int64Measure
 
 		// Metrics for scene classification
-		kSegClassName     tag.Key
-		mSegmentClassProb *stats.Float64Measure
+		kSegClassName        tag.Key
+		mSegmentClassProb    *stats.Float64Measure
 		mSceneClassification *stats.Int64Measure
 
 		lock        sync.Mutex
@@ -1230,7 +1230,6 @@ func SegSceneClassificationDone(ctx context.Context, seqNo uint64) {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
-
 
 func HTTPClientTimedOut1(ctx context.Context) {
 	if err := stats.RecordWithTags(census.ctx,
