@@ -560,7 +560,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
 	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)
+		return NewMinLSSelectorWithRandFreq(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, SelectRandFreq)
 	}
 
 	// safe, because other goroutines should be waiting on initializing channel
