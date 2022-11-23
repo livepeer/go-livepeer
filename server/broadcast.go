@@ -207,11 +207,23 @@ func removeSessionFromList(sessions []*BroadcastSession, sess *BroadcastSession)
 
 func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
 	for _, session := range sessions {
-		if len(session.SegsInFlight) > 0 &&
-			time.Since(session.SegsInFlight[0].startTime) < time.Duration(durMult)*session.SegsInFlight[0].segDur &&
-			!includesSession(exclude, session) {
-			// Re-use last session if oldest segment is in-flight for < durMult * segDur
-			return session
+		// A session in the exclusion list is not selectable
+		if includesSession(exclude, session) {
+			continue
+		}
+
+		// A session with segments in flight might be selectable under certain conditions
+		if len(session.SegsInFlight) > 0 {
+			// The 0th segment in the slice is the oldest segment in flight since segments are appended
+			// to the slice as they are sent out
+			oldestSegInFlight := session.SegsInFlight[0]
+			timeInFlight := time.Since(oldestSegInFlight.startTime)
+			// durMult can be tuned by the caller to tighten/relax the maximum in flight time for the oldest segment
+			maxTimeInFlight := time.Duration(durMult) * oldestSegInFlight.segDur
+
+			if timeInFlight < maxTimeInFlight {
+				return session
+			}
 		}
 	}
 	return nil
