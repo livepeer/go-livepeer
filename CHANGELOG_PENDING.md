@@ -25,6 +25,8 @@
 
 #### Broadcaster
 
+- \#2666 Re-use a session as long as it passes the latency score threshold check (@yondonfu)
+
 #### Orchestrator
 - \#2639 Increase IdleTimeout for HTTP connections (@leszko)
 
