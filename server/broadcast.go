@@ -212,6 +212,14 @@ func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, du
 			continue
 		}
 
+		// A session without any segments in flight and that has a latency score that meets the selector
+		// threshold is selectable
+		if len(session.SegsInFlight) == 0 {
+			if session.LatencyScore > 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
+				return session
+			}
+		}
+
 		// A session with segments in flight might be selectable under certain conditions
 		if len(session.SegsInFlight) > 0 {
 			// The 0th segment in the slice is the oldest segment in flight since segments are appended
@@ -352,6 +360,13 @@ func (sp *SessionPool) completeSession(sess *BroadcastSession) {
 			// we will return it later in transcodeSegment() once all in-flight segs downloaded
 			return
 		}
+
+		// If the latency score meets the selector threshold, we skip giving the session back to the selector
+		// because we consider it for re-use in selectSession()
+		if sess.LatencyScore > 0 && sess.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
+			return
+		}
+
 		sp.sel.Complete(sess)
 	}
 }

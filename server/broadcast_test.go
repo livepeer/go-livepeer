@@ -446,6 +446,35 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	assert.Equal(1, orchInfoCalled)
 }
 
+func TestSelectSession_NoSegsInFlight(t *testing.T) {
+	assert := assert.New(t)
+
+	sess := &BroadcastSession{}
+	sessList := []*BroadcastSession{sess}
+
+	// Session has segs in flight
+	sess.SegsInFlight = []SegFlightMetadata{
+		{startTime: time.Now().Add(time.Duration(-1) * time.Second), segDur: 1 * time.Second},
+	}
+	s := selectSession(sessList, nil, 1)
+	assert.Nil(s)
+
+	// Session has no segs in flight, latency score = 0
+	sess.SegsInFlight = nil
+	s = selectSession(sessList, nil, 1)
+	assert.Nil(s)
+
+	// Session has no segs in flight, latency score > SELECTOR_LATENCY_SCORE_THRESHOLD
+	sess.LatencyScore = SELECTOR_LATENCY_SCORE_THRESHOLD + 0.001
+	s = selectSession(sessList, nil, 1)
+	assert.Nil(s)
+
+	// Session has no segs in flight, latency score > 0 and < SELECTOR_LATENCY_SCORE_THRESHOLD
+	sess.LatencyScore = SELECTOR_LATENCY_SCORE_THRESHOLD - 0.001
+	s = selectSession(sessList, nil, 1)
+	assert.Equal(sess, s)
+}
+
 // Note: Add processSegment tests, including:
 //     assert an error from transcoder removes sess from BroadcastSessionManager
 //     assert a success re-adds sess to BroadcastSessionManager
@@ -704,7 +733,9 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	// Create stub server
 	ts, mux := stubTLSServer()
 	defer ts.Close()
+	transcodeDelay := 100 * time.Millisecond
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(transcodeDelay)
 		w.WriteHeader(http.StatusOK)
 		w.Write(buf)
 	})
@@ -720,18 +751,32 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 		sessManager: bsm,
 	}
 
-	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil, nil)
+	segDurMultiplier := 100.0
+	// The seg duration that meets the latency score threshold
+	// A larger seg duration gives a smaller/better latency score
+	// A smaller seg duration gives a larger/worse latency score
+	segDurLatencyScoreThreshold := transcodeDelay.Seconds() / SELECTOR_LATENCY_SCORE_THRESHOLD
+	// The seg duration that is better than the threshold (i.e. "fast")
+	segDurFastLatencyScore := segDurLatencyScoreThreshold * segDurMultiplier
+	// The seg duration that is worse than the threshold (i.e "slow")
+	segDurSlowLatencyScore := segDurLatencyScoreThreshold / segDurMultiplier
+
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: segDurSlowLatencyScore}, "dummy", nil, nil)
 	assert.Nil(err)
 
 	completedSess := bsm.trustedPool.sessMap[ts.URL]
 	assert.Equal(sess, completedSess)
 	assert.NotZero(completedSess.LatencyScore)
+	// Check that session is returned to the selector because it did not pass the latency score threshold check
+	assert.Equal(1, bsm.trustedPool.sel.Size())
 
-	tr.Info = &net.OrchestratorInfo{Transcoder: ts.URL, PriceInfo: &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}}
+	newInfo := StubBroadcastSession(ts.URL).OrchestratorInfo
+	newInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7}
+	tr.Info = newInfo
 	buf, err = proto.Marshal(tr)
 	require.Nil(err)
 
-	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil, nil)
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: segDurFastLatencyScore}, "dummy", nil, nil)
 	assert.Nil(err)
 
 	// Check that BroadcastSession.OrchestratorInfo was updated
@@ -739,6 +784,15 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	assert.Equal(tr.Info.Transcoder, completedSessInfo.Transcoder)
 	assert.Equal(tr.Info.PriceInfo.PricePerUnit, completedSessInfo.PriceInfo.PricePerUnit)
 	assert.Equal(tr.Info.PriceInfo.PixelsPerUnit, completedSessInfo.PriceInfo.PixelsPerUnit)
+	// Check that session is not returned to the selector because it passed the latency score threshold check
+	assert.Zero(bsm.trustedPool.sel.Size())
+
+	// Check that we can re-use the last session that previously passed the latency score threshold check
+	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: segDurFastLatencyScore}, "dummy", nil, nil)
+	assert.Nil(err)
+	completedSessInfo = bsm.trustedPool.sessMap[ts.URL].OrchestratorInfo
+	assert.Equal(sess.OrchestratorInfo.Transcoder, completedSessInfo.Transcoder)
+	assert.Zero(bsm.trustedPool.sel.Size())
 }
 
 func TestProcessSegment_MaxAttempts(t *testing.T) {
