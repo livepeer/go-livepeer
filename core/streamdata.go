@@ -29,22 +29,22 @@ type DetectionConfig struct {
 }
 
 type StreamParameters struct {
-	ManifestID                 ManifestID
-	ExternalStreamID           string
-	SessionID                  string
-	RtmpKey                    string
-	Profiles                   []ffmpeg.VideoProfile
-	Resolution                 string
-	Format                     ffmpeg.Format
-	OS                         drivers.OSSession
-	RecordOS                   drivers.OSSession
-	Capabilities               *Capabilities
-	Detection                  DetectionConfig
-	VerificationFreq           uint
-	Nonce                      uint64
-	Codec                      ffmpeg.VideoCodec
-	PixelFormat                ffmpeg.PixelFormat
-	SegUploadTimeoutMultiplier int // Used in the VOD workflow to allow us to be more lenient with timeouts
+	ManifestID        ManifestID
+	ExternalStreamID  string
+	SessionID         string
+	RtmpKey           string
+	Profiles          []ffmpeg.VideoProfile
+	Resolution        string
+	Format            ffmpeg.Format
+	OS                drivers.OSSession
+	RecordOS          drivers.OSSession
+	Capabilities      *Capabilities
+	Detection         DetectionConfig
+	VerificationFreq  uint
+	Nonce             uint64
+	Codec             ffmpeg.VideoCodec
+	PixelFormat       ffmpeg.PixelFormat
+	TimeoutMultiplier int // Used in the VOD workflow to allow us to be more lenient with timeouts
 }
 
 func (s *StreamParameters) StreamID() string {
