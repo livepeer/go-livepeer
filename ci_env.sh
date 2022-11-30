@@ -3,7 +3,7 @@
 # Script to populate some environment variables in various CI processes. Should be
 # invoked by `ci_env.sh [script-name]`.
 
-set -e
+set -eo pipefail
 
 # Populate necessary Windows build path stuff
 if [[ $(uname) == *"MSYS"* ]]; then
@@ -55,6 +55,8 @@ if [[ $generatedVersion != $definedVersion ]]; then
   export BUILD_TAGS="${BUILD_TAGS},experimental"
 fi
 
-echo "::set-output name=build-tags::${BUILD_TAGS}"
+if [[ "$CI" == "true" ]]; then
+  echo "build-tags=${BUILD_TAGS}" >>"$GITHUB_OUTPUT"
+fi
 
 exec "$@"
