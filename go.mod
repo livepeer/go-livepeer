@@ -34,8 +34,7 @@ require (
 	go.opencensus.io v0.24.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
-	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
-	golang.org/x/tools v0.1.9 // indirect
-	google.golang.org/grpc v1.47.0
+	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
+	google.golang.org/grpc v1.51.0
 	pgregory.net/rapid v0.4.0
 )
