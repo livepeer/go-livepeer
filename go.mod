@@ -3,7 +3,7 @@ module github.com/livepeer/go-livepeer
 go 1.13
 
 require (
-	contrib.go.opencensus.io/exporter/prometheus v0.1.0
+	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cespare/cp v1.1.1 // indirect
@@ -23,7 +23,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/peterbourgon/ff/v3 v3.3.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.11.0
+	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/status-im/keycard-go v0.0.0-20190424133014-d95853db0f48 // indirect
@@ -31,7 +31,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	github.com/urfave/cli v1.22.2
-  go.opencensus.io v0.24.0
+	go.opencensus.io v0.24.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
 	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
