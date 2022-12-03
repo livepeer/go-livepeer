@@ -75,7 +75,7 @@ if [[ "$UNAME" != "Darwin" ]]; then
   if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
     cd $ROOT/nv-codec-headers
-    git checkout n9.1.23.1
+    git checkout n11.1.5.2
     make -e PREFIX="$ROOT/compiled"
     make install -e PREFIX="$ROOT/compiled"
   fi
@@ -145,12 +145,12 @@ if [[ ! -e "$ROOT/WavPack" ]]; then
 fi
 
 # Netint codec
-if [[ ! -e "$ROOT/libxcoder" ]]; then
-  echo "Please obtain Netint LibXcoder sources and place them to $ROOT/libxcoder!"
+if [[ ! -e "$ROOT/libxcoder_logan" ]]; then
+  echo "Please place libxcoder_logan dir from Netint distribution v3.1.0 to $ROOT/libxcoder_logan!"
   exit -1
 else
-  if [[ ! -e "$ROOT/libxcoder/bin/libxcoder.a" ]]; then
-    cd $ROOT/libxcoder
+  if [[ ! -e "$ROOT/libxcoder_logan/bin/libxcoder_logan.a" ]]; then
+    cd $ROOT/libxcoder_logan
     ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
     --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
     make -j$NPROC
@@ -197,8 +197,9 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout 399aed59ec4b5e4ab5cb380120ea9aeae9be0ce1
+  git checkout f78d1dcf5995024ef0c846198e70f18ddc0e9d5e
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
+    --enable-libxcoder_logan --enable-ni_logan \
     --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
