@@ -134,16 +134,6 @@ if [[ "$UNAME" == "Linux" && "${BUILD_TAGS}" == *"debug-video"* ]]; then
   fi
 fi
 
-# WavPack required for Netint Ffmpeg
-if [[ ! -e "$ROOT/WavPack" ]]; then
-  git clone https://github.com/dbry/WavPack "$ROOT/WavPack"
-  cd "$ROOT/WavPack"
-  git checkout 6cf0e243a33011490099814220ee0b1ac31cd0da
-  ./configure --prefix="$ROOT/compiled"
-  make -j$NPROC
-  make -j$NPROC install
-fi
-
 # Netint codec
 if [[ ! -e "$ROOT/libxcoder_logan" ]]; then
   echo "Please place libxcoder_logan dir from Netint distribution v3.1.0 to $ROOT/libxcoder_logan!"
@@ -200,6 +190,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git checkout adba7845a077c12a99fe35fb96df633528754520
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libxcoder_logan --enable-ni_logan \
+    --enable-pthreads --extra-libs='-lpthread' \
     --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
@@ -207,10 +198,10 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,opus,libx264 \
-    --enable-decoder=aac,opus,h264 \
+    --enable-encoder=aac,opus,libx264,h264_ni_logan_enc,h265_ni_logan_enc \
+    --enable-decoder=aac,opus,h264,h264_ni_logan_dec,h265_ni_logan_dec \
     --extra-cflags="-I${ROOT}/compiled/include ${EXTRA_CFLAGS}" \
-    --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_FFMPEG_LDFLAGS}" \
+    --extra-ldflags="-lm" --extra-ldflags="-ldl" --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_FFMPEG_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
     $EXTRA_FFMPEG_FLAGS \
     $DEV_FFMPEG_FLAGS
