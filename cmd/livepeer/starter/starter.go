@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/math"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -87,6 +88,7 @@ type LivepeerConfig struct {
 	TestTranscoder               *bool
 	SceneClassificationModelPath *string
 	DetectContent                *bool
+	DetectionSampleRate          *uint
 	EthAcctAddr                  *string
 	EthPassword                  *string
 	EthKeystorePath              *string
@@ -153,6 +155,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetint := ""
 	defaultTestTranscoder := true
 	defaultDetectContent := false
+	defaultDetectionSampleRate := uint(math.MaxUint32)
 	defaultSceneClassificationModelPath := "tasmodel.pb"
 
 	// Onchain:
@@ -231,6 +234,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:               &defaultTestTranscoder,
 		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
 		DetectContent:                &defaultDetectContent,
+		DetectionSampleRate:          &defaultDetectionSampleRate,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -292,6 +296,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
+		return
+	}
+
+	if *cfg.DetectionSampleRate <= 0 {
+		glog.Fatal("-detectionSampleRate must be greater than zero")
 		return
 	}
 
@@ -432,6 +441,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if accel == ffmpeg.Nvidia && *cfg.DetectContent {
 				if _, err := os.Stat(*cfg.SceneClassificationModelPath); err == nil {
 					detectorProfile := ffmpeg.DSceneAdultSoccer
+					detectorProfile.SampleRate = *cfg.DetectionSampleRate
 					detectorProfile.ModelPath = *cfg.SceneClassificationModelPath
 					core.DetectorProfile = &detectorProfile
 					for _, d := range devices {
