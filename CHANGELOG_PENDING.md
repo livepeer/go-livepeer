@@ -13,6 +13,7 @@
 #### Orchestrator
 
 #### Transcoder
+- \#2686 Control non-stream specific scene classification with command line args
 
 ### Bug Fixes 🐞
 
