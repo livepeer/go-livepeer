@@ -327,6 +327,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
+	// TODO log message here
 	verifyToken := orch.AuthToken(req.AuthToken.SessionId, req.AuthToken.Expiration)
 	if !bytes.Equal(verifyToken.Token, req.AuthToken.Token) {
 		return nil, fmt.Errorf("Invalid auth token")

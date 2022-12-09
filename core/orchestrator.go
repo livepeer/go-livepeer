@@ -36,7 +36,7 @@ import (
 
 const maxSegmentChannels = 4
 
-var transcodeLoopTimeout = 1 * time.Minute
+var transcodeLoopTimeout = 70 * time.Second
 
 // Gives us more control of "timeout" / cancellation behavior during testing
 var transcodeLoopContext = func() (context.Context, context.CancelFunc) {
