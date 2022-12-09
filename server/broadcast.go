@@ -923,11 +923,17 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 		if isNonRetryableError(err) {
 			clog.Warningf(ctx, "Not retrying current segment due to non-retryable error err=%q", err)
+			if monitor.Enabled {
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNonRetryable, nonce, seg.SeqNo, err, true)
+			}
 			break
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = ctxErr
 			clog.Warningf(ctx, "Not retrying current segment due to context cancellation err=%q", err)
+			if monitor.Enabled {
+				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorCtxCancelled, nonce, seg.SeqNo, err, true)
+			}
 			break
 		}
 		// recoverable error, retry
@@ -950,6 +956,9 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 	if len(attempts) == MaxAttempts && err != nil {
 		err = fmt.Errorf("Hit max transcode attempts: %w", err)
+		if monitor.Enabled {
+			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorMaxAttempts, nonce, seg.SeqNo, err, true)
+		}
 	}
 	return urls, err
 }
