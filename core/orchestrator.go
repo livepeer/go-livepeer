@@ -504,6 +504,9 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		}
 		return &TranscodeResult{Err: err}
 	}
+	if monitor.Enabled {
+		// TODO emit transcode started metric
+	}
 
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
