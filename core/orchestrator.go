@@ -992,7 +992,7 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 // ends transcoding session and releases resources
 func (node *LivepeerNode) EndTranscodingSession(sessionId string) {
 	logCtx := context.TODO()
-	clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended for sessionID=%v", sessionId)
+	clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
 	node.endTranscodingSession(sessionId, logCtx)
 }
 
