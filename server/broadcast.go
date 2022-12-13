@@ -1013,9 +1013,30 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 			}
 			return nil, info, err
 		}
+		// log all received detection results
+		if monitor.Enabled {
+			if len(res.Detections) > 0 {
+				for _, detection := range res.Detections {
+					switch x := detection.Value.(type) {
+					case *net.DetectData_SceneClassification:
+						probs := x.SceneClassification.ClassProbs
+						for id, prob := range probs {
+							className := "unknown"
+							for name, lookupId := range ffmpeg.DetectorClassIDLookup {
+								if id == uint32(lookupId) {
+									className = name
+									break
+								}
+							}
+							monitor.SegSceneClassificationResult(ctx, seg.SeqNo, className, prob)
+						}
+					}
+				}
+			}
+		}
 		// [EXPERIMENTAL] send content detection results to callback webhook
 		// for now use detection only in common path
-		if DetectionWebhookURL != nil && len(res.Detections) > 0 {
+		if DetectionWebhookURL != nil {
 			clog.V(common.DEBUG).Infof(ctx, "Got detection result %v", res.Detections)
 			if monitor.Enabled {
 				monitor.SegSceneClassificationDone(ctx, seg.SeqNo)
@@ -1035,9 +1056,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 											Name:        name,
 											Probability: prob,
 										})
-									if monitor.Enabled {
-										monitor.SegSceneClassificationResult(ctx, seg.SeqNo, name, prob)
-									}
 								}
 							}
 						}

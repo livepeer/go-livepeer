@@ -100,10 +100,13 @@ func (lb *LoadBalancingTranscoder) createSession(ctx context.Context, md *SegTra
 	// Acquire transcode session. Map to job id + assigned transcoder
 	key := job + "_" + transcoder
 	costEstimate := calculateCost(md.Profiles)
+
+	// create the transcoder - with AI capabilities, if required by local or stream configuration
 	var lpmsSession TranscoderSession
-	if md.DetectorEnabled {
+	setEffectiveDetectorConfig(md)
+	if md.DetectorEnabled && len(md.DetectorProfiles) == 1 {
 		var err error
-		lpmsSession, err = lb.newDetectorT(DetectorProfile, transcoder)
+		lpmsSession, err = lb.newDetectorT(md.DetectorProfiles[0], transcoder)
 		if err != nil {
 			return nil, err
 		}
