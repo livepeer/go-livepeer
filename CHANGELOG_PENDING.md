@@ -29,5 +29,6 @@
 
 #### Orchestrator
 - \#2639 Increase IdleTimeout for HTTP connections (@leszko)
+- \#2685 Add a log message when sessions are closed by the Broadcaster. Increase transcode loop timeout (@mj1)
 
 #### Transcoder

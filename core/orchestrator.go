@@ -36,6 +36,8 @@ import (
 
 const maxSegmentChannels = 4
 
+// this is set to be higher than httpPushTimeout in server/mediaserver.go so that B has a chance to end the session
+// based on httpPushTimeout before transcodeLoopTimeout is reached
 var transcodeLoopTimeout = 70 * time.Second
 
 // Gives us more control of "timeout" / cancellation behavior during testing
