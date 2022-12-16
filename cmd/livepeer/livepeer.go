@@ -49,6 +49,10 @@ func main() {
 	if err != nil {
 		glog.Fatal("Error parsing config: ", err)
 	}
+	if len(flag.CommandLine.Args()) > 0 {
+		flag.CommandLine.Usage()
+		glog.Fatalf("Unknown arguments provided: %v", flag.CommandLine.Args())
+	}
 
 	vFlag.Value.Set(*verbosity)
 
