@@ -72,6 +72,7 @@ jobs:
           echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+          echo "BUILD_TAGS=experimental" >> $GITHUB_ENV
 
       - name: Install dependencies
         if: matrix.platform.name == 'darwin'
