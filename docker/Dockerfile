@@ -55,11 +55,7 @@ ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
-
-FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
-
-FROM livepeer-${TARGETARCH}-base
+FROM --platform=${TARGETPLATFORM}	nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
@@ -68,13 +64,13 @@ COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 
+# libtensorflow.so is required at runtime, because Ffmpeg DNN filter loads it dynamically
 RUN apt update && apt install -yqq software-properties-common curl apt-transport-https lsb-release
 
+# Tensorflow version needs to be compatible with CUDA and CuDNN of the image
 RUN LIBTENSORFLOW_VERSION=2.6.3 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && ldconfig
-
-RUN	ldconfig
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]
