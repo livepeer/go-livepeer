@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2696 Add Rinkeby network deprecation warning (@leszko)
 
 #### Broadcaster
 
