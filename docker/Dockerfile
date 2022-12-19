@@ -72,8 +72,8 @@ RUN apt update && apt install -yqq software-properties-common curl apt-transport
 
 RUN LIBTENSORFLOW_VERSION=2.6.3 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
+            && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && ldconfig
 
 RUN	ldconfig
 
