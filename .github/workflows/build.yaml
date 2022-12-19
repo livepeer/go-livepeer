@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-tf-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
 
@@ -91,18 +91,13 @@ jobs:
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
             && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
-          LIBTENSORFLOW_VERSION=2.6.3 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
-
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: BUILD_TAGS=experimental ./install_ffmpeg.sh
+        run: ./install_ffmpeg.sh
 
       - name: Build binaries
         run: |
@@ -144,9 +139,6 @@ jobs:
           name: release-artifacts
           path: releases/
 
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
-
   linux-tensorflow:
     name: Build binaries for linux using tensorflow
     runs-on: ubuntu-18.04
@@ -173,7 +165,7 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-ffmpeg-tensorflow-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-ffmpeg-tf-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-ffmpeg-tensorflow
 
@@ -181,7 +173,7 @@ jobs:
         uses: actions/cache@v2.1.5
         with:
           path: ~/build
-          key: ${{ runner.os }}-binaries-tensorflow-${{ github.sha }}
+          key: ${{ runner.os }}-binaries-tf-${{ github.sha }}
 
       - name: Install dependencies
         run: |
@@ -195,7 +187,7 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
-          LIBTENSORFLOW_VERSION=2.6.3 \
+          LIBTENSORFLOW_VERSION=2.8.0 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo ldconfig
@@ -216,13 +208,6 @@ jobs:
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
 
-      - name: Install libtensorflow
-        run: |
-          LIBTENSORFLOW_VERSION=2.6.3 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
-
       - name: Upload build
         run: cp ~/build/* . && ./upload_build.sh
         env:
@@ -237,9 +222,6 @@ jobs:
         with:
           name: release-artifacts
           path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   upload:
     name: Upload artifacts to google bucket
@@ -295,3 +277,6 @@ jobs:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
           parent: false
+
+      - name: Notify new build upload
+        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev

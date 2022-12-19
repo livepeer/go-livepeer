@@ -14,6 +14,10 @@ end_of_line = lf
 [Makefile]
 indent_style = tab
 
+[Dockerfile]
+indent_style = tab
+indent_size = 8
+
 # YAML Files
 [*.{yaml,sh}]
 indent_size = 2
