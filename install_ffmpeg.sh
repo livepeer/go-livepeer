@@ -150,7 +150,7 @@ else
       if [[ ! -e "/usr/local/lib/libtensorflow_framework.so" ]]; then
         LIBTENSORFLOW_VERSION=2.6.3 &&
           curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
-          tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
+          tar -C ${ROOT}/compiled/ -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
           rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
       fi
       echo "experimental tag detected, building with Tensorflow support"
