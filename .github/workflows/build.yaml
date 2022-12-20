@@ -97,7 +97,7 @@ jobs:
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: BUILD_TAGS=experimental ./install_ffmpeg.sh
+        run: ./install_ffmpeg.sh
 
       - name: Build binaries
         run: |
@@ -201,7 +201,7 @@ jobs:
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: BUILD_TAGS=experimental ./install_ffmpeg.sh
+        run: ./install_ffmpeg.sh
 
       - name: Build binaries
         run: |
