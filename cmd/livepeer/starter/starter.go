@@ -332,6 +332,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		},
 	}
 
+	if *cfg.Network == "rinkeby" || *cfg.Network == "arbitrum-one-rinkeby" {
+		glog.Warning("The Rinkeby/ArbRinkeby networks are deprecated in favor of the Goerli/ArbGoerli networks which will be launched in January 2023.")
+	}
+
 	// If multiple orchAddr specified, ensure other necessary flags present and clean up list
 	orchURLs := parseOrchAddrs(*cfg.OrchAddr)
 
