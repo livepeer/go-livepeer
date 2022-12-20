@@ -2,13 +2,15 @@ FROM --platform=$BUILDPLATFORM	ubuntu:18.04	as	build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
+ARG	BUILD_TAGS
 
 ENV	GOARCH="$TARGETARCH" \
 	PATH="/usr/local/go/bin:/go/bin:${PATH}" \
 	PKG_CONFIG_PATH="/root/compiled/lib/pkgconfig" \
 	CPATH="/usr/local/cuda/include" \
 	LIBRARY_PATH="/usr/local/cuda/lib64" \
-	DEBIAN_FRONTEND="noninteractive"
+	DEBIAN_FRONTEND="noninteractive" \
+	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
@@ -45,7 +47,7 @@ RUN	mkdir -p /go \
 
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
-RUN BUILD_TAGS=experimental	./install_ffmpeg.sh \
+RUN ./install_ffmpeg.sh \
 	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
 	&& go get -v github.com/jstemmer/go-junit-report
 
@@ -54,9 +56,6 @@ COPY	go.mod	go.sum	./
 RUN	go mod download
 
 COPY	.	.
-
-ARG	BUILD_TAGS
-ENV	BUILD_TAGS=${BUILD_TAGS}
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
