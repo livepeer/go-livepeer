@@ -29,6 +29,11 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
 
+# note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
+RUN LIBTENSORFLOW_VERSION=2.6.3 \
+            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
 	GOFLAGS="-mod=readonly"
@@ -63,14 +68,7 @@ COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
-
 # libtensorflow.so is required at runtime, because Ffmpeg DNN filter loads it dynamically
-RUN apt update && apt install -yqq software-properties-common curl apt-transport-https lsb-release
-
-# Tensorflow version needs to be compatible with CUDA and CuDNN of the image
-RUN LIBTENSORFLOW_VERSION=2.6.3 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && ldconfig
+COPY --from=build	/tf/	/usr/local/
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]
