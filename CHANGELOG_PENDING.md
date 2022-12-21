@@ -17,6 +17,7 @@
 - \#2686 Control non-stream specific scene classification with command line args
 
 ### Bug Fixes 🐞
+- \#2697 Fix backwards compatibility of livepeer_cli with prior livepeer version
 
 #### CLI
 
