@@ -2,15 +2,13 @@ FROM --platform=$BUILDPLATFORM	ubuntu:18.04	as	build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
-ARG	BUILD_TAGS
 
 ENV	GOARCH="$TARGETARCH" \
 	PATH="/usr/local/go/bin:/go/bin:${PATH}" \
 	PKG_CONFIG_PATH="/root/compiled/lib/pkgconfig" \
 	CPATH="/usr/local/cuda/include" \
 	LIBRARY_PATH="/usr/local/cuda/lib64" \
-	DEBIAN_FRONTEND="noninteractive" \
-	BUILD_TAGS=${BUILD_TAGS}
+	DEBIAN_FRONTEND="noninteractive"
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
@@ -46,6 +44,9 @@ RUN	mkdir -p /go \
 	&& curl -fsSLO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
 
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
+
+ARG	BUILD_TAGS
+ENV BUILD_TAGS=${BUILD_TAGS}
 
 RUN ./install_ffmpeg.sh \
 	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
