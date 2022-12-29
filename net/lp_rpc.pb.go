@@ -334,9 +334,8 @@ func (m *OrchestratorRequest) GetSig() []byte {
 	return nil
 }
 
-//
-//OSInfo needed to negotiate storages that will be used.
-//It carries info needed to write to the storage.
+// OSInfo needed to negotiate storages that will be used.
+// It carries info needed to write to the storage.
 type OSInfo struct {
 	// Storage type: direct, s3, ipfs.
 	StorageType          OSInfo_StorageType `protobuf:"varint,1,opt,name=storageType,proto3,enum=net.OSInfo_StorageType" json:"storageType,omitempty"`

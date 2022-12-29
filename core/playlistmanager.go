@@ -26,7 +26,7 @@ const (
 
 var JsonPlaylistQuitTimeout = 60 * time.Second
 
-//	PlaylistManager manages playlists and data for one video stream, backed by one object storage.
+// PlaylistManager manages playlists and data for one video stream, backed by one object storage.
 type PlaylistManager interface {
 	ManifestID() ManifestID
 	// Implicitly creates master and media playlists
