@@ -60,7 +60,7 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=${TARGETPLATFORM}	nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-base
+FROM --platform=${TARGETPLATFORM}	nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04 AS livepeer-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
