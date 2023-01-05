@@ -456,6 +456,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			err := s.RTMPSegmenter.SegmentRTMPToHLS(context.Background(), rtmpStrm, hlsStrm, segOptions)
 			if err != nil {
 				// Stop the incoming RTMP connection.
+				if err == segmenter.ErrSegmenterTimeout {
+					glog.Info("RTMP Timeout: Ensure keyframe interval is less than 8 seconds")
+				}
 				// TODO retry segmentation if err != SegmenterTimeout; may be recoverable
 				rtmpStrm.Close()
 			}
