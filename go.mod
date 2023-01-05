@@ -7,6 +7,7 @@ require (
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cespare/cp v1.1.1 // indirect
+	github.com/elliotchance/orderedmap v1.5.0 // indirect
 	github.com/ethereum/go-ethereum v1.10.26
 	github.com/fatih/color v1.12.0 // indirect
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
