@@ -29,6 +29,15 @@ jobs:
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Cleanup hosted runner
+        run: |
+          sudo apt purge -yqq dotnet-* mono-* llvm-* adoptopenjdk-* libllvm* powershell* openjdk-* \
+          temurin-* mongodb-* firefox mysql-* \
+          hhvm google-chrome-stable \
+          libgl1-mesa-dri microsoft-edge-stable \
+          google-cloud-sdk azure-cli
+          sudo apt autoremove -y
+
       - uses: actions-ecosystem/action-regex-match@v2
         id: match-tag
         with:
