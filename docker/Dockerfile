@@ -30,7 +30,7 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& ldconfig /usr/local/lib
 
 # note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
-RUN LIBTENSORFLOW_VERSION=2.6.3 \
+RUN LIBTENSORFLOW_VERSION=2.3.4 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
 
@@ -60,7 +60,7 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=${TARGETPLATFORM}	nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-base
+FROM --platform=${TARGETPLATFORM}	nvidia/cuda:10.2-cudnn7-runtime-ubuntu18.04 AS livepeer-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
