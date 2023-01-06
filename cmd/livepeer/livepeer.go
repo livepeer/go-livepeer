@@ -142,9 +142,9 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.DetectionSampleRate = flag.Uint("detectionSampleRate", *cfg.DetectionSampleRate, "Run content detection automatically on every nth frame of each segment, independently of requested stream transcoding configuration.")
 
 	// Onchain:
-	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in keystore directory. Overridden when by providing a valid key file using -ethKeystorePath")
+	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in keystore directory. Overridden when key file provided with -ethKeystorePath")
 	cfg.EthPassword = flag.String("ethPassword", *cfg.EthPassword, "Password for existing Eth account address or path to file")
-	cfg.EthKeystorePath = flag.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to keystore directory or path to ETH key file. If file provided, ethAcctAddr will be set and parent directory will be used for new accounts")
+	cfg.EthKeystorePath = flag.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to ETH keystore directory or keyfile. If valid keyfile, overrides -ethAcctAddr and uses parent directory for keystore path")
 	cfg.EthOrchAddr = flag.String("ethOrchAddr", *cfg.EthOrchAddr, "ETH address of an on-chain registered orchestrator")
 	cfg.EthUrl = flag.String("ethUrl", *cfg.EthUrl, "Ethereum node JSON-RPC URL")
 	cfg.TxTimeout = flag.Duration("transactionTimeout", *cfg.TxTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
