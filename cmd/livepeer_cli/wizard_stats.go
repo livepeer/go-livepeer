@@ -496,9 +496,12 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 	}
 
 	prices := new(bytes.Buffer)
-	for b, p := range status["BroadcasterPrices"].(map[string]interface{}) {
-		if b != "default" {
-			fmt.Fprintf(prices, "%s: %s per pixel\n", b, p)
+
+	if broadcasterPrices, ok := status["BroadcasterPrices"]; ok {
+		for b, p := range broadcasterPrices.(map[string]interface{}) {
+			if b != "default" {
+				fmt.Fprintf(prices, "%s: %s per pixel\n", b, p)
+			}
 		}
 	}
 

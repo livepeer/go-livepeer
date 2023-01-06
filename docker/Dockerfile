@@ -27,8 +27,12 @@ RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 3
 RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& curl -fsSL https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${TARGETARCH} -o /usr/bin/grpc_health_probe \
 	&& chmod +x /usr/bin/grpc_health_probe \
-	&& curl -fsSL https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-2.8.0.tar.gz | tar -C /usr/local -xzf - \
 	&& ldconfig /usr/local/lib
+
+# note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
+RUN LIBTENSORFLOW_VERSION=2.3.4 \
+            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
@@ -41,7 +45,10 @@ RUN	mkdir -p /go \
 
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
-RUN	./install_ffmpeg.sh \
+ARG	BUILD_TAGS
+ENV BUILD_TAGS=${BUILD_TAGS}
+
+RUN ./install_ffmpeg.sh \
 	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
 	&& go get -v github.com/jstemmer/go-junit-report
 
@@ -51,12 +58,10 @@ RUN	go mod download
 
 COPY	.	.
 
-ARG	BUILD_TAGS
-ENV	BUILD_TAGS=${BUILD_TAGS}
-
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime AS livepeer-amd64-base
+# cuda 10.2 image is 1.4 Gb smaller, which is critical for our root partition size
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime-ubuntu18.04 AS livepeer-amd64-base
 
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
 
@@ -68,7 +73,7 @@ COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
-
-RUN	ldconfig
+# libtensorflow.so is required at runtime, because Ffmpeg DNN filter loads it dynamically
+COPY --from=build	/tf/	/usr/local/
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]

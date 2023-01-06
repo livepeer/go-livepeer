@@ -36,7 +36,9 @@ import (
 
 const maxSegmentChannels = 4
 
-var transcodeLoopTimeout = 1 * time.Minute
+// this is set to be higher than httpPushTimeout in server/mediaserver.go so that B has a chance to end the session
+// based on httpPushTimeout before transcodeLoopTimeout is reached
+var transcodeLoopTimeout = 70 * time.Second
 
 // Gives us more control of "timeout" / cancellation behavior during testing
 var transcodeLoopContext = func() (context.Context, context.CancelFunc) {
@@ -994,7 +996,9 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 
 // ends transcoding session and releases resources
 func (node *LivepeerNode) EndTranscodingSession(sessionId string) {
-	node.endTranscodingSession(sessionId, context.TODO())
+	logCtx := context.TODO()
+	clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
+	node.endTranscodingSession(sessionId, logCtx)
 }
 
 func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {

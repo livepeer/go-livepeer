@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/math"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -87,6 +88,7 @@ type LivepeerConfig struct {
 	TestTranscoder               *bool
 	SceneClassificationModelPath *string
 	DetectContent                *bool
+	DetectionSampleRate          *uint
 	EthAcctAddr                  *string
 	EthPassword                  *string
 	EthKeystorePath              *string
@@ -153,6 +155,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetint := ""
 	defaultTestTranscoder := true
 	defaultDetectContent := false
+	defaultDetectionSampleRate := uint(math.MaxUint32)
 	defaultSceneClassificationModelPath := "tasmodel.pb"
 
 	// Onchain:
@@ -231,6 +234,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:               &defaultTestTranscoder,
 		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
 		DetectContent:                &defaultDetectContent,
+		DetectionSampleRate:          &defaultDetectionSampleRate,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -295,6 +299,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		return
 	}
 
+	if *cfg.DetectionSampleRate <= 0 {
+		glog.Fatal("-detectionSampleRate must be greater than zero")
+		return
+	}
+
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
 
 	type NetworkConfig struct {
@@ -321,6 +330,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			ethController: "0xD8E8328501E9645d16Cf49539efC04f734606ee4",
 			redeemGas:     redeemGasL2,
 		},
+	}
+
+	if *cfg.Network == "rinkeby" || *cfg.Network == "arbitrum-one-rinkeby" {
+		glog.Warning("The Rinkeby/ArbRinkeby networks are deprecated in favor of the Goerli/ArbGoerli networks which will be launched in January 2023.")
 	}
 
 	// If multiple orchAddr specified, ensure other necessary flags present and clean up list
@@ -432,6 +445,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if accel == ffmpeg.Nvidia && *cfg.DetectContent {
 				if _, err := os.Stat(*cfg.SceneClassificationModelPath); err == nil {
 					detectorProfile := ffmpeg.DSceneAdultSoccer
+					detectorProfile.SampleRate = *cfg.DetectionSampleRate
 					detectorProfile.ModelPath = *cfg.SceneClassificationModelPath
 					core.DetectorProfile = &detectorProfile
 					for _, d := range devices {

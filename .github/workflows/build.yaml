@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.1.0
+        uses: actions/checkout@v3.2.0
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.1.0
+        uses: actions/checkout@v3.2.0
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -190,7 +190,7 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
-          LIBTENSORFLOW_VERSION=2.6.3 \
+          LIBTENSORFLOW_VERSION=2.3.4 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo ldconfig
@@ -201,7 +201,7 @@ jobs:
 
       - name: Install ffmpeg
         if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: BUILD_TAGS=experimental ./install_ffmpeg.sh
+        run: ./install_ffmpeg.sh
 
       - name: Build binaries
         run: |
@@ -213,7 +213,7 @@ jobs:
 
       - name: Install libtensorflow
         run: |
-          LIBTENSORFLOW_VERSION=2.6.3 \
+          LIBTENSORFLOW_VERSION=2.3.4 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && sudo ldconfig

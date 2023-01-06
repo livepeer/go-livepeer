@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,6 +42,36 @@ func NewUnrecoverableError(err error) UnrecoverableError {
 
 var WorkDir string
 
+func setEffectiveDetectorConfig(md *SegTranscodingMetadata) {
+	aiEnabled := DetectorProfile != nil
+	actualProfile := DetectorProfile
+	if aiEnabled {
+		presetSampleRate := DetectorProfile.(*ffmpeg.SceneClassificationProfile).SampleRate
+		if md.DetectorEnabled && len(md.DetectorProfiles) == 1 {
+			actualProfile = md.DetectorProfiles[0]
+			requestedSampleRate := actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate
+			// 0 is not a valid value
+			if requestedSampleRate == 0 {
+				requestedSampleRate = math.MaxUint32
+			}
+			actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate = uint(math.Min(float64(presetSampleRate),
+				float64(requestedSampleRate)))
+			// copy other fields from default AI capability, as we don't yet support custom ones
+			actualProfile.(*ffmpeg.SceneClassificationProfile).ModelPath = DetectorProfile.(*ffmpeg.SceneClassificationProfile).ModelPath
+			actualProfile.(*ffmpeg.SceneClassificationProfile).Input = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Input
+			actualProfile.(*ffmpeg.SceneClassificationProfile).Output = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Output
+			actualProfile.(*ffmpeg.SceneClassificationProfile).Classes = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Classes
+		}
+	}
+	if actualProfile != nil && actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate < math.MaxUint32 {
+		md.DetectorProfiles = []ffmpeg.DetectorProfile{actualProfile}
+		md.DetectorEnabled = true
+	} else {
+		md.DetectorProfiles = []ffmpeg.DetectorProfile{}
+		md.DetectorEnabled = false
+	}
+}
+
 func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
@@ -50,6 +81,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		Fname: md.Fname,
 		Accel: ffmpeg.Software,
 	}
+	setEffectiveDetectorConfig(md)
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
@@ -141,6 +173,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
+	setEffectiveDetectorConfig(md)
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash, md.SegmentParameters)
 	if md.DetectorEnabled {
 		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
@@ -352,43 +385,6 @@ func TestSoftwareTranscoderCapabilities(tmpdir string) (caps []Capability, fatal
 		return true
 	})
 	return caps, fatalError
-}
-
-func TestNetintTranscoder(devices []string) error {
-	buf, _ := os.ReadFile("core/test.ts")
-	b := bytes.NewReader(buf)
-	z, err := gzip.NewReader(b)
-	if err != nil {
-		return err
-	}
-	mp4testSeg, err := ioutil.ReadAll(z)
-	z.Close()
-	if err != nil {
-		return err
-	}
-	fname := filepath.Join(WorkDir, "testseg.tempfile")
-	err = ioutil.WriteFile(fname, mp4testSeg, 0644)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(fname)
-	for _, device := range devices {
-		t1 := NewNetintTranscoder(device)
-		// "145x1" is the minimal resolution that succeeds on Windows, so use "145x145"
-		p := ffmpeg.VideoProfile{Resolution: "145x145", Bitrate: "1k", Format: ffmpeg.FormatMP4}
-		md := &SegTranscodingMetadata{Fname: fname, Profiles: []ffmpeg.VideoProfile{p, p, p, p}}
-		td, err := t1.Transcode(context.Background(), md)
-
-		t1.Stop()
-		if err != nil {
-			return err
-		}
-		if len(td.Segments) == 0 || td.Pixels == 0 {
-			return errors.New("Empty transcoded segment")
-		}
-	}
-
-	return nil
 }
 
 func GetTranscoderFactoryByAccel(acceleration ffmpeg.Acceleration) (func(device string) TranscoderSession, func(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error), error) {
