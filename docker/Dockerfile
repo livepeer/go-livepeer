@@ -61,7 +61,7 @@ COPY	.	.
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
 # cuda 10.2 image is 1.4 Gb smaller, which is critical for our root partition size
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.2-cudnn7-runtime-ubuntu18.04 AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime-ubuntu18.04 AS livepeer-amd64-base
 
 FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
 
