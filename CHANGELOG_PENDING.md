@@ -19,6 +19,7 @@
 #### CLI
 
 #### General
+- \#[] Update cli flag descriptions and print usage to stdout
 
 #### Broadcaster
 - \#2709 Add logging for high keyframe interval, reduce log level for discovery loop
