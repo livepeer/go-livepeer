@@ -144,7 +144,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in keystore directory")
 	cfg.EthPassword = flag.String("ethPassword", *cfg.EthPassword, "Password for existing Eth account address or path to file")
-	cfg.EthKeystorePath = flag.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to ETH keystore directory or keyfile. Defaults to [dataDir]\keystore. If keyfile, overrides -ethAcctAddr and uses parent directory")
+	cfg.EthKeystorePath = flag.String("ethKeystorePath", *cfg.EthKeystorePath, "Path to ETH keystore directory or keyfile. If keyfile, overrides -ethAcctAddr and uses parent directory")
 	cfg.EthOrchAddr = flag.String("ethOrchAddr", *cfg.EthOrchAddr, "ETH address of an on-chain registered orchestrator")
 	cfg.EthUrl = flag.String("ethUrl", *cfg.EthUrl, "Ethereum node JSON-RPC URL")
 	cfg.TxTimeout = flag.Duration("transactionTimeout", *cfg.TxTimeout, "Amount of time to wait for an Ethereum transaction to confirm before timing out")
