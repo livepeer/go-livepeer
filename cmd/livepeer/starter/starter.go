@@ -486,6 +486,34 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Fatalf("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
+	lpmon.NodeID = *cfg.EthAcctAddr
+	if lpmon.NodeID != "" {
+		lpmon.NodeID += "-"
+	}
+	hn, _ := os.Hostname()
+	lpmon.NodeID += hn
+
+	if *cfg.Monitor {
+		if *cfg.MetricsExposeClientIP {
+			*cfg.MetricsPerStream = true
+		}
+		lpmon.Enabled = true
+		lpmon.PerStreamMetrics = *cfg.MetricsPerStream
+		lpmon.ExposeClientIP = *cfg.MetricsExposeClientIP
+		nodeType := lpmon.Default
+		switch n.NodeType {
+		case core.BroadcasterNode:
+			nodeType = lpmon.Broadcaster
+		case core.OrchestratorNode:
+			nodeType = lpmon.Orchestrator
+		case core.TranscoderNode:
+			nodeType = lpmon.Transcoder
+		case core.RedeemerNode:
+			nodeType = lpmon.Redeemer
+		}
+		lpmon.InitCensus(nodeType, core.LivepeerVersion)
+	}
+
 	watcherErr := make(chan error)
 	serviceErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
@@ -959,33 +987,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	core.MaxSessions = *cfg.MaxSessions
-	lpmon.NodeID = *cfg.EthAcctAddr
-	if lpmon.NodeID != "" {
-		lpmon.NodeID += "-"
-	}
-	hn, _ := os.Hostname()
-	lpmon.NodeID += hn
-
-	if *cfg.Monitor {
-		if *cfg.MetricsExposeClientIP {
-			*cfg.MetricsPerStream = true
-		}
-		lpmon.Enabled = true
-		lpmon.PerStreamMetrics = *cfg.MetricsPerStream
-		lpmon.ExposeClientIP = *cfg.MetricsExposeClientIP
+	if lpmon.Enabled {
 		lpmon.MaxSessions(core.MaxSessions)
-		nodeType := lpmon.Default
-		switch n.NodeType {
-		case core.BroadcasterNode:
-			nodeType = lpmon.Broadcaster
-		case core.OrchestratorNode:
-			nodeType = lpmon.Orchestrator
-		case core.TranscoderNode:
-			nodeType = lpmon.Transcoder
-		case core.RedeemerNode:
-			nodeType = lpmon.Redeemer
-		}
-		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
 
 	if *cfg.AuthWebhookURL != "" {
