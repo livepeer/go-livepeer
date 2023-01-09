@@ -526,22 +526,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 	} else {
+		*cfg.EthKeystorePath = strings.TrimSuffix(*cfg.EthKeystorePath, "/")
 		var keystoreDir string
-		if fileInfo, err := os.Stat(*cfg.EthKeystorePath); !os.IsNotExist(err) {
+		if fileInfo, err := os.Stat(*cfg.EthKeystorePath); !os.IsNotExist(err) && fileInfo != nil {
 			if fileInfo.IsDir() {
 				keystoreDir = *cfg.EthKeystorePath
 			} else {
-				//If a file is provided, parse the directory from it
+				//If a file is provided, parse the directory
 				keystoreDir, _ = filepath.Split(*cfg.EthKeystorePath)
 
 				//Parse ETH address from file and override -ethAcctAddr
-				if keyText, err := common.ReadFromFile(*cfg.EthKeystorePath); err == nil {
-					var keyJson map[string]interface{}
-					if err = json.Unmarshal([]byte(keyText), &keyJson); err == nil {
-						if address, ok := keyJson["address"].(string); ok {
-							*cfg.EthAcctAddr = address
-						}
-					}
+				if addr := parseEthAddr(*cfg.EthKeystorePath); addr != "" {
+					*cfg.EthAcctAddr = addr
 				}
 			}
 		} else {
@@ -1426,4 +1422,20 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	}
 
 	return pricesSet.Prices
+}
+
+func parseEthAddr(ethKeystorePath string) string {
+	var result string
+	//= "not found"
+	if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
+		var keyJson map[string]interface{}
+
+		if err = json.Unmarshal([]byte(keyText), &keyJson); err == nil {
+			if address, ok := keyJson["address"].(string); ok {
+				result = address
+			}
+		}
+	}
+
+	return result
 }
