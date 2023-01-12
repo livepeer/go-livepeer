@@ -3,7 +3,6 @@ package pm
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"github.com/elliotchance/orderedmap"
 	"math/big"
 	"strings"
 	"sync"
@@ -225,8 +224,8 @@ func TestReceiveTicket_ValidNonWinningTicket(t *testing.T) {
 	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
-	if senderNonce.Front().Key != newSenderNonce {
-		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce.Front().Key)
+	if _, ok := senderNonce.nonceSeen[newSenderNonce]; !ok {
+		t.Errorf("expected senderNonce to exist: %d", newSenderNonce)
 	}
 }
 
@@ -258,8 +257,8 @@ func TestReceiveTicket_ValidWinningTicket(t *testing.T) {
 	recipientRand := genRecipientRand(sender, secret, params)
 	senderNonce := r.(*recipient).senderNonces[recipientRand.String()]
 
-	if senderNonce.Front().Key != newSenderNonce {
-		t.Errorf("expected senderNonce to be %d, got %d", newSenderNonce, senderNonce.Front().Key)
+	if _, ok := senderNonce.nonceSeen[newSenderNonce]; !ok {
+		t.Errorf("expected senderNonce to exist: %d", newSenderNonce)
 	}
 }
 
@@ -343,22 +342,15 @@ func TestReceiveTicket_NonceMapFill(t *testing.T) {
 	params, err := r.TicketParams(sender, big.NewRat(1, 1))
 	require.Nil(t, err)
 	// fill nonce map to capacity
-	for i := 0; i < maxSenderNonces; i++ {
+	for i := 0; i < maxSenderNonces+1; i++ {
 		ticket := newTicket(sender, params, uint32(i))
 		_, _, err := r.ReceiveTicket(ticket, sig, params.Seed)
-		assert.NoError(err)
+		if i < maxSenderNonces {
+			assert.NoError(err)
+		} else {
+			assert.Error(err)
+		}
 	}
-	// ensure can't use existing nonce
-	_, _, err = r.ReceiveTicket(newTicket(sender, params, uint32(0)), sig, params.Seed)
-	assert.Error(err)
-
-	// adding new element above capacity - it should exclude nonce 0
-	_, _, err = r.ReceiveTicket(newTicket(sender, params, uint32(maxSenderNonces)), sig, params.Seed)
-
-	// check that we can use nonce 0 now
-	_, _, err = r.ReceiveTicket(newTicket(sender, params, uint32(0)), sig, params.Seed)
-	assert.NoError(err)
-
 }
 
 func TestReceiveTicket_ValidTicket_Expired(t *testing.T) {
@@ -676,23 +668,32 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 	tm := &stubTimeManager{}
 
 	r := &recipient{
-		tm:           tm,
-		quit:         make(chan struct{}),
-		senderNonces: make(map[string]*orderedmap.OrderedMap),
+		tm:   tm,
+		quit: make(chan struct{}),
+		senderNonces: make(map[string]*struct {
+			nonceSeen       map[uint32]byte
+			expirationBlock *big.Int
+		}),
 	}
 
 	// add some senderNonces
 	rand0 := "blastoise"
 	rand1 := "charizard"
 	rand2 := "raichu"
-	r.senderNonces[rand0] = orderedmap.NewOrderedMap()
-	r.senderNonces[rand0].Set(1, big.NewInt(3))
+	r.senderNonces[rand0] = &struct {
+		nonceSeen       map[uint32]byte
+		expirationBlock *big.Int
+	}{map[uint32]byte{1: 1}, big.NewInt(3)}
 
-	r.senderNonces[rand1] = orderedmap.NewOrderedMap()
-	r.senderNonces[rand1].Set(1, big.NewInt(2))
+	r.senderNonces[rand1] = &struct {
+		nonceSeen       map[uint32]byte
+		expirationBlock *big.Int
+	}{map[uint32]byte{1: 1}, big.NewInt(2)}
 
-	r.senderNonces[rand2] = orderedmap.NewOrderedMap()
-	r.senderNonces[rand2].Set(1, big.NewInt(1))
+	r.senderNonces[rand2] = &struct {
+		nonceSeen       map[uint32]byte
+		expirationBlock *big.Int
+	}{map[uint32]byte{1: 1}, big.NewInt(1)}
 
 	go r.senderNoncesCleanupLoop()
 	time.Sleep(20 * time.Millisecond)

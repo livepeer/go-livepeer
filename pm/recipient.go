@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"github.com/elliotchance/orderedmap"
 	"math/big"
 	"sync"
 
@@ -89,7 +88,10 @@ type recipient struct {
 	secret       [32]byte
 	maxfacevalue *big.Int
 
-	senderNonces     map[string]*orderedmap.OrderedMap
+	senderNonces map[string]*struct {
+		nonceSeen       map[uint32]byte
+		expirationBlock *big.Int
+	}
 	senderNoncesLock sync.Mutex
 
 	cfg TicketParamsConfig
@@ -124,9 +126,12 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		addr:         addr,
 		secret:       secret,
 		maxfacevalue: big.NewInt(0),
-		senderNonces: make(map[string]*orderedmap.OrderedMap),
-		cfg:          cfg,
-		quit:         make(chan struct{}),
+		senderNonces: make(map[string]*struct {
+			nonceSeen       map[uint32]byte
+			expirationBlock *big.Int
+		}),
+		cfg:  cfg,
+		quit: make(chan struct{}),
 	}
 }
 
@@ -361,21 +366,24 @@ func (r *recipient) updateSenderNonce(rand *big.Int, ticket *Ticket) error {
 	defer r.senderNoncesLock.Unlock()
 
 	randStr := rand.String()
-	nonceToExpBlock, randKeySeen := r.senderNonces[randStr]
+	senderNonce, randKeySeen := r.senderNonces[randStr]
 	if randKeySeen {
-		_, nonceSeen := nonceToExpBlock.Get(ticket.SenderNonce)
-		if nonceSeen {
+		_, isSeen := senderNonce.nonceSeen[ticket.SenderNonce]
+		if isSeen {
 			return errors.Errorf("invalid ticket senderNonce: already seen sender=%v nonce=%v", ticket.Sender.Hex(), ticket.SenderNonce)
 		}
 	} else {
-		r.senderNonces[randStr] = orderedmap.NewOrderedMap()
+		r.senderNonces[randStr] = &struct {
+			nonceSeen       map[uint32]byte
+			expirationBlock *big.Int
+		}{make(map[uint32]byte), ticket.ParamsExpirationBlock}
+	}
+	// check nonce map size
+	if len(r.senderNonces[randStr].nonceSeen) > maxSenderNonces - 1 {
+		return errors.Errorf("invalid ticket senderNonce: too many values sender=%v nonce=%v", ticket.Sender.Hex(), ticket.SenderNonce)
 	}
 	// add new nonce
-	r.senderNonces[randStr].Set(ticket.SenderNonce, ticket.ParamsExpirationBlock)
-	// delete first seen nonce, if ordered map exceeds max size
-	if r.senderNonces[randStr].Len() > maxSenderNonces {
-		r.senderNonces[randStr].Delete(r.senderNonces[randStr].Front().Key)
-	}
+	r.senderNonces[randStr].nonceSeen[ticket.SenderNonce] = 1
 	return nil
 }
 
@@ -396,15 +404,9 @@ func (r *recipient) senderNoncesCleanupLoop() {
 			glog.Error(err)
 		case latestL1Block := <-sink:
 			r.senderNoncesLock.Lock()
-			for recipientRand, nonceMap := range r.senderNonces {
-				for _, key := range nonceMap.Keys() {
-					expirationBlock, _ := nonceMap.Get(key)
-					if expirationBlock.(*big.Int).Cmp(latestL1Block) <= 0 {
-						nonceMap.Delete(key)
-						if nonceMap.Len() == 0 {
-							delete(r.senderNonces, recipientRand)
-						}
-					}
+			for recipientRand, sn := range r.senderNonces {
+				if sn.expirationBlock.Cmp(latestL1Block) <= 0 {
+					delete(r.senderNonces, recipientRand)
 				}
 			}
 			r.senderNoncesLock.Unlock()
