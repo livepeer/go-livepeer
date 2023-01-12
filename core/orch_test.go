@@ -373,31 +373,39 @@ func TestRemoveFromRemoteTranscoders(t *testing.T) {
 	remoteTranscoderList := []*RemoteTranscoder{}
 	assert := assert.New(t)
 
-	// Create 4 tanscoders
-	tr := make([]*RemoteTranscoder, 4)
-	for i := 0; i < 4; i++ {
+	// Create 6 transcoders
+	tr := make([]*RemoteTranscoder, 5)
+	for i := 0; i < 5; i++ {
 		tr[i] = &RemoteTranscoder{addr: "testAddress" + strconv.Itoa(i)}
 	}
 
 	// Add to list
 	remoteTranscoderList = append(remoteTranscoderList, tr...)
-	assert.Len(remoteTranscoderList, 4)
+	assert.Len(remoteTranscoderList, 5)
 
 	// Remove transcoder froms head of the list
 	remoteTranscoderList = removeFromRemoteTranscoders(tr[0], remoteTranscoderList)
 	assert.Equal(remoteTranscoderList[0], tr[1])
 	assert.Equal(remoteTranscoderList[1], tr[2])
 	assert.Equal(remoteTranscoderList[2], tr[3])
-	assert.Len(remoteTranscoderList, 3)
+	assert.Equal(remoteTranscoderList[3], tr[4])
+	assert.Len(remoteTranscoderList, 4)
 
 	// Remove transcoder from the middle of the list
 	remoteTranscoderList = removeFromRemoteTranscoders(tr[3], remoteTranscoderList)
 	assert.Equal(remoteTranscoderList[0], tr[1])
 	assert.Equal(remoteTranscoderList[1], tr[2])
+	assert.Equal(remoteTranscoderList[2], tr[4])
+	assert.Len(remoteTranscoderList, 3)
+
+	// Remove transcoder from the middle of the list
+	remoteTranscoderList = removeFromRemoteTranscoders(tr[2], remoteTranscoderList)
+	assert.Equal(remoteTranscoderList[0], tr[1])
+	assert.Equal(remoteTranscoderList[1], tr[4])
 	assert.Len(remoteTranscoderList, 2)
 
 	// Remove transcoder from the end of the list
-	remoteTranscoderList = removeFromRemoteTranscoders(tr[2], remoteTranscoderList)
+	remoteTranscoderList = removeFromRemoteTranscoders(tr[4], remoteTranscoderList)
 	assert.Equal(remoteTranscoderList[0], tr[1])
 	assert.Len(remoteTranscoderList, 1)
 
