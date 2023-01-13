@@ -48,6 +48,9 @@ const (
 	SegmentTranscodeErrorSaveData           SegmentTranscodeError = "SaveData"
 	SegmentTranscodeErrorSessionEnded       SegmentTranscodeError = "SessionEnded"
 	SegmentTranscodeErrorDuplicateSegment   SegmentTranscodeError = "DuplicateSegment"
+	SegmentTranscodeErrorMaxAttempts        SegmentTranscodeError = "MaxAttempts"
+	SegmentTranscodeErrorNonRetryable       SegmentTranscodeError = "NonRetryable"
+	SegmentTranscodeErrorCtxCancelled       SegmentTranscodeError = "CtxCancelled"
 
 	numberOfSegmentsToCalcAverage = 30
 	gweiConversionFactor          = 1000000000
