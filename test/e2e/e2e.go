@@ -292,6 +292,22 @@ func pushSegmentsBroadcaster(t *testing.T, b *livepeer, numSegs int) {
 	}
 }
 
+func pushSegmentsParallelBroadcaster(t *testing.T, b *livepeer, numSegs int) {
+	assert := assert.New(t)
+
+	var wg sync.WaitGroup
+	mid := common.RandName()
+	for i := 0; i < numSegs; i++ {
+		wg.Add(1)
+		go func(mid string, seqNo int) {
+			assert.Nil(pushSegmentBroadcaster(b, mid, i))
+			wg.Done()
+		}(mid, i)
+	}
+
+	wg.Wait()
+}
+
 func pushSegmentBroadcaster(b *livepeer, manifestID string, seqNo int) error {
 	data, err := ioutil.ReadFile("test.flv")
 	rdr := bytes.NewReader(data)

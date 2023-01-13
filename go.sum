@@ -688,8 +688,6 @@ github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cO
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded/go.mod h1:xkDdm+akniYxVT9KW1Y2Y7Hso6aW+rZObz3nrA9yTHw=
 github.com/livepeer/livepeer-data v0.4.11 h1:Sv+ss8e4vcscnMWLxcRJ2g3sNIHyQ3RzCtgEelfGPzw=
 github.com/livepeer/livepeer-data v0.4.11/go.mod h1:VIbJRdyH2Tas8EgLVkP79IPMepFDOv0dgHYLEZsCaf4=
-github.com/livepeer/lpms v0.0.0-20221123192553-7cef5fc8c1d2 h1:q9DU5UATq+3zzpG8MmuGkLQKAalqo/ivXpbbimzuk4U=
-github.com/livepeer/lpms v0.0.0-20221123192553-7cef5fc8c1d2/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/lpms v0.0.0-20230106125835-78ae44836422 h1:AIm6737jFdSrUbzUFneCZuxy8OBXllez6k6vRzp93JE=
 github.com/livepeer/lpms v0.0.0-20230106125835-78ae44836422/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
