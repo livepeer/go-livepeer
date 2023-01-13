@@ -89,7 +89,7 @@ type recipient struct {
 	maxfacevalue *big.Int
 
 	senderNonces map[string]*struct {
-		nonceSeen       map[uint32]byte
+		nonceSeen       map[uint32]bool
 		expirationBlock *big.Int
 	}
 	senderNoncesLock sync.Mutex
@@ -127,7 +127,7 @@ func NewRecipientWithSecret(addr ethcommon.Address, broker Broker, val Validator
 		secret:       secret,
 		maxfacevalue: big.NewInt(0),
 		senderNonces: make(map[string]*struct {
-			nonceSeen       map[uint32]byte
+			nonceSeen       map[uint32]bool
 			expirationBlock *big.Int
 		}),
 		cfg:  cfg,
@@ -366,24 +366,24 @@ func (r *recipient) updateSenderNonce(rand *big.Int, ticket *Ticket) error {
 	defer r.senderNoncesLock.Unlock()
 
 	randStr := rand.String()
-	senderNonce, randKeySeen := r.senderNonces[randStr]
+	senderNonces, randKeySeen := r.senderNonces[randStr]
 	if randKeySeen {
-		_, isSeen := senderNonce.nonceSeen[ticket.SenderNonce]
+		_, isSeen := senderNonces.nonceSeen[ticket.SenderNonce]
 		if isSeen {
 			return errors.Errorf("invalid ticket senderNonce: already seen sender=%v nonce=%v", ticket.Sender.Hex(), ticket.SenderNonce)
 		}
 	} else {
 		r.senderNonces[randStr] = &struct {
-			nonceSeen       map[uint32]byte
+			nonceSeen       map[uint32]bool
 			expirationBlock *big.Int
-		}{make(map[uint32]byte), ticket.ParamsExpirationBlock}
+		}{make(map[uint32]bool), ticket.ParamsExpirationBlock}
 	}
 	// check nonce map size
 	if len(r.senderNonces[randStr].nonceSeen) > maxSenderNonces-1 {
 		return errors.Errorf("invalid ticket senderNonce: too many values sender=%v nonce=%v", ticket.Sender.Hex(), ticket.SenderNonce)
 	}
 	// add new nonce
-	r.senderNonces[randStr].nonceSeen[ticket.SenderNonce] = 1
+	r.senderNonces[randStr].nonceSeen[ticket.SenderNonce] = true
 	return nil
 }
 

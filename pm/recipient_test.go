@@ -671,7 +671,7 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 		tm:   tm,
 		quit: make(chan struct{}),
 		senderNonces: make(map[string]*struct {
-			nonceSeen       map[uint32]byte
+			nonceSeen       map[uint32]bool
 			expirationBlock *big.Int
 		}),
 	}
@@ -681,19 +681,19 @@ func TestSenderNoncesCleanupLoop(t *testing.T) {
 	rand1 := "charizard"
 	rand2 := "raichu"
 	r.senderNonces[rand0] = &struct {
-		nonceSeen       map[uint32]byte
+		nonceSeen       map[uint32]bool
 		expirationBlock *big.Int
-	}{map[uint32]byte{1: 1}, big.NewInt(3)}
+	}{map[uint32]bool{1: true}, big.NewInt(3)}
 
 	r.senderNonces[rand1] = &struct {
-		nonceSeen       map[uint32]byte
+		nonceSeen       map[uint32]bool
 		expirationBlock *big.Int
-	}{map[uint32]byte{1: 1}, big.NewInt(2)}
+	}{map[uint32]bool{1: true}, big.NewInt(2)}
 
 	r.senderNonces[rand2] = &struct {
-		nonceSeen       map[uint32]byte
+		nonceSeen       map[uint32]bool
 		expirationBlock *big.Int
-	}{map[uint32]byte{1: 1}, big.NewInt(1)}
+	}{map[uint32]bool{1: true}, big.NewInt(1)}
 
 	go r.senderNoncesCleanupLoop()
 	time.Sleep(20 * time.Millisecond)
