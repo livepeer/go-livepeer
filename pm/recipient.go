@@ -379,7 +379,7 @@ func (r *recipient) updateSenderNonce(rand *big.Int, ticket *Ticket) error {
 		}{make(map[uint32]bool), ticket.ParamsExpirationBlock}
 	}
 	// check nonce map size
-	if len(r.senderNonces[randStr].nonceSeen) > maxSenderNonces-1 {
+	if len(r.senderNonces[randStr].nonceSeen) >= maxSenderNonces {
 		return errors.Errorf("invalid ticket senderNonce: too many values sender=%v nonce=%v", ticket.Sender.Hex(), ticket.SenderNonce)
 	}
 	// add new nonce
