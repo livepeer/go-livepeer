@@ -531,7 +531,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			keystoreInfo, err := ParseEthKeystorePath(*cfg.EthKeystorePath)
 			if keystoreInfo.path.(string) != "" {
 				keystoreDir = keystoreInfo.path.(string)
-				if keystoreInfo.address != "" && err != nil {
+				if keystoreInfo.address.(string) != "" && err == nil {
 					*cfg.EthAcctAddr = keystoreInfo.address.(string)
 				}
 			} else {
