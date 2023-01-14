@@ -2,7 +2,10 @@ package starter
 
 import (
 	"errors"
+	"io/ioutil"
 	"math/big"
+	"path/filepath"
+	"syscall"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -98,4 +101,67 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
+}
+
+func TestFlag_KeystorePath_File(t *testing.T) {
+	assert := assert.New(t)
+
+	var addr = "0000000000000000000000000000000000000000"
+	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
+	tempDir := t.TempDir()
+	file1, err := ioutil.TempFile(tempDir, fname)
+	if err != nil {
+		panic(err)
+	}
+	defer syscall.Unlink(fname)
+	file1.WriteString("{\"address\":\"" + addr + "\"}")
+
+	var keystoreInfo KeystorePath
+	keystoreInfo, err = ParseEthKeystorePath(file1.Name())
+
+	assert.NotEmpty(keystoreInfo.path)
+	assert.NotEmpty(keystoreInfo.address)
+	assert.True(addr == keystoreInfo.address.(string))
+}
+
+func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	//Create test file
+	var addr = "0000000000000000000000000000000000000000"
+	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
+	badJsonfile, err := ioutil.TempFile(tempDir, fname)
+	if err != nil {
+		panic(err)
+	}
+
+	defer syscall.Unlink(fname)
+	badJsonfile.WriteString("{{\"address_broken_json\":\"" + addr + "\"}")
+
+	var keystoreInfo KeystorePath
+	keystoreInfo, err = ParseEthKeystorePath(badJsonfile.Name())
+	assert.NotEmpty(keystoreInfo.path)
+	assert.Empty(keystoreInfo.address)
+	assert.True(err.Error() == "Error parsing address from keyfile.")
+}
+
+func TestFlag_KeystorePath_Directory(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	var keystoreInfo KeystorePath
+	keystoreInfo, err := ParseEthKeystorePath(tempDir)
+	assert.NotEmpty(keystoreInfo.path)
+	assert.True(err == nil)
+}
+
+func TestFlag_KeystorePath_PathNotFound(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	var keystoreInfo KeystorePath
+	keystoreInfo, err := ParseEthKeystorePath(filepath.Join(tempDir, "missing path"))
+	assert.Empty(keystoreInfo.path)
+	assert.True(err.Error() == "Provided -ethKeystorePath was not found.")
 }
