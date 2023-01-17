@@ -838,7 +838,8 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	transcodeCalls = 0
 	_, err = processSegment(context.Background(), cxn, seg, nil)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
+	assert.True(errors.Is(err, maxTranscodeAttempts))
+	assert.Equal("hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 1)
 
