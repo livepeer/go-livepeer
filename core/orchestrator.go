@@ -929,7 +929,7 @@ func removeFromRemoteTranscoders(rt *RemoteTranscoder, remoteTranscoders []*Remo
 			if i == 0 {
 				return remoteTranscoders[1:]
 			}
-			newRemoteTs = remoteTranscoders[i-1 : i]
+			newRemoteTs = remoteTranscoders[:i]
 			newRemoteTs = append(newRemoteTs, remoteTranscoders[i+1:]...)
 			break
 		}
