@@ -19,6 +19,7 @@
 
 #### Transcoder
 - [#2686](https://github.com/livepeer/go-livepeer/pull/2686) Control non-stream specific scene classification with command line args (@cyberj0g)
+- [#2705](https://github.com/livepeer/go-livepeer/pull/2705) Fix: standalone transcoder will not exit when orchestrator disconnects or terminates the session (@stronk-dev)
 
 ## v0.5.36
 
