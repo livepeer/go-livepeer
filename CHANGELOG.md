@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.37
+
+### Breaking Changes 🚨🚨
+- Potentially breaking for environments with tight disk space: the docker image is 700 Mb larger now, because of bundled Tensorflow libraries
+
+#### General
+- [#2697](https://github.com/livepeer/go-livepeer/pull/2697) Fix backwards compatibility of livepeer_cli with prior livepeer version (@eliteprox)
+
+#### Broadcaster
+- [#2709](https://github.com/livepeer/go-livepeer/pull/2709) Add logging for high keyframe interval, reduce log level for discovery loop (@eliteprox)
+- [#2684](https://github.com/livepeer/go-livepeer/pull/2684) Fix transcode success rate metric to better account for errors (@mjh1)
+- [#357](https://github.com/livepeer/lpms/pull/357) Tune fast verification signature comparison (@cyberj0g)
+
+#### Orchestrator
+- [#2707](https://github.com/livepeer/go-livepeer/pull/2707) Fix remote transcoders quietly getting dropped from selection (@stronk-dev)
+- [#2710](https://github.com/livepeer/go-livepeer/pull/2710) Fix `Invalid Ticket senderNonce` error when segments are sent from B to O out of order or in parallel (@cyberj0g)
+
+#### Transcoder
+- [#2686](https://github.com/livepeer/go-livepeer/pull/2686) Control non-stream specific scene classification with command line args (@cyberj0g)
+- [#2705](https://github.com/livepeer/go-livepeer/pull/2705) Fix: standalone transcoder will not exit when orchestrator disconnects or terminates the session (@stronk-dev)
+
 ## v0.5.36
 
 #### General
