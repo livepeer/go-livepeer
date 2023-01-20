@@ -1419,11 +1419,11 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 }
 
 type KeystorePath struct {
-	path, address interface{}
+	path, address string
 }
 
 func ParseEthKeystorePath(ethKeystorePath string) (KeystorePath, error) {
-	var keystore KeystorePath = KeystorePath{"", ""}
+	var keystore = KeystorePath{"", ""}
 	ethKeystorePath = strings.TrimSuffix(ethKeystorePath, "/")
 
 	if fileInfo, err := os.Stat(ethKeystorePath); !os.IsNotExist(err) && fileInfo != nil {
@@ -1435,12 +1435,12 @@ func ParseEthKeystorePath(ethKeystorePath string) (KeystorePath, error) {
 				if address, err := common.ParseEthAddr(keyText); err == nil {
 					keystore.address = address
 				} else {
-					return keystore, errors.New("Error parsing address from keyfile.")
+					return keystore, errors.New("error parsing address from keyfile")
 				}
 			}
 		}
 	} else {
-		return keystore, errors.New("Provided -ethKeystorePath was not found.")
+		return keystore, errors.New("provided -ethKeystorePath was not found")
 	}
 
 	return keystore, nil
