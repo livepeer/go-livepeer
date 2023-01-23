@@ -30,7 +30,7 @@ require (
 	github.com/stretchr/testify v1.8.1
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
-	github.com/urfave/cli v1.22.10
+	github.com/urfave/cli v1.22.12
 	go.opencensus.io v0.24.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
