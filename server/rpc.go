@@ -278,7 +278,7 @@ func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
 	defer conn.Close()
 
 	req, err := genEndSessionRequest(sess)
-	_, err = c.EndTranscodingSession(ctx, req)
+	_, err = c.EndTranscodingSession(context.Background(), req)
 	if err != nil {
 		return errors.Wrapf(err, "Could not end orchestrator session orch=%v", sess.Transcoder())
 	}
