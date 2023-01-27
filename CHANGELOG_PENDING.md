@@ -28,3 +28,4 @@
 #### Orchestrator
 
 #### Transcoder
+- \#2732 Fix transcoder crash on session teardown, fix maxing out available sessions, because fast verification session teardown is not being called
