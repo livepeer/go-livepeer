@@ -1815,6 +1815,6 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 		}
 	}
 
-	require.Greater(t, float32(shouldSkipCount), float32(numTests) * (1 - 2 / float32(verificationFreq)))
-	require.Less(t, float32(shouldSkipCount), float32(numTests) * (1 - 0.5 / float32(verificationFreq)))
+	require.Greater(t, float32(shouldSkipCount), float32(numTests)*(1-2/float32(verificationFreq)))
+	require.Less(t, float32(shouldSkipCount), float32(numTests)*(1-0.5/float32(verificationFreq)))
 }
