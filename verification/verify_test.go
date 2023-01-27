@@ -64,7 +64,7 @@ func TestVerify(t *testing.T) {
 	assert := assert.New(t)
 
 	verifier := &stubVerifier{
-		results: &Results{Score: 9.3, Pixels: []int64{123, 456}},
+		results: &Results{Score: 9.3, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}},
 		err:     errors.New("Stub Verifier Error")}
 
 	// Check empty policy and verifier
@@ -92,21 +92,21 @@ func TestVerify(t *testing.T) {
 
 	// Check pixel list from verifier isn't what's expected
 	data := &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "abc", Pixels: verifier.results.Pixels[0] + 1},
+		{Url: "abc", Pixels: verifier.results.Stats[0].Pixels + 1},
 	}}
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
 	// check pixel count fails w/ external verifier
-	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
-	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
+	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Stats[1].Pixels})
+	assert.Len(data.Segments, len(verifier.results.Stats)) // sanity check
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(res)
 	assert.Equal(ErrPixelMismatch, err)
 
 	// Check pixel count succeeds w/ external verifier
-	data.Segments[0].Pixels = verifier.results.Pixels[0]
+	data.Segments[0].Pixels = verifier.results.Stats[0].Pixels
 	res, err = sv.Verify(&Params{Results: data})
 	assert.Nil(err)
 	assert.NotNil(res)
@@ -114,23 +114,23 @@ func TestVerify(t *testing.T) {
 	// check pixel count fails w/o external verifier
 	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "abc", Pixels: verifier.results.Pixels[0] + 1},
+		{Url: "abc", Pixels: verifier.results.Stats[0].Pixels + 1},
 	}}
-	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Pixels[1]})
-	assert.Len(data.Segments, len(verifier.results.Pixels)) // sanity check
+	data.Segments = append(data.Segments, &net.TranscodedSegmentData{Url: "def", Pixels: verifier.results.Stats[1].Pixels})
+	assert.Len(data.Segments, len(verifier.results.Stats)) // sanity check
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}})
 	assert.Nil(res)
 	assert.Equal(ErrPixelsAbsent, err)
 
 	// Check pixel count succeeds w/o external verifier
 	sv = &SegmentVerifier{policy: &Policy{Verifier: nil, Retries: 2}, verifySig: func(ethcommon.Address, []byte, []byte) bool { return true }}
-	pxls, err := pixels("../server/test.flv")
+	mi, err := ffmpeg.GetDecoderStats("../server/test.flv")
 
 	a, err := ioutil.ReadFile("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "../server/test.flv", Pixels: pxls},
-		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
 	}}
 	renditions := [][]byte{a, a}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
@@ -139,7 +139,7 @@ func TestVerify(t *testing.T) {
 
 	// check pixel count fails w/o external verifier w populated renditions but incorrect pixel counts
 	sv = NewSegmentVerifier(&Policy{Verifier: nil, Retries: 2}) // reset
-	pxls, err = pixels("../server/test.flv")
+	mi, err = ffmpeg.GetDecoderStats("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
 		{Url: "../server/test.flv", Pixels: 123},
@@ -151,19 +151,19 @@ func TestVerify(t *testing.T) {
 
 	// Check pixel count succeeds w/o external verifier
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "../server/test.flv", Pixels: pxls},
-		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
 	}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
 	// Check sig verifier fails when len(params.Results.Segments) != len(params.Renditions)
-	pxls, err = pixels("../server/test.flv")
+	mi, err = ffmpeg.GetDecoderStats("../server/test.flv")
 	assert.Nil(err)
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "../server/test.flv", Pixels: pxls},
-		{Url: "../server/test.flv", Pixels: pxls},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
+		{Url: "../server/test.flv", Pixels: mi.Pixels},
 	}}
 	renditions = [][]byte{}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
@@ -182,8 +182,8 @@ func TestVerify(t *testing.T) {
 	}
 
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "xyz", Pixels: pxls},
-		{Url: "xyz", Pixels: pxls},
+		{Url: "xyz", Pixels: mi.Pixels},
+		{Url: "xyz", Pixels: mi.Pixels},
 	}, Sig: []byte{}}
 
 	renditions = [][]byte{{0}, {0}}
@@ -209,8 +209,8 @@ func TestVerify(t *testing.T) {
 		err:     nil,
 	}, Retries: 2})
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "uvw", Pixels: pxls},
-		{Url: "xyz", Pixels: pxls},
+		{Url: "uvw", Pixels: mi.Pixels},
+		{Url: "xyz", Pixels: mi.Pixels},
 	}}
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
@@ -227,29 +227,29 @@ func TestVerify(t *testing.T) {
 	verifier.err = Retryable{errors.New("Stub Verifier Retryable Error")}
 	assert.True(IsRetryable(verifier.err))
 	// first attempt
-	verifier.results = &Results{Score: 1.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 1.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "abc", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
 	// second attempt
-	verifier.results = &Results{Score: 3.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 3.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "def", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
 	// final attempt should return highest scoring
-	verifier.results = &Results{Score: 2.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 2.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "ghi", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.NotNil(res)
 	assert.Equal("def", string(res.ManifestID))
 	// Additional attempts should still return best score winner
-	verifier.results = &Results{Score: -1.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: -1.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "jkl", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.NotNil(res)
 	assert.Equal("def", string(res.ManifestID))
 	// If we pass in a result with a better score, that should be returned
-	verifier.results = &Results{Score: 4.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 4.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "mno", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.NotNil(res)
@@ -257,24 +257,24 @@ func TestVerify(t *testing.T) {
 
 	// Pixel count handling
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
-		{Url: "abc", Pixels: verifier.results.Pixels[0]},
-		{Url: "def", Pixels: verifier.results.Pixels[1]},
+		{Url: "abc", Pixels: verifier.results.Stats[0].Pixels},
+		{Url: "def", Pixels: verifier.results.Stats[1].Pixels},
 	}}
 	verifier.err = nil
 	// Good score but incorrect pixel list should still fail
-	verifier.results = &Results{Score: 10.0, Pixels: []int64{789}}
+	verifier.results = &Results{Score: 10.0, Stats: []ffmpeg.MediaInfo{{Pixels: 789}}}
 	res, err = sv.Verify(&Params{ManifestID: "pqr", Results: data})
 	assert.Equal(ErrPixelsAbsent, err)
 	assert.Equal("mno", string(res.ManifestID)) // Still return best result
 	// Higher score and incorrect pixel list should prioritize pixel count
-	verifier.results = &Results{Score: 20.0, Pixels: []int64{789}}
+	verifier.results = &Results{Score: 20.0, Stats: []ffmpeg.MediaInfo{{Pixels: 789}}}
 	res, err = sv.Verify(&Params{ManifestID: "stu", Results: data})
 	assert.Equal(ErrPixelsAbsent, err)
 	assert.Equal("mno", string(res.ManifestID)) // Still return best result
 
 	// A high score should still fail if audio checking fails
 	sv.policy = &Policy{Verifier: &stubVerifier{
-		results: &Results{Score: 21.0, Pixels: []int64{-1, -2}},
+		results: &Results{Score: 21.0, Stats: []ffmpeg.MediaInfo{{Pixels: -1}, {Pixels: -2}}},
 		err:     ErrAudioMismatch,
 	}, Retries: 2}
 	res, err = sv.Verify(&Params{ManifestID: "vws", Results: data})
@@ -285,48 +285,30 @@ func TestVerify(t *testing.T) {
 	sv = NewSegmentVerifier(&Policy{Verifier: verifier, Retries: 1}) // reset
 	verifier.err = errors.New("Stub Verifier Non-Retryable Error")
 	// first attempt
-	verifier.results = &Results{Score: 1.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 1.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "abc", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
 	// second attempt
-	verifier.results = &Results{Score: 3.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 3.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "def", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
 	// third attempt, just to make sure?
-	verifier.results = &Results{Score: 2.0, Pixels: []int64{123, 456}}
+	verifier.results = &Results{Score: 2.0, Stats: []ffmpeg.MediaInfo{{Pixels: 123}, {Pixels: 456}}}
 	res, err = sv.Verify(&Params{ManifestID: "ghi", Results: data})
 	assert.Equal(err, verifier.err)
 	assert.Nil(res)
 }
 
-func TestPixels(t *testing.T) {
-	ffmpeg.InitFFmpeg()
-
-	assert := assert.New(t)
-
-	p, err := pixels("foo")
-	// Early codec check didn't find video in missing input file so
-	//  we get `TranscoderInvalidVideo` err instead of `No such file or directory`
-	assert.EqualError(err, "TranscoderInvalidVideo")
-	assert.Equal(int64(0), p)
-
-	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
-	// check that no error is returned
-	p, err = pixels("../server/test.flv")
-	assert.Nil(err)
-	assert.NotZero(p)
-}
-
-// helper function for TestVerifyPixels to test countPixels()
+// helper function for TestVerifyPixels to test GetDecoderInfo()
 func verifyPixels(fname string, data []byte, reportedPixels int64) error {
-	c, err := countPixels(data)
+	info, err := ffmpeg.GetDecoderStatsBytes(data)
 	if err != nil {
 		return err
 	}
 
-	if c != reportedPixels {
+	if info.Pixels != reportedPixels {
 		return ErrPixelMismatch
 	}
 
@@ -362,9 +344,9 @@ func TestVerifyPixels(t *testing.T) {
 
 	// Test writing temp file for relative URI and local memory storage with correct pixels
 	// Make sure that verifyPixels() checks against the output of pixels()
-	p, err := pixels("../server/test.flv")
+	p, err := ffmpeg.GetDecoderStats("../server/test.flv")
 	require.Nil(err)
-	err = verifyPixels(fname, memOS.GetData(fname), p)
+	err = verifyPixels(fname, memOS.GetData(fname), p.Pixels)
 	assert.Nil(err)
 
 	// Test nil data

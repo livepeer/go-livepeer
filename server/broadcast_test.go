@@ -1414,9 +1414,9 @@ func TestVerifier_HLSInsertion(t *testing.T) {
 		retries: 2,
 		err:     verification.ErrTampered,
 		results: []verification.Results{
-			{Score: 5, Pixels: []int64{100}},
-			{Score: 9, Pixels: []int64{100}},
-			{Score: 1, Pixels: []int64{100}},
+			{Score: 5, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
+			{Score: 9, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
+			{Score: 1, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
 		},
 	})
 
@@ -1464,9 +1464,9 @@ func TestDownloadSegError_SuspendAndRemove(t *testing.T) {
 		retries: 2,
 		err:     verification.ErrTampered,
 		results: []verification.Results{
-			{Score: 5, Pixels: []int64{100}},
-			{Score: 9, Pixels: []int64{100}},
-			{Score: 1, Pixels: []int64{100}},
+			{Score: 5, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
+			{Score: 9, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
+			{Score: 1, Stats: []ffmpeg.MediaInfo{{Pixels: 100}}},
 		},
 	})
 	oldDownloadSeg := downloadSeg
