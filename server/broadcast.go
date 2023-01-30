@@ -397,7 +397,7 @@ func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*Broadcas
 	if !includesSession(sessions, bsm.verifiedSession) {
 		return false
 	}
-	return common.RandomUintUnder(bsm.VerificationFreq) == 0
+	return common.RandomUintUnder(bsm.VerificationFreq) != 0
 }
 
 func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {

@@ -1796,8 +1796,9 @@ func TestVerifcationDoesntRunWhenNoVerifiedSessionPresent(t *testing.T) {
 }
 
 func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
+	verificationFreq := 5
 	b := BroadcastSessionsManager{
-		VerificationFreq: 5, // Run approximately 1 in 5 times
+		VerificationFreq: uint(verificationFreq), // Verification should run approximately 1 in 5 times
 	}
 
 	var verifiedSession = &BroadcastSession{
@@ -1806,15 +1807,14 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 
 	b.verifiedSession = verifiedSession
 
-	var shouldRunCount int
-	for i := 0; i < 10000; i++ {
+	var shouldSkipCount int
+	numTests := 10000
+	for i := 0; i < numTests; i++ {
 		if b.shouldSkipVerification([]*BroadcastSession{verifiedSession}) {
-			shouldRunCount++
+			shouldSkipCount++
 		}
 	}
 
-	// Difficult to test a random function, so we just check that it's in
-	// the ball park of what we'd expect (1 in 5 of 10,000 tries)
-	require.Greater(t, shouldRunCount, 1000)
-	require.Less(t, shouldRunCount, 3000)
+	require.Greater(t, float32(shouldSkipCount), float32(numTests)*(1-2/float32(verificationFreq)))
+	require.Less(t, float32(shouldSkipCount), float32(numTests)*(1-0.5/float32(verificationFreq)))
 }

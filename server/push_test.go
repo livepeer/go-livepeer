@@ -1657,7 +1657,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	sess3.OrchestratorScore = common.Score_Untrusted
 
 	bsm := bsmWithSessListExt([]*BroadcastSession{sess1}, []*BroadcastSession{sess3, sess2}, false)
-	bsm.VerificationFreq = math.MaxInt
+	bsm.VerificationFreq = 1
 	assert.Equal(0, bsm.untrustedPool.sus.count)
 	// hack: stop pool from refreshing
 	bsm.untrustedPool.refreshing = true
