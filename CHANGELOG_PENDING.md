@@ -24,6 +24,7 @@
 - \#2709 Add logging for high keyframe interval, reduce log level for discovery loop
 - \#2684 Fix transcode success rate metric
 - \#2649 Fix for broadcaster local verification fails for vertical videos
+- \#2740 Fix incorrect processing of VerificationFreq parameter, which caused fast verification to run too often
 
 #### Orchestrator
 
