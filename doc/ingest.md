@@ -68,7 +68,7 @@ Streams can be authenticated through a webhook. See the documentation on the
 The RTMP stream can be played back, or pulled from Livepeer by another part of
 the ingest infrastructure. To prevent unauthorized RTMP playback of streams
 whose name is known, a stream key is randomly appended to the playback URL at
-ingest itme. However, the broadcaster can control the stream key by
+ingest time. However, the broadcaster can control the stream key by
 appending the key to the RTMP URL.
 
 
@@ -122,7 +122,7 @@ segment to a path ending with ".mp4" rather than ".ts", such as:
 http://broadcasters:8935/live/movie/14.mp4
 ```
 
-Possble statuses returned by HTTP request:
+Possible statuses returned by HTTP request:
 - 500 Internal Server Error - in case there was error during segment's transcode
 - 503 Service Unavailable - if the broadcaster wasn't able to find an orchestrator to transcode the segment
 - 200 OK - if transcoded successfully. Returned only after transcode completed 
