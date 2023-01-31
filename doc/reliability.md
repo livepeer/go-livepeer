@@ -1,4 +1,4 @@
-length# Livepeer Orchestrator Selection and Reliability Strategy
+# Livepeer Orchestrator Selection and Reliability Strategy
 
 ## Overview
 
