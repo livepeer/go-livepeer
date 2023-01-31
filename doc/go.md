@@ -16,7 +16,7 @@ There are a few ways to manage different Go versions:
 1. [go install](https://go.dev/doc/manage-install)
 2. [gvm](https://github.com/moovweb/gvm)
 
-Using `gvm` has the benefit of automatically aliasing `go` to whichever version of Go you are currently using as opposed having to use a command like `go1.10.7`.
+Using `gvm` has the benefit of automatically aliasing `go` to whichever version of Go you are currently using as opposed to having to use a command like `go1.10.7`.
 
 **gvm: Installing arm64 binaries on >= macOS 11**
 

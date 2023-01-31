@@ -24,7 +24,7 @@ livepeer \
 
 ## Single Orchestrator with Redeemer
 
-This setup allows an operator to use a seperate Ethereum account for redeeming winning tickets on-chain and paying for that transaction while the ticket recipient is still the operator's on-chain registered Ethereum address.
+This setup allows an operator to use a separate Ethereum account for redeeming winning tickets on-chain and paying for that transaction while the ticket recipient is still the operator's on-chain registered Ethereum address.
 
 The Orchestrator node will still be responsible for calling `reward`*.
 

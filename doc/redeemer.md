@@ -12,7 +12,7 @@ _Max float_ is the guaranteed value an Orchestrator will be able to claim from a
 
 ## TicketQueue
 
-1. The `ticketQueue` is a loop that runs everytime a new block is seen. It will then pop tickets off the queue starting with the oldest ticket first, and sends it to the `LocalSenderMonitor` for redemption if the `recipientRand` for the ticket has expired. 
+1. The `ticketQueue` is a loop that runs every time a new block is seen. It will then pop tickets off the queue starting with the oldest ticket first, and sends it to the `LocalSenderMonitor` for redemption if the `recipientRand` for the ticket has expired. 
 
 2. When the `LocalSenderMonitor` receives a ticket from the `ticketQueue` it will substract `ticket.faceValue` from the outstanding `maxFloat` as long as the ticket is in limbo. 
 
@@ -30,7 +30,7 @@ _Max float_ is the guaranteed value an Orchestrator will be able to claim from a
 
 2. A second RPC call to `MonitorMaxFloat(sender)` will open up a server-side gRPC stream to receive future update. 
 
-_If this call fails the response from step 1 is returned, but not kept in cache to to prevent it becoming stale due to not being able to receive further updates_
+_If this call fails the response from step 1 is returned, but not kept in cache to prevent it becoming stale due to not being able to receive further updates_
 
 3. The `Redeemer` goroutine started by the RPC call in step 2 will start a subscription to listen for max float changes from the `LocalSenderMonitor` for the specified `sender` using `LocalSenderMonitor.SubscribeMaxFloatChange(sender)`.
 
@@ -53,7 +53,7 @@ _Each open server-side stream will have its own subscription that will be closed
 
 So far we've discussed `LocalSenderMonitor.addFloat()` and `LocalSenderMonitor.subFloat()` being responsible for triggering `LocalSenderMonitor.SubscribeMaxFloatChange(sender)` notifications, but these can also be triggered by certain Ethereum events related to the Livepeer protocol: 
 
-- FundReserve: When a broadcaster funds it's reserve the `maxFloat` allocation increases by the added reserve divided by the active Orchestrator set size.
+- FundReserve: When a broadcaster funds its reserve the `maxFloat` allocation increases by the added reserve divided by the active Orchestrator set size.
 - NewRound: If the active Orchestrator set size changes, the `maxFloat` will become the current broadcaster's reserve divided by the new active set size. Since this event impacts all participants in the protocol the `Redeemer` will have to send updates for _every_ `sender` it is keeping track of. 
 
 ![Ethereum Events](./assets/redeemer/eth-events.png)

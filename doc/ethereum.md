@@ -39,7 +39,7 @@ The following options can be used to set the max gas price to `<MAX_GAS_PRICE>`,
 The following options can be used to get the min gas price:
 
 - `curl localhost:7935/minGasPrice`
-- Run `livepeer_cli` and observe the min gas price in the node statts
+- Run `livepeer_cli` and observe the min gas price in the node stats
 
 The following options can be used to set the min gas price to `<MIN_GAS_PRICE>`, a Wei denominated value:
 

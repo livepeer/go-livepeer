@@ -12,7 +12,7 @@ The `BroadcastSessionsManager` stores orchestrators in two lists, a `sessList` a
 
 ## Orchestrator List Refresh
 
-The orchestrator list is refreshed when the number of sessions in `sessList` is less than double the `HTTMPTimeout` in seconds (hard-coded to 8 seconds at the moment) divided by the lenght of segments (hard-coded to 2 seconds at the moment) OR less than the size of the OrchestratorPool saved on disk, whichever is less (i.e. when its length is less than what is required to keep in memory). This happens at startup (as described above), and when an orchestrator is selected for individual transcoding in `selectSession`.
+The orchestrator list is refreshed when the number of sessions in `sessList` is less than double the `HTTMPTimeout` in seconds (hard-coded to 8 seconds at the moment) divided by the length of segments (hard-coded to 2 seconds at the moment) OR less than the size of the OrchestratorPool saved on disk, whichever is less (i.e. when its length is less than what is required to keep in memory). This happens at startup (as described above), and when an orchestrator is selected for individual transcoding in `selectSession`.
 
 ## Orchestrator Selection
 
