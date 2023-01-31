@@ -38,7 +38,7 @@ CUDA | Nvidia
 10.2 | 440.33.01, 440.118.02
 11.1,11.2 | 460.39
 
-Nvidia's 450.xx drivers can occassionally lead to stuck transcoding sessions.
+Nvidia's 450.xx drivers can occasionally lead to stuck transcoding sessions.
 Refer to this [forum post](https://forum.livepeer.org/t/working-around-occasional-transcoding-issues-with-nvidia-driver-450/1219) on how to switch to a different driver version.
 
 All Nvidia chipsets from [the Maxwell series](https://developer.nvidia.com/maxwell-compute-architecture) and later, that have NVDEC/NVENC cores, should theoretically be supported by go-livepeer.
