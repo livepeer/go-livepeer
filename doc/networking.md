@@ -5,12 +5,12 @@
 ![broadcaster-transcoder network v2 1](https://user-images.githubusercontent.com/292510/41455677-c8437268-7032-11e8-9ce8-bfdd9b6e3fc0.png)
 [Sequence diagram source](https://sequencediagram.org/index.html#initialData=C4S2BsFMAIBkQG6QA6UgJ2gOUsA7gPboDWIAdgObQIBMAUHcgIbqgDGIzZw0ASpBRABnYOgCedAELoCTACZsmIjAFoAfP0EjxALmgB5dGwAWkbU2BE+kAI51Nw0WJXrpshUuAY9hk2dEWVvxCyAxu8orK6Oq+puaW6DoAOmQAKuhMZEJsBHIY1nbhHlEAPC6x-hkJOumZ2bn5AJJkAGYEDAzgBAShRZFe0Wq1WTl5idAAygIAtpDcBVIyEZ4YZSrD9WN6UxSz88Ghc3J0QA)
 
-For a reference each message used by Livepeer, refer to the [Protocol Buffers definitions](https://github.com/livepeer/go-livepeer/blob/master/net/lp_rpc.proto).
+For a reference to each message used by Livepeer, refer to the [Protocol Buffers definitions](https://github.com/livepeer/go-livepeer/blob/master/net/lp_rpc.proto).
 
 
 ## Broadcaster to Registry
 
-The broadcaster does an on-chain lookup to retrieve the orchestrator's ServiceURI in order to discover prices, capabilities and to initiate an transcoding job.
+The broadcaster does an on-chain lookup to retrieve the orchestrator's ServiceURI in order to discover prices, capabilities and to initiate a transcoding job.
 
 ## Broadcaster to Orchestrator:
 
@@ -144,7 +144,7 @@ message TranscodedSegmentData {
 
 Currently, any errors are dumped directly into the response in stringified form. This gives broadcasters more information to diagnose problems with remote transcoders. However, we may not want to return such details forever, as this may leak internal information that is best left private to a transcoder.
 
-Broadcasters can use the difference in time between the request submissing and the 200ok to approximate the upload time. The time between the 200ok and receiving the response body approximates the transcode time.
+Broadcasters can use the difference in time between the request submission and the 200ok to approximate the upload time. The time between the 200ok and receiving the response body approximates the transcode time.
 
 There is an end-to-end request timeout of 8 seconds, However, issues are likely to appear earlier, and any issues will likely to lead to gaps in playback and stuttering. For example, live streams that consistently take 4+ seconds (the segment length) to upload and transcode will be outrun by players.
 
@@ -187,11 +187,11 @@ message Ticket {
 }
 ```
 
-The `Redeemer` will send back an empty message, `QueueTicketRes` on success as well as a `200 OK` status. Upon error a `500 Internal Server Error` error code will be returned along side the error. 
+The `Redeemer` will send back an empty message, `QueueTicketRes` on success as well as a `200 OK` status. Upon error a `500 Internal Server Error` error code will be returned alongside the error. 
 
 ### gRPC `MaxFloat`: `MaxFloatReq` -> `MaxFloatUpdate`
 
-`MaxFloat` is a unary RPC method that is called by an Orchestrator when it requires the max float for a sender but no local cache is available. It's request takes in a sender's ethereum address:
+`MaxFloat` is a unary RPC method that is called by an Orchestrator when it requires the max float for a sender but no local cache is available. Its request takes in a sender's ethereum address:
 
 ```protobuf
 message MaxFloatReq {
@@ -209,7 +209,7 @@ message MaxFloatUpdate {
 
 ### gRPC `MonitorMaxFloat`: `MaxFloatReq` -> stream `MaxFloatUpdate`
 
-`MonitorMaxFloat` is a server-side streming RPC method that is called by an Orchestrator to receive max float updates for a sender. The stream will remain open until either the client or the server closes the stream or connection. 
+`MonitorMaxFloat` is a server-side streaming RPC method that is called by an Orchestrator to receive max float updates for a sender. The stream will remain open until either the client or the server closes the stream or connection. 
 
 The request follows the same format as the `MaxFloat` method:
 
