@@ -106,7 +106,7 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 func TestFlag_KeystorePath_File(t *testing.T) {
 	assert := assert.New(t)
 
-	var addr = "0000000000000000000000000000000000000000"
+	var addr = "0x0000000000000000000000000000000000000001"
 	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
 	tempDir := t.TempDir()
 	file1, err := ioutil.TempFile(tempDir, fname)
@@ -117,11 +117,11 @@ func TestFlag_KeystorePath_File(t *testing.T) {
 	file1.WriteString("{\"address\":\"" + addr + "\"}")
 
 	var keystoreInfo KeystorePath
-	keystoreInfo, err = ParseEthKeystorePath(file1.Name())
+	keystoreInfo, _ = ParseEthKeystorePath(file1.Name())
 
 	assert.NotEmpty(keystoreInfo.path)
 	assert.NotEmpty(keystoreInfo.address)
-	assert.True(addr == keystoreInfo.address.(string))
+	assert.True(addr == keystoreInfo.address.Hex())
 }
 
 func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
@@ -129,7 +129,7 @@ func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
 	tempDir := t.TempDir()
 
 	//Create test file
-	var addr = "0000000000000000000000000000000000000000"
+	var addr = "0x0000000000000000000000000000000000000001"
 	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
 	badJsonfile, err := ioutil.TempFile(tempDir, fname)
 	if err != nil {
@@ -143,7 +143,7 @@ func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
 	keystoreInfo, err = ParseEthKeystorePath(badJsonfile.Name())
 	assert.NotEmpty(keystoreInfo.path)
 	assert.Empty(keystoreInfo.address)
-	assert.True(err.Error() == "Error parsing address from keyfile.")
+	assert.True(err.Error() == "error parsing address from keyfile")
 }
 
 func TestFlag_KeystorePath_Directory(t *testing.T) {
@@ -163,5 +163,5 @@ func TestFlag_KeystorePath_PathNotFound(t *testing.T) {
 	var keystoreInfo KeystorePath
 	keystoreInfo, err := ParseEthKeystorePath(filepath.Join(tempDir, "missing path"))
 	assert.Empty(keystoreInfo.path)
-	assert.True(err.Error() == "Provided -ethKeystorePath was not found.")
+	assert.True(err.Error() == "provided -ethKeystorePath was not found")
 }

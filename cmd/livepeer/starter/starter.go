@@ -527,20 +527,23 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	} else {
 		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
-		if *cfg.EthKeystorePath != "" {
-			keystoreInfo, err := ParseEthKeystorePath(*cfg.EthKeystorePath)
+		if keystoreInfo, err := ParseEthKeystorePath(*cfg.EthKeystorePath); err == nil {
 			if keystoreInfo.path != "" {
 				keystoreDir = keystoreInfo.path
-				if keystoreInfo.address != "" && err == nil {
-					*cfg.EthAcctAddr = keystoreInfo.address
-				}
-			} else {
-				keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
-			}
 
-			if err != nil {
-				glog.Warning(fmt.Errorf(err.Error()+" Defaulting to %s", keystoreDir))
+				if (keystoreInfo.address != ethcommon.Address{}) {
+					ethKeystoreAddr := keystoreInfo.address.Hex()
+					ethAcctAddr := ethcommon.HexToAddress(*cfg.EthAcctAddr).Hex()
+
+					if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
+						*cfg.EthAcctAddr = ethKeystoreAddr
+					} else {
+						glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
+					}
+				}
 			}
+		} else {
+			glog.Fatal(fmt.Errorf(err.Error()))
 		}
 
 		//Get the Eth client connection information
@@ -1419,29 +1422,35 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 }
 
 type KeystorePath struct {
-	path, address string
+	path    string
+	address ethcommon.Address
 }
 
 func ParseEthKeystorePath(ethKeystorePath string) (KeystorePath, error) {
-	var keystore = KeystorePath{"", ""}
-	ethKeystorePath = strings.TrimSuffix(ethKeystorePath, "/")
+	var keystore = KeystorePath{"", ethcommon.Address{}}
+	if ethKeystorePath == "" {
+		return keystore, nil
+	}
 
-	if fileInfo, err := os.Stat(ethKeystorePath); !os.IsNotExist(err) && fileInfo != nil {
-		if fileInfo.IsDir() {
-			keystore.path = ethKeystorePath
-		} else {
-			keystore.path, _ = filepath.Split(ethKeystorePath)
-			if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
-				if address, err := common.ParseEthAddr(keyText); err == nil {
-					keystore.address = address
-				} else {
-					return keystore, errors.New("error parsing address from keyfile")
-				}
-			}
-		}
-	} else {
+	ethKeystorePath = strings.TrimSuffix(ethKeystorePath, "/")
+	fileInfo, err := os.Stat(ethKeystorePath)
+	if err != nil {
 		return keystore, errors.New("provided -ethKeystorePath was not found")
 	}
 
+	if fileInfo.IsDir() {
+		keystore.path = ethKeystorePath
+	} else {
+		keystore.path, _ = filepath.Split(ethKeystorePath)
+		if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
+			if address, err := common.ParseEthAddr(keyText); err == nil {
+				keystore.address = ethcommon.HexToAddress(address)
+			} else {
+				return keystore, errors.New("error parsing address from keyfile")
+			}
+		} else {
+			return keystore, errors.New("error opening keystore")
+		}
+	}
 	return keystore, nil
 }
