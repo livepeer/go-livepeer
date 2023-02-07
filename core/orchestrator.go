@@ -913,7 +913,7 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 func removeFromRemoteTranscoders(rt *RemoteTranscoder, remoteTranscoders []*RemoteTranscoder) []*RemoteTranscoder {
 	if len(remoteTranscoders) == 0 {
-		// No transocerds to remove, return
+		// No transcoders to remove, return
 		return remoteTranscoders
 	}
 
