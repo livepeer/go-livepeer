@@ -917,21 +917,10 @@ func removeFromRemoteTranscoders(rt *RemoteTranscoder, remoteTranscoders []*Remo
 		return remoteTranscoders
 	}
 
-	lastIndex := len(remoteTranscoders) - 1
-	last := remoteTranscoders[lastIndex]
-	if rt == last {
-		return remoteTranscoders[:lastIndex]
-	}
-
 	newRemoteTs := make([]*RemoteTranscoder, 0)
-	for i, t := range remoteTranscoders {
-		if t == rt {
-			if i == 0 {
-				return remoteTranscoders[1:]
-			}
-			newRemoteTs = remoteTranscoders[:i]
-			newRemoteTs = append(newRemoteTs, remoteTranscoders[i+1:]...)
-			break
+	for _, t := range remoteTranscoders {
+		if t != rt {
+			newRemoteTs = append(newRemoteTs, t)
 		}
 	}
 	return newRemoteTs
