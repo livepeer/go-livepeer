@@ -12,7 +12,7 @@ require (
 	github.com/golang/glog v0.0.0-20210429001901-424d2337a529
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
-	github.com/jaypipes/ghw v0.9.0
+	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/go-tools v0.0.0-20220805063103-76df6beb6506
 	github.com/livepeer/livepeer-data v0.4.11
