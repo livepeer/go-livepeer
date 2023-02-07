@@ -15,13 +15,13 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
+- #2746 Fixed a transcoding bug that occured when remote transcoder was removed
 
 #### CLI
 
 #### General
 
 #### Broadcaster
-- \#2709 Add logging for high keyframe interval, reduce log level for discovery loop
 - \#2684 Fix transcode success rate metric
 
 #### Orchestrator
