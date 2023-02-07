@@ -15,7 +15,7 @@
 #### Transcoder
 
 ### Bug Fixes 🐞
-- #2746 Fixed a transcoding bug that occurred when remote transcoder was removed
+- #2747 Fixed a transcoding bug that occurred when remote transcoder was removed
 
 #### CLI
 
