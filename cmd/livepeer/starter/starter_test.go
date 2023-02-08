@@ -2,11 +2,9 @@ package starter
 
 import (
 	"errors"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -131,12 +129,12 @@ func TestParseEthKeystorePathIncorrectAddress(t *testing.T) {
 	//Create test file
 	var addr = "0x0000000000000000000000000000000000000001"
 	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
-	badJsonfile, err := ioutil.TempFile(tempDir, fname)
+	badJsonfile, err := os.CreateTemp(tempDir, fname)
 	if err != nil {
 		panic(err)
 	}
 
-	defer syscall.Unlink(fname)
+	defer os.Remove(fname)
 	badJsonfile.WriteString("{{\"address_broken_json\":\"" + addr + "\"}")
 
 	var keystoreInfo keystorePath
