@@ -521,9 +521,9 @@ func ParseAccelDevices(devices string, acceleration ffmpeg.Acceleration) ([]stri
 }
 
 func ParseEthAddr(strJsonKey string) (string, error) {
-	var keyJson map[string]interface{}
+	var keyJson map[string]string
 	if err := json.Unmarshal([]byte(strJsonKey), &keyJson); err == nil {
-		if address, ok := keyJson["address"].(string); ok {
+		if address, ok := keyJson["address"]; ok {
 			return address, nil
 		}
 	}

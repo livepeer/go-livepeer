@@ -103,17 +103,16 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	assert.Equal(big.NewRat(2000, 3), price2)
 }
 
-func TestFlag_KeystorePath_File(t *testing.T) {
+func TestParseEthKeystorePath(t *testing.T) {
 	assert := assert.New(t)
 
 	var addr = "0x0000000000000000000000000000000000000001"
 	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
-	tempDir := t.TempDir()
-	file1, err := ioutil.TempFile(tempDir, fname)
+	file1, err := os.CreateTemp("", "")
 	if err != nil {
 		panic(err)
 	}
-	defer syscall.Unlink(fname)
+	defer os.Remove(fname)
 	file1.WriteString("{\"address\":\"" + addr + "\"}")
 
 	var keystoreInfo KeystorePath
@@ -124,7 +123,7 @@ func TestFlag_KeystorePath_File(t *testing.T) {
 	assert.True(addr == keystoreInfo.address.Hex())
 }
 
-func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
+func TestParseEthKeystorePathIncorrectAddress(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
@@ -146,7 +145,7 @@ func TestFlag_KeystorePath_FileBadAddress(t *testing.T) {
 	assert.True(err.Error() == "error parsing address from keyfile")
 }
 
-func TestFlag_KeystorePath_Directory(t *testing.T) {
+func TestParseEthKeystorePathIncorrectAddressDirectory(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
@@ -156,7 +155,7 @@ func TestFlag_KeystorePath_Directory(t *testing.T) {
 	assert.True(err == nil)
 }
 
-func TestFlag_KeystorePath_PathNotFound(t *testing.T) {
+func TestParseEthKeystorePathNotFound(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 

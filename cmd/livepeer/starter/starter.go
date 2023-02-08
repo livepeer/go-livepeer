@@ -544,6 +544,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		} else {
 			glog.Fatal(fmt.Errorf(err.Error()))
+			return
 		}
 
 		//Get the Eth client connection information
@@ -1421,12 +1422,12 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	return pricesSet.Prices
 }
 
-type KeystorePath struct {
+type keystorePath struct {
 	path    string
 	address ethcommon.Address
 }
 
-func ParseEthKeystorePath(ethKeystorePath string) (KeystorePath, error) {
+func parseEthKeystorePath(ethKeystorePath string) (KeystorePath, error) {
 	var keystore = KeystorePath{"", ethcommon.Address{}}
 	if ethKeystorePath == "" {
 		return keystore, nil
