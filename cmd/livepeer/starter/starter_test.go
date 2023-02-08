@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"math/big"
+	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -115,8 +116,8 @@ func TestParseEthKeystorePath(t *testing.T) {
 	defer os.Remove(fname)
 	file1.WriteString("{\"address\":\"" + addr + "\"}")
 
-	var keystoreInfo KeystorePath
-	keystoreInfo, _ = ParseEthKeystorePath(file1.Name())
+	var keystoreInfo keystorePath
+	keystoreInfo, _ = parseEthKeystorePath(file1.Name())
 
 	assert.NotEmpty(keystoreInfo.path)
 	assert.NotEmpty(keystoreInfo.address)
@@ -138,8 +139,8 @@ func TestParseEthKeystorePathIncorrectAddress(t *testing.T) {
 	defer syscall.Unlink(fname)
 	badJsonfile.WriteString("{{\"address_broken_json\":\"" + addr + "\"}")
 
-	var keystoreInfo KeystorePath
-	keystoreInfo, err = ParseEthKeystorePath(badJsonfile.Name())
+	var keystoreInfo keystorePath
+	keystoreInfo, err = parseEthKeystorePath(badJsonfile.Name())
 	assert.NotEmpty(keystoreInfo.path)
 	assert.Empty(keystoreInfo.address)
 	assert.True(err.Error() == "error parsing address from keyfile")
@@ -149,8 +150,8 @@ func TestParseEthKeystorePathIncorrectAddressDirectory(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
-	var keystoreInfo KeystorePath
-	keystoreInfo, err := ParseEthKeystorePath(tempDir)
+	var keystoreInfo keystorePath
+	keystoreInfo, err := parseEthKeystorePath(tempDir)
 	assert.NotEmpty(keystoreInfo.path)
 	assert.True(err == nil)
 }
@@ -159,8 +160,8 @@ func TestParseEthKeystorePathNotFound(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
-	var keystoreInfo KeystorePath
-	keystoreInfo, err := ParseEthKeystorePath(filepath.Join(tempDir, "missing path"))
+	var keystoreInfo keystorePath
+	keystoreInfo, err := parseEthKeystorePath(filepath.Join(tempDir, "missing path"))
 	assert.Empty(keystoreInfo.path)
 	assert.True(err.Error() == "provided -ethKeystorePath was not found")
 }
