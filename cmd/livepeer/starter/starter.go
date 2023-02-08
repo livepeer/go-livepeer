@@ -530,8 +530,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath); err == nil {
 			if keystoreInfo.path != "" {
 				keystoreDir = keystoreInfo.path
-
-				if (keystoreInfo.address != ethcommon.Address{}) {
+			} else if (keystoreInfo.address != ethcommon.Address{}) {
 					ethKeystoreAddr := keystoreInfo.address.Hex()
 					ethAcctAddr := ethcommon.HexToAddress(*cfg.EthAcctAddr).Hex()
 
@@ -1442,7 +1441,6 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 	if fileInfo.IsDir() {
 		keystore.path = ethKeystorePath
 	} else {
-		keystore.path, _ = filepath.Split(ethKeystorePath)
 		if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
 			if address, err := common.ParseEthAddr(keyText); err == nil {
 				keystore.address = ethcommon.HexToAddress(address)
