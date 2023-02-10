@@ -69,9 +69,7 @@ type LivepeerConfig struct {
 	HttpAddr                     *string
 	ServiceAddr                  *string
 	OrchAddr                     *string
-	VerifierURL                  *string
 	EthController                *string
-	VerifierPath                 *string
 	LocalVerify                  *bool
 	HttpIngest                   *bool
 	Orchestrator                 *bool
@@ -138,8 +136,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
 	defaultOrchAddr := ""
-	defaultVerifierURL := ""
-	defaultVerifierPath := ""
 
 	// Transcoding:
 	defaultOrchestrator := false
@@ -210,14 +206,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 	return LivepeerConfig{
 		// Network & Addresses:
-		Network:      &defaultNetwork,
-		RtmpAddr:     &defaultRtmpAddr,
-		CliAddr:      &defaultCliAddr,
-		HttpAddr:     &defaultHttpAddr,
-		ServiceAddr:  &defaultServiceAddr,
-		OrchAddr:     &defaultOrchAddr,
-		VerifierURL:  &defaultVerifierURL,
-		VerifierPath: &defaultVerifierPath,
+		Network:     &defaultNetwork,
+		RtmpAddr:    &defaultRtmpAddr,
+		CliAddr:     &defaultCliAddr,
+		HttpAddr:    &defaultHttpAddr,
+		ServiceAddr: &defaultServiceAddr,
+		OrchAddr:    &defaultOrchAddr,
 
 		// Transcoding:
 		Orchestrator:                 &defaultOrchestrator,
@@ -1057,7 +1051,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		// Disable local verification when running in off-chain mode
-		// To enable, set -localVerify or -verifierURL
+		// To enable, set -localVerify
 		localVerify := true
 		if cfg.LocalVerify != nil {
 			localVerify = *cfg.LocalVerify
@@ -1066,21 +1060,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			localVerify = false
 		}
 
-		if *cfg.VerifierURL != "" {
-			_, err := validateURL(*cfg.VerifierURL)
-			if err != nil {
-				glog.Fatal("Error setting verifier URL ", err)
-			}
-			glog.Info("Using the Epic Labs classifier for verification at ", *cfg.VerifierURL)
-			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *cfg.VerifierURL}}
-
-			// Set the verifier path. Remove once [1] is implemented!
-			// [1] https://github.com/livepeer/verification-classifier/issues/64
-			if drivers.NodeStorage == nil && *cfg.VerifierPath == "" {
-				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
-			}
-			verification.VerifierPath = *cfg.VerifierPath
-		} else if localVerify {
+		if localVerify {
 			glog.Info("Local verification enabled")
 			server.Policy = &verification.Policy{Retries: 2}
 		}

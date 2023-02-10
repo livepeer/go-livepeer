@@ -33,8 +33,10 @@ type Fatal struct {
 	Retryable
 }
 
+var ErrTampered = Retryable{errors.New("Tampered")}
 var ErrPixelMismatch = Retryable{errors.New("PixelMismatch")}
 var ErrPixelsAbsent = errors.New("PixelsAbsent")
+var ErrAudioMismatch = Fatal{Retryable{errors.New("AudioMismatch")}}
 var errPMCheckFailed = errors.New("PM Check Failed")
 
 type Params struct {
