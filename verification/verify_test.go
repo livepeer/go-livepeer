@@ -44,6 +44,10 @@ func TestFatalRetryable(t *testing.T) {
 	// check ErrPixelMismatch
 	assert.True(t, IsRetryable(ErrPixelMismatch))
 	assert.False(t, IsFatal(ErrPixelMismatch))
+
+	// check ErrTampered
+	assert.True(t, IsRetryable(ErrTampered))
+	assert.False(t, IsFatal(ErrTampered))
 }
 
 type stubVerifier struct {
