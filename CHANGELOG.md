@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.5.38
+
+### Breaking Changes 🚨🚨
+
+None
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+- [#2709](https://github.com/livepeer/go-livepeer/pull/2709) Add logging for high keyframe interval, reduce log level for discovery loop
+- [#2684](https://github.com/livepeer/go-livepeer/pull/2684) Fix transcode success rate metric
+- [#2740](https://github.com/livepeer/go-livepeer/pull/2740) Fix incorrect processing of VerificationFreq parameter
+- [#2735](https://github.com/livepeer/go-livepeer/pull/2735) Fix EndTranscodingSession() call and potential race
+
 ## v0.5.37
 
 ### Breaking Changes 🚨🚨
