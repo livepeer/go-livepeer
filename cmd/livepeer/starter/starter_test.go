@@ -103,7 +103,7 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 }
 
 // Address provided to keystore file
-func TestFlag_ParseEthKeystorePath_ValidFile(t *testing.T) {
+func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
@@ -125,7 +125,7 @@ func TestFlag_ParseEthKeystorePath_ValidFile(t *testing.T) {
 	assert.True(err == nil)
 }
 
-func TestFlag_ParseEthKeystorePath_ValidDirectory(t *testing.T) {
+func TestParse_ParseEthKeystorePathValidDirectory(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
@@ -137,7 +137,7 @@ func TestFlag_ParseEthKeystorePath_ValidDirectory(t *testing.T) {
 }
 
 // Keystore file exists, but address cannot be parsed
-func TestFlag_ParseEthKeystorePath_InvalidJSON(t *testing.T) {
+func TestParse_ParseEthKeystorePathInvalidJSON(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
@@ -160,7 +160,7 @@ func TestFlag_ParseEthKeystorePath_InvalidJSON(t *testing.T) {
 }
 
 // Keystore path or file doesn't exist
-func TestFlag_ParseEthKeystorePath_FileNotFound(t *testing.T) {
+func TestParse_ParseEthKeystorePathFileNotFound(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 	var keystoreInfo keystorePath
