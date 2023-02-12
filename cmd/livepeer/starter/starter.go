@@ -531,17 +531,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if keystoreInfo.path != "" {
 				keystoreDir = keystoreInfo.path
 			} else if (keystoreInfo.address != ethcommon.Address{}) {
-					ethKeystoreAddr := keystoreInfo.address.Hex()
-					ethAcctAddr := ethcommon.HexToAddress(*cfg.EthAcctAddr).Hex()
+				ethKeystoreAddr := keystoreInfo.address.Hex()
+				ethAcctAddr := ethcommon.HexToAddress(*cfg.EthAcctAddr).Hex()
 
-					if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
-						*cfg.EthAcctAddr = ethKeystoreAddr
-					} else {
-						glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
-					}
+				if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
+					*cfg.EthAcctAddr = ethKeystoreAddr
+				} else {
+					glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
 				}
+			} else {
+				glog.Fatal(fmt.Errorf(err.Error()))
+				return
 			}
-		} else {
+		}
+
+		if err != nil {
 			glog.Fatal(fmt.Errorf(err.Error()))
 			return
 		}
