@@ -538,10 +538,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					*cfg.EthAcctAddr = ethKeystoreAddr
 				} else {
 					glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
+					return
 				}
-			} else {
-				glog.Fatal(fmt.Errorf(err.Error()))
-				return
 			}
 		}
 
