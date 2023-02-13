@@ -114,7 +114,7 @@ func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 		panic(err)
 	}
 	defer os.Remove(fname)
-	file1.WriteString("{\"address\":\"" + addr + "\"}")
+	file1.WriteString("{\"address\":\"" + addr + "\",\"crypto\":{\"cipher\":\"1\",\"ciphertext\":\"1\",\"cipherparams\":{\"iv\":\"1\"},\"kdf\":\"scrypt\",\"kdfparams\":{\"dklen\":32,\"n\":1,\"p\":1,\"r\":8,\"salt\":\"1\"},\"mac\":\"1\"},\"id\":\"1\",\"version\":3}")
 
 	var keystoreInfo keystorePath
 	keystoreInfo, _ = parseEthKeystorePath(file1.Name())
