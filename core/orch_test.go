@@ -429,13 +429,14 @@ func TestRemoveFromRemoteTranscoders_StreamFailover(t *testing.T) {
 	var transcoder_2 = &StubTranscoderServer{manager: rtm}
 
 	assert.Nil(rtm.liveTranscoders[transcoder_1])
+	assert.Nil(rtm.liveTranscoders[transcoder_2])
 	assert.Empty(rtm.remoteTranscoders)
 
 	// register 2 transcoders, 8 stream capacity each
 	go func() { rtm.Manage(transcoder_1, 8, capabilities.ToNetCapabilities()) }()
-	time.Sleep(1 * time.Millisecond) // allow time for first stream to register
+	time.Sleep(1 * time.Millisecond) // allow time for remote T to connect
 	go func() { rtm.Manage(transcoder_2, 8, capabilities.ToNetCapabilities()) }()
-	time.Sleep(1 * time.Millisecond) // allow time for second stream to register
+	time.Sleep(1 * time.Millisecond) // allow time for remote T to connect
 
 	//Validate two transcoders exist
 	assert.NotNil(rtm.liveTranscoders[transcoder_1])
@@ -446,7 +447,6 @@ func TestRemoveFromRemoteTranscoders_StreamFailover(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		testSessionId := fmt.Sprintf("%s%d", "testID", i)
 		rtm.selectTranscoder(testSessionId, nil)
-		time.Sleep(1 * time.Millisecond) // allow time for second stream to register
 	}
 
 	t1 := rtm.liveTranscoders[transcoder_1]
@@ -465,7 +465,6 @@ func TestRemoveFromRemoteTranscoders_StreamFailover(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		testSessionId := fmt.Sprintf("%s%d", "testID", i)
 		rtm.selectTranscoder(testSessionId, nil)
-		time.Sleep(1 * time.Millisecond) // allow time for second stream to register
 	}
 
 	t1 = rtm.liveTranscoders[transcoder_1]
