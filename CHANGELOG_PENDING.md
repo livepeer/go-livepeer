@@ -19,6 +19,7 @@
 #### CLI
 
 #### General
+- \#2713 Add support for keyfiles with -ethKeystorePath, update flag descriptions, flagset output to stdout
 
 #### Broadcaster
 - \#2709 Add logging for high keyframe interval, reduce log level for discovery loop

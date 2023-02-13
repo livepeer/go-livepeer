@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -517,4 +518,14 @@ func ParseAccelDevices(devices string, acceleration ffmpeg.Acceleration) ([]stri
 		return detectNvidiaDevices()
 	}
 	return strings.Split(devices, ","), nil
+}
+
+func ParseEthAddr(strJsonKey string) (string, error) {
+	var keyJson map[string]interface{}
+	if err := json.Unmarshal([]byte(strJsonKey), &keyJson); err == nil {
+		if address, ok := keyJson["address"].(string); ok {
+			return address, nil
+		}
+	}
+	return "", errors.New("Error parsing address from keyfile")
 }
