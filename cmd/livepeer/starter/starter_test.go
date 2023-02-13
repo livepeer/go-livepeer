@@ -168,7 +168,6 @@ func TestParse_ParseEthKeystorePathFileNotFound(t *testing.T) {
 	keystoreInfo, err := parseEthKeystorePath(filepath.Join(tempDir, "missing_keyfile"))
 	assert.Empty(keystoreInfo.path)
 	assert.Empty(keystoreInfo.address)
-	//assert.True(err.Error() == "error opening keystore")
 	assert.True(err.Error() == "provided -ethKeystorePath was not found")
 
 	//Test missing key file directory
