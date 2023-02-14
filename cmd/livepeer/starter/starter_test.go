@@ -3,6 +3,8 @@ package starter
 import (
 	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -98,4 +100,79 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
+}
+
+// Address provided to keystore file
+func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	var addr = "0x0000000000000000000000000000000000000001"
+	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
+	file1, err := os.CreateTemp(tempDir, fname)
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(fname)
+	file1.WriteString("{\"address\":\"" + addr + "\",\"crypto\":{\"cipher\":\"1\",\"ciphertext\":\"1\",\"cipherparams\":{\"iv\":\"1\"},\"kdf\":\"scrypt\",\"kdfparams\":{\"dklen\":32,\"n\":1,\"p\":1,\"r\":8,\"salt\":\"1\"},\"mac\":\"1\"},\"id\":\"1\",\"version\":3}")
+
+	var keystoreInfo keystorePath
+	keystoreInfo, _ = parseEthKeystorePath(file1.Name())
+
+	assert.Empty(keystoreInfo.path)
+	assert.NotEmpty(keystoreInfo.address)
+	assert.True(addr == keystoreInfo.address.Hex())
+	assert.True(err == nil)
+}
+
+func TestParse_ParseEthKeystorePathValidDirectory(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	var keystoreInfo keystorePath
+	keystoreInfo, err := parseEthKeystorePath(tempDir)
+	assert.NotEmpty(keystoreInfo.path)
+	assert.Empty(keystoreInfo.address)
+	assert.True(err == nil)
+}
+
+// Keystore file exists, but address cannot be parsed
+func TestParse_ParseEthKeystorePathInvalidJSON(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+
+	//Create test file
+	var addr = "0x0000000000000000000000000000000000000001"
+	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
+	badJsonfile, err := os.CreateTemp(tempDir, fname)
+	if err != nil {
+		panic(err)
+	}
+
+	defer os.Remove(fname)
+	badJsonfile.WriteString("{{\"address_broken_json\":\"" + addr + "\"}")
+
+	var keystoreInfo keystorePath
+	keystoreInfo, err = parseEthKeystorePath(badJsonfile.Name())
+	assert.Empty(keystoreInfo.path)
+	assert.Empty(keystoreInfo.address)
+	assert.True(err.Error() == "error parsing address from keyfile")
+}
+
+// Keystore path or file doesn't exist
+func TestParse_ParseEthKeystorePathFileNotFound(t *testing.T) {
+	assert := assert.New(t)
+	tempDir := t.TempDir()
+	var keystoreInfo keystorePath
+	//Test missing key file
+	keystoreInfo, err := parseEthKeystorePath(filepath.Join(tempDir, "missing_keyfile"))
+	assert.Empty(keystoreInfo.path)
+	assert.Empty(keystoreInfo.address)
+	assert.True(err.Error() == "provided -ethKeystorePath was not found")
+
+	//Test missing key file directory
+	keystoreInfo, err = parseEthKeystorePath(filepath.Join("missing_directory", "missing_keyfile"))
+	assert.Empty(keystoreInfo.path)
+	assert.Empty(keystoreInfo.address)
+	assert.True(err.Error() == "provided -ethKeystorePath was not found")
 }
