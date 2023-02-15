@@ -1180,7 +1180,7 @@ func TestProcessPayment_PaymentError_DoesNotIncreaseCreditBalance(t *testing.T) 
 	assert.Nil(orch.node.Balances.Balance(ethcommon.BytesToAddress(payment.Sender), manifestID))
 }
 
-func TestIsPaymentEligible(t *testing.T) {
+func TestIsActive(t *testing.T) {
 	assert := assert.New(t)
 	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
