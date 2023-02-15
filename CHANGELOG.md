@@ -13,6 +13,10 @@ None
 - [#2684](https://github.com/livepeer/go-livepeer/pull/2684) Fix transcode success rate metric
 - [#2740](https://github.com/livepeer/go-livepeer/pull/2740) Fix incorrect processing of VerificationFreq parameter
 - [#2735](https://github.com/livepeer/go-livepeer/pull/2735) Fix EndTranscodingSession() call and potential race
+- [#2747](https://github.com/livepeer/go-livepeer/pull/2747) Fixed a transcoding bug that occurred when remote transcoder was removed
+
+#### General
+- [#2713](https://github.com/livepeer/go-livepeer/pull/2713) Add support for keyfiles with -ethKeystorePath, update flag descriptions, flagset output to stdout
 
 ## v0.5.37
 

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common/math"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -526,15 +526,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 	} else {
-		var keystoreDir string
-		if _, err := os.Stat(*cfg.EthKeystorePath); !os.IsNotExist(err) {
-			keystoreDir, _ = filepath.Split(*cfg.EthKeystorePath)
-		} else {
-			keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
+		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
+		if keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath); err == nil {
+			if keystoreInfo.path != "" {
+				keystoreDir = keystoreInfo.path
+			} else if (keystoreInfo.address != ethcommon.Address{}) {
+				ethKeystoreAddr := keystoreInfo.address.Hex()
+				ethAcctAddr := ethcommon.HexToAddress(*cfg.EthAcctAddr).Hex()
+
+				if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
+					*cfg.EthAcctAddr = ethKeystoreAddr
+				} else {
+					glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
+					return
+				}
+			}
 		}
 
-		if keystoreDir == "" {
-			glog.Errorf("Cannot find keystore directory")
+		if err != nil {
+			glog.Fatal(fmt.Errorf(err.Error()))
 			return
 		}
 
@@ -1411,4 +1421,37 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	}
 
 	return pricesSet.Prices
+}
+
+type keystorePath struct {
+	path    string
+	address ethcommon.Address
+}
+
+func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
+	var keystore = keystorePath{"", ethcommon.Address{}}
+	if ethKeystorePath == "" {
+		return keystore, nil
+	}
+
+	ethKeystorePath = strings.TrimSuffix(ethKeystorePath, "/")
+	fileInfo, err := os.Stat(ethKeystorePath)
+	if err != nil {
+		return keystore, errors.New("provided -ethKeystorePath was not found")
+	}
+
+	if fileInfo.IsDir() {
+		keystore.path = ethKeystorePath
+	} else {
+		if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
+			if address, err := common.ParseEthAddr(keyText); err == nil {
+				keystore.address = ethcommon.HexToAddress(address)
+			} else {
+				return keystore, errors.New("error parsing address from keyfile")
+			}
+		} else {
+			return keystore, errors.New("error opening keystore")
+		}
+	}
+	return keystore, nil
 }
