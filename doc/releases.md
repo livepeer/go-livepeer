@@ -95,4 +95,4 @@ git push origin v0.5.2
 7. Once the CI (Github Actions) process completes, you should see your release at https://github.com/livepeer/go-livepeer/releases. Fix up the release notes to be more human-friendly, using previous releases as a guide.
 
 8. Update commit hash, version and checksum for Homebrew as per https://github.com/livepeer/homebrew-tap/pull/5
-9. Announce the release on Discord in #orchestrator-announcements
+9. Announce the release on Discord in #network-announcements
