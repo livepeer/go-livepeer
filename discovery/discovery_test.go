@@ -1071,13 +1071,12 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	}
 
 	// check size
-	// 25 active Os + 1 pending O
-	assert.Equal(26, pool.Size())
+	assert.Equal(25, pool.Size())
 
 	infos := pool.GetInfos()
-	assert.Len(infos, 26)
+	assert.Len(infos, 25)
 	for _, info := range infos {
-		assert.Contains(addresses[:26], info.URL.String())
+		assert.Contains(addresses[:25], info.URL.String())
 	}
 	oinfos, err := pool.GetOrchestrators(context.TODO(), 50, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	for _, info := range oinfos {
@@ -1086,7 +1085,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	}
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(infos, 26)
+	assert.Len(infos, 25)
 }
 
 func TestNewWHOrchestratorPoolCache(t *testing.T) {
