@@ -69,8 +69,8 @@ type EpicClassifier struct {
 func epicResultsToVerificationResults(er *epicResults) (*Results, error) {
 	// find average of scores and build list of pixels
 	var (
-		score  float64
-		pixels []int64
+		score float64
+		mis   []ffmpeg.MediaInfo
 	)
 	var err error
 	// If an error is gathered, continue to gather overall pixel counts
@@ -88,9 +88,9 @@ func epicResultsToVerificationResults(er *epicResults) (*Results, error) {
 			err = ErrVideoUnavailable
 		}
 		score += v.OCSVMDist / float64(len(er.Results))
-		pixels = append(pixels, v.Pixels)
+		mis = append(mis, ffmpeg.MediaInfo{Pixels: v.Pixels})
 	}
-	return &Results{Score: score, Pixels: pixels}, err
+	return &Results{Score: score, Stats: mis}, err
 }
 
 func (e *EpicClassifier) Verify(params *Params) (*Results, error) {

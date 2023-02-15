@@ -2,9 +2,6 @@ package verification
 
 import (
 	"errors"
-	"fmt"
-	"io/ioutil"
-	"os"
 	"sort"
 
 	"github.com/golang/glog"
@@ -12,7 +9,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	"github.com/livepeer/go-livepeer/net"
@@ -67,8 +63,8 @@ type Results struct {
 	// Verifier specific score
 	Score float64
 
-	// Number of pixels decoded in this result
-	Pixels []int64
+	// Decoder stats
+	Stats []ffmpeg.MediaInfo
 }
 
 type Verifier interface {
@@ -134,14 +130,14 @@ func (sv *SegmentVerifier) Verify(params *Params) (*Params, error) {
 
 	// Check pixel counts
 	if (err == nil || (err != ErrAudioMismatch && IsRetryable(err))) && res != nil && params.Results != nil {
-		pxls := res.Pixels
-		if len(pxls) != len(params.Results.Segments) {
-			pxls, err = countPixelParams(params)
+		stats := res.Stats
+		if len(stats) != len(params.Results.Segments) {
+			stats, err = GetAllDecoderStats(params)
 		}
-		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(pxls); i++ {
+		for i := 0; err == nil && i < len(params.Results.Segments) && i < len(stats); i++ {
 			reportedPixels := params.Results.Segments[i].Pixels
-			verifiedPixels := pxls[i]
-			if reportedPixels != verifiedPixels {
+			verifiedMediainfo := stats[i]
+			if !ffmpeg.FuzzyMatchMediaInfo(verifiedMediainfo, reportedPixels) {
 				err = ErrPixelMismatch
 			}
 		}
@@ -214,55 +210,20 @@ func (sv *SegmentVerifier) sigVerification(params *Params) error {
 	return nil
 }
 
-func countPixelParams(params *Params) ([]int64, error) {
+func GetAllDecoderStats(params *Params) ([]ffmpeg.MediaInfo, error) {
 
 	if len(params.Results.Segments) != len(params.Renditions) {
 		return nil, ErrPixelsAbsent
 	}
 
-	pxls := make([]int64, len(params.Results.Segments))
+	mis := make([]ffmpeg.MediaInfo, len(params.Results.Segments))
 
 	for i := 0; i < len(params.Results.Segments); i++ {
-		count, err := countPixels(params.Renditions[i])
+		mi, err := ffmpeg.GetDecoderStatsBytes(params.Renditions[i])
 		if err != nil {
 			return nil, err
 		}
-		pxls[i] = count
+		mis[i] = *mi
 	}
-	return pxls, nil
-}
-
-func countPixels(data []byte) (int64, error) {
-	// write the data to a temp file
-	tempfile, err := ioutil.TempFile("", common.RandName())
-	if err != nil {
-		return 0, fmt.Errorf("error creating temp file for pixels verification: %w", err)
-	}
-	defer os.Remove(tempfile.Name())
-
-	if _, err := tempfile.Write(data); err != nil {
-		tempfile.Close()
-		return 0, fmt.Errorf("error writing temp file for pixels verification: %w", err)
-	}
-
-	if err = tempfile.Close(); err != nil {
-		return 0, fmt.Errorf("error closing temp file for pixels verification: %w", err)
-	}
-
-	p, err := pixels(tempfile.Name())
-	if err != nil {
-		return 0, err
-	}
-
-	return p, nil
-}
-
-func pixels(fname string) (int64, error) {
-	in := &ffmpeg.TranscodeOptionsIn{Fname: fname}
-	res, err := ffmpeg.Transcode3(in, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	return res.Decoded.Pixels, nil
+	return mis, nil
 }

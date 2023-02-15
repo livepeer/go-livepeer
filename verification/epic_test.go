@@ -29,7 +29,7 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(res)
 	assert.Equal(0., res.Score)
-	assert.Empty(res.Pixels)
+	assert.Empty(res.Stats)
 
 	// Success case
 	r = &epicResults{
@@ -40,7 +40,7 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	}
 	res, err = fn(r)
 	assert.Nil(err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((2.0+3.0)/2., res.Score)
 
 	// Check various errors. Should always count pixels/score for each rendition
@@ -50,7 +50,7 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	r.Results[0].AudioDistance = 1.0
 	res, err = fn(r)
 	assert.Equal(ErrAudioMismatch, err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((2.0+3.0)/2., res.Score)
 
 	// Check tampering. Tamper first result only.
@@ -59,13 +59,13 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	r.Results[0].OCSVMDist = -2.0
 	res, err = fn(r)
 	assert.Equal(ErrAudioMismatch, err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((-2.0+3.0)/2., res.Score)
 	// Disable audio mismatch and we should get a tamper error
 	r.Results[0].AudioDistance = 0.0
 	res, err = fn(r)
 	assert.Equal(ErrTampered, err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((-2.0+3.0)/2., res.Score)
 
 	// Tamper both results
@@ -73,7 +73,7 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	r.Results[1].OCSVMDist = -3.0
 	res, err = fn(r)
 	assert.Equal(ErrTampered, err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((-2.0+-3.0)/2., res.Score)
 
 	// Tamper second result only
@@ -81,7 +81,7 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	r.Results[0].OCSVMDist = 2.0
 	res, err = fn(r)
 	assert.Equal(ErrTampered, err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((2.0-3.0)/2., res.Score)
 
 	// Unset tamper, sanity check success
@@ -89,14 +89,14 @@ func TestEpic_EpicResultsToVerificationResults(t *testing.T) {
 	r.Results[1].OCSVMDist = 3.0
 	res, err = fn(r)
 	assert.Nil(err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((2.0+3.0)/2., res.Score)
 
 	// Unset video availability
 	r.Results[0].VideoAvailable = false
 	res, err = fn(r)
 	assert.Equal(ErrVideoUnavailable, err)
-	assert.Equal([]int64{123, 456}, res.Pixels) // Does this even make sense?
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels}) // Does this even make sense?
 	assert.Equal((2.0+3.0)/2., res.Score)
 }
 
@@ -247,7 +247,7 @@ func TestEpic_Verify(t *testing.T) {
 	ec.Addr = ts.URL + "/checkReq"
 	res, err := ec.Verify(params)
 	assert.Nil(err)
-	assert.Equal([]int64{123, 456}, res.Pixels)
+	assert.Equal([]int64{123, 456}, []int64{res.Stats[0].Pixels, res.Stats[1].Pixels})
 	assert.Equal((1.0+2.0)/2.0, res.Score)
 }
 
