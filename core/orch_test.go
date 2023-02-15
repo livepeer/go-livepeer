@@ -789,7 +789,7 @@ func TestProcessPayment_ActiveOrchestrator(t *testing.T) {
 
 	// orchestrator inactive -> error
 	err := orch.ProcessPayment(context.Background(), defaultPayment(t), ManifestID("some manifest"))
-	expErr := fmt.Sprintf("orchestrator %v is not eligible for payments in round %v, cannot process payments", addr.Hex(), 10)
+	expErr := fmt.Sprintf("orchestrator %v is inactive in round %v, cannot process payments", addr.Hex(), 10)
 	assert.EqualError(err, expErr)
 
 	// orchestrator is active -> no error
@@ -1197,13 +1197,13 @@ func TestIsActive(t *testing.T) {
 	}
 	orch := NewOrchestrator(n, rm)
 
-	ok, err := orch.isPaymentEligible(addr)
+	ok, err := orch.isActive(addr)
 	assert.True(ok)
 	assert.NoError(err)
 
 	// inactive
 	rm.round = big.NewInt(1000)
-	ok, err = orch.isPaymentEligible(addr)
+	ok, err = orch.isActive(addr)
 	assert.False(ok)
 	assert.NoError(err)
 }
