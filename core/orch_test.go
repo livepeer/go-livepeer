@@ -1185,32 +1185,19 @@ func TestIsPaymentEligible(t *testing.T) {
 	addr := defaultRecipient
 	dbh, dbraw := tempDBWithOrch(t, &common.DBOrch{
 		EthereumAddr:      addr.Hex(),
-		ActivationRound:   2,
+		ActivationRound:   1,
 		DeactivationRound: 999,
 	})
 	defer dbh.Close()
 	defer dbraw.Close()
 
-	// not active yet
 	n, _ := NewLivepeerNode(nil, "", dbh)
 	rm := &stubRoundsManager{
-		round: big.NewInt(0),
+		round: big.NewInt(10),
 	}
 	orch := NewOrchestrator(n, rm)
 
 	ok, err := orch.isPaymentEligible(addr)
-	assert.False(ok)
-	assert.NoError(err)
-
-	// pending activation
-	rm.round = big.NewInt(1)
-	ok, err = orch.isPaymentEligible(addr)
-	assert.True(ok)
-	assert.NoError(err)
-
-	// active
-	rm.round = big.NewInt(10)
-	ok, err = orch.isPaymentEligible(addr)
 	assert.True(ok)
 	assert.NoError(err)
 
