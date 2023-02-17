@@ -1444,7 +1444,7 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 	} else {
 		if keyText, err := common.ReadFromFile(ethKeystorePath); err == nil {
 			if address, err := common.ParseEthAddr(keyText); err == nil {
-				keystore.address = ethcommon.HexToAddress(address)
+				keystore.address = ethcommon.BytesToAddress(ethcommon.FromHex(address))
 			} else {
 				return keystore, errors.New("error parsing address from keyfile")
 			}
