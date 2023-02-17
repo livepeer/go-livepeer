@@ -527,7 +527,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	} else {
 		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
-		if keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath); err == nil {
+		keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath)
+		if err == nil {
 			if keystoreInfo.path != "" {
 				keystoreDir = keystoreInfo.path
 			} else if (keystoreInfo.address != ethcommon.Address{}) {
@@ -541,9 +542,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					return
 				}
 			}
-		}
-
-		if err != nil {
+		} else {
 			glog.Fatal(fmt.Errorf(err.Error()))
 			return
 		}
