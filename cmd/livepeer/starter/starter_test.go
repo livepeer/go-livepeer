@@ -107,7 +107,8 @@ func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 	assert := assert.New(t)
 	tempDir := t.TempDir()
 
-	var addr = "0x0000000000000000000000000000000000000001"
+	//Test without 0x in address
+	var addr = "0000000000000000000000000000000000000001"
 	var fname = "UTC--2023-01-05T00-46-15.503776013Z--" + addr
 	file1, err := os.CreateTemp(tempDir, fname)
 	if err != nil {
@@ -121,7 +122,23 @@ func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 
 	assert.Empty(keystoreInfo.path)
 	assert.NotEmpty(keystoreInfo.address)
-	assert.True(addr == keystoreInfo.address.Hex())
+	assert.True(ethcommon.BytesToAddress(ethcommon.FromHex(addr)) == keystoreInfo.address)
+	assert.True(err == nil)
+
+	//Test with 0x in address
+	var hexAddr = "0x0000000000000000000000000000000000000001"
+	var fname2 = "UTC--2023-01-05T00-46-15.503776013Z--" + hexAddr
+	file2, err := os.CreateTemp(tempDir, fname2)
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(fname2)
+	file2.WriteString("{\"address\":\"" + addr + "\",\"crypto\":{\"cipher\":\"1\",\"ciphertext\":\"1\",\"cipherparams\":{\"iv\":\"1\"},\"kdf\":\"scrypt\",\"kdfparams\":{\"dklen\":32,\"n\":1,\"p\":1,\"r\":8,\"salt\":\"1\"},\"mac\":\"1\"},\"id\":\"1\",\"version\":3}")
+
+	keystoreInfo, _ = parseEthKeystorePath(file1.Name())
+	assert.Empty(keystoreInfo.path)
+	assert.NotEmpty(keystoreInfo.address)
+	assert.True(ethcommon.BytesToAddress(ethcommon.FromHex(addr)) == keystoreInfo.address)
 	assert.True(err == nil)
 }
 
