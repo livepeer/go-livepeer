@@ -122,8 +122,7 @@ func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 
 	assert.Empty(keystoreInfo.path)
 	assert.NotEmpty(keystoreInfo.address)
-	origAddr := ethcommon.BytesToAddress(ethcommon.FromHex(addr))
-	assert.True(origAddr.Hex() == keystoreInfo.address.Hex())
+	assert.True(ethcommon.BytesToAddress(ethcommon.FromHex(addr)) == keystoreInfo.address)
 	assert.True(err == nil)
 
 	//Test with 0x in address
@@ -139,8 +138,7 @@ func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 	keystoreInfo, _ = parseEthKeystorePath(file1.Name())
 	assert.Empty(keystoreInfo.path)
 	assert.NotEmpty(keystoreInfo.address)
-	origAddr2 := ethcommon.BytesToAddress(ethcommon.FromHex(addr))
-	assert.True(origAddr2.Hex() == keystoreInfo.address.Hex())
+	assert.True(ethcommon.BytesToAddress(ethcommon.FromHex(addr)) == keystoreInfo.address)
 	assert.True(err == nil)
 }
 
