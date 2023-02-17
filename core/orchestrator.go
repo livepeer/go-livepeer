@@ -119,13 +119,13 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	sender := ethcommon.BytesToAddress(payment.Sender)
 
 	recipientAddr := ethcommon.BytesToAddress(payment.TicketParams.Recipient)
-	ok, err := orch.isPaymentEligible(recipientAddr)
+	ok, err := orch.isActive(recipientAddr)
 	if err != nil {
 		return err
 	}
 
 	if !ok {
-		return fmt.Errorf("orchestrator %v is not eligible for payments in round %v, cannot process payments", recipientAddr.Hex(), orch.rm.LastInitializedRound())
+		return fmt.Errorf("orchestrator %v is inactive in round %v, cannot process payments", recipientAddr.Hex(), orch.rm.LastInitializedRound())
 	}
 
 	priceInfo := payment.GetExpectedPrice()
@@ -349,11 +349,9 @@ func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.Aut
 	}
 }
 
-func (orch *orchestrator) isPaymentEligible(addr ethcommon.Address) (bool, error) {
-	// Accept payments when already activated or will be activated in the next round
-	nextRound := new(big.Int).Add(orch.rm.LastInitializedRound(), big.NewInt(1))
+func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	filter := &common.DBOrchFilter{
-		CurrentRound: nextRound,
+		CurrentRound: orch.rm.LastInitializedRound(),
 		Addresses:    []ethcommon.Address{addr},
 	}
 	orchs, err := orch.node.Database.SelectOrchs(filter)

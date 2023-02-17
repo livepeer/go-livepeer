@@ -7,6 +7,7 @@
 ### Features ⚒
 
 #### General
+- \#2758 Accept only active Os to receive traffic and redeem tickets (@leszko)
 
 #### Broadcaster
 
