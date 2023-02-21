@@ -13,9 +13,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  linux-build:
     name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.platform.os }}
+    runs-on: ${{ matrix.platform.runner }}
+    container:
+      image: ubuntu:18.04
     strategy:
       fail-fast: false
       matrix:
@@ -24,15 +26,119 @@ jobs:
           - amd64
         platform:
           - name: linux
-            os: ubuntu-18.04
+            runner: ubuntu-latest
           - name: windows
-            os: ubuntu-18.04
-          - name: darwin
-            os: macos-latest
+            runner: ubuntu-latest
         exclude:
           - platform:
               name: windows
             arch: arm64
+
+    steps:
+      - name: Setup ubuntu container
+        run: |
+          apt update
+          apt install -yqq build-essential make software-properties-common
+          add-apt-repository -y ppa:git-core/ppa
+          apt update && apt install -yqq git zip unzip
+
+      - name: Check out code
+        uses: actions/checkout@v3.2.0
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up go
+        id: go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.17
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Cache ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v3
+        with:
+          path: /github/home/compiled
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
+
+      - name: Cache binaries
+        uses: actions/cache@v3
+        with:
+          path: ~/build
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-binaries-${{ github.sha }}
+
+      - name: Set build environment
+        run: |
+          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
+          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: |
+          apt-get update \
+            && apt-get install -y software-properties-common curl apt-transport-https \
+            && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+            && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
+            && apt-get update \
+            && apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
+
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
+
+      - name: Install go modules
+        if: steps.go.outputs.cache-hit != 'true'
+        run: go mod download
+
+      - name: Install ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: ./install_ffmpeg.sh
+
+      - name: Build binaries
+        run: |
+          git config --global --add safe.directory '*'
+          export PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig
+          ./ci_env.sh make
+        env:
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+
+      - name: Upload build
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
+          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
+          DISCORD_URL: ${{ secrets.DISCORD_URL }}
+        run: ./upload_build.sh
+
+      - name: Upload artifacts for cutting release
+        uses: actions/upload-artifact@master
+        with:
+          name: release-artifacts
+          path: releases/
+
+      - name: Notify new build upload
+        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
+
+  macos-build:
+    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - arm64
+          - amd64
+        platform:
+          - name: darwin
+            runner: macos-latest
 
     steps:
       - name: Check out code
@@ -74,22 +180,7 @@ jobs:
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
       - name: Install dependencies
-        if: matrix.platform.name == 'darwin'
         run: brew install coreutils
-
-      - name: Install dependencies
-        if: matrix.platform.name != 'darwin'
-        run: |
-          sudo apt-get update \
-            && sudo apt-get install -y software-properties-common curl apt-transport-https \
-            && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-            && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
-            && sudo apt-get update \
-            && sudo apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
-
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
-            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
@@ -243,7 +334,8 @@ jobs:
       id-token: "write"
     runs-on: ubuntu-latest
     needs:
-      - build
+      - macos-build
+      - linux-build
       - linux-tensorflow
     steps:
       - name: Download artifacts
