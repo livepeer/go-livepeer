@@ -40,7 +40,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/ppa
-          apt update && apt install -yqq git zip unzip
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g
 
       - name: Check out code
         uses: actions/checkout@v3.3.0
@@ -102,12 +102,12 @@ jobs:
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
+        env:
+          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         run: |
           git config --global --add safe.directory '*'
           export PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig
           ./ci_env.sh make
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
 
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -158,6 +158,12 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
+      - name: Set build environment
+        run: |
+          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
+          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+
       - name: Cache ffmpeg
         id: cache-ffmpeg
         uses: actions/cache@v3
@@ -173,29 +179,24 @@ jobs:
           path: ~/build
           key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-binaries-${{ github.sha }}
 
-      - name: Set build environment
-        run: |
-          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
-          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
-
       - name: Install dependencies
-        run: brew install coreutils
+        run: brew install coreutils pkg-config
 
       - name: Install go modules
-        if: steps.go.outputs.cache-hit != 'true'
+        # if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        # if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
-        run: |
-          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+        run: |
+          git config --global --add safe.directory '*'
+          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+          ./ci_env.sh make
 
       - uses: actions-ecosystem/action-regex-match@v2
         id: match-tag
@@ -244,7 +245,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/ppa
-          apt update && apt install -yqq git zip unzip
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g coreutils binutils libc++-dev libc++abi-dev libtool p7zip-full mediainfo xz-utils
 
       - name: Check out code
         uses: actions/checkout@v3.3.0
@@ -265,38 +266,38 @@ jobs:
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
-          path: ~/compiled
-          key: ${{ runner.os }}-ffmpeg-tensorflow-${{ hashFiles('**/install_ffmpeg.sh') }}
+          path: /github/home/compiled
+          key: ${{ runner.os }}-ffmpeg-tf-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-ffmpeg-tensorflow
+            ${{ runner.os }}-ffmpeg-tf-
 
       - name: Cache binaries
-        uses: actions/cache@v2.1.5
+        uses: actions/cache@v3
         with:
           path: ~/build
-          key: ${{ runner.os }}-binaries-tensorflow-${{ github.sha }}
+          key: ${{ runner.os }}-binaries-tf-${{ github.sha }}
 
       - name: Install dependencies
         run: |
-          sudo apt-get update \
-            && sudo apt-get install -y software-properties-common curl apt-transport-https \
-            && sudo apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-            && sudo add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
-            && sudo apt-get update \
-            && sudo apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
+          apt-get update \
+            && apt-get install -y software-properties-common curl apt-transport-https \
+            && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+            && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
+            && apt-get update \
+            && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
 
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
           LIBTENSORFLOW_VERSION=2.3.4 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
+            && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+            && ldconfig
 
       - name: Install go modules
-        if: steps.go.outputs.cache-hit != 'true'
+        # if: steps.go.outputs.cache-hit != 'true'
         run: go mod download
 
       - name: Install ffmpeg
@@ -304,19 +305,13 @@ jobs:
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
-        run: |
-          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
-          rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-
-      - name: Install libtensorflow
         run: |
-          LIBTENSORFLOW_VERSION=2.3.4 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
+          git config --global --add safe.directory '*'
+          export PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig
+          ./ci_env.sh make cgo_cflags="-lz" all
+          rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
 
       - name: Upload build
         run: cp ~/build/* . && ./upload_build.sh
