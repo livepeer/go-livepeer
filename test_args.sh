@@ -130,7 +130,7 @@ else
 
     # Check that -pricePerUnit needs to be set
     $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be set"
-    # Orchestrator needs PricePerUnit > 0 
+    # Orchestrator needs PricePerUnit > 0
     $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be >= 0, provided -5"
     # Orchestrator needs PixelsPerUnit > 0
     $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided 0"
@@ -156,7 +156,7 @@ else
 
     # Check that local verification is enabled by default in on-chain mode
     $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -network rinkeby $ETH_ARGS 2>&1 | grep "Local verification enabled"
-    
+
     # Check that local verification is disabled via -localVerify in on-chain mode
     $TMPDIR/livepeer -broadcaster -transcodingOptions invalid -localVerify=false -network rinkeby $ETH_ARGS 2>&1 | grep -v "Local verification enabled"
 
@@ -202,27 +202,6 @@ run_lp -broadcaster
 curl -sI http://127.0.0.1:7935/debug/pprof/allocs | grep "200 OK"
 kill $pid
 
-# exit early if verifier URL is not http
-res=0
-$TMPDIR/livepeer -broadcaster -verifierUrl tcp://host/ || res=$?
-[ $res -ne 0 ]
-
-# exit early if verifier URL is not properly formatted
-res=0
-$TMPDIR/livepeer -broadcaster -verifierUrl http\\://host/ || res=$?
-[ $res -ne 0 ]
-
-# Check that verifier shared path is required
-$TMPDIR/livepeer -broadcaster -verifierUrl http://host 2>&1 | grep "Requires a path to the"
-
-# Check OK with verifier shared path
-run_lp -broadcaster -verifierUrl http://host -verifierPath path
-kill $pid
-
-# Check OK with verifier + external storage
-run_lp -broadcaster -verifierUrl http://host -objectStore s3+https://ACCESS_KEY_ID:ACCESS_KEY_PASSWORD@s3api.example.com/bucket-name
-kill $pid
-
 # Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is no auth webhook URL and -httpIngest defaults to false
 run_lp -broadcaster -httpAddr 0.0.0.0
 curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
@@ -249,7 +228,7 @@ curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is enabled when -httpAddr sets the hostname to localhost
-run_lp -broadcaster -httpAddr localhost 
+run_lp -broadcaster -httpAddr localhost
 curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
