@@ -187,7 +187,7 @@ jobs:
         run: go mod download
 
       - name: Install ffmpeg
-        # if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
