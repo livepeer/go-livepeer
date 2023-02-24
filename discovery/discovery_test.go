@@ -1159,7 +1159,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	//  assert that list is not refreshed if lastRequest is less than 1 min ago and hash is not the same
 	wg.Add(whpool.Size())
-	lastReq = time.Now()
+	lastReq = time.Now().Add(-10 * time.Millisecond)
 	whpool.mu.Lock()
 	whpool.lastRequest = lastReq
 	whpool.mu.Unlock()
