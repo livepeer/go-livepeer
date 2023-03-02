@@ -267,21 +267,22 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 
 // EndSession - the broadcaster calls EndTranscodingSession to tear down sessions used for verification only once
 func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
-	uri, err := url.Parse(sess.Transcoder())
-	if err != nil {
-		return err
-	}
-	c, conn, err := startOrchestratorClient(ctx, uri)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
+	// TODO FIXME no-op to work around https://github.com/livepeer/go-livepeer/issues/2762
+	// uri, err := url.Parse(sess.Transcoder())
+	// if err != nil {
+	// 	return err
+	// }
+	// c, conn, err := startOrchestratorClient(ctx, uri)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer conn.Close()
 
-	req, err := genEndSessionRequest(sess)
-	_, err = c.EndTranscodingSession(context.Background(), req)
-	if err != nil {
-		return errors.Wrapf(err, "Could not end orchestrator session orch=%v", sess.Transcoder())
-	}
+	// req, err := genEndSessionRequest(sess)
+	// _, err = c.EndTranscodingSession(context.Background(), req)
+	// if err != nil {
+	// 	return errors.Wrapf(err, "Could not end orchestrator session orch=%v", sess.Transcoder())
+	// }
 	return nil
 }
 
