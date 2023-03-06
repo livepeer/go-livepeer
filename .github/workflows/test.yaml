@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /github/home/compiled
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-ffmpeg
 
