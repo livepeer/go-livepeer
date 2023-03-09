@@ -31,16 +31,13 @@ import (
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/segmenter"
 	"github.com/livepeer/lpms/stream"
+	"go.uber.org/goleak"
 )
 
 // var S *LivepeerServer
 
 var pushResetWg sync.WaitGroup // needed to synchronize exits from HTTP push
 
-// func setupServer() *LivepeerServer {
-// 	s, _ := setupServerWithCancel()
-// 	return s
-// }
 var port = 10000
 
 // waitForTCP tries to establish TCP connection for a specified time
@@ -1226,6 +1223,10 @@ func TestRegisterConnection(t *testing.T) {
 }
 
 func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
+	goleakOptions := common.IgnoreRoutines()
+	// allow enough time for the transcode end goroutines to finish
+	goleakOptions = append(goleakOptions, goleak.MaxSleepInterval(5*time.Second), goleak.MaxRetryAttempts(1000))
+	defer goleak.VerifyNone(t, goleakOptions...)
 	assert := assert.New(t)
 
 	s, cancel := setupServerWithCancel()

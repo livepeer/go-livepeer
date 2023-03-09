@@ -32,7 +32,7 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	github.com/urfave/cli v1.22.12
 	go.opencensus.io v0.24.0
-	go.uber.org/goleak v1.2.0
+	go.uber.org/goleak v1.2.2-0.20230213210001-751da596f6f7
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	google.golang.org/grpc v1.51.0
