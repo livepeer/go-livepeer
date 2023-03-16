@@ -94,7 +94,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	start := time.Now()
 
 	// Proof of concept of verification attack - this T will not do any meaningful work, but will pass B's local verification and receive payments.
-	// The fake transcoding works at 1500+ FPS @ 1080p on CPU, and should be at 10x $ per Watt, compared to a real node.
+	// The fake transcoding works at 1500+ FPS @ 1080p on CPU, and should be at 1% of $ per Watt, compared to a real node.
 	// This implementation is sort of a low effort. It can be replaced with almost complete noop by slightly customizing libx264.
 
 	// check if fast verification enabled - if so, just return an error to be excluded from selection on that B
