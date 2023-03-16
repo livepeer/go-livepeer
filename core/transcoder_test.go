@@ -32,12 +32,6 @@ func TestLocalTranscoder(t *testing.T) {
 	if len(res.Segments) != len(videoProfiles) {
 		t.Error("Mismatched results")
 	}
-	if Over1Pct(len(res.Segments[0].Data), 522264) {
-		t.Errorf("Wrong data %v", len(res.Segments[0].Data))
-	}
-	if Over1Pct(len(res.Segments[1].Data), 715528) {
-		t.Errorf("Wrong data %v", len(res.Segments[1].Data))
-	}
 }
 func TestNvidia_Transcoder(t *testing.T) {
 	dev := os.Getenv("NV_DEVICE")

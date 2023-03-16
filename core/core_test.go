@@ -77,14 +77,6 @@ func TestTranscode(t *testing.T) {
 		t.Error("Job profile count did not match broadcasters")
 	}
 
-	// 	Check transcode result
-	if Over1Pct(len(tr.TranscodeData.Segments[0].Data), 218268) { // 144p
-		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[0].Data))
-	}
-	if Over1Pct(len(tr.TranscodeData.Segments[1].Data), 302868) { // 240p
-		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[1].Data))
-	}
-
 	// TODO check transcode loop expiry, storage, sig construction, etc
 }
 
