@@ -20,7 +20,7 @@ import (
 // a hard limit of 10,000 logs returned by a single `eth_getLogs` query by Infura's Ethereum nodes so
 // we need to try and stay below it. Parity, Geth and Alchemy all have much higher limits (if any) on
 // the number of logs returned so Infura is by far the limiting factor.
-var maxBlocksInGetLogsQuery = 60
+var maxBlocksInGetLogsQuery = 1000
 
 // EventType describes the types of events emitted by blockwatch.Watcher. A block can be discovered
 // and added to our representation of the chain. During a block re-org, a block previously stored
@@ -159,6 +159,7 @@ func (w *Watcher) InspectRetainedBlocks() ([]*MiniHeader, error) {
 }
 
 func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
+	glog.V(6).Info("syncToLatestBlock")
 	w.Lock()
 	defer w.Unlock()
 
@@ -431,6 +432,7 @@ const getLogsRequestChunkSize = 3
 // batch requests are not sent. Instead, it returns all the logs it found up until the error was
 // encountered, along with the block number after which no further logs were retrieved.
 func (w *Watcher) getLogsInBlockRange(ctx context.Context, from, to int) ([]types.Log, int) {
+	glog.V(6).Infof("### getLogsInBlockRange, from=%v t=%v", from, to)
 	blockRanges := w.getSubBlockRanges(from, to, maxBlocksInGetLogsQuery)
 
 	numChunks := 0
@@ -489,6 +491,7 @@ func (w *Watcher) getLogsInBlockRange(ctx context.Context, from, to int) ([]type
 				}
 
 				logs, err := w.filterLogsRecursively(b.FromBlock, b.ToBlock, []types.Log{})
+				glog.V(6).Infof("### Number of logs fetched: %d", len(logs))
 				if err != nil {
 					glog.Errorf("failed to fetch logs for range error=%v fromBlock=%v toBlock=%v", err, b.FromBlock, b.ToBlock)
 				}
