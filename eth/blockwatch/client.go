@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/golang/glog"
 	"math/big"
 	"time"
 
@@ -62,12 +63,14 @@ func (rc *RPCClient) HeaderByNumber(number *big.Int) (*MiniHeader, error) {
 		blockParam = hexutil.EncodeBig(number)
 	}
 
+	glog.V(6).Info("Calling ETH RPC: eth_getBlockByNumber")
 	return rc.callEth("eth_getBlockByNumber", blockParam)
 }
 
 // HeaderByHash fetches a block header by its block hash. If no block exists with this number it will return
 // a `ethereum.NotFound` error.
 func (rc *RPCClient) HeaderByHash(hash common.Hash) (*MiniHeader, error) {
+	glog.V(6).Info("Calling ETH RPC: eth_getBlockByHash")
 	return rc.callEth("eth_getBlockByHash", hash)
 }
 
@@ -112,6 +115,7 @@ func (rc *RPCClient) callEth(method string, arg interface{}) (*MiniHeader, error
 func (rc *RPCClient) FilterLogs(q ethereum.FilterQuery) ([]types.Log, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), rc.requestTimeout)
 	defer cancel()
+	glog.V(6).Info("Calling ETH RPC: eth_getLogs")
 	logs, err := rc.client.FilterLogs(ctx, q)
 	if err != nil {
 		return nil, err
