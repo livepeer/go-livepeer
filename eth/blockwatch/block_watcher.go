@@ -90,8 +90,17 @@ func New(config Config) *Watcher {
 // Note that the latest block is never backfilled here from logs. It will be polled separately in syncToLatestBlock().
 // The reason for that is that we always need to propagate events from the latest block even if it does not contain
 // events which are filtered out during the backfilling process.
-func (w *Watcher) BackfillEvents(ctx context.Context) error {
-	events, err := w.getMissedEventsToBackfill(ctx)
+func (w *Watcher) BackfillEvents(ctx context.Context, chainHead *MiniHeader) error {
+	if chainHead == nil {
+		glog.V(6).Info("### BackfillEvents: chainHead is nil")
+		var err error
+		chainHead, err = w.client.HeaderByNumber(nil)
+		if err != nil {
+			return err
+		}
+	}
+
+	var events, err = w.getMissedEventsToBackfill(ctx, chainHead)
 	if err != nil {
 		return err
 	}
@@ -153,12 +162,12 @@ func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 	w.Lock()
 	defer w.Unlock()
 
-	if err := w.BackfillEvents(ctx); err != nil {
+	newestHeader, err := w.client.HeaderByNumber(nil)
+	if err != nil {
 		return err
 	}
 
-	newestHeader, err := w.client.HeaderByNumber(nil)
-	if err != nil {
+	if err := w.BackfillEvents(ctx, newestHeader); err != nil {
 		return err
 	}
 
@@ -168,10 +177,12 @@ func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 	}
 
 	if lastSeenHeader == nil {
+		glog.V(6).Info("### lastSeenHeader is nil, pollNextBlock")
 		return w.pollNextBlock()
 	}
 
 	for i := lastSeenHeader.Number; i.Cmp(newestHeader.Number) < 0; i = i.Add(i, big.NewInt(1)) {
+		glog.V(6).Infof("### pollNextBlock, i=%d", i)
 		if err := w.pollNextBlock(); err != nil {
 			return err
 		}
@@ -315,7 +326,7 @@ func (w *Watcher) addLogs(header *MiniHeader) (*MiniHeader, error) {
 // If the stored block is older than the latest block, it batch-fetches the events for missing blocks,
 // re-sets the stored blocks and returns the block events found.
 // Note that the latest block is never backfilled, and will be polled separately during in syncToLatestBlock().
-func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, error) {
+func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *MiniHeader) ([]*Event, error) {
 	events := []*Event{}
 
 	var (
@@ -329,13 +340,8 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 		return events, err
 	}
 
-	latestBlock, err := w.client.HeaderByNumber(nil)
-	if err != nil {
-		return events, err
-	}
-
 	// Latest block will be polled separately in syncToLatestBlock(), so it's not backfilled.
-	preLatestBlockNum := int(latestBlock.Number.Int64()) - 1
+	preLatestBlockNum := int(chainHead.Number.Int64()) - 1
 
 	if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
@@ -365,7 +371,8 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context) ([]*Event, erro
 			}
 		}
 		// Add furthest block processed into the DB
-		latestHeader, err := w.client.HeaderByNumber(big.NewInt(int64(furthestBlockProcessed)))
+		var latestHeader *MiniHeader
+		latestHeader, err = w.client.HeaderByNumber(big.NewInt(int64(furthestBlockProcessed)))
 		if err != nil {
 			return events, err
 		}

@@ -204,7 +204,7 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	events, err := watcher.getMissedEventsToBackfill(ctx)
+	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 1)
 
@@ -236,7 +236,7 @@ func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	events, err := watcher.getMissedEventsToBackfill(ctx)
+	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 0)
 
@@ -262,7 +262,7 @@ func TestGetMissedEventsToBackfill_NOOP(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	events, err := watcher.getMissedEventsToBackfill(ctx)
+	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
 	assert.Len(t, events, 0)
 
