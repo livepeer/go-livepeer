@@ -341,8 +341,7 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		return events, err
 	}
 
-	// Latest block will be polled separately in syncToLatestBlock(), so it's not backfilled.
-	preLatestBlockNum := int(chainHead.Number.Int64()) - 1
+	latestBlockNum := int(chainHead.Number.Int64())
 
 	if latestRetainedBlock != nil {
 		latestRetainedBlockNum = int(latestRetainedBlock.Number.Int64())
@@ -352,11 +351,11 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		return events, nil
 	}
 
-	if blocksElapsed = preLatestBlockNum - startBlockNum; blocksElapsed <= 0 {
+	if blocksElapsed = latestBlockNum - startBlockNum; blocksElapsed <= 0 {
 		return events, nil
 	}
 
-	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, preLatestBlockNum)
+	logs, furthestBlockProcessed := w.getLogsInBlockRange(ctx, startBlockNum, latestBlockNum)
 	if furthestBlockProcessed > latestRetainedBlockNum {
 		// If we have processed blocks further then the latestRetainedBlock in the DB, we
 		// want to remove all blocks from the DB and insert the furthestBlockProcessed
@@ -373,7 +372,12 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		}
 		// Add furthest block processed into the DB
 		var latestHeader *MiniHeader
-		latestHeader, err = w.client.HeaderByNumber(big.NewInt(int64(furthestBlockProcessed)))
+		if chainHead.Number.Int64() == int64(furthestBlockProcessed) {
+			latestHeader = chainHead
+		} else {
+			glog.V(6).Infof("### chainHead (%d) is different than furtherBlockProcessed (%d)", chainHead.Number.Int64(), furthestBlockProcessed)
+			latestHeader, err = w.client.HeaderByNumber(big.NewInt(int64(furthestBlockProcessed)))
+		}
 		if err != nil {
 			return events, err
 		}
