@@ -22,8 +22,8 @@ import (
 
 // TimeWatcher allows for subscriptions to certain data feeds using a caller provided sink channel
 // consumers of the TimeWatcher can subscribe to following data feeds:
-//   - Last Initialized Round Number
-//   - Last Seen Block Number
+// 	* Last Initialized Round Number
+//	* Last Seen Block Number
 type TimeWatcher struct {
 	// state
 	mu                            sync.RWMutex
@@ -224,7 +224,6 @@ func (tw *TimeWatcher) handleL1BlockNum(event *blockwatch.Event) {
 	last := tw.LastSeenL1Block()
 	new := event.BlockHeader.L1BlockNumber
 	if new != nil && (last == nil || last.Cmp(new) != 0) {
-		glog.V(6).Infof("!!! TimeWatcher, last seen L1 BlocK: %d", new)
 		tw.setLastSeenL1Block(new)
 		tw.l1BlockSubFeed.Send(new)
 	}

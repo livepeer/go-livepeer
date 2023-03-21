@@ -168,8 +168,6 @@ func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 		return err
 	}
 
-	glog.V(6).Infof("!!! block watcher, newestHeader, L1: %d", newestHeader.L1BlockNumber.Int64())
-
 	return w.BackfillEvents(ctx, newestHeader)
 }
 
@@ -251,10 +249,6 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		if err != nil {
 			return events, err
 		}
-		events = append(events, &Event{
-			Type:        Added,
-			BlockHeader: latestHeader,
-		})
 
 		// If no logs found, noop
 		if len(logs) == 0 {
