@@ -404,7 +404,6 @@ func (c *client) callOpts() *bind.CallOpts {
 }
 
 func newEthRpcContext() context.Context {
-	glog.V(6).Info("Calling ETH RPC: newEthRpcContext")
 	ctx, _ := context.WithTimeout(context.Background(), ethRpcTimeout)
 	return ctx
 }
