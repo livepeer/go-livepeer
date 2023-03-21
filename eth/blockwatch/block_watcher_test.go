@@ -41,9 +41,6 @@ func TestWatcher(t *testing.T) {
 	for i := 0; i < fakeClient.NumberOfTimesteps(); i++ {
 		scenarioLabel := fakeClient.GetScenarioLabel()
 
-		//err := watcher.pollNextBlock()
-		require.NoError(t, err)
-
 		retainedBlocks, err := watcher.InspectRetainedBlocks()
 		require.NoError(t, err)
 		expectedRetainedBlocks := fakeClient.ExpectedRetainedBlocks()
@@ -212,7 +209,7 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 	headers, err := store.FindAllMiniHeadersSortedByNumber()
 	require.NoError(t, err)
 	require.Len(t, headers, 1)
-	assert.Equal(t, big.NewInt(29), headers[0].Number)
+	assert.Equal(t, big.NewInt(30), headers[0].Number)
 }
 
 func TestGetMissedEventsToBackfillNoneMissed(t *testing.T) {

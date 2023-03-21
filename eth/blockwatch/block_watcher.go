@@ -91,14 +91,6 @@ func New(config Config) *Watcher {
 // The reason for that is that we always need to propagate events from the latest block even if it does not contain
 // events which are filtered out during the backfilling process.
 func (w *Watcher) BackfillEvents(ctx context.Context, chainHead *MiniHeader) error {
-	if chainHead == nil {
-		var err error
-		chainHead, err = w.client.HeaderByNumber(nil)
-		if err != nil {
-			return err
-		}
-	}
-
 	var events, err = w.getMissedEventsToBackfill(ctx, chainHead)
 	if err != nil {
 		return err
@@ -201,6 +193,14 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 	latestRetainedBlock, err := w.stack.Peek()
 	if err != nil {
 		return events, err
+	}
+
+	if chainHead == nil {
+		var err error
+		chainHead, err = w.client.HeaderByNumber(nil)
+		if err != nil {
+			return events, err
+		}
 	}
 
 	latestBlockNum := int(chainHead.Number.Int64())
