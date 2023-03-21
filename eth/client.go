@@ -418,18 +418,15 @@ func (c *client) Backend() Backend {
 
 // Controller
 func (c *client) GetContract(hash ethcommon.Hash) (ethcommon.Address, error) {
-	glog.V(6).Info("--> GetContract")
 	return c.controller.GetContract(c.callOpts(), hash)
 }
 
 func (c *client) Paused() (bool, error) {
-	glog.V(6).Info("--> Paused")
 	return c.controller.Paused(c.callOpts())
 }
 
 // Rounds
 func (c *client) InitializeRound() (*types.Transaction, error) {
-	glog.V(6).Info("--> CurrentRoundInitialized")
 	i, err := c.roundsManager.CurrentRoundInitialized(c.callOpts())
 	if err != nil {
 		return nil, err
@@ -438,122 +435,99 @@ func (c *client) InitializeRound() (*types.Transaction, error) {
 		glog.V(common.SHORT).Infof("Round already initialized")
 		return nil, errors.New("ErrRoundInitialized")
 	} else {
-		glog.V(6).Info("--> InitializeRound")
 		return c.roundsManager.InitializeRound(c.transactOpts())
 	}
 }
 
 func (c *client) CurrentRound() (*big.Int, error) {
-	glog.V(6).Info("--> CurrentRound")
 	return c.roundsManager.CurrentRound(c.callOpts())
 }
 
 func (c *client) CurrentRoundLocked() (bool, error) {
-	glog.V(6).Info("--> CurrentRoundLocked")
 	return c.roundsManager.CurrentRoundLocked(c.callOpts())
 }
 
 func (c *client) LastInitializedRound() (*big.Int, error) {
-	glog.V(6).Info("--> LastInitializedRound")
 	return c.roundsManager.LastInitializedRound(c.callOpts())
 }
 
 func (c *client) BlockHashForRound(round *big.Int) ([32]byte, error) {
-	glog.V(6).Info("--> BlockHashForRound")
 	return c.roundsManager.BlockHashForRound(c.callOpts(), round)
 }
 
 func (c *client) CurrentRoundInitialized() (bool, error) {
-	glog.V(6).Info("--> CurrentRoundInitialized")
 	return c.roundsManager.CurrentRoundInitialized(c.callOpts())
 }
 
 func (c *client) CurrentRoundStartBlock() (*big.Int, error) {
-	glog.V(6).Info("--> CurrentRoundStartBlock")
 	return c.roundsManager.CurrentRoundStartBlock(c.callOpts())
 }
 
 func (c *client) RoundLength() (*big.Int, error) {
-	glog.V(6).Info("--> RoundLength")
 	return c.roundsManager.RoundLength(c.callOpts())
 }
 
 func (c *client) RoundLockAmount() (*big.Int, error) {
-	glog.V(6).Info("--> RoundLockAmount")
 	return c.roundsManager.RoundLockAmount(c.callOpts())
 }
 
 // Minter
 func (c *client) Inflation() (*big.Int, error) {
-	glog.V(6).Info("--> Inflation")
 	return c.minter.Inflation(c.callOpts())
 }
 
 func (c *client) InflationChange() (*big.Int, error) {
-	glog.V(6).Info("--> InflationChange")
 	return c.minter.InflationChange(c.callOpts())
 }
 
 func (c *client) TargetBondingRate() (*big.Int, error) {
-	glog.V(6).Info("--> TargetBondingRate")
 	return c.minter.TargetBondingRate(c.callOpts())
 }
 
 func (c *client) GetGlobalTotalSupply() (*big.Int, error) {
-	glog.V(6).Info("--> GetGlobalTotalSupply")
 	return c.minter.GetGlobalTotalSupply(c.callOpts())
 }
 
 func (c *client) CurrentMintableTokens() (*big.Int, error) {
-	glog.V(6).Info("--> CurrentMintableTokens")
 	return c.minter.CurrentMintableTokens(c.callOpts())
 }
 
 // Token
 func (c *client) Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
-	glog.V(6).Info("--> Transfer")
 	return c.livepeerToken.Transfer(c.transactOpts(), toAddr, amount)
 }
 
 func (c *client) Allowance(owner ethcommon.Address, spender ethcommon.Address) (*big.Int, error) {
-	glog.V(6).Info("--> Allowance")
 	return c.livepeerToken.Allowance(c.callOpts(), owner, spender)
 }
 
 func (c *client) Request() (*types.Transaction, error) {
-	glog.V(6).Info("--> Request")
 	return c.livepeerTokenFaucet.Request(c.transactOpts())
 }
 
 func (c *client) BalanceOf(address ethcommon.Address) (*big.Int, error) {
-	glog.V(6).Info("--> BalanceOf")
 	return c.livepeerToken.BalanceOf(c.callOpts(), address)
 }
 
 func (c *client) TotalSupply() (*big.Int, error) {
-	glog.V(6).Info("--> TotalSupply")
 	return c.livepeerToken.TotalSupply(c.callOpts())
 }
 
 func (c *client) NextValidRequest(addr ethcommon.Address) (*big.Int, error) {
-	glog.V(6).Info("--> NextValidRequest")
 	return c.livepeerTokenFaucet.NextValidRequest(c.callOpts(), addr)
 }
 
 // Service Registry
 func (c *client) SetServiceURI(serviceURI string) (*types.Transaction, error) {
-	glog.V(6).Info("--> SetServiceURI")
 	return c.serviceRegistry.SetServiceURI(c.transactOpts(), serviceURI)
 }
 
 func (c *client) GetServiceURI(addr ethcommon.Address) (string, error) {
-	glog.V(6).Info("--> GetServiceURI")
 	return c.serviceRegistry.GetServiceURI(c.callOpts(), addr)
 }
 
 // Staking
 func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transaction, error) {
-	glog.V(6).Info("--> CurrentRoundLocked")
 	locked, err := c.CurrentRoundLocked()
 	if err != nil {
 		return nil, err
@@ -562,7 +536,6 @@ func (c *client) Transcoder(blockRewardCut, feeShare *big.Int) (*types.Transacti
 	if locked {
 		return nil, ErrCurrentRoundLocked
 	} else {
-		glog.V(6).Info("--> Transcoder")
 		return c.bondingManager.Transcoder(c.transactOpts(), blockRewardCut, feeShare)
 	}
 }
@@ -577,7 +550,6 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 	// If existing allowance set by account for BondingManager is
 	// less than the bond amount, approve the necessary amount
 	if allowance.Cmp(amount) == -1 {
-		glog.V(6).Info("--> Approve")
 		tx, err := c.livepeerToken.Approve(c.transactOpts(), c.bondingManagerAddr, amount)
 		if err != nil {
 			return nil, err
@@ -644,7 +616,6 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 
 	newHints := simulateTranscoderPoolUpdate(to, newStake, transcoders, isFull)
 
-	glog.V(6).Info("--> BondWithHint")
 	return c.bondingManager.BondWithHint(
 		c.transactOpts(),
 		amount,
@@ -689,7 +660,6 @@ func (c *client) Unbond(amount *big.Int) (*types.Transaction, error) {
 
 	hints := simulateTranscoderPoolUpdate(delegator.DelegateAddress, newStake, transcoders, isFull)
 
-	glog.V(6).Info("--> UnbondWithHint")
 	return c.bondingManager.UnbondWithHint(c.transactOpts(), amount, hints.PosPrev, hints.PosNext)
 }
 
@@ -724,7 +694,6 @@ func (c *client) RebondFromUnbonded(to ethcommon.Address, unbondingLockID *big.I
 
 	hints := simulateTranscoderPoolUpdate(to, newStake, transcoders, isFull)
 
-	glog.V(6).Info("--> RebondFromUnbondedWithHint")
 	return c.bondingManager.RebondFromUnbondedWithHint(c.transactOpts(), to, unbondingLockID, hints.PosPrev, hints.PosNext)
 }
 
@@ -765,87 +734,70 @@ func (c *client) Rebond(unbondingLockID *big.Int) (*types.Transaction, error) {
 
 	hints := simulateTranscoderPoolUpdate(delegator.DelegateAddress, newStake, transcoders, isFull)
 
-	glog.V(6).Info("--> RebondWithHint")
 	return c.bondingManager.RebondWithHint(c.transactOpts(), unbondingLockID, hints.PosPrev, hints.PosNext)
 }
 
 func (c *client) WithdrawStake(unbondingLockID *big.Int) (*types.Transaction, error) {
-	glog.V(6).Info("--> WithdrawStake")
 	return c.bondingManager.WithdrawStake(c.transactOpts(), unbondingLockID)
 }
 
 func (c *client) L1WithdrawFees() (*types.Transaction, error) {
-	glog.V(6).Info("--> WithdrawFees")
 	return c.l1BondingManager.WithdrawFees(c.transactOpts())
 }
 
 func (c *client) ClaimEarnings(endRound *big.Int) (*types.Transaction, error) {
-	glog.V(6).Info("--> ClaimEarnings")
 	return c.bondingManager.ClaimEarnings(c.transactOpts(), endRound)
 }
 
 func (c *client) GetTranscoderPoolMaxSize() (*big.Int, error) {
-	glog.V(6).Info("--> GetTranscoderPoolMaxSize")
 	return c.bondingManager.GetTranscoderPoolMaxSize(c.callOpts())
 }
 
 func (c *client) TranscoderTotalStake(to ethcommon.Address) (*big.Int, error) {
-	glog.V(6).Info("--> TranscoderTotalStake")
 	return c.bondingManager.TranscoderTotalStake(c.callOpts(), to)
 }
 
 func (c *client) GetTotalBonded() (*big.Int, error) {
-	glog.V(6).Info("--> GetTotalBonded")
 	return c.bondingManager.GetTotalBonded(c.callOpts())
 }
 
 func (c *client) PendingStake(delegator ethcommon.Address, endRound *big.Int) (*big.Int, error) {
-	glog.V(6).Info("--> PendingStake")
 	return c.bondingManager.PendingStake(c.callOpts(), delegator, endRound)
 }
 
 func (c *client) TranscoderStatus(transcoder ethcommon.Address) (uint8, error) {
-	glog.V(6).Info("--> TranscoderStatus")
 	return c.bondingManager.TranscoderStatus(c.callOpts(), transcoder)
 }
 
 func (c *client) DelegatorStatus(delegator ethcommon.Address) (uint8, error) {
-	glog.V(6).Info("--> DelegatorStatus")
 	return c.bondingManager.DelegatorStatus(c.callOpts(), delegator)
 }
 
 func (c *client) GetFirstTranscoderInPool() (ethcommon.Address, error) {
-	glog.V(6).Info("--> GetFirstTranscoderInPool")
 	return c.bondingManager.GetFirstTranscoderInPool(c.callOpts())
 }
 
 func (c *client) PendingFees(delegator ethcommon.Address, endRound *big.Int) (*big.Int, error) {
-	glog.V(6).Info("--> PendingFees")
 	return c.bondingManager.PendingFees(c.callOpts(), delegator, endRound)
 }
 
 func (c *client) GetNextTranscoderInPool(transcoder ethcommon.Address) (ethcommon.Address, error) {
-	glog.V(6).Info("--> GetNextTranscoderInPool")
 	return c.bondingManager.GetNextTranscoderInPool(c.callOpts(), transcoder)
 }
 
 func (c *client) GetTranscoderPoolSize() (*big.Int, error) {
-	glog.V(6).Info("--> GetTranscoderPoolSize")
 	return c.bondingManager.GetTranscoderPoolSize(c.callOpts())
 }
 
 func (c *client) UnbondingPeriod() (uint64, error) {
-	glog.V(6).Info("--> UnbondingPeriod")
 	return c.bondingManager.UnbondingPeriod(c.callOpts())
 }
 
 func (c *client) IsActiveTranscoder() (bool, error) {
-	glog.V(6).Info("--> IsActiveTranscoder")
 	return c.bondingManager.IsActiveTranscoder(c.callOpts(), c.Account().Address)
 }
 
 func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, error) {
-	glog.V(6).Info("--> GetTranscoder")
 	tInfo, err := c.bondingManager.GetTranscoder(c.callOpts(), addr)
 	if err != nil {
 		return nil, err
@@ -866,7 +818,6 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 		return nil, err
 	}
 
-	glog.V(6).Info("--> IsActiveTranscoder")
 	active, err := c.bondingManager.IsActiveTranscoder(c.callOpts(), addr)
 	if err != nil {
 		return nil, err
@@ -893,7 +844,6 @@ func (c *client) GetTranscoder(addr ethcommon.Address) (*lpTypes.Transcoder, err
 }
 
 func (c *client) GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round *big.Int) (*lpTypes.TokenPools, error) {
-	glog.V(6).Info("--> GetTranscoderEarningsPoolForRound")
 	tp, err := c.bondingManager.GetTranscoderEarningsPoolForRound(c.callOpts(), addr, round)
 	if err != nil {
 		return nil, err
@@ -909,7 +859,6 @@ func (c *client) GetTranscoderEarningsPoolForRound(addr ethcommon.Address, round
 }
 
 func (c *client) GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error) {
-	glog.V(6).Info("--> GetDelegator")
 	dInfo, err := c.bondingManager.GetDelegator(c.callOpts(), addr)
 	if err != nil {
 		glog.Errorf("Error getting delegator from bonding manager: %v", err)
@@ -968,7 +917,6 @@ func (c *client) GetDelegator(addr ethcommon.Address) (*lpTypes.Delegator, error
 }
 
 func (c *client) GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLockId *big.Int) (*lpTypes.UnbondingLock, error) {
-	glog.V(6).Info("--> GetDelegatorUnbondingLock")
 	lock, err := c.bondingManager.GetDelegatorUnbondingLock(c.callOpts(), addr, unbondingLockId)
 	if err != nil {
 		return nil, err
@@ -984,27 +932,22 @@ func (c *client) GetDelegatorUnbondingLock(addr ethcommon.Address, unbondingLock
 
 // TicketBroker
 func (c *client) Unlock() (*types.Transaction, error) {
-	glog.V(6).Info("--> Unlock")
 	return c.ticketBroker.Unlock(c.transactOpts())
 }
 
 func (c *client) CancelUnlock() (*types.Transaction, error) {
-	glog.V(6).Info("--> CancelUnlock")
 	return c.ticketBroker.CancelUnlock(c.transactOpts())
 }
 
 func (c *client) Withdraw() (*types.Transaction, error) {
-	glog.V(6).Info("--> Withdraw")
 	return c.ticketBroker.Withdraw(c.transactOpts())
 }
 
 func (c *client) UnlockPeriod() (*big.Int, error) {
-	glog.V(6).Info("--> UnlockPeriod")
 	return c.ticketBroker.UnlockPeriod(c.callOpts())
 }
 
 func (c *client) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
-	glog.V(6).Info("--> ClaimedReserve")
 	return c.ticketBroker.ClaimedReserve(c.callOpts(), reserveHolder, claimant)
 }
 
@@ -1039,7 +982,6 @@ func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Tra
 		return nil, err
 	}
 
-	glog.V(6).Info("--> Vote")
 	opts := c.transactOpts()
 	return poll.Vote(opts, choiceID)
 }
@@ -1089,12 +1031,10 @@ func (c *client) Reward() (*types.Transaction, error) {
 
 	hints := simulateTranscoderPoolUpdate(addr, reward.Add(reward, tr.DelegatedStake), transcoders, len(transcoders) == int(maxSize.Int64()))
 
-	glog.V(6).Info("--> RewardWithHint")
 	return c.bondingManager.RewardWithHint(c.transactOpts(), hints.PosPrev, hints.PosNext)
 }
 
 func (c *client) WithdrawFees(addr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
-	glog.V(6).Info("--> WithdrawFees")
 	return c.bondingManager.WithdrawFees(c.transactOpts(), addr, amount)
 }
 
