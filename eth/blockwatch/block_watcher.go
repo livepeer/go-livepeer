@@ -168,6 +168,8 @@ func (w *Watcher) syncToLatestBlock(ctx context.Context) error {
 		return err
 	}
 
+	glog.V(6).Infof("!!! block watcher, newestHeader, L1: %d", newestHeader.L1BlockNumber.Int64())
+
 	if err := w.BackfillEvents(ctx, newestHeader); err != nil {
 		return err
 	}
@@ -237,6 +239,7 @@ func (w *Watcher) buildCanonicalChain(nextHeader *MiniHeader, events []*Event) (
 	}
 	// Is the stack empty or is it the next block?
 	if latestHeader == nil || nextHeader.Parent == latestHeader.Hash {
+		glog.V(6).Infof("!!! buildCanonicalChain, latestHeader=%v, nextHeader.Parent=%v, latestHeader.Hash=%v", latestHeader, nextHeader.Parent, latestHeader.Hash)
 		nextHeader, err := w.addLogs(nextHeader)
 		if err != nil {
 			// Due to block re-orgs & Ethereum node services load-balancing requests across multiple nodes
@@ -385,6 +388,10 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		if err != nil {
 			return events, err
 		}
+		events = append(events, &Event{
+			Type:        Added,
+			BlockHeader: latestHeader,
+		})
 
 		// If no logs found, noop
 		if len(logs) == 0 {
