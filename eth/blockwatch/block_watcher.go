@@ -210,6 +210,15 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 		// Events for latestRetainedBlock already processed, start at latestRetainedBlock + 1
 		startBlockNum = latestRetainedBlockNum + 1
 	} else {
+		err = w.stack.Push(chainHead)
+		if err != nil {
+			return events, err
+		}
+
+		events = append(events, &Event{
+			Type:        Added,
+			BlockHeader: chainHead,
+		})
 		return events, nil
 	}
 
