@@ -700,8 +700,13 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
 	n.Capabilities.AddCapacity(coreCaps)
 	defer n.Capabilities.RemoveCapacity(coreCaps)
-    n.SetMaxSessions(MaxSessions + capacity)
-    defer n.SetMaxSessions(MaxSessions - capacity)
+
+	if n.AutoSessionLimit {
+		n.SetMaxSessions(MaxSessions + capacity)
+		defer n.SetMaxSessions(MaxSessions - capacity)
+		glog.Infof("Updated session limit", MaxSessions-capacity)
+	}
+
 	// Manage blocks while transcoder is connected
 	n.TranscoderManager.Manage(stream, capacity, capabilities)
 	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
@@ -883,6 +888,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 		glog.Errorf("Stream closed for transcoder=%s, err=%q", from, err)
 		transcoder.done()
 	}()
+
+	// if n.AutoSessionLimit {
+	// 	n.SetMaxSessions(MaxSessions + capacity)
+	// 	defer n.SetMaxSessions(MaxSessions - capacity)
+	// 	glog.Infof("Updated session limit", MaxSessions-capacity)
+	// }
 
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder

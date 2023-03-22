@@ -81,6 +81,7 @@ type LivepeerNode struct {
 	Balances          *AddressBalances
 	Capabilities      *Capabilities
 	AutoAdjustPrice   bool
+	AutoSessionLimit  bool
 	// Broadcaster public fields
 	Sender pm.Sender
 
