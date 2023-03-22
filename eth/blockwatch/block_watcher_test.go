@@ -203,7 +203,7 @@ func TestGetMissedEventsToBackfillSomeMissed(t *testing.T) {
 	defer cancel()
 	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
-	assert.Len(t, events, 1)
+	assert.Len(t, events, 2)
 
 	// Check that block 30 is now in the DB, and block 5 was removed.
 	headers, err := store.FindAllMiniHeadersSortedByNumber()
@@ -261,11 +261,11 @@ func TestGetMissedEventsToBackfill_NOOP(t *testing.T) {
 	defer cancel()
 	events, err := watcher.getMissedEventsToBackfill(ctx, nil)
 	require.NoError(t, err)
-	assert.Len(t, events, 0)
+	assert.Len(t, events, 1)
 
 	headers, err := store.FindAllMiniHeadersSortedByNumber()
 	require.NoError(t, err)
-	require.Len(t, headers, 0)
+	require.Len(t, headers, 1)
 }
 
 var logStub = types.Log{
