@@ -22,6 +22,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
+	lpmon "github.com/livepeer/go-livepeer/monitor"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -80,6 +81,7 @@ type LivepeerNode struct {
 	Balances          *AddressBalances
 	Capabilities      *Capabilities
 	AutoAdjustPrice   bool
+	AutoSessionLimit  bool
 	// Broadcaster public fields
 	Sender pm.Sender
 
@@ -153,4 +155,15 @@ func (n *LivepeerNode) SetMaxFaceValue(maxfacevalue *big.Int) {
 	defer n.mu.Unlock()
 
 	n.Recipient.SetMaxFaceValue(maxfacevalue)
+}
+
+func (n *LivepeerNode) SetMaxSessions(s int) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	MaxSessions = s
+
+	//update metrics reporting
+	if lpmon.Enabled {
+		lpmon.MaxSessions(MaxSessions)
+	}
 }

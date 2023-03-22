@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -81,7 +82,7 @@ type LivepeerConfig struct {
 	TranscodingOptions           *string
 	MaxAttempts                  *int
 	SelectRandFreq               *float64
-	MaxSessions                  *int
+	MaxSessions                  *string
 	CurrentManifest              *bool
 	Nvidia                       *string
 	Netint                       *string
@@ -149,7 +150,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
 	defaultSelectRandFreq := 0.3
-	defaultMaxSessions := 10
+	defaultMaxSessions := "10"
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -289,9 +290,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
-	if *cfg.MaxSessions <= 0 {
-		glog.Fatal("-maxSessions must be greater than zero")
-		return
+	if *cfg.MaxSessions != "auto" {
+		intMaxSessions, _ := strconv.Atoi(*cfg.MaxSessions)
+		if intMaxSessions <= 0 {
+			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
+			return
+		}
+
+		core.MaxSessions = intMaxSessions
 	}
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
@@ -399,6 +405,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+
+	n.AutoSessionLimit = *cfg.MaxSessions == "auto"
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
@@ -980,7 +988,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
-	core.MaxSessions = *cfg.MaxSessions
 	if lpmon.Enabled {
 		lpmon.MaxSessions(core.MaxSessions)
 	}
@@ -1194,7 +1201,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Fatal("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, *cfg.MaxSessions, transcoderCaps)
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
 
 	switch n.NodeType {
