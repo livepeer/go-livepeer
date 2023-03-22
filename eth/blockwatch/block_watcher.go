@@ -247,6 +247,11 @@ func (w *Watcher) getMissedEventsToBackfill(ctx context.Context, chainHead *Mini
 			return events, err
 		}
 
+		events = append(events, &Event{
+			Type:        Added,
+			BlockHeader: latestHeader,
+		})
+
 		// If no logs found, noop
 		if len(logs) == 0 {
 			return events, nil
