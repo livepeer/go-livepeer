@@ -889,12 +889,6 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 		transcoder.done()
 	}()
 
-	// if n.AutoSessionLimit {
-	// 	n.SetMaxSessions(MaxSessions + capacity)
-	// 	defer n.SetMaxSessions(MaxSessions - capacity)
-	// 	glog.Infof("Updated session limit", MaxSessions-capacity)
-	// }
-
 	rtm.RTmutex.Lock()
 	rtm.liveTranscoders[transcoder.stream] = transcoder
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
