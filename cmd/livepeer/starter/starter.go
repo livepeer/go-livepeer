@@ -298,8 +298,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
 			return
 		}
-		core.MaxSessions = intMaxSessions
-	}
+    
+    core.MaxSessions = intMaxSessions
+  }
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")

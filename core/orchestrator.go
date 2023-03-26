@@ -703,7 +703,7 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 
 	if n.AutoSessionLimit {
 		n.SetMaxSessions(MaxSessions + capacity)
-		defer n.SetMaxSessions(MaxSessions)
+    defer n.SetMaxSessions(MaxSessions)
 		glog.Infof("Updated session limit: %d", MaxSessions)
 	}
 
