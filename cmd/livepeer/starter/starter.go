@@ -150,7 +150,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
 	defaultSelectRandFreq := 0.3
-	defaultMaxSessions := "10"
+	defaultMaxSessions := strconv.Itoa(10)
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -290,13 +290,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
-	if *cfg.MaxSessions != "auto" {
+	if *cfg.MaxSessions == "auto" {
+		core.MaxSessions = 0
+	} else {
 		intMaxSessions, _ := strconv.Atoi(*cfg.MaxSessions)
 		if intMaxSessions <= 0 {
 			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
 			return
 		}
-
 		core.MaxSessions = intMaxSessions
 	}
 
