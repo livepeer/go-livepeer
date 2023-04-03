@@ -578,6 +578,26 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) setMaxSessions() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		frmMaxSessions := r.FormValue("maxSessions")
+		if frmMaxSessions == "auto" {
+			s.LivepeerNode.AutoSessionLimit = true
+			s.LivepeerNode.SetMaxSessions(0)
+			respondOk(w, []byte(fmt.Sprintf("Max Sessions set to auto\n")))
+		} else if maxSessions, err := strconv.Atoi(frmMaxSessions); err == nil {
+			if maxSessions > 0 {
+				s.LivepeerNode.SetMaxSessions(maxSessions)
+				respondOk(w, []byte(fmt.Sprintf("Max Sessions set to %d\n", maxSessions)))
+			} else {
+				respond400(w, "Max Sessions must be 'auto' or greater than zero")
+			}
+		} else {
+			respond400(w, err.Error())
+		}
+	})
+}
+
 // Bond, withdraw, reward
 func bondHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

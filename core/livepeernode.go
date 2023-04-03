@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -166,4 +167,19 @@ func (n *LivepeerNode) SetMaxSessions(s int) {
 	if lpmon.Enabled {
 		lpmon.MaxSessions(MaxSessions)
 	}
+
+	glog.Infof("Updated session limit to %d", MaxSessions)
+}
+
+func (n *LivepeerNode) GetMaxSessions(s int) int {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	MaxSessions = s
+
+	//update metrics reporting
+	if lpmon.Enabled {
+		lpmon.MaxSessions(MaxSessions)
+	}
+
+	return MaxSessions
 }
