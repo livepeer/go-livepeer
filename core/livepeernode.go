@@ -171,6 +171,14 @@ func (n *LivepeerNode) SetMaxSessions(s int) {
 	glog.Infof("Updated session limit to %d", MaxSessions)
 }
 
+func (n *LivepeerNode) GetCurrentCapacity() int {
+	currentCapacity := 0
+	for _, transcoder := range n.TranscoderManager.liveTranscoders {
+		currentCapacity += transcoder.capacity
+	}
+	return currentCapacity
+}
+
 func (n *LivepeerNode) GetMaxSessions(s int) int {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
