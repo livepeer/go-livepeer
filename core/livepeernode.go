@@ -159,8 +159,8 @@ func (n *LivepeerNode) SetMaxFaceValue(maxfacevalue *big.Int) {
 }
 
 func (n *LivepeerNode) SetMaxSessions(s int) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	MaxSessions = s
 
 	//update metrics reporting
@@ -172,6 +172,8 @@ func (n *LivepeerNode) SetMaxSessions(s int) {
 }
 
 func (n *LivepeerNode) GetCurrentCapacity() int {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
 	currentCapacity := 0
 	for _, transcoder := range n.TranscoderManager.liveTranscoders {
 		currentCapacity += transcoder.capacity

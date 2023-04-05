@@ -708,10 +708,9 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
 	n.Capabilities.AddCapacity(coreCaps)
 	defer n.Capabilities.RemoveCapacity(coreCaps)
-	currentCapacity := n.GetCurrentCapacity()
 
 	if n.AutoSessionLimit {
-		n.SetMaxSessions(currentCapacity + capacity)
+		n.SetMaxSessions(n.GetCurrentCapacity() + capacity)
 	}
 
 	// Manage blocks while transcoder is connected
@@ -719,7 +718,7 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
 
 	if n.AutoSessionLimit {
-		defer n.SetMaxSessions(currentCapacity)
+		defer n.SetMaxSessions(n.GetCurrentCapacity())
 	}
 }
 

@@ -584,9 +584,10 @@ func (s *LivepeerServer) setMaxSessions() http.Handler {
 		if frmMaxSessions == "auto" {
 			s.LivepeerNode.AutoSessionLimit = true
 			s.LivepeerNode.SetMaxSessions(s.LivepeerNode.GetCurrentCapacity())
-			respondOk(w, []byte(fmt.Sprintf("Max Sessions set to auto\n")))
+			respondOk(w, []byte("Max Sessions set to auto\n"))
 		} else if maxSessions, err := strconv.Atoi(frmMaxSessions); err == nil {
 			if maxSessions > 0 {
+				s.LivepeerNode.AutoSessionLimit = false
 				s.LivepeerNode.SetMaxSessions(maxSessions)
 				respondOk(w, []byte(fmt.Sprintf("Max Sessions set to %d\n", maxSessions)))
 			} else {
