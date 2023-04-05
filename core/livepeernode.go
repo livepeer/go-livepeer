@@ -172,13 +172,10 @@ func (n *LivepeerNode) SetMaxSessions(s int) {
 }
 
 func (n *LivepeerNode) GetCurrentCapacity() int {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	currentCapacity := 0
-	for _, transcoder := range n.TranscoderManager.liveTranscoders {
-		currentCapacity += transcoder.capacity
-	}
-	return currentCapacity
+	n.TranscoderManager.RTmutex.Lock()
+	defer n.TranscoderManager.RTmutex.Unlock()
+	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
+	return totalCapacity
 }
 
 func (n *LivepeerNode) GetMaxSessions(s int) int {
