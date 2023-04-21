@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -82,7 +81,7 @@ type LivepeerConfig struct {
 	TranscodingOptions           *string
 	MaxAttempts                  *int
 	SelectRandFreq               *float64
-	MaxSessions                  *string
+	MaxSessions                  *int
 	CurrentManifest              *bool
 	Nvidia                       *string
 	Netint                       *string
@@ -150,7 +149,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
 	defaultSelectRandFreq := 0.3
-	defaultMaxSessions := strconv.Itoa(10)
+	defaultMaxSessions := 10
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -290,16 +289,15 @@ func DefaultLivepeerConfig() LivepeerConfig {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
-	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
+	if *cfg.MaxSessions == 0 && *cfg.Orchestrator {
 		core.MaxSessions = 0
 	} else {
-		intMaxSessions, _ := strconv.Atoi(*cfg.MaxSessions)
-		if intMaxSessions <= 0 {
-			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
+		if *cfg.MaxSessions <= 0 {
+			glog.Fatal("-maxSessions must be greater than zero")
 			return
 		}
 
-		core.MaxSessions = intMaxSessions
+		core.MaxSessions = *cfg.MaxSessions
 	}
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
@@ -408,7 +406,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
 
-	n.AutoSessionLimit = *cfg.MaxSessions == "auto"
+	n.AutoSessionLimit = *cfg.MaxSessions == 0
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
