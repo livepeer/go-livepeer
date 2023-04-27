@@ -65,6 +65,7 @@ func main() {
 	}
 
 	cfg = updateNilsForUnsetFlags(cfg)
+	cfg = defaultOrchestorLimit(cfg)
 
 	// compare current settings with default values, and print the difference
 	defCfg := starter.DefaultLivepeerConfig()
@@ -132,7 +133,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.TranscodingOptions = flag.String("transcodingOptions", *cfg.TranscodingOptions, "Transcoding options for broadcast job, or path to json config")
 	cfg.MaxAttempts = flag.Int("maxAttempts", *cfg.MaxAttempts, "Maximum transcode attempts")
 	cfg.SelectRandFreq = flag.Float64("selectRandFreq", *cfg.SelectRandFreq, "Frequency to randomly select unknown orchestrators (on-chain mode only)")
-	cfg.MaxSessions = flag.Int("maxSessions", *cfg.MaxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator or '0' for dynamic limit, maximum number of RTMP streams for Broadcaster, or maximum capacity for transcoder")
+	cfg.MaxSessions = flag.Int("maxSessions", *cfg.MaxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number of RTMP streams for Broadcaster, or maximum capacity for transcoder")
+
 	cfg.CurrentManifest = flag.Bool("currentManifest", *cfg.CurrentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
@@ -222,6 +224,19 @@ func updateNilsForUnsetFlags(cfg starter.LivepeerConfig) starter.LivepeerConfig 
 	}
 	if !isFlagSet["localVerify"] {
 		res.LocalVerify = nil
+	}
+
+	return res
+}
+
+//Defaults session limit to "0" (auto) for orchestrators when -maxSessions flag not set
+func defaultOrchestorLimit(cfg starter.LivepeerConfig) starter.LivepeerConfig {
+	res := cfg
+
+	isFlagSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) { isFlagSet[f.Name] = true })
+	if isFlagSet["orchestrator"] && !isFlagSet["maxSessions"] {
+		*cfg.MaxSessions = 0
 	}
 
 	return res
