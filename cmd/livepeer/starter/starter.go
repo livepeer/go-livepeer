@@ -289,15 +289,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
-	if *cfg.MaxSessions == 0 && *cfg.Orchestrator {
-		core.MaxSessions = 0
-	} else {
-		if *cfg.MaxSessions <= 0 {
-			glog.Fatal("-maxSessions must be greater than zero")
-			return
-		}
-
-		core.MaxSessions = *cfg.MaxSessions
+	if *cfg.MaxSessions <= 0 && !*cfg.Orchestrator {
+		glog.Fatal("-maxSessions must be greater than zero")
+		return
 	}
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
@@ -405,8 +399,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
-
-	n.AutoSessionLimit = *cfg.MaxSessions == 0
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
@@ -753,6 +745,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 
+			n.AutoSessionLimit = *cfg.MaxSessions == 0
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
 
 			ev, _ := new(big.Int).SetString(*cfg.TicketEV, 10)
@@ -988,6 +981,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
+	core.MaxSessions = *cfg.MaxSessions
 	if lpmon.Enabled {
 		lpmon.MaxSessions(core.MaxSessions)
 	}
@@ -1201,7 +1195,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Fatal("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+		go server.RunTranscoder(n, orchURLs[0].Host, *cfg.MaxSessions, transcoderCaps)
 	}
 
 	switch n.NodeType {
