@@ -177,16 +177,3 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
 	return totalCapacity
 }
-
-func (n *LivepeerNode) GetMaxSessions(s int) int {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	MaxSessions = s
-
-	//update metrics reporting
-	if lpmon.Enabled {
-		lpmon.MaxSessions(MaxSessions)
-	}
-
-	return MaxSessions
-}

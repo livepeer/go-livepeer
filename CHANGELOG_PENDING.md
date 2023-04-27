@@ -13,6 +13,7 @@
 #### Broadcaster
 
 #### Orchestrator
+- \#2781 Add automatic session limit and set max sessions with livepeer_cli
 
 #### Transcoder
 

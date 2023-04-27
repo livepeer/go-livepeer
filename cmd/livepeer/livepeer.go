@@ -134,7 +134,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.MaxAttempts = flag.Int("maxAttempts", *cfg.MaxAttempts, "Maximum transcode attempts")
 	cfg.SelectRandFreq = flag.Float64("selectRandFreq", *cfg.SelectRandFreq, "Frequency to randomly select unknown orchestrators (on-chain mode only)")
 	cfg.MaxSessions = flag.Int("maxSessions", *cfg.MaxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator, maximum number of RTMP streams for Broadcaster, or maximum capacity for transcoder")
-
 	cfg.CurrentManifest = flag.Bool("currentManifest", *cfg.CurrentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
