@@ -36,5 +36,5 @@ require (
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b
 	google.golang.org/grpc v1.51.0
-	pgregory.net/rapid v0.4.0
+	pgregory.net/rapid v0.5.7
 )
