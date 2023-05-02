@@ -52,7 +52,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.17
           go-version-file: go.mod
@@ -151,7 +151,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.17
           go-version-file: go.mod
@@ -257,7 +257,7 @@ jobs:
 
       - name: Set up go
         id: go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v4
         with:
           go-version: 1.17
           go-version-file: go.mod
