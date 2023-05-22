@@ -76,17 +76,20 @@ jobs:
             livepeer/go-livepeer
             ghcr.io/${{ github.repository }}
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=ref,event=pr
             type=sha
+            type=ref,event=pr
+            type=ref,event=tag
             type=sha,format=long
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.event.pull_request.head.ref }}
+            type=raw,value=stable,enable=${{ startsWith(github.event.ref, 'refs/tags/v') }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata (tags, labels) for builder image
         id: meta-builder
         uses: docker/metadata-action@v4
         with:
@@ -94,11 +97,11 @@ jobs:
             livepeerci/build
             ghcr.io/${{ github.repository }}/build
           tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=ref,event=pr
             type=sha
+            type=ref,event=pr
+            type=ref,event=tag
             type=sha,format=long
+            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
