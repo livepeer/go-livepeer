@@ -30,6 +30,5 @@ indent_style = tab
 [{.ecrc,*.{yml,yaml,sh,json}}]
 indent_size = 2
 
-# # Go source files
-# [*.go]
-# indent_style = tab
+[{server/handlers_test,eth/accountmanager_test}.go]
+indent_style = unset

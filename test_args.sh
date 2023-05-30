@@ -147,7 +147,7 @@ else
   res=0
   $TMPDIR/livepeer -broadcaster -maxTicketEV -1 -network rinkeby $ETH_ARGS || res=$?
   [ $res -ne 0 ]
-  # Broadcaster needs a postive number for -depositMultiplier
+  # Broadcaster needs a positive number for -depositMultiplier
   res=0
   $TMPDIR/livepeer -broadcaster -depositMultiplier 0 -network rinkeby $ETH_ARGS || res=$?
   [ $res -ne 0 ]
