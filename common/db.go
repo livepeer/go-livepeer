@@ -208,30 +208,30 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// updateOrch prepared statement
 	stmt, err = db.Prepare(`
-	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, createdAt) 
-	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, :stake, datetime()) 
-	ON CONFLICT(ethereumAddr) DO UPDATE SET 
+	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, createdAt)
+	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, :stake, datetime())
+	ON CONFLICT(ethereumAddr) DO UPDATE SET
 	updatedAt = excluded.updatedAt,
 	serviceURI =
-  		CASE WHEN trim(excluded.serviceURI) == ""
-  		THEN orchestrators.serviceURI
-		ELSE trim(excluded.serviceURI) END, 
-	pricePerPixel = 
+		CASE WHEN trim(excluded.serviceURI) == ""
+		THEN orchestrators.serviceURI
+		ELSE trim(excluded.serviceURI) END,
+	pricePerPixel =
 		CASE WHEN excluded.pricePerPixel == 0
 		THEN orchestrators.pricePerPixel
-		ELSE excluded.pricePerPixel END, 
-	activationRound = 
+		ELSE excluded.pricePerPixel END,
+	activationRound =
 		CASE WHEN excluded.activationRound == 0
 		THEN orchestrators.activationRound
-		ELSE excluded.activationRound END, 
-	deactivationRound = 
+		ELSE excluded.activationRound END,
+	deactivationRound =
 		CASE WHEN excluded.deactivationRound == 0
 		THEN orchestrators.deactivationRound
 		ELSE excluded.deactivationRound END,
-	stake = 
+	stake =
 		CASE WHEN excluded.stake == 0
 		THEN orchestrators.stake
-		ELSE excluded.stake END 
+		ELSE excluded.stake END
 	`)
 	if err != nil {
 		glog.Error("Unable to prepare updateOrch ", err)
