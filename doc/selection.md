@@ -22,3 +22,13 @@ The current default selector implementation is the [MinLSSelectorWithRandFreq](h
 **Selecting Known Sessions**
 
 - Select the known session with the best latency score
+
+## Future
+
+A few considerations for future iterations on selection algorithms:
+
+- Consider additional inputs outside of just speed and price including transcoding quality (i.e. lowest loss compared to original signal) and efficiency (i.e. highest quality per bit)
+	- Previous work:
+		- [Leaderboard scoring framework](https://livepeer.notion.site/Leaderboard-Score-Framework-a420c0e9b6e4408b81cf0d9ffcd9d40e)
+		- [Presentation](https://www.youtube.com/watch?v=ZDCg5feDELA) on selection framework based on technical constraints and economic preferences
+- Should be able to express their preferences in a way that adjusts how much each input into the selection algorithm is weighted (i.e. weight speed over price, weight quality over speed, etc) and a list of weights (or a weights generation algorithm) could be used to customize how the selection algorithm works
