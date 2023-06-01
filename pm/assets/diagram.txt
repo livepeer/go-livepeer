@@ -1,0 +1,22 @@
+title Sending & Receiving Tickets
+
+participant ChangeMe1
+Recipient->Sender: ticketParams
+
+note over Sender: StartSession(ticketParams)
+
+note over Sender: tickets = CreateTicketBatch(n)
+
+Sender -> Recipient: n tickets
+
+note over Recipient: ReceiveTicket(ticket) for all n tickets
+
+note over Recipient: RedeemWinningTicket(ticket) for all winning tickets
+
+note over Sender: tickets = CreateTicketBatch(n)
+
+Sender -> Recipient: n tickets
+
+note over Recipient: ReceiveTicket(ticket) for all n tickets
+
+note over Recipient: RedeemWinningTicket(ticket) for all winning tickets
