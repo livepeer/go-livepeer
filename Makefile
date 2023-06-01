@@ -61,12 +61,3 @@ livepeer_bench:
 .PHONY: livepeer_router
 livepeer_router:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags)" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_router/*.go
-
-.PHONY: localdocker
-localdocker:
-	./print_version.sh > .git.describe
-	# docker build -t livepeerbinary:debian -f Dockerfile.debian .
-	# Manually build our context... this is hacky but docker refuses to support symlinks
-	# or selectable .dockerignore files
-	tar ch --exclude=.git . | docker build --build-arg BUILD_TAGS="$(BUILD_TAGS)" -t livepeerbinary:debian -f docker/Dockerfile.debian -
-	rm .git.describe
