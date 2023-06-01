@@ -26,6 +26,7 @@
 #### General
 
 #### Broadcaster
+- \#2751 Remove unused verification logic and CLI arguments
 
 #### Orchestrator
 
