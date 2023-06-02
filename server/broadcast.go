@@ -282,13 +282,15 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 		}
 
 		/*
-		   Don't select sessions no longer in the map.
+			Don't select sessions no longer in the map.
 
-		   Retry if the first selected session has been removed from the map.
-		   This may occur if the session is removed while still in the list.
-		   To avoid a runtime search of the session list under lock, simply
-		   fixup the session list at selection time by retrying the selection.
+			Retry if the first selected session has been removed from
+			the map.  This may occur if the session is removed while
+			still in the list.  To avoid a runtime search of the
+			session list under lock, simply fixup the session list at
+			selection time by retrying the selection.
 		*/
+
 		if _, ok := sp.sessMap[sess.Transcoder()]; ok {
 			selectedSessions = append(selectedSessions, sess)
 

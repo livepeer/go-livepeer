@@ -11,7 +11,7 @@ participant TicketQueue
 database TicketStore
 end
 participant Ethereum Node
-participantgroup 
+participantgroup
 
 Recipient->Redeemer Client (SenderMonitor):MaxFloat(sender)
 group MaxFloat(sender)
@@ -21,9 +21,9 @@ Redeemer Client (SenderMonitor)->>Redeemer gRPC server: MaxFloat(sender)
 Redeemer gRPC server->LocalSenderMonitor: MaxFloat(sender)
 Redeemer gRPC server<--LocalSenderMonitor: MaxFloat
 Redeemer Client (SenderMonitor)<<--Redeemer gRPC server: MaxFloatUpdate
-Redeemer Client (SenderMonitor)-#blue>>Redeemer gRPC server: <color:#blue>MonitorMaxFloat(sender)    
+Redeemer Client (SenderMonitor)-#blue>>Redeemer gRPC server: <color:#blue>MonitorMaxFloat(sender)
 Redeemer gRPC server-#red>LocalSenderMonitor: <color:#red>SubscribeMaxFloatChange(Sender)
-end 
+end
 Recipient<--Redeemer Client (SenderMonitor): MaxFloat
 
 entryspacing 3
@@ -40,7 +40,7 @@ LocalSenderMonitor->TicketQueue:QueueTicket
 parallel off
 TicketQueue->TicketStore:StoreWinningTicket
 note over TicketStore:submittedAt==NULL\ntxHash==NULL
-Redeemer Client (SenderMonitor)<<#green--Redeemer gRPC server:<color:#green>QueueTicketRes    
+Redeemer Client (SenderMonitor)<<#green--Redeemer gRPC server:<color:#green>QueueTicketRes
 end
 Recipient<--Redeemer Client (SenderMonitor): RedeemWinningTicket
 

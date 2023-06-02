@@ -31,8 +31,8 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 
 # note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
 RUN LIBTENSORFLOW_VERSION=2.3.4 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+	&& curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+	&& mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
