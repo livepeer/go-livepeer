@@ -12,7 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-	&& curl -fsSL https://dl.google.com/go/go1.17.6.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL https://dl.google.com/go/go1.20.4.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
