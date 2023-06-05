@@ -46,7 +46,7 @@ var Policy *verification.Policy
 var BroadcastCfg = &BroadcastConfig{}
 var MaxAttempts = 3
 
-var MetadataQueue event.Producer
+var MetadataQueue event.SimpleProducer
 var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
