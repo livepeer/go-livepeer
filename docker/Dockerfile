@@ -12,7 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-	&& curl -fsSL https://dl.google.com/go/go1.17.6.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL https://dl.google.com/go/go1.20.4.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
@@ -48,13 +48,12 @@ COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 ARG	BUILD_TAGS
 ENV BUILD_TAGS=${BUILD_TAGS}
 
-RUN ./install_ffmpeg.sh \
-	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
-	&& go get -v github.com/jstemmer/go-junit-report
-
 COPY	go.mod	go.sum	./
-
 RUN	go mod download
+
+RUN ./install_ffmpeg.sh \
+	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.52.2 \
+	&& go get -v github.com/jstemmer/go-junit-report
 
 COPY	.	.
 

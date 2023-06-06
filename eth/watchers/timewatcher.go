@@ -22,8 +22,8 @@ import (
 
 // TimeWatcher allows for subscriptions to certain data feeds using a caller provided sink channel
 // consumers of the TimeWatcher can subscribe to following data feeds:
-// 	* Last Initialized Round Number
-//	* Last Seen Block Number
+//   - Last Initialized Round Number
+//   - Last Seen Block Number
 type TimeWatcher struct {
 	// state
 	mu                            sync.RWMutex
