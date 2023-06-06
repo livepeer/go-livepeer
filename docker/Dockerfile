@@ -52,7 +52,7 @@ COPY	go.mod	go.sum	./
 RUN	go mod download
 
 RUN ./install_ffmpeg.sh \
-	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
+	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.52.2 \
 	&& go get -v github.com/jstemmer/go-junit-report
 
 COPY	.	.
