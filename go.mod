@@ -26,7 +26,7 @@ require (
 	github.com/urfave/cli v1.22.12
 	go.opencensus.io v0.24.0
 	go.uber.org/goleak v1.2.2-0.20230213210001-751da596f6f7
-	golang.org/x/net v0.8.0
+	golang.org/x/net v0.10.0
 	google.golang.org/grpc v1.54.0
 	pgregory.net/rapid v0.4.0
 )
@@ -112,8 +112,8 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.114.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
