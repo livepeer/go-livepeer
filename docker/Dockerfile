@@ -48,13 +48,12 @@ COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 ARG	BUILD_TAGS
 ENV BUILD_TAGS=${BUILD_TAGS}
 
+COPY	go.mod	go.sum	./
+RUN	go mod download
+
 RUN ./install_ffmpeg.sh \
 	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
 	&& go get -v github.com/jstemmer/go-junit-report
-
-COPY	go.mod	go.sum	./
-
-RUN	go mod download
 
 COPY	.	.
 
