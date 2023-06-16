@@ -20,7 +20,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/peterbourgon/ff/v3 v3.3.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.14.0
+	github.com/prometheus/client_golang v1.16.0
 	github.com/stretchr/testify v1.8.1
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/urfave/cli v1.22.12
@@ -96,12 +96,13 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/prometheus/statsd_exporter v0.22.7 // indirect
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rabbitmq/amqp091-go v1.8.0 // indirect
 	github.com/rabbitmq/rabbitmq-stream-go-client v1.1.1 // indirect
 	github.com/rjeczalik/notify v0.9.2 // indirect
+	github.com/rogpeppe/go-internal v1.10.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
@@ -112,7 +113,7 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.114.0 // indirect
