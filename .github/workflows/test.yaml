@@ -40,8 +40,7 @@ jobs:
         id: go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.17
-          go-version-file: go.mod
+          go-version: 1.20.4
           cache: true
           cache-dependency-path: go.sum
 
@@ -90,7 +89,7 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.39.0
+          version: v1.52.2
           args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
 
       - name: Run Revive Action by building from repository
@@ -140,3 +139,20 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
+
+  editorconfig:
+    name: Run editorconfig checker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3.5.2
+        with:
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install editorconfig-checker
+        uses: editorconfig-checker/action-editorconfig-checker@main
+
+      - name: Run editorconfig checker against the repo
+        run: editorconfig-checker

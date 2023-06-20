@@ -3,7 +3,7 @@
 set -eo pipefail
 set -x
 
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export MINGW_INSTALLS=mingw64
 pacman -S --noconfirm --noprogressbar --ask=20 --needed mingw-w64-x86_64-binutils mingw-w64-x86_64-gcc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-go mingw-w64-x86_64-nasm mingw-w64-x86_64-clang git make autoconf automake patch libtool texinfo gtk-doc zip

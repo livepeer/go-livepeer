@@ -12,7 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-	&& curl -fsSL https://dl.google.com/go/go1.17.6.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL https://dl.google.com/go/go1.20.4.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
@@ -31,8 +31,8 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 
 # note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
 RUN LIBTENSORFLOW_VERSION=2.3.4 \
-            && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
+	&& curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
+	&& mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
@@ -48,13 +48,12 @@ COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 ARG	BUILD_TAGS
 ENV BUILD_TAGS=${BUILD_TAGS}
 
-RUN ./install_ffmpeg.sh \
-	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.25.0 \
-	&& go get -v github.com/jstemmer/go-junit-report
-
 COPY	go.mod	go.sum	./
-
 RUN	go mod download
+
+RUN ./install_ffmpeg.sh \
+	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.52.2 \
+	&& go get -v github.com/jstemmer/go-junit-report
 
 COPY	.	.
 
