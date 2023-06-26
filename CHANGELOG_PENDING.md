@@ -9,6 +9,7 @@
 #### General
 - \#2758 Accept only active Os to receive traffic and redeem tickets (@leszko)
 - \#2775 Reduce number of ETH RPC calls during block polling (@leszko)
+- \#2815 Add new logging methods to publish a set of public logs (@emranemran)
 
 #### Broadcaster
 
