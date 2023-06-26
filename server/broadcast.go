@@ -205,7 +205,7 @@ func removeSessionFromList(sessions []*BroadcastSession, sess *BroadcastSession)
 	return res
 }
 
-func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
+func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []*BroadcastSession, durMult int) *BroadcastSession {
 	for _, session := range sessions {
 		// A session in the exclusion list is not selectable
 		if includesSession(exclude, session) {
@@ -216,6 +216,15 @@ func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, du
 		// threshold is selectable
 		if len(session.SegsInFlight) == 0 {
 			if session.LatencyScore > 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
+				clog.PublicInfof(ctx,
+					"Selecting new orchestrator, reason=%v",
+					fmt.Sprintf(
+						"performance: no segments in flight, latency score of %v < %v",
+						session.LatencyScore,
+						durMult,
+					),
+				)
+
 				return session
 			}
 		}
@@ -230,6 +239,15 @@ func selectSession(sessions []*BroadcastSession, exclude []*BroadcastSession, du
 			maxTimeInFlight := time.Duration(durMult) * oldestSegInFlight.segDur
 
 			if timeInFlight < maxTimeInFlight {
+				clog.PublicInfof(ctx,
+					"Selected orchestrator reason=%v",
+					fmt.Sprintf(
+						"performance: segments in flight, latency score of %v < %v",
+						session.LatencyScore,
+						durMult,
+					),
+				)
+
 				return session
 			}
 		}
@@ -258,7 +276,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 		// Re-use last session if oldest segment is in-flight for < segDur
 		gotFromLast := false
-		sess = selectSession(sp.lastSess, selectedSessions, 1)
+		sess = selectSession(ctx, sp.lastSess, selectedSessions, 1)
 		if sess == nil {
 			// Or try a new session from the available ones
 			sess = sp.sel.Select(ctx)
@@ -268,7 +286,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 		if sess == nil {
 			// If no new sessions are available, re-use last session when oldest segment is in-flight for < 2 * segDur
-			sess = selectSession(sp.lastSess, selectedSessions, 2)
+			sess = selectSession(ctx, sp.lastSess, selectedSessions, 2)
 			if sess != nil {
 				gotFromLast = true
 				clog.V(common.DEBUG).Infof(ctx, "No sessions in the selector for manifestID=%v re-using orch=%v with acceptable in-flight time",
@@ -303,6 +321,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 				sess.SegsInFlight = nil
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
 				clog.V(common.DEBUG).Infof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
+				clog.PublicInfof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
 				}
@@ -316,6 +335,8 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 		for _, ls := range sp.lastSess {
 			if !includesSession(selectedSessions, ls) {
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
+					getOrchs(selectedSessions), sp.mid)
+				clog.PublicInfof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
