@@ -252,7 +252,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 			maxTimeInFlight := time.Duration(durMult) * oldestSegInFlight.segDur
 
 			if timeInFlight < maxTimeInFlight {
-				if session.OrchestratorInfo.GetTicketParams() != nil {
+				/*if session.OrchestratorInfo.GetTicketParams() != nil {
 					clog.PublicInfof(ctx,
 						"Selected orchestrator eth-address=0x%v, ip-address=%v, reason=%v",
 						ethcommon.Bytes2Hex(session.OrchestratorInfo.TicketParams.Recipient),
@@ -273,7 +273,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 						),
 					)
 
-				}
+				}*/
 				return session
 			}
 		}
@@ -347,7 +347,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 				sess.SegsInFlight = nil
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
 				clog.V(common.DEBUG).Infof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
-				clog.PublicInfof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
+//				clog.PublicInfof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
 				}
@@ -362,7 +362,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 			if !includesSession(selectedSessions, ls) {
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
-				if ls.OrchestratorInfo.GetTicketParams() != nil {
+				/*if ls.OrchestratorInfo.GetTicketParams() != nil {
 					clog.PublicInfof(ctx,
 						"Swapping from orch=%v to orch=%+v, eth-address=0x%v, ip-address=%v, reason=%v",
 						ls.Transcoder(),
@@ -379,7 +379,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 						fmt.Sprintf("performance: latency score of %v", ls.LatencyScore),
 					)
 
-				}
+				}*/
 
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
