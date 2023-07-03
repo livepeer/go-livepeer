@@ -11,7 +11,7 @@ import (
 // A valid string will always be returned, regardless of whether an error occurred.
 func ReadFromFile(s string) (string, error) {
 	info, err := os.Stat(s)
-	if err !=  nil {
+	if err != nil {
 		return s, err
 	}
 	if os.IsNotExist(err) {
