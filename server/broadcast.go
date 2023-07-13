@@ -470,7 +470,7 @@ func (bsm *BroadcastSessionsManager) suspendAndRemoveOrch(ctx context.Context, s
 	}
 
 	//broadcaster introspection
-	clog.PublicInfof(ctx, "Suspending and Removing orchestrator for %v session refreshes reason=%v", sess.LogInfo(), penalty, err.Error())
+	clog.PublicInfof(ctx, "Suspending and Removing orchestrator for %v session refreshes reason=%v", penalty, err.Error())
 }
 
 func (bsm *BroadcastSessionsManager) removeSession(session *BroadcastSession) {
@@ -1168,13 +1168,11 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		resc := make(chan *SubmitResult, len(sessions))
 		submittedCount := 0
 
-		for _, sess := range sessions {
+		for idx, sess := range sessions {
 			//broadcaster introspection
-			ethAddr := clog.GetVal(ctx, "ethaddress")
-			orchUrl := clog.GetVal(ctx, "orchestrator")
-			ctx = clog.AddVal(ctx, "ethaddress", strings.Join([]string{ethAddr, sess.Address()}, ","))
-			ctx = clog.AddVal(ctx, "orchestrator", strings.Join([]string{orchUrl, sess.OrchestratorInfo.Transcoder}, ","))
-			clog.PublicInfof(ctx, "Selected orchestrator reason=%v", strings.Join(selectedReasons, ","))
+			ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+			ctx = clog.AddVal(ctx, "orchestrator", sess.OrchestratorInfo.Transcoder)
+			clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[idx])
 
 			// todo: run it in own goroutine (move to submitSegment?)
 			seg2, err := prepareForTranscoding(ctx, cxn, sess, seg, name)

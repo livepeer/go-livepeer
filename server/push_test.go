@@ -31,6 +31,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/vidplayer"
@@ -603,7 +604,7 @@ func TestPush_MP4(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	sd := &stubDiscovery{}
-	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken}}
+	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken, TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()}}}
 	s.LivepeerNode.OrchestratorPool = sd
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
@@ -1300,7 +1301,7 @@ func TestPush_OSPerStream(t *testing.T) {
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P720p25fps16x9}
 
 	sd := &stubDiscovery{}
-	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken}}
+	sd.infos = []*net.OrchestratorInfo{{Transcoder: ts.URL, AuthToken: stubAuthToken, TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()}}}
 	s.LivepeerNode.OrchestratorPool = sd
 
 	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {

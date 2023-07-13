@@ -35,7 +35,7 @@ const (
 type Verbose bool
 
 var stdKeys map[string]bool
-var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID}
+var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID, "ethaddress", "orchestrator"}
 var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP, seqNo, "ethaddress", "orchestrator"}
 
 func init() {

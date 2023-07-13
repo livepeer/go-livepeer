@@ -56,7 +56,8 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 				PricePerUnit:  1,
 				PixelsPerUnit: 1,
 			},
-			AuthToken: stubAuthToken,
+			AuthToken:    stubAuthToken,
+			TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
 		},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
@@ -549,8 +550,9 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	sess.Balance = balance
 	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	sess.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-		AuthToken:  stubAuthToken,
+		Transcoder:   ts.URL,
+		AuthToken:    stubAuthToken,
+		TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
 	}
 
 	cxn := &rtmpConnection{
@@ -599,7 +601,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 			PricePerUnit:  1,
 			PixelsPerUnit: 1,
 		},
-		TicketParams: &net.TicketParams{},
+		TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
 		AuthToken:    stubAuthToken,
 	}
 
@@ -685,7 +687,7 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 		Info: &net.OrchestratorInfo{
 			Transcoder:   ts.URL,
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes(), ExpirationBlock: big.NewInt(100).Bytes()},
 		},
 		Result: &net.TranscodeResult_Error{
 			Error: "OrchestratorBusy",
