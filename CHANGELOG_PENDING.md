@@ -19,6 +19,7 @@
 ### Bug Fixes 🐞
 
 #### CLI
+- \#2825 Enable quieter logging with -v=2 and -v=1 (@iameli)
 
 #### General
 
