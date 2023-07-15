@@ -36,7 +36,7 @@ func main() {
 	// Help & Log
 	mistJson := flag.Bool("j", false, "Print application info as json")
 	version := flag.Bool("version", false, "Print out the version")
-	verbosity := flag.String("v", "", "Log verbosity.  {4|5|6}")
+	verbosity := flag.String("v", "3", "Log verbosity.  {4|5|6}")
 
 	cfg := parseLivepeerConfig()
 

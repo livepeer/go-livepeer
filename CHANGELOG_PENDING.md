@@ -24,6 +24,7 @@
 - \#2804 Bump livepeer-data and go version due to breaking interface change (@victorges)
 
 #### CLI
+- \#2825 Enable quieter logging with -v=2 and -v=1 (@iameli)
 
 #### General
 
