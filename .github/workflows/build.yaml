@@ -211,8 +211,8 @@ jobs:
           developer-certificate-password: ${{ secrets.CI_MACOS_CERTIFICATE_PASSWORD }}
           app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
           app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
+          app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
           binary-path: "lp-builds/"
-          app-bundle-id: "org.livepeer.livepeer"
 
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -288,7 +288,7 @@ jobs:
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
-          LIBTENSORFLOW_VERSION=2.3.4 \
+          LIBTENSORFLOW_VERSION=2.12.1 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && ldconfig

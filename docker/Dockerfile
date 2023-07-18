@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM	ubuntu:18.04	as	build
+FROM --platform=$BUILDPLATFORM	ubuntu:20.04	as	build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
@@ -30,7 +30,7 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& ldconfig /usr/local/lib
 
 # note: for runtime, Tensorflow version needs to be compatible with CUDA and CuDNN of the image
-RUN LIBTENSORFLOW_VERSION=2.3.4 \
+RUN	LIBTENSORFLOW_VERSION=2.12.1 \
 	&& curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
 	&& mkdir /tf && tar -C /tf -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
 
@@ -46,12 +46,12 @@ RUN	mkdir -p /go \
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
 ARG	BUILD_TAGS
-ENV BUILD_TAGS=${BUILD_TAGS}
+ENV	BUILD_TAGS=${BUILD_TAGS}
 
 COPY	go.mod	go.sum	./
 RUN	go mod download
 
-RUN ./install_ffmpeg.sh \
+RUN	./install_ffmpeg.sh \
 	&& GO111MODULE=on go get -v github.com/golangci/golangci-lint/cmd/golangci-lint@v1.52.2 \
 	&& go get -v github.com/jstemmer/go-junit-report
 
@@ -59,12 +59,11 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-# cuda 10.2 image is 1.4 Gb smaller, which is critical for our root partition size
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:10.1-cudnn7-runtime-ubuntu18.04 AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
 
-FROM --platform=$TARGETPLATFORM nvidia/cuda:11.6.2-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
 
-FROM livepeer-${TARGETARCH}-base
+FROM	livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
@@ -72,6 +71,7 @@ COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
+
 # libtensorflow.so is required at runtime, because Ffmpeg DNN filter loads it dynamically
 COPY --from=build	/tf/	/usr/local/
 
