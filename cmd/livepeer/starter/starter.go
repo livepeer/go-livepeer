@@ -127,6 +127,7 @@ type LivepeerConfig struct {
 	AuthWebhookURL               *string
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
+	OrchBlacklist                *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -1012,13 +1013,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		bcast := core.NewBroadcaster(n)
 
+		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
+
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
 		// caching/polling from the logic for fetching orchestrators during discovery
 		if *cfg.Network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
 			if err != nil {
 				glog.Fatalf("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -1035,7 +1038,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist)
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1254,6 +1257,13 @@ func parseOrchAddrs(addrs string) []*url.URL {
 		}
 	}
 	return res
+}
+
+func parseOrchBlacklist(b *string) []string {
+	if b == nil {
+		return []string{}
+	}
+	return strings.Split(*b, ",")
 }
 
 func validateURL(u string) (*url.URL, error) {
