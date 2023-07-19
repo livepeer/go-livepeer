@@ -3,6 +3,7 @@
 ## vX.X
 
 ### Breaking Changes 🚨🚨
+- \#2821 Bump nvidia/cuda base version for docker builds (@stronk-dev and @hjpotter92)
 
 ### Features ⚒
 

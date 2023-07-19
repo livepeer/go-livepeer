@@ -19,7 +19,7 @@ func TestReadFromFileNoFileExists(t *testing.T) {
 	output, err := ReadFromFile(input)
 
 	assert.Nil(err)
-	// ReadFromFile should return the originaly supplied string
+	// ReadFromFile should return the originally supplied string
 	assert.Equal(expectedOutput, output)
 }
 
@@ -33,7 +33,7 @@ func TestReadFromFileDirectoryExists(t *testing.T) {
 	output, err := ReadFromFile(input)
 
 	assert.NotNil(err)
-	// ReadFromFile should return the originaly supplied string
+	// ReadFromFile should return the originally supplied string
 	assert.Equal(expectedOutput, output)
 }
 
@@ -57,7 +57,7 @@ func TestReadFromFileEmptyFileExists(t *testing.T) {
 	output, err := ReadFromFile(tmpFile)
 
 	assert.NotNil(err)
-	// ReadFromFile should return the originaly supplied string
+	// ReadFromFile should return the originally supplied string
 	assert.Equal(expectedOutput, output)
 }
 
