@@ -295,7 +295,7 @@ This release also includes a darwin arm64 build and darwin/linux binaries compil
 
 *February 11th 2022*
 
-This release supports connecting to Arbitrum Mainnet using the `-network arbitrum-one-mainnet` flag after the L1 Ethereum block 14207040 which is the block at which [LIP-73 i.e. the Confluence upgrade](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md#specification) will be activated. Prior to this block, running the node wtih `-network arbitrum-one-mainnet` will result in a startup error so it is recommended to wait until after block 14207040 to run the node with the `-network arbitrum-one-mainnet` flag. **We strongly encourage all node operators to upgrade to this release so they can connect to Arbitrum Mainnet after the LIP-73 block**.
+This release supports connecting to Arbitrum Mainnet using the `-network arbitrum-one-mainnet` flag after the L1 Ethereum block 14207040 which is the block at which [LIP-73 i.e. the Confluence upgrade](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md#specification) will be activated. Prior to this block, running the node with `-network arbitrum-one-mainnet` will result in a startup error so it is recommended to wait until after block 14207040 to run the node with the `-network arbitrum-one-mainnet` flag. **We strongly encourage all node operators to upgrade to this release so they can connect to Arbitrum Mainnet after the LIP-73 block**.
 
 Additional updates in this release include various improvements to compatibility with Arbitrum networks as well as the initial groundwork for enabling H.265/HEVC encoding/decoding and VP8/VP9 decoding jobs on the network.
 
@@ -579,7 +579,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 *August 10 2021*
 
-This release includes another gas price monitoring fix to address additional cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, automatic replacements for pending transactions that timeout, fixes for broadcaster stream recording, support for downloading stream recordings as mp4 files as well as variety of other bug fixes and enhancements.
+This release includes another gas price monitoring fix to address additional cases where Ethereum JSON-RPC providers occasionally return really low gas prices for the `eth_gasPrice` RPC call, automatic replacements for pending transactions that timeout, fixes for broadcaster stream recording, support for downloading stream recordings as mp4 files as well as variety of other bug fixes and enhancements.
 
 In addition to the gas price monitoring fix and support for automatic replacements for pending transactions that timeout, a few additional configuration options are introduced to give node operators more control over gas prices and transactions:
 
@@ -639,7 +639,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 *May 18 2021*
 
-This release includes an important gas price monitoring fix that addresses cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, reductions in the gas cost for staking actions (under certain circumstances) using `livepeer_cli`  and improvements to split orchestrator and transcoder setups that help remote transcoders retain streams. We strongly recommend all orchestrator and transcoder operators to upgrade to this version as soon as possible to access this latest set of bug fixes and improvements.
+This release includes an important gas price monitoring fix that addresses cases where Ethereum JSON-RPC providers occasionally return really low gas prices for the `eth_gasPrice` RPC call, reductions in the gas cost for staking actions (under certain circumstances) using `livepeer_cli`  and improvements to split orchestrator and transcoder setups that help remote transcoders retain streams. We strongly recommend all orchestrator and transcoder operators to upgrade to this version as soon as possible to access this latest set of bug fixes and improvements.
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 

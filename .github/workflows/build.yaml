@@ -43,7 +43,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g
 
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -141,7 +141,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -211,8 +211,8 @@ jobs:
           developer-certificate-password: ${{ secrets.CI_MACOS_CERTIFICATE_PASSWORD }}
           app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
           app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
+          app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
           binary-path: "lp-builds/"
-          app-bundle-id: "org.livepeer.livepeer"
 
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -246,7 +246,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g coreutils binutils libc++-dev libc++abi-dev libtool p7zip-full mediainfo xz-utils
 
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -288,7 +288,7 @@ jobs:
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
 
-          LIBTENSORFLOW_VERSION=2.3.4 \
+          LIBTENSORFLOW_VERSION=2.12.1 \
             && curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
             && ldconfig

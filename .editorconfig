@@ -25,6 +25,7 @@ insert_final_newline = unset
 # Makefiles/Dockerfile/golang files
 [{Makefile,Dockerfile{,.debian},*.go}]
 indent_style = tab
+indent_size = 8
 
 # YAML/JSON Files
 [{.ecrc,*.{yml,yaml,sh,json}}]
