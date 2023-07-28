@@ -19,6 +19,7 @@ type RemoteTranscoderInfo struct {
 	Priority int
 	PPNS     float64
 	RTR      float64
+	Secret   string
 }
 
 type StreamInfo struct {

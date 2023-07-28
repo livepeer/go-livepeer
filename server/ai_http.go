@@ -654,9 +654,11 @@ func (h *lphttp) AIResults() http.Handler {
 
 		creds := r.Header.Get("Credentials")
 
-		if creds != orch.TranscoderSecret() {
+		_, exists := h.node.AIWorkerManager.CheckWorkerSecret(creds)
+		if exists == false {
 			glog.Error("Invalid shared secret")
-			respondWithError(w, errSecret.Error(), http.StatusUnauthorized)
+			http.Error(w, errSecret.Error(), http.StatusUnauthorized)
+			return
 		}
 
 		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))

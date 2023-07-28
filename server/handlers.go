@@ -1735,6 +1735,32 @@ func (s *LivepeerServer) setMaxSessionsHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) activateTranscoderSecretHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			secret := common.RandName()
+			s.LivepeerNode.UpdateTranscoderSecret(secret, true)
+			glog.Infof("Transcoder secret activated: %v", secret)
+			respondOk(w, []byte(secret))
+		}
+	})
+}
+
+func (s *LivepeerServer) deactivateTranscoderSecretHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			secret := r.FormValue("secret")
+			if secret == "" {
+				respond400(w, "need to set secret")
+			}
+		
+			s.LivepeerNode.UpdateTranscoderSecret(secret, false)
+			glog.Infof("Transcoder secret deactivated: %v", secret)
+			respondOk(w, []byte(""))
+		}
+	})
+}
+
 // Helpers
 func respondOk(w http.ResponseWriter, msg []byte) {
 	w.WriteHeader(http.StatusOK)

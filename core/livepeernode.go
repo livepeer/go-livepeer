@@ -337,3 +337,58 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
 	return totalCapacity
 }
+
+func (n *LivepeerNode) GetTranscoderSecrets() error {
+	secrets, err := n.Database.GetTranscoderSecrets()
+
+	if n.TranscoderManager != nil {
+		n.TranscoderManager.RTmutex.Lock()
+		defer n.TranscoderManager.RTmutex.Unlock()
+
+		//include OrchSecret
+		n.TranscoderManager.transcoderSecrets[n.OrchSecret] = true
+		//get other transcoder secrets
+		if err == nil {
+			for k, v := range secrets {
+				n.TranscoderManager.transcoderSecrets[k] = v
+			}
+		} else {
+			return err
+		}
+	}
+
+	if n.AIWorkerManager != nil {
+		n.AIWorkerManager.RWmutex.Lock()
+		defer n.AIWorkerManager.RWmutex.Unlock()
+
+		//include OrchSecret
+		n.AIWorkerManager.workerSecrets[n.OrchSecret] = true
+		//get other transcoder secrets
+		if err == nil {
+			for k, v := range secrets {
+				n.AIWorkerManager.workerSecrets[k] = v
+			}
+		} else {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+func (n *LivepeerNode) UpdateTranscoderSecret(secret string, active bool) {
+	if n.TranscoderManager != nil {
+		n.TranscoderManager.RTmutex.Lock()
+		defer n.TranscoderManager.RTmutex.Unlock()
+		n.TranscoderManager.transcoderSecrets[secret] = active
+	}
+
+	if n.AIWorkerManager != nil {
+		n.AIWorkerManager.RWmutex.Lock()
+		defer n.AIWorkerManager.RWmutex.Unlock()
+		n.AIWorkerManager.workerSecrets[secret] = active
+	}
+
+	n.Database.UpdateTranscoderSecret(secret, active)
+}

@@ -26,6 +26,7 @@ type DB struct {
 	// prepared statements
 	updateOrch                       *sql.Stmt
 	selectKV                         *sql.Stmt
+	selectKVLike                     *sql.Stmt
 	updateKV                         *sql.Stmt
 	insertUnbondingLock              *sql.Stmt
 	deleteUnbondingLock              *sql.Stmt
@@ -196,6 +197,15 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 	d.selectKV = stmt
+
+	// selectKVLike prepared statement
+	stmt, err = db.Prepare("SELECT key, value from kv WHERE key LIKE ?")
+	if err != nil {
+		glog.Error("Unable to prepare selectKVLike stmt ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectKVLike = stmt
 
 	// updateKV prepared statement
 	stmt, err = db.Prepare("INSERT OR REPLACE INTO kv(key, value, updatedAt) VALUES(?1, ?2, datetime())")
@@ -369,6 +379,9 @@ func (db *DB) Close() {
 	if db.selectKV != nil {
 		db.selectKV.Close()
 	}
+	if db.selectKVLike != nil {
+		db.selectKVLike.Close()
+	}
 	if db.updateKV != nil {
 		db.updateKV.Close()
 	}
@@ -457,6 +470,50 @@ func (db *DB) SetChainID(id *big.Int) error {
 	if err := db.updateKVStore("chainID", id.String()); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (db *DB) GetTranscoderSecret(secret string) (bool, error) {
+	active, err := db.selectKVStore("secret:"+secret)
+	if err != nil {
+		return false, err
+	}
+
+	is_active, err := strconv.ParseBool(active)
+	if err == nil {
+		return is_active, nil
+	} else {
+		return false, err
+	}
+}
+
+func(db *DB) GetTranscoderSecrets() (map[string]bool, error) {
+	var (
+		ks string
+		secrets map[string]bool
+		is_active bool
+	)
+	kvs, err := db.selectKVStoreLike("secret%%")
+	if err == nil {
+		secrets = make(map[string]bool)	
+		for k, v := range kvs {
+			ks = strings.Replace(k, "secret:", "", 1)
+			is_active, _ = strconv.ParseBool(v)
+			secrets[ks] = is_active
+		}
+		return secrets, nil
+	} else {
+		return nil, err
+	}
+}
+
+func (db *DB) UpdateTranscoderSecret(secret string, active bool) error {
+	err := db.updateKVStore("secret:"+secret, strconv.FormatBool(active))
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -471,6 +528,31 @@ func (db *DB) selectKVStore(key string) (string, error) {
 		return "", nil
 	}
 	return valueString, nil
+}
+
+func (db *DB) selectKVStoreLike(key string) (map[string]string, error) {
+	rows, err := db.selectKVLike.Query(key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	kvs := make(map[string]string)
+	for rows.Next() {
+		var (
+			 key string
+			 value string
+		)
+		if err := rows.Scan(&key, &value); err != nil {
+			if err.Error() != "sql: no rows in result set" {
+				return kvs, fmt.Errorf("could not retrieve key from database: %v", err)
+			}
+			// If there is no result return no error, just zero value
+			return kvs, nil
+		}
+		glog.Infof("Adding key %s %s", key, value)
+		kvs[key] = value
+	}
+	return kvs, nil
 }
 
 func (db *DB) updateKVStore(key, value string) error {

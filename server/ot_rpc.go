@@ -299,7 +299,8 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	from := common.GetConnectionAddr(stream.Context())
 	glog.Infof("Got a RegisterTranscoder request from transcoder=%s capacity=%d", from, req.Capacity)
 
-	if req.Secret != h.orchestrator.TranscoderSecret() {
+	is_active, _ := h.node.TranscoderManager.CheckTranscoderSecret(req.Secret)
+	if is_active == false {
 		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
@@ -312,7 +313,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, req.Secret)
 	return nil
 }
 
@@ -328,8 +329,9 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-
-	if creds != orch.TranscoderSecret() {
+	
+	_, exists := h.node.TranscoderManager.CheckTranscoderSecret(creds)
+	if exists == false {
 		glog.Error("Invalid shared secret")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return

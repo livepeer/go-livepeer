@@ -63,6 +63,8 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
 	mux.Handle("/setPriceForBroadcaster", mustHaveFormParams(s.setPriceForBroadcaster(), "pricePerUnit", "pixelsPerUnit", "broadcasterEthAddr"))
 	mux.Handle("/setMaxSessions", mustHaveFormParams(s.setMaxSessions(), "maxSessions"))
+	mux.Handle("/activateTranscoderSecret", s.activateTranscoderSecretHandler())
+	mux.Handle("/deactivateTranscoderSecret", mustHaveFormParams(s.deactivateTranscoderSecretHandler(), "secret"))
 
 	// Bond, withdraw, reward
 	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))

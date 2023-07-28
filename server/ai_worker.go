@@ -43,7 +43,8 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 	from := common.GetConnectionAddr(stream.Context())
 	glog.Infof("Got a RegisterAIWorker request from aiworker=%s ", from)
 
-	if req.Secret != h.orchestrator.TranscoderSecret() {
+	is_active, _ := h.node.AIWorkerManager.CheckWorkerSecret(req.Secret)
+	if is_active == false {
 		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
