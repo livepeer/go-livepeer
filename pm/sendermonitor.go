@@ -2,6 +2,7 @@ package pm
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math/big"
 	"sync"
@@ -13,7 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // The minimum value for the ratio between a sender's deposit and its pending amount required for the
@@ -92,11 +96,16 @@ type LocalSenderMonitor struct {
 
 	ticketStore TicketStore
 
+	redeemeruri string
+	useredeemer bool
+	conn        *grpc.ClientConn
+	rpc         net.TicketRedeemerClient
+
 	quit chan struct{}
 }
 
 // NewSenderMonitor returns a new SenderMonitor
-func NewSenderMonitor(cfg *LocalSenderMonitorConfig, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore) *LocalSenderMonitor {
+func NewSenderMonitor(cfg *LocalSenderMonitorConfig, broker Broker, smgr SenderManager, tm TimeManager, store TicketStore, redeemeruri string, useredeemer bool) *LocalSenderMonitor {
 	return &LocalSenderMonitor{
 		cfg:         cfg,
 		broker:      broker,
@@ -105,6 +114,10 @@ func NewSenderMonitor(cfg *LocalSenderMonitorConfig, broker Broker, smgr SenderM
 		senders:     make(map[ethcommon.Address]*remoteSender),
 		redeemable:  make(chan *redemption),
 		ticketStore: store,
+		redeemeruri: redeemeruri,
+		useredeemer: useredeemer,
+		conn:        nil,
+		rpc:         nil,
 		quit:        make(chan struct{}),
 	}
 }
@@ -114,10 +127,30 @@ func (sm *LocalSenderMonitor) Start() {
 	go sm.startCleanupLoop()
 	go sm.watchReserveChange()
 	go sm.watchPoolSizeChange()
+
+	if sm.useredeemer {
+		conn, err := grpc.Dial(
+			sm.redeemeruri,
+			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})),
+			grpc.WithBlock(),
+			grpc.WithTimeout(3*time.Second),
+		)
+
+		// TODO: PROVIDE KEEPALIVE SETTINGS
+		if err != nil {
+			glog.Errorf("Did not connect to redeemer=%v err=%q", sm.redeemeruri, err)
+		}
+
+		rpc := net.NewTicketRedeemerClient(conn)
+		sm.conn = conn
+		sm.rpc = rpc
+		glog.Infof("Redeemer client started for %v", sm.redeemeruri)
+	}
 }
 
 // Stop signals the monitor to exit gracefully
 func (sm *LocalSenderMonitor) Stop() {
+	sm.conn.Close()
 	close(sm.quit)
 }
 
@@ -288,21 +321,34 @@ func (sm *LocalSenderMonitor) startTicketQueueConsumerLoop(queue *ticketQueue, d
 	for {
 		select {
 		case red := <-queue.Redeemable():
-			tx, err := sm.redeemWinningTicket(red.SignedTicket)
-			res := struct {
-				txHash ethcommon.Hash
-				err    error
-			}{
-				ethcommon.Hash{},
-				err,
-			}
-			// FIXME: If there are replacement txs then tx.Hash() could be different
-			// from the hash of the replacement tx that was mined
-			if tx != nil {
-				res.txHash = tx.Hash()
-			}
+			if sm.useredeemer == false {
+				tx, err := sm.redeemWinningTicket(red.SignedTicket)
+				res := struct {
+					txHash ethcommon.Hash
+					err    error
+				}{
+					ethcommon.Hash{},
+					err,
+				}
+				// FIXME: If there are replacement txs then tx.Hash() could be different
+				// from the hash of the replacement tx that was mined
+				if tx != nil {
+					res.txHash = tx.Hash()
+				}
 
-			red.resCh <- res
+				red.resCh <- res
+			} else {
+				glog.Info("Sending ticket to redeemer")
+				err := sm.sendTicketToRedeemer(red.SignedTicket)
+				res := struct {
+					txHash ethcommon.Hash
+					err    error
+				}{
+					ethcommon.Hash{},
+					err,
+				}
+				red.resCh <- res
+			}
 		case <-done:
 			// When the ticket consumer exits, tell the ticketQueue
 			// to exit as well
@@ -440,6 +486,23 @@ func (sm *LocalSenderMonitor) redeemWinningTicket(ticket *SignedTicket) (*types.
 	return tx, nil
 }
 
+func (sm *LocalSenderMonitor) sendTicketToRedeemer(ticket *SignedTicket) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_, err := sm.rpc.QueueTicket(ctx, protoTicket(ticket))
+
+	if err == nil {
+		if monitor.Enabled {
+			monitor.ValueRedeemed(ticket.Sender.Hex(), ticket.Ticket.FaceValue)
+		}
+	} else {
+		if monitor.Enabled {
+			monitor.TicketRedemptionError(ticket.Sender.Hex())
+		}
+	}
+	return err
+}
+
 // SubscribeMaxFloatChange notifies subcribers when the max float for a sender has changed
 // and that it should call LocalSenderMonitor.MaxFloat() to get the latest value
 func (sm *LocalSenderMonitor) SubscribeMaxFloatChange(sender ethcommon.Address, sink chan<- struct{}) event.Subscription {
@@ -508,5 +571,27 @@ func (sm *LocalSenderMonitor) handlePoolSizeChange() {
 	defer sm.mu.Unlock()
 	for sender := range sm.senders {
 		sm.sendMaxFloatChange(sender)
+	}
+}
+
+func protoTicket(ticket *SignedTicket) *net.Ticket {
+	return &net.Ticket{
+		Sender:        ticket.Sender.Bytes(),
+		RecipientRand: ticket.RecipientRand.Bytes(),
+		TicketParams: &net.TicketParams{
+			Recipient:         ticket.Recipient.Bytes(),
+			FaceValue:         ticket.FaceValue.Bytes(),
+			WinProb:           ticket.WinProb.Bytes(),
+			RecipientRandHash: ticket.RecipientRandHash.Bytes(),
+			ExpirationBlock:   ticket.ParamsExpirationBlock.Bytes(),
+		},
+		SenderParams: &net.TicketSenderParams{
+			SenderNonce: ticket.SenderNonce,
+			Sig:         ticket.Sig,
+		},
+		ExpirationParams: &net.TicketExpirationParams{
+			CreationRound:          ticket.CreationRound,
+			CreationRoundBlockHash: ticket.CreationRoundBlockHash.Bytes(),
+		},
 	}
 }

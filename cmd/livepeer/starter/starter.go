@@ -939,19 +939,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
 
 			var sm pm.SenderMonitor
+			var useredeemer bool
 			if *cfg.RedeemerAddr != "" {
 				*cfg.RedeemerAddr = defaultAddr(*cfg.RedeemerAddr, "127.0.0.1", OrchestratorRpcPort)
-				rc, err := server.NewRedeemerClient(*cfg.RedeemerAddr, senderWatcher, timeWatcher)
-				if err != nil {
-					glog.Error("Unable to start redeemer client: ", err)
-					return
-				}
-				sm = rc
+				useredeemer = true
+				glog.Infof("Tickets will be redeemed at: %v", *cfg.RedeemerAddr)
 			} else {
-				sm = pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database)
+				useredeemer = false
 			}
+			//start SenderMonitor the O will use to get ticket information from B
+			sm = pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database, *cfg.RedeemerAddr, useredeemer)
 
-			// Start sender monitor
+			// Start sender monitor(s)
 			sm.Start()
 			defer sm.Stop()
 
@@ -1091,7 +1090,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			r, err := server.NewRedeemer(
 				recipientAddr,
 				n.Eth,
-				pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database),
+				pm.NewSenderMonitor(smCfg, n.Eth, senderWatcher, timeWatcher, n.Database, "", false),
 			)
 			if err != nil {
 				glog.Errorf("Unable to create redeemer: %v", err)
