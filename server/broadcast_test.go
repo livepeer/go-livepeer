@@ -253,12 +253,12 @@ type stubSelector struct {
 	size int
 }
 
-func (s *stubSelector) Add(sessions []*BroadcastSession)         {}
-func (s *stubSelector) Complete(sess *BroadcastSession)          {}
-func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
-func (s *stubSelector) Size() int                                { return s.size }
-func (s *stubSelector) Clear()                                   {}
-func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
+func (s *stubSelector) Add(sessions []*BroadcastSession)                   {}
+func (s *stubSelector) Complete(sess *BroadcastSession)                    {}
+func (s *stubSelector) Select(context.Context) (*BroadcastSession, string) { return s.sess, "" }
+func (s *stubSelector) Size() int                                          { return s.size }
+func (s *stubSelector) Clear()                                             {}
+func (s *stubSelector) Remove(session *BroadcastSession) bool              { return false }
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -344,11 +344,13 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	ts, mux := stubTLSServer()
 	defer ts.Close()
 
+	orchAddr := pm.RandAddress().Bytes()
 	tr := &net.TranscodeResult{
 		Info: &net.OrchestratorInfo{
-			Transcoder:   ts.URL,
+			Transcoder: ts.URL,
+
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes(), Recipient: orchAddr},
 			AuthToken:    stubAuthToken,
 		},
 		Result: &net.TranscodeResult_Data{
@@ -376,7 +378,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 			PricePerUnit:  1,
 			PixelsPerUnit: 1,
 		},
-		TicketParams: &net.TicketParams{},
+		TicketParams: &net.TicketParams{Recipient: orchAddr},
 		AuthToken:    stubAuthToken,
 	}
 
@@ -402,8 +404,9 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	balance.On("Credit", mock.Anything)
 	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	sess.OrchestratorInfo = &net.OrchestratorInfo{
-		Transcoder: ts.URL,
-		AuthToken:  stubAuthToken,
+		Transcoder:   ts.URL,
+		AuthToken:    stubAuthToken,
+		TicketParams: &net.TicketParams{Recipient: orchAddr},
 		PriceInfo: &net.PriceInfo{
 			PricePerUnit:  2,
 			PixelsPerUnit: 2,
@@ -457,22 +460,22 @@ func TestSelectSession_NoSegsInFlight(t *testing.T) {
 	sess.SegsInFlight = []SegFlightMetadata{
 		{startTime: time.Now().Add(time.Duration(-2) * time.Second), segDur: 1 * time.Second},
 	}
-	s := selectSession(ctx, sessList, nil, 1)
+	s, _ := selectSession(ctx, sessList, nil, 1)
 	assert.Nil(s)
 
 	// Session has no segs in flight, latency score = 0
 	sess.SegsInFlight = nil
-	s = selectSession(ctx, sessList, nil, 1)
+	s, _ = selectSession(ctx, sessList, nil, 1)
 	assert.Nil(s)
 
 	// Session has no segs in flight, latency score > SELECTOR_LATENCY_SCORE_THRESHOLD
 	sess.LatencyScore = SELECTOR_LATENCY_SCORE_THRESHOLD + 0.001
-	s = selectSession(ctx, sessList, nil, 1)
+	s, _ = selectSession(ctx, sessList, nil, 1)
 	assert.Nil(s)
 
 	// Session has no segs in flight, latency score > 0 and < SELECTOR_LATENCY_SCORE_THRESHOLD
 	sess.LatencyScore = SELECTOR_LATENCY_SCORE_THRESHOLD - 0.001
-	s = selectSession(ctx, sessList, nil, 1)
+	s, _ = selectSession(ctx, sessList, nil, 1)
 	assert.Equal(sess, s)
 }
 
@@ -1733,7 +1736,7 @@ func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSe
 		Broadcaster:       stubBroadcaster2(),
 		Params:            &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
 		BroadcasterOS:     os,
-		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken},
+		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken, TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()}},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
 	}
@@ -1766,7 +1769,7 @@ func TestCollectResults(t *testing.T) {
 	resChan <- &SubmitResult{Session: untrustedSess2, TranscodeResult: &ReceivedTranscodeResult{}}
 	resChan <- &SubmitResult{Session: trustedSess, TranscodeResult: &ReceivedTranscodeResult{}}
 
-	trustedResult, untrustedResults, err := bsm.collectResults(resChan, 4)
+	trustedResult, untrustedResults, err := bsm.collectResults(context.TODO(), resChan, 4)
 
 	assert.NoError(err)
 	assert.Equal(trustedSess, trustedResult.Session)

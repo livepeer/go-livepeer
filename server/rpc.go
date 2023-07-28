@@ -129,7 +129,7 @@ func (bs *BroadcastSession) Transcoder() string {
 func (bs *BroadcastSession) Address() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
-	return hexutil.Encode(bs.OrchestratorInfo.Address)
+	return hexutil.Encode(bs.OrchestratorInfo.TicketParams.Recipient)
 }
 
 func (bs *BroadcastSession) Clone() *BroadcastSession {
@@ -138,6 +138,10 @@ func (bs *BroadcastSession) Clone() *BroadcastSession {
 	newSess.lock = &sync.RWMutex{}
 	bs.lock.RUnlock()
 	return &newSess
+}
+
+func (bs *BroadcastSession) LogInfo() string {
+	return fmt.Sprintf("manifestID=%v orchSessionID=%v orchestrator=%v ethaddress=%v", bs.Params.ManifestID, bs.OrchestratorInfo.AuthToken.SessionId, bs.OrchestratorInfo.Transcoder, bs.Address())
 }
 
 func (bs *BroadcastSession) IsTrusted() bool {

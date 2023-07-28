@@ -1206,6 +1206,7 @@ func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Du
 }
 
 func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur time.Duration) {
+
 	clog.V(logLevel).Infof(ctx, "Logging SegmentDownloaded... dur=%s", downloadDur)
 
 	if err := stats.RecordWithTags(census.ctx,

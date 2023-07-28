@@ -67,18 +67,18 @@ func TestSelectSession(t *testing.T) {
 	expectedSess2 := pool.sessList()[0]
 
 	// assert last session selected and sessList is correct length
-	sess := pool.selectSessions(context.TODO(), 1)[0]
-	assert.Equal(expectedSess1, sess)
+	sess, _ := pool.selectSessions(context.TODO(), 1)
+	assert.Equal(expectedSess1, sess[0])
 	assert.Equal(sess, pool.lastSess[0])
 	assert.Len(pool.sessList(), 1)
 
-	sess = pool.selectSessions(context.TODO(), 1)[0]
-	assert.Equal(expectedSess2, sess)
+	sess, _ = pool.selectSessions(context.TODO(), 1)
+	assert.Equal(expectedSess2, sess[0])
 	assert.Equal(sess, pool.lastSess[0])
 	assert.Len(pool.sessList(), 0)
 
 	// assert no session is selected from empty list
-	sesss := pool.selectSessions(context.TODO(), 1)
+	sesss, _ := pool.selectSessions(context.TODO(), 1)
 	assert.Nil(sesss)
 	assert.Nil(pool.lastSess)
 	assert.Len(pool.sessList(), 0)
@@ -100,11 +100,11 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
 	// sanity checks then rebuild in order
-	firstSess := pool.selectSessions(context.TODO(), 1)
-	expectedSess := pool.selectSessions(context.TODO(), 1)[0]
+	firstSess, _ := pool.selectSessions(context.TODO(), 1)
+	expectedSess, _ := pool.selectSessions(context.TODO(), 1)
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 2)
-	pool.completeSession(expectedSess)
+	pool.completeSession(expectedSess[0])
 	pool.completeSession(firstSess[0])
 	// remove first sess from map, but keep in list. check results around that
 	pool.removeSession(firstSess[0])
@@ -112,8 +112,8 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(pool.sessMap, 1)
 	assert.Equal(firstSess[0], pool.sessList()[1]) // ensure removed sess still in list
 	// now ensure next selectSession call fixes up sessList as expected
-	sess = pool.selectSessions(context.TODO(), 1)[0]
-	assert.Equal(sess, expectedSess)
+	sess, _ = pool.selectSessions(context.TODO(), 1)
+	assert.Equal(sess[0], expectedSess)
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 1)
 
@@ -124,8 +124,8 @@ func TestSelectSession_NilSession(t *testing.T) {
 	pool := stubPool()
 	// Replace selector with stubSelector that will return nil for Select(), but 1 for Size()
 	pool.sel = &stubSelector{size: 1}
-
-	assert.Nil(t, pool.selectSessions(context.TODO(), 1))
+	selsess, _ := pool.selectSessions(context.TODO(), 1)
+	assert.Nil(t, selsess)
 }
 
 func TestRemoveSession(t *testing.T) {
@@ -159,24 +159,24 @@ func TestRemoveSession(t *testing.T) {
 func TestCompleteSessions(t *testing.T) {
 	pool := stubPool()
 
-	sess1 := pool.selectSessions(context.TODO(), 1)[0]
+	sess1, _ := pool.selectSessions(context.TODO(), 1)
 
 	// assert that initial lengths are as expected
 	assert := assert.New(t)
 	assert.Len(pool.sessList(), 1)
 	assert.Len(pool.sessMap, 2)
 
-	pool.completeSession(sess1)
+	pool.completeSession(sess1[0])
 
 	// assert that session already in sessMap is added back to sessList
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
-	assert.Equal(sess1, pool.sessMap[sess1.OrchestratorInfo.Transcoder])
+	assert.Equal(sess1, pool.sessMap[sess1[0].OrchestratorInfo.Transcoder])
 
 	// assert that we get the same session back next time we call select
-	newSess := pool.selectSessions(context.TODO(), 1)[0]
-	assert.Equal(sess1, newSess)
-	pool.completeSession(newSess)
+	newSess, _ := pool.selectSessions(context.TODO(), 1)
+	assert.Equal(sess1, newSess[0])
+	pool.completeSession(newSess[0])
 
 	// assert that session not in sessMap is not added to sessList
 	sess3 := StubBroadcastSession("transcoder3")
@@ -184,15 +184,15 @@ func TestCompleteSessions(t *testing.T) {
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
 
-	sess1 = pool.selectSessions(context.TODO(), 1)[0]
+	sess1, _ = pool.selectSessions(context.TODO(), 1)
 
-	sess1.LatencyScore = 2.7
-	pool.completeSession(sess1)
+	sess1[0].LatencyScore = 2.7
+	pool.completeSession(sess1[0])
 
 	// assert that existing session with same key in sessMap is replaced
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
-	assert.Equal(2.7, pool.sessMap[sess1.OrchestratorInfo.Transcoder].LatencyScore)
+	assert.Equal(2.7, pool.sessMap[sess1[0].OrchestratorInfo.Transcoder].LatencyScore)
 }
 
 func TestRefreshSessions(t *testing.T) {
@@ -298,7 +298,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	pool := stubPool()
 
 	sendSegStub := func() *BroadcastSession {
-		sesss := pool.selectSessions(context.TODO(), 1)
+		sesss, _ := pool.selectSessions(context.TODO(), 1)
 		pool.lock.Lock()
 		if sesss == nil {
 			pool.lock.Unlock()
@@ -387,7 +387,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	completeSegStub(sess1)
 
 	// send in multiple segments with delay > segDur but < 2*segDur and only a single session available
-	pool.suspend(expectedSess0.OrchestratorInfo.GetTranscoder())
+	pool.suspend(expectedSess0)
 	pool.removeSession(expectedSess0)
 	assert.Len(pool.sessMap, 1)
 
@@ -408,7 +408,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	assert.Len(pool.lastSess[0].SegsInFlight, 0)
 
 	// send in multiple segments with delay > 2*segDur and only a single session available
-	pool.suspend(expectedSess0.OrchestratorInfo.Transcoder)
+	pool.suspend(expectedSess0)
 	pool.removeSession(expectedSess0)
 	assert.Len(pool.sessMap, 1)
 
@@ -426,8 +426,8 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	completeSegStub(sess0)
 
 	// remove both session and check if selector returns nil and sets lastSession to nil
-	pool.suspend(expectedSess0.OrchestratorInfo.Transcoder)
-	pool.suspend(expectedSess1.OrchestratorInfo.Transcoder)
+	pool.suspend(expectedSess0)
+	pool.suspend(expectedSess1)
 	pool.removeSession(expectedSess0)
 	pool.removeSession(expectedSess1)
 	pool.lock.Lock() // refresh session could be running in parallel and modifying sessMap
@@ -443,7 +443,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 func TestSelectSessionMoreThanOne(t *testing.T) {
 	pool := stubPoolExt(3)
 	sendSegStub := func(num int) []*BroadcastSession {
-		sesss := pool.selectSessions(context.TODO(), num)
+		sesss, _ := pool.selectSessions(context.TODO(), num)
 		pool.lock.Lock()
 		if sesss == nil {
 			pool.lock.Unlock()
