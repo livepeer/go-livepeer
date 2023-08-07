@@ -734,6 +734,9 @@ func (bsm *BroadcastSessionsManager) completeSession(ctx context.Context, sess *
 	bsm.completeSessionUnsafe(ctx, sess, tearDown)
 	//broadcaster introspection
 	if tearDown {
+		ctx = clog.AddVal(ctx, "manifestID", string(sess.Params.ManifestID))
+		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		clog.PublicInfof(ctx, "Session completed reason=stream completed")
 	}
 }
@@ -1055,7 +1058,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		sess := sessions[0]
 		//broadcaster introspection
 		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
-		ctx = clog.AddVal(ctx, "orchestrator", sess.OrchestratorInfo.Transcoder)
+		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[0])
 
 		if seg, err = prepareForTranscoding(ctx, cxn, sess, seg, name); err != nil {
@@ -1171,7 +1174,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		for idx, sess := range sessions {
 			//broadcaster introspection
 			ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
-			ctx = clog.AddVal(ctx, "orchestrator", sess.OrchestratorInfo.Transcoder)
+			ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 			clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[idx])
 
 			// todo: run it in own goroutine (move to submitSegment?)
