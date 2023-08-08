@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.39
+## v0.6.0
 
 ### Breaking Changes 🚨🚨
 - [#2821](https://github.com/livepeer/go-livepeer/pull/2821) Bump nvidia/cuda base version for docker builds (@stronk-dev and @hjpotter92)
