@@ -8,7 +8,7 @@
 ### Features ⚒
 
 #### Broadcaster
-- [#2827](https://github.com/livepeer/go-livepeer/pull/2827) Introduce configurable Orchestrater blocklist (@mjh1)
+- [#2827](https://github.com/livepeer/go-livepeer/pull/2827) Introduce configurable Orchestrator blocklist (@mjh1)
 
 #### General
 - [#2758](https://github.com/livepeer/go-livepeer/pull/2758) Accept only active Os to receive traffic and redeem tickets (@leszko)
