@@ -139,23 +139,6 @@ EXTRA_FFMPEG_LDFLAGS="$EXTRA_LDFLAGS"
 # all flags which should be present for production build, but should be replaced/removed for debug build
 DEV_FFMPEG_FLAGS="--disable-programs"
 
-if [[ "$UNAME" == "Darwin" ]]; then
-  EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS -framework CoreFoundation -framework Security"
-else
-  # If we have clang, we can compile with CUDA support!
-  if which clang >/dev/null; then
-    echo "clang detected, building with GPU and Tensorflow support"
-    EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
-    if [[ ! -e "${ROOT}/compiled/lib/libtensorflow_framework.so" ]]; then
-      LIBTENSORFLOW_VERSION=2.12.1 &&
-        curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
-        tar -C ${ROOT}/compiled/ -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
-        rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
-    fi
-    EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
-  fi
-fi
-
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
   echo "video debug mode, building ffmpeg with tools, debug info and additional capabilities for running tests"
   DEV_FFMPEG_FLAGS="--enable-muxer=md5,flv --enable-demuxer=hls --enable-filter=ssim,tinterlace --enable-encoder=wrapped_avframe,pcm_s16le "
