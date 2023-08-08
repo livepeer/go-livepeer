@@ -306,14 +306,6 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 	}
 	caps[storageCap] = true
 
-	// capabilities based on detector profiles
-	for _, profile := range params.Detection.Profiles {
-		switch profile.Type() {
-		case ffmpeg.SceneClassification:
-			caps[Capability_SceneClassification] = true
-		}
-	}
-
 	// capabilities based on detected input codec
 	decodeCap, err := inputCodecToCapability(params.Codec)
 	if err != nil {

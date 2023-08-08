@@ -27,7 +27,7 @@ func TestLB_CalculateCost(t *testing.T) {
 
 func TestLB_LeastLoaded(t *testing.T) {
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	rapid.Check(t, func(t *rapid.T) {
 		cost := rapid.IntRange(1, 10).Draw(t, "cost").(int)
 		transcoder := lb.leastLoaded()
@@ -51,7 +51,7 @@ func TestLB_Ratchet(t *testing.T) {
 	// Test:     Two transcoders, several sessions with the same set of profiles
 	//           Run multiple transcodes.
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 
 	rapid.Check(t, func(t *rapid.T) {

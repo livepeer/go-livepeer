@@ -35,9 +35,6 @@ ENV	GOPATH=/go \
 
 WORKDIR	/src
 
-RUN	mkdir -p /go \
-	&& curl -fsSLO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
-
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
 ARG	BUILD_TAGS
@@ -64,7 +61,6 @@ ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
 COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
-COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]

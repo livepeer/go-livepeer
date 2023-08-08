@@ -17,7 +17,6 @@ import (
 
 type StubTranscoder struct {
 	Profiles      []ffmpeg.VideoProfile
-	Detector      ffmpeg.DetectorProfile
 	SegCount      int
 	StoppedCount  int
 	FailTranscode bool
@@ -26,10 +25,6 @@ type StubTranscoder struct {
 
 func newStubTranscoder(d string) TranscoderSession {
 	return &StubTranscoder{}
-}
-
-func newStubTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error) {
-	return &StubTranscoder{Detector: detector}, nil
 }
 
 func stubTranscoderWithProfiles(profiles []ffmpeg.VideoProfile) *StubTranscoder {

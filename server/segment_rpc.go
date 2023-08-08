@@ -643,15 +643,6 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.Se
 		storage = core.ToNetOSInfo(bos.GetInfo())
 	}
 
-	detectorProfiles := []ffmpeg.DetectorProfile{}
-	detectorEnabled := false
-	if sess.Params.Detection.Freq != 0 {
-		detectorProfiles = sess.Params.Detection.Profiles
-		if seg.SeqNo%uint64(sess.Params.Detection.Freq) == 0 {
-			detectorEnabled = true
-		}
-	}
-
 	// Generate signature for relevant parts of segment
 	params := sess.Params
 	hash := crypto.Keccak256(seg.Data)
@@ -664,8 +655,6 @@ func genSegCreds(sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.Se
 		Duration:           time.Duration(seg.Duration * float64(time.Second)),
 		Caps:               params.Capabilities,
 		AuthToken:          sess.OrchestratorInfo.GetAuthToken(),
-		DetectorEnabled:    detectorEnabled,
-		DetectorProfiles:   detectorProfiles,
 		CalcPerceptualHash: calcPerceptualHash,
 		SegmentParameters:  segPar,
 	}

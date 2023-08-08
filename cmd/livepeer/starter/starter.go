@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -63,71 +62,67 @@ const RpcPort = "8935"
 const CliPort = "7935"
 
 type LivepeerConfig struct {
-	Network                      *string
-	RtmpAddr                     *string
-	CliAddr                      *string
-	HttpAddr                     *string
-	ServiceAddr                  *string
-	OrchAddr                     *string
-	VerifierURL                  *string
-	EthController                *string
-	VerifierPath                 *string
-	LocalVerify                  *bool
-	HttpIngest                   *bool
-	Orchestrator                 *bool
-	Transcoder                   *bool
-	Broadcaster                  *bool
-	OrchSecret                   *string
-	TranscodingOptions           *string
-	MaxAttempts                  *int
-	SelectRandFreq               *float64
-	MaxSessions                  *int
-	CurrentManifest              *bool
-	Nvidia                       *string
-	Netint                       *string
-	TestTranscoder               *bool
-	SceneClassificationModelPath *string
-	DetectContent                *bool
-	DetectionSampleRate          *uint
-	EthAcctAddr                  *string
-	EthPassword                  *string
-	EthKeystorePath              *string
-	EthOrchAddr                  *string
-	EthUrl                       *string
-	TxTimeout                    *time.Duration
-	MaxTxReplacements            *int
-	GasLimit                     *int
-	MinGasPrice                  *int64
-	MaxGasPrice                  *int
-	InitializeRound              *bool
-	TicketEV                     *string
-	MaxFaceValue                 *string
-	MaxTicketEV                  *string
-	DepositMultiplier            *int
-	PricePerUnit                 *int
-	MaxPricePerUnit              *int
-	PixelsPerUnit                *int
-	AutoAdjustPrice              *bool
-	PricePerBroadcaster          *string
-	BlockPollingInterval         *int
-	Redeemer                     *bool
-	RedeemerAddr                 *string
-	Reward                       *bool
-	Monitor                      *bool
-	MetricsPerStream             *bool
-	MetricsExposeClientIP        *bool
-	MetadataQueueUri             *string
-	MetadataAmqpExchange         *string
-	MetadataPublishTimeout       *time.Duration
-	Datadir                      *string
-	Objectstore                  *string
-	Recordstore                  *string
-	FVfailGsBucket               *string
-	FVfailGsKey                  *string
-	AuthWebhookURL               *string
-	OrchWebhookURL               *string
-	DetectionWebhookURL          *string
-	OrchBlacklist                *string
+	Network                *string
+	RtmpAddr               *string
+	CliAddr                *string
+	HttpAddr               *string
+	ServiceAddr            *string
+	OrchAddr               *string
+	VerifierURL            *string
+	EthController          *string
+	VerifierPath           *string
+	LocalVerify            *bool
+	HttpIngest             *bool
+	Orchestrator           *bool
+	Transcoder             *bool
+	Broadcaster            *bool
+	OrchSecret             *string
+	TranscodingOptions     *string
+	MaxAttempts            *int
+	SelectRandFreq         *float64
+	MaxSessions            *int
+	CurrentManifest        *bool
+	Nvidia                 *string
+	Netint                 *string
+	TestTranscoder         *bool
+	EthAcctAddr            *string
+	EthPassword            *string
+	EthKeystorePath        *string
+	EthOrchAddr            *string
+	EthUrl                 *string
+	TxTimeout              *time.Duration
+	MaxTxReplacements      *int
+	GasLimit               *int
+	MinGasPrice            *int64
+	MaxGasPrice            *int
+	InitializeRound        *bool
+	TicketEV               *string
+	MaxFaceValue           *string
+	MaxTicketEV            *string
+	DepositMultiplier      *int
+	PricePerUnit           *int
+	MaxPricePerUnit        *int
+	PixelsPerUnit          *int
+	AutoAdjustPrice        *bool
+	PricePerBroadcaster    *string
+	BlockPollingInterval   *int
+	Redeemer               *bool
+	RedeemerAddr           *string
+	Reward                 *bool
+	Monitor                *bool
+	MetricsPerStream       *bool
+	MetricsExposeClientIP  *bool
+	MetadataQueueUri       *string
+	MetadataAmqpExchange   *string
+	MetadataPublishTimeout *time.Duration
+	Datadir                *string
+	Objectstore            *string
+	Recordstore            *string
+	FVfailGsBucket         *string
+	FVfailGsKey            *string
+	AuthWebhookURL         *string
+	OrchWebhookURL         *string
+	OrchBlacklist          *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -155,9 +150,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNvidia := ""
 	defaultNetint := ""
 	defaultTestTranscoder := true
-	defaultDetectContent := false
-	defaultDetectionSampleRate := uint(math.MaxUint32)
-	defaultSceneClassificationModelPath := "tasmodel.pb"
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -207,7 +199,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
-	defaultDetectionWebhookURL := ""
 
 	return LivepeerConfig{
 		// Network & Addresses:
@@ -221,21 +212,18 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		VerifierPath: &defaultVerifierPath,
 
 		// Transcoding:
-		Orchestrator:                 &defaultOrchestrator,
-		Transcoder:                   &defaultTranscoder,
-		Broadcaster:                  &defaultBroadcaster,
-		OrchSecret:                   &defaultOrchSecret,
-		TranscodingOptions:           &defaultTranscodingOptions,
-		MaxAttempts:                  &defaultMaxAttempts,
-		SelectRandFreq:               &defaultSelectRandFreq,
-		MaxSessions:                  &defaultMaxSessions,
-		CurrentManifest:              &defaultCurrentManifest,
-		Nvidia:                       &defaultNvidia,
-		Netint:                       &defaultNetint,
-		TestTranscoder:               &defaultTestTranscoder,
-		SceneClassificationModelPath: &defaultSceneClassificationModelPath,
-		DetectContent:                &defaultDetectContent,
-		DetectionSampleRate:          &defaultDetectionSampleRate,
+		Orchestrator:       &defaultOrchestrator,
+		Transcoder:         &defaultTranscoder,
+		Broadcaster:        &defaultBroadcaster,
+		OrchSecret:         &defaultOrchSecret,
+		TranscodingOptions: &defaultTranscodingOptions,
+		MaxAttempts:        &defaultMaxAttempts,
+		SelectRandFreq:     &defaultSelectRandFreq,
+		MaxSessions:        &defaultMaxSessions,
+		CurrentManifest:    &defaultCurrentManifest,
+		Nvidia:             &defaultNvidia,
+		Netint:             &defaultNetint,
+		TestTranscoder:     &defaultTestTranscoder,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -283,9 +271,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
-		AuthWebhookURL:      &defaultAuthWebhookURL,
-		OrchWebhookURL:      &defaultOrchWebhookURL,
-		DetectionWebhookURL: &defaultDetectionWebhookURL,
+		AuthWebhookURL: &defaultAuthWebhookURL,
+		OrchWebhookURL: &defaultOrchWebhookURL,
 	}
 }
 
@@ -297,11 +284,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
-		return
-	}
-
-	if *cfg.DetectionSampleRate <= 0 {
-		glog.Fatal("-detectionSampleRate must be greater than zero")
 		return
 	}
 
@@ -420,7 +402,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		if accel != ffmpeg.Software {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
-			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
+			tf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
 				glog.Fatalf("Error unsupported acceleration: %v", err)
 			}
@@ -442,28 +424,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// no capability test was run, assume default capabilities
 				transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
 			}
-			// initialize Tensorflow runtime on each device to reduce delay when creating new transcoding session
-			if accel == ffmpeg.Nvidia && *cfg.DetectContent {
-				if _, err := os.Stat(*cfg.SceneClassificationModelPath); err == nil {
-					detectorProfile := ffmpeg.DSceneAdultSoccer
-					detectorProfile.SampleRate = *cfg.DetectionSampleRate
-					detectorProfile.ModelPath = *cfg.SceneClassificationModelPath
-					core.DetectorProfile = &detectorProfile
-					for _, d := range devices {
-						tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
-						if err != nil {
-							glog.Fatalf("Could not initialize content detector")
-						}
-						defer tc.Stop()
-					}
-					// add SceneClassification capability
-					transcoderCaps = append(transcoderCaps, core.Capability_SceneClassification)
-				} else {
-					glog.Fatalf("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
-				}
-			}
 			// Initialize LB transcoder
-			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf, dtf)
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
 			// for local software mode, enable all capabilities
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
@@ -995,14 +957,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		server.AuthWebhookURL = parsedUrl
 	}
 
-	if *cfg.DetectionWebhookURL != "" {
-		parsedUrl, err := validateURL(*cfg.DetectionWebhookURL)
-		if err != nil {
-			glog.Fatal("Error setting detection webhook URL ", err)
-		}
-		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
-		server.DetectionWebhookURL = parsedUrl
-	}
 	httpIngest := true
 
 	if n.NodeType == core.BroadcasterNode {
