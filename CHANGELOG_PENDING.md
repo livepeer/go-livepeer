@@ -9,6 +9,7 @@
 #### General
 
 #### Broadcaster
+- \#2837 Set a floor of 1.5s for accepted Orchestrator response times, regardless of segment length (@thomshutt) 
 
 #### Orchestrator
 
