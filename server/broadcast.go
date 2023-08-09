@@ -238,6 +238,12 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 			// durMult can be tuned by the caller to tighten/relax the maximum in flight time for the oldest segment
 			maxTimeInFlight := time.Duration(durMult) * oldestSegInFlight.segDur
 
+			// We're more lenient for segments <= 1s in length, since we've found the overheads to make this quite an aggressive target
+			// to consistently meet, so instead set a floor of 1.5s
+			if maxTimeInFlight <= 1*time.Second {
+				maxTimeInFlight = 1500 * time.Millisecond
+			}
+
 			if timeInFlight < maxTimeInFlight {
 				clog.PublicInfof(ctx,
 					"Selected orchestrator reason=%v",
