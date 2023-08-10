@@ -1263,7 +1263,7 @@ func parseOrchBlacklist(b *string) []string {
 	if b == nil {
 		return []string{}
 	}
-	return strings.Split(*b, ",")
+	return strings.Split(strings.ToLower(*b), ",")
 }
 
 func validateURL(u string) (*url.URL, error) {
