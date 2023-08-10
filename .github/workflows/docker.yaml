@@ -31,7 +31,7 @@ jobs:
 
       - name: Cleanup hosted runner
         run: |
-          sudo apt purge -yqq dotnet-* mono-* llvm-* adoptopenjdk-* libllvm* powershell* openjdk-* \
+          sudo apt purge -yqq dotnet-* mono-* llvm-* libllvm* powershell* openjdk-* \
           temurin-* mongodb-* firefox mysql-* \
           hhvm google-chrome-stable \
           libgl1-mesa-dri microsoft-edge-stable \
@@ -89,9 +89,6 @@ jobs:
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
-          # linux/arm64 is disabled until
-          # <https://github.com/livepeer/go-livepeer/issues/2545> gets
-          # resolved
           context: .
           platforms: linux/amd64, linux/arm64
           push: true
@@ -119,7 +116,7 @@ jobs:
 
       - name: Cleanup hosted runner
         run: |
-          sudo apt purge -yqq dotnet-* mono-* llvm-* adoptopenjdk-* libllvm* powershell* openjdk-* \
+          sudo apt purge -yqq dotnet-* mono-* llvm-* libllvm* powershell* openjdk-* \
           temurin-* mongodb-* firefox mysql-* \
           hhvm google-chrome-stable \
           libgl1-mesa-dri microsoft-edge-stable \
