@@ -163,7 +163,6 @@ func (s *MinLSSelector) Clear() {
 // Use stake weighted random selection to select from unknownSessions
 func (s *MinLSSelector) selectUnknownSession(ctx context.Context) (*BroadcastSession, string) {
 	if len(s.unknownSessions) == 0 {
-		//broadcaster introspection
 		return nil, "no unknown sessions"
 	}
 
@@ -171,7 +170,6 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) (*BroadcastSes
 		// Sessions are selected based on the order of unknownSessions in off-chain mode
 		sess := s.unknownSessions[0]
 		s.unknownSessions = s.unknownSessions[1:]
-		//broadcaster introspection
 		return sess, "selected first in list (offchain mode)"
 	}
 
@@ -180,7 +178,6 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) (*BroadcastSes
 		i := rand.Intn(len(s.unknownSessions))
 		sess := s.unknownSessions[i]
 		s.removeUnknownSession(i)
-		//broadcaster introspection
 		return sess, fmt.Sprintf("%v random factor, orch %v of %v", s.randFreq, i, s.Size())
 	}
 
@@ -236,7 +233,6 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) (*BroadcastSes
 
 		if r <= 0 {
 			s.removeUnknownSession(i)
-			//broadcaster introspection
 			return sess, fmt.Sprintf("stake weight, orch %v of %v", i, s.Size())
 		}
 	}

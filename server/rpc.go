@@ -140,10 +140,6 @@ func (bs *BroadcastSession) Clone() *BroadcastSession {
 	return &newSess
 }
 
-func (bs *BroadcastSession) LogInfo() string {
-	return fmt.Sprintf("manifestID=%v orchSessionID=%v orchestrator=%v ethaddress=%v", bs.Params.ManifestID, bs.OrchestratorInfo.AuthToken.SessionId, bs.OrchestratorInfo.Transcoder, bs.Address())
-}
-
 func (bs *BroadcastSession) IsTrusted() bool {
 	return bs.OrchestratorScore == common.Score_Trusted
 }

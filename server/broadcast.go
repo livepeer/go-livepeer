@@ -322,7 +322,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) ([]*
 				ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
 				ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
-				//broadcaster introspection
+
 				clog.PublicInfof(ctx, "Removing orch=%v from manifestID=%s session list", sess.Transcoder(), sp.mid)
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
@@ -336,7 +336,6 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) ([]*
 	} else {
 		for _, ls := range sp.lastSess {
 			if !includesSession(selectedSessions, ls) {
-				//broadcaster introspection
 				ctx = clog.AddVal(ctx, "ethaddress", ls.Address())
 				ctx = clog.AddVal(ctx, "orchestrator", ls.Transcoder())
 				clog.PublicInfof(ctx, "Swapping from orch=%v to orch=%+v reason=%v", ls.Transcoder(),
@@ -469,7 +468,6 @@ func (bsm *BroadcastSessionsManager) suspendAndRemoveOrch(ctx context.Context, s
 		bsm.trustedPool.removeSession(sess)
 	}
 
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "Suspending and Removing orchestrator for %v session refreshes reason=%v", penalty, err.Error())
 }
 
@@ -732,7 +730,6 @@ func (bsm *BroadcastSessionsManager) completeSession(ctx context.Context, sess *
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.completeSessionUnsafe(ctx, sess, tearDown)
-	//broadcaster introspection
 	if tearDown {
 		ctx = clog.AddVal(ctx, "manifestID", string(sess.Params.ManifestID))
 		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
@@ -957,13 +954,11 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 
 		if shouldStopStream(err) {
-			//broadcaster introspection
 			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, fmt.Sprintf("broadcaster error: %v", err.Error()))
 			rtmpStrm.Close()
 			break
 		}
 		if isNonRetryableError(err) {
-			//broadcaster introspection
 			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, fmt.Sprintf("ffmpeg error: %v", err.Error()))
 			if monitor.Enabled {
 				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNonRetryable, nonce, seg.SeqNo, err, true)
@@ -973,7 +968,6 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = ctxErr
-			//broadcaster introspection
 			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, "stream closed by sender")
 			if monitor.Enabled {
 				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorCtxCancelled, nonce, seg.SeqNo, err, true)
@@ -983,7 +977,6 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 
 		// recoverable error, retry
-		//broadcaster introspection
 		clog.PublicInfof(ctx, "Segment transcode failed seqNo=%v reason=%v", seg.SeqNo, err.Error())
 	}
 	if MetadataQueue != nil {
@@ -1007,7 +1000,6 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorMaxAttempts, nonce, seg.SeqNo, err, true)
 		}
-		//broadcaster introspection
 		clog.PublicInfof(ctx, "Stream transcode failed seqNo=%v reason=%v", seg.SeqNo, "max transcode attempts reached")
 	}
 	return urls, err
@@ -1048,7 +1040,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		Address:       sessions[0].Address(),
 	}
 
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "Trying to transcode segment using sessions=%d", len(sessions))
 	if monitor.Enabled {
 		monitor.TranscodeTry(ctx, nonce, seg.SeqNo)
@@ -1056,7 +1047,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
-		//broadcaster introspection
 		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
 		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[0])
@@ -1172,7 +1162,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		submittedCount := 0
 
 		for idx, sess := range sessions {
-			//broadcaster introspection
 			ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
 			ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 			clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[idx])
@@ -1406,7 +1395,6 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	cxn.sessManager.completeSession(ctx, sess, false)
 
 	downloadDur := time.Since(dlStart)
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "SegmentDownloaded... dur=%s", downloadDur)
 	if monitor.Enabled {
 		monitor.SegmentDownloaded(ctx, nonce, seg.SeqNo, downloadDur)

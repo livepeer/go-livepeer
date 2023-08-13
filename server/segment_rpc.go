@@ -507,7 +507,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s uploadTimeout=%s segDur=%v",
 		len(data), ti.Transcoder, httpTimeout, uploadTimeout, seg.Duration)
 	start := time.Now()
@@ -545,7 +544,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		}
 		return nil, fmt.Errorf("segment upload failed %v", errorString)
 	}
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "Uploaded segment orch=%s dur=%s", ti.Transcoder, uploadDur)
 	if monitor.Enabled {
 		monitor.SegmentUploaded(ctx, nonce, seg.SeqNo, uploadDur, ti.Transcoder)
@@ -626,7 +624,6 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		monitor.SegmentTranscoded(ctx, nonce, seg.SeqNo, time.Duration(seg.Duration*float64(time.Second)), transcodeDur,
 			common.ProfilesNames(params.Profiles), sess.IsTrusted(), verified)
 	}
-	//broadcaster introspection
 	clog.PublicInfof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
 		seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
 
@@ -830,7 +827,6 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 		protoPayment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
-		//broadcaster introspection
 		clog.PublicInfof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.Params.ManifestID,
 			sess.OrchestratorInfo.AuthToken.SessionId,
