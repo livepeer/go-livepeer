@@ -525,7 +525,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 		Info: &net.OrchestratorInfo{
 			Transcoder:   ts.URL,
 			PriceInfo:    &net.PriceInfo{PricePerUnit: 7, PixelsPerUnit: 7},
-			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes()},
+			TicketParams: &net.TicketParams{ExpirationBlock: big.NewInt(100).Bytes(), Recipient: pm.RandAddress().Bytes()},
 			AuthToken:    stubAuthToken,
 		},
 		Result: &net.TranscodeResult_Data{
@@ -618,7 +618,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, pm.ErrTicketParamsExpired).Once()
 	balance.On("Credit", mock.Anything)
 	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil, nil)
-	assert.EqualError(err, pm.ErrTicketParamsExpired.Error())
+	assert.ErrorContains(err, pm.ErrTicketParamsExpired.Error())
 	_, ok = cxn.sessManager.trustedPool.sessMap[ts.URL]
 	assert.False(ok)
 	assert.Greater(cxn.sessManager.trustedPool.sus.Suspended(ts.URL), 0)
@@ -717,7 +717,7 @@ func TestTranscodeSegment_SuspendOrchestrator(t *testing.T) {
 
 	_, _, err = transcodeSegment(context.TODO(), cxn, &stream.HLSSegment{Data: []byte("dummy"), Duration: 2.0}, "dummy", nil, nil)
 
-	assert.EqualError(err, "OrchestratorBusy")
+	assert.ErrorContains(err, "OrchestratorBusy")
 	assert.Equal(bsm.trustedPool.sus.Suspended(ts.URL), bsm.trustedPool.poolSize/bsm.trustedPool.numOrchs)
 }
 
@@ -842,7 +842,7 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	transcodeCalls = 0
 	_, err = processSegment(context.Background(), cxn, seg, nil)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
+	assert.Equal("Hit max transcode attempts: segment transcode failed, UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 1)
 
@@ -971,7 +971,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	assert.Equal(true, transEvt.Success)
 	assert.Equal(2, len(transEvt.Attempts))
 	assert.NotNil(transEvt.Attempts[0].Error)
-	assert.Equal("UnknownResponse", *transEvt.Attempts[0].Error)
+	assert.Equal("segment transcode failed, UnknownResponse", *transEvt.Attempts[0].Error)
 
 	// All failed transcode attempts. Transcode event should be sent with success=false
 	cxn.sessManager = bsmWithSessList(stubSessionList(ctx, 3, handler))
@@ -989,7 +989,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	assert.Equal(3, len(transEvt.Attempts))
 	for _, attempt := range transEvt.Attempts {
 		assert.NotNil(attempt.Error)
-		assert.Equal("UnknownResponse", *attempt.Error)
+		assert.Equal("segment transcode failed, UnknownResponse", *attempt.Error)
 	}
 
 	// Empty session list. Transcode event should still have success=false

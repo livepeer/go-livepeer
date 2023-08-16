@@ -319,7 +319,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) ([]*
 			if gotFromLast {
 				// Last session got removed from map (possibly due to a failure) so stop tracking its in-flight segments
 				sess.SegsInFlight = nil
-				ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+				ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
 				ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 				sp.lastSess = removeSessionFromList(sp.lastSess, sess)
 
@@ -336,7 +336,7 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) ([]*
 	} else {
 		for _, ls := range sp.lastSess {
 			if !includesSession(selectedSessions, ls) {
-				ctx = clog.AddVal(ctx, "ethaddress", ls.Address())
+				ctx = clog.AddVal(ctx, "ethaddress", ls.RecipientAddress())
 				ctx = clog.AddVal(ctx, "orchestrator", ls.Transcoder())
 				clog.PublicInfof(ctx, "Swapping from orch=%v to orch=%+v reason=%v", ls.Transcoder(),
 					getOrchs(selectedSessions), fmt.Sprintf("switch orchestrator due to performance: latency score of %v", ls.LatencyScore))
@@ -732,7 +732,7 @@ func (bsm *BroadcastSessionsManager) completeSession(ctx context.Context, sess *
 	bsm.completeSessionUnsafe(ctx, sess, tearDown)
 	if tearDown {
 		ctx = clog.AddVal(ctx, "manifestID", string(sess.Params.ManifestID))
-		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+		ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
 		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		clog.PublicInfof(ctx, "Session completed reason=stream completed")
 	}
@@ -1047,7 +1047,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
-		ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+		ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
 		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[0])
 
@@ -1162,7 +1162,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		submittedCount := 0
 
 		for idx, sess := range sessions {
-			ctx = clog.AddVal(ctx, "ethaddress", sess.Address())
+			ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
 			ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 			clog.PublicInfof(ctx, "Selected orchestrator reason=%v", selectedReasons[idx])
 

@@ -129,6 +129,12 @@ func (bs *BroadcastSession) Transcoder() string {
 func (bs *BroadcastSession) Address() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
+	return hexutil.Encode(bs.OrchestratorInfo.Address)
+}
+
+func (bs *BroadcastSession) RecipientAddress() string {
+	bs.lock.RLock()
+	defer bs.lock.RUnlock()
 	return hexutil.Encode(bs.OrchestratorInfo.TicketParams.Recipient)
 }
 
