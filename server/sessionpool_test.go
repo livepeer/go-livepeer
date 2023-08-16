@@ -69,12 +69,12 @@ func TestSelectSession(t *testing.T) {
 	// assert last session selected and sessList is correct length
 	sess, _ := pool.selectSessions(context.TODO(), 1)
 	assert.Equal(expectedSess1, sess[0])
-	assert.Equal(sess, pool.lastSess[0])
+	assert.Equal(sess, pool.lastSess)
 	assert.Len(pool.sessList(), 1)
 
 	sess, _ = pool.selectSessions(context.TODO(), 1)
 	assert.Equal(expectedSess2, sess[0])
-	assert.Equal(sess, pool.lastSess[0])
+	assert.Equal(sess, pool.lastSess)
 	assert.Len(pool.sessList(), 0)
 
 	// assert no session is selected from empty list
@@ -113,7 +113,7 @@ func TestSelectSession(t *testing.T) {
 	assert.Equal(firstSess[0], pool.sessList()[1]) // ensure removed sess still in list
 	// now ensure next selectSession call fixes up sessList as expected
 	sess, _ = pool.selectSessions(context.TODO(), 1)
-	assert.Equal(sess[0], expectedSess)
+	assert.Equal(sess, expectedSess)
 	assert.Len(pool.sessList(), 0)
 	assert.Len(pool.sessMap, 1)
 
@@ -171,11 +171,11 @@ func TestCompleteSessions(t *testing.T) {
 	// assert that session already in sessMap is added back to sessList
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 2)
-	assert.Equal(sess1, pool.sessMap[sess1[0].OrchestratorInfo.Transcoder])
+	assert.Equal(sess1[0], pool.sessMap[sess1[0].OrchestratorInfo.Transcoder])
 
 	// assert that we get the same session back next time we call select
 	newSess, _ := pool.selectSessions(context.TODO(), 1)
-	assert.Equal(sess1, newSess[0])
+	assert.Equal(sess1[0], newSess[0])
 	pool.completeSession(newSess[0])
 
 	// assert that session not in sessMap is not added to sessList

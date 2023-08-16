@@ -1663,7 +1663,7 @@ func TestSubmitSegment_GenSegCredsError(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.Equal(t, "Sign error", err.Error())
+	assert.Equal(t, "segment upload failed, seg creds failed: Sign error", err.Error())
 }
 
 func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
@@ -1679,7 +1679,7 @@ func TestSubmitSegment_RatPriceInfoError(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualError(t, err, "pixels per unit is 0")
+	assert.EqualError(t, err, "segment upload failed, could not get price info: pixels per unit is 0")
 }
 
 func TestSubmitSegment_EstimateFeeError(t *testing.T) {
@@ -1720,7 +1720,7 @@ func TestSubmitSegment_NewBalanceUpdateError(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualError(t, err, expErr.Error())
+	assert.ErrorContains(t, err, expErr.Error())
 }
 
 func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
@@ -1752,7 +1752,7 @@ func TestSubmitSegment_GenPaymentError_CreateTicketBatchError(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualError(t, err, expErr.Error())
+	assert.ErrorContains(t, err, expErr.Error())
 	// Check that completeBalanceUpdate() adds back the existing credit when the update status is Staged
 	balance.AssertCalled(t, "Credit", existingCredit)
 }
@@ -1847,7 +1847,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.Equal(t, "Server error", err.Error())
+	assert.Equal(t, "segment upload failed Server error", err.Error())
 
 	// Test completeBalanceUpdate() does not add anything back when the update status is CreditSpent
 	newCredit := big.NewRat(7, 1)
@@ -1861,7 +1861,7 @@ func TestSubmitSegment_Non200StatusCode(t *testing.T) {
 
 	_, err = SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.Equal(t, "Server error", err.Error())
+	assert.Equal(t, "segment upload failed Server error", err.Error())
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
@@ -1935,7 +1935,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 
 	_, err = SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.Equal(t, "TranscodeResult error", err.Error())
+	assert.Equal(t, "segment transcode failed, TranscodeResult error", err.Error())
 
 	// Test completeBalanceUpdate() does not add anything back when the update status is CreditSpent
 	newCredit := big.NewRat(7, 1)
@@ -1949,7 +1949,7 @@ func TestSubmitSegment_TranscodeResultError(t *testing.T) {
 
 	_, err = SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.Equal(t, "TranscodeResult error", err.Error())
+	assert.Equal(t, "segment transcode failed, TranscodeResult error", err.Error())
 	balance.AssertNotCalled(t, "Credit", mock.Anything)
 }
 
@@ -2006,7 +2006,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	lock.Unlock()
 	_, err = SubmitSegment(context.Background(), sess, seg, nil, 0, false, true)
 	assert.NotNil(err)
-	assert.Contains(err.Error(), "header timeout")
+	assert.Contains(err.Error(), "timeout")
 	assert.Contains(err.Error(), "context canceled")
 
 	// should enforce minimum segment upload timeout
@@ -2023,7 +2023,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
 	assert.NotNil(err)
-	assert.Equal("body timeout: context deadline exceeded", err.Error())
+	assert.Equal("segment transcode failed, failed to read results: context deadline exceeded", err.Error())
 
 	// sanity check, again
 	lock.Lock()
@@ -2056,7 +2056,7 @@ func TestSubmitSegment_Timeout(t *testing.T) {
 	assert.Greater(bodyDelay.Milliseconds(), common.HTTPTimeout.Milliseconds())
 	lock.Unlock()
 	_, err = SubmitSegment(context.TODO(), sess, seg, nil, 0, false, true)
-	assert.Equal("body timeout: context deadline exceeded", err.Error())
+	assert.Equal("segment transcode failed, failed to read results: context deadline exceeded", err.Error())
 }
 
 func TestSubmitSegment_Success(t *testing.T) {
