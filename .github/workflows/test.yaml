@@ -19,11 +19,14 @@ jobs:
     name: Run tests defined for the project
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:18.04
+      image: ubuntu:20.04
     steps:
       - name: Setup ubuntu container
         run: |
           apt update
+          export TZ=Etc/Utc
+          ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+          export DEBIAN_FRONTEND=noninteractive
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/ppa
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g
@@ -35,6 +38,10 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Cleanup hosted runner
+        run: |
+          rm -rf /usr/share/dotnet /usr/local/lib/android
 
       - name: Set up go
         id: go
@@ -55,15 +62,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update \
-            && apt-get install -yqq software-properties-common curl apt-transport-https \
-            && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
-            && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
-            && apt-get update \
-            && apt-get -yqq install clang-8 clang-tools-8 build-essential pkg-config autoconf git python
-
-          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-8 30 \
-            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-8 30
+          apt update \
+            && apt install -yqq software-properties-common curl apt-transport-https lsb-release \
+            && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
+            && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
+            && add-apt-repository "deb [arch=amd64] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
+            && apt update \
+            && apt -yqq install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
