@@ -228,7 +228,7 @@ func updateNilsForUnsetFlags(cfg starter.LivepeerConfig) starter.LivepeerConfig 
 	return res
 }
 
-//Defaults session limit to "0" (auto) for orchestrators when -maxSessions flag not set
+// Defaults session limit to "0" (auto) for orchestrators when -maxSessions flag not set
 func defaultOrchestorLimit(cfg starter.LivepeerConfig) starter.LivepeerConfig {
 	res := cfg
 
