@@ -29,7 +29,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g
 
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -122,7 +122,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -145,7 +145,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3.5.3
         with:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion

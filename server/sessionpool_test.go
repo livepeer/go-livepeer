@@ -376,7 +376,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	assert.Equal(expectedSess0.OrchestratorInfo, sess0.OrchestratorInfo)
 	assert.Len(pool.lastSess[0].SegsInFlight, 1)
 
-	time.Sleep(110 * time.Millisecond)
+	time.Sleep(1600 * time.Millisecond)
 
 	sess1 = sendSegStub()
 	assert.Equal(pool.lastSess[0], sess1)
@@ -396,7 +396,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
 	assert.Len(pool.lastSess[0].SegsInFlight, 1)
 
-	time.Sleep(110 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 
 	sess1 = sendSegStub()
 	assert.Equal(pool.lastSess[0], sess1)
@@ -417,7 +417,7 @@ func TestSelectSession_MultipleInFlight(t *testing.T) {
 	assert.Equal(expectedSess1.OrchestratorInfo, sess0.OrchestratorInfo)
 	assert.Len(pool.lastSess[0].SegsInFlight, 1)
 
-	time.Sleep(210 * time.Millisecond)
+	time.Sleep(1600 * time.Millisecond)
 
 	sess1 = sendSegStub()
 	assert.Nil(sess1)
@@ -504,14 +504,14 @@ func TestSelectSessionMoreThanOne(t *testing.T) {
 	assert.Len(pool.sessList(), 0)
 	assert.Len(sessions[0].SegsInFlight, 1)
 	assert.Len(pool.lastSess[0].SegsInFlight, 1)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 	sessions2 := sendSegStub(3)
 	assert.Len(sessions2, 3)
 	assert.Len(pool.sessList(), 0)
 	assert.Len(sessions2[0].SegsInFlight, 2)
 	assert.Len(pool.lastSess[1].SegsInFlight, 2)
 	assert.Equal(sessions, sessions2)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(800 * time.Millisecond)
 	sessions3 := sendSegStub(3)
 	assert.Len(sessions3, 0)
 	assert.Len(sessions2[0].SegsInFlight, 2)

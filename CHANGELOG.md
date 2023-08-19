@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.6.0
+
+### Breaking Changes 🚨🚨
+- [#2821](https://github.com/livepeer/go-livepeer/pull/2821) Bump nvidia/cuda base version for docker builds (@stronk-dev and @hjpotter92)
+
+### Features ⚒
+
+#### Broadcaster
+- [#2827](https://github.com/livepeer/go-livepeer/pull/2827) Introduce configurable Orchestrator blocklist (@mjh1)
+
+#### General
+- [#2758](https://github.com/livepeer/go-livepeer/pull/2758) Accept only active Os to receive traffic and redeem tickets (@leszko)
+- [#2775](https://github.com/livepeer/go-livepeer/pull/2775) Reduce number of ETH RPC calls during block polling (@leszko)
+- [#2815](https://github.com/livepeer/go-livepeer/pull/2815) Add new logging methods to publish a set of public logs (@emranemran)
+
+### Bug Fixes 🐞
+- [#2759](https://github.com/livepeer/go-livepeer/pull/2759) Parse keystore address without 0x prefix, fix parse error logging
+- [#2764](https://github.com/livepeer/go-livepeer/pull/2764) Call session end asynchronously to avoid unnecessary blocking (@mjh1)
+- [#2777](https://github.com/livepeer/go-livepeer/pull/2777) Only write session end log message if session exists (@mjh1)
+- [#2804](https://github.com/livepeer/go-livepeer/pull/2804) Bump livepeer-data and go version due to breaking interface change (@victorges)
+
 ## v0.5.38
 
 ### Breaking Changes 🚨🚨
@@ -295,7 +316,7 @@ This release also includes a darwin arm64 build and darwin/linux binaries compil
 
 *February 11th 2022*
 
-This release supports connecting to Arbitrum Mainnet using the `-network arbitrum-one-mainnet` flag after the L1 Ethereum block 14207040 which is the block at which [LIP-73 i.e. the Confluence upgrade](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md#specification) will be activated. Prior to this block, running the node wtih `-network arbitrum-one-mainnet` will result in a startup error so it is recommended to wait until after block 14207040 to run the node with the `-network arbitrum-one-mainnet` flag. **We strongly encourage all node operators to upgrade to this release so they can connect to Arbitrum Mainnet after the LIP-73 block**.
+This release supports connecting to Arbitrum Mainnet using the `-network arbitrum-one-mainnet` flag after the L1 Ethereum block 14207040 which is the block at which [LIP-73 i.e. the Confluence upgrade](https://github.com/livepeer/LIPs/blob/master/LIPs/LIP-73.md#specification) will be activated. Prior to this block, running the node with `-network arbitrum-one-mainnet` will result in a startup error so it is recommended to wait until after block 14207040 to run the node with the `-network arbitrum-one-mainnet` flag. **We strongly encourage all node operators to upgrade to this release so they can connect to Arbitrum Mainnet after the LIP-73 block**.
 
 Additional updates in this release include various improvements to compatibility with Arbitrum networks as well as the initial groundwork for enabling H.265/HEVC encoding/decoding and VP8/VP9 decoding jobs on the network.
 
@@ -579,7 +600,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 *August 10 2021*
 
-This release includes another gas price monitoring fix to address additional cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, automatic replacements for pending transactions that timeout, fixes for broadcaster stream recording, support for downloading stream recordings as mp4 files as well as variety of other bug fixes and enhancements.
+This release includes another gas price monitoring fix to address additional cases where Ethereum JSON-RPC providers occasionally return really low gas prices for the `eth_gasPrice` RPC call, automatic replacements for pending transactions that timeout, fixes for broadcaster stream recording, support for downloading stream recordings as mp4 files as well as variety of other bug fixes and enhancements.
 
 In addition to the gas price monitoring fix and support for automatic replacements for pending transactions that timeout, a few additional configuration options are introduced to give node operators more control over gas prices and transactions:
 
@@ -639,7 +660,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 *May 18 2021*
 
-This release includes an important gas price monitoring fix that addresses cases where Ethereum JSON-RPC providers occassionally return really low gas prices for the `eth_gasPrice` RPC call, reductions in the gas cost for staking actions (under certain circumstances) using `livepeer_cli`  and improvements to split orchestrator and transcoder setups that help remote transcoders retain streams. We strongly recommend all orchestrator and transcoder operators to upgrade to this version as soon as possible to access this latest set of bug fixes and improvements.
+This release includes an important gas price monitoring fix that addresses cases where Ethereum JSON-RPC providers occasionally return really low gas prices for the `eth_gasPrice` RPC call, reductions in the gas cost for staking actions (under certain circumstances) using `livepeer_cli`  and improvements to split orchestrator and transcoder setups that help remote transcoders retain streams. We strongly recommend all orchestrator and transcoder operators to upgrade to this version as soon as possible to access this latest set of bug fixes and improvements.
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 
