@@ -83,7 +83,7 @@ jobs:
         run: |
           apt-get update \
             && apt-get install -y software-properties-common curl apt-transport-https \
-            && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
             && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-12 main" \
             && apt-get update \
             && apt-get -y install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python gcc-multilib libgcc-8-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
@@ -280,7 +280,7 @@ jobs:
         run: |
           apt-get update \
             && apt-get install -y software-properties-common curl apt-transport-https \
-            && apt-key adv --keyserver keyserver.ubuntu.com --recv 15CF4D18AF4F7421 \
+            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
             && add-apt-repository "deb [arch=amd64] http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" \
             && apt-get update \
             && apt-get -y install clang-8 clang-tools-8 build-essential pkg-config autoconf gnutls-dev git python
