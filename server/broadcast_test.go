@@ -56,7 +56,8 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 				PricePerUnit:  1,
 				PixelsPerUnit: 1,
 			},
-			AuthToken: stubAuthToken,
+			AuthToken:    stubAuthToken,
+			TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()},
 		},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
@@ -1733,7 +1734,7 @@ func genBcastSess(ctx context.Context, t *testing.T, url string, os drivers.OSSe
 		Broadcaster:       stubBroadcaster2(),
 		Params:            &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}, OS: os},
 		BroadcasterOS:     os,
-		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken},
+		OrchestratorInfo:  &net.OrchestratorInfo{Transcoder: transcoderURL, AuthToken: stubAuthToken, TicketParams: &net.TicketParams{Recipient: pm.RandAddress().Bytes()}},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
 	}
