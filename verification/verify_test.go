@@ -167,7 +167,7 @@ func TestVerify(t *testing.T) {
 		{Url: "../server/test.flv", Pixels: pxls},
 	}}
 	renditions = [][]byte{}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: pm.RandAddress().Bytes()}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: pm.RandAddress().Bytes(), TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
@@ -214,13 +214,13 @@ func TestVerify(t *testing.T) {
 		{Url: "uvw", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
 	}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar")}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar"), TicketParams: params}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
 	// Check sig verifier runs and fails (due to missing sig) even when policy is nil
 	sv = NewSegmentVerifier(nil)
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar")}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar"), TicketParams: params}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
