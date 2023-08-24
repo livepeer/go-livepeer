@@ -88,7 +88,9 @@ jobs:
             && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
             && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
             && sudo apt update \
-            && sudo apt -yqq install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python
+            && sudo apt -yqq install \
+              clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python \
+              gcc-multilib gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
 
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
             && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
@@ -244,7 +246,7 @@ jobs:
           sudo apt update
           sudo apt install -yqq build-essential make software-properties-common
           sudo add-apt-repository -y ppa:git-core/ppa
-          sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g
+          sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g coreutils binutils libc++-dev libc++abi-dev libtool p7zip-full mediainfo xz-utils
 
       - name: Check out code
         uses: actions/checkout@v3.5.3
