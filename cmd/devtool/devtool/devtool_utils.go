@@ -319,7 +319,8 @@ func (d *Devtool) RegisterOrchestrator(cfg DevtoolConfig) error {
 
 	tx, err = d.Client.Transcoder(eth.FromPerc(10), eth.FromPerc(5))
 	if err == eth.ErrCurrentRoundLocked {
-		// wait for next round and retry
+		// TODO: wait for next round and retry
+		fmt.Println("unimplemented: wait for next round and retry")
 	}
 	if err != nil {
 		glog.Error(err)

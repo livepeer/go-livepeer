@@ -34,7 +34,7 @@ func main() {
 	flag.CommandLine.SetOutput(os.Stdout)
 
 	// Help & Log
-	mistJson := flag.Bool("j", false, "Print application info as json")
+	mistJSON := flag.Bool("j", false, "Print application info as json")
 	version := flag.Bool("version", false, "Print out the version")
 	verbosity := flag.String("v", "3", "Log verbosity.  {4|5|6}")
 
@@ -53,7 +53,7 @@ func main() {
 
 	vFlag.Value.Set(*verbosity)
 
-	if *mistJson {
+	if *mistJSON {
 		mistconnector.PrintMistConfigJson(
 			"livepeer",
 			"Official implementation of the Livepeer video processing protocol. Can play all roles in the network.",
