@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
@@ -272,7 +273,6 @@ func (sm *LocalSenderMonitor) cache(addr ethcommon.Address) {
 	queue.Start()
 	done := make(chan struct{})
 	go sm.startTicketQueueConsumerLoop(queue, done)
-
 	sm.senders[addr] = &remoteSender{
 		pendingAmount: big.NewInt(0),
 		queue:         queue,
@@ -327,6 +327,8 @@ func (sm *LocalSenderMonitor) startCleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
+			sm.smgr.UpdateSenderInfos()
+			sm.smgr.UpdateClaimedReserves(sm.cfg.Claimant)
 			sm.cleanup()
 		case <-sm.quit:
 			return
@@ -347,6 +349,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 			v.subScope.Close() // close the maxfloat subscriptions
 			delete(sm.senders, k)
 			sm.smgr.Clear(k)
+			glog.Infof("sender cleared from cache addr: %v last access: %v ttl: %vs", hexutil.Encode(k.Bytes()), v.lastAccess, sm.cfg.TTL)
 		}
 	}
 }

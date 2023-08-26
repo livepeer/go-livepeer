@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
@@ -50,6 +51,17 @@ func NewSenderWatcher(ticketBrokerAddr ethcommon.Address, watcher BlockWatcher, 
 	}, nil
 }
 
+func (sw *SenderWatcher) UpdateSenderInfos() {
+	for addr, _ := range sw.senders {
+		info, err := sw.GetSenderInfo(addr)
+		if err == nil {
+			sw.setSenderInfo(addr, info)
+		} else {
+			glog.Errorf("Failed to get sender info for %v", hexutil.Encode(addr.Bytes()))
+		}
+	}
+}
+
 // GetSenderInfo returns information about a sender's deposit and reserve
 // if values for a sender are not cached an RPC call to a remote ethereum node will be made to initialize the cache
 func (sw *SenderWatcher) GetSenderInfo(addr ethcommon.Address) (*pm.SenderInfo, error) {
@@ -75,6 +87,12 @@ func (sw *SenderWatcher) setSenderInfo(addr ethcommon.Address, info *pm.SenderIn
 	if addr == sw.lpEth.Account().Address && monitor.Enabled {
 		monitor.Deposit(addr.Hex(), info.Deposit)
 		monitor.Reserve(addr.Hex(), info.Reserve.FundsRemaining)
+	}
+}
+
+func (sw *SenderWatcher) UpdateClaimedReserves(claimaint ethcommon.Address) {
+	for addr, _ := range sw.senders {
+		sw.ClaimedReserve(addr, claimaint)
 	}
 }
 
