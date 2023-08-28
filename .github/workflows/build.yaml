@@ -69,12 +69,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
 
-      - name: Cache binaries
-        uses: actions/cache@v3
-        with:
-          path: ~/build
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-binaries-${{ github.sha }}
-
       - name: Set build environment
         run: |
           echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
@@ -175,12 +169,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
 
-      - name: Cache binaries
-        uses: actions/cache@v3
-        with:
-          path: ~/build
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-binaries-${{ github.sha }}
-
       - name: Install dependencies
         run: brew install coreutils pkg-config
 
@@ -276,12 +264,6 @@ jobs:
           key: ${{ runner.os }}-ffmpeg-tf-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
             ${{ runner.os }}-ffmpeg-tf-
-
-      - name: Cache binaries
-        uses: actions/cache@v3
-        with:
-          path: ~/build
-          key: ${{ runner.os }}-binaries-tf-${{ github.sha }}
 
       - name: Install dependencies
         env:
