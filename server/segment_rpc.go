@@ -330,6 +330,7 @@ func makeFfmpegVideoProfiles(protoProfiles []*net.VideoProfile) ([]ffmpeg.VideoP
 			Profile:      encoderProf,
 			GOP:          gop,
 			Encoder:      encoder,
+			CRF:          uint(profile.Crf),
 		}
 		profiles = append(profiles, prof)
 	}
