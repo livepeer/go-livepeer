@@ -264,6 +264,7 @@ func FFmpegProfiletoNetProfile(ffmpegProfiles []ffmpeg.VideoProfile) ([]*net.Vid
 			Encoder:      encoder,
 			ColorDepth:   int32(profile.ColorDepth),
 			ChromaFormat: chromaFormat,
+			Crf:          uint32(profile.CRF),
 		}
 		profiles = append(profiles, &fullProfile)
 	}
