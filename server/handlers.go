@@ -581,7 +581,7 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 func (s *LivepeerServer) setMaxSessions() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		frmMaxSessions := r.FormValue("maxSessions")
-		if frmMaxSessions == "0" { //Auto
+		if frmMaxSessions == "auto" {
 			s.LivepeerNode.AutoSessionLimit = true
 			s.LivepeerNode.SetMaxSessions(s.LivepeerNode.GetCurrentCapacity())
 			respondOk(w, []byte("Max sessions set to auto\n"))
@@ -591,7 +591,7 @@ func (s *LivepeerServer) setMaxSessions() http.Handler {
 				s.LivepeerNode.SetMaxSessions(maxSessions)
 				respondOk(w, []byte(fmt.Sprintf("Max sessions set to %d\n", maxSessions)))
 			} else {
-				respond400(w, "max sessions must greater than zero")
+				respond400(w, "Max Sessions must be 'auto' or greater than zero")
 			}
 		} else {
 			respond400(w, err.Error())

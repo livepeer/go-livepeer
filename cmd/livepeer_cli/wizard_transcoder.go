@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -341,11 +340,12 @@ func (w *wizard) setPriceForBroadcaster() {
 }
 
 func (w *wizard) setMaxSessions() {
-	fmt.Println("Enter the maximum # of sessions (0 = auto)")
+	fmt.Println("Enter the maximum # of sessions")
+	// maxSessions := w.readStringAndValidate(10)
 	maxSessions := w.readStringAndValidate(func(in string) (string, error) {
-		var numeric = regexp.MustCompile(`\d`).MatchString(in)
-		if !numeric {
-			return "", fmt.Errorf("max sessions must be numeric")
+		intVal, err := strconv.Atoi(in)
+		if "" == in || (in != "auto" && intVal <= 0 && err != nil) {
+			return "", fmt.Errorf("Max Sessions must be 'auto' or greater than zero")
 		}
 
 		return in, nil
@@ -356,7 +356,7 @@ func (w *wizard) setMaxSessions() {
 	}
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxSessions", w.host, w.httpPort), data)
 	if ok {
-		fmt.Printf("%v", result)
+		fmt.Printf(result)
 		return
 	} else {
 		fmt.Printf("Error setting max sessions: %v", result)
