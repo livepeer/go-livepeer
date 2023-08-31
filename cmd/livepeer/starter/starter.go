@@ -413,8 +413,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
 
-	n.AutoSessionLimit = *cfg.MaxSessions == "auto"
-
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
 	}

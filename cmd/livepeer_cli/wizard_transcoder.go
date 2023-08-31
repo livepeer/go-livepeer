@@ -341,7 +341,6 @@ func (w *wizard) setPriceForBroadcaster() {
 
 func (w *wizard) setMaxSessions() {
 	fmt.Println("Enter the maximum # of sessions")
-	// maxSessions := w.readStringAndValidate(10)
 	maxSessions := w.readStringAndValidate(func(in string) (string, error) {
 		intVal, err := strconv.Atoi(in)
 		if "" == in || (in != "auto" && intVal <= 0 && err != nil) {
