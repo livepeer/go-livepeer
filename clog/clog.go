@@ -30,14 +30,16 @@ const (
 	nonce         = "nonce"
 	seqNo         = "seqNo"
 	orchSessionID = "orchSessionID" // session id generated on orchestrator for broadcaster
+	ethaddress    = "ethaddress"
+	orchestrator  = "orchestrator"
 )
 
 // Verbose is a boolean type that implements Infof (like Printf) etc.
 type Verbose bool
 
 var stdKeys map[string]bool
-var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID}
-var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP}
+var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID, ethaddress, orchestrator}
+var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP, seqNo, ethaddress, orchestrator}
 
 func init() {
 	stdKeys = make(map[string]bool)
