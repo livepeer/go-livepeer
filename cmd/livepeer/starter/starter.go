@@ -298,8 +298,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		core.MaxSessions = 0
 	} else {
-		intMaxSessions, _ := strconv.Atoi(*cfg.MaxSessions)
-		if intMaxSessions <= 0 {
+		intMaxSessions, err := strconv.Atoi(*cfg.MaxSessions)
+		if err != nil || intMaxSessions <= 0 {
 			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
 			return
 		}
