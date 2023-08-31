@@ -3,9 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net/http"
 	"os"
@@ -302,12 +301,12 @@ func (w *wizard) getProtocolParameters() (lpTypes.ProtocolParameters, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return lpTypes.ProtocolParameters{}, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
+		return lpTypes.ProtocolParameters{}, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
 	defer resp.Body.Close()
 
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return lpTypes.ProtocolParameters{}, err
 	}
@@ -328,11 +327,11 @@ func (w *wizard) getContractAddresses() (map[string]common.Address, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
+		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
 	defer resp.Body.Close()
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +377,7 @@ func (w *wizard) getBroadcastConfig() (*big.Rat, string) {
 	}
 
 	defer resp.Body.Close()
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		glog.Errorf("Error reading response: %v", err)
 		return nil, ""
@@ -405,7 +404,7 @@ func (w *wizard) getOrchestratorInfo() (*lpTypes.Transcoder, *big.Rat, error) {
 
 	defer resp.Body.Close()
 
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -430,7 +429,7 @@ func (w *wizard) getDelegatorInfo() (lpTypes.Delegator, error) {
 
 	defer resp.Body.Close()
 
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return lpTypes.Delegator{}, err
 	}
@@ -465,10 +464,10 @@ func (w *wizard) currentBlock() (*big.Int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("http response status %d", resp.StatusCode))
+		return nil, fmt.Errorf("http response status %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -484,7 +483,7 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 	}
 
 	defer resp.Body.Close()
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
