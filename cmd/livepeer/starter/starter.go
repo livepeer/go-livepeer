@@ -138,8 +138,8 @@ type LivepeerConfig struct {
 func DefaultLivepeerConfig() LivepeerConfig {
 	// Network & Addresses:
 	defaultNetwork := "offchain"
-	defaultRtmpAddr := "127.0.0.1:" + BroadcasterRtmpPort
-	defaultCliAddr := "127.0.0.1:" + OrchestratorCliPort
+	defaultRtmpAddr := ""
+	defaultCliAddr := ""
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
 	defaultOrchAddr := ""
@@ -1171,7 +1171,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Current ManifestID will be available over ", *cfg.HttpAddr)
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
-
 	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
 		s.StartCliWebserver(srv)
@@ -1397,6 +1396,7 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 	if addr == "" {
 		return defaultHost + ":" + defaultPort
 	}
+
 	if addr[0] == ':' {
 		return defaultHost + addr
 	}
