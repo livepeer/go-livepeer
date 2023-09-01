@@ -114,6 +114,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Vote in a poll", invoke: w.vote, orchestrator: true},
 		{desc: "Set max ticket face value", invoke: w.setMaxFaceValue, orchestrator: true},
 		{desc: "Set price for broadcaster", invoke: w.setPriceForBroadcaster, orchestrator: true},
+		{desc: "Set maximum sessions", invoke: w.setMaxSessions, orchestrator: true, notOrchestrator: false},
 		{desc: "Exit", invoke: func() {
 			fmt.Println("Goodbye, my friend")
 			os.Exit(0)
