@@ -4,7 +4,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
@@ -14,13 +13,6 @@ import (
 )
 
 func TestPush_WebhookRequestURL(t *testing.T) {
-	fmt.Println("############")
-	fmt.Println("############")
-	fmt.Println("############")
-	fmt.Println("############")
-	fmt.Println("############")
-	fmt.Println("############")
-	fmt.Println("############")
 	assert := assert.New(t)
 
 	// wait for any earlier tests to complete
