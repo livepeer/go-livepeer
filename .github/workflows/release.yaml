@@ -13,7 +13,7 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
-        uses: actions/checkout@v3.5.3
+        uses: actions/checkout@v4.0.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_branch }}
