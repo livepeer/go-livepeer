@@ -11,10 +11,9 @@ import (
 // A valid string will always be returned, regardless of whether an error occurred.
 func ReadFromFile(s string) (string, error) {
 	info, err := os.Stat(s)
-	if os.IsNotExist(err) {
-		// If the supplied string is not a path to a file,
-		// assume it is the pass and return it
-		return s, nil
+	// Return string as-is if the Stat call returned any error
+	if err != nil {
+		return s, err
 	}
 	if info.IsDir() {
 		// If the supplied string is a directory,
