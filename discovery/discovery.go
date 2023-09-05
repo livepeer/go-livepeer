@@ -3,10 +3,12 @@ package discovery
 import (
 	"container/heap"
 	"context"
+	"encoding/hex"
 	"errors"
 	"math"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -25,12 +27,13 @@ var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	infos []common.OrchestratorLocalInfo
-	pred  func(info *net.OrchestratorInfo) bool
-	bcast common.Broadcaster
+	infos         []common.OrchestratorLocalInfo
+	pred          func(info *net.OrchestratorInfo) bool
+	bcast         common.Broadcaster
+	orchBlacklist []string
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32) *orchestratorPool {
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -39,13 +42,13 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 	for _, uri := range uris {
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
 	}
-	return &orchestratorPool{infos: infos, bcast: bcast}
+	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist}
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
-	pred func(*net.OrchestratorInfo) bool, score float32) *orchestratorPool {
+	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string) *orchestratorPool {
 
-	pool := NewOrchestratorPool(bcast, addresses, score)
+	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist)
 	pool.pred = pred
 	return pool
 }
@@ -78,6 +81,15 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	// the assumption that all orchestrators support capability discovery.
 	legacyCapsOnly := caps.LegacyOnly()
 
+	isBlacklisted := func(info *net.OrchestratorInfo) bool {
+		for _, blacklisted := range o.orchBlacklist {
+			if strings.TrimPrefix(blacklisted, "0x") == strings.ToLower(hex.EncodeToString(info.Address)) {
+				return true
+			}
+		}
+		return false
+	}
+
 	isCompatible := func(info *net.OrchestratorInfo) bool {
 		if o.pred != nil && !o.pred(info) {
 			return false
@@ -95,7 +107,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL)
-		if err == nil && isCompatible(info) {
+		if err == nil && !isBlacklisted(info) && isCompatible(info) {
 			od.RemoteInfo = info
 			infoCh <- od
 			return
@@ -156,6 +168,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 	cancel()
 
+	// consider suspended orchestrators if we have an insufficient number of non-suspended ones
 	if len(ods) < numOrchestrators {
 		diff := numOrchestrators - len(ods)
 		for i := 0; i < diff && suspendedInfos.Len() > 0; i++ {

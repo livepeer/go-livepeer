@@ -5,6 +5,7 @@ package clog
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -20,7 +21,8 @@ type clogContextKeyT struct{}
 var clogContextKey = clogContextKeyT{}
 
 const (
-	ClientIP = "clientIP"
+	ClientIP     = "clientIP"
+	publicLogTag = "[PublicLogs] "
 
 	// standard keys
 	manifestID    = "manifestID"
@@ -28,19 +30,25 @@ const (
 	nonce         = "nonce"
 	seqNo         = "seqNo"
 	orchSessionID = "orchSessionID" // session id generated on orchestrator for broadcaster
+	ethaddress    = "ethaddress"
+	orchestrator  = "orchestrator"
 )
 
 // Verbose is a boolean type that implements Infof (like Printf) etc.
 type Verbose bool
 
 var stdKeys map[string]bool
-var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID}
+var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID, ethaddress, orchestrator}
+var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP, seqNo, ethaddress, orchestrator}
 
 func init() {
 	stdKeys = make(map[string]bool)
 	for _, key := range stdKeysOrder {
 		stdKeys[key] = true
 	}
+	// Set default v level to 3; this is overridden in main() but is useful for tests
+	vFlag := flag.Lookup("v")
+	vFlag.Value.Set("3")
 }
 
 type values struct {
@@ -123,27 +131,36 @@ func GetVal(ctx context.Context, key string) string {
 }
 
 func Warningf(ctx context.Context, format string, args ...interface{}) {
-	msg, _ := formatMessage(ctx, false, format, args...)
+	if !glog.V(2) {
+		return
+	}
+	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.WarningDepth(1, msg)
 }
 
 func Errorf(ctx context.Context, format string, args ...interface{}) {
-	msg, _ := formatMessage(ctx, false, format, args...)
+	if !glog.V(1) {
+		return
+	}
+	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.ErrorDepth(1, msg)
 }
 
 func Fatalf(ctx context.Context, format string, args ...interface{}) {
-	msg, _ := formatMessage(ctx, false, format, args...)
+	if !glog.V(0) {
+		return
+	}
+	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.FatalDepth(1, msg)
 }
 
 func Infof(ctx context.Context, format string, args ...interface{}) {
-	infof(ctx, false, format, args...)
+	infof(ctx, false, false, format, args...)
 }
 
 // InfofErr if last argument is not nil it will be printed as " err=%q"
 func InfofErr(ctx context.Context, format string, args ...interface{}) {
-	infof(ctx, true, format, args...)
+	infof(ctx, true, false, format, args...)
 }
 
 func V(level glog.Level) Verbose {
@@ -154,7 +171,7 @@ func V(level glog.Level) Verbose {
 // See the documentation of V for usage.
 func (v Verbose) Infof(ctx context.Context, format string, args ...interface{}) {
 	if v {
-		infof(ctx, false, format, args...)
+		infof(ctx, false, false, format, args...)
 	}
 }
 
@@ -164,15 +181,15 @@ func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{
 		err = args[len(args)-1]
 	}
 	if v || err != nil {
-		infof(ctx, true, format, args...)
+		infof(ctx, true, false, format, args...)
 	}
 }
 
-func infof(ctx context.Context, lastErr bool, format string, args ...interface{}) {
-	msg, isErr := formatMessage(ctx, lastErr, format, args...)
-	if isErr {
+func infof(ctx context.Context, lastErr bool, publicLog bool, format string, args ...interface{}) {
+	msg, isErr := formatMessage(ctx, lastErr, publicLog, format, args...)
+	if bool(glog.V(2)) && isErr {
 		glog.ErrorDepth(2, msg)
-	} else {
+	} else if glog.V(1) {
 		glog.InfoDepth(2, msg)
 	}
 }
@@ -205,8 +222,11 @@ func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	cmap.mu.RUnlock()
 }
 
-func formatMessage(ctx context.Context, lastErr bool, format string, args ...interface{}) (string, bool) {
+func formatMessage(ctx context.Context, lastErr bool, publicLog bool, format string, args ...interface{}) (string, bool) {
 	var sb strings.Builder
+	if publicLog {
+		sb.WriteString(publicLogTag)
+	}
 	messageFromContext(ctx, &sb)
 	var err interface{}
 	if lastErr && len(args) > 0 {
@@ -218,4 +238,31 @@ func formatMessage(ctx context.Context, lastErr bool, format string, args ...int
 		sb.WriteString(fmt.Sprintf(" err=%q", err))
 	}
 	return sb.String(), err != nil
+}
+
+func PublicInfof(ctx context.Context, format string, args ...interface{}) {
+	publicCtx := context.Background()
+
+	publicCtx = PublicCloneCtx(ctx, publicCtx, publicLogKeys)
+
+	infof(publicCtx, false, true, format, args...)
+}
+
+// PublicCloneCtx creates a new context but only copies key/val pairs from the original context
+// that are allowed to be published publicly (i.e. list in []publicLogKeys
+func PublicCloneCtx(originalCtx context.Context, publicCtx context.Context, publicLogKeys []string) context.Context {
+	cmap, _ := originalCtx.Value(clogContextKey).(*values)
+	publicCmap := newValues()
+	if cmap != nil {
+		cmap.mu.RLock()
+		for k, v := range cmap.vals {
+			for _, key := range publicLogKeys {
+				if key == k {
+					publicCmap.vals[k] = v
+				}
+			}
+		}
+		cmap.mu.RUnlock()
+	}
+	return context.WithValue(publicCtx, clogContextKey, publicCmap)
 }

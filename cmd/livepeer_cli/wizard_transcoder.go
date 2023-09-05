@@ -338,3 +338,27 @@ func (w *wizard) setPriceForBroadcaster() {
 	}
 
 }
+
+func (w *wizard) setMaxSessions() {
+	fmt.Println("Enter the maximum # of sessions")
+	maxSessions := w.readStringAndValidate(func(in string) (string, error) {
+		intVal, err := strconv.Atoi(in)
+		if "" == in || (in != "auto" && intVal <= 0 && err != nil) {
+			return "", fmt.Errorf("Max Sessions must be 'auto' or greater than zero")
+		}
+
+		return in, nil
+	})
+
+	data := url.Values{
+		"maxSessions": {fmt.Sprintf("%v", maxSessions)},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxSessions", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf(result)
+		return
+	} else {
+		fmt.Printf("Error setting max sessions: %v", result)
+		return
+	}
+}
