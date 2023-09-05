@@ -13,6 +13,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -166,7 +167,7 @@ func TestVerify(t *testing.T) {
 		{Url: "../server/test.flv", Pixels: pxls},
 	}}
 	renditions = [][]byte{}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: pm.RandAddress().Bytes(), TicketParams: &net.TicketParams{}}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
@@ -174,6 +175,7 @@ func TestVerify(t *testing.T) {
 	// We use this stubVerifier to make sure that ffmpeg doesnt try to read from a file
 	// Verify sig against ticket recipient address
 	recipientAddr := ethcommon.BytesToAddress([]byte("foo"))
+	orchAddr := ethcommon.Address{}
 	sv = &SegmentVerifier{policy: &Policy{Verifier: &stubVerifier{
 		results: nil,
 		err:     nil,
@@ -188,12 +190,12 @@ func TestVerify(t *testing.T) {
 
 	renditions = [][]byte{{0}, {0}}
 	params := &net.TicketParams{Recipient: recipientAddr.Bytes()}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: params}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: orchAddr.Bytes(), TicketParams: params}, Renditions: renditions})
 	assert.Nil(err)
 	assert.NotNil(res)
 
 	// Verify sig against orchestrator provided address
-	orchAddr := ethcommon.BytesToAddress([]byte("bar"))
+	orchAddr = ethcommon.BytesToAddress([]byte("bar"))
 	sv = &SegmentVerifier{
 		policy:    &Policy{Verifier: &stubVerifier{}, Retries: 2},
 		verifySig: func(addr ethcommon.Address, msg []byte, sig []byte) bool { return addr == orchAddr },
@@ -212,13 +214,13 @@ func TestVerify(t *testing.T) {
 		{Url: "uvw", Pixels: pxls},
 		{Url: "xyz", Pixels: pxls},
 	}}
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar"), TicketParams: params}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 
 	// Check sig verifier runs and fails (due to missing sig) even when policy is nil
 	sv = NewSegmentVerifier(nil)
-	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: &net.TicketParams{}}, Renditions: renditions})
+	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{Address: []byte("bar"), TicketParams: params}, Renditions: renditions})
 	assert.Equal(errPMCheckFailed, err)
 	assert.Nil(res)
 

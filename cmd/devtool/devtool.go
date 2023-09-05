@@ -126,7 +126,7 @@ func main() {
 	}
 	createRunScript(devtool.EthController, dataDir, serviceHost, cfg)
 	if !isBroadcaster {
-		cliPort += 1
+		cliPort++
 		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
 		err = os.MkdirAll(tDataDir, 0755)
 		if err != nil {

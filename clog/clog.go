@@ -5,6 +5,7 @@ package clog
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,20 +30,25 @@ const (
 	nonce         = "nonce"
 	seqNo         = "seqNo"
 	orchSessionID = "orchSessionID" // session id generated on orchestrator for broadcaster
+	ethaddress    = "ethaddress"
+	orchestrator  = "orchestrator"
 )
 
 // Verbose is a boolean type that implements Infof (like Printf) etc.
 type Verbose bool
 
 var stdKeys map[string]bool
-var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID}
-var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP}
+var stdKeysOrder = []string{manifestID, sessionID, nonce, seqNo, orchSessionID, ethaddress, orchestrator}
+var publicLogKeys = []string{manifestID, sessionID, orchSessionID, ClientIP, seqNo, ethaddress, orchestrator}
 
 func init() {
 	stdKeys = make(map[string]bool)
 	for _, key := range stdKeysOrder {
 		stdKeys[key] = true
 	}
+	// Set default v level to 3; this is overridden in main() but is useful for tests
+	vFlag := flag.Lookup("v")
+	vFlag.Value.Set("3")
 }
 
 type values struct {
@@ -125,16 +131,25 @@ func GetVal(ctx context.Context, key string) string {
 }
 
 func Warningf(ctx context.Context, format string, args ...interface{}) {
+	if !glog.V(2) {
+		return
+	}
 	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.WarningDepth(1, msg)
 }
 
 func Errorf(ctx context.Context, format string, args ...interface{}) {
+	if !glog.V(1) {
+		return
+	}
 	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.ErrorDepth(1, msg)
 }
 
 func Fatalf(ctx context.Context, format string, args ...interface{}) {
+	if !glog.V(0) {
+		return
+	}
 	msg, _ := formatMessage(ctx, false, false, format, args...)
 	glog.FatalDepth(1, msg)
 }
@@ -172,9 +187,9 @@ func (v Verbose) InfofErr(ctx context.Context, format string, args ...interface{
 
 func infof(ctx context.Context, lastErr bool, publicLog bool, format string, args ...interface{}) {
 	msg, isErr := formatMessage(ctx, lastErr, publicLog, format, args...)
-	if isErr {
+	if bool(glog.V(2)) && isErr {
 		glog.ErrorDepth(2, msg)
-	} else {
+	} else if glog.V(1) {
 		glog.InfoDepth(2, msg)
 	}
 }

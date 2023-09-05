@@ -83,7 +83,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	isBlacklisted := func(info *net.OrchestratorInfo) bool {
 		for _, blacklisted := range o.orchBlacklist {
-			if strings.TrimPrefix(blacklisted, "0x") == hex.EncodeToString(info.Address) {
+			if strings.TrimPrefix(blacklisted, "0x") == strings.ToLower(hex.EncodeToString(info.Address)) {
 				return true
 			}
 		}

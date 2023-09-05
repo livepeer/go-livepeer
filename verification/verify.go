@@ -184,7 +184,7 @@ func IsRetryable(err error) bool {
 }
 
 func (sv *SegmentVerifier) sigVerification(params *Params) error {
-	if params.Orchestrator == nil || params.Orchestrator.TicketParams == nil {
+	if params.Orchestrator == nil || params.Orchestrator.Address == nil || params.Orchestrator.TicketParams == nil {
 		return nil
 	}
 

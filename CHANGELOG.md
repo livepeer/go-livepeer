@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.6.0
+
+### Breaking Changes 🚨🚨
+- [#2821](https://github.com/livepeer/go-livepeer/pull/2821) Bump nvidia/cuda base version for docker builds (@stronk-dev and @hjpotter92)
+
+### Features ⚒
+
+#### Broadcaster
+- [#2827](https://github.com/livepeer/go-livepeer/pull/2827) Introduce configurable Orchestrator blocklist (@mjh1)
+
+#### General
+- [#2758](https://github.com/livepeer/go-livepeer/pull/2758) Accept only active Os to receive traffic and redeem tickets (@leszko)
+- [#2775](https://github.com/livepeer/go-livepeer/pull/2775) Reduce number of ETH RPC calls during block polling (@leszko)
+- [#2815](https://github.com/livepeer/go-livepeer/pull/2815) Add new logging methods to publish a set of public logs (@emranemran)
+
+### Bug Fixes 🐞
+- [#2759](https://github.com/livepeer/go-livepeer/pull/2759) Parse keystore address without 0x prefix, fix parse error logging
+- [#2764](https://github.com/livepeer/go-livepeer/pull/2764) Call session end asynchronously to avoid unnecessary blocking (@mjh1)
+- [#2777](https://github.com/livepeer/go-livepeer/pull/2777) Only write session end log message if session exists (@mjh1)
+- [#2804](https://github.com/livepeer/go-livepeer/pull/2804) Bump livepeer-data and go version due to breaking interface change (@victorges)
+
 ## v0.5.38
 
 ### Breaking Changes 🚨🚨
