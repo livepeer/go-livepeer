@@ -60,6 +60,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setOrchestratorConfig", mustHaveFormParams(s.setOrchestratorConfigHandler(client)))
 	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
 	mux.Handle("/setPriceForBroadcaster", mustHaveFormParams(s.setPriceForBroadcaster(), "pricePerUnit", "pixelsPerUnit", "broadcasterEthAddr"))
+	mux.Handle("/setMaxSessions", mustHaveFormParams(s.setMaxSessions(), "maxSessions"))
 
 	// Bond, withdraw, reward
 	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))

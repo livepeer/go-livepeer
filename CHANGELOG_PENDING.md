@@ -13,6 +13,7 @@
 - \#2839 Add Orchestrator blocklist CLI parameter (@mjh1)
 
 #### Orchestrator
+- \#2781 Add automatic session limit and set max sessions with livepeer_cli
 
 #### Transcoder
 

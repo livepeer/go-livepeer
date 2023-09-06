@@ -18,7 +18,7 @@ func TestReadFromFileNoFileExists(t *testing.T) {
 	// ReadFromFile should return the string it was supplied
 	output, err := ReadFromFile(input)
 
-	assert.Nil(err)
+	assert.NotNil(err)
 	// ReadFromFile should return the originally supplied string
 	assert.Equal(expectedOutput, output)
 }

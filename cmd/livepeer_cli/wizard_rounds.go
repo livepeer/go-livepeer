@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -17,7 +16,7 @@ func (w *wizard) currentRound() (*big.Int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("http response status %d", resp.StatusCode))
+		return nil, fmt.Errorf("http response status %d", resp.StatusCode)
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)

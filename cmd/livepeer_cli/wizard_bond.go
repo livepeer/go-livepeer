@@ -2,9 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -64,12 +63,12 @@ func (w *wizard) getRegisteredOrchestrators() ([]lpTypes.Transcoder, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("http error: %d", resp.StatusCode))
+		return nil, fmt.Errorf("http error: %d", resp.StatusCode)
 	}
 
 	defer resp.Body.Close()
 
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +131,7 @@ func (w *wizard) getUnbondingLocks(withdrawable bool) ([]lpcommon.DBUnbondingLoc
 
 	defer resp.Body.Close()
 
-	result, err := ioutil.ReadAll(resp.Body)
+	result, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
