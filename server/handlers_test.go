@@ -309,7 +309,9 @@ func TestCurrentRoundHandler_Success(t *testing.T) {
 	status, body := get(handler)
 
 	assert.Equal(http.StatusOK, status)
-	assert.Equal(currentRound, new(big.Int).SetBytes([]byte(body)))
+	cr, _ := new(big.Int).SetString(body, 10)
+
+	assert.Equal(currentRound, cr)
 }
 
 func TestInitializeRoundHandler_InitializeRoundError(t *testing.T) {

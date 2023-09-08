@@ -23,8 +23,12 @@ func (w *wizard) currentRound() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
+	cr, ok := new(big.Int).SetString(string(body), 10)
+	if !ok {
+		return nil, fmt.Errorf("could not parse current round from response")
+	}
 
-	return new(big.Int).SetBytes(body), nil
+	return cr, nil
 }
 
 func (w *wizard) initializeRound() {
