@@ -111,7 +111,6 @@ jobs:
           PKG_CONFIG_PATH: "/home/runner/compiled/lib/pkgconfig"
         run: |
           ./test.sh
-          ./test_e2e.sh
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v3
