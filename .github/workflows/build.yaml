@@ -17,7 +17,7 @@ jobs:
     name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
     runs-on: ${{ matrix.platform.runner }}
     container:
-      image: leszko/cuda:11.7.1-cudnn8-devel-ubuntu20.04-all
+      image: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
       env:
         DEBIAN_FRONTEND: noninteractive
     strategy:
