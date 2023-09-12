@@ -11,6 +11,7 @@ EXTRA_LDFLAGS=""
 EXTRA_X264_FLAGS=""
 EXTRA_FFMPEG_FLAGS=""
 
+
 if [[ "$ARCH" == "arm64" && "$UNAME" == "Darwin" ]]; then
   # Detect Apple Silicon
   IS_ARM64=1
@@ -19,8 +20,8 @@ fi
 if [[ "$ARCH" == "x86_64" && "$UNAME" == "Linux" && "${GOARCH:-}" == "arm64" ]]; then
   echo "cross-compiling linux-arm64"
   export CC="clang --sysroot=/usr/aarch64-linux-gnu"
-  EXTRA_CFLAGS="--target=aarch64-linux-gnu $EXTRA_CFLAGS"
-  EXTRA_LDFLAGS="--target=aarch64-linux-gnu $EXTRA_LDFLAGS"
+  EXTRA_CFLAGS="--target=aarch64-linux-gnu -I/usr/local/cuda_arm64/include $EXTRA_CFLAGS"
+  EXTRA_LDFLAGS="--target=aarch64-linux-gnu -L/usr/local/cuda_arm64/lib64 $EXTRA_LDFLAGS"
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang --sysroot=/usr/aarch64-linux-gnu"
   HOST_OS="--host=aarch64-linux-gnu"
   IS_ARM64=1
@@ -141,19 +142,18 @@ DEV_FFMPEG_FLAGS="--disable-programs"
 
 if [[ "$UNAME" == "Darwin" ]]; then
   EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS -framework CoreFoundation -framework Security"
-else
-  # If we have clang, we can compile with CUDA support!
-  if which clang >/dev/null; then
-    echo "clang detected, building with GPU and Tensorflow support"
-    EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
-    if [[ ! -e "${ROOT}/compiled/lib/libtensorflow_framework.so" ]]; then
-      LIBTENSORFLOW_VERSION=2.12.1 &&
-        curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
-        tar -C ${ROOT}/compiled/ -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
-        rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
-    fi
-    EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
+elif [[ -e "/usr/local/cuda/lib64" ]]; then
+  echo "CUDA SDK detected, building with GPU support"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-nonfree --enable-cuda-nvcc --enable-libnpp --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_npp,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
+  if [[ ! -e "${ROOT}/compiled/lib/libtensorflow_framework.so" ]]; then
+    LIBTENSORFLOW_VERSION=2.12.1 &&
+      curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
+      tar -C ${ROOT}/compiled/ -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz &&
+      rm libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz
   fi
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-libtensorflow"
+else
+  echo "No CUDA SDK detected, building without GPU support"
 fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
@@ -181,8 +181,8 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
     --enable-encoder=aac,opus,libx264 \
     --enable-decoder=aac,opus,h264 \
-    --extra-cflags="-I${ROOT}/compiled/include ${EXTRA_CFLAGS}" \
-    --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_FFMPEG_LDFLAGS}" \
+    --extra-cflags="${EXTRA_CFLAGS} -I${ROOT}/compiled/include -I/usr/local/cuda/include" \
+    --extra-ldflags="${EXTRA_FFMPEG_LDFLAGS} -L${ROOT}/compiled/lib -L/usr/local/cuda/lib64" \
     --prefix="$ROOT/compiled" \
     $EXTRA_FFMPEG_FLAGS \
     $DEV_FFMPEG_FLAGS
