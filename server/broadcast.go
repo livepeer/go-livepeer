@@ -215,7 +215,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 		// A session without any segments in flight and that has a latency score that meets the selector
 		// threshold is selectable
 		if len(session.SegsInFlight) == 0 {
-			if session.LatencyScore > 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
+			if session.LatencyScore >= 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
 				clog.PublicInfof(ctx,
 					"Selecting new orchestrator, reason=%v",
 					fmt.Sprintf(
