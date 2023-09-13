@@ -55,6 +55,7 @@ var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *
 	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
 	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
 }
+var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -986,7 +987,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}()
 	}
 	if len(attempts) == MaxAttempts && err != nil {
-		err = fmt.Errorf("Hit max transcode attempts: %w", err)
+		err = fmt.Errorf("%w: %w", maxTranscodeAttempts, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorMaxAttempts, nonce, seg.SeqNo, err, true)
 		}
@@ -1612,7 +1613,7 @@ func isNonRetryableError(err error) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(err.Error(), "Hit max transcode attempts:") {
+	if errors.Is(err, maxTranscodeAttempts) {
 		return true
 	}
 	return false
