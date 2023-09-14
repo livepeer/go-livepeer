@@ -301,6 +301,7 @@ message VideoProfile {
     CHROMA_444 = 2;
   }
   ChromaSubsampling chromaFormat = 27;
+  uint32 quality = 28;
 }
 
 // Individual transcoded segment data.
