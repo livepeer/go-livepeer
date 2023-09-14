@@ -289,23 +289,13 @@ func pushSegmentsBroadcaster(t *testing.T, b *livepeer, numSegs int) {
 	mid := common.RandName()
 	for i := 0; i < numSegs; i++ {
 		require.Nil(pushSegmentBroadcaster(b, mid, i))
+		// Wait at least 1 second between sending each segment to simulate the usual streaming scenario.
+		// In the Broadcaster's selection algorithm the Orchestrator's session is reused only if the previous
+		// segment is transcoded in a timely manner, so sending a new segment before the last one completed
+		// causes O's switch, which in turn causes the test failure (because we have only 1 O in this test).
+		time.Sleep(1 * time.Second)
+
 	}
-}
-
-func pushSegmentsParallelBroadcaster(t *testing.T, b *livepeer, numSegs int) {
-	assert := assert.New(t)
-
-	var wg sync.WaitGroup
-	mid := common.RandName()
-	for i := 0; i < numSegs; i++ {
-		wg.Add(1)
-		go func(mid string, seqNo int) {
-			assert.Nil(pushSegmentBroadcaster(b, mid, i))
-			wg.Done()
-		}(mid, i)
-	}
-
-	wg.Wait()
 }
 
 func pushSegmentBroadcaster(b *livepeer, manifestID string, seqNo int) error {

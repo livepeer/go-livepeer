@@ -27,7 +27,4 @@ func TestHTTPPushBroadcaster(t *testing.T) {
 
 	// Sequential requests
 	pushSegmentsBroadcaster(t, b, 3)
-
-	// Parallel requests
-	pushSegmentsParallelBroadcaster(t, b, 5)
 }
