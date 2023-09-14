@@ -280,7 +280,7 @@ func depositBroadcaster(t *testing.T, b *livepeer, amount *big.Int) {
 	require.Zero(info.Reserve.FundsRemaining.Cmp(amount))
 
 	// Ensure that on-chain deposit event handlers have time to process
-	time.Sleep(3 * time.Second)
+	time.Sleep(1 * time.Second)
 }
 
 func pushSegmentsBroadcaster(t *testing.T, b *livepeer, numSegs int) {
