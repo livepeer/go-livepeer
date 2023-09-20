@@ -383,7 +383,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if homedir == "" {
 			usr, err := user.Current()
 			if err != nil {
-				glog.Fatalf("Cannot find current user: %v", err)
+				exit("Cannot find current user: %v", err)
 			}
 			homedir = usr.HomeDir
 		}
@@ -437,13 +437,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
 			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
-				glog.Fatalf("Error unsupported acceleration: %v", err)
+				exit("Error unsupported acceleration: %v", err)
 			}
 			// Get a list of device ids
 			devices, err := common.ParseAccelDevices(devicesStr, accel)
 			glog.Infof("%v devices: %v", accelName, devices)
 			if err != nil {
-				glog.Fatalf("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
+				exit("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
 			}
 			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
 			// Test transcoding with specified device
@@ -467,14 +467,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					for _, d := range devices {
 						tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
 						if err != nil {
-							glog.Fatalf("Could not initialize content detector")
+							exit("Could not initialize content detector")
 						}
 						defer tc.Stop()
 					}
 					// add SceneClassification capability
 					transcoderCaps = append(transcoderCaps, core.Capability_SceneClassification)
 				} else {
-					glog.Fatalf("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
+					exit("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
 				}
 			}
 			// Initialize LB transcoder
@@ -499,7 +499,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Broadcaster {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		glog.Fatalf("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -1039,7 +1039,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			defer cancel()
 			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
 			if err != nil {
-				glog.Fatalf("Could not create orchestrator pool with DB cache: %v", err)
+				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
 			n.OrchestratorPool = dbOrchPoolCache
@@ -1139,17 +1139,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.MetadataQueueUri != "" {
 		uri, err := url.ParseRequestURI(*cfg.MetadataQueueUri)
 		if err != nil {
-			glog.Fatalf("Error parsing -metadataQueueUri: err=%q", err)
+			exit("Error parsing -metadataQueueUri: err=%q", err)
 		}
 		switch uri.Scheme {
 		case "amqp", "amqps":
 			uriStr, exchange, keyNs := *cfg.MetadataQueueUri, *cfg.MetadataAmqpExchange, n.NodeType.String()
 			server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uriStr, exchange, keyNs)
 			if err != nil {
-				glog.Fatalf("Error establishing AMQP connection: err=%q", err)
+				exit("Error establishing AMQP connection: err=%q", err)
 			}
 		default:
-			glog.Fatalf("Unsupported scheme in -metadataUri: %s", uri.Scheme)
+			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
 
@@ -1158,7 +1158,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	//Set up the media server
 	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
-		glog.Fatalf("Error creating Livepeer server: err=%q", err)
+		exit("Error creating Livepeer server: err=%q", err)
 	}
 
 	ec := make(chan error)
@@ -1192,7 +1192,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go func() {
 			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
 			if err != nil {
-				glog.Fatalf("Error starting Transcoder node: err=%q", err)
+				exit("Error starting Transcoder node: err=%q", err)
 			}
 			tc <- struct{}{}
 		}()
@@ -1242,7 +1242,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		return
 	case err := <-serviceErr:
 		if err != nil {
-			glog.Fatalf("Error starting service: %v", err)
+			exit("Error starting service: %v", err)
 		}
 	case <-tc:
 		glog.Infof("Orchestrator server shut down")
@@ -1483,4 +1483,9 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func exit(msg string, args ...any) {
+	glog.Errorf(msg, args...)
+	os.Exit(2)
 }
