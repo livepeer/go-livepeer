@@ -14,10 +14,10 @@ concurrency:
 
 jobs:
   linux-build:
-    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
+    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}
     runs-on: ${{ matrix.platform.runner }}
     container:
-      image: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
+      image: ${{ matrix.hardware.container }}
       env:
         DEBIAN_FRONTEND: noninteractive
     strategy:
@@ -31,6 +31,11 @@ jobs:
             runner: ubuntu-20.04
           - name: windows
             runner: ubuntu-20.04
+        hardware:
+          - type: cpu
+            container: ubuntu:20.04
+          - type: gpu
+            container: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
         exclude:
           - platform:
               name: windows
@@ -65,9 +70,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
+            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-
 
       - name: Set build environment
         run: |
@@ -75,9 +80,14 @@ jobs:
           echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Set GPU build environment
+        if: matrix.hardware.type == 'gpu'
+        run: |
           echo "CPATH=/usr/local/cuda_${{ matrix.arch }}/include" >> $GITHUB_ENV
           echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
+          echo "RELEASE_TAG=gpu" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
