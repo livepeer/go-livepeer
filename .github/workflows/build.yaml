@@ -14,8 +14,12 @@ concurrency:
 
 jobs:
   linux-build:
-    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
+    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}
     runs-on: ${{ matrix.platform.runner }}
+    container:
+      image: ${{ matrix.hardware.container }}
+      env:
+        DEBIAN_FRONTEND: noninteractive
     strategy:
       fail-fast: false
       matrix:
@@ -27,6 +31,11 @@ jobs:
             runner: ubuntu-20.04
           - name: windows
             runner: ubuntu-20.04
+        hardware:
+          - type: cpu
+            container: ubuntu:20.04
+          - type: gpu
+            container: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
         exclude:
           - platform:
               name: windows
@@ -35,10 +44,10 @@ jobs:
     steps:
       - name: Setup ubuntu container
         run: |
-          sudo apt update
-          sudo apt install -yqq build-essential make software-properties-common
-          sudo add-apt-repository -y ppa:git-core/ppa
-          sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g
+          apt update
+          apt install -yqq build-essential make software-properties-common
+          add-apt-repository -y ppa:git-core/ppa
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
         uses: actions/checkout@v4.0.0
@@ -47,10 +56,6 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Cleanup hosted runner
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
 
       - name: Set up go
         id: go
@@ -65,30 +70,39 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
+            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-
 
       - name: Set build environment
         run: |
           echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Set GPU build environment
+        if: matrix.hardware.type == 'gpu'
+        run: |
+          echo "CPATH=/usr/local/cuda_${{ matrix.arch }}/include" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
+          echo "RELEASE_TAG=gpu" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
-          sudo apt update \
-            && sudo apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
-            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
-            && sudo apt update \
-            && sudo apt -yqq install \
+          apt update \
+            && apt install -yqq software-properties-common curl apt-transport-https lsb-release \
+            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
+            && add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
+            && apt update \
+            && apt -yqq install \
               clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python \
               gcc-multilib gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
 
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
-            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
+            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
 
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
@@ -101,7 +115,6 @@ jobs:
       - name: Build binaries
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          PKG_CONFIG_PATH: "/home/runner/compiled/lib/pkgconfig"
         run: |
           git config --global --add safe.directory '*'
           ./ci_env.sh make
@@ -224,101 +237,6 @@ jobs:
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
-  linux-tensorflow:
-    name: Build binaries for linux using tensorflow
-    runs-on: ubuntu-20.04
-
-    steps:
-      - name: Setup ubuntu container
-        run: |
-          sudo apt update
-          sudo apt install -yqq build-essential make software-properties-common
-          sudo add-apt-repository -y ppa:git-core/ppa
-          sudo apt update && sudo apt install -yqq git zip unzip zlib1g-dev zlib1g coreutils binutils libc++-dev libc++abi-dev libtool p7zip-full mediainfo xz-utils
-
-      - name: Check out code
-        uses: actions/checkout@v4.0.0
-        with:
-          fetch-depth: 0
-          # Check https://github.com/livepeer/go-livepeer/pull/1891
-          # for ref value discussion
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - name: Cleanup hosted runner
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android
-
-      - name: Set up go
-        id: go
-        uses: actions/setup-go@v4
-        with:
-          go-version: 1.20.4
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Cache ffmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/compiled
-          key: ${{ runner.os }}-ffmpeg-tf-${{ hashFiles('**/install_ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-ffmpeg-tf-
-
-      - name: Install dependencies
-        env:
-          LIBTENSORFLOW_VERSION: "2.12.1"
-        run: |
-          sudo apt update \
-            && sudo apt install -yqq software-properties-common curl apt-transport-https lsb-release \
-            && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
-            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
-            && sudo apt update \
-            && sudo apt -yqq install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python
-
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
-            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
-
-          sudo curl -LO https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo tar -C /usr/local -xzf libtensorflow-gpu-linux-x86_64-${LIBTENSORFLOW_VERSION}.tar.gz \
-            && sudo ldconfig
-
-      - name: Install go modules
-        # if: steps.go.outputs.cache-hit != 'true'
-        run: go mod download
-
-      - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: ./install_ffmpeg.sh
-
-      - name: Build binaries
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          PKG_CONFIG_PATH: "/home/runner/compiled/lib/pkgconfig"
-        run: |
-          git config --global --add safe.directory '*'
-          ./ci_env.sh make cgo_cflags="-lz" all
-          rm -rf ~/build && mkdir ~/build && mv livepeer* ~/build/
-
-      - name: Upload build
-        run: cp ~/build/* . && ./upload_build.sh
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-          RELEASE_TAG: "tensorflow"
-
-      - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@master
-        with:
-          name: release-artifacts
-          path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
-
   upload:
     name: Upload artifacts to google bucket
     permissions:
@@ -328,7 +246,6 @@ jobs:
     needs:
       - macos-build
       - linux-build
-      - linux-tensorflow
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v3

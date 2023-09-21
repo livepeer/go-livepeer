@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM	ubuntu:20.04	as	build
+FROM --platform=$BUILDPLATFORM livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04 as build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
@@ -6,12 +6,13 @@ ARG	BUILDARCH
 ENV	GOARCH="$TARGETARCH" \
 	PATH="/usr/local/go/bin:/go/bin:${PATH}" \
 	PKG_CONFIG_PATH="/root/compiled/lib/pkgconfig" \
-	CPATH="/usr/local/cuda/include" \
-	LIBRARY_PATH="/usr/local/cuda/lib64" \
-	DEBIAN_FRONTEND="noninteractive"
+	CPATH="/usr/local/cuda_${TARGETARCH}/include" \
+	LIBRARY_PATH="/usr/local/cuda_${TARGETARCH}/lib64" \
+	DEBIAN_FRONTEND="noninteractive" \
+	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release yasm \
 	&& curl -fsSL https://dl.google.com/go/go1.20.4.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
