@@ -1623,3 +1623,113 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 	assert.Len(infos, 1)
 	assert.Equal(i4, infos[0].RemoteInfo)
 }
+
+func TestOrchestratorPool_filterByMinPerfScore(t *testing.T) {
+	tests := []struct {
+		name             string
+		orchMinPerfScore float64
+		orchPerfScores   map[string]float64
+		orchestrators    []string
+		want             []string
+	}{
+		{
+			name:             "Some Orchestrators pass the filter",
+			orchMinPerfScore: 0.7,
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+				"0x0000000000000000000000000000000000000004",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+		},
+		{
+			name:             "No orchestrator scores defined",
+			orchMinPerfScore: 0.7,
+			orchPerfScores:   nil,
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			},
+		},
+		{
+			name:             "No min score defined",
+			orchMinPerfScore: 0,
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			},
+		},
+		{
+			name:             "No Orchestrators pass the filter",
+			orchMinPerfScore: 0.99,
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+				"0x0000000000000000000000000000000000000004",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+				"0x0000000000000000000000000000000000000004",
+			},
+		},
+	}
+	toOrchDescr := func(addr string) common.OrchestratorDescriptor {
+		return common.OrchestratorDescriptor{
+			RemoteInfo: &net.OrchestratorInfo{
+				Address: ethcommon.FromHex(addr),
+			},
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ods := common.OrchestratorDescriptors{}
+			for _, o := range tt.orchestrators {
+				ods = append(ods, toOrchDescr(o))
+			}
+			op := &orchestratorPool{
+				orchMinPerfScore: tt.orchMinPerfScore,
+				orchPerfScore: &PerfScore{
+					scores: tt.orchPerfScores,
+				},
+			}
+
+			res := op.filterByMinPerfScore(ods)
+
+			exp := common.OrchestratorDescriptors{}
+			for _, o := range tt.want {
+				exp = append(exp, toOrchDescr(o))
+			}
+			require.Equal(t, exp, res)
+		})
+	}
+}

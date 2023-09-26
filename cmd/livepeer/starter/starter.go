@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	TranscodingOptions           *string
 	MaxAttempts                  *int
 	SelectRandFreq               *float64
+	OrchPerfStatsURL             *string
 	MaxSessions                  *string
 	CurrentManifest              *bool
 	Nvidia                       *string
@@ -132,6 +133,8 @@ type LivepeerConfig struct {
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
 	OrchBlacklist                *string
+	Region                       *string
+	MinPerfScore                 *float64
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.

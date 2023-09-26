@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"math"
 	"math/rand"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -27,10 +29,17 @@ var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	infos         []common.OrchestratorLocalInfo
-	pred          func(info *net.OrchestratorInfo) bool
-	bcast         common.Broadcaster
-	orchBlacklist []string
+	infos            []common.OrchestratorLocalInfo
+	pred             func(info *net.OrchestratorInfo) bool
+	bcast            common.Broadcaster
+	orchBlacklist    []string
+	orchMinPerfScore float64
+	orchPerfScore    *PerfScore
+}
+
+type PerfScore struct {
+	mu     sync.Mutex
+	scores map[string]float64
 }
 
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {
@@ -177,6 +186,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 	}
 
+	ods = o.filterByMinPerfScore(ods)
+
 	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
 		len(ods), nbResp, len(linfos), timedOut)
 	return ods, nil
@@ -194,4 +205,30 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 		}
 	}
 	return size
+}
+
+// filterByMinPerfScore returns only Orchestrators whose performance score is greater than configured with minPerfScore.
+// If no orchestrators pass the filter, then returns all Orchestrators; that may mean that PerfScore service is down.
+func (o *orchestratorPool) filterByMinPerfScore(ods common.OrchestratorDescriptors) common.OrchestratorDescriptors {
+	if o.orchMinPerfScore <= 0 || o.orchPerfScore == nil {
+		// Performance Score filter not defined, return all Orchestrators
+		return ods
+	}
+
+	o.orchPerfScore.mu.Lock()
+	defer o.orchPerfScore.mu.Unlock()
+
+	var res common.OrchestratorDescriptors
+	for _, od := range ods {
+		addr := ethcommon.BytesToAddress(od.RemoteInfo.Address).Hex()
+		if o.orchPerfScore.scores[addr] >= o.orchMinPerfScore {
+			res = append(res, od)
+		}
+	}
+
+	if len(res) == 0 {
+		glog.Warning("No Orchestrators passed min performance score filter, returning all orchestrators")
+		return ods
+	}
+	return res
 }
