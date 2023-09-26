@@ -163,6 +163,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxAttempts := 3
 	defaultSelectRandFreq := 0.3
 	defaultMaxSessions := strconv.Itoa(10)
+	defaultOrchPerfStatsURL := ""
+	defaultRegion := ""
+	defaultMinPerfScore := 0.0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -241,6 +244,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxAttempts:                  &defaultMaxAttempts,
 		SelectRandFreq:               &defaultSelectRandFreq,
 		MaxSessions:                  &defaultMaxSessions,
+		OrchPerfStatsURL:             &defaultOrchPerfStatsURL,
+		Region:                       &defaultRegion,
+		MinPerfScore:                 &defaultMinPerfScore,
 		CurrentManifest:              &defaultCurrentManifest,
 		Nvidia:                       &defaultNvidia,
 		Netint:                       &defaultNetint,
