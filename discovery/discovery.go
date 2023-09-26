@@ -29,20 +29,20 @@ var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	infos            []common.OrchestratorLocalInfo
-	pred             func(info *net.OrchestratorInfo) bool
-	bcast            common.Broadcaster
-	orchBlacklist    []string
-	orchMinPerfScore float64
-	orchPerfScore    *PerfScore
+	infos         []common.OrchestratorLocalInfo
+	pred          func(info *net.OrchestratorInfo) bool
+	bcast         common.Broadcaster
+	orchBlacklist []string
+	minPerfScore  float64
+	perfScore     *PerfScore
 }
 
 type PerfScore struct {
-	mu     sync.Mutex
-	scores map[string]float64
+	Mu     sync.Mutex
+	Scores map[string]float64
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, perfScore *PerfScore, minPerfScore float64) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -51,13 +51,13 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 	for _, uri := range uris {
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
 	}
-	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist}
+	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist, perfScore: perfScore, minPerfScore: minPerfScore}
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
-	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string) *orchestratorPool {
+	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, perfScore *PerfScore, minPerfScore float64) *orchestratorPool {
 
-	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist)
+	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist, perfScore, minPerfScore)
 	pool.pred = pred
 	return pool
 }
@@ -210,18 +210,18 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 // filterByMinPerfScore returns only Orchestrators whose performance score is greater than configured with minPerfScore.
 // If no orchestrators pass the filter, then returns all Orchestrators; that may mean that PerfScore service is down.
 func (o *orchestratorPool) filterByMinPerfScore(ods common.OrchestratorDescriptors) common.OrchestratorDescriptors {
-	if o.orchMinPerfScore <= 0 || o.orchPerfScore == nil {
+	if o.minPerfScore <= 0 || o.perfScore == nil {
 		// Performance Score filter not defined, return all Orchestrators
 		return ods
 	}
 
-	o.orchPerfScore.mu.Lock()
-	defer o.orchPerfScore.mu.Unlock()
+	o.perfScore.Mu.Lock()
+	defer o.perfScore.Mu.Unlock()
 
 	var res common.OrchestratorDescriptors
 	for _, od := range ods {
 		addr := ethcommon.BytesToAddress(od.RemoteInfo.Address).Hex()
-		if o.orchPerfScore.scores[addr] >= o.orchMinPerfScore {
+		if o.perfScore.Scores[addr] >= o.minPerfScore {
 			res = append(res, od)
 		}
 	}
