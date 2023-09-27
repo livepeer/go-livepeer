@@ -1059,7 +1059,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
 			orchPerfScore = &discovery.PerfScore{}
-			go refreshOrchPerfScoreLoop(ctx, *cfg.Region, *cfg.OrchPerfStatsURL, orchPerfScore)
+			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, orchPerfScore)
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
