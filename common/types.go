@@ -109,7 +109,7 @@ type SelectionAlgorithm interface {
 
 type PerfScore struct {
 	Mu     sync.Mutex
-	Scores map[string]float64
+	Scores map[ethcommon.Address]float64
 }
 
 func ScoreAtLeast(minScore float32) ScorePred {

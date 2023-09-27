@@ -1057,7 +1057,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
-			n.OrchPerfScore = &common.PerfScore{}
+			n.OrchPerfScore = &common.PerfScore{Scores: make(map[ethcommon.Address]float64)}
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
@@ -1542,7 +1542,7 @@ func refreshOrchPerfScore(region string, scoreURL string, score *common.PerfScor
 }
 
 func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
-	respMap := map[string]map[string]map[string]float64{}
+	respMap := map[ethcommon.Address]map[string]map[string]float64{}
 	if err := json.Unmarshal(respBody, &respMap); err != nil {
 		glog.Warning("Cannot unmarshal response from Orchestrator Performance Stats URL, err=%v", err)
 		return

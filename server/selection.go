@@ -6,7 +6,6 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
-	"math/big"
 )
 
 const SELECTOR_LATENCY_SCORE_THRESHOLD = 1.0
@@ -168,7 +167,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 	}
 
 	var addrs []ethcommon.Address
-	var prices map[ethcommon.Address]float64
+	prices := map[ethcommon.Address]float64{}
 	addrCount := make(map[ethcommon.Address]int)
 	for _, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
@@ -180,25 +179,24 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		}
 		addrCount[addr]++
 		pi := sess.OrchestratorInfo.PriceInfo
-		price, _ := big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit).Float64()
-		prices[addr] = price
+		prices[addr] = float64(pi.PricePerUnit) / float64(pi.PixelsPerUnit)
 	}
 
-	// Fetch stake weights for all addresses
-	// We handle the possibility of missing stake weights for addresses when we run weighted random selection on unknownSessions
 	stakes, err := s.stakeRdr.Stakes(addrs)
-	// If we fail to read stake weights of unknownSessions we should not continue with selection
 	if err != nil {
 		clog.Errorf(ctx, "failed to read stake weights for selection err=%q", err)
 		return nil
 	}
-
-	s.perfScore.Mu.Lock()
 	var perfScores map[ethcommon.Address]float64
-	for _, addr := range addrs {
-		perfScores[addr] = s.perfScore.Scores[addr.Hex()]
+	if s.perfScore != nil {
+		s.perfScore.Mu.Lock()
+		perfScores = map[ethcommon.Address]float64{}
+		for _, addr := range addrs {
+			perfScores[addr] = s.perfScore.Scores[addr]
+		}
+		s.perfScore.Mu.Unlock()
 	}
-	s.perfScore.Mu.Unlock()
+
 	selected := s.selectionAlgorithm.Select(addrs, stakes, prices, perfScores)
 
 	for i, sess := range s.unknownSessions {
