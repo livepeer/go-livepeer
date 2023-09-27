@@ -1055,11 +1055,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		bcast := core.NewBroadcaster(n)
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
-		var orchPerfScore *discovery.PerfScore
 		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
 			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
-			orchPerfScore = &discovery.PerfScore{}
-			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, orchPerfScore)
+			n.OrchPerfScore = &common.PerfScore{}
+			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
@@ -1068,7 +1067,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.Network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, orchPerfScore, *cfg.MinPerfScore)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -1085,7 +1084,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, orchPerfScore, *cfg.MinPerfScore)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist)
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1515,7 +1514,7 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 	return keystore, nil
 }
 
-func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *discovery.PerfScore) {
+func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {
 	for {
 		refreshOrchPerfScore(region, orchPerfScoreURL, score)
 
@@ -1527,7 +1526,7 @@ func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreU
 	}
 }
 
-func refreshOrchPerfScore(region string, scoreURL string, score *discovery.PerfScore) {
+func refreshOrchPerfScore(region string, scoreURL string, score *common.PerfScore) {
 	resp, err := http.Get(scoreURL)
 	if err != nil {
 		glog.Warning("Cannot fetch Orchestrator Performance Stats from URL: %s", scoreURL)
@@ -1542,7 +1541,7 @@ func refreshOrchPerfScore(region string, scoreURL string, score *discovery.PerfS
 	updatePerfScore(region, body, score)
 }
 
-func updatePerfScore(region string, respBody []byte, score *discovery.PerfScore) {
+func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 	respMap := map[string]map[string]map[string]float64{}
 	if err := json.Unmarshal(respBody, &respMap); err != nil {
 		glog.Warning("Cannot unmarshal response from Orchestrator Performance Stats URL, err=%v", err)
@@ -1568,6 +1567,7 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
+		MinPerfScore:   *cfg.MinPerfScore,
 		StakeWeight:    *cfg.SelectStakeWeight,
 		PriceWeight:    *cfg.SelectPriceWeight,
 		RandWeight:     *cfg.SelectRandWeight,

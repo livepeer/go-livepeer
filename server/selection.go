@@ -98,11 +98,12 @@ type MinLSSelector struct {
 	stakeRdr           stakeReader
 	selectionAlgorithm common.SelectionAlgorithm
 
-	minLS float64
+	minLS     float64
+	perfScore *common.PerfScore
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
-func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm) *MinLSSelector {
+func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore) *MinLSSelector {
 	knownSessions := &sessHeap{}
 	heap.Init(knownSessions)
 
@@ -111,6 +112,7 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 		stakeRdr:           stakeRdr,
 		minLS:              minLS,
 		selectionAlgorithm: selectionAlgorithm,
+		perfScore:          perfScore,
 	}
 }
 
@@ -191,7 +193,13 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		return nil
 	}
 
-	selected := s.selectionAlgorithm.Select(addrs, stakes, prices)
+	s.perfScore.Mu.Lock()
+	var perfScores map[ethcommon.Address]float64
+	for _, addr := range addrs {
+		perfScores[addr] = s.perfScore.Scores[addr.Hex()]
+	}
+	s.perfScore.Mu.Unlock()
+	selected := s.selectionAlgorithm.Select(addrs, stakes, prices, perfScores)
 
 	for i, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {

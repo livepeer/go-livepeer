@@ -90,7 +90,7 @@ func (r *stubStakeReader) SetStakes(stakes map[ethcommon.Address]int64) {
 
 type stubSelectionAlgorithm struct{}
 
-func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) ethcommon.Address {
+func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
 	return ethcommon.Address{}
 }
 
@@ -127,7 +127,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{})
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -204,7 +204,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 	assert := assert.New(t)
 
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0, stubSelectionAlgorithm{})
+	sel := NewMinLSSelector(stakeRdr, 1.0, stubSelectionAlgorithm{}, nil)
 
 	sel.Add(
 		[]*BroadcastSession{
@@ -442,7 +442,7 @@ func TestMinLSSelector_SelectUnknownSession_Errors(t *testing.T) {
 //}
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{})
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {
@@ -463,7 +463,7 @@ func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 
 func createSessionSelector() (*MinLSSelector, ethcommon.Address) {
 	stakeRdr := newStubStakeReader()
-	sel := NewMinLSSelector(stakeRdr, 1.0, stubSelectionAlgorithm{})
+	sel := NewMinLSSelector(stakeRdr, 1.0, stubSelectionAlgorithm{}, nil)
 
 	sessions := make([]*BroadcastSession, 10)
 	stakes := make([]int64, 10)
@@ -521,7 +521,7 @@ func createSessionSelector() (*MinLSSelector, ethcommon.Address) {
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{})
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{

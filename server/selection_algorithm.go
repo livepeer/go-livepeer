@@ -2,11 +2,14 @@ package server
 
 import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/golang/glog"
 	"math"
 	"math/rand"
 )
 
 type ProbabilitySelectionAlgorithm struct {
+	MinPerfScore float64
+
 	StakeWeight float64
 	PriceWeight float64
 	RandWeight  float64
@@ -14,9 +17,32 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceExpFactor float64
 }
 
-func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) ethcommon.Address {
-	probabilities := sa.calculateProbabilities(addrs, stakes, prices)
+func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+	filtered := sa.filter(addrs, perfScores)
+	probabilities := sa.calculateProbabilities(filtered, stakes, prices)
 	return selectBy(probabilities)
+}
+
+func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, scores map[ethcommon.Address]float64) []ethcommon.Address {
+	if sa.MinPerfScore <= 0 || scores == nil || len(scores) == 0 {
+		// Performance Score filter not defined, return all Orchestrators
+		return addrs
+	}
+
+	var res []ethcommon.Address
+	for _, addr := range addrs {
+		if scores[addr] >= sa.MinPerfScore {
+			res = append(res, addr)
+		}
+	}
+
+	if len(res) == 0 {
+		// If no orchestrators pass the filter, then returns all Orchestrators
+		// That may mean some issues with the PerfScore service.
+		glog.Warning("No Orchestrators passed min performance score filter, not using the filter")
+		return addrs
+	}
+	return res
 }
 
 func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) map[ethcommon.Address]float64 {

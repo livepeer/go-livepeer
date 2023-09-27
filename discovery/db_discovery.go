@@ -37,11 +37,9 @@ type DBOrchestratorPoolCache struct {
 	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
-	perfscore             *PerfScore
-	minPerfScore          float64
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, perfscore *PerfScore, minPerfScore float64) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -53,8 +51,6 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		rm:                    rm,
 		bcast:                 core.NewBroadcaster(node),
 		orchBlacklist:         orchBlacklist,
-		perfscore:             perfscore,
-		minPerfScore:          minPerfScore,
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -146,7 +142,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist, dbo.perfscore, dbo.minPerfScore)
+	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist)
 	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
