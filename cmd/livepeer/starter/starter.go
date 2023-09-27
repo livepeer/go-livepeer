@@ -94,6 +94,9 @@ type LivepeerConfig struct {
 	SelectPriceWeight            *float64
 	SelectPriceExpFactor         *float64
 	OrchPerfStatsURL             *string
+	Region                       *string
+	MaxPricePerUnit              *int
+	MinPerfScore                 *float64
 	MaxSessions                  *string
 	CurrentManifest              *bool
 	Nvidia                       *string
@@ -118,7 +121,6 @@ type LivepeerConfig struct {
 	MaxTicketEV                  *string
 	DepositMultiplier            *int
 	PricePerUnit                 *int
-	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
 	PricePerBroadcaster          *string
@@ -141,8 +143,6 @@ type LivepeerConfig struct {
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
 	OrchBlacklist                *string
-	Region                       *string
-	MinPerfScore                 *float64
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -565,6 +565,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 	} else {
+		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
+		if err != nil {
+			exit("Incorrect parameters for selection algorithm, err=%v", err)
+		}
+
 		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
 		keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath)
 		if err == nil {
@@ -849,10 +854,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				n.SetMaxFaceValue(mfv)
 			}
 
-		}
-		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
-		if err != nil {
-			exit("Incorrect parameters for selection algorithm, err=%v", err)
 		}
 		if n.NodeType == core.BroadcasterNode {
 			ev, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
@@ -1481,6 +1482,22 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	return pricesSet.Prices
 }
 
+func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
+	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
+	if math.Abs(sumWeight-1.0) > 0.0001 {
+		return nil, fmt.Errorf(
+			"sum of selection algorithm weights must be 1.0, stakeWeight=%v, priceWeight=%v, randWeight=%v",
+			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
+	}
+	return server.ProbabilitySelectionAlgorithm{
+		MinPerfScore:   *cfg.MinPerfScore,
+		StakeWeight:    *cfg.SelectStakeWeight,
+		PriceWeight:    *cfg.SelectPriceWeight,
+		RandWeight:     *cfg.SelectRandWeight,
+		PriceExpFactor: *cfg.SelectPriceExpFactor,
+	}, nil
+}
+
 type keystorePath struct {
 	path    string
 	address ethcommon.Address
@@ -1557,22 +1574,7 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 			}
 		}
 	}
-}
-
-func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
-	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
-	if math.Abs(sumWeight-1.0) > 0.0001 {
-		return nil, fmt.Errorf(
-			"sum of selection algorithm weights must be 1.0, have stakeWeight=%v, priceWeight=%v, randWeight=%v",
-			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
-	}
-	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
-	}, nil
+	glog.Infof("Scores: %v", score.Scores)
 }
 
 func exit(msg string, args ...any) {

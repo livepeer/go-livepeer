@@ -97,5 +97,8 @@ func selectBy(probabilities map[ethcommon.Address]float64) ethcommon.Address {
 		}
 	}
 
+	// return any Orchestrator is none was found with the probabilities
+	// should not happen, but just to be on the safe side if we encounter some super corner case with the float
+	// number precision
 	return addrs[0]
 }

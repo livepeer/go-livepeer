@@ -31,7 +31,6 @@ type orchestratorPool struct {
 	pred          func(info *net.OrchestratorInfo) bool
 	bcast         common.Broadcaster
 	orchBlacklist []string
-	minPerfScore  float64
 }
 
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {

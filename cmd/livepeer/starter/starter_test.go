@@ -2,7 +2,6 @@ package starter
 
 import (
 	"errors"
-	"github.com/livepeer/go-livepeer/discovery"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -283,16 +282,16 @@ func TestUpdatePerfScore(t *testing.T) {
 	    }
 	  }
 	}`
-	scores := &discovery.PerfScore{Scores: map[string]float64{
+	scores := &common.PerfScore{Scores: map[ethcommon.Address]float64{
 		// some previous data
-		"0x001ffe939761eea3f37dd2223bd08401a3848bf3": 0.11,
+		ethcommon.HexToAddress("0x001ffe939761eea3f37dd2223bd08401a3848bf3"): 0.11,
 	}}
 
 	updatePerfScore("LAX", []byte(perfStatsResp), scores)
 
-	expScores := map[string]float64{
-		"0x001ffe939761eea3f37dd2223bd08401a3848bf3": 0.326224769938329,
-		"0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38": 0.3133182335267256,
+	expScores := map[ethcommon.Address]float64{
+		ethcommon.HexToAddress("0x001ffe939761eea3f37dd2223bd08401a3848bf3"): 0.326224769938329,
+		ethcommon.HexToAddress("0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38"): 0.3133182335267256,
 	}
 	require.Equal(t, expScores, scores.Scores)
 }

@@ -96,9 +96,9 @@ type MinLSSelector struct {
 
 	stakeRdr           stakeReader
 	selectionAlgorithm common.SelectionAlgorithm
+	perfScore          *common.PerfScore
 
-	minLS     float64
-	perfScore *common.PerfScore
+	minLS float64
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
@@ -109,9 +109,9 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 	return &MinLSSelector{
 		knownSessions:      knownSessions,
 		stakeRdr:           stakeRdr,
-		minLS:              minLS,
 		selectionAlgorithm: selectionAlgorithm,
 		perfScore:          perfScore,
+		minLS:              minLS,
 	}
 }
 
