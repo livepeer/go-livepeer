@@ -68,11 +68,11 @@ func TestCalculateProbabilities(t *testing.T) {
 				expProbs[addr] = tt.want[i]
 			}
 
-			sa := probabilitySelectionAlgorithm{
-				stakeWeight:    tt.stakeWeight,
-				priceWeight:    tt.priceWeight,
-				randWeight:     tt.randWeight,
-				priceExpFactor: testPriceExpFactor,
+			sa := ProbabilitySelectionAlgorithm{
+				StakeWeight:    tt.stakeWeight,
+				PriceWeight:    tt.priceWeight,
+				RandWeight:     tt.randWeight,
+				PriceExpFactor: testPriceExpFactor,
 			}
 
 			probs := sa.calculateProbabilities(orchs, stakes, prices)

@@ -6,28 +6,24 @@ import (
 	"math/rand"
 )
 
-type SelectionAlgorithm interface {
-	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) ethcommon.Address
+type ProbabilitySelectionAlgorithm struct {
+	StakeWeight float64
+	PriceWeight float64
+	RandWeight  float64
+
+	PriceExpFactor float64
 }
 
-type probabilitySelectionAlgorithm struct {
-	stakeWeight float64
-	priceWeight float64
-	randWeight  float64
-
-	priceExpFactor float64
-}
-
-func (sa probabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) ethcommon.Address {
+func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) ethcommon.Address {
 	probabilities := sa.calculateProbabilities(addrs, stakes, prices)
 	return selectBy(probabilities)
 }
 
-func (sa probabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) map[ethcommon.Address]float64 {
+func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) map[ethcommon.Address]float64 {
 	pricesNorm := map[ethcommon.Address]float64{}
 	for _, addr := range addrs {
 		p := prices[addr]
-		pricesNorm[addr] = math.Exp(-1 * float64(p) / sa.priceExpFactor)
+		pricesNorm[addr] = math.Exp(-1 * float64(p) / sa.PriceExpFactor)
 	}
 
 	var priceSum, stakeSum float64
@@ -48,7 +44,7 @@ func (sa probabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon
 		}
 		randProb := 1.0 / float64(len(addrs))
 
-		probs[addr] = sa.priceWeight*priceProb + sa.stakeWeight*stakeProb + sa.randWeight*randProb
+		probs[addr] = sa.PriceWeight*priceProb + sa.StakeWeight*stakeProb + sa.RandWeight*randProb
 	}
 
 	return probs

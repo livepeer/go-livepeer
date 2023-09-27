@@ -89,7 +89,10 @@ type LivepeerConfig struct {
 	OrchSecret                   *string
 	TranscodingOptions           *string
 	MaxAttempts                  *int
-	SelectRandFreq               *float64
+	SelectRandWeight             *float64
+	SelectStakeWeight            *float64
+	SelectPriceWeight            *float64
+	SelectPriceExpFactor         *float64
 	OrchPerfStatsURL             *string
 	MaxSessions                  *string
 	CurrentManifest              *bool
@@ -161,7 +164,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchSecret := ""
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
-	defaultSelectRandFreq := 0.3
+	defaultSelectRandWeight := 0.3
+	defaultSelectStakeWeight := 0.7
+	defaultSelectPriceWeight := 0.0
+	defaultSelectPriceExpFactor := 100.0
 	defaultMaxSessions := strconv.Itoa(10)
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
@@ -242,7 +248,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchSecret:                   &defaultOrchSecret,
 		TranscodingOptions:           &defaultTranscodingOptions,
 		MaxAttempts:                  &defaultMaxAttempts,
-		SelectRandFreq:               &defaultSelectRandFreq,
+		SelectRandWeight:             &defaultSelectRandWeight,
+		SelectStakeWeight:            &defaultSelectStakeWeight,
+		SelectPriceWeight:            &defaultSelectPriceWeight,
+		SelectPriceExpFactor:         &defaultSelectPriceExpFactor,
 		MaxSessions:                  &defaultMaxSessions,
 		OrchPerfStatsURL:             &defaultOrchPerfStatsURL,
 		Region:                       &defaultRegion,
@@ -841,7 +850,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 		}
-
+		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
+		if err != nil {
+			exit("Incorrect parameters for selection algorithm, err=%v", err)
+		}
 		if n.NodeType == core.BroadcasterNode {
 			ev, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
 			if ev == nil {
@@ -1125,7 +1137,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Set max transcode attempts. <=0 is OK; it just means "don't transcode"
 		server.MaxAttempts = *cfg.MaxAttempts
-		server.SelectRandFreq = *cfg.SelectRandFreq
 
 	} else if n.NodeType == core.OrchestratorNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", OrchestratorCliPort)
@@ -1547,6 +1558,21 @@ func updatePerfScore(region string, respBody []byte, score *discovery.PerfScore)
 			}
 		}
 	}
+}
+
+func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
+	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
+	if math.Abs(sumWeight-1.0) > 0.0001 {
+		return nil, fmt.Errorf(
+			"sum of selection algorithm weights must be 1.0, have stakeWeight=%v, priceWeight=%v, randWeight=%v",
+			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
+	}
+	return server.ProbabilitySelectionAlgorithm{
+		StakeWeight:    *cfg.SelectStakeWeight,
+		PriceWeight:    *cfg.SelectPriceWeight,
+		RandWeight:     *cfg.SelectRandWeight,
+		PriceExpFactor: *cfg.SelectPriceExpFactor,
+	}, nil
 }
 
 func exit(msg string, args ...any) {
