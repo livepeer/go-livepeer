@@ -13,7 +13,7 @@ func TestCalculateProbabilities(t *testing.T) {
 		name        string
 		addrs       []string
 		stakes      []int64
-		prices      []int64
+		prices      []float64
 		stakeWeight float64
 		priceWeight float64
 		randWeight  float64
@@ -23,7 +23,7 @@ func TestCalculateProbabilities(t *testing.T) {
 			name:        "Stake and Price weights",
 			addrs:       []string{"0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000003"},
 			stakes:      []int64{100, 100000, 300},
-			prices:      []int64{400, 700, 1000},
+			prices:      []float64{400, 700, 1000},
 			stakeWeight: 0.3,
 			priceWeight: 0.7,
 			want:        []float64{0.665530, 0.331925, 0.002545},
@@ -32,7 +32,7 @@ func TestCalculateProbabilities(t *testing.T) {
 			name:       "Random selection",
 			addrs:      []string{"0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000003"},
 			stakes:     []int64{100, 100000, 300},
-			prices:     []int64{400, 700, 1000},
+			prices:     []float64{400, 700, 1000},
 			randWeight: 1.0,
 			want:       []float64{0.333333, 0.333333, 0.333333},
 		},
@@ -40,7 +40,7 @@ func TestCalculateProbabilities(t *testing.T) {
 			name:        "Price selection",
 			addrs:       []string{"0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000003"},
 			stakes:      []int64{100, 100000, 300},
-			prices:      []int64{1, 1, 100000000},
+			prices:      []float64{1, 1, 100000000},
 			priceWeight: 1.0,
 			want:        []float64{0.5, 0.5, 0.0},
 		},
@@ -48,7 +48,7 @@ func TestCalculateProbabilities(t *testing.T) {
 			name:        "Stake selection",
 			addrs:       []string{"0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000003"},
 			stakes:      []int64{100, 100, 800},
-			prices:      []int64{400, 700, 1000},
+			prices:      []float64{400, 700, 1000},
 			stakeWeight: 1.0,
 			want:        []float64{0.1, 0.1, 0.8},
 		},
@@ -58,7 +58,7 @@ func TestCalculateProbabilities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var orchs []ethcommon.Address
 			stakes := map[ethcommon.Address]int64{}
-			prices := map[ethcommon.Address]int64{}
+			prices := map[ethcommon.Address]float64{}
 			expProbs := map[ethcommon.Address]float64{}
 			for i, addrStr := range tt.addrs {
 				addr := ethcommon.HexToAddress(addrStr)

@@ -14,16 +14,16 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceExpFactor float64
 }
 
-func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) ethcommon.Address {
+func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) ethcommon.Address {
 	probabilities := sa.calculateProbabilities(addrs, stakes, prices)
 	return selectBy(probabilities)
 }
 
-func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) map[ethcommon.Address]float64 {
+func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) map[ethcommon.Address]float64 {
 	pricesNorm := map[ethcommon.Address]float64{}
 	for _, addr := range addrs {
 		p := prices[addr]
-		pricesNorm[addr] = math.Exp(-1 * float64(p) / sa.PriceExpFactor)
+		pricesNorm[addr] = math.Exp(-1 * p / sa.PriceExpFactor)
 	}
 
 	var priceSum, stakeSum float64

@@ -104,7 +104,7 @@ type OrchestratorPool interface {
 }
 
 type SelectionAlgorithm interface {
-	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]int64) ethcommon.Address
+	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) ethcommon.Address
 }
 
 func ScoreAtLeast(minScore float32) ScorePred {

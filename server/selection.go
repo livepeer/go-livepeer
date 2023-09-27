@@ -6,6 +6,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
+	"math/big"
 )
 
 const SELECTOR_LATENCY_SCORE_THRESHOLD = 1.0
@@ -165,6 +166,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 	}
 
 	var addrs []ethcommon.Address
+	var prices map[ethcommon.Address]float64
 	addrCount := make(map[ethcommon.Address]int)
 	for _, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
@@ -175,6 +177,9 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 			addrs = append(addrs, addr)
 		}
 		addrCount[addr]++
+		pi := sess.OrchestratorInfo.PriceInfo
+		price, _ := big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit).Float64()
+		prices[addr] = price
 	}
 
 	// Fetch stake weights for all addresses
@@ -186,8 +191,6 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		return nil
 	}
 
-	// TODO: Fill pridces and perfScores
-	var prices map[ethcommon.Address]int64
 	selected := s.selectionAlgorithm.Select(addrs, stakes, prices)
 
 	for i, sess := range s.unknownSessions {
