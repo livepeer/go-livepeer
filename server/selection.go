@@ -153,7 +153,7 @@ func (s *MinLSSelector) Clear() {
 	s.stakeRdr = nil
 }
 
-// Use stake weighted random selection to select from unknownSessions
+// Use selection algorithm to select from unknownSessions
 func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 	if len(s.unknownSessions) == 0 {
 		return nil
@@ -179,7 +179,9 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		}
 		addrCount[addr]++
 		pi := sess.OrchestratorInfo.PriceInfo
-		prices[addr] = float64(pi.PricePerUnit) / float64(pi.PixelsPerUnit)
+		if pi != nil && pi.PixelsPerUnit != 0 {
+			prices[addr] = float64(pi.PricePerUnit) / float64(pi.PixelsPerUnit)
+		}
 	}
 
 	stakes, err := s.stakeRdr.Stakes(addrs)
