@@ -118,12 +118,23 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.CliAddr = flag.String("cliAddr", *cfg.CliAddr, "Address to bind for  CLI commands")
 	cfg.HttpAddr = flag.String("httpAddr", *cfg.HttpAddr, "Address to bind for HTTP commands")
 	cfg.ServiceAddr = flag.String("serviceAddr", *cfg.ServiceAddr, "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
-	cfg.OrchAddr = flag.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
 	cfg.VerifierURL = flag.String("verifierUrl", *cfg.VerifierURL, "URL of the verifier to use")
 	cfg.VerifierPath = flag.String("verifierPath", *cfg.VerifierPath, "Path to verifier shared volume")
 	cfg.LocalVerify = flag.Bool("localVerify", *cfg.LocalVerify, "Set to true to enable local verification i.e. pixel count and signature verification.")
 	cfg.HttpIngest = flag.Bool("httpIngest", *cfg.HttpIngest, "Set to true to enable HTTP ingest")
+
+	// Broadcaster's Selection Algorithm
+	cfg.OrchAddr = flag.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
+	cfg.OrchWebhookURL = flag.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
 	cfg.OrchBlacklist = flag.String("orchBlocklist", "", "Comma-separated list of blocklisted orchestrators")
+	cfg.SelectRandWeight = flag.Float64("selectRandFreq", *cfg.SelectRandWeight, "Weight of the random factor in the orchestrator selection algorithm")
+	cfg.SelectStakeWeight = flag.Float64("selectStakeWeight", *cfg.SelectStakeWeight, "Weight of the stake factor in the orchestrator selection algorithm")
+	cfg.SelectPriceWeight = flag.Float64("selectPriceWeight", *cfg.SelectPriceWeight, "Weight of the price factor in the orchestrator selection algorithm")
+	cfg.SelectPriceExpFactor = flag.Float64("selectPriceExpFactor", *cfg.SelectPriceExpFactor, "Expresses how significant a small change of price is for the selection algorithm; default 100")
+	cfg.OrchPerfStatsURL = flag.String("orchPerfStatsUrl", *cfg.OrchPerfStatsURL, "URL of Orchestrator Performance Stream Tester")
+	cfg.Region = flag.String("region", *cfg.Region, "Region in which a broadcaster is deployed; used to select the region while using the orchestrator's performance stats")
+	cfg.MaxPricePerUnit = flag.Int("maxPricePerUnit", *cfg.MaxPricePerUnit, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
+	cfg.MinPerfScore = flag.Float64("minPerfScore", *cfg.MinPerfScore, "The minimum orchestrator's performance score a broadcaster is willing to accept")
 
 	// Transcoding:
 	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
@@ -132,7 +143,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.OrchSecret = flag.String("orchSecret", *cfg.OrchSecret, "Shared secret with the orchestrator as a standalone transcoder or path to file")
 	cfg.TranscodingOptions = flag.String("transcodingOptions", *cfg.TranscodingOptions, "Transcoding options for broadcast job, or path to json config")
 	cfg.MaxAttempts = flag.Int("maxAttempts", *cfg.MaxAttempts, "Maximum transcode attempts")
-	cfg.SelectRandFreq = flag.Float64("selectRandFreq", *cfg.SelectRandFreq, "Frequency to randomly select unknown orchestrators (on-chain mode only)")
 	cfg.MaxSessions = flag.String("maxSessions", *cfg.MaxSessions, "Maximum number of concurrent transcoding sessions for Orchestrator or 'auto' for dynamic limit, maximum number of RTMP streams for Broadcaster, or maximum capacity for transcoder.")
 	cfg.CurrentManifest = flag.Bool("currentManifest", *cfg.CurrentManifest, "Expose the currently active ManifestID as \"/stream/current.m3u8\"")
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
@@ -163,8 +173,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.DepositMultiplier = flag.Int("depositMultiplier", *cfg.DepositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 	// Orchestrator base pricing info
 	cfg.PricePerUnit = flag.Int("pricePerUnit", 0, "The price per 'pixelsPerUnit' amount pixels")
-	// Broadcaster max acceptable price
-	cfg.MaxPricePerUnit = flag.Int("maxPricePerUnit", *cfg.MaxPricePerUnit, "The maximum transcoding price (in wei) per 'pixelsPerUnit' a broadcaster is willing to accept. If not set explicitly, broadcaster is willing to accept ANY price")
 	// Unit of pixels for both O's basePriceInfo and B's MaxBroadcastPrice
 	cfg.PixelsPerUnit = flag.Int("pixelsPerUnit", *cfg.PixelsPerUnit, "Amount of pixels per unit. Set to '> 1' to have smaller price granularity than 1 wei / pixel")
 	cfg.AutoAdjustPrice = flag.Bool("autoAdjustPrice", *cfg.AutoAdjustPrice, "Enable/disable automatic price adjustments based on the overhead for redeeming tickets")
@@ -195,7 +203,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Cloud Storage private key file name or key in JSON format for accessing FVfailGsBucket")
 	// API
 	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
-	cfg.OrchWebhookURL = flag.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
 	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
 
 	return cfg

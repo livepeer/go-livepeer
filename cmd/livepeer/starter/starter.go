@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/big"
@@ -59,12 +60,16 @@ var (
 	smTTL = 60 // 1 minute
 )
 
-const BroadcasterRpcPort = "9935"
-const BroadcasterCliPort = "5935"
-const BroadcasterRtmpPort = "1935"
-const OrchestratorRpcPort = "8935"
-const OrchestratorCliPort = "7935"
-const TranscoderCliPort = "6935"
+const (
+	BroadcasterRpcPort  = "9935"
+	BroadcasterCliPort  = "5935"
+	BroadcasterRtmpPort = "1935"
+	OrchestratorRpcPort = "8935"
+	OrchestratorCliPort = "7935"
+	TranscoderCliPort   = "6935"
+
+	RefreshPerfScoreInterval = 10 * time.Minute
+)
 
 type LivepeerConfig struct {
 	Network                      *string
@@ -84,7 +89,14 @@ type LivepeerConfig struct {
 	OrchSecret                   *string
 	TranscodingOptions           *string
 	MaxAttempts                  *int
-	SelectRandFreq               *float64
+	SelectRandWeight             *float64
+	SelectStakeWeight            *float64
+	SelectPriceWeight            *float64
+	SelectPriceExpFactor         *float64
+	OrchPerfStatsURL             *string
+	Region                       *string
+	MaxPricePerUnit              *int
+	MinPerfScore                 *float64
 	MaxSessions                  *string
 	CurrentManifest              *bool
 	Nvidia                       *string
@@ -109,7 +121,6 @@ type LivepeerConfig struct {
 	MaxTicketEV                  *string
 	DepositMultiplier            *int
 	PricePerUnit                 *int
-	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
 	PricePerBroadcaster          *string
@@ -153,8 +164,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchSecret := ""
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
-	defaultSelectRandFreq := 0.3
+	defaultSelectRandWeight := 0.3
+	defaultSelectStakeWeight := 0.7
+	defaultSelectPriceWeight := 0.0
+	defaultSelectPriceExpFactor := 100.0
 	defaultMaxSessions := strconv.Itoa(10)
+	defaultOrchPerfStatsURL := ""
+	defaultRegion := ""
+	defaultMinPerfScore := 0.0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -231,8 +248,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchSecret:                   &defaultOrchSecret,
 		TranscodingOptions:           &defaultTranscodingOptions,
 		MaxAttempts:                  &defaultMaxAttempts,
-		SelectRandFreq:               &defaultSelectRandFreq,
+		SelectRandWeight:             &defaultSelectRandWeight,
+		SelectStakeWeight:            &defaultSelectStakeWeight,
+		SelectPriceWeight:            &defaultSelectPriceWeight,
+		SelectPriceExpFactor:         &defaultSelectPriceExpFactor,
 		MaxSessions:                  &defaultMaxSessions,
+		OrchPerfStatsURL:             &defaultOrchPerfStatsURL,
+		Region:                       &defaultRegion,
+		MinPerfScore:                 &defaultMinPerfScore,
 		CurrentManifest:              &defaultCurrentManifest,
 		Nvidia:                       &defaultNvidia,
 		Netint:                       &defaultNetint,
@@ -542,6 +565,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 	} else {
+		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
+		if err != nil {
+			exit("Incorrect parameters for selection algorithm, err=%v", err)
+		}
+
 		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
 		keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath)
 		if err == nil {
@@ -827,7 +855,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 		}
-
 		if n.NodeType == core.BroadcasterNode {
 			ev, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
 			if ev == nil {
@@ -1028,8 +1055,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", BroadcasterCliPort)
 
 		bcast := core.NewBroadcaster(n)
-
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
+		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
+			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
+			n.OrchPerfScore = &common.PerfScore{Scores: make(map[ethcommon.Address]float64)}
+			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
+		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
@@ -1106,7 +1137,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Set max transcode attempts. <=0 is OK; it just means "don't transcode"
 		server.MaxAttempts = *cfg.MaxAttempts
-		server.SelectRandFreq = *cfg.SelectRandFreq
 
 	} else if n.NodeType == core.OrchestratorNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", OrchestratorCliPort)
@@ -1452,6 +1482,22 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	return pricesSet.Prices
 }
 
+func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
+	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
+	if math.Abs(sumWeight-1.0) > 0.0001 {
+		return nil, fmt.Errorf(
+			"sum of selection algorithm weights must be 1.0, stakeWeight=%v, priceWeight=%v, randWeight=%v",
+			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
+	}
+	return server.ProbabilitySelectionAlgorithm{
+		MinPerfScore:   *cfg.MinPerfScore,
+		StakeWeight:    *cfg.SelectStakeWeight,
+		PriceWeight:    *cfg.SelectPriceWeight,
+		RandWeight:     *cfg.SelectRandWeight,
+		PriceExpFactor: *cfg.SelectPriceExpFactor,
+	}, nil
+}
+
 type keystorePath struct {
 	path    string
 	address ethcommon.Address
@@ -1483,6 +1529,52 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {
+	for {
+		refreshOrchPerfScore(region, orchPerfScoreURL, score)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(RefreshPerfScoreInterval):
+		}
+	}
+}
+
+func refreshOrchPerfScore(region string, scoreURL string, score *common.PerfScore) {
+	resp, err := http.Get(scoreURL)
+	if err != nil {
+		glog.Warning("Cannot fetch Orchestrator Performance Stats from URL: %s", scoreURL)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		glog.Warning("Cannot fetch Orchestrator Performance Stats from URL: %s", scoreURL)
+		return
+	}
+	updatePerfScore(region, body, score)
+}
+
+func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
+	respMap := map[ethcommon.Address]map[string]map[string]float64{}
+	if err := json.Unmarshal(respBody, &respMap); err != nil {
+		glog.Warning("Cannot unmarshal response from Orchestrator Performance Stats URL, err=%v", err)
+		return
+	}
+
+	score.Mu.Lock()
+	defer score.Mu.Unlock()
+	for orchAddr, regions := range respMap {
+		if stats, ok := regions[region]; ok {
+			if sc, ok := stats["score"]; ok {
+				score.Scores[orchAddr] = sc
+			}
+		}
+	}
+	glog.Infof("Scores: %v", score.Scores)
 }
 
 func exit(msg string, args ...any) {

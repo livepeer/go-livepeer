@@ -65,8 +65,6 @@ var AuthWebhookURL *url.URL
 var DetectionWebhookURL *url.URL
 var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
-var SelectRandFreq float64
-
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
 }
@@ -563,7 +561,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
 	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelectorWithRandFreq(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, SelectRandFreq)
+		return NewMinLSSelector(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, s.LivepeerNode.SelectionAlgorithm, s.LivepeerNode.OrchPerfScore)
 	}
 
 	// safe, because other goroutines should be waiting on initializing channel

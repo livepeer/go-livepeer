@@ -454,8 +454,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)

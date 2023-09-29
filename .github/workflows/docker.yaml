@@ -34,8 +34,7 @@ jobs:
           sudo apt purge -yqq dotnet-* mono-* llvm-* libllvm* powershell* openjdk-* \
           temurin-* mongodb-* firefox mysql-* \
           hhvm google-chrome-stable \
-          libgl1-mesa-dri microsoft-edge-stable \
-          google-cloud-sdk azure-cli
+          libgl1-mesa-dri microsoft-edge-stable azure-cli
           sudo apt autoremove -y
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android
 
@@ -119,8 +118,7 @@ jobs:
           sudo apt purge -yqq dotnet-* mono-* llvm-* libllvm* powershell* openjdk-* \
           temurin-* mongodb-* firefox mysql-* \
           hhvm google-chrome-stable \
-          libgl1-mesa-dri microsoft-edge-stable \
-          google-cloud-sdk azure-cli
+          libgl1-mesa-dri microsoft-edge-stable azure-cli
           sudo apt autoremove -y
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android
 
