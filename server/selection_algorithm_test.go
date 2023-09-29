@@ -188,14 +188,23 @@ func TestCalculateProbabilities(t *testing.T) {
 }
 
 func TestSelectByProbability(t *testing.T) {
+	// use constant seed to avoid test flakiness
+	random.Seed(0)
+	iters := 100000
+
 	probs := map[ethcommon.Address]float64{
-		ethcommon.HexToAddress("0x0000000000000000000000000000000000000001"): 0.1,
-		ethcommon.HexToAddress("0x0000000000000000000000000000000000000002"): 0.3,
+		ethcommon.HexToAddress("0x0000000000000000000000000000000000000001"): 0.11,
+		ethcommon.HexToAddress("0x0000000000000000000000000000000000000002"): 0.29,
 		ethcommon.HexToAddress("0x0000000000000000000000000000000000000003"): 0.6,
 	}
 
-	selected := selectBy(probs)
+	selected := map[ethcommon.Address]int64{}
+	for i := 0; i < iters; i++ {
+		selected[selectBy(probs)]++
+	}
 
-	// all we can check is that one of input addresses was selected
-	require.Contains(t, probs, selected)
+	for addr, prob := range probs {
+		selectedRatio := float64(selected[addr]) / float64(iters)
+		require.InDelta(t, prob, selectedRatio, 0.01)
+	}
 }

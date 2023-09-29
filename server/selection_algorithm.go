@@ -5,7 +5,10 @@ import (
 	"github.com/golang/glog"
 	"math"
 	"math/rand"
+	"time"
 )
+
+var random = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 type ProbabilitySelectionAlgorithm struct {
 	MinPerfScore float64
@@ -90,7 +93,7 @@ func selectBy(probabilities map[ethcommon.Address]float64) ethcommon.Address {
 		cumProbs = append(cumProbs, cumProb)
 	}
 
-	r := rand.Float64()
+	r := random.Float64()
 	for i, cumProb := range cumProbs {
 		if r <= cumProb {
 			return addrs[i]
