@@ -1123,11 +1123,13 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 
 		if shouldStopStream(err) {
 			clog.Warningf(ctx, "Stopping current stream due to err=%q", err)
+			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, fmt.Sprintf("broadcaster error: %v", err.Error()))
 			rtmpStrm.Close()
 			break
 		}
 		if isNonRetryableError(err) {
 			clog.Warningf(ctx, "Not retrying current segment due to non-retryable error err=%q", err)
+			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, fmt.Sprintf("ffmpeg error: %v", err.Error()))
 			if monitor.Enabled {
 				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorNonRetryable, nonce, seg.SeqNo, err, true)
 			}
@@ -1136,12 +1138,14 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = ctxErr
 			clog.Warningf(ctx, "Not retrying current segment due to context cancellation err=%q", err)
+			clog.PublicInfof(ctx, "Stream transcode failed-not retrying seqNo=%v reason=%v", seg.SeqNo, "stream closed by sender")
 			if monitor.Enabled {
 				monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorCtxCancelled, nonce, seg.SeqNo, err, true)
 			}
 			break
 		}
 		// recoverable error, retry
+		clog.PublicInfof(ctx, "Stream transcode failed-retrying seqNo=%v reason=%v", seg.SeqNo, err.Error())
 	}
 
 	if MetadataQueue != nil {
@@ -1165,6 +1169,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorMaxAttempts, nonce, seg.SeqNo, err, true)
 		}
+		clog.PublicInfof(ctx, "Stream transcode failed seqNo=%v reason=%v", seg.SeqNo, "max transcode attempts reached")
 	}
 	return urls, err
 }
