@@ -888,6 +888,14 @@ func (bsm *BroadcastSessionsManager) completeSession(ctx context.Context, sess *
 	bsm.sessLock.Lock()
 	defer bsm.sessLock.Unlock()
 	bsm.completeSessionUnsafe(ctx, sess, tearDown)
+
+	if tearDown {
+		ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
+		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
+		ctx = clog.AddManifestID(ctx, string(sess.Params.ManifestID))
+
+		clog.PublicInfof(ctx, "Session completed reason=stream completed")
+	}
 }
 
 func (bsm *BroadcastSessionsManager) sessionVerified(sess *BroadcastSession) {
