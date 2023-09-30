@@ -1215,6 +1215,8 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
+		ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
+		ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 		if seg, err = prepareForTranscoding(ctx, cxn, sess, seg, name); err != nil {
 			return nil, info, err
 		}
@@ -1254,6 +1256,8 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		submittedCount := 0
 		for _, sess := range sessions {
 			// todo: run it in own goroutine (move to submitSegment?)
+			ctx = clog.AddVal(ctx, "ethaddress", sess.RecipientAddress())
+			ctx = clog.AddVal(ctx, "orchestrator", sess.Transcoder())
 			seg2, err := prepareForTranscoding(ctx, cxn, sess, seg, name)
 			if err != nil || seg2 == nil {
 				continue
