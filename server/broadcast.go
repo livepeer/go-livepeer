@@ -1234,6 +1234,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		var res *ReceivedTranscodeResult
 		res, err = SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, verified)
 		if err != nil || res == nil {
+			clog.PublicInfof(ctx, "segment transcode failed: %w", err.Error())
 			if isNonRetryableError(err) {
 				cxn.sessManager.completeSession(ctx, sess, false)
 				return nil, info, err
