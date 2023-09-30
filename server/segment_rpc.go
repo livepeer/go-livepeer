@@ -545,7 +545,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		req.Header.Set("Content-Type", "video/MP2T")
 	}
 
-	clog.Infof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s uploadTimeout=%s segDur=%v",
+	clog.PublicInfof(ctx, "Submitting segment bytes=%v orch=%s timeout=%s uploadTimeout=%s segDur=%v",
 		len(data), ti.Transcoder, httpTimeout, uploadTimeout, seg.Duration)
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, uploadTimeout)
@@ -662,7 +662,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 			common.ProfilesNames(params.Profiles), sess.IsTrusted(), verified)
 	}
 
-	clog.Infof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
+	clog.PublicInfof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
 		seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
 
 	// Use 1.5s for segments that are shorter than 1.5s
