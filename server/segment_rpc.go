@@ -581,7 +581,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 		}
 		return nil, fmt.Errorf(errorString)
 	}
-	clog.Infof(ctx, "Uploaded segment orch=%s dur=%s", ti.Transcoder, uploadDur)
+	clog.PublicInfof(ctx, "Uploaded segment orch=%s dur=%s", ti.Transcoder, uploadDur)
 	if monitor.Enabled {
 		monitor.SegmentUploaded(ctx, nonce, seg.SeqNo, uploadDur, ti.Transcoder)
 	}
