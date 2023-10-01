@@ -1528,8 +1528,8 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	if monitor.Enabled {
 		monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode, sess.OrchestratorInfo)
 	}
-
-	clog.V(common.DEBUG).Infof(ctx, "Successfully validated segment")
+	validateDur := time.Since(dlStart) - downloadDur
+	clog.PublicInfof(ctx, "Successfully validated segment took=%s", validateDur)
 	return segURLs, nil
 }
 
