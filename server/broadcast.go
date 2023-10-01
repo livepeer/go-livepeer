@@ -440,8 +440,10 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 			if !includesSession(selectedSessions, ls) {
 				clog.V(common.DEBUG).Infof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
 					getOrchs(selectedSessions), sp.mid)
-				clog.PublicInfof(ctx, "Swapping from orch=%v to orch=%+v for manifestID=%s", ls.Transcoder(),
-					getOrchs(selectedSessions), sp.mid)
+				ctx = clog.AddVal(ctx, "ethaddress", ls.RecipientAddress())
+				ctx = clog.AddVal(ctx, "orchestrator", ls.Transcoder())
+				clog.PublicInfof(ctx, "Swapping from orch=%v to orch=%+v reason=%v", ls.Transcoder(),
+					getOrchs(selectedSessions), fmt.Sprintf("switch orchestrator due to performance: latency score of %v", ls.LatencyScore))
 				if monitor.Enabled {
 					monitor.OrchestratorSwapped(ctx)
 				}
