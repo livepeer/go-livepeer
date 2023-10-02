@@ -519,6 +519,12 @@ github.com/livepeer/lpms v0.0.0-20230831075050-b4d36c999826 h1:kXhxR6PQEEpwbwooF
 github.com/livepeer/lpms v0.0.0-20230831075050-b4d36c999826/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/lpms v0.0.0-20230918073815-4fe16b9b9026 h1:xeP83m9ReB2drvOdqc6s2OL4L1U/6mZULA5eS+OHmtc=
 github.com/livepeer/lpms v0.0.0-20230918073815-4fe16b9b9026/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/livepeer/lpms v0.0.0-20230929102549-12c5ad2c4ab5 h1:GKrDppLsxJghdwva2n1HhyZyyy5E8IqWm1y+O+g3LSk=
+github.com/livepeer/lpms v0.0.0-20230929102549-12c5ad2c4ab5/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/livepeer/lpms v0.0.0-20230929110526-56e4da53054d h1:utFfwOYnwSxwdwN0o8YwPi8T0oVHkerNh0TYat7rCG4=
+github.com/livepeer/lpms v0.0.0-20230929110526-56e4da53054d/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/livepeer/lpms v0.0.0-20231002131146-663c62246a3c h1:qxmMX/j6Yp0xFR17nhGktbHwEVqIjLK5lh2TiiENzY8=
+github.com/livepeer/lpms v0.0.0-20231002131146-663c62246a3c/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
 github.com/livepeer/m3u8 v0.11.1/go.mod h1:IUqAtwWPAG2CblfQa4SVzTQoDcEMPyfNOaBSxqHMS04=
 github.com/magiconair/properties v1.8.5 h1:b6kJs+EmPFMYGkow9GiUyCyOvIwYetYJ3fSaWak/Gls=

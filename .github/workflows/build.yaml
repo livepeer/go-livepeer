@@ -40,6 +40,10 @@ jobs:
           - platform:
               name: windows
             arch: arm64
+          - platform:
+              name: windows
+            hardware:
+              type: gpu
 
     steps:
       - name: Setup ubuntu container
