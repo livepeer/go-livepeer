@@ -1574,7 +1574,6 @@ func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
 			}
 		}
 	}
-	glog.Infof("Scores: %v", score.Scores)
 }
 
 func exit(msg string, args ...any) {
