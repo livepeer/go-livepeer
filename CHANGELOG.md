@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.7.0
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### Broadcaster
+- [#2837](https://github.com/livepeer/go-livepeer/pull/2837) Set a floor of 1.5s for accepted Orchestrator response times, regardless of segment length (@thomshutt)
+- [#2839](https://github.com/livepeer/go-livepeer/pull/2839) Add Orchestrator blocklist CLI parameter (@mjh1)
+- [#2729](https://github.com/livepeer/go-livepeer/pull/2729) Switch to a custom error type for max transcode attempts (@mjh1)
+- [#2844](https://github.com/livepeer/go-livepeer/pull/2844) Exit early during verification when Orchestrator's address is nil (@ad-astra-video)
+- [#2842](https://github.com/livepeer/go-livepeer/pull/2842) Add Keys to public logs (@ad-astra-video)
+- [#2872](https://github.com/livepeer/go-livepeer/pull/2872) New Selection Algorithm (@leszko)
+
+#### Orchestrator
+- [#2781](https://github.com/livepeer/go-livepeer/pull/2781) Add automatic session limit and set max sessions with livepeer_cli (@eliteprox)
+- [#2848](https://github.com/livepeer/go-livepeer/pull/2848) Improve Transcode Quality (@leszko)
+- [#2851](https://github.com/livepeer/go-livepeer/pull/2851) Change scaling to `scale_npp` instead of `scale_cuda` (Linux-only) (@leszko)
+
+#### General
+- [#2843](https://github.com/livepeer/go-livepeer/pull/2843) Increase log level of payment creation (@iameli)
+- [#2850](https://github.com/livepeer/go-livepeer/pull/2850) Update default ports (@ad-astra-video)
+- [#2859](https://github.com/livepeer/go-livepeer/pull/2859) Update currentRound endpoint to return string instead of bytes (@ad-astra-video)
+- [#2878](https://github.com/livepeer/go-livepeer/pull/2878) Fix Mist JSON (@leszko)
+
+### Bug Fixes 🐞
+- [#2820](https://github.com/livepeer/go-livepeer/pull/2820) Fix segfault in setting a pricePerBroadcaster (@stronk-dev)
+
+#### CLI
+- [#2825](https://github.com/livepeer/go-livepeer/pull/2825) Enable quieter logging with -v=2 and -v=1 (@iameli)
+
 ## v0.6.0
 
 ### Breaking Changes 🚨🚨
