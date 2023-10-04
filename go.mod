@@ -20,13 +20,13 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/peterbourgon/ff/v3 v3.3.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.14.0
+	github.com/prometheus/client_golang v1.17.0
 	github.com/stretchr/testify v1.8.1
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/urfave/cli v1.22.12
 	go.opencensus.io v0.24.0
 	go.uber.org/goleak v1.2.2-0.20230213210001-751da596f6f7
-	golang.org/x/net v0.8.0
+	golang.org/x/net v0.10.0
 	google.golang.org/grpc v1.54.0
 	pgregory.net/rapid v0.4.0
 )
@@ -94,9 +94,9 @@ require (
 	github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7 // indirect
 	github.com/pierrec/lz4 v2.6.1+incompatible // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.3.0 // indirect
-	github.com/prometheus/common v0.42.0 // indirect
-	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
+	github.com/prometheus/common v0.44.0 // indirect
+	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/prometheus/statsd_exporter v0.22.7 // indirect
 	github.com/prometheus/tsdb v0.10.0 // indirect
 	github.com/rabbitmq/amqp091-go v1.8.0 // indirect
@@ -111,14 +111,14 @@ require (
 	github.com/tklauser/numcpus v0.2.2 // indirect
 	github.com/tyler-smith/go-bip39 v1.0.2 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
-	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/oauth2 v0.8.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.114.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230330154414-c0448cd141ea // indirect
-	google.golang.org/protobuf v1.30.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
