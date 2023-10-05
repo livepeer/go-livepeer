@@ -144,8 +144,9 @@ type authWebhookResponse struct {
 			Name string `json:"name"`
 		} `json:"sceneClassification"`
 	} `json:"detection"`
-	VerificationFreq  uint `json:"verificationFreq"`
-	TimeoutMultiplier int  `json:"timeoutMultiplier"`
+	VerificationFreq   uint `json:"verificationFreq"`
+	TimeoutMultiplier  int  `json:"timeoutMultiplier"`
+	ForceSessionReinit bool `json:"forceSessionReinit"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
