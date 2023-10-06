@@ -939,6 +939,9 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		attempts  []data.TranscodeAttemptInfo
 		urls      []string
 	)
+	if len(cxn.params.Profiles) == 0 {
+		return []string{}, nil
+	}
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
 		var info *data.TranscodeAttemptInfo
@@ -970,6 +973,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 		// recoverable error, retry
 	}
+
 	if MetadataQueue != nil {
 		success := err == nil && len(urls) > 0
 		streamID := string(mid)
@@ -1036,6 +1040,10 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 	if len(sessions) == 1 {
 		// shortcut for most common path
 		sess := sessions[0]
+		if len(sess.Params.Profiles) == 0 {
+			// If not profiles were requested, then skip transcoding
+			return []string{}, info, nil
+		}
 		if seg, err = prepareForTranscoding(ctx, cxn, sess, seg, name); err != nil {
 			return nil, info, err
 		}

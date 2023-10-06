@@ -302,7 +302,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			profiles = append(profiles, parsedProfiles...)
 
 			// Only set defaults if user did not specify a preset/profile
-			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
+			if resp.Profiles == nil && len(resp.Presets) <= 0 {
 				profiles = BroadcastJobVideoProfiles
 			}
 
@@ -1032,8 +1032,6 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
-		clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
-		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		return
 	}
 	renditionData := make([][]byte, len(urls))
