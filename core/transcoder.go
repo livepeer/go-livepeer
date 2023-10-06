@@ -500,9 +500,9 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			CalcSign:     calcPHash,
 		}
-		if segPar != nil {
-			o.From = segPar.From
-			o.To = segPar.To
+		if segPar != nil && segPar.Clip != nil {
+			o.From = segPar.Clip.From
+			o.To = segPar.Clip.To
 		}
 		opts[i] = o
 	}
