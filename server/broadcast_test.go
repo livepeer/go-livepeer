@@ -928,7 +928,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	}
 	cxn := &rtmpConnection{
 		mid:     "dummy1",
-		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy"},
+		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy", Profiles: BroadcastJobVideoProfiles},
 		profile: &ffmpeg.VideoProfile{Name: "unused"},
 		pl:      &stubPlaylistManager{os: &stubOSSession{}},
 	}
