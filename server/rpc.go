@@ -538,6 +538,7 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 	}
 	var segPar core.SegmentParameters
 	if segData.SegmentParameters != nil {
+		segPar.ForceSessionReinit = segData.ForceSessionReinit
 		segPar.Clip = &core.SegmentClip{
 			From: time.Duration(segData.SegmentParameters.From) * time.Millisecond,
 			To:   time.Duration(segData.SegmentParameters.To) * time.Millisecond,
