@@ -1032,6 +1032,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
+		if len(cxn.params.Profiles) > 0 {
+			clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+			http.Error(w, "No sessions available", http.StatusServiceUnavailable)
+		}
 		return
 	}
 	renditionData := make([][]byte, len(urls))
