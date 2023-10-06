@@ -144,8 +144,9 @@ type authWebhookResponse struct {
 			Name string `json:"name"`
 		} `json:"sceneClassification"`
 	} `json:"detection"`
-	VerificationFreq  uint `json:"verificationFreq"`
-	TimeoutMultiplier int  `json:"timeoutMultiplier"`
+	VerificationFreq   uint `json:"verificationFreq"`
+	TimeoutMultiplier  int  `json:"timeoutMultiplier"`
+	ForceSessionReinit bool `json:"forceSessionReinit"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -801,7 +802,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if valMs, err := strconv.ParseUint(sliceToStr, 10, 64); err == nil {
 		sliceToDur = time.Duration(valMs) * time.Millisecond
 	}
-	var segPar *core.SegmentParameters
+	var segPar core.SegmentParameters
 	if sliceFromDur > 0 || sliceToDur > 0 {
 		if sliceFromDur > 0 && sliceToDur > 0 && sliceFromDur > sliceToDur {
 			httpErr := fmt.Sprintf(`Invalid slice config from=%s to=%s`, sliceFromDur, sliceToDur)
@@ -809,10 +810,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, httpErr, http.StatusBadRequest)
 			return
 		}
-		segPar = &core.SegmentParameters{
+		segPar.Clip = &core.SegmentClip{
 			From: sliceFromDur,
 			To:   sliceToDur,
 		}
+	}
+	if authHeaderConfig != nil {
+		segPar.ForceSessionReinit = authHeaderConfig.ForceSessionReinit
 	}
 
 	now := time.Now()
@@ -900,7 +904,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, segPar)
+		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, &segPar)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
@@ -1009,7 +1013,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Do the transcoding!
-	urls, err := processSegment(ctx, cxn, seg, segPar)
+	urls, err := processSegment(ctx, cxn, seg, &segPar)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {

@@ -1039,7 +1039,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		if seg, err = prepareForTranscoding(ctx, cxn, sess, seg, name); err != nil {
 			return nil, info, err
 		}
-		// cxn.sessManager.pushSegInFlight(sess, seg)
 		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
 		res, err = SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, verified)
