@@ -88,6 +88,8 @@ type rtmpConnection struct {
 	lastUsed        time.Time
 	sourceBytes     uint64
 	transcodedBytes uint64
+	mu              sync.Mutex
+	mediaFormat     ffmpeg.MediaFormatInfo
 }
 
 func (s *LivepeerServer) getActiveRtmpConnectionUnsafe(mid core.ManifestID) (*rtmpConnection, bool) {
@@ -1011,6 +1013,16 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+
+	// Reinitialize HW Session if video segment resolution has changed
+	cxn.mu.Lock()
+	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
+		cxn.mediaFormat = mediaFormat
+	} else if cxn.mediaFormat != mediaFormat {
+		cxn.mediaFormat = mediaFormat
+		segPar.ForceSessionReinit = true
+	}
+	cxn.mu.Unlock()
 
 	// Do the transcoding!
 	urls, err := processSegment(ctx, cxn, seg, &segPar)
