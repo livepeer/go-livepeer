@@ -14,43 +14,52 @@ concurrency:
 
 jobs:
   linux-build:
-    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.platform.runner }}
+    name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
+    runs-on: ${{ matrix.target.runner }}
     container:
-      image: ${{ matrix.hardware.container }}
+      image: ${{ matrix.target.container }}
       env:
         DEBIAN_FRONTEND: noninteractive
     strategy:
       fail-fast: false
       matrix:
-        arch:
-          - arm64
-          - amd64
-        platform:
-          - name: linux
+        target:
+          - GOOS: linux
+            GOARCH: amd64
             runner: ubuntu-20.04
-          - name: windows
-            runner: ubuntu-20.04
-        hardware:
-          - type: cpu
             container: ubuntu:20.04
-          - type: gpu
+            type: cpu
+
+          - GOOS: linux
+            GOARCH: arm64
+            runner: ubuntu-20.04
+            container: ubuntu:20.04
+            type: cpu
+
+          - GOOS: linux
+            GOARCH: amd64
+            runner: ubuntu-20.04
             container: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
-        exclude:
-          - platform:
-              name: windows
-            arch: arm64
-          - platform:
-              name: windows
-            hardware:
-              type: gpu
+            type: gpu
+
+          - GOOS: linux
+            GOARCH: arm64
+            runner: ubuntu-20.04
+            container: livepeerci/cuda:11.7.1-cudnn8-devel-ubuntu20.04
+            type: gpu
+
+          - GOOS: windows
+            GOARCH: amd64
+            runner: ubuntu-20.04
+            container: ubuntu:22.04
+            type: cpu
 
     steps:
       - name: Setup ubuntu container
         run: |
           apt update
           apt install -yqq build-essential make software-properties-common
-          add-apt-repository -y ppa:git-core/ppa
+          add-apt-repository -y ppa:git-core/candidate
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
@@ -74,23 +83,21 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.hardware.type }}-${{ matrix.arch }}-ffmpeg-
+          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Set build environment
         run: |
-          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
+          echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Set GPU build environment
-        if: matrix.hardware.type == 'gpu'
+        if: matrix.target.type == 'gpu'
         run: |
-          echo "CPATH=/usr/local/cuda_${{ matrix.arch }}/include" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
-          echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.arch }}/lib64" >> $GITHUB_ENV
+          echo "CPATH=/usr/local/cuda_${{ matrix.target.GOARCH }}/include" >> $GITHUB_ENV
+          echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
           echo "RELEASE_TAG=gpu" >> $GITHUB_ENV
 
       - name: Install dependencies
@@ -98,15 +105,15 @@ jobs:
           apt update \
             && apt install -yqq software-properties-common curl apt-transport-https lsb-release \
             && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-            && add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
+            && add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
             && apt update \
             && apt -yqq install \
-              clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python \
-              gcc-multilib gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
+              nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
 
-          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
-            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
-            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
+          update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
+            && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
+            && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
 
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
@@ -142,16 +149,18 @@ jobs:
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   macos-build:
-    name: Build binaries for ${{ matrix.platform.name }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.platform.runner }}
+    name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       fail-fast: false
       matrix:
-        arch:
-          - arm64
-          - amd64
-        platform:
-          - name: darwin
+        target:
+          - GOOS: darwin
+            GOARCH: amd64
+            runner: macos-latest
+
+          - GOOS: darwin
+            GOARCH: arm64
             runner: macos-latest
 
     steps:
@@ -173,8 +182,8 @@ jobs:
 
       - name: Set build environment
         run: |
-          echo "GOARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "GOOS=${{ matrix.platform.name }}" >> $GITHUB_ENV
+          echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
 
       - name: Cache ffmpeg
@@ -182,9 +191,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.platform.name }}-${{ matrix.arch }}-ffmpeg-
+          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
         run: brew install coreutils pkg-config
@@ -212,7 +219,7 @@ jobs:
           regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
-        if: steps.match-tag.outputs.match != '' && matrix.platform.name == 'darwin'
+        if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
         uses: livepeer/action-gh-codesign-apple@latest
         with:
           developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
