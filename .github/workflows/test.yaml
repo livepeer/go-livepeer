@@ -67,13 +67,13 @@ jobs:
           sudo apt update \
             && sudo apt install -yqq software-properties-common curl apt-transport-https lsb-release \
             && curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add - \
-            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-12 main" \
+            && sudo add-apt-repository "deb https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
             && sudo apt update \
-            && sudo apt -yqq install clang-12 clang-tools-12 lld-12 build-essential pkg-config autoconf git python
+            && sudo apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python
 
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 30 \
-            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 30 \
-            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-12 30
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
+            && sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
+            && sudo update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
