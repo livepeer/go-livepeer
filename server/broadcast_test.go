@@ -735,7 +735,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	// Create stub server
 	ts, mux := stubTLSServer()
 	defer ts.Close()
-	transcodeDelay := 100 * time.Millisecond
+	transcodeDelay := 1500 * time.Millisecond
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(transcodeDelay)
 		w.WriteHeader(http.StatusOK)
