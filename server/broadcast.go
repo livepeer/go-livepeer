@@ -218,7 +218,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 		if len(session.SegsInFlight) == 0 {
 			if session.LatencyScore > 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
 				clog.PublicInfof(ctx,
-					"Selecting new orchestrator, reason=%v",
+					"Reusing Orchestrator, reason=%v",
 					fmt.Sprintf(
 						"performance: no segments in flight, latency score of %v < %v",
 						session.LatencyScore,
@@ -228,6 +228,14 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 				return session
 			}
+			clog.PublicInfof(ctx,
+				"Swapping Orchestrator, reason=%v",
+				fmt.Sprintf(
+					"performance: no segments in flight, latency score of %v < %v",
+					session.LatencyScore,
+					durMult,
+				),
+			)
 		}
 
 		// A session with segments in flight might be selectable under certain conditions
@@ -247,7 +255,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 			if timeInFlight < maxTimeInFlight {
 				clog.PublicInfof(ctx,
-					"Selected orchestrator reason=%v",
+					"Reusing orchestrator reason=%v",
 					fmt.Sprintf(
 						"performance: segments in flight, latency score of %v < %v",
 						session.LatencyScore,
@@ -257,6 +265,14 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 				return session
 			}
+			clog.PublicInfof(ctx,
+				"Swapping Orchestrator, reason=%v",
+				fmt.Sprintf(
+					"performance: no segments in flight, latency score of %v < %v",
+					session.LatencyScore,
+					durMult,
+				),
+			)
 		}
 	}
 	return nil
