@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.1
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### Broadcaster
+- [#2884](https://github.com/livepeer/go-livepeer/pull/2884) Detect resolution change and reinit hw session (@leszko)
+- [#2883](https://github.com/livepeer/go-livepeer/pull/2883) Skip transcoding when empty profiles were sent to B (@leszko)
+
+#### General
+- [#2882](https://github.com/livepeer/go-livepeer/pull/2882) Add parameter to force HW Session Reinit (@leszko)
+
 ## v0.7.0
 
 ### Breaking Changes 🚨🚨
