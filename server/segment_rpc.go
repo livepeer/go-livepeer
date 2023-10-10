@@ -629,10 +629,13 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	clog.Infof(ctx, "Successfully transcoded segment segName=%s seqNo=%d orch=%s dur=%s",
 		seg.Name, seg.SeqNo, ti.Transcoder, transcodeDur)
 
+	// Use 1.5s for segments that are shorter than 1.5s
+	// Otherwise, the latency score is too high which results in a high number session swaps
+	segDuration := math.Max(1.5, seg.Duration)
 	return &ReceivedTranscodeResult{
 		TranscodeData: tdata,
 		Info:          tr.Info,
-		LatencyScore:  tookAllDur.Seconds() / seg.Duration,
+		LatencyScore:  tookAllDur.Seconds() / segDuration,
 	}, nil
 }
 
