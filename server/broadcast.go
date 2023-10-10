@@ -840,6 +840,9 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "Processing segment dur=%v bytes=%v", seg.Duration, len(seg.Data))
+	if segPar != nil && segPar.ForceSessionReinit {
+		clog.V(common.DEBUG).Infof(ctx, "Requesting HW Session Reinitialization for seg.SeqNo=%v", seg.SeqNo)
+	}
 	if monitor.Enabled {
 		monitor.SegmentEmerged(ctx, nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	}
