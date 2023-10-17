@@ -696,7 +696,23 @@ func TestValidatePrice(t *testing.T) {
 	err = validatePrice(s)
 	assert.Nil(err)
 
+	// O Initial Price == O Price
+	s.InitialPrice = oinfo.PriceInfo
+	err = validatePrice(s)
+	assert.Nil(err)
+
+	// O Initial Price higher than O Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 10, PixelsPerUnit: 3}
+	err = validatePrice(s)
+	assert.Nil(err)
+
+	// O Initial Price lower than O Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 10}
+	err = validatePrice(s)
+	assert.ErrorContains(err, "price has changed")
+
 	// B MaxPrice < O Price
+	s.InitialPrice = nil
 	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
 	err = validatePrice(s)
 	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))

@@ -118,6 +118,7 @@ type BroadcastSession struct {
 	OrchestratorOS   drivers.OSSession
 	PMSessionID      string
 	Balance          Balance
+	InitialPrice     *net.PriceInfo
 }
 
 func (bs *BroadcastSession) Transcoder() string {
