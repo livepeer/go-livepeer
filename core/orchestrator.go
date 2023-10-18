@@ -284,16 +284,11 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID) (*big.Rat, error) {
 	basePrice := orch.node.GetBasePrice(sender.String())
 
-	glog.V(6).Infof("priceInfo")
-
 	// If there is already a fixed price for the given session, use this price
 	if manifestID != "" {
-		glog.V(6).Infof("manifestID = %v", manifestID)
 		if balances, ok := orch.node.Balances.balances[sender]; ok {
-			glog.V(6).Infof("sender = %v", sender)
 			fixedPrice := balances.FixedPrice(manifestID)
 			if fixedPrice != nil {
-				glog.V(6).Infof("##### Using fixed price=%v", fixedPrice)
 				return fixedPrice, nil
 			}
 		}

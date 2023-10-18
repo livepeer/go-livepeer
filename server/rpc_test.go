@@ -137,7 +137,7 @@ func (r *stubOrchestrator) TicketParams(sender ethcommon.Address, priceInfo *net
 	return r.ticketParams, nil
 }
 
-func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error) {
 	return r.priceInfo, nil
 }
 
@@ -1050,7 +1050,7 @@ func TestGetPriceInfo_NoWebhook_DefaultPriceError_ReturnsError(t *testing.T) {
 
 	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
 
-	p, err := getPriceInfo(orch, addr)
+	p, err := getPriceInfo(orch, addr, "")
 	assert.Nil(p)
 	assert.EqualError(err, expErr.Error())
 }
@@ -1068,7 +1068,7 @@ func TestGetPriceInfo_NoWebhook_ReturnsDefaultPrice(t *testing.T) {
 
 	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
 
-	p, err := getPriceInfo(orch, addr)
+	p, err := getPriceInfo(orch, addr, "")
 	assert.Equal(p.PricePerUnit, int64(100))
 	assert.Equal(p.PixelsPerUnit, int64(30))
 	assert.Nil(err)
@@ -1092,7 +1092,7 @@ func TestGetPriceInfo_Webhook_NoCache_ReturnsDefaultPrice(t *testing.T) {
 
 	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
 
-	p, err := getPriceInfo(orch, addr)
+	p, err := getPriceInfo(orch, addr, "")
 	assert.Equal(p.PricePerUnit, int64(100))
 	assert.Equal(p.PixelsPerUnit, int64(30))
 	assert.Nil(err)
@@ -1118,7 +1118,7 @@ func TestGetPriceInfo_Webhook_Cache_WrongType_ReturnsDefaultPrice(t *testing.T) 
 
 	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
 
-	p, err := getPriceInfo(orch, addr)
+	p, err := getPriceInfo(orch, addr, "")
 	assert.Equal(p.PricePerUnit, int64(100))
 	assert.Equal(p.PixelsPerUnit, int64(30))
 	assert.Nil(err)
@@ -1149,7 +1149,7 @@ func TestGetPriceInfo_Webhook_Cache_ReturnsCachePrice(t *testing.T) {
 
 	orch.On("PriceInfo", mock.Anything).Return(priceInfo, nil)
 
-	p, err := getPriceInfo(orch, addr)
+	p, err := getPriceInfo(orch, addr, "")
 	assert.Equal(p.PricePerUnit, int64(20))
 	assert.Equal(p.PixelsPerUnit, int64(19))
 	assert.Nil(err)
@@ -1323,7 +1323,7 @@ func (o *mockOrchestrator) TicketParams(sender ethcommon.Address, priceInfo *net
 	return nil, args.Error(1)
 }
 
-func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error) {
 	args := o.Called(sender)
 	if args.Get(0) != nil {
 		return args.Get(0).(*net.PriceInfo), args.Error(1)

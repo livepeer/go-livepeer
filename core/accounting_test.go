@@ -211,6 +211,23 @@ func TestReserve(t *testing.T) {
 	assert.Zero(big.NewRat(0, 1).Cmp(b.Balance(mid)))
 }
 
+func TestFixedPrice(t *testing.T) {
+	b := NewBalances(5 * time.Second)
+	id1 := ManifestID("12345")
+	id2 := ManifestID("abcdef")
+
+	// No fixed price set yet
+	assert.Nil(t, b.FixedPrice(id1))
+
+	// Set fixed price
+	p := big.NewRat(1, 5)
+	b.SetFixedPrice(id1, p)
+	assert.Equal(t, p, b.FixedPrice(id1))
+
+	// No fixed price for a different manifest ID
+	assert.Nil(t, b.FixedPrice(id2))
+}
+
 func TestBalancesCleanup(t *testing.T) {
 	b := NewBalances(5 * time.Second)
 	assert := assert.New(t)
