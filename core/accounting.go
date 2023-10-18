@@ -124,6 +124,7 @@ type Balances struct {
 type balance struct {
 	lastUpdate time.Time // Unix time since last update
 	amount     *big.Rat  // Balance represented as a big.Rat
+	fixedPrice *big.Rat  // Fixed price for the session
 }
 
 // NewBalances creates a Balances instance with the given ttl
@@ -179,6 +180,27 @@ func (b *Balances) Balance(id ManifestID) *big.Rat {
 		return nil
 	}
 	return b.balances[id].amount
+}
+
+// FixedPrice retrieves the price fixed the given session
+func (b *Balances) FixedPrice(id ManifestID) *big.Rat {
+	b.mtx.RLock()
+	defer b.mtx.RUnlock()
+	if b.balances[id] == nil {
+		return nil
+	}
+	return b.balances[id].fixedPrice
+}
+
+// SetFixedPrice sets fixed price for the given session
+func (b *Balances) SetFixedPrice(id ManifestID, fixedPrice *big.Rat) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	if b.balances[id] == nil {
+		b.balances[id] = &balance{amount: big.NewRat(0, 1)}
+	}
+	b.balances[id].fixedPrice = fixedPrice
+	b.balances[id].lastUpdate = time.Now()
 }
 
 func (b *Balances) cleanup() {

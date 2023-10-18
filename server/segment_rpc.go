@@ -112,7 +112,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String())
+	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
 	if err != nil {
 		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
