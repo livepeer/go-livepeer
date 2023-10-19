@@ -416,9 +416,9 @@ func TestEstimateFee(t *testing.T) {
 	assert.Zero(fee.Cmp(expFee))
 
 	// Test estimation with fps pass-through
-	// pixels = (256 * 144 * 120 * 3) + (426 * 240 * 30 * 3)
+	// pixels = (256 * 144 * 60 * 3) + (426 * 240 * 30 * 3)
 	profiles[0].Framerate = 0
-	expFee = new(big.Rat).SetInt64(22472640)
+	expFee = new(big.Rat).SetInt64(15837120)
 	expFee.Mul(expFee, new(big.Rat).SetFloat64(pixelEstimateMultiplier))
 	expFee.Mul(expFee, priceInfo)
 	fee, err = estimateFee(&stream.HLSSegment{Duration: 3.0}, profiles, priceInfo)
