@@ -1143,8 +1143,7 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 	stats.Record(census.ctx, census.mTranscodersLoad.M(int64(load)))
 	stats.Record(census.ctx, census.mTranscodersCapacity.M(int64(capacity)))
 	stats.Record(census.ctx, census.mTranscodersNumber.M(int64(number)))
-	stats.Record(census.ctx, census.mWinningTicketsRecv.M(int64(number)))
-        stats.Record(census.ctx, census.mCurrentSessions.M(int64(number)))
+	
 }
 
 func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, dur float64) {
