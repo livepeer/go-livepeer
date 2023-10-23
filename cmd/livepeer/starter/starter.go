@@ -56,7 +56,7 @@ var (
 	// The interval at which to clean up cached max float values for PM senders and balances per stream
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
-	smTTL = 604800 // 1 week
+	smTTL = 172800 // 2 days
 )
 
 const RTMPPort = "1935"
