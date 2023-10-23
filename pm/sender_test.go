@@ -621,7 +621,7 @@ func defaultSender(t *testing.T) *sender {
 		Reserve:       &ReserveInfo{FundsRemaining: big.NewInt(10)},
 		WithdrawRound: big.NewInt(0),
 	}
-	s := NewSender(am, tm, sm, big.NewRat(100, 1), 2)
+	s := NewSender(am, tm, sm, big.NewRat(100, 1), big.NewRat(100, 1), 2)
 	return s.(*sender)
 }
 
