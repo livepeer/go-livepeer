@@ -55,7 +55,7 @@ type Orchestrator interface {
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
-	PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error)
+	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Capabilities() *net.Capabilities
@@ -118,6 +118,7 @@ type BroadcastSession struct {
 	OrchestratorOS   drivers.OSSession
 	PMSessionID      string
 	Balance          Balance
+	InitialPrice     *net.PriceInfo
 }
 
 func (bs *BroadcastSession) Transcoder() string {
@@ -323,7 +324,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	}
 
 	// currently, orchestrator == transcoder
-	return orchestratorInfo(orch, addr, orch.ServiceURI().String())
+	return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -335,18 +336,18 @@ func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.
 	return &net.EndTranscodingSessionResponse{}, nil
 }
 
-func getPriceInfo(orch Orchestrator, addr ethcommon.Address) (*net.PriceInfo, error) {
+func getPriceInfo(orch Orchestrator, addr ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error) {
 	if AuthWebhookURL != nil {
 		webhookRes := getFromDiscoveryAuthWebhookCache(addr.Hex())
 		if webhookRes != nil && webhookRes.PriceInfo != nil {
 			return webhookRes.PriceInfo, nil
 		}
 	}
-	return orch.PriceInfo(addr)
+	return orch.PriceInfo(addr, manifestID)
 }
 
-func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string) (*net.OrchestratorInfo, error) {
-	priceInfo, err := getPriceInfo(orch, addr)
+func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID) (*net.OrchestratorInfo, error) {
+	priceInfo, err := getPriceInfo(orch, addr, manifestID)
 	if err != nil {
 		return nil, err
 	}

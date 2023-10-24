@@ -140,6 +140,14 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		return fmt.Errorf("invalid expected price sent with payment err=%q", "expected price is nil")
 	}
 
+	// During the first payment, set the fixed price per session
+	if balances, ok := orch.node.Balances.balances[sender]; ok {
+		if balances.FixedPrice(manifestID) == nil {
+			balances.SetFixedPrice(manifestID, priceInfoRat)
+			glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
+		}
+	}
+
 	ticketParams := &pm.TicketParams{
 		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
 		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
@@ -252,12 +260,12 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 	}, nil
 }
 
-func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
 
-	price, err := orch.priceInfo(sender)
+	price, err := orch.priceInfo(sender, manifestID)
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +281,18 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
-func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) {
+func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID) (*big.Rat, error) {
 	basePrice := orch.node.GetBasePrice(sender.String())
+
+	// If there is already a fixed price for the given session, use this price
+	if manifestID != "" {
+		if balances, ok := orch.node.Balances.balances[sender]; ok {
+			fixedPrice := balances.FixedPrice(manifestID)
+			if fixedPrice != nil {
+				return fixedPrice, nil
+			}
+		}
+	}
 
 	if basePrice == nil {
 		basePrice = orch.node.GetBasePrice("default")
