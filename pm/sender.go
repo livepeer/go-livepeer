@@ -43,18 +43,20 @@ type sender struct {
 	timeManager       TimeManager
 	senderManager     SenderManager
 	maxEV             *big.Rat
+	maxTotalEV        *big.Rat
 	depositMultiplier int
 
 	sessions sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, depositMultiplier int) Sender {
+func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, maxTotalEV *big.Rat, depositMultiplier int) Sender {
 	return &sender{
 		signer:            signer,
 		timeManager:       timeManager,
 		senderManager:     senderManager,
 		maxEV:             maxEV,
+		maxTotalEV:        maxTotalEV,
 		depositMultiplier: depositMultiplier,
 	}
 }
@@ -169,6 +171,9 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	if ev.Cmp(new(big.Rat).SetInt(ticketParams.FaceValue)) >= 0 {
 		return fmt.Errorf("ticket faceValue too low faceValue=%v", ticketParams.FaceValue)
 	}
+	if ev.Cmp(s.maxEV) > 0 {
+		return fmt.Errorf("ticket EV %v > max ticket EV %v", ev.FloatString(5), s.maxEV.FloatString(5))
+	}
 
 	info, err := s.senderManager.GetSenderInfo(s.signer.Account().Address)
 	if err != nil {
@@ -180,8 +185,8 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 	}
 
 	totalEV := ev.Mul(ev, new(big.Rat).SetInt64(int64(numTickets)))
-	if totalEV.Cmp(s.maxEV) > 0 {
-		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxEV.FloatString(5))
+	if totalEV.Cmp(s.maxTotalEV) > 0 {
+		return fmt.Errorf("total ticket EV %v for %v tickets > max total ticket EV %v", totalEV.FloatString(5), numTickets, s.maxTotalEV.FloatString(5))
 	}
 
 	maxFaceValue := new(big.Int).Div(info.Deposit, big.NewInt(int64(s.depositMultiplier)))

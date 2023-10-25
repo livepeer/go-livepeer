@@ -168,7 +168,9 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.TicketEV = flag.String("ticketEV", *cfg.TicketEV, "The expected value for PM tickets")
 	cfg.MaxFaceValue = flag.String("maxFaceValue", *cfg.MaxFaceValue, "set max ticket face value in WEI")
 	// Broadcaster max acceptable ticket EV
-	cfg.MaxTicketEV = flag.String("maxTicketEV", *cfg.MaxTicketEV, "The maximum acceptable expected value for PM tickets")
+	cfg.MaxTicketEV = flag.String("maxTicketEV", *cfg.MaxTicketEV, "The maximum acceptable expected value for one PM ticket")
+	// Broadcaster max acceptable total EV for one payment
+	cfg.MaxTotalEV = flag.String("maxTotalEV", *cfg.MaxTotalEV, "The maximum acceptable expected value for one PM payment")
 	// Broadcaster deposit multiplier to determine max acceptable ticket faceValue
 	cfg.DepositMultiplier = flag.Int("depositMultiplier", *cfg.DepositMultiplier, "The deposit multiplier used to determine max acceptable faceValue for PM tickets")
 	// Orchestrator base pricing info

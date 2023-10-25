@@ -119,6 +119,7 @@ type LivepeerConfig struct {
 	TicketEV                     *string
 	MaxFaceValue                 *string
 	MaxTicketEV                  *string
+	MaxTotalEV                   *string
 	DepositMultiplier            *int
 	PricePerUnit                 *int
 	PixelsPerUnit                *int
@@ -195,11 +196,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTicketEV := "1000000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
+	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
-	defaultpricePerBroadcaster := ""
+	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
@@ -279,11 +281,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TicketEV:               &defaultTicketEV,
 		MaxFaceValue:           &defaultMaxFaceValue,
 		MaxTicketEV:            &defaultMaxTicketEV,
+		MaxTotalEV:             &defaultMaxTotalEV,
 		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
-		PricePerBroadcaster:    &defaultpricePerBroadcaster,
+		PricePerBroadcaster:    &defaultPricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
@@ -856,13 +859,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		}
 		if n.NodeType == core.BroadcasterNode {
-			ev, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
-			if ev == nil {
+			maxEV, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
+			if maxEV == nil {
 				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
 			}
-
-			if ev.Cmp(big.NewRat(0, 1)) < 0 {
+			if maxEV.Cmp(big.NewRat(0, 1)) < 0 {
 				panic(fmt.Errorf("-maxTicketEV must not be negative, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
+			}
+			maxTotalEV, _ := new(big.Rat).SetString(*cfg.MaxTotalEV)
+			if maxTotalEV.Cmp(big.NewRat(0, 1)) < 0 {
+				panic(fmt.Errorf("-maxTotalEV must not be negative, but %v provided. Restart the node with a valid value for -maxTotalEV", *cfg.MaxTotalEV))
 			}
 
 			if *cfg.DepositMultiplier <= 0 {
@@ -878,7 +884,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Broadcaster Deposit: ", eth.FormatUnits(info.Deposit, "ETH"))
 			glog.Info("Broadcaster Reserve: ", eth.FormatUnits(info.Reserve.FundsRemaining, "ETH"))
 
-			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, *cfg.DepositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
 			if *cfg.PixelsPerUnit <= 0 {
 				// Can't divide by 0
