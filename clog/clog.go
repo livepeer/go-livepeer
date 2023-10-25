@@ -146,14 +146,6 @@ func Errorf(ctx context.Context, format string, args ...interface{}) {
 	glog.ErrorDepth(1, msg)
 }
 
-func Fatalf(ctx context.Context, format string, args ...interface{}) {
-	if !glog.V(0) {
-		return
-	}
-	msg, _ := formatMessage(ctx, false, false, format, args...)
-	glog.FatalDepth(1, msg)
-}
-
 func Infof(ctx context.Context, format string, args ...interface{}) {
 	infof(ctx, false, false, format, args...)
 }

@@ -48,7 +48,7 @@ func main() {
 		ff.WithConfigFileParser(ff.PlainParser),
 	)
 	if err != nil {
-		glog.Fatal("Error parsing config: ", err)
+		glog.Exit("Error parsing config: ", err)
 	}
 
 	vFlag.Value.Set(*verbosity)
