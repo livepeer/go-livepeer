@@ -196,7 +196,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTicketEV := "1000000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
-	defaultMaxTotalEV := "3000000000000"
+	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
