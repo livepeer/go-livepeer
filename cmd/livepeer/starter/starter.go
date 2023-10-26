@@ -322,28 +322,24 @@ func DefaultLivepeerConfig() LivepeerConfig {
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
-			glog.Fatal("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
-			return
+			glog.Exit("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
 		}
 		core.MaxSessions = 0
 	} else {
 		intMaxSessions, err := strconv.Atoi(*cfg.MaxSessions)
 		if err != nil || intMaxSessions <= 0 {
-			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
-			return
+			glog.Exit("-maxSessions must be 'auto' or greater than zero")
 		}
 
 		core.MaxSessions = intMaxSessions
 	}
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
-		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
-		return
+		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
 	}
 
 	if *cfg.DetectionSampleRate <= 0 {
-		glog.Fatal("-detectionSampleRate must be greater than zero")
-		return
+		glog.Exit("-detectionSampleRate must be greater than zero")
 	}
 
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
@@ -476,8 +472,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.TestTranscoder {
 				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
 				if err != nil {
-					glog.Fatal(err)
-					return
+					glog.Exit(err)
 				}
 			} else {
 				// no capability test was run, assume default capabilities
@@ -585,18 +580,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
 					*cfg.EthAcctAddr = ethKeystoreAddr
 				} else {
-					glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
-					return
+					glog.Exit("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
 				}
 			}
 		} else {
-			glog.Fatal(fmt.Errorf(err.Error()))
-			return
+			glog.Exit(fmt.Errorf(err.Error()))
 		}
 
 		//Get the Eth client connection information
 		if *cfg.EthUrl == "" {
-			glog.Fatal("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
+			glog.Exit("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
 		}
 
 		//Set up eth client
@@ -1037,7 +1030,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.AuthWebhookURL != "" {
 		parsedUrl, err := validateURL(*cfg.AuthWebhookURL)
 		if err != nil {
-			glog.Fatal("Error setting auth webhook URL ", err)
+			glog.Exit("Error setting auth webhook URL ", err)
 		}
 		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
 		server.AuthWebhookURL = parsedUrl
@@ -1046,7 +1039,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.DetectionWebhookURL != "" {
 		parsedUrl, err := validateURL(*cfg.DetectionWebhookURL)
 		if err != nil {
-			glog.Fatal("Error setting detection webhook URL ", err)
+			glog.Exit("Error setting detection webhook URL ", err)
 		}
 		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
 		server.DetectionWebhookURL = parsedUrl
@@ -1086,7 +1079,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.OrchWebhookURL != "" {
 			whurl, err := validateURL(*cfg.OrchWebhookURL)
 			if err != nil {
-				glog.Fatal("Error setting orch webhook URL ", err)
+				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
@@ -1125,7 +1118,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.VerifierURL != "" {
 			_, err := validateURL(*cfg.VerifierURL)
 			if err != nil {
-				glog.Fatal("Error setting verifier URL ", err)
+				glog.Exit("Error setting verifier URL ", err)
 			}
 			glog.Info("Using the Epic Labs classifier for verification at ", *cfg.VerifierURL)
 			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *cfg.VerifierURL}}
@@ -1133,7 +1126,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Set the verifier path. Remove once [1] is implemented!
 			// [1] https://github.com/livepeer/verification-classifier/issues/64
 			if drivers.NodeStorage == nil && *cfg.VerifierPath == "" {
-				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
+				glog.Exit("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
 			}
 			verification.VerifierPath = *cfg.VerifierPath
 		} else if localVerify {
@@ -1149,14 +1142,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		suri, err := getServiceURI(n, *cfg.ServiceAddr)
 		if err != nil {
-			glog.Fatal("Error getting service URI: ", err)
+			glog.Exit("Error getting service URI: ", err)
 		}
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
 		if !*cfg.Transcoder && n.OrchSecret == "" {
-			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+			glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
 	} else if n.NodeType == core.TranscoderNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
@@ -1246,10 +1239,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if n.NodeType == core.TranscoderNode {
 		if n.OrchSecret == "" {
-			glog.Fatal("Missing -orchSecret")
+			glog.Exit("Missing -orchSecret")
 		}
 		if len(orchURLs) <= 0 {
-			glog.Fatal("Missing -orchAddr")
+			glog.Exit("Missing -orchAddr")
 		}
 
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)

@@ -253,7 +253,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
-		glog.Fatal("Error creating context", err)
+		glog.Exit("Error creating context", err)
 	}
 	census.mHTTPClientTimeout1 = stats.Int64("http_client_timeout_1", "Number of times HTTP connection was dropped before transcoding complete", "tot")
 	census.mHTTPClientTimeout2 = stats.Int64("http_client_timeout_2", "Number of times HTTP connection was dropped before transcoded segments was sent back to client", "tot")
@@ -346,7 +346,7 @@ func InitCensus(nodeType NodeType, version string) {
 		tag.Insert(compiler, runtime.Compiler), tag.Insert(goarch, runtime.GOARCH), tag.Insert(goos, runtime.GOOS),
 		tag.Insert(goversion, runtime.Version()), tag.Insert(livepeerversion, version))
 	if err != nil {
-		glog.Fatal("Error creating tagged context", err)
+		glog.Exit("Error creating tagged context", err)
 	}
 	baseTags := []tag.Key{census.kNodeID, census.kNodeType}
 	baseTagsWithManifestID := baseTags
@@ -829,7 +829,7 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// Register the views
 	if err := view.Register(views...); err != nil {
-		glog.Fatalf("Failed to register views: %v", err)
+		glog.Exitf("Failed to register views: %v", err)
 	}
 	registry := rprom.NewRegistry()
 	registry.MustRegister(rprom.NewProcessCollector(rprom.ProcessCollectorOpts{}))
@@ -839,7 +839,7 @@ func InitCensus(nodeType NodeType, version string) {
 		Registry:  registry,
 	})
 	if err != nil {
-		glog.Fatalf("Failed to create the Prometheus stats exporter: %v", err)
+		glog.Exitf("Failed to create the Prometheus stats exporter: %v", err)
 	}
 
 	// Register the Prometheus exporters as a stats exporter.
@@ -847,7 +847,7 @@ func InitCensus(nodeType NodeType, version string) {
 	stats.Record(ctx, mVersions.M(1))
 	ctx, err = tag.New(census.ctx, tag.Insert(census.kErrorCode, "LostSegment"))
 	if err != nil {
-		glog.Fatal("Error creating context", err)
+		glog.Exit("Error creating context", err)
 	}
 	if !unitTestMode {
 		go census.timeoutWatcher(ctx)
