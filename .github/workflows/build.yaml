@@ -116,7 +116,7 @@ jobs:
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
             && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
 
-          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5
+          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5 && which protoc-gen-go
 
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
