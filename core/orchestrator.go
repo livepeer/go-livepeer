@@ -108,7 +108,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		return nil
 	}
 
-	if (payment.Sender == nil || len(payment.Sender) == 0) && payment.TicketParams == nil {
+	if (payment.Sender == nil || len(payment.Sender) == 0) && payment.TicketParams != nil {
 		return fmt.Errorf("Could not find Sender for payment: %v", payment)
 	}
 	sender := ethcommon.BytesToAddress(payment.Sender)
