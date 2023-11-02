@@ -108,15 +108,16 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		return nil
 	}
 
-	if payment.TicketParams == nil {
-		return nil
-	}
-
-	if payment.Sender == nil || len(payment.Sender) == 0 {
+	if (payment.Sender == nil || len(payment.Sender) == 0) && payment.TicketParams != nil {
 		return fmt.Errorf("Could not find Sender for payment: %v", payment)
 	}
-
 	sender := ethcommon.BytesToAddress(payment.Sender)
+
+	if payment.TicketParams == nil {
+		// No ticket params means that the price is 0, then set the fixed price per session to 0
+		orch.setFixedPricePerSession(sender, manifestID, big.NewRat(0, 1))
+		return nil
+	}
 
 	recipientAddr := ethcommon.BytesToAddress(payment.TicketParams.Recipient)
 	ok, err := orch.isActive(recipientAddr)
@@ -141,12 +142,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	}
 
 	// During the first payment, set the fixed price per session
-	if balances, ok := orch.node.Balances.balances[sender]; ok {
-		if balances.FixedPrice(manifestID) == nil {
-			balances.SetFixedPrice(manifestID, priceInfoRat)
-			glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
-		}
-	}
+	orch.setFixedPricePerSession(sender, manifestID, priceInfoRat)
 
 	ticketParams := &pm.TicketParams{
 		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
@@ -378,6 +374,19 @@ func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	}
 
 	return len(orchs) > 0, nil
+}
+
+func (orch *orchestrator) setFixedPricePerSession(sender ethcommon.Address, manifestID ManifestID, priceInfoRat *big.Rat) {
+	if orch.node.Balances == nil {
+		glog.Warning("Node balances are not initialized")
+		return
+	}
+	if balances, ok := orch.node.Balances.balances[sender]; ok {
+		if balances.FixedPrice(manifestID) == nil {
+			balances.SetFixedPrice(manifestID, priceInfoRat)
+			glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
+		}
+	}
 }
 
 func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {
