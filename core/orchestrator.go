@@ -377,6 +377,10 @@ func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 }
 
 func (orch *orchestrator) setFixedPricePerSession(sender ethcommon.Address, manifestID ManifestID, priceInfoRat *big.Rat) {
+	if orch.node.Balances == nil {
+		glog.Warning("Node balances are not initialized")
+		return
+	}
 	if balances, ok := orch.node.Balances.balances[sender]; ok {
 		if balances.FixedPrice(manifestID) == nil {
 			balances.SetFixedPrice(manifestID, priceInfoRat)
