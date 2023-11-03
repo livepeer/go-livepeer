@@ -94,8 +94,4 @@ type SenderManager interface {
 	Clear(addr ethcommon.Address)
 	// SubscribeReserveChange notifies a subcriber when the senderInfo for a sender changes
 	SubscribeReserveChange(sink chan<- ethcommon.Address) event.Subscription
-	//update SenderInfos in background
-	UpdateSenderInfos()
-	//update ClaimedReserves in background
-	UpdateClaimedReserves(claimaint ethcommon.Address)
 }

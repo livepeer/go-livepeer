@@ -327,8 +327,6 @@ func (sm *LocalSenderMonitor) startCleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			sm.smgr.UpdateSenderInfos()
-			sm.smgr.UpdateClaimedReserves(sm.cfg.Claimant)
 			sm.cleanup()
 		case <-sm.quit:
 			return
