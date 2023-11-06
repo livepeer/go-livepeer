@@ -65,8 +65,6 @@ var AuthWebhookURL *url.URL
 var DetectionWebhookURL *url.URL
 var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
-var SelectRandFreq float64
-
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
 }
@@ -90,6 +88,8 @@ type rtmpConnection struct {
 	lastUsed        time.Time
 	sourceBytes     uint64
 	transcodedBytes uint64
+	mu              sync.Mutex
+	mediaFormat     ffmpeg.MediaFormatInfo
 }
 
 func (s *LivepeerServer) getActiveRtmpConnectionUnsafe(mid core.ManifestID) (*rtmpConnection, bool) {
@@ -146,8 +146,9 @@ type authWebhookResponse struct {
 			Name string `json:"name"`
 		} `json:"sceneClassification"`
 	} `json:"detection"`
-	VerificationFreq  uint `json:"verificationFreq"`
-	TimeoutMultiplier int  `json:"timeoutMultiplier"`
+	VerificationFreq   uint `json:"verificationFreq"`
+	TimeoutMultiplier  int  `json:"timeoutMultiplier"`
+	ForceSessionReinit bool `json:"forceSessionReinit"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -303,7 +304,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			profiles = append(profiles, parsedProfiles...)
 
 			// Only set defaults if user did not specify a preset/profile
-			if len(resp.Profiles) <= 0 && len(resp.Presets) <= 0 {
+			if resp.Profiles == nil && len(resp.Presets) <= 0 {
 				profiles = BroadcastJobVideoProfiles
 			}
 
@@ -563,7 +564,7 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
 	}
 	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelectorWithRandFreq(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, SelectRandFreq)
+		return NewMinLSSelector(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, s.LivepeerNode.SelectionAlgorithm, s.LivepeerNode.OrchPerfScore)
 	}
 
 	// safe, because other goroutines should be waiting on initializing channel
@@ -803,7 +804,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if valMs, err := strconv.ParseUint(sliceToStr, 10, 64); err == nil {
 		sliceToDur = time.Duration(valMs) * time.Millisecond
 	}
-	var segPar *core.SegmentParameters
+	var segPar core.SegmentParameters
 	if sliceFromDur > 0 || sliceToDur > 0 {
 		if sliceFromDur > 0 && sliceToDur > 0 && sliceFromDur > sliceToDur {
 			httpErr := fmt.Sprintf(`Invalid slice config from=%s to=%s`, sliceFromDur, sliceToDur)
@@ -811,10 +812,13 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, httpErr, http.StatusBadRequest)
 			return
 		}
-		segPar = &core.SegmentParameters{
+		segPar.Clip = &core.SegmentClip{
 			From: sliceFromDur,
 			To:   sliceToDur,
 		}
+	}
+	if authHeaderConfig != nil {
+		segPar.ForceSessionReinit = authHeaderConfig.ForceSessionReinit
 	}
 
 	now := time.Now()
@@ -902,7 +906,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, segPar)
+		cxn, err = s.registerConnection(ctx, st, vcodec, mediaFormat.PixFormat, &segPar)
 		if err != nil {
 			st.Close()
 			if err != errAlreadyExists {
@@ -1010,8 +1014,18 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// Reinitialize HW Session if video segment resolution has changed
+	cxn.mu.Lock()
+	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
+		cxn.mediaFormat = mediaFormat
+	} else if cxn.mediaFormat != mediaFormat {
+		cxn.mediaFormat = mediaFormat
+		segPar.ForceSessionReinit = true
+	}
+	cxn.mu.Unlock()
+
 	// Do the transcoding!
-	urls, err := processSegment(ctx, cxn, seg, segPar)
+	urls, err := processSegment(ctx, cxn, seg, &segPar)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if isNonRetryableError(err) {
@@ -1030,8 +1044,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	default:
 	}
 	if len(urls) == 0 {
-		clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
-		http.Error(w, "No sessions available", http.StatusServiceUnavailable)
+		if len(cxn.params.Profiles) > 0 {
+			clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+			http.Error(w, "No sessions available", http.StatusServiceUnavailable)
+		}
 		return
 	}
 	renditionData := make([][]byte, len(urls))

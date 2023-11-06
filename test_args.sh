@@ -197,7 +197,7 @@ $TMPDIR/livepeer -broadcaster -maxSessions 0 || res=$?
 
 # Check that pprof is running on CLI port
 run_lp -broadcaster
-curl -sI http://127.0.0.1:7935/debug/pprof/allocs | grep "200 OK"
+curl -sI http://127.0.0.1:5935/debug/pprof/allocs | grep "200 OK"
 kill $pid
 
 # exit early if verifier URL is not http
@@ -223,47 +223,47 @@ kill $pid
 
 # Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is no auth webhook URL and -httpIngest defaults to false
 run_lp -broadcaster -httpAddr 0.0.0.0
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is disabled when -httpAddr is not publicly accessible and -httpIngest is set to false
 run_lp -broadcaster -httpIngest=false
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is disabled when -httpAddr is publicly accessible and there is a auth webhook URL and -httpIngest is set to false
 run_lp -broadcaster -httpAddr 0.0.0.0 -authWebhookUrl http://foo.com -httpIngest=false
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is enabled when -httpIngest is true
 run_lp -broadcaster -httpAddr 0.0.0.0 -httpIngest
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is enabled when -httpAddr sets the hostname to 127.0.0.1
 run_lp -broadcaster -httpAddr 127.0.0.1
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is enabled when -httpAddr sets the hostname to localhost
 run_lp -broadcaster -httpAddr localhost
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
 # Check that HTTP ingest is enabled when there is an auth webhook URL
 run_lp -broadcaster -httpAddr 0.0.0.0 -authWebhookUrl http://foo.com
-curl -X PUT http://localhost:8935/live/movie/0.ts | grep -v "404 page not found"
+curl -X PUT http://localhost:9935/live/movie/0.ts | grep -v "404 page not found"
 kill $pid
 
 # Check that the default presets are used
 run_lp -broadcaster
-curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep P240p30fps16x9,P360p30fps16x9
+curl -s --stderr - http://localhost:5935/getBroadcastConfig | grep P240p30fps16x9,P360p30fps16x9
 kill $pid
 
 # Check that the presets passed in are used
 run_lp -broadcaster -transcodingOptions P144p30fps16x9,P720p30fps16x9
-curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep P144p30fps16x9,P720p30fps16x9
+curl -s --stderr - http://localhost:5935/getBroadcastConfig | grep P144p30fps16x9,P720p30fps16x9
 kill $pid
 
 # Check that config file profiles passed in are used
@@ -271,7 +271,7 @@ cat >$TMPDIR/profile.json <<PROFILE_JSON
 [{"name":"abc","width":1,"height":2},{"name":"def","width":1,"height":2}]
 PROFILE_JSON
 run_lp -broadcaster -transcodingOptions $TMPDIR/profile.json
-curl -s --stderr - http://localhost:7935/getBroadcastConfig | grep abc,def
+curl -s --stderr - http://localhost:5935/getBroadcastConfig | grep abc,def
 kill $pid
 
 # Check nonexistent profile config file

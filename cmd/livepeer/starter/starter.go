@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/big"
@@ -59,9 +60,16 @@ var (
 	smTTL = 172800 // 2 days
 )
 
-const RTMPPort = "1935"
-const RPCPort = "8935"
-const CliPort = "7935"
+const (
+	BroadcasterRpcPort  = "9935"
+	BroadcasterCliPort  = "5935"
+	BroadcasterRtmpPort = "1935"
+	OrchestratorRpcPort = "8935"
+	OrchestratorCliPort = "7935"
+	TranscoderCliPort   = "6935"
+
+	RefreshPerfScoreInterval = 10 * time.Minute
+)
 
 type LivepeerConfig struct {
 	Network                      *string
@@ -81,7 +89,14 @@ type LivepeerConfig struct {
 	OrchSecret                   *string
 	TranscodingOptions           *string
 	MaxAttempts                  *int
-	SelectRandFreq               *float64
+	SelectRandWeight             *float64
+	SelectStakeWeight            *float64
+	SelectPriceWeight            *float64
+	SelectPriceExpFactor         *float64
+	OrchPerfStatsURL             *string
+	Region                       *string
+	MaxPricePerUnit              *int
+	MinPerfScore                 *float64
 	MaxSessions                  *string
 	CurrentManifest              *bool
 	Nvidia                       *string
@@ -104,9 +119,9 @@ type LivepeerConfig struct {
 	TicketEV                     *string
 	MaxFaceValue                 *string
 	MaxTicketEV                  *string
+	MaxTotalEV                   *string
 	DepositMultiplier            *int
 	PricePerUnit                 *int
-	MaxPricePerUnit              *int
 	PixelsPerUnit                *int
 	AutoAdjustPrice              *bool
 	PricePerBroadcaster          *string
@@ -135,8 +150,8 @@ type LivepeerConfig struct {
 func DefaultLivepeerConfig() LivepeerConfig {
 	// Network & Addresses:
 	defaultNetwork := "offchain"
-	defaultRtmpAddr := "127.0.0.1:" + RTMPPort
-	defaultCliAddr := "127.0.0.1:" + CliPort
+	defaultRtmpAddr := ""
+	defaultCliAddr := ""
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
 	defaultOrchAddr := ""
@@ -150,8 +165,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchSecret := ""
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
-	defaultSelectRandFreq := 0.3
+	defaultSelectRandWeight := 0.3
+	defaultSelectStakeWeight := 0.7
+	defaultSelectPriceWeight := 0.0
+	defaultSelectPriceExpFactor := 100.0
 	defaultMaxSessions := strconv.Itoa(10)
+	defaultOrchPerfStatsURL := ""
+	defaultRegion := ""
+	defaultMinPerfScore := 0.0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -172,14 +193,15 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxGasPrice := 0
 	defaultEthController := ""
 	defaultInitializeRound := false
-	defaultTicketEV := "1000000000000"
+	defaultTicketEV := "8000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
+	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
-	defaultpricePerBroadcaster := ""
+	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
@@ -228,8 +250,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchSecret:                   &defaultOrchSecret,
 		TranscodingOptions:           &defaultTranscodingOptions,
 		MaxAttempts:                  &defaultMaxAttempts,
-		SelectRandFreq:               &defaultSelectRandFreq,
+		SelectRandWeight:             &defaultSelectRandWeight,
+		SelectStakeWeight:            &defaultSelectStakeWeight,
+		SelectPriceWeight:            &defaultSelectPriceWeight,
+		SelectPriceExpFactor:         &defaultSelectPriceExpFactor,
 		MaxSessions:                  &defaultMaxSessions,
+		OrchPerfStatsURL:             &defaultOrchPerfStatsURL,
+		Region:                       &defaultRegion,
+		MinPerfScore:                 &defaultMinPerfScore,
 		CurrentManifest:              &defaultCurrentManifest,
 		Nvidia:                       &defaultNvidia,
 		Netint:                       &defaultNetint,
@@ -253,11 +281,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TicketEV:               &defaultTicketEV,
 		MaxFaceValue:           &defaultMaxFaceValue,
 		MaxTicketEV:            &defaultMaxTicketEV,
+		MaxTotalEV:             &defaultMaxTotalEV,
 		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
-		PricePerBroadcaster:    &defaultpricePerBroadcaster,
+		PricePerBroadcaster:    &defaultPricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
 		Redeemer:               &defaultRedeemer,
 		RedeemerAddr:           &defaultRedeemerAddr,
@@ -293,28 +322,24 @@ func DefaultLivepeerConfig() LivepeerConfig {
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
-			glog.Fatal("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
-			return
+			glog.Exit("-maxSessions 'auto' cannot be used when both -orchestrator and -transcoder are specified")
 		}
 		core.MaxSessions = 0
 	} else {
 		intMaxSessions, err := strconv.Atoi(*cfg.MaxSessions)
 		if err != nil || intMaxSessions <= 0 {
-			glog.Fatal("-maxSessions must be 'auto' or greater than zero")
-			return
+			glog.Exit("-maxSessions must be 'auto' or greater than zero")
 		}
 
 		core.MaxSessions = intMaxSessions
 	}
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
-		glog.Fatal("both -netint and -nvidia arguments specified, this is not supported")
-		return
+		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
 	}
 
 	if *cfg.DetectionSampleRate <= 0 {
-		glog.Fatal("-detectionSampleRate must be greater than zero")
-		return
+		glog.Exit("-detectionSampleRate must be greater than zero")
 	}
 
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
@@ -380,7 +405,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if homedir == "" {
 			usr, err := user.Current()
 			if err != nil {
-				glog.Fatalf("Cannot find current user: %v", err)
+				exit("Cannot find current user: %v", err)
 			}
 			homedir = usr.HomeDir
 		}
@@ -434,21 +459,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
 			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
-				glog.Fatalf("Error unsupported acceleration: %v", err)
+				exit("Error unsupported acceleration: %v", err)
 			}
 			// Get a list of device ids
 			devices, err := common.ParseAccelDevices(devicesStr, accel)
 			glog.Infof("%v devices: %v", accelName, devices)
 			if err != nil {
-				glog.Fatalf("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
+				exit("Error while parsing '-%v %v' flag: %v", strings.ToLower(accelName), devices, err)
 			}
 			glog.Infof("Transcoding on these %v devices: %v", accelName, devices)
 			// Test transcoding with specified device
 			if *cfg.TestTranscoder {
 				transcoderCaps, err = core.TestTranscoderCapabilities(devices, tf)
 				if err != nil {
-					glog.Fatal(err)
-					return
+					glog.Exit(err)
 				}
 			} else {
 				// no capability test was run, assume default capabilities
@@ -464,14 +488,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					for _, d := range devices {
 						tc, err := core.NewNvidiaTranscoderWithDetector(&detectorProfile, d)
 						if err != nil {
-							glog.Fatalf("Could not initialize content detector")
+							exit("Could not initialize content detector")
 						}
 						defer tc.Stop()
 					}
 					// add SceneClassification capability
 					transcoderCaps = append(transcoderCaps, core.Capability_SceneClassification)
 				} else {
-					glog.Fatalf("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
+					exit("Content detection is enabled, but the model file '%s' does not exist", *cfg.SceneClassificationModelPath)
 				}
 			}
 			// Initialize LB transcoder
@@ -496,7 +520,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Broadcaster {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		glog.Fatalf("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -539,6 +563,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 	} else {
+		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
+		if err != nil {
+			exit("Incorrect parameters for selection algorithm, err=%v", err)
+		}
+
 		var keystoreDir = filepath.Join(*cfg.Datadir, "keystore")
 		keystoreInfo, err := parseEthKeystorePath(*cfg.EthKeystorePath)
 		if err == nil {
@@ -551,18 +580,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				if (ethAcctAddr == ethcommon.Address{}.Hex()) || ethKeystoreAddr == ethAcctAddr {
 					*cfg.EthAcctAddr = ethKeystoreAddr
 				} else {
-					glog.Fatal("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
-					return
+					glog.Exit("-ethKeystorePath and -ethAcctAddr were both provided, but ethAcctAddr does not match the address found in keystore")
 				}
 			}
 		} else {
-			glog.Fatal(fmt.Errorf(err.Error()))
-			return
+			glog.Exit(fmt.Errorf(err.Error()))
 		}
 
 		//Get the Eth client connection information
 		if *cfg.EthUrl == "" {
-			glog.Fatal("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
+			glog.Exit("Need to specify an Ethereum node JSON-RPC URL using -ethUrl")
 		}
 
 		//Set up eth client
@@ -782,7 +809,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			var sm pm.SenderMonitor
 			if *cfg.RedeemerAddr != "" {
-				*cfg.RedeemerAddr = defaultAddr(*cfg.RedeemerAddr, "127.0.0.1", RPCPort)
+				*cfg.RedeemerAddr = defaultAddr(*cfg.RedeemerAddr, "127.0.0.1", OrchestratorRpcPort)
 				rc, err := server.NewRedeemerClient(*cfg.RedeemerAddr, senderWatcher, timeWatcher)
 				if err != nil {
 					glog.Error("Unable to start redeemer client: ", err)
@@ -824,15 +851,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 		}
-
 		if n.NodeType == core.BroadcasterNode {
-			ev, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
-			if ev == nil {
+			maxEV, _ := new(big.Rat).SetString(*cfg.MaxTicketEV)
+			if maxEV == nil {
 				panic(fmt.Errorf("-maxTicketEV must be a valid rational number, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
 			}
-
-			if ev.Cmp(big.NewRat(0, 1)) < 0 {
+			if maxEV.Cmp(big.NewRat(0, 1)) < 0 {
 				panic(fmt.Errorf("-maxTicketEV must not be negative, but %v provided. Restart the node with a valid value for -maxTicketEV", *cfg.MaxTicketEV))
+			}
+			maxTotalEV, _ := new(big.Rat).SetString(*cfg.MaxTotalEV)
+			if maxTotalEV.Cmp(big.NewRat(0, 1)) < 0 {
+				panic(fmt.Errorf("-maxTotalEV must not be negative, but %v provided. Restart the node with a valid value for -maxTotalEV", *cfg.MaxTotalEV))
 			}
 
 			if *cfg.DepositMultiplier <= 0 {
@@ -848,7 +877,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Broadcaster Deposit: ", eth.FormatUnits(info.Deposit, "ETH"))
 			glog.Info("Broadcaster Reserve: ", eth.FormatUnits(info.Reserve.FundsRemaining, "ETH"))
 
-			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, ev, *cfg.DepositMultiplier)
+			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
 			if *cfg.PixelsPerUnit <= 0 {
 				// Can't divide by 0
@@ -878,7 +907,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
-			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", RPCPort)
+			*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", OrchestratorRpcPort)
 			url, err := url.ParseRequestURI("https://" + *cfg.HttpAddr)
 			if err != nil {
 				glog.Error("Could not parse redeemer URI: ", err)
@@ -1001,7 +1030,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.AuthWebhookURL != "" {
 		parsedUrl, err := validateURL(*cfg.AuthWebhookURL)
 		if err != nil {
-			glog.Fatal("Error setting auth webhook URL ", err)
+			glog.Exit("Error setting auth webhook URL ", err)
 		}
 		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
 		server.AuthWebhookURL = parsedUrl
@@ -1010,7 +1039,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.DetectionWebhookURL != "" {
 		parsedUrl, err := validateURL(*cfg.DetectionWebhookURL)
 		if err != nil {
-			glog.Fatal("Error setting detection webhook URL ", err)
+			glog.Exit("Error setting detection webhook URL ", err)
 		}
 		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
 		server.DetectionWebhookURL = parsedUrl
@@ -1020,12 +1049,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if n.NodeType == core.BroadcasterNode {
 		// default lpms listener for broadcaster; same as default rpc port
 		// TODO provide an option to disable this?
-		*cfg.RtmpAddr = defaultAddr(*cfg.RtmpAddr, "127.0.0.1", RTMPPort)
-		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", RPCPort)
+		*cfg.RtmpAddr = defaultAddr(*cfg.RtmpAddr, "127.0.0.1", BroadcasterRtmpPort)
+		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", BroadcasterRpcPort)
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", BroadcasterCliPort)
 
 		bcast := core.NewBroadcaster(n)
-
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)
+		if *cfg.OrchPerfStatsURL != "" && *cfg.Region != "" {
+			glog.Infof("Using Performance Stats, region=%s, URL=%s, minPerfScore=%v", *cfg.Region, *cfg.OrchPerfStatsURL, *cfg.MinPerfScore)
+			n.OrchPerfScore = &common.PerfScore{Scores: make(map[ethcommon.Address]float64)}
+			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
+		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
@@ -1035,7 +1069,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			defer cancel()
 			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
 			if err != nil {
-				glog.Fatalf("Could not create orchestrator pool with DB cache: %v", err)
+				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
 			n.OrchestratorPool = dbOrchPoolCache
@@ -1045,7 +1079,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.OrchWebhookURL != "" {
 			whurl, err := validateURL(*cfg.OrchWebhookURL)
 			if err != nil {
-				glog.Fatal("Error setting orch webhook URL ", err)
+				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
@@ -1084,7 +1118,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.VerifierURL != "" {
 			_, err := validateURL(*cfg.VerifierURL)
 			if err != nil {
-				glog.Fatal("Error setting verifier URL ", err)
+				glog.Exit("Error setting verifier URL ", err)
 			}
 			glog.Info("Using the Epic Labs classifier for verification at ", *cfg.VerifierURL)
 			server.Policy = &verification.Policy{Retries: 2, Verifier: &verification.EpicClassifier{Addr: *cfg.VerifierURL}}
@@ -1092,7 +1126,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Set the verifier path. Remove once [1] is implemented!
 			// [1] https://github.com/livepeer/verification-classifier/issues/64
 			if drivers.NodeStorage == nil && *cfg.VerifierPath == "" {
-				glog.Fatal("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
+				glog.Exit("Requires a path to the verifier shared volume when local storage is in use; use -verifierPath or -objectStore")
 			}
 			verification.VerifierPath = *cfg.VerifierPath
 		} else if localVerify {
@@ -1102,23 +1136,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Set max transcode attempts. <=0 is OK; it just means "don't transcode"
 		server.MaxAttempts = *cfg.MaxAttempts
-		server.SelectRandFreq = *cfg.SelectRandFreq
 
 	} else if n.NodeType == core.OrchestratorNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", OrchestratorCliPort)
+
 		suri, err := getServiceURI(n, *cfg.ServiceAddr)
 		if err != nil {
-			glog.Fatal("Error getting service URI: ", err)
+			glog.Exit("Error getting service URI: ", err)
 		}
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
 		if !*cfg.Transcoder && n.OrchSecret == "" {
-			glog.Fatal("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+			glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 		}
+	} else if n.NodeType == core.TranscoderNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
+
 	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
-	*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", CliPort)
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
@@ -1131,17 +1168,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.MetadataQueueUri != "" {
 		uri, err := url.ParseRequestURI(*cfg.MetadataQueueUri)
 		if err != nil {
-			glog.Fatalf("Error parsing -metadataQueueUri: err=%q", err)
+			exit("Error parsing -metadataQueueUri: err=%q", err)
 		}
 		switch uri.Scheme {
 		case "amqp", "amqps":
 			uriStr, exchange, keyNs := *cfg.MetadataQueueUri, *cfg.MetadataAmqpExchange, n.NodeType.String()
 			server.MetadataQueue, err = event.NewAMQPExchangeProducer(context.Background(), uriStr, exchange, keyNs)
 			if err != nil {
-				glog.Fatalf("Error establishing AMQP connection: err=%q", err)
+				exit("Error establishing AMQP connection: err=%q", err)
 			}
 		default:
-			glog.Fatalf("Unsupported scheme in -metadataUri: %s", uri.Scheme)
+			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
 
@@ -1150,7 +1187,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	//Set up the media server
 	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
-		glog.Fatalf("Error creating Livepeer server: err=%q", err)
+		exit("Error creating Livepeer server: err=%q", err)
 	}
 
 	ec := make(chan error)
@@ -1163,7 +1200,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Info("Current ManifestID will be available over ", *cfg.HttpAddr)
 		s.ExposeCurrentManifest = *cfg.CurrentManifest
 	}
-
 	srv := &http.Server{Addr: *cfg.CliAddr}
 	go func() {
 		s.StartCliWebserver(srv)
@@ -1185,7 +1221,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go func() {
 			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
 			if err != nil {
-				glog.Fatalf("Error starting Transcoder node: err=%q", err)
+				exit("Error starting Transcoder node: err=%q", err)
 			}
 			tc <- struct{}{}
 		}()
@@ -1203,10 +1239,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if n.NodeType == core.TranscoderNode {
 		if n.OrchSecret == "" {
-			glog.Fatal("Missing -orchSecret")
+			glog.Exit("Missing -orchSecret")
 		}
 		if len(orchURLs) <= 0 {
-			glog.Fatal("Missing -orchAddr")
+			glog.Exit("Missing -orchAddr")
 		}
 
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
@@ -1235,7 +1271,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		return
 	case err := <-serviceErr:
 		if err != nil {
-			glog.Fatalf("Error starting service: %v", err)
+			exit("Error starting service: %v", err)
 		}
 	case <-tc:
 		glog.Infof("Orchestrator server shut down")
@@ -1256,7 +1292,7 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	if len(addrs) > 0 {
 		for _, addr := range strings.Split(addrs, ",") {
 			addr = strings.TrimSpace(addr)
-			addr = defaultAddr(addr, "127.0.0.1", RPCPort)
+			addr = defaultAddr(addr, "127.0.0.1", OrchestratorRpcPort)
 			if !strings.HasPrefix(addr, "http") {
 				addr = "https://" + addr
 			}
@@ -1332,7 +1368,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 		glog.Errorf("Could not look up public IP err=%q", err)
 		return nil, err
 	}
-	addr := "https://" + strings.TrimSpace(string(body)) + ":" + RPCPort
+	addr := "https://" + strings.TrimSpace(string(body)) + ":" + OrchestratorRpcPort
 	inferredUri, err := url.ParseRequestURI(addr)
 	if err != nil {
 		glog.Errorf("Could not look up public IP err=%q", err)
@@ -1352,7 +1388,7 @@ func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	ethUri, err := url.ParseRequestURI(addr)
 	if err != nil {
 		glog.Errorf("Could not parse service URI; orchestrator may be unreachable err=%q", err)
-		ethUri, _ = url.ParseRequestURI("http://127.0.0.1:" + RPCPort)
+		ethUri, _ = url.ParseRequestURI("http://127.0.0.1:" + OrchestratorRpcPort)
 	}
 	if ethUri.Hostname() != inferredUri.Hostname() || ethUri.Port() != inferredUri.Port() {
 		glog.Errorf("Service address %v did not match discovered address %v; set the correct address in livepeer_cli or use -serviceAddr", ethUri, inferredUri)
@@ -1389,6 +1425,7 @@ func defaultAddr(addr, defaultHost, defaultPort string) string {
 	if addr == "" {
 		return defaultHost + ":" + defaultPort
 	}
+
 	if addr[0] == ':' {
 		return defaultHost + addr
 	}
@@ -1444,6 +1481,22 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	return pricesSet.Prices
 }
 
+func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
+	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
+	if math.Abs(sumWeight-1.0) > 0.0001 {
+		return nil, fmt.Errorf(
+			"sum of selection algorithm weights must be 1.0, stakeWeight=%v, priceWeight=%v, randWeight=%v",
+			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
+	}
+	return server.ProbabilitySelectionAlgorithm{
+		MinPerfScore:   *cfg.MinPerfScore,
+		StakeWeight:    *cfg.SelectStakeWeight,
+		PriceWeight:    *cfg.SelectPriceWeight,
+		RandWeight:     *cfg.SelectRandWeight,
+		PriceExpFactor: *cfg.SelectPriceExpFactor,
+	}, nil
+}
+
 type keystorePath struct {
 	path    string
 	address ethcommon.Address
@@ -1475,4 +1528,54 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {
+	for {
+		refreshOrchPerfScore(region, orchPerfScoreURL, score)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(RefreshPerfScoreInterval):
+		}
+	}
+}
+
+func refreshOrchPerfScore(region string, scoreURL string, score *common.PerfScore) {
+	resp, err := http.Get(scoreURL)
+	if err != nil {
+		glog.Warning("Cannot fetch Orchestrator Performance Stats from URL: %s", scoreURL)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		glog.Warning("Cannot fetch Orchestrator Performance Stats from URL: %s", scoreURL)
+		return
+	}
+	updatePerfScore(region, body, score)
+}
+
+func updatePerfScore(region string, respBody []byte, score *common.PerfScore) {
+	respMap := map[ethcommon.Address]map[string]map[string]float64{}
+	if err := json.Unmarshal(respBody, &respMap); err != nil {
+		glog.Warning("Cannot unmarshal response from Orchestrator Performance Stats URL, err=%v", err)
+		return
+	}
+
+	score.Mu.Lock()
+	defer score.Mu.Unlock()
+	for orchAddr, regions := range respMap {
+		if stats, ok := regions[region]; ok {
+			if sc, ok := stats["score"]; ok {
+				score.Scores[orchAddr] = sc
+			}
+		}
+	}
+}
+
+func exit(msg string, args ...any) {
+	glog.Errorf(msg, args...)
+	os.Exit(2)
 }
