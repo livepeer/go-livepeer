@@ -193,7 +193,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxGasPrice := 0
 	defaultEthController := ""
 	defaultInitializeRound := false
-	defaultTicketEV := "1000000000000"
+	defaultTicketEV := "8000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
 	defaultMaxTotalEV := "20000000000000"
