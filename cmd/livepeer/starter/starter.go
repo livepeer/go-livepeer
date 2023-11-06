@@ -55,9 +55,9 @@ var (
 	txCostMultiplier = 100
 
 	// The interval at which to clean up cached max float values for PM senders and balances per stream
-	cleanupInterval = 1 * time.Minute
+	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
-	smTTL = 60 // 1 minute
+	smTTL = 172800 // 2 days
 )
 
 const (
