@@ -347,7 +347,7 @@ func (sm *LocalSenderMonitor) cleanup() {
 			v.subScope.Close() // close the maxfloat subscriptions
 			delete(sm.senders, k)
 			sm.smgr.Clear(k)
-			glog.Infof("sender cleared from cache addr: %v last access: %v ttl: %vs", hexutil.Encode(k.Bytes()), v.lastAccess, sm.cfg.TTL)
+			glog.V(6).Infof("sender cleared from cache addr: %v last access: %v ttl: %vs", hexutil.Encode(k.Bytes()), v.lastAccess, sm.cfg.TTL)
 		}
 	}
 }
