@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/monitor"
 )
 
 var (
@@ -57,6 +58,9 @@ func (s *RewardService) Start(ctx context.Context) error {
 				err := s.tryReward()
 				if err != nil {
 					glog.Errorf("Error trying to call reward err=%q", err)
+					if monitor.Enabled {
+						monitor.RewardCallError(err.Error())
+					}
 				}
 			}()
 		case <-cancelCtx.Done():
