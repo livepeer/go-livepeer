@@ -22,7 +22,7 @@ var errInsufficientSenderReserve = errors.New("insufficient sender reserve")
 var maxWinProb = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 
 // max number of sender nonces for a given recipient random hash
-var maxSenderNonces = 50
+var maxSenderNonces = 150
 
 var paramsExpirationBlock = big.NewInt(10)
 var paramsExpiryBuffer = int64(1)
