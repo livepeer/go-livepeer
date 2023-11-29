@@ -182,7 +182,7 @@ if [[ ! -e "$ROOT/Quadra_V4.6.0/libxcoder" ]]; then
   exit -1
 else
   if [[ ! -e "$ROOT/Quadra_V4.6.0/libxcoder/bin/libxcoder.a" ]]; then
-    cd $ROOT/libxcoder
+    cd $ROOT/Quadra_V4.6.0/libxcoder
     ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
     --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
     make -j$NPROC
