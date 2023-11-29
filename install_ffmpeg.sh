@@ -116,7 +116,7 @@ if [[ "$GOOS" != "darwin" ]]; then
   if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
     git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
     cd $ROOT/nv-codec-headers
-    git checkout n9.1.23.1
+    git checkout n11.1.5.2
     make -e PREFIX="$ROOT/compiled"
     make install -e PREFIX="$ROOT/compiled"
   fi
@@ -154,7 +154,7 @@ if [[ ! -e "$ROOT/x264" ]]; then
 fi
 
 if [[ "$GOOS" == "linux" && "$BUILD_TAGS" == *"debug-video"* ]]; then
-  sudo apt-get install -y libnuma-dev cmake
+  sudo apt-get install -y libnuma-dev cmake libfreetype-dev
   if [[ ! -e "$ROOT/x265" ]]; then
     git clone https://bitbucket.org/multicoreware/x265_git.git "$ROOT/x265"
     cd "$ROOT/x265"
@@ -170,6 +170,21 @@ if [[ "$GOOS" == "linux" && "$BUILD_TAGS" == *"debug-video"* ]]; then
     cd "$ROOT/libvpx"
     git checkout ab35ee100a38347433af24df05a5e1578172a2ae
     ./configure --prefix="$ROOT/compiled" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --enable-shared --as=nasm
+    make -j$NPROC
+    make -j$NPROC install
+  fi
+fi
+
+
+# Netint codec
+if [[ ! -e "$ROOT/libxcoder_logan" ]]; then
+  echo "Please place libxcoder_logan dir from Netint distribution v3.1.0 to $ROOT/libxcoder_logan!"
+  exit -1
+else
+  if [[ ! -e "$ROOT/libxcoder_logan/bin/libxcoder_logan.a" ]]; then
+    cd $ROOT/libxcoder_logan
+    ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
+    --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
     make -j$NPROC
     make -j$NPROC install
   fi
@@ -212,19 +227,21 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout 2e18d069668c143f3c251067abd25389e411d022
+  git checkout adba7845a077c12a99fe35fb96df633528754520
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
-    --enable-libx264 --enable-gpl \
+    --enable-libxcoder_logan --enable-ni_logan \
+    --enable-pthreads --extra-libs='-lpthread' \
+    --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=flv,mpegts,mp4,mov,webm,matroska \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,opus,libx264 \
-    --enable-decoder=aac,opus,h264 \
-    --extra-cflags="${EXTRA_CFLAGS} -I${ROOT}/compiled/include -I/usr/local/cuda/include" \
-    --extra-ldflags="${EXTRA_FFMPEG_LDFLAGS} -L${ROOT}/compiled/lib -L/usr/local/cuda/lib64" \
+    --enable-encoder=aac,opus,libx264,h264_ni_logan_enc,h265_ni_logan_enc \
+    --enable-decoder=aac,opus,h264,h264_ni_logan_dec,h265_ni_logan_dec \
+    --extra-cflags="-I${ROOT}/compiled/include ${EXTRA_CFLAGS}" \
+    --extra-ldflags="-lm" --extra-ldflags="-ldl" --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_FFMPEG_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
     $EXTRA_FFMPEG_FLAGS \
     $DEV_FFMPEG_FLAGS || (tail -100 ${ROOT}/ffmpeg/ffbuild/config.log && exit 1)
