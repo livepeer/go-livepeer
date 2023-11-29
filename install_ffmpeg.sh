@@ -177,12 +177,12 @@ fi
 
 
 # Netint codec
-if [[ ! -e "$ROOT/libxcoder_logan" ]]; then
-  echo "Please place libxcoder_logan dir from Netint distribution v3.1.0 to $ROOT/libxcoder_logan!"
+if [[ ! -e "$ROOT/libxcoder" ]]; then
+  echo "Please place libxcoder dir from Netint distribution to $ROOT/libxcoder!"
   exit -1
 else
-  if [[ ! -e "$ROOT/libxcoder_logan/bin/libxcoder_logan.a" ]]; then
-    cd $ROOT/libxcoder_logan
+  if [[ ! -e "$ROOT/libxcoder/bin/libxcoder.a" ]]; then
+    cd $ROOT/libxcoder
     ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
     --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
     make -j$NPROC
@@ -229,7 +229,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   cd "$ROOT/ffmpeg"
   git checkout adba7845a077c12a99fe35fb96df633528754520
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
-    --enable-libxcoder_logan --enable-ni_logan \
+    --enable-libxcoder --enable-ni \
     --enable-pthreads --extra-libs='-lpthread' \
     --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
@@ -238,8 +238,8 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --enable-parser=aac,aac_latm,h264,hevc,vp8,vp9 \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,opus,libx264,h264_ni_logan_enc,h265_ni_logan_enc \
-    --enable-decoder=aac,opus,h264,h264_ni_logan_dec,h265_ni_logan_dec \
+    --enable-encoder=aac,opus,libx264,h264_ni_enc,h265_ni_enc \
+    --enable-decoder=aac,opus,h264,h264_ni_dec,h265_ni_dec \
     --extra-cflags="-I${ROOT}/compiled/include ${EXTRA_CFLAGS}" \
     --extra-ldflags="-lm" --extra-ldflags="-ldl" --extra-ldflags="-L${ROOT}/compiled/lib ${EXTRA_FFMPEG_LDFLAGS}" \
     --prefix="$ROOT/compiled" \
