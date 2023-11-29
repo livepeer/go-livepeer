@@ -177,11 +177,11 @@ fi
 
 
 # Netint codec
-if [[ ! -e "$ROOT/libxcoder" ]]; then
+if [[ ! -e "$ROOT/Quadra_V4.6.0/libxcoder" ]]; then
   echo "Please place libxcoder dir from Netint distribution to $ROOT/libxcoder!"
   exit -1
 else
-  if [[ ! -e "$ROOT/libxcoder/bin/libxcoder.a" ]]; then
+  if [[ ! -e "$ROOT/Quadra_V4.6.0/libxcoder/bin/libxcoder.a" ]]; then
     cd $ROOT/libxcoder
     ./configure --libdir=$ROOT/compiled/lib --bindir=$ROOT/compiled/bin \
     --includedir=$ROOT/compiled/include --shareddir=$ROOT/compiled/lib
