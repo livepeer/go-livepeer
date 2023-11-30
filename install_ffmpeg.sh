@@ -227,7 +227,7 @@ fi
 if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   git clone https://github.com/livepeer/FFmpeg.git "$ROOT/ffmpeg" || echo "FFmpeg dir already exists"
   cd "$ROOT/ffmpeg"
-  git checkout adba7845a077c12a99fe35fb96df633528754520
+  git checkout 1bda40210bb3d84d16053e9a7884d1e9346be3ff
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
     --enable-libxcoder --enable-ni \
     --enable-pthreads --extra-libs='-lpthread' \
