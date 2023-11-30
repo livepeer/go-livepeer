@@ -229,7 +229,7 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
   cd "$ROOT/ffmpeg"
   git checkout 399aed59ec4b5e4ab5cb380120ea9aeae9be0ce1
   ./configure ${TARGET_OS:-} $DISABLE_FFMPEG_COMPONENTS --fatal-warnings \
-    --enable-libxcoder --enable-ni \
+    --enable-ni-quadra \
     --enable-pthreads --extra-libs='-lpthread' \
     --enable-libx264 --enable-gpl --enable-libfreetype \
     --enable-protocol=rtmp,file,pipe \
