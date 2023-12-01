@@ -14,6 +14,8 @@
 
 #### Orchestrator
 
+- Set default price with livepeer_cli option 20 (@eliteprox)
+
 #### Transcoder
 
 ### Bug Fixes 🐞
