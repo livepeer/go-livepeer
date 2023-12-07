@@ -16,9 +16,7 @@ func ReadFromFile(s string) (string, error) {
 		return s, err
 	}
 	if info.IsDir() {
-		// If the supplied string is a directory,
-		// assume it is the pass and return it
-		// along with an appropriate error.
+		// If the supplied string is a directory, return it along with an appropriate error.
 		return s, fmt.Errorf("supplied path is a directory")
 	}
 	bytes, err := os.ReadFile(s)
