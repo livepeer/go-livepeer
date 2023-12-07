@@ -1,9 +1,9 @@
 package common
 
 import (
-	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // ReadFromFile attempts to read a file at the supplied location.
@@ -18,23 +18,18 @@ func ReadFromFile(s string) (string, error) {
 	if info.IsDir() {
 		// If the supplied string is a directory,
 		// assume it is the pass and return it
-		// along with an approptiate error.
+		// along with an appropriate error.
 		return s, fmt.Errorf("supplied path is a directory")
 	}
-	file, err := os.Open(s)
+	bytes, err := os.ReadFile(s)
 	if err != nil {
 		return s, err
 	}
-	scanner := bufio.NewScanner(file)
-	scanner.Split(bufio.ScanLines)
+	txt := strings.TrimSpace(string(bytes))
 
-	scanner.Scan()
-	txtline := scanner.Text()
-	file.Close()
-
-	if len(txtline) == 0 {
+	if len(txt) <= 0 {
 		return s, fmt.Errorf("supplied file is empty")
 	}
 
-	return txtline, nil
+	return txt, nil
 }
