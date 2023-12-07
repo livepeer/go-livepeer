@@ -22,29 +22,64 @@ cgo_cflags :=
 cgo_ldflags :=
 cc :=
 
-uname_s := $(shell uname -s)
-ifeq ($(uname_s),Darwin)
+# Build platform flags
+BUILDOS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
+BUILDARCH ?= $(shell uname -m | tr '[:upper:]' '[:lower:]')
+ifeq ($(BUILDARCH),aarch64)
+		BUILDARCH=arm64
+endif
+ifeq ($(BUILDARCH),x86_64)
+		BUILDARCH=amd64
+endif
+
+# Override these (not BUILDOS/BUILDARCH) for cross-compilation
+export GOOS ?= $(BUILDOS)
+export GOARCH ?= $(BUILDARCH)
+
+# Cross-compilation section. Currently supported:
+# darwin amd64 --> darwin arm64
+# darwin arm64 --> linux arm64
+# linux amd64 --> linux arm64
+# linux amd64 --> windows amd64
+
+ifeq ($(BUILDOS),darwin)
+	ifeq ($(GOOS),darwin)
 		cgo_ldflags += -framework CoreFoundation -framework Security
-	ifeq ($(GOARCH),arm64)
-		cgo_cflags += --target=arm64-apple-macos11
-		cgo_ldflags += --target=arm64-apple-macos11
+		ifeq ($(BUILDARCH),amd64)
+			ifeq ($(GOARCH),arm64)
+				cgo_cflags += --target=arm64-apple-macos11
+				cgo_ldflags += --target=arm64-apple-macos11
+			endif
+		endif
+	endif
+
+	ifeq ($(GOOS),linux)
+		ifeq ($(GOARCH),arm64)
+			LLVM_PATH ?= /opt/homebrew/opt/llvm/bin
+			SYSROOT ?= /tmp/sysroot-aarch64-linux-gnu
+			cgo_cflags += --target=aarch64-linux-gnu -Wno-error=unused-command-line-argument -fuse-ld=$(LLVM_PATH)/ld.lld
+			cgo_ldflags += --target=aarch64-linux-gnu
+			cc = $(LLVM_PATH)/clang -fuse-ld=$(LLVM_PATH)/ld.lld --sysroot=$(SYSROOT)
+		endif
 	endif
 endif
 
-ifeq ($(uname_s),Linux)
-	ifeq ($(GOARCH),arm64)
-		cgo_cflags += --target=aarch64-linux-gnu
-		cgo_ldflags += --target=aarch64-linux-gnu
-		cc = clang --sysroot=/usr/aarch64-linux-gnu
+ifeq ($(BUILDOS),linux)
+	ifeq ($(BUILDARCH),amd64)
+		ifeq ($(GOARCH),arm64)
+			ifeq ($(GOOS),linux)
+				cgo_cflags += --target=aarch64-linux-gnu
+				cgo_ldflags += --target=aarch64-linux-gnu
+				cc = clang
+			endif
+		endif
 	endif
-endif
 
-pkg_config_libdir :=
-ifeq ($(uname_s),Linux)
 	ifeq ($(GOOS),windows)
 		cc = x86_64-w64-mingw32-gcc
 	endif
 endif
+
 
 .PHONY: livepeer livepeer_bench livepeer_cli livepeer_router docker
 

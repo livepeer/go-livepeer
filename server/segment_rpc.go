@@ -710,7 +710,7 @@ func estimateFee(seg *stream.HLSSegment, profiles []ffmpeg.VideoProfile, priceIn
 		if framerate == 0 {
 			// FPS is being passed through (no fps adjustment)
 			// TODO incorporate the actual number of frames from the input
-			framerate = 120 // conservative estimate of input fps
+			framerate = 60 // conservative estimate of input fps
 		}
 		framerateDen := p.FramerateDen
 		if framerateDen == 0 {

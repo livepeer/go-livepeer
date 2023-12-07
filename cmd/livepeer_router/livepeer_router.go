@@ -40,7 +40,7 @@ func main() {
 
 	usr, err := user.Current()
 	if err != nil {
-		glog.Fatalf("Cannot find current user: %v", err)
+		glog.Exitf("Cannot find current user: %v", err)
 	}
 
 	if *datadir == "" {
@@ -54,23 +54,23 @@ func main() {
 	if _, err := os.Stat(*datadir); os.IsNotExist(err) {
 		glog.Infof("Creating datadir: %v", *datadir)
 		if err = os.MkdirAll(*datadir, 0755); err != nil {
-			glog.Fatalf("Error creating datadir: %v", err)
+			glog.Exitf("Error creating datadir: %v", err)
 		}
 	}
 
 	if *serviceAddr == "" {
-		glog.Fatal("Missing -serviceAddr")
+		glog.Exit("Missing -serviceAddr")
 	}
 
 	serviceURI, err := url.ParseRequestURI("https://" + *serviceAddr)
 	if err != nil {
-		glog.Fatalf("Could not parse -serviceAddr: %v", err)
+		glog.Exitf("Could not parse -serviceAddr: %v", err)
 	}
 
 	*httpAddr = defaultAddr(*httpAddr, "0.0.0.0", serviceURI.Port())
 	uri, err := url.ParseRequestURI("https://" + *httpAddr)
 	if err != nil {
-		glog.Fatalf("Could not parse -httpAddr: %v", err)
+		glog.Exitf("Could not parse -httpAddr: %v", err)
 	}
 
 	var uris []*url.URL
@@ -82,7 +82,7 @@ func main() {
 			}
 			uri, err := url.ParseRequestURI(addr)
 			if err != nil {
-				glog.Fatalf("Could not parse orchestrator URI: %v", err)
+				glog.Exitf("Could not parse orchestrator URI: %v", err)
 			}
 			uris = append(uris, uri)
 		}
