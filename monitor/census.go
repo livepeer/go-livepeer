@@ -857,6 +857,7 @@ func InitCensus(nodeType NodeType, version string) {
 	SetTranscodersNumberAndLoad(0, 0, 0)
 	stats.Record(census.ctx, census.mWinningTicketsRecv.M(int64(0)))
 	stats.Record(census.ctx, census.mCurrentSessions.M(int64(0)))
+	stats.Record(census.ctx, census.mValueRedeemed.M(float64(0)))
 }
 
 /*
