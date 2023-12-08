@@ -162,6 +162,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	totalEV := big.NewRat(0, 1)
 	totalTickets := 0
 	totalWinningTickets := 0
+	totalWinningTicketValue := big.NewInt(0)
 	totalFaceValue := big.NewInt(0)
 	totalWinProb := big.NewRat(0, 1)
 
@@ -207,6 +208,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 			clog.V(common.DEBUG).Infof(ctx, "Received winning ticket sessionID=%v recipientRandHash=%x senderNonce=%v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce)
 
 			totalWinningTickets++
+			totalWinningTicketValue.Add(totalWinningTicketValue, ticket.FaceValue)
 
 			go func(ticket *pm.Ticket, sig []byte, seed *big.Int) {
 				if err := orch.node.Recipient.RedeemWinningTicket(ticket, sig, seed); err != nil {
@@ -222,6 +224,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
 		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
 		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
+		monitor.WinningTicketValueRecv(ctx, sender.Hex(), totalWinningTicketValue)
 	}
 
 	if receiveErr != nil {

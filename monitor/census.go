@@ -162,16 +162,16 @@ type (
 		mDeposit            *stats.Float64Measure
 		mReserve            *stats.Float64Measure
 		// Metrics for receiving payments
-		mTicketValueRecv       *stats.Float64Measure
-		mTicketsRecv           *stats.Int64Measure
-		mPaymentRecvErr        *stats.Int64Measure
-		mWinningTicketsRecv    *stats.Int64Measure
-		mValueRedeemed         *stats.Float64Measure
-		mTicketRedemptionError *stats.Int64Measure
-		mSuggestedGasPrice     *stats.Float64Measure
-		mMinGasPrice           *stats.Float64Measure
-		mMaxGasPrice           *stats.Float64Measure
-		mTranscodingPrice      *stats.Float64Measure
+		mTicketValueRecv        *stats.Float64Measure
+		mTicketsRecv            *stats.Int64Measure
+		mPaymentRecvErr         *stats.Int64Measure
+		mWinningTicketsRecv     *stats.Int64Measure
+		mWinningTicketValueRecv *stats.Float64Measure
+		mTicketRedemptionError  *stats.Int64Measure
+		mSuggestedGasPrice      *stats.Float64Measure
+		mMinGasPrice            *stats.Float64Measure
+		mMaxGasPrice            *stats.Float64Measure
+		mTranscodingPrice       *stats.Float64Measure
 
 		// Metrics for pixel accounting
 		mMilPixelsProcessed *stats.Float64Measure
@@ -311,7 +311,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTicketsRecv = stats.Int64("tickets_recv", "TicketsRecv", "tot")
 	census.mPaymentRecvErr = stats.Int64("payment_recv_errors", "PaymentRecvErr", "tot")
 	census.mWinningTicketsRecv = stats.Int64("winning_tickets_recv", "WinningTicketsRecv", "tot")
-	census.mValueRedeemed = stats.Float64("value_redeemed", "ValueRedeemed", "gwei")
+	census.mWinningTicketValueRecv = stats.Float64("winning_ticket_value_recv", "WinningTicketValueRecv", "gwei")
 	census.mTicketRedemptionError = stats.Int64("ticket_redemption_errors", "TicketRedemptionError", "tot")
 	census.mSuggestedGasPrice = stats.Float64("suggested_gas_price", "SuggestedGasPrice", "gwei")
 	census.mMinGasPrice = stats.Float64("min_gas_price", "MinGasPrice", "gwei")
@@ -729,8 +729,8 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.Sum(),
 		},
 		{
-			Name:        "value_redeemed",
-			Measure:     census.mValueRedeemed,
+			Name:        "winning_ticket_value_recv",
+			Measure:     census.mWinningTicketValueRecv,
 			Description: "Winning ticket value redeemed",
 			TagKeys:     baseTagsWithEthAddr,
 			Aggregation: view.Sum(),
@@ -1624,15 +1624,15 @@ func WinningTicketsRecv(ctx context.Context, sender string, numTickets int) {
 	}
 }
 
-// ValueRedeemed records the value from redeeming winning tickets
-func ValueRedeemed(sender string, value *big.Int) {
+// WinningTicketValueRecv records the value from redeeming winning tickets
+func WinningTicketValueRecv(ctx context.Context, sender string, value *big.Int) {
 	if value.Cmp(big.NewInt(0)) <= 0 {
 		return
 	}
 
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kSender, sender)},
-		census.mValueRedeemed.M(wei2gwei(value))); err != nil {
+		manifestIDTag(ctx, tag.Insert(census.kSender, sender)),
+		census.mWinningTicketValueRecv.M(wei2gwei(value))); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
