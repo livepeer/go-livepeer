@@ -194,14 +194,15 @@ func TestCreateTicketBatch_EVTooHigh_ReturnsError(t *testing.T) {
 	ticketParams.WinProb = new(big.Int).Div(maxWinProb, big.NewInt(2))
 	ev := ticketEV(ticketParams.FaceValue, ticketParams.WinProb)
 	sessionID := sender.StartSession(ticketParams)
-	expErrStr := maxEVErrStr(ev, 1, sender.maxEV)
+	expErrStr := maxTicketEVErrStr(ev, sender.maxEV)
 	_, err := sender.CreateTicketBatch(sessionID, 1)
 	assert.EqualError(t, err, expErrStr)
 
 	// Test multiple tickets EV too high
-	sender.maxEV = big.NewRat(200, 1)
+	sender.maxEV = big.NewRat(150, 1)
+	sender.maxTotalEV = big.NewRat(200, 1)
 
-	expErrStr = maxEVErrStr(ev.Mul(ev, new(big.Rat).SetInt64(2)), 2, sender.maxEV)
+	expErrStr = maxTotalEVErrStr(ev.Mul(ev, new(big.Rat).SetInt64(2)), 2, sender.maxTotalEV)
 	_, err = sender.CreateTicketBatch(sessionID, 2)
 	assert.EqualError(t, err, expErrStr)
 
@@ -456,7 +457,7 @@ func TestValidateTicketParams_EVTooHigh_ReturnsError(t *testing.T) {
 		WinProb:         new(big.Int).Div(maxWinProb, big.NewInt(2)),
 		ExpirationBlock: big.NewInt(100),
 	}
-	expErrStr := maxEVErrStr(ticketEV(ticketParams.FaceValue, ticketParams.WinProb), 1, sender.maxEV)
+	expErrStr := maxTicketEVErrStr(ticketEV(ticketParams.FaceValue, ticketParams.WinProb), sender.maxEV)
 	err := sender.ValidateTicketParams(ticketParams)
 	assert.EqualError(t, err, expErrStr)
 }
@@ -621,7 +622,7 @@ func defaultSender(t *testing.T) *sender {
 		Reserve:       &ReserveInfo{FundsRemaining: big.NewInt(10)},
 		WithdrawRound: big.NewInt(0),
 	}
-	s := NewSender(am, tm, sm, big.NewRat(100, 1), 2)
+	s := NewSender(am, tm, sm, big.NewRat(100, 1), big.NewRat(100, 1), 2)
 	return s.(*sender)
 }
 
@@ -642,6 +643,10 @@ func maxFaceValueErrStr(faceValue, maxFaceValue *big.Int) string {
 	return fmt.Sprintf("ticket faceValue %v > max faceValue %v", faceValue, maxFaceValue)
 }
 
-func maxEVErrStr(ev *big.Rat, numTickets int, maxEV *big.Rat) string {
+func maxTicketEVErrStr(ev *big.Rat, maxEV *big.Rat) string {
+	return fmt.Sprintf("ticket EV %v > max ticket EV %v", ev.FloatString(5), maxEV.FloatString(5))
+}
+
+func maxTotalEVErrStr(ev *big.Rat, numTickets int, maxEV *big.Rat) string {
 	return fmt.Sprintf("total ticket EV %v for %v tickets > max total ticket EV %v", ev.FloatString(5), numTickets, maxEV.FloatString(5))
 }

@@ -108,15 +108,16 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		return nil
 	}
 
-	if payment.TicketParams == nil {
-		return nil
-	}
-
-	if payment.Sender == nil || len(payment.Sender) == 0 {
+	if (payment.Sender == nil || len(payment.Sender) == 0) && payment.TicketParams != nil {
 		return fmt.Errorf("Could not find Sender for payment: %v", payment)
 	}
-
 	sender := ethcommon.BytesToAddress(payment.Sender)
+
+	if payment.TicketParams == nil {
+		// No ticket params means that the price is 0, then set the fixed price per session to 0
+		orch.setFixedPricePerSession(sender, manifestID, big.NewRat(0, 1))
+		return nil
+	}
 
 	recipientAddr := ethcommon.BytesToAddress(payment.TicketParams.Recipient)
 	ok, err := orch.isActive(recipientAddr)
@@ -140,6 +141,9 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		return fmt.Errorf("invalid expected price sent with payment err=%q", "expected price is nil")
 	}
 
+	// During the first payment, set the fixed price per session
+	orch.setFixedPricePerSession(sender, manifestID, priceInfoRat)
+
 	ticketParams := &pm.TicketParams{
 		Recipient:         ethcommon.BytesToAddress(payment.TicketParams.Recipient),
 		FaceValue:         new(big.Int).SetBytes(payment.TicketParams.FaceValue),
@@ -158,6 +162,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	totalEV := big.NewRat(0, 1)
 	totalTickets := 0
 	totalWinningTickets := 0
+	totalFaceValue := big.NewInt(0)
+	totalWinProb := big.NewRat(0, 1)
 
 	var receiveErr error
 
@@ -169,8 +175,6 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 			sender,
 			tsp.SenderNonce,
 		)
-
-		clog.V(common.DEBUG).Infof(ctx, "Receiving ticket sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(ticket.FaceValue, "ETH"), ticket.WinProbRat().FloatString(10), ticket.EV().FloatString(2))
 
 		_, won, err := orch.node.Recipient.ReceiveTicket(
 			ticket,
@@ -194,6 +198,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 			ev := ticket.EV()
 			orch.node.Balances.Credit(sender, manifestID, ev)
 			totalEV.Add(totalEV, ev)
+			totalFaceValue.Add(totalFaceValue, ticket.FaceValue)
+			totalWinProb.Add(totalWinProb, ticket.WinProbRat())
 			totalTickets++
 		}
 
@@ -209,6 +215,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 			}(ticket, tsp.Sig, seed)
 		}
 	}
+
+	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(totalFaceValue, "ETH"), totalWinProb.FloatString(10), totalEV.FloatString(2))
 
 	if monitor.Enabled {
 		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
@@ -252,12 +260,12 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 	}, nil
 }
 
-func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, error) {
+func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil
 	}
 
-	price, err := orch.priceInfo(sender)
+	price, err := orch.priceInfo(sender, manifestID)
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +281,18 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address) (*net.PriceInfo, e
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
-func (orch *orchestrator) priceInfo(sender ethcommon.Address) (*big.Rat, error) {
+func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID) (*big.Rat, error) {
 	basePrice := orch.node.GetBasePrice(sender.String())
+
+	// If there is already a fixed price for the given session, use this price
+	if manifestID != "" {
+		if balances, ok := orch.node.Balances.balances[sender]; ok {
+			fixedPrice := balances.FixedPrice(manifestID)
+			if fixedPrice != nil {
+				return fixedPrice, nil
+			}
+		}
+	}
 
 	if basePrice == nil {
 		basePrice = orch.node.GetBasePrice("default")
@@ -360,6 +378,19 @@ func (orch *orchestrator) isActive(addr ethcommon.Address) (bool, error) {
 	}
 
 	return len(orchs) > 0, nil
+}
+
+func (orch *orchestrator) setFixedPricePerSession(sender ethcommon.Address, manifestID ManifestID, priceInfoRat *big.Rat) {
+	if orch.node.Balances == nil {
+		glog.Warning("Node balances are not initialized")
+		return
+	}
+	if balances, ok := orch.node.Balances.balances[sender]; ok {
+		if balances.FixedPrice(manifestID) == nil {
+			balances.SetFixedPrice(manifestID, priceInfoRat)
+			glog.V(6).Infof("Setting fixed price=%v for session=%v", priceInfoRat, manifestID)
+		}
+	}
 }
 
 func NewOrchestrator(n *LivepeerNode, rm common.RoundsManager) *orchestrator {

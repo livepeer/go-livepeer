@@ -74,7 +74,7 @@ func RemoteConsole(cfg DevtoolConfig) (string, error) {
 
 	client, err := rpc.Dial(cfg.Endpoint)
 	if err != nil {
-		glog.Fatalf("Unable to attach to remote geth: %v", err)
+		glog.Exitf("Unable to attach to remote geth: %v", err)
 		return "", err
 	}
 	// get mining account
@@ -83,11 +83,11 @@ func RemoteConsole(cfg DevtoolConfig) (string, error) {
 		var accounts []string
 		err = client.Call(&accounts, "eth_accounts")
 		if err != nil {
-			glog.Fatalf("Error finding mining account: %v", err)
+			glog.Exitf("Error finding mining account: %v", err)
 			return "", err
 		}
 		if len(accounts) == 0 {
-			glog.Fatal("Can't find mining account")
+			glog.Exit("Can't find mining account")
 			return "", errors.New("can't find mining account")
 		}
 		gethMiningAccount = accounts[0]
@@ -96,7 +96,7 @@ func RemoteConsole(cfg DevtoolConfig) (string, error) {
 
 	tmp, err := ioutil.TempDir("", "console")
 	if err != nil {
-		glog.Fatalf("Can't create temporary directory: %v", err)
+		glog.Exitf("Can't create temporary directory: %v", err)
 		return "", err
 	}
 	defer os.RemoveAll(tmp)
@@ -111,7 +111,7 @@ func RemoteConsole(cfg DevtoolConfig) (string, error) {
 
 	console, err := console.New(config)
 	if err != nil {
-		glog.Fatalf("Failed to start the JavaScript console: %v", err)
+		glog.Exitf("Failed to start the JavaScript console: %v", err)
 		return "", err
 	}
 	defer console.Stop(false)
@@ -131,7 +131,7 @@ func RemoteConsole(cfg DevtoolConfig) (string, error) {
 		glog.Infof("Running eth script: %s", getEthControllerScript)
 		console.Evaluate(getEthControllerScript)
 		if printer.Len() == 0 {
-			glog.Fatal("Can't find deployed controller")
+			glog.Exit("Can't find deployed controller")
 			return "", errors.New("can't find deployed controller")
 		}
 		ethController = strings.Split(printer.String(), "\n")[0]
@@ -361,7 +361,7 @@ func CreateKey(keystoreDir string) string {
 
 	account, err := keyStore.NewAccount(passphrase)
 	if err != nil {
-		glog.Fatal(err)
+		glog.Exit(err)
 	}
 	glog.Infof("Using ETH account: %v", account.Address.Hex())
 	return account.Address.Hex()

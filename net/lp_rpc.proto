@@ -230,6 +230,9 @@ message SegData {
   // Transcoding parameters specific to this segment
   SegParameters segment_parameters = 37;
 
+  // Force HW Session Reinit
+  bool ForceSessionReinit = 38;
+
   // [EXPERIMENTAL]
   // Detector profiles to use
   repeated DetectorProfile detector_profiles = 36;
@@ -301,6 +304,7 @@ message VideoProfile {
     CHROMA_444 = 2;
   }
   ChromaSubsampling chromaFormat = 27;
+  uint32 quality = 28;
 }
 
 // Individual transcoded segment data.
