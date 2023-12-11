@@ -3,12 +3,12 @@ package common
 import (
 	"context"
 	"encoding/json"
-	"math/big"
-	"net/url"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/m3u8"
+	"math/big"
+	"net/url"
+	"sync"
 )
 
 type RemoteTranscoderInfo struct {
@@ -101,6 +101,15 @@ type OrchestratorPool interface {
 	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) (OrchestratorDescriptors, error)
 	Size() int
 	SizeWith(ScorePred) int
+}
+
+type SelectionAlgorithm interface {
+	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address
+}
+
+type PerfScore struct {
+	Mu     sync.Mutex
+	Scores map[ethcommon.Address]float64
 }
 
 func ScoreAtLeast(minScore float32) ScorePred {

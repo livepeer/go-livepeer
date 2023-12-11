@@ -55,6 +55,7 @@ var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *
 	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
 	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
 }
+var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
 	maxPrice *big.Rat
@@ -217,7 +218,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 		if len(session.SegsInFlight) == 0 {
 			if session.LatencyScore > 0 && session.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
 				clog.PublicInfof(ctx,
-					"Selecting new orchestrator, reason=%v",
+					"Reusing Orchestrator, reason=%v",
 					fmt.Sprintf(
 						"performance: no segments in flight, latency score of %v < %v",
 						session.LatencyScore,
@@ -227,6 +228,14 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 				return session
 			}
+			clog.PublicInfof(ctx,
+				"Swapping Orchestrator, reason=%v",
+				fmt.Sprintf(
+					"performance: no segments in flight, latency score of %v < %v",
+					session.LatencyScore,
+					durMult,
+				),
+			)
 		}
 
 		// A session with segments in flight might be selectable under certain conditions
@@ -246,7 +255,7 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 			if timeInFlight < maxTimeInFlight {
 				clog.PublicInfof(ctx,
-					"Selected orchestrator reason=%v",
+					"Reusing orchestrator reason=%v",
 					fmt.Sprintf(
 						"performance: segments in flight, latency score of %v < %v",
 						session.LatencyScore,
@@ -256,6 +265,14 @@ func selectSession(ctx context.Context, sessions []*BroadcastSession, exclude []
 
 				return session
 			}
+			clog.PublicInfof(ctx,
+				"Swapping Orchestrator, reason=%v",
+				fmt.Sprintf(
+					"performance: no segments in flight, latency score of %v < %v",
+					session.LatencyScore,
+					durMult,
+				),
+			)
 		}
 	}
 	return nil
@@ -453,8 +470,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelectorWithRandFreq(stakeRdr, 1.0, SelectRandFreq)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)
@@ -818,6 +835,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			Balance:           balance,
 			lock:              &sync.RWMutex{},
 			OrchestratorScore: oScore,
+			InitialPrice:      od.RemoteInfo.PriceInfo,
 		}
 
 		sessions = append(sessions, session)
@@ -839,6 +857,9 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "Processing segment dur=%v bytes=%v", seg.Duration, len(seg.Data))
+	if segPar != nil && segPar.ForceSessionReinit {
+		clog.V(common.DEBUG).Infof(ctx, "Requesting HW Session Reinitialization for seg.SeqNo=%v", seg.SeqNo)
+	}
 	if monitor.Enabled {
 		monitor.SegmentEmerged(ctx, nonce, seg.SeqNo, len(BroadcastJobVideoProfiles), seg.Duration)
 	}
@@ -938,6 +959,9 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		attempts  []data.TranscodeAttemptInfo
 		urls      []string
 	)
+	if cxn.params != nil && len(cxn.params.Profiles) == 0 {
+		return []string{}, nil
+	}
 	for len(attempts) < MaxAttempts {
 		// if transcodeSegment fails, retry; rudimentary
 		var info *data.TranscodeAttemptInfo
@@ -969,6 +993,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}
 		// recoverable error, retry
 	}
+
 	if MetadataQueue != nil {
 		success := err == nil && len(urls) > 0
 		streamID := string(mid)
@@ -986,7 +1011,7 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 		}()
 	}
 	if len(attempts) == MaxAttempts && err != nil {
-		err = fmt.Errorf("Hit max transcode attempts: %w", err)
+		err = fmt.Errorf("%w: %w", maxTranscodeAttempts, err)
 		if monitor.Enabled {
 			monitor.SegmentTranscodeFailed(ctx, monitor.SegmentTranscodeErrorMaxAttempts, nonce, seg.SeqNo, err, true)
 		}
@@ -1038,7 +1063,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 		if seg, err = prepareForTranscoding(ctx, cxn, sess, seg, name); err != nil {
 			return nil, info, err
 		}
-		// cxn.sessManager.pushSegInFlight(sess, seg)
 		sess.pushSegInFlight(seg)
 		var res *ReceivedTranscodeResult
 		res, err = SubmitSegment(ctx, sess.Clone(), seg, segPar, nonce, calcPerceptualHash, verified)
@@ -1612,7 +1636,7 @@ func isNonRetryableError(err error) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(err.Error(), "Hit max transcode attempts:") {
+	if errors.Is(err, maxTranscodeAttempts) {
 		return true
 	}
 	return false

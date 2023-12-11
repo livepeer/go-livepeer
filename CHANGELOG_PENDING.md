@@ -9,18 +9,20 @@
 #### General
 
 #### Broadcaster
-- \#2837 Set a floor of 1.5s for accepted Orchestrator response times, regardless of segment length (@thomshutt)
-- \#2839 Add Orchestrator blocklist CLI parameter (@mjh1)
+
+- \#xxx Use FPS of 60, rather then 120 for cost estimation (@thomshutt)
 
 #### Orchestrator
-- \#2781 Add automatic session limit and set max sessions with livepeer_cli
+
+- #2911 Set default price with livepeer_cli option 20 (@eliteprox)
 
 #### Transcoder
 
 ### Bug Fixes 🐞
 
+- \[#2914](https://github.com/livepeer/go-livepeer/issues/2912) fixes a bug that prevented `pricePerBroadcaster` JSON files with line-breaks from being parsed correctly (@rickstaa).
+
 #### CLI
-- \#2825 Enable quieter logging with -v=2 and -v=1 (@iameli)
 
 #### General
 

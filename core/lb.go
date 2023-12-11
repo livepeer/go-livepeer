@@ -72,6 +72,13 @@ func (lb *LoadBalancingTranscoder) Transcode(ctx context.Context, md *SegTransco
 	lb.mu.RUnlock()
 	if exists {
 		clog.V(common.DEBUG).Infof(ctx, "LB: Using existing transcode session for key=%s", session.key)
+		if md != nil && md.SegmentParameters != nil && md.SegmentParameters.ForceSessionReinit {
+			// Broadcaster requested HW session reinitialization
+			lb.mu.Lock()
+			session.transcoder.Stop()
+			session.transcoder = lb.newT(lb.leastLoaded())
+			lb.mu.Unlock()
+		}
 	} else {
 		var err error
 		if len(md.DetectorProfiles) > 0 {

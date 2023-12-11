@@ -73,16 +73,18 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// Transcoder public fields
-	SegmentChans      map[ManifestID]SegmentChan
-	Recipient         pm.Recipient
-	OrchestratorPool  common.OrchestratorPool
-	OrchSecret        string
-	Transcoder        Transcoder
-	TranscoderManager *RemoteTranscoderManager
-	Balances          *AddressBalances
-	Capabilities      *Capabilities
-	AutoAdjustPrice   bool
-	AutoSessionLimit  bool
+	SegmentChans       map[ManifestID]SegmentChan
+	Recipient          pm.Recipient
+	SelectionAlgorithm common.SelectionAlgorithm
+	OrchestratorPool   common.OrchestratorPool
+	OrchPerfScore      *common.PerfScore
+	OrchSecret         string
+	Transcoder         Transcoder
+	TranscoderManager  *RemoteTranscoderManager
+	Balances           *AddressBalances
+	Capabilities       *Capabilities
+	AutoAdjustPrice    bool
+	AutoSessionLimit   bool
 	// Broadcaster public fields
 	Sender pm.Sender
 

@@ -29,7 +29,6 @@ func (w *wizard) stream() {
 	_, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
-		// glog.Fatal(err)
 		fmt.Println(err)
 		return
 	}

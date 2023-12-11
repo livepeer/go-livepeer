@@ -88,14 +88,29 @@ func TestReadFromFile_FileExistsOneLine(t *testing.T) {
 	assert.Equal(expectedOutput, output)
 }
 
+// Check that we can reliably read a single line value from the file, even when it ends in a newline / whitespace
+func TestReadFromFile_FileExistsEndsInNewline(t *testing.T) {
+	input :=
+		`something
+`
+	f, err := os.CreateTemp(os.TempDir(), "TestReadFromFile_FileExistsEndsInNewline*")
+	require.NoError(t, err)
+	defer os.Remove(f.Name())
+
+	_, err = f.WriteString(input)
+	require.NoError(t, err)
+
+	output, err := ReadFromFile(f.Name())
+	require.NoError(t, err)
+	require.Equal(t, "something", output)
+}
+
 func TestReadFromFile_FileExistsMultiline(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
 
 	input :=
 		`something
 somethingelse`
-	expectedOutput := "something"
 
 	tmpFile := "TestReadFromFile_FileExistsMultiline.txt"
 
@@ -112,7 +127,7 @@ somethingelse`
 
 	output, err := ReadFromFile(tmpFile)
 
-	assert.Nil(err)
+	require.NoError(err)
 	// ReadFromFile should the first line of the text file
-	assert.Equal(expectedOutput, output)
+	require.Equal(input, output)
 }

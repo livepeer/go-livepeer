@@ -54,15 +54,15 @@ func main() {
 
 	f, err := os.Open(*in)
 	if err != nil {
-		glog.Fatal("Couldn't open input manifest: ", err)
+		glog.Exit("Couldn't open input manifest: ", err)
 	}
 	p, _, err := m3u8.DecodeFrom(bufio.NewReader(f), true)
 	if err != nil {
-		glog.Fatal("Couldn't decode input manifest: ", err)
+		glog.Exit("Couldn't decode input manifest: ", err)
 	}
 	pl, ok := p.(*m3u8.MediaPlaylist)
 	if !ok {
-		glog.Fatalf("Expecting media playlist in the input %s", *in)
+		glog.Exitf("Expecting media playlist in the input %s", *in)
 	}
 
 	accel := ffmpeg.Software
@@ -72,7 +72,7 @@ func main() {
 		accel = ffmpeg.Nvidia
 		devices, err = common.ParseAccelDevices(*nvidia, accel)
 		if err != nil {
-			glog.Fatalf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
+			glog.Exitf("Error while parsing '-nvidia %v' flag: %v", *nvidia, err)
 		}
 	}
 
@@ -81,7 +81,7 @@ func main() {
 		accel = ffmpeg.Netint
 		devices, err = common.ParseAccelDevices(*netint, accel)
 		if err != nil {
-			glog.Fatalf("Error while parsing '-netint %v' flag: %v", *netint, err)
+			glog.Exitf("Error while parsing '-netint %v' flag: %v", *netint, err)
 		}
 	}
 
@@ -144,7 +144,7 @@ func main() {
 			detectorTc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, d)
 			end := time.Now()
 			if err != nil {
-				glog.Fatalf("Could not initialize detector profiles")
+				glog.Exitf("Could not initialize detector profiles")
 			}
 			fmt.Printf("InitDetectorSession time %0.4v\n", end.Sub(t).Seconds())
 			defer detectorTc.StopTranscoder()
@@ -170,7 +170,7 @@ func main() {
 					end := time.Now()
 					fmt.Printf("InitDetectorSession time %0.4v for session %v\n", end.Sub(t).Seconds(), i)
 					if err != nil {
-						glog.Fatalf("Could not initialize detector")
+						glog.Exitf("Could not initialize detector")
 					}
 				} else {
 					tc = ffmpeg.NewTranscoder()
@@ -225,7 +225,7 @@ func main() {
 					res, err := tc.Transcode(in, out)
 					end := time.Now()
 					if err != nil {
-						glog.Fatalf("Transcoding failed for session %d segment %d: %v", k, j, err)
+						glog.Exitf("Transcoding failed for session %d segment %d: %v", k, j, err)
 					}
 					if *detectionFreq > 0 && j%*detectionFreq == 0 {
 						fmt.Printf("%s,%d,%d,%0.4v,%0.4v,%v\n", end.Format("2006-01-02 15:04:05.9999"), k, j, v.Duration, end.Sub(t).Seconds(), res.Encoded[len(res.Encoded)-1].DetectData)
@@ -254,7 +254,7 @@ func main() {
 		}
 		wg.Wait()
 		if segCount == 0 || srcDur == 0.0 {
-			glog.Fatal("Input manifest has no segments or total duration is 0s")
+			glog.Exit("Input manifest has no segments or total duration is 0s")
 		}
 		statsTable := tablewriter.NewWriter(os.Stderr)
 		stats := [][]string{
@@ -285,7 +285,7 @@ func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
 			var parsingError error
 			profiles, parsingError = ffmpeg.ParseProfiles(content)
 			if parsingError != nil {
-				glog.Fatal(parsingError)
+				glog.Exit(parsingError)
 			}
 		} else {
 			// check the built-in profiles
@@ -298,7 +298,7 @@ func parseVideoProfiles(inp string) []ffmpeg.VideoProfile {
 			}
 		}
 		if len(profiles) <= 0 {
-			glog.Fatalf("No transcoding options provided")
+			glog.Exitf("No transcoding options provided")
 		}
 	}
 	return profiles
