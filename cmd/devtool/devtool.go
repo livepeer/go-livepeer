@@ -88,7 +88,7 @@ func main() {
 
 	tmp, err := ioutil.TempDir("", "livepeer")
 	if err != nil {
-		glog.Fatalf("Can't create temporary directory: %v", err)
+		glog.Exitf("Can't create temporary directory: %v", err)
 	}
 	defer os.RemoveAll(tmp)
 
@@ -100,13 +100,13 @@ func main() {
 	dataDir := filepath.Join(*baseDataDir, t+"_"+acc)
 	err = os.MkdirAll(dataDir, 0755)
 	if err != nil {
-		glog.Fatalf("Can't create directory %v", err)
+		glog.Exitf("Can't create directory %v", err)
 	}
 
 	keystoreDir := filepath.Join(dataDir, "keystore")
 	err = moveDir(tempKeystoreDir, keystoreDir)
 	if err != nil {
-		glog.Fatal(err)
+		glog.Exit(err)
 	}
 	cfg.KeystoreDir = keystoreDir
 	cfg.IsBroadcaster = isBroadcaster
@@ -130,7 +130,7 @@ func main() {
 		tDataDir := filepath.Join(*baseDataDir, "transcoder_"+acc)
 		err = os.MkdirAll(tDataDir, 0755)
 		if err != nil {
-			glog.Fatalf("Can't create directory %v", err)
+			glog.Exitf("Can't create directory %v", err)
 		}
 		createTranscoderRunScript(acc, tDataDir, serviceHost)
 	}

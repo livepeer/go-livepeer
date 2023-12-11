@@ -51,9 +51,14 @@ func (s *StreamParameters) StreamID() string {
 	return string(s.ManifestID) + "/" + s.RtmpKey
 }
 
-type SegmentParameters struct {
+type SegmentClip struct {
 	From time.Duration
 	To   time.Duration
+}
+
+type SegmentParameters struct {
+	Clip               *SegmentClip
+	ForceSessionReinit bool
 }
 
 type SegTranscodingMetadata struct {
@@ -135,9 +140,12 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Profiles: []byte("invalid"),
 	}
 	if md.SegmentParameters != nil {
-		segData.SegmentParameters = &net.SegParameters{
-			From: uint64(md.SegmentParameters.From.Milliseconds()),
-			To:   uint64(md.SegmentParameters.To.Milliseconds()),
+		segData.ForceSessionReinit = md.SegmentParameters.ForceSessionReinit
+		if md.SegmentParameters.Clip != nil {
+			segData.SegmentParameters = &net.SegParameters{
+				From: uint64(md.SegmentParameters.Clip.From.Milliseconds()),
+				To:   uint64(md.SegmentParameters.Clip.To.Milliseconds()),
+			}
 		}
 	}
 

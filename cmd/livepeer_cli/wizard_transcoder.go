@@ -307,12 +307,12 @@ func (w *wizard) setMaxFaceValue() {
 }
 
 func (w *wizard) setPriceForBroadcaster() {
-	fmt.Println("Enter the ETH address of the broadcaster")
+	fmt.Println("Enter the ETH address of the broadcaster (default=default)")
 	ethaddr := w.readStringAndValidate(func(in string) (string, error) {
 		if "" == in {
-			return "", fmt.Errorf("no broadcaster eth address input")
+			in = "default"
 		}
-		if in[0:2] != "0x" || len(in) != 42 {
+		if in != "default" && (in[0:2] != "0x" || len(in) != 42) {
 			return "", fmt.Errorf("broadcaster eth address input not in correct format")
 		}
 

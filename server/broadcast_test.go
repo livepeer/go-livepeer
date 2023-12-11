@@ -735,7 +735,7 @@ func TestTranscodeSegment_CompleteSession(t *testing.T) {
 	// Create stub server
 	ts, mux := stubTLSServer()
 	defer ts.Close()
-	transcodeDelay := 100 * time.Millisecond
+	transcodeDelay := 1500 * time.Millisecond
 	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(transcodeDelay)
 		w.WriteHeader(http.StatusOK)
@@ -838,7 +838,8 @@ func TestProcessSegment_MaxAttempts(t *testing.T) {
 	transcodeCalls = 0
 	_, err = processSegment(context.Background(), cxn, seg, nil)
 	assert.NotNil(err)
-	assert.Equal("Hit max transcode attempts: UnknownResponse", err.Error())
+	assert.True(errors.Is(err, maxTranscodeAttempts))
+	assert.Equal("hit max transcode attempts: UnknownResponse", err.Error())
 	assert.Equal(1, transcodeCalls, "Segment submission calls did not match")
 	assert.Len(bsm.trustedPool.sessMap, 1)
 
@@ -927,7 +928,7 @@ func TestProcessSegment_MetadataQueueTranscodeEvent(t *testing.T) {
 	}
 	cxn := &rtmpConnection{
 		mid:     "dummy1",
-		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy"},
+		params:  &core.StreamParameters{ManifestID: "dummy1", ExternalStreamID: "ext_dummy", Profiles: BroadcastJobVideoProfiles},
 		profile: &ffmpeg.VideoProfile{Name: "unused"},
 		pl:      &stubPlaylistManager{os: &stubOSSession{}},
 	}

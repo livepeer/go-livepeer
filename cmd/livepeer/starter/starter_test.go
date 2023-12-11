@@ -193,3 +193,105 @@ func TestParse_ParseEthKeystorePathFileNotFound(t *testing.T) {
 	assert.Empty(keystoreInfo.address)
 	assert.True(err.Error() == "provided -ethKeystorePath was not found")
 }
+
+func TestUpdatePerfScore(t *testing.T) {
+	perfStatsResp := `
+	{
+	  "0x001ffe939761eea3f37dd2223bd08401a3848bf3": {
+	    "FRA": {
+	      "success_rate": 0,
+	      "round_trip_score": 0,
+	      "score": 0
+	    },
+	    "LAX": {
+	      "success_rate": 0.3333333333333333,
+	      "round_trip_score": 0.978674309814987,
+	      "score": 0.326224769938329
+	    },
+	    "LON": {
+	      "success_rate": 0.3333333333333333,
+	      "round_trip_score": 0.9999999981139247,
+	      "score": 0.33333333270464155
+	    },
+	    "MDW": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.8356601580708897,
+	      "score": 0.8356601580708897
+	    },
+	    "NYC": {
+	      "success_rate": 0.6666666666666666,
+	      "round_trip_score": 0.9564037252220472,
+	      "score": 0.6376024834813647
+	    },
+	    "PRG": {
+	      "success_rate": 0.6666666666666666,
+	      "round_trip_score": 0.9988698987407547,
+	      "score": 0.6659132658271698
+	    },
+	    "SAO": {
+	      "success_rate": 0.3333333333333333,
+	      "round_trip_score": 0.8955986338422629,
+	      "score": 0.29853287794742095
+	    },
+	    "SIN": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.9969482179442755,
+	      "score": 0.9969482179442755
+	    }
+	  },
+	  "0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38": {
+	    "FRA": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.6646347113088987,
+	      "score": 0.6646347113088987
+	    },
+	    "LAX": {
+	      "success_rate": 0.8222222222222223,
+	      "round_trip_score": 0.381062716451423,
+	      "score": 0.3133182335267256
+	    },
+	    "LON": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.7694480079804097,
+	      "score": 0.7694480079804097
+	    },
+	    "MDW": {
+	      "success_rate": 0.6222222222222222,
+	      "round_trip_score": 0.36531156012968535,
+	      "score": 0.22730497074735978
+	    },
+	    "NYC": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.543865046753563,
+	      "score": 0.543865046753563
+	    },
+	    "PRG": {
+	      "success_rate": 1,
+	      "round_trip_score": 0.6681529487891555,
+	      "score": 0.6681529487891555
+	    },
+	    "SAO": {
+	      "success_rate": 0.6888888888888888,
+	      "round_trip_score": 0.33652629465036343,
+	      "score": 0.23182922520358365
+	    },
+	    "SIN": {
+	      "success_rate": 0.6,
+	      "round_trip_score": 0.3958106005746348,
+	      "score": 0.23748636034478088
+	    }
+	  }
+	}`
+	scores := &common.PerfScore{Scores: map[ethcommon.Address]float64{
+		// some previous data
+		ethcommon.HexToAddress("0x001ffe939761eea3f37dd2223bd08401a3848bf3"): 0.11,
+	}}
+
+	updatePerfScore("LAX", []byte(perfStatsResp), scores)
+
+	expScores := map[ethcommon.Address]float64{
+		ethcommon.HexToAddress("0x001ffe939761eea3f37dd2223bd08401a3848bf3"): 0.326224769938329,
+		ethcommon.HexToAddress("0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38"): 0.3133182335267256,
+	}
+	require.Equal(t, expScores, scores.Scores)
+}
