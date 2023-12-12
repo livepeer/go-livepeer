@@ -63,7 +63,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
-        uses: actions/checkout@v4.0.0
+        uses: actions/checkout@v4.1.1
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -165,7 +165,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.0.0
+        uses: actions/checkout@v4.1.1
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
