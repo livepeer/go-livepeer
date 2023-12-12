@@ -1165,9 +1165,9 @@ func TestGenVerify_RoundTrip_AuthToken(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
 
-		authTokenValidPeriod = time.Duration(rapid.Int64Range(int64(1*time.Minute), int64(2*time.Hour)).Draw(t, "authTokenValidPeriod").(int64))
-		randToken := rapid.SliceOfN(rapid.Byte(), 32, 32).Draw(t, "token").([]byte)
-		randSessionID := rapid.String().Draw(t, "sessionID").(string)
+		authTokenValidPeriod = time.Duration(rapid.Int64Range(int64(1*time.Minute), int64(2*time.Hour)).Draw(t, "authTokenValidPeriod"))
+		randToken := rapid.SliceOfN(rapid.Byte(), 32, 32).Draw(t, "token")
+		randSessionID := rapid.String().Draw(t, "sessionID")
 		authToken := &net.AuthToken{Token: randToken, SessionId: randSessionID, Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
 
 		sess := &BroadcastSession{
@@ -1191,11 +1191,11 @@ func TestGenVerify_RoundTrip_Capabilities(t *testing.T) {
 	// check invariant : verifySegCreds(genSegCreds(caps)).Capabilities == caps
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randCapsLen := rapid.IntRange(0, 256).Draw(t, "capLen").(int)
+		randCapsLen := rapid.IntRange(0, 256).Draw(t, "capLen")
 		randCaps := rapid.IntRange(0, 512)
 		caps := []core.Capability{}
 		for i := 0; i < randCapsLen; i++ {
-			caps = append(caps, core.Capability(randCaps.Draw(t, "cap").(int)))
+			caps = append(caps, core.Capability(randCaps.Draw(t, "cap")))
 		}
 		sess := &BroadcastSession{
 			Broadcaster: stubBroadcaster2(),
@@ -1224,7 +1224,7 @@ func TestGenVerify_RoundTrip_Duration(t *testing.T) {
 	// check invariant : verifySegCreds(genSegCreds(dur)).Duration == dur
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randDur := rapid.IntRange(1, int(common.MaxDuration.Milliseconds())).Draw(t, "dur").(int)
+		randDur := rapid.IntRange(1, int(common.MaxDuration.Milliseconds())).Draw(t, "dur")
 		dur := time.Duration(randDur * int(time.Millisecond))
 		seg := &stream.HLSSegment{Duration: dur.Seconds()}
 		creds, err := genSegCreds(sess, seg, nil, false)
@@ -1243,7 +1243,7 @@ func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
 	// and vice versa.
 	rapid.Check(t, func(t *rapid.T) {
 		assert := assert.New(t) // in order to pick up the rapid rng
-		randDur := rapid.IntRange(1, int(common.MaxDuration.Milliseconds())).Draw(t, "dur").(int)
+		randDur := rapid.IntRange(1, int(common.MaxDuration.Milliseconds())).Draw(t, "dur")
 		dur := time.Duration(randDur * int(time.Millisecond))
 		segData := &net.SegData{Duration: int32(randDur)}
 		md := &core.SegTranscodingMetadata{Duration: dur, Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}}

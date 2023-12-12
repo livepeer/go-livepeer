@@ -28,7 +28,7 @@ require (
 	go.uber.org/goleak v1.2.2-0.20230213210001-751da596f6f7
 	golang.org/x/net v0.17.0
 	google.golang.org/grpc v1.54.0
-	pgregory.net/rapid v0.4.0
+	pgregory.net/rapid v1.1.0
 )
 
 require (
