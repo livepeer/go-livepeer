@@ -1224,10 +1224,8 @@ func TestRegisterConnection(t *testing.T) {
 
 func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	goleakOptions := common.IgnoreRoutines()
-	// allow enough time for the transcode end goroutines to finish
-	goleakOptions = append(goleakOptions, goleak.MaxSleepInterval(5*time.Second), goleak.MaxRetryAttempts(1000))
 	defer goleak.VerifyNone(t, goleakOptions...)
-	assert := assert.New(t)
+	assert := require.New(t)
 
 	s, cancel := setupServerWithCancel()
 	defer func() {

@@ -25,7 +25,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.12.0
 	github.com/urfave/cli v1.22.12
 	go.opencensus.io v0.24.0
-	go.uber.org/goleak v1.2.2-0.20230213210001-751da596f6f7
+	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.17.0
 	google.golang.org/grpc v1.54.0
 	pgregory.net/rapid v1.1.0
