@@ -15,6 +15,7 @@
 #### Orchestrator
 
 - #2911 Set default price with livepeer_cli option 20 (@eliteprox)
+- #2928 Added `startupAvailabilityCheck` param to skip the availability check on startup (@stronk-dev)
 
 #### Transcoder
 
