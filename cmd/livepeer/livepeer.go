@@ -207,6 +207,9 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
 	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
 
+	// flags
+	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
+
 	return cfg
 }
 

@@ -144,6 +144,7 @@ type LivepeerConfig struct {
 	OrchWebhookURL               *string
 	DetectionWebhookURL          *string
 	OrchBlacklist                *string
+	TestOrchAvail                *bool
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -232,6 +233,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchWebhookURL := ""
 	defaultDetectionWebhookURL := ""
 
+	// Flags
+	defaultTestOrchAvail := true
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -316,6 +320,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AuthWebhookURL:      &defaultAuthWebhookURL,
 		OrchWebhookURL:      &defaultOrchWebhookURL,
 		DetectionWebhookURL: &defaultDetectionWebhookURL,
+
+		// Flags
+		TestOrchAvail: &defaultTestOrchAvail,
 	}
 }
 
@@ -1227,12 +1234,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 
 		// check whether or not the orchestrator is available
-		time.Sleep(2 * time.Second)
-		orchAvail := server.CheckOrchestratorAvailability(orch)
-		if !orchAvail {
-			// shut down orchestrator
-			glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
-			tc <- struct{}{}
+		if *cfg.TestOrchAvail {
+			time.Sleep(2 * time.Second)
+			orchAvail := server.CheckOrchestratorAvailability(orch)
+			if !orchAvail {
+				// shut down orchestrator
+				glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
+				tc <- struct{}{}
+			}
 		}
 
 	}()
