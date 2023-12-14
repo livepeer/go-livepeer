@@ -9,7 +9,7 @@ require (
 	github.com/golang/glog v1.1.1
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.3
-	github.com/jaypipes/ghw v0.10.0
+	github.com/jaypipes/ghw v0.12.0
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/go-tools v0.0.0-20220805063103-76df6beb6506
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
