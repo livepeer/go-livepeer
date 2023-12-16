@@ -8,6 +8,8 @@
 
 #### General
 
+- #2936 Add `LIVEPEER_HTTP_PORT` test env variable (@rickstaa)
+
 #### Broadcaster
 
 - \#xxx Use FPS of 60, rather then 120 for cost estimation (@thomshutt)
