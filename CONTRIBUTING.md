@@ -25,14 +25,15 @@ create your own, or submit a PR with the updates you want to see.
 If you're interested in updating user (e.g., node operator) documentation, please refer to [the relevant documentation on livepeer.org](https://docs.livepeer.org/contributing/overview).
 
 #### 💬 Getting involved in issues
-As a starting point, check out the issues that we've labeled as 
+
+As a starting point, check out the issues that we've labeled as
 [help wanted](https://github.com/livepeer/go-livepeer/labels/help%20wanted)
 and
 [good first issues](https://github.com/livepeer/go-livepeer/labels/good%20first%20issue).
 
 Many issues are open discussions. Feel free to add your own concerns, ideas, and
 workarounds. If you don't see what you're looking for, you can always open a new
-issue. 
+issue.
 
 #### 🐛 Fixing bugs, 🕶️ adding feature/enhancements, or 👌 improving code quality
 
@@ -42,7 +43,7 @@ or taking on a
 [feature request](https://github.com/livepeer/go-livepeer/issues?q=is%3Aissue+is%3Aopen+label%3A%22type%3A+feature%22+).
 
 If picking up issues isn't your thing, no worries -- you can always add more
-tests to improve coverage or refactor code to increase maintainability. 
+tests to improve coverage or refactor code to increase maintainability.
 
 > Note: Bonus points if you can delete code instead of adding it! 👾
 
@@ -78,17 +79,18 @@ it'd be good to have some proficiency with go.
 - **If you are opening an issue...**
 
   - Fill out all required sections for your issue type. Issues that are not
-    filled out properly will be flagged as `need: more info` and will be closed if not
-    updated.
+        filled out properly will be flagged as `need: more info` and will be closed if not
+        updated.
   - _Keep your issue simple, clear, and to-the-point_. Most issues do not
-    require many paragraphs of text. In fact, if you write too much, it's
-    difficult to understand what you are actually trying to communicate.
-    **Consider
-    [starting a discussion](https://github.com/livepeer/go-livepeer/discussions/new)
-    if you're not clear on something or want feedback from the community.**
+        require many paragraphs of text. In fact, if you write too much, it's
+        difficult to understand what you are actually trying to communicate.
+        **Consider
+        [starting a discussion](https://github.com/livepeer/go-livepeer/discussions/new)
+        if you're not clear on something or want feedback from the community.**
 
 - **If you are submitting a pull request...**
   - Write tests to increase code coverage
+  - Make sure all tests pass (you can use the `LIVEPEER_HTTP_PORT` environment variable to change the port used for testing)
   - Tag the issue(s) your PR is closing or relating to
   - Make sure your PR is up-to-date with `master` (rebase please 🙏)
   - Wait for a maintainer to review your PR
@@ -99,14 +101,13 @@ it'd be good to have some proficiency with go.
     - For a small changesets, the Github "squash and merge" option can be an acceptable
     - For larger changesets, the Github "rebase and merge" option is preferable and a maintainer may request you do a local rebase first to cleanup the branch commit history before merging
 
-
 ### Changelog
 
 Every change (feature, bug fix, etc.) should be made in a PR that includes an update to the `CHANGELOG_PENDING.md` file which tracks the set of changes that will be included in the next release.
 
 Changelog entries should be formatted as follows:
 
-```
+```md
 - \#xxx Description of the change (@contributor)
 ```
 
@@ -115,7 +116,6 @@ Changelog entries should be formatted as follows:
 Changelog entries should be classified based on the `livepeer` mode of operation that they pertain to i.e. General, Broadcaster, Orchestrator, Transcoder.
 
 Breaking changes should be documented in the "Breaking changes" section. Any changes that involve pending deprecations (i.e. a flag will be removed in the next release) should be documented in the "Upcoming changes" section.
-
 
 ### When is it appropriate to follow up?
 
@@ -137,7 +137,7 @@ suggestion or merge a PR. If that happens, maintainer will still...
 
 - Thank you for your contribution.
 - Explain why it doesn’t fit into the scope of the project and offer clear
-  suggestions for improvement, if possible.
+    suggestions for improvement, if possible.
 - Link to relevant documentation, if it exists.
 - Close the issue/request.
 

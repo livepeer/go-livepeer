@@ -2,6 +2,9 @@
 
 set -eux
 
+# Retrieve environment variables
+LIVEPEER_HTTP_PORT=${LIVEPEER_HTTP_PORT:-8935}
+
 # set a clean slate "home dir" for testing
 TMPDIR=$PWD/tmp/livepeer-test-"$RANDOM"
 DEFAULT_DATADIR="$TMPDIR"/.lpData
@@ -67,14 +70,14 @@ $TMPDIR/livepeer -orchestrator -orchSecret asdf -serviceAddr "hibye" 2>&1 | gr
 
 # check that orchestrators require -orchSecret or -transcoder
 # sanity check with -transcoder
-run_lp -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder
+run_lp -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder
 kill $pid
 # sanity check with -orchSecret
-run_lp -orchestrator -serviceAddr 127.0.0.1:8935 -orchSecret asdf
+run_lp -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -orchSecret asdf
 kill $pid
 # XXX need a better way of confirming the error type. specialized exit code?
 res=0
-$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
+$TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} || res=$?
 [ $res -ne 0 ]
 
 # Run mainnet tests
@@ -127,16 +130,16 @@ else
   kill $pid
 
   # Check that -pricePerUnit needs to be set
-  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be set"
+  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be set"
   # Orchestrator needs PricePerUnit > 0
-  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be >= 0, provided -5"
+  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder -pricePerUnit -5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pricePerUnit must be >= 0, provided -5"
   # Orchestrator needs PixelsPerUnit > 0
-  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided 0"
-  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided -5"
+  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder -pixelsPerUnit 0 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided 0"
+  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder -pixelsPerUnit -5 -pricePerUnit 5 -network rinkeby $ETH_ARGS 2>&1 | grep -e "-pixelsPerUnit must be > 0, provided -5"
 
   # Check that price can be set to 0 with -pricePerUnit 0
   res=0
-  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
+  $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:${LIVEPEER_HTTP_PORT} -transcoder -pricePerUnit 0 -network rinkeby $ETH_ARGS || res=$?
   [ $res -ne 0 ]
 
   # Broadcaster needs a valid rational number for -maxTicketEV

@@ -20,6 +20,6 @@
 <!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
 - [ ] Read the [contribution guide](./CONTRIBUTING.md)
 - [ ] `make` runs successfully
-- [ ] All tests in `./test.sh` pass
+- [ ] All tests in `./test.sh` pass (you can use the `LIVEPEER_HTTP_PORT` environment variable to change the port used for testing)
 - [ ] README and other documentation updated
 - [ ] [Pending changelog](./CHANGELOG_PENDING.md) updated
