@@ -57,7 +57,7 @@ func (s *RewardService) Start(ctx context.Context) error {
 			go func() {
 				err := s.tryReward()
 				if err != nil {
-					glog.Errorf("Error trying to call reward err=%q", err)
+					glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
 					if monitor.Enabled {
 						monitor.RewardCallError(err.Error())
 					}
