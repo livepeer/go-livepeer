@@ -173,6 +173,9 @@ type (
 		mMaxGasPrice           *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
 
+		// Metrics for calling rewards
+		mRewardCallError *stats.Int64Measure
+
 		// Metrics for pixel accounting
 		mMilPixelsProcessed *stats.Float64Measure
 
@@ -317,6 +320,9 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mMinGasPrice = stats.Float64("min_gas_price", "MinGasPrice", "gwei")
 	census.mMaxGasPrice = stats.Float64("max_gas_price", "MaxGasPrice", "gwei")
 	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
+
+	// Metrics for calling rewards
+	census.mRewardCallError = stats.Int64("reward_call_errors", "RewardCallError", "tot")
 
 	// Metrics for pixel accounting
 	census.mMilPixelsProcessed = stats.Float64("mil_pixels_processed", "MilPixelsProcessed", "mil pixels")
@@ -778,6 +784,15 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Transcoding price per pixel",
 			TagKeys:     baseTagsWithEthAddr,
 			Aggregation: view.LastValue(),
+		},
+
+		// Metrics for calling rewards
+		{
+			Name:        "reward_call_errors",
+			Measure:     census.mRewardCallError,
+			Description: "Errors when calling rewards",
+			TagKeys:     baseTags,
+			Aggregation: view.Sum(),
 		},
 
 		// Metrics for fast verification
@@ -1680,6 +1695,16 @@ func TranscodingPrice(sender string, price *big.Rat) {
 
 			glog.Errorf("Error recording metrics err=%q", err)
 		}
+	}
+}
+
+// RewardCallError records an error from reward calling
+func RewardCallError(sender string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)},
+		census.mRewardCallError.M(1)); err != nil {
+
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
