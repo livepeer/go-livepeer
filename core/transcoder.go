@@ -398,41 +398,34 @@ func resToTranscodeData(ctx context.Context, res *ffmpeg.TranscodeResults, opts 
 
 	// Convert results into in-memory bytes following the expected API
 	segments := []*TranscodedSegmentData{}
-	// Extract detection data from detector outputs
-	detections := []ffmpeg.DetectData{}
 	for i := range opts {
-		if opts[i].Detector == nil {
-			oname := opts[i].Oname
-			o, err := ioutil.ReadFile(oname)
+		oname := opts[i].Oname
+		o, err := ioutil.ReadFile(oname)
+		if err != nil {
+			clog.Errorf(ctx, "Cannot read transcoded output for name=%s", oname)
+			return nil, err
+		}
+		// Extract perceptual hash if calculated
+		var s []byte = nil
+		if opts[i].CalcSign {
+			sigfile := oname + ".bin"
+			s, err = ioutil.ReadFile(sigfile)
 			if err != nil {
-				clog.Errorf(ctx, "Cannot read transcoded output for name=%s", oname)
+				clog.Errorf(ctx, "Cannot read perceptual hash at name=%s", sigfile)
 				return nil, err
 			}
-			// Extract perceptual hash if calculated
-			var s []byte = nil
-			if opts[i].CalcSign {
-				sigfile := oname + ".bin"
-				s, err = ioutil.ReadFile(sigfile)
-				if err != nil {
-					clog.Errorf(ctx, "Cannot read perceptual hash at name=%s", sigfile)
-					return nil, err
-				}
-				err = os.Remove(sigfile)
-				if err != nil {
-					clog.Errorf(ctx, "Cannot delete perceptual hash after reading name=%s", sigfile)
-				}
+			err = os.Remove(sigfile)
+			if err != nil {
+				clog.Errorf(ctx, "Cannot delete perceptual hash after reading name=%s", sigfile)
 			}
-			segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})
-			os.Remove(oname)
-		} else {
-			detections = append(detections, res.Encoded[i].DetectData)
 		}
+		segments = append(segments, &TranscodedSegmentData{Data: o, Pixels: res.Encoded[i].Pixels, PHash: s})
+		os.Remove(oname)
 	}
 
 	return &TranscodeData{
-		Segments:   segments,
-		Pixels:     res.Decoded.Pixels,
-		Detections: detections,
+		Segments: segments,
+		Pixels:   res.Decoded.Pixels,
 	}, nil
 }
 
@@ -451,26 +444,6 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profi
 		if segPar != nil && segPar.Clip != nil {
 			o.From = segPar.Clip.From
 			o.To = segPar.Clip.To
-		}
-		opts[i] = o
-	}
-	return opts
-}
-
-func detectorsToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, profiles []ffmpeg.DetectorProfile) []ffmpeg.TranscodeOptions {
-	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
-	for i := range profiles {
-		var o ffmpeg.TranscodeOptions
-		switch profiles[i].Type() {
-		case ffmpeg.SceneClassification:
-			classifier := profiles[i].(*ffmpeg.SceneClassificationProfile)
-			classifier.ModelPath = ffmpeg.DSceneAdultSoccer.ModelPath
-			classifier.Input = ffmpeg.DSceneAdultSoccer.Input
-			classifier.Output = ffmpeg.DSceneAdultSoccer.Output
-			o = ffmpeg.TranscodeOptions{
-				Detector: classifier,
-				Accel:    accel,
-			}
 		}
 		opts[i] = o
 	}

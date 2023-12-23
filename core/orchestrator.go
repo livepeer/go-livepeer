@@ -30,7 +30,6 @@ import (
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -420,9 +419,8 @@ type TranscodeResult struct {
 
 // TranscodeData contains the transcoding output for an input segment
 type TranscodeData struct {
-	Segments   []*TranscodedSegmentData
-	Pixels     int64 // Decoded pixels
-	Detections []ffmpeg.DetectData
+	Segments []*TranscodedSegmentData
+	Pixels   int64 // Decoded pixels
 }
 
 // TranscodedSegmentData contains encoded data for a profile
