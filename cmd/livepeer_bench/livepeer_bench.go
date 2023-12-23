@@ -123,36 +123,8 @@ func main() {
 	table.AppendBulk(data)
 	table.Render()
 
-	detectionOpts := ffmpeg.TranscodeOptions{
-		Accel:        accel,
-		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		Detector: &ffmpeg.SceneClassificationProfile{
-			SampleRate: *detectionSampleRate,
-			Input:      ffmpeg.DSceneAdultSoccer.Input,
-			Output:     ffmpeg.DSceneAdultSoccer.Output,
-			Classes:    ffmpeg.DSceneAdultSoccer.Classes,
-			ModelPath:  ffmpeg.DSceneAdultSoccer.ModelPath,
-		},
-	}
-
 	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogWarning)
-	var detectorTc *ffmpeg.Transcoder
-	if *detectionFreq > 0 {
-		for _, d := range devices {
-			t := time.Now()
-			// We don't actually use this transcoder session, but initialize it to save time for model loading
-			detectorTc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, d)
-			end := time.Now()
-			if err != nil {
-				glog.Exitf("Could not initialize detector profiles")
-			}
-			fmt.Printf("InitDetectorSession time %0.4v\n", end.Sub(t).Seconds())
-			defer detectorTc.StopTranscoder()
-		}
-		fmt.Println("timestamp,session,segment,seg_dur,transcode_time,detect_data")
-	} else {
-		fmt.Println("timestamp,session,segment,seg_dur,transcode_time,frames")
-	}
+	fmt.Println("timestamp,session,segment,seg_dur,transcode_time,frames")
 
 	var mu sync.Mutex
 	for repeatCounter := 0; repeatCounter < *repeat; repeatCounter++ {
@@ -163,18 +135,7 @@ func main() {
 		for i := 0; i < *concurrentSessions; i++ {
 			wg.Add(1)
 			go func(k int, wg *sync.WaitGroup) {
-				var tc *ffmpeg.Transcoder
-				if *detectionFreq > 0 {
-					t := time.Now()
-					tc, err = ffmpeg.NewTranscoderWithDetector(detectionOpts.Detector, devices[k%len(devices)])
-					end := time.Now()
-					fmt.Printf("InitDetectorSession time %0.4v for session %v\n", end.Sub(t).Seconds(), i)
-					if err != nil {
-						glog.Exitf("Could not initialize detector")
-					}
-				} else {
-					tc = ffmpeg.NewTranscoder()
-				}
+				var tc *ffmpeg.Transcoder = ffmpeg.NewTranscoder()
 				for j, v := range pl.Segments {
 					iterStart := time.Now()
 					if *segs > 0 && j >= *segs {
@@ -213,10 +174,6 @@ func main() {
 								CalcSign:     *sign,
 							}
 							opts = append(opts, o)
-						}
-						// add detector profile if freq > 0
-						if *detectionFreq > 0 && j%*detectionFreq == 0 {
-							opts = append(opts, detectionOpts)
 						}
 						return opts
 					}

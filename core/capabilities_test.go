@@ -246,7 +246,6 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_ProfileH264High,
 		Capability_GOP,
 		Capability_AuthToken,
-		Capability_SceneClassification,
 	}), "failed with everything enabled")
 
 	// check fractional framerates

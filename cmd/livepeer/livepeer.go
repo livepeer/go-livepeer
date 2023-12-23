@@ -148,9 +148,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	cfg.TestTranscoder = flag.Bool("testTranscoder", *cfg.TestTranscoder, "Test Nvidia GPU transcoding at startup")
-	cfg.SceneClassificationModelPath = flag.String("sceneClassificationModelPath", *cfg.SceneClassificationModelPath, "Path to scene classification model")
-	cfg.DetectContent = flag.Bool("detectContent", *cfg.DetectContent, "Enables content type detection capability and automatic detection. If not specified, transcoder won't advertise corresponding capabilities and receive such jobs.")
-	cfg.DetectionSampleRate = flag.Uint("detectionSampleRate", *cfg.DetectionSampleRate, "Run content detection automatically on every nth frame of each segment, independently of requested stream transcoding configuration.")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
