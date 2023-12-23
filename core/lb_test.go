@@ -27,7 +27,7 @@ func TestLB_CalculateCost(t *testing.T) {
 
 func TestLB_LeastLoaded(t *testing.T) {
 	assert := require.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	rapid.Check(t, func(t *rapid.T) {
 		cost := rapid.IntRange(1, 10).Draw(t, "cost")
 		transcoder := lb.leastLoaded()
@@ -51,7 +51,7 @@ func TestLB_Ratchet(t *testing.T) {
 	// Test:     Two transcoders, several sessions with the same set of profiles
 	//           Run multiple transcodes.
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 
 	rapid.Check(t, func(t *rapid.T) {
@@ -72,7 +72,7 @@ func TestLB_SessionCleanupRace(t *testing.T) {
 	// Reproduce race condition around session cleanup #1750
 
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	sess := "sess"
 	// Force create a new session
 	_, err := lb.Transcode(context.TODO(), stubMetadata(sess, ffmpeg.P144p30fps16x9))
@@ -111,7 +111,7 @@ func TestLB_LoadAssignment(t *testing.T) {
 	//           Subsequent segments should ignore subsequent load costs.
 
 	assert := assert.New(t)
-	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	lb := NewLoadBalancingTranscoder([]string{"0", "1", "2", "3", "4"}, newStubTranscoder).(*LoadBalancingTranscoder)
 	sessions := []string{"a", "b", "c", "d", "e"}
 	profiles := []ffmpeg.VideoProfile{}
 	for _, v := range ffmpeg.VideoProfileLookup {
@@ -323,7 +323,7 @@ func (m *lbMachine) Init(t *rapid.T) {
 		devices = append(devices, strconv.Itoa(i))
 	}
 
-	m.lb = NewLoadBalancingTranscoder(devices, newStubTranscoder, newStubTranscoderWithDetector).(*LoadBalancingTranscoder)
+	m.lb = NewLoadBalancingTranscoder(devices, newStubTranscoder).(*LoadBalancingTranscoder)
 	m.states = make(map[string]*machineState)
 
 	assert.Equal(t, devices, m.lb.transcoders) // sanity check

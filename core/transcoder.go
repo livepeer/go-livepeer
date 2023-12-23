@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -42,36 +41,6 @@ func NewUnrecoverableError(err error) UnrecoverableError {
 
 var WorkDir string
 
-func setEffectiveDetectorConfig(md *SegTranscodingMetadata) {
-	aiEnabled := DetectorProfile != nil
-	actualProfile := DetectorProfile
-	if aiEnabled {
-		presetSampleRate := DetectorProfile.(*ffmpeg.SceneClassificationProfile).SampleRate
-		if md.DetectorEnabled && len(md.DetectorProfiles) == 1 {
-			actualProfile = md.DetectorProfiles[0]
-			requestedSampleRate := actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate
-			// 0 is not a valid value
-			if requestedSampleRate == 0 {
-				requestedSampleRate = math.MaxUint32
-			}
-			actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate = uint(math.Min(float64(presetSampleRate),
-				float64(requestedSampleRate)))
-			// copy other fields from default AI capability, as we don't yet support custom ones
-			actualProfile.(*ffmpeg.SceneClassificationProfile).ModelPath = DetectorProfile.(*ffmpeg.SceneClassificationProfile).ModelPath
-			actualProfile.(*ffmpeg.SceneClassificationProfile).Input = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Input
-			actualProfile.(*ffmpeg.SceneClassificationProfile).Output = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Output
-			actualProfile.(*ffmpeg.SceneClassificationProfile).Classes = DetectorProfile.(*ffmpeg.SceneClassificationProfile).Classes
-		}
-	}
-	if actualProfile != nil && actualProfile.(*ffmpeg.SceneClassificationProfile).SampleRate < math.MaxUint32 {
-		md.DetectorProfiles = []ffmpeg.DetectorProfile{actualProfile}
-		md.DetectorEnabled = true
-	} else {
-		md.DetectorProfiles = []ffmpeg.DetectorProfile{}
-		md.DetectorEnabled = false
-	}
-}
-
 func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
@@ -81,12 +50,8 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		Fname: md.Fname,
 		Accel: ffmpeg.Software,
 	}
-	setEffectiveDetectorConfig(md)
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, profiles, md.CalcPerceptualHash, md.SegmentParameters)
-	if md.DetectorEnabled {
-		opts = append(opts, detectorsToTranscodeOptions(lt.workDir, ffmpeg.Software, md.DetectorProfiles)...)
-	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -136,9 +101,6 @@ func (nv *NetintTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	}
 	profiles := md.Profiles
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Netint, profiles, md.CalcPerceptualHash, md.SegmentParameters)
-	if md.DetectorEnabled {
-		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Netint, md.DetectorProfiles)...)
-	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -173,11 +135,7 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 		Device: nv.device,
 	}
 	profiles := md.Profiles
-	setEffectiveDetectorConfig(md)
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash, md.SegmentParameters)
-	if md.DetectorEnabled {
-		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
-	}
 
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
@@ -387,14 +345,14 @@ func TestSoftwareTranscoderCapabilities(tmpdir string) (caps []Capability, fatal
 	return caps, fatalError
 }
 
-func GetTranscoderFactoryByAccel(acceleration ffmpeg.Acceleration) (func(device string) TranscoderSession, func(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error), error) {
+func GetTranscoderFactoryByAccel(acceleration ffmpeg.Acceleration) (func(device string) TranscoderSession, error) {
 	switch acceleration {
 	case ffmpeg.Nvidia:
-		return NewNvidiaTranscoder, NewNvidiaTranscoderWithDetector, nil
+		return NewNvidiaTranscoder, nil
 	case ffmpeg.Netint:
-		return NewNetintTranscoder, nil, nil
+		return NewNetintTranscoder, nil
 	default:
-		return nil, nil, ffmpeg.ErrTranscoderHw
+		return nil, ffmpeg.ErrTranscoderHw
 	}
 }
 
@@ -410,16 +368,6 @@ func NewNetintTranscoder(gpu string) TranscoderSession {
 		device:  gpu,
 		session: ffmpeg.NewTranscoder(),
 	}
-}
-
-func NewNvidiaTranscoderWithDetector(detector ffmpeg.DetectorProfile, gpu string) (TranscoderSession, error) {
-	// Hardcode detection to device 0 for now
-	// Transcoding can still run on a separate GPU as we copy frames to CPU before detection
-	session, err := ffmpeg.NewTranscoderWithDetector(detector, gpu)
-	return &NvidiaTranscoder{
-		device:  gpu,
-		session: session,
-	}, err
 }
 
 func (nv *NvidiaTranscoder) Stop() {

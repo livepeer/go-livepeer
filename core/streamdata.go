@@ -22,12 +22,6 @@ const (
 	DefaultManifestIDLength = 4
 )
 
-type DetectionConfig struct {
-	Freq               uint
-	SelectedClassNames []string
-	Profiles           []ffmpeg.DetectorProfile
-}
-
 type StreamParameters struct {
 	ManifestID        ManifestID
 	ExternalStreamID  string
@@ -39,7 +33,6 @@ type StreamParameters struct {
 	OS                drivers.OSSession
 	RecordOS          drivers.OSSession
 	Capabilities      *Capabilities
-	Detection         DetectionConfig
 	VerificationFreq  uint
 	Nonce             uint64
 	Codec             ffmpeg.VideoCodec
@@ -71,8 +64,6 @@ type SegTranscodingMetadata struct {
 	Duration           time.Duration
 	Caps               *Capabilities
 	AuthToken          *net.AuthToken
-	DetectorEnabled    bool
-	DetectorProfiles   []ffmpeg.DetectorProfile
 	CalcPerceptualHash bool
 	SegmentParameters  *SegmentParameters
 }
@@ -90,7 +81,6 @@ func (md *SegTranscodingMetadata) Flatten() []byte {
 }
 
 func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
-
 	fullProfiles, err := common.FFmpegProfiletoNetProfile(md.Profiles)
 	if err != nil {
 		return nil, err
@@ -100,30 +90,6 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		storage = append(storage, md.OS)
 	}
 
-	detectorProfiles := []*net.DetectorProfile{}
-	for _, detector := range md.DetectorProfiles {
-		var netProfile *net.DetectorProfile
-		switch detector.Type() {
-		case ffmpeg.SceneClassification:
-			profile := detector.(*ffmpeg.SceneClassificationProfile)
-			classes := []*net.DetectorClass{}
-			for _, class := range profile.Classes {
-				classes = append(classes, &net.DetectorClass{
-					ClassId:   uint32(class.ID),
-					ClassName: class.Name,
-				})
-			}
-			netProfile = &net.DetectorProfile{
-				Value: &net.DetectorProfile_SceneClassification{
-					SceneClassification: &net.SceneClassificationProfile{
-						SampleRate: uint32(profile.SampleRate),
-						Classes:    classes,
-					},
-				},
-			}
-		}
-		detectorProfiles = append(detectorProfiles, netProfile)
-	}
 	// Generate serialized segment info
 	segData := &net.SegData{
 		ManifestId:         []byte(md.ManifestID),
@@ -133,8 +99,6 @@ func NetSegData(md *SegTranscodingMetadata) (*net.SegData, error) {
 		Duration:           int32(md.Duration / time.Millisecond),
 		Capabilities:       md.Caps.ToNetCapabilities(),
 		AuthToken:          md.AuthToken,
-		DetectorEnabled:    md.DetectorEnabled,
-		DetectorProfiles:   detectorProfiles,
 		CalcPerceptualHash: md.CalcPerceptualHash,
 		// Triggers failure on Os that don't know how to use FullProfiles/2/3
 		Profiles: []byte("invalid"),

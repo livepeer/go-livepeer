@@ -62,8 +62,6 @@ const BroadcastRetry = 15 * time.Second
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
-var DetectionWebhookURL *url.URL
-var DetectionWhClient = &http.Client{Timeout: 2 * time.Second}
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
@@ -136,19 +134,11 @@ type authWebhookResponse struct {
 	RecordObjectStoreURL string   `json:"recordObjectStoreUrl"`
 	// Same json structure is used in lpms to decode profile from
 	// files, while here we decode from HTTP
-	Profiles         []ffmpeg.JsonProfile `json:"profiles"`
-	PreviousSessions []string             `json:"previousSessions"`
-	Detection        struct {
-		// Run detection on 1/freq segments
-		Freq                uint `json:"freq"`
-		SampleRate          uint `json:"sampleRate"`
-		SceneClassification []struct {
-			Name string `json:"name"`
-		} `json:"sceneClassification"`
-	} `json:"detection"`
-	VerificationFreq   uint `json:"verificationFreq"`
-	TimeoutMultiplier  int  `json:"timeoutMultiplier"`
-	ForceSessionReinit bool `json:"forceSessionReinit"`
+	Profiles           []ffmpeg.JsonProfile `json:"profiles"`
+	PreviousSessions   []string             `json:"previousSessions"`
+	VerificationFreq   uint                 `json:"verificationFreq"`
+	TimeoutMultiplier  int                  `json:"timeoutMultiplier"`
+	ForceSessionReinit bool                 `json:"forceSessionReinit"`
 }
 
 func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bool, transcodingOptions string) (*LivepeerServer, error) {
@@ -260,7 +250,6 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		var os, ros drivers.OSDriver
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
-		detectionConfig := core.DetectionConfig{}
 		var VerificationFreq uint
 		nonce := rand.Uint64()
 
@@ -325,14 +314,6 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				}
 			}
 
-			// set Detection profile if provided
-			if resp.Detection.Freq != 0 {
-				detectionConfig, err = jsonDetectionToDetectionConfig(ctx, resp)
-				if err != nil {
-					clog.Errorf(ctx, "Failed to parse detection config from JSON for streamID url=%s err=%q", url.String(), err)
-					return nil
-				}
-			}
 			VerificationFreq = resp.VerificationFreq
 		} else {
 			profiles = BroadcastJobVideoProfiles
@@ -377,37 +358,10 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			Profiles:         append([]ffmpeg.VideoProfile(nil), profiles...),
 			OS:               oss,
 			RecordOS:         ross,
-			Detection:        detectionConfig,
 			VerificationFreq: VerificationFreq,
 			Nonce:            nonce,
 		}
 	}
-}
-
-func jsonDetectionToDetectionConfig(ctx context.Context, resp *authWebhookResponse) (core.DetectionConfig, error) {
-	detection := core.DetectionConfig{
-		Freq:               resp.Detection.Freq,
-		SelectedClassNames: []string{},
-		Profiles:           []ffmpeg.DetectorProfile{},
-	}
-	modelPaths := make(map[string]bool)
-	for _, class := range resp.Detection.SceneClassification {
-		c, ok := ffmpeg.SceneClassificationProfileLookup[class.Name]
-		if !ok {
-			return detection, errors.New("No detector found for class: " + class.Name)
-		}
-		detection.SelectedClassNames = append(detection.SelectedClassNames, class.Name)
-		if _, ok := modelPaths[c.ModelPath]; ok {
-			// Skip this profile because we already have a profile with a model that covers this class
-			continue
-		}
-		modelPaths[c.ModelPath] = true
-		c.SampleRate = resp.Detection.SampleRate
-		detection.Profiles = append(detection.Profiles, &c)
-	}
-	clog.V(common.DEBUG).Infof(ctx, "Configuring detection for classes=%v with segment freq=%v and frame sampleRate=%v",
-		detection.SelectedClassNames, detection.Freq, resp.Detection.SampleRate)
-	return detection, nil
 }
 
 func streamParams(d stream.AppData) *core.StreamParameters {

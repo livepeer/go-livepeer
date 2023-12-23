@@ -176,11 +176,6 @@ func OptionalCapabilities() []Capability {
 	}
 }
 
-func ExperimentalCapabilities() []Capability {
-	// Add experimental capabilities if enabled during build
-	return experimentalCapabilities
-}
-
 func MandatoryOCapabilities() []Capability {
 	// Add to this list as certain features become mandatory.
 	// Use sparingly, as adding to this is a hard break with older nodes

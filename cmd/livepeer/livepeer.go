@@ -202,7 +202,6 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.FVfailGsKey = flag.String("FVfailGskey", *cfg.FVfailGsKey, "Google Cloud Storage private key file name or key in JSON format for accessing FVfailGsBucket")
 	// API
 	cfg.AuthWebhookURL = flag.String("authWebhookUrl", *cfg.AuthWebhookURL, "RTMP authentication webhook URL")
-	cfg.DetectionWebhookURL = flag.String("detectionWebhookUrl", *cfg.DetectionWebhookURL, "(Experimental) Detection results callback URL")
 
 	// flags
 	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")

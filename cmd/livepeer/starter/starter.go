@@ -139,7 +139,6 @@ type LivepeerConfig struct {
 	FVfailGsKey            *string
 	AuthWebhookURL         *string
 	OrchWebhookURL         *string
-	DetectionWebhookURL    *string
 	OrchBlacklist          *string
 	TestOrchAvail          *bool
 }
@@ -225,7 +224,6 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
-	defaultDetectionWebhookURL := ""
 
 	// Flags
 	defaultTestOrchAvail := true
@@ -308,9 +306,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
-		AuthWebhookURL:      &defaultAuthWebhookURL,
-		OrchWebhookURL:      &defaultOrchWebhookURL,
-		DetectionWebhookURL: &defaultDetectionWebhookURL,
+		AuthWebhookURL: &defaultAuthWebhookURL,
+		OrchWebhookURL: &defaultOrchWebhookURL,
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
@@ -451,7 +448,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		if accel != ffmpeg.Software {
 			accelName := ffmpeg.AccelerationNameLookup[accel]
-			tf, dtf, err := core.GetTranscoderFactoryByAccel(accel)
+			tf, err := core.GetTranscoderFactoryByAccel(accel)
 			if err != nil {
 				exit("Error unsupported acceleration: %v", err)
 			}
@@ -473,7 +470,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				transcoderCaps = append(transcoderCaps, core.DefaultCapabilities()...)
 			}
 			// Initialize LB transcoder
-			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf, dtf)
+			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
 			// for local software mode, enable all capabilities
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
@@ -1010,14 +1007,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		server.AuthWebhookURL = parsedUrl
 	}
 
-	if *cfg.DetectionWebhookURL != "" {
-		parsedUrl, err := validateURL(*cfg.DetectionWebhookURL)
-		if err != nil {
-			glog.Exit("Error setting detection webhook URL ", err)
-		}
-		glog.Info("Using detection webhook URL ", parsedUrl.Redacted())
-		server.DetectionWebhookURL = parsedUrl
-	}
 	httpIngest := true
 
 	if n.NodeType == core.BroadcasterNode {

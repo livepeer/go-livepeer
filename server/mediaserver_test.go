@@ -673,14 +673,6 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	params = createSid(u).(*core.StreamParameters)
 	detectorProf := ffmpeg.DSceneAdultSoccer
 	detectorProf.SampleRate = 10
-	expectedDetection := core.DetectionConfig{
-		Freq:               5,
-		SelectedClassNames: []string{"soccer"},
-		Profiles: []ffmpeg.DetectorProfile{
-			&detectorProf,
-		},
-	}
-	assert.Equal(expectedDetection, params.Detection, "Did not have matching detector config")
 
 	// do not create stream if detector class is unknown
 	ts19 := makeServer(`{"manifestID":"a", "detection": {"freq": 5, "sampleRate": 10, "sceneClassification": [{"name": "Unknown class"}]}}`)

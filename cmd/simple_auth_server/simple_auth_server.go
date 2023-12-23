@@ -17,16 +17,6 @@ type authWebhookReq struct {
 	Url string `json:"url"`
 }
 
-type sceneClassificationProfile struct {
-	Name string `json:"name"`
-}
-
-type detection struct {
-	Freq                       uint                         `json:"freq"`
-	SampleRate                 uint                         `json:"sampleRate"`
-	SceneClassificationProfile []sceneClassificationProfile `json:"sceneClassification"`
-}
-
 type profile struct {
 	Name    string `json:"name"`
 	Width   int    `json:"width"`
@@ -41,7 +31,6 @@ type profile struct {
 type authWebhookResponse struct {
 	ManifestID string    `json:"manifestID"`
 	Profiles   []profile `json:"profiles"`
-	Detection  detection `json:"detection"`
 }
 
 func main() {
@@ -77,14 +66,6 @@ func main() {
 				Bitrate: 250000,
 				FPS:     0,
 			}},
-			Detection: detection{
-				Freq:       4,
-				SampleRate: 1,
-				SceneClassificationProfile: []sceneClassificationProfile{
-					{Name: "adult"},
-					{Name: "soccer"},
-				},
-			},
 		}
 		byteSlice, _ := json.Marshal(resp)
 		w.Write(byteSlice)

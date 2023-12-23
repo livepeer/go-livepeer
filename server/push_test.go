@@ -153,127 +153,6 @@ func TestPush_ShouldReturn422ForNonRetryable(t *testing.T) {
 	assert.Contains(string(body), "No keyframes in input")
 }
 
-func TestPush_SceneDetection(t *testing.T) {
-	assert := assert.New(t)
-	// wait for any earlier tests to complete
-	assert.True(wgWait(&pushResetWg), "timed out waiting for earlier tests")
-	s, cancel := setupServerWithCancel()
-	defer serverCleanup(s)
-	defer cancel()
-	reader := strings.NewReader("InsteadOf.TS")
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/live/mani/17.ts", reader)
-
-	dummyRes := func(tSegData []*net.TranscodedSegmentData) *net.TranscodeResult {
-		netClasses := make(map[uint32]float64)
-		netClasses[1] = 2
-		netClasses[0] = 4.5
-		return &net.TranscodeResult{
-			Result: &net.TranscodeResult_Data{
-				Data: &net.TranscodeData{
-					Segments: tSegData,
-					Sig:      []byte("bar"),
-					Detections: []*net.DetectData{
-						{Value: &net.DetectData_SceneClassification{
-							SceneClassification: &net.SceneClassificationData{
-								ClassProbs: netClasses,
-							},
-						}},
-					},
-				},
-			},
-		}
-	}
-
-	// Create stub server
-	ts, mux := stubTLSServer()
-	defer ts.Close()
-
-	dwmux := http.NewServeMux()
-	var detectionHookCalled int
-	var dwReq common.DetectionWebhookRequest
-	var wg sync.WaitGroup // to synchronize on cancels of the watchdog
-	dwmux.HandleFunc("/detected", func(w http.ResponseWriter, r *http.Request) {
-		defer wg.Done()
-		detectionHookCalled++
-		out, err := ioutil.ReadAll(r.Body)
-		assert.NoError(err)
-		err = json.Unmarshal(out, &dwReq)
-		assert.NoError(err)
-		if err != nil {
-			fmt.Printf("Error parsing detection hook payload: %v\n", err)
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	dwts := httptest.NewServer(dwmux)
-	defer dwts.Close()
-	oldDetectionWebhookURL := DetectionWebhookURL
-	defer func() { DetectionWebhookURL = oldDetectionWebhookURL }()
-	DetectionWebhookURL, _ = url.Parse(dwts.URL + "/detected")
-
-	segPath := "/transcoded/segment.ts"
-	tSegData := []*net.TranscodedSegmentData{{Url: ts.URL + segPath, Pixels: 100}}
-	tr := dummyRes(tSegData)
-	buf, err := proto.Marshal(tr)
-	require.Nil(t, err)
-
-	var segmentCalled int
-	mux.HandleFunc("/segment", func(w http.ResponseWriter, r *http.Request) {
-		segmentCalled++
-		w.WriteHeader(http.StatusOK)
-		w.Write(buf)
-	})
-	mux.HandleFunc(segPath, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("transcoded binary data"))
-	})
-
-	sess := StubBroadcastSession(ts.URL)
-	sess.Params.Profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
-	sess.Params.ManifestID = "mani"
-	bsm := bsmWithSessList([]*BroadcastSession{sess})
-
-	url, _ := url.ParseRequestURI("test://some.host")
-	osd := drivers.NewMemoryDriver(url)
-	osSession := osd.NewSession("testPath")
-
-	pl := core.NewBasicPlaylistManager("xx", osSession, nil)
-
-	cxn := &rtmpConnection{
-		mid:         core.ManifestID("mani"),
-		nonce:       7,
-		pl:          pl,
-		profile:     &ffmpeg.P144p30fps16x9,
-		sessManager: bsm,
-		params: &core.StreamParameters{
-			Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9},
-			Detection: core.DetectionConfig{
-				SelectedClassNames: []string{"adult"},
-			},
-		},
-	}
-
-	s.rtmpConnections["mani"] = cxn
-
-	req.Header.Set("Accept", "multipart/mixed")
-	wg.Add(1)
-	s.HandlePush(w, req)
-	resp := w.Result()
-	defer resp.Body.Close()
-	assert.True(wgWait(&wg), "detection hook not called")
-	assert.Equal(200, resp.StatusCode)
-	assert.Equal(1, detectionHookCalled)
-	assert.Equal(1, segmentCalled)
-	assert.Equal("mani", dwReq.ManifestID)
-	assert.Equal(uint64(17), dwReq.SeqNo)
-	assert.Len(dwReq.SceneClassification, 1)
-	assert.Equal("adult", dwReq.SceneClassification[0].Name)
-	assert.Equal(4.5, dwReq.SceneClassification[0].Probability)
-}
-
 func TestPush_MultipartReturn(t *testing.T) {
 	assert := assert.New(t)
 	// wait for any earlier tests to complete
@@ -2022,9 +1901,6 @@ func TestPush_SlicePass(t *testing.T) {
 		sessManager: bsm,
 		params: &core.StreamParameters{
 			Profiles: []ffmpeg.VideoProfile{ffmpeg.P144p25fps16x9},
-			Detection: core.DetectionConfig{
-				SelectedClassNames: []string{"adult"},
-			},
 		},
 	}
 
