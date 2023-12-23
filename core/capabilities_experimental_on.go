@@ -3,6 +3,4 @@
 
 package core
 
-var experimentalCapabilities = []Capability{
-	Capability_SceneClassification,
-}
+var experimentalCapabilities = []Capability{}
