@@ -90,6 +90,48 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	return nil
 }
 
+func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
+	for _, capability := range orch.ExternalCapabilities().Capabilities {
+		if capability.Name == extCapability {
+			return capability.Url.RequestURI()
+		}
+	}
+
+	return ""
+}
+
+func (orch *orchestrator) CheckExternalCapacity(extCapability string) error {
+	capJobCnt := orch.node.ExternalCapabilities.Capabilities[extCapability].Load
+	capMax := orch.node.ExternalCapabilities.Capabilities[extCapability].Capacity
+	if capJobCnt < capMax {
+		orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Lock()
+		defer orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Unlock()
+
+		orch.node.ExternalCapabilities.Capabilities[extCapability].Load++
+	} else {
+		return ErrOrchCap
+	}
+
+	//all capabilities needed have capacity
+	return nil
+}
+
+func (orch *orchestrator) FreeExternalCapacity(extCapability string) error {
+	capJobCnt := orch.node.ExternalCapabilities.Capabilities[extCapability].Load
+	capMax := orch.node.ExternalCapabilities.Capabilities[extCapability].Capacity
+	if capJobCnt < capMax {
+		orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Lock()
+		defer orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Unlock()
+
+		orch.node.ExternalCapabilities.Capabilities[extCapability].Load--
+	} else {
+		return errors.New("could not free capacity")
+	}
+
+	//capacity released for capabilities
+	return nil
+}
+
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
@@ -353,6 +395,66 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 	}, nil
 }
 
+func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobId ManifestID, jobCapability string) (*net.PriceInfo, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil, nil
+	}
+
+	jobPrice, err := orch.jobPriceInfo(sender, jobId, jobCapability)
+	if err != nil {
+		return nil, err
+	}
+
+	return &net.PriceInfo{
+		PricePerUnit:  jobPrice.Num().Int64(),
+		PixelsPerUnit: jobPrice.Denom().Int64(),
+	}, nil
+}
+
+func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobId ManifestID, jobCapability string) (*big.Rat, error) {
+	basePrice := orch.node.GetPriceForJob(sender.Hex(), jobCapability)
+
+	// If there is already a fixed price for the given session, use this price
+	if jobId != "" {
+		if balances, ok := orch.node.Balances.balances[sender]; ok {
+			fixedPrice := balances.FixedPrice(ManifestID(jobId))
+			if fixedPrice != nil {
+				return fixedPrice, nil
+			}
+		}
+	}
+
+	if basePrice == nil {
+		basePrice = orch.node.GetPriceForJob("default", jobCapability)
+	}
+
+	if !orch.node.AutoAdjustPrice {
+		return basePrice, nil
+	}
+
+	// If price = 0, overhead is 1
+	// If price > 0, overhead = 1 + (1 / txCostMultiplier)
+	overhead := big.NewRat(1, 1)
+	if basePrice.Num().Cmp(big.NewInt(0)) > 0 {
+		txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
+		if err != nil {
+			return nil, err
+		}
+
+		if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
+			overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
+		}
+
+	}
+	// pricePerPixel = basePrice * overhead
+	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(basePrice, overhead))
+	if err != nil {
+		return nil, err
+	}
+	return common.FixedToPrice(fixedPrice), nil
+
+}
+
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
 func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
@@ -467,6 +569,14 @@ func (orch *orchestrator) Capabilities() *net.Capabilities {
 		return nil
 	}
 	return orch.node.Capabilities.ToNetCapabilities()
+}
+
+func (orch *orchestrator) ExternalCapabilities() *ExternalCapabilities {
+	if orch.node == nil {
+		return nil
+	} else {
+		return orch.node.ExternalCapabilities
+	}
 }
 
 func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {

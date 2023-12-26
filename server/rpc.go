@@ -81,6 +81,11 @@ type Orchestrator interface {
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
+	ExternalCapabilities() *core.ExternalCapabilities
+	GetUrlForCapability(extCapability string) string
+	CheckExternalCapacity(extCapability string) error
+	FreeExternalCapacity(extCapability string) error
+	JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapabiliy string) (*net.PriceInfo, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -239,6 +244,10 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
+	//API for external jobs
+	lp.transRPC.HandleFunc("/processJob", lp.ProcessJob)
+	lp.transRPC.HandleFunc("/getToken", lp.GetJobToken)
+	lp.transRPC.HandleFunc("/registerCapability", lp.RegisterCapability)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
