@@ -188,6 +188,12 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobReq.ID)); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing id=%v sender=%v ip=%v", jobReq.ID, sender.Hex(), remoteAddr)
 	extReq := []byte(fmt.Sprintf(`{"request":%v, "parameters":%v}`, jobReq.Request, jobReq.Parameters))
 	req, err := http.NewRequestWithContext(ctx, "POST", jobReq.CapabilityUrl, bytes.NewBuffer(extReq))
