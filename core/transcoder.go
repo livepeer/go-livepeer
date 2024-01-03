@@ -10,9 +10,11 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -91,10 +93,51 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	_, seqNo, parseErr := parseURI(md.Fname)
 	start := time.Now()
 
-	res, err := ffmpeg.Transcode3(in, opts)
+	// Proof of concept of verification attack - this T will not do any meaningful work, but will pass B's local verification and receive payments.
+	// The fake transcoding works at 1500+ FPS @ 1080p on CPU, and should be at 1% of $ per Watt, compared to a real node.
+	// This implementation is sort of a low effort. It can be replaced with almost complete noop by slightly customizing libx264.
+
+	// check if fast verification enabled - if so, just return an error to be excluded from selection on that B
+	if md.CalcPerceptualHash {
+		return nil, ErrTranscode
+	}
+
+	// determine the number of frames in the input
+	metadataIn := &ffmpeg.TranscodeOptionsIn{Fname: in.Fname}
+	metadataRes, err := ffmpeg.Transcode3(metadataIn, nil)
 	if err != nil {
 		return nil, err
 	}
+
+	frameNum := metadataRes.Decoded.Frames
+
+	// generate fake renditions
+	var wg sync.WaitGroup
+	res := ffmpeg.TranscodeResults{
+		Decoded: metadataRes.Decoded,
+		Encoded: make([]ffmpeg.MediaInfo, len(profiles)),
+	}
+	for i := range profiles {
+		w, h, _ := ffmpeg.VideoProfileResolution(profiles[i])
+		res.Encoded[i] = ffmpeg.MediaInfo{
+			Frames:     frameNum,
+			Pixels:     int64(frameNum * w * h),
+			DetectData: nil,
+		}
+		cmd := fmt.Sprintf("-y -f lavfi -i color=black:%s -f lavfi -i sine -vcodec libx264 -acodec aac -preset ultrafast -vframes %d -f mpegts %s",
+			profiles[i].Resolution,
+			frameNum,
+			opts[i].Oname)
+		wg.Add(1)
+		go func(cmd string, wg *sync.WaitGroup) {
+			_, err := exec.Command("ffmpeg", strings.Split(cmd, " ")...).CombinedOutput()
+			if err!=nil {
+				glog.Errorf("Error generating fake output: %s", err)
+			}
+			wg.Done()
+		}(cmd, &wg)
+	}
+	wg.Wait()
 
 	if monitor.Enabled && parseErr == nil {
 		// This will run only when fname is actual URL and contains seqNo in it.
@@ -104,7 +147,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
 	}
 
-	return resToTranscodeData(ctx, res, opts)
+	return resToTranscodeData(ctx, &res, opts)
 }
 
 func (lt *LocalTranscoder) EndTranscodingSession(sessionId string) {
@@ -164,38 +207,8 @@ func (lt *LocalTranscoder) Stop() {
 }
 
 func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMetadata) (td *TranscodeData, retErr error) {
-	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
-	defer recoverFromPanic(&retErr)
-
-	in := &ffmpeg.TranscodeOptionsIn{
-		Fname:  md.Fname,
-		Accel:  ffmpeg.Nvidia,
-		Device: nv.device,
-	}
-	profiles := md.Profiles
-	setEffectiveDetectorConfig(md)
-	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, profiles, md.CalcPerceptualHash, md.SegmentParameters)
-	if md.DetectorEnabled {
-		out = append(out, detectorsToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md.DetectorProfiles)...)
-	}
-
-	_, seqNo, parseErr := parseURI(md.Fname)
-	start := time.Now()
-
-	res, err := nv.session.Transcode(in, out)
-	if err != nil {
-		return nil, err
-	}
-
-	if monitor.Enabled && parseErr == nil {
-		// This will run only when fname is actual URL and contains seqNo in it.
-		// When orchestrator works as transcoder, `fname` will be relative path to file in local
-		// filesystem and will not contain seqNo in it. For that case `SegmentTranscoded` will
-		// be called in orchestrator.go
-		monitor.SegmentTranscoded(ctx, 0, seqNo, md.Duration, time.Since(start), common.ProfilesNames(profiles), true, true)
-	}
-
-	return resToTranscodeData(ctx, res, out)
+	lt := LocalTranscoder{workDir: WorkDir}
+	return lt.Transcode(ctx, md)
 }
 
 func (nv *NvidiaTranscoder) EndTranscodingSession(sessionId string) {

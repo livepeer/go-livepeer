@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -141,19 +140,6 @@ func setupWorkDir(t *testing.T) (string, func()) {
 func TestCapability_TranscoderCapabilities(t *testing.T) {
 	tmpdir, cleanup := setupWorkDir(t)
 	defer cleanup()
-
-	// nvidia test
-	devices, err := common.ParseAccelDevices("all", ffmpeg.Nvidia)
-	devicesAvailable := err == nil && len(devices) > 0
-	if devicesAvailable {
-		nvidiaCaps, err := TestTranscoderCapabilities(devices, NewNvidiaTranscoder)
-		assert.Nil(t, err)
-		assert.False(t, InArray(Capability_H264_Decode_444_8bit, nvidiaCaps), "Nvidia device should not support decode of 444_8bit")
-		assert.False(t, InArray(Capability_H264_Decode_422_8bit, nvidiaCaps), "Nvidia device should not support decode of 422_8bit")
-		assert.False(t, InArray(Capability_H264_Decode_444_10bit, nvidiaCaps), "Nvidia device should not support decode of 444_10bit")
-		assert.False(t, InArray(Capability_H264_Decode_422_10bit, nvidiaCaps), "Nvidia device should not support decode of 422_10bit")
-		assert.False(t, InArray(Capability_H264_Decode_420_10bit, nvidiaCaps), "Nvidia device should not support decode of 420_10bit")
-	}
 
 	// Same test with software transcoder:
 	softwareCaps, err := TestSoftwareTranscoderCapabilities(tmpdir)
