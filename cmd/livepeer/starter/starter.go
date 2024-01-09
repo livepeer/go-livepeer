@@ -92,7 +92,9 @@ type LivepeerConfig struct {
 	SelectRandWeight             *float64
 	SelectStakeWeight            *float64
 	SelectPriceWeight            *float64
-	SelectPriceExpFactor         *float64
+	SelectPriceExpFactorA        *float64
+	SelectPriceExpFactorB        *float64
+	SelectPriceCenter            *float64
 	OrchPerfStatsURL             *string
 	Region                       *string
 	MaxPricePerUnit              *int
@@ -169,7 +171,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultSelectRandWeight := 0.3
 	defaultSelectStakeWeight := 0.7
 	defaultSelectPriceWeight := 0.0
-	defaultSelectPriceExpFactor := 100.0
+	defaultSelectPriceExpFactorA := 0.001
+	defaultSelectPriceExpFactorB := 20.0
+	defaultSelectPriceCenter := 150.0
 	defaultMaxSessions := strconv.Itoa(10)
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
@@ -257,7 +261,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		SelectRandWeight:             &defaultSelectRandWeight,
 		SelectStakeWeight:            &defaultSelectStakeWeight,
 		SelectPriceWeight:            &defaultSelectPriceWeight,
-		SelectPriceExpFactor:         &defaultSelectPriceExpFactor,
+		SelectPriceExpFactorA:        &defaultSelectPriceExpFactorA,
+		SelectPriceExpFactorB:        &defaultSelectPriceExpFactorB,
+		SelectPriceCenter:            &defaultSelectPriceCenter,
 		MaxSessions:                  &defaultMaxSessions,
 		OrchPerfStatsURL:             &defaultOrchPerfStatsURL,
 		Region:                       &defaultRegion,
@@ -1498,11 +1504,13 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:    *cfg.MinPerfScore,
+		StakeWeight:     *cfg.SelectStakeWeight,
+		PriceWeight:     *cfg.SelectPriceWeight,
+		RandWeight:      *cfg.SelectRandWeight,
+		PriceExpFactorA: *cfg.SelectPriceExpFactorA,
+		PriceExpFactorB: *cfg.SelectPriceExpFactorB,
+		PriceCenter:     *cfg.SelectPriceCenter,
 	}, nil
 }
 
