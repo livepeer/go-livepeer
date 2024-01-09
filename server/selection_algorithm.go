@@ -49,31 +49,23 @@ func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, scores
 }
 
 func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) map[ethcommon.Address]float64 {
-	pricesNorm := map[ethcommon.Address]float64{}
+	// Find the biggest stake in the current working set
+	var maxStake float64 = 0.0
 	for _, addr := range addrs {
-		p := prices[addr]
-		pricesNorm[addr] = math.Exp(-1 * p / sa.PriceExpFactor)
-	}
-
-	var priceSum, stakeSum float64
-	for _, addr := range addrs {
-		priceSum += pricesNorm[addr]
-		stakeSum += float64(stakes[addr])
+		var thisStake = float64(stakes[addr])
+		if thisStake > maxStake {
+			maxStake = thisStake
+		}
 	}
 
 	probs := map[ethcommon.Address]float64{}
 	for _, addr := range addrs {
-		priceProb := 1.0
-		if priceSum != 0 {
-			priceProb = pricesNorm[addr] / priceSum
-		}
-		stakeProb := 1.0
-		if stakeSum != 0 {
-			stakeProb = float64(stakes[addr]) / stakeSum
-		}
 		randProb := 1.0 / float64(len(addrs))
-
-		probs[addr] = sa.PriceWeight*priceProb + sa.StakeWeight*stakeProb + sa.RandWeight*randProb
+		// Normalize price-weighted curve exponentially
+		var priceProb = math.Exp(-1 * prices[addr] / sa.PriceExpFactor)
+		// Normalize stake-weighted curve linearly relative to the highest staked orchestrator in the set
+		var stakeProb = float64(stakes[addr]) / maxStake
+		probs[addr] = (sa.PriceWeight*priceProb)*(sa.StakeWeight*stakeProb) + sa.RandWeight*randProb
 	}
 
 	return probs
