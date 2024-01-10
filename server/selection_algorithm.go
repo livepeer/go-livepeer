@@ -17,7 +17,9 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceWeight float64
 	RandWeight  float64
 
-	PriceExpFactor float64
+	PriceExpFactorA float64
+	PriceExpFactorB float64
+	PriceCenter     float64
 }
 
 func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
@@ -50,9 +52,11 @@ func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, scores
 
 func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) map[ethcommon.Address]float64 {
 	pricesNorm := map[ethcommon.Address]float64{}
+
+	// Normalize price-weighted selection according to a inverted sigmoid function
 	for _, addr := range addrs {
 		p := prices[addr]
-		pricesNorm[addr] = math.Exp(-1 * p / sa.PriceExpFactor)
+		pricesNorm[addr] = 1 / (1 + math.Pow(math.Exp(sa.PriceExpFactorA*(p-sa.PriceCenter)), sa.PriceExpFactorB))
 	}
 
 	var priceSum, stakeSum float64
