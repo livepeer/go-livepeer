@@ -12,7 +12,8 @@
 
 #### Broadcaster
 
-- \#xxx Use FPS of 60, rather then 120 for cost estimation (@thomshutt)
+- #2896 Use FPS of 60, rather then 120 for cost estimation (@thomshutt)
+- #2948 Remove logging from metrics methods (@thomshutt)
 
 #### Orchestrator
 
