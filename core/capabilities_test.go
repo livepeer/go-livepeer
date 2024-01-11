@@ -228,14 +228,10 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		{Profile: ffmpeg.ProfileH264High},
 		{GOP: 1},
 	}
-	detector := DetectionConfig{
-		Freq:     1,
-		Profiles: []ffmpeg.DetectorProfile{&ffmpeg.SceneClassificationProfile{}},
-	}
 	storageURI := "s3+http://K:P@localhost:9000/bucket"
 	os, err := drivers.ParseOSURL(storageURI, false)
 	assert.Nil(err)
-	params := &StreamParameters{Profiles: profs, OS: os.NewSession(""), Detection: detector}
+	params := &StreamParameters{Profiles: profs, OS: os.NewSession("")}
 	assert.True(checkSuccess(params, []Capability{
 		Capability_H264,
 		Capability_MP4,
@@ -246,13 +242,11 @@ func TestCapability_JobCapabilities(t *testing.T) {
 		Capability_ProfileH264High,
 		Capability_GOP,
 		Capability_AuthToken,
-		Capability_SceneClassification,
 	}), "failed with everything enabled")
 
 	// check fractional framerates
 	params.Profiles = []ffmpeg.VideoProfile{{FramerateDen: 1}}
 	params.OS = nil
-	params.Detection = DetectionConfig{}
 	assert.True(checkSuccess(params, []Capability{
 		Capability_H264,
 		Capability_MPEGTS,

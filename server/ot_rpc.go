@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +19,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
@@ -268,17 +265,7 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
 
 	pixels := int64(0)
-	// add detections
 	if tData != nil {
-		if len(tData.Detections) > 0 {
-			detectData, err := json.Marshal(tData.Detections)
-			if err != nil {
-				clog.Errorf(ctx, "Error posting results, couldn't serialize detection data orch=%s staskId=%d url=%s err=%q", orchAddr,
-					notify.TaskId, notify.Url, err)
-				return
-			}
-			req.Header.Set("Detections", string(detectData))
-		}
 		pixels = tData.Pixels
 	}
 	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
@@ -361,22 +348,6 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// read detection data - only scene classification is supported
-	var detections []ffmpeg.DetectData
-	var sceneDetections []ffmpeg.SceneClassificationData
-	var detectionsHeader = r.Header.Get("Detections")
-	if len(detectionsHeader) > 0 {
-		err = json.Unmarshal([]byte(detectionsHeader), &sceneDetections)
-		if err != nil {
-			glog.Error("Could not parse detection data ", err)
-			http.Error(w, "Invalid detection data", http.StatusBadRequest)
-			return
-		}
-		for _, sd := range sceneDetections {
-			detections = append(detections, sd)
-		}
-	}
-
 	var res core.RemoteTranscoderResult
 	if transcodingErrorMimeType == mediaType {
 		w.Write([]byte("OK"))
@@ -441,9 +412,8 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		res.TranscodeData = &core.TranscodeData{
-			Segments:   segments,
-			Pixels:     decodedPixels,
-			Detections: detections,
+			Segments: segments,
+			Pixels:   decodedPixels,
 		}
 		dlDur := time.Since(start)
 		glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)

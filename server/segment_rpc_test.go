@@ -396,73 +396,6 @@ func TestGenSegCreds_Profiles(t *testing.T) {
 	assert.Equal(expectedProfiles, segData.FullProfiles)
 }
 
-func TestGenSegCreds_Detection(t *testing.T) {
-	assert := assert.New(t)
-	ffmpegDetector := &ffmpeg.SceneClassificationProfile{
-		SampleRate: uint(5678),
-		Classes:    []ffmpeg.DetectorClass{{ID: 1, Name: "classA"}, {ID: 3, Name: "classB"}},
-	}
-
-	expectedSegData := &net.SegData{
-		DetectorProfiles: []*net.DetectorProfile{
-			&net.DetectorProfile{Value: &net.DetectorProfile_SceneClassification{
-				SceneClassification: &net.SceneClassificationProfile{
-					SampleRate: uint32(5678),
-					Classes: []*net.DetectorClass{
-						&net.DetectorClass{ClassId: uint32(1), ClassName: "classA"},
-						&net.DetectorClass{ClassId: uint32(3), ClassName: "classB"},
-					},
-				},
-			}},
-		},
-		DetectorEnabled: true,
-	}
-
-	s := &BroadcastSession{
-		Broadcaster: stubBroadcaster2(),
-		Params: &core.StreamParameters{
-			Detection: core.DetectionConfig{
-				Freq:     12,
-				Profiles: []ffmpeg.DetectorProfile{ffmpegDetector},
-			},
-		},
-	}
-	seg := &stream.HLSSegment{SeqNo: 24, Data: []byte("foo")}
-
-	getSegData := func(s *BroadcastSession, seg *stream.HLSSegment) *net.SegData {
-		data, err := genSegCreds(s, seg, nil, false)
-		assert.Nil(err)
-
-		buf, err := base64.StdEncoding.DecodeString(data)
-		assert.Nil(err)
-
-		segData := net.SegData{}
-		err = proto.Unmarshal(buf, &segData)
-		assert.Nil(err)
-
-		return &segData
-	}
-
-	// Test serialization
-	// Freq 12 - SegNo 24 - Detection should be enabled
-	segData := getSegData(s, seg)
-	assert.Equal(expectedSegData.DetectorProfiles, segData.DetectorProfiles)
-	assert.Equal(expectedSegData.DetectorEnabled, segData.DetectorEnabled)
-
-	// Freq 12 - SegNo 14 - Detection should not be enabled
-	seg.SeqNo = 14
-	segData = getSegData(s, seg)
-	expectedSegData.DetectorEnabled = false
-	assert.Equal(expectedSegData.DetectorProfiles, segData.DetectorProfiles)
-	assert.Equal(expectedSegData.DetectorEnabled, segData.DetectorEnabled)
-
-	// Freq 0 - Detector profile should not be present
-	s.Params.Detection.Freq = 0
-	segData = getSegData(s, seg)
-	assert.Len(segData.DetectorProfiles, 0)
-	assert.Equal(expectedSegData.DetectorEnabled, segData.DetectorEnabled)
-}
-
 func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
 
@@ -524,42 +457,6 @@ func TestCoreSegMetadata_FullProfiles(t *testing.T) {
 		Format: ffmpeg.FormatMPEGTS}}
 	assert.Equal(expected, md.Profiles)
 
-}
-
-func TestCoreSegMetadata_Detection(t *testing.T) {
-	assert := assert.New(t)
-
-	segData := &net.SegData{
-		DetectorProfiles: []*net.DetectorProfile{
-			&net.DetectorProfile{Value: &net.DetectorProfile_SceneClassification{
-				SceneClassification: &net.SceneClassificationProfile{
-					SampleRate: uint32(1234),
-					Classes: []*net.DetectorClass{
-						&net.DetectorClass{ClassId: uint32(1), ClassName: "class1"},
-						&net.DetectorClass{ClassId: uint32(3), ClassName: "class3"},
-					},
-				},
-			}},
-		},
-		DetectorEnabled: true,
-	}
-
-	ffmpegDetector := &ffmpeg.SceneClassificationProfile{
-		SampleRate: uint(1234),
-		Classes:    []ffmpeg.DetectorClass{{ID: 1, Name: "class1"}, {ID: 3, Name: "class3"}},
-	}
-
-	// Test deserialization
-	md, err := coreSegMetadata(segData)
-	assert.Nil(err)
-	assert.Len(md.DetectorProfiles, 1)
-	assert.Equal(ffmpegDetector, md.DetectorProfiles[0])
-	assert.True(md.DetectorEnabled)
-
-	segData.DetectorEnabled = false
-	md, err = coreSegMetadata(segData)
-	assert.Nil(err)
-	assert.False(md.DetectorEnabled)
 }
 
 func TestMakeFfmpegVideoProfiles(t *testing.T) {

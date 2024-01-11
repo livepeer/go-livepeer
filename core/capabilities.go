@@ -43,7 +43,7 @@ const (
 	Capability_ProfileH264ConstrainedHigh
 	Capability_GOP
 	Capability_AuthToken
-	Capability_SceneClassification
+	Capability_SceneClassification // Deprecated, but can't remove because of Capability ordering
 	Capability_MPEG7VideoSignature
 	Capability_HEVC_Decode
 	Capability_HEVC_Encode
@@ -75,7 +75,6 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ProfileH264ConstrainedHigh: "H264 Constained High profile",
 	Capability_GOP:                        "GOP",
 	Capability_AuthToken:                  "Auth token",
-	Capability_SceneClassification:        "Scene slassification",
 	Capability_MPEG7VideoSignature:        "MPEG7 signature",
 	Capability_HEVC_Decode:                "HEVC decode",
 	Capability_HEVC_Encode:                "HEVC encode",
@@ -175,11 +174,6 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
 	}
-}
-
-func ExperimentalCapabilities() []Capability {
-	// Add experimental capabilities if enabled during build
-	return experimentalCapabilities
 }
 
 func MandatoryOCapabilities() []Capability {
@@ -305,14 +299,6 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 		return nil, err
 	}
 	caps[storageCap] = true
-
-	// capabilities based on detector profiles
-	for _, profile := range params.Detection.Profiles {
-		switch profile.Type() {
-		case ffmpeg.SceneClassification:
-			caps[Capability_SceneClassification] = true
-		}
-	}
 
 	// capabilities based on detected input codec
 	decodeCap, err := inputCodecToCapability(params.Codec)

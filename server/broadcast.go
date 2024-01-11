@@ -3,10 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"math/rand"
@@ -1076,76 +1074,6 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 				err = errors.New("empty response")
 			}
 			return nil, info, err
-		}
-		// log all received detection results
-		if monitor.Enabled {
-			if len(res.Detections) > 0 {
-				for _, detection := range res.Detections {
-					switch x := detection.Value.(type) {
-					case *net.DetectData_SceneClassification:
-						probs := x.SceneClassification.ClassProbs
-						for id, prob := range probs {
-							className := "unknown"
-							for name, lookupId := range ffmpeg.DetectorClassIDLookup {
-								if id == uint32(lookupId) {
-									className = name
-									break
-								}
-							}
-							monitor.SegSceneClassificationResult(ctx, seg.SeqNo, className, prob)
-						}
-					}
-				}
-			}
-		}
-		// [EXPERIMENTAL] send content detection results to callback webhook
-		// for now use detection only in common path
-		if DetectionWebhookURL != nil {
-			clog.V(common.DEBUG).Infof(ctx, "Got detection result %v", res.Detections)
-			if monitor.Enabled {
-				monitor.SegSceneClassificationDone(ctx, seg.SeqNo)
-			}
-			go func(mid core.ManifestID, config core.DetectionConfig, seqNo uint64, detections []*net.DetectData) {
-				req := common.DetectionWebhookRequest{ManifestID: string(mid), SeqNo: seqNo}
-				for _, detection := range detections {
-					switch x := detection.Value.(type) {
-					case *net.DetectData_SceneClassification:
-						probs := x.SceneClassification.ClassProbs
-						// match returned probs (key: class id) with one of the user-selected class names
-						for _, name := range config.SelectedClassNames {
-							if id, ok := ffmpeg.DetectorClassIDLookup[name]; ok {
-								if prob, ok := probs[uint32(id)]; ok {
-									req.SceneClassification = append(req.SceneClassification,
-										common.SceneClassificationResult{
-											Name:        name,
-											Probability: prob,
-										})
-								}
-							}
-						}
-					}
-				}
-				jsonValue, err := json.Marshal(req)
-				if err != nil {
-					clog.Errorf(ctx, "Unable to marshal detection result into JSON ")
-					return
-				}
-				resp, err := DetectionWhClient.Post(DetectionWebhookURL.String(), "application/json", bytes.NewBuffer(jsonValue))
-				if err != nil {
-					clog.Errorf(ctx, "Unable to POST detection result on webhook url=%v err=%q",
-						DetectionWebhookURL.Redacted(), err)
-				} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-					rbody, rerr := ioutil.ReadAll(resp.Body)
-					resp.Body.Close()
-					if rerr != nil {
-						clog.Errorf(ctx, "Detection webhook returned error status=%v with unreadable body err=%q",
-							resp.StatusCode, rerr)
-					} else {
-						clog.Errorf(ctx, "Detection webhook returned error status=%v err=%q",
-							resp.StatusCode, string(rbody))
-					}
-				}
-			}(cxn.mid, cxn.params.Detection, seg.SeqNo, res.Detections)
 		}
 		// Ensure perceptual hash is generated if we ask for it
 		if calcPerceptualHash {

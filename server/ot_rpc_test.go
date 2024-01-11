@@ -207,25 +207,6 @@ func TestTranscodeResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 	require.Contains(t, w.Body.String(), "Invalid Task ID")
 }
 
-func TestTranscodeResults_DoesNotErrorWhenSceneDetectionHeaderMissing(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodGet, "/TranscodeResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerLPT)
-	r.Header.Set("Credentials", "")
-	r.Header.Set("Content-Type", "video/mp4")
-	r.Header.Set("TaskId", "123")
-	r.Header.Set("Pixels", "1")
-
-	l.TranscodeResults(w, r)
-	require.Equal(t, http.StatusOK, w.Code)
-}
-
 func TestTranscodeResults_ErrorsWhenPixelsHeaderMissing(t *testing.T) {
 	var l lphttp
 	l.orchestrator = newStubOrchestrator()

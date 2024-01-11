@@ -149,34 +149,6 @@ message AuthToken {
   int64 expiration = 3;
 }
 
-// [EXPERIMENTAL]
-// Describes a class that a model is trained to detect
-message DetectorClass {
-  // ID of the class to detect
-  uint32 class_id = 1;
-
-  // Name of the class to detect
-  string class_name = 2;
-}
-
-// [EXPERIMENTAL]
-// Describes the scene classification configuration
-message SceneClassificationProfile {
-  // Sample rate of the frames picked by the O for scene detection
-  uint32 sample_rate = 1;
-
-  // List of output classes the model is trained to detect
-  repeated DetectorClass classes = 2;
-}
-
-// [EXPERIMENTAL]
-// Describes the content detection configuration
-message DetectorProfile {
-  oneof value {
-    SceneClassificationProfile scene_classification = 1;
-  }
-}
-
 // Data included by the broadcaster when submitting a segment for transcoding.
 message SegData {
 
@@ -205,10 +177,6 @@ message SegData {
   // Data for transcoding authentication
   AuthToken auth_token = 8;
 
-  // [EXPERIMENTAL]
-  // Detector enabled for this segment
-  bool detector_enabled = 9;
-
   // Calculate perceptual hash for this segment
   bool calc_perceptual_hash = 10;
 
@@ -232,10 +200,6 @@ message SegData {
 
   // Force HW Session Reinit
   bool ForceSessionReinit = 38;
-
-  // [EXPERIMENTAL]
-  // Detector profiles to use
-  repeated DetectorProfile detector_profiles = 36;
 }
 
 message SegParameters {
@@ -320,21 +284,6 @@ message TranscodedSegmentData {
     string perceptual_hash_url = 3;
 }
 
-// [EXPERIMENTAL]
-// Describes scene classification results
-message SceneClassificationData {
-  // Probability that the segment is detected as a particular classID (uint32)
-  map<uint32, double> class_probs = 1;
-}
-
-// [EXPERIMENTAL]
-// Describes detection results
-message DetectData {
-  oneof value {
-    SceneClassificationData scene_classification = 1;
-  }
-}
-
 // A set of transcoded segments following the profiles specified in the job.
 message TranscodeData {
 
@@ -343,10 +292,6 @@ message TranscodeData {
 
     // Signature of the hash of the concatenated hashes
     bytes sig = 2;
-
-    // [EXPERIMENTAL]
-    // Detection result data in same order as SegData.detector_profiles
-    repeated DetectData detections = 3;
 }
 
 // Response that a transcoder sends after transcoding a segment.
