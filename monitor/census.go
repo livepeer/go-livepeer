@@ -1162,7 +1162,6 @@ func SetTranscodersNumberAndLoad(load, capacity, number int) {
 }
 
 func SegmentEmerged(ctx context.Context, nonce, seqNo uint64, profilesNum int, dur float64) {
-	clog.V(logLevel).Infof(ctx, "Logging SegmentEmerged... duration=%v", dur)
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTagAndIP(ctx),
 		census.mSegmentEmergedUnprocessed.M(1)); err != nil {
@@ -1189,7 +1188,6 @@ func (cen *censusMetricsCounter) segmentEmerged(nonce, seqNo uint64, profilesNum
 }
 
 func SourceSegmentAppeared(ctx context.Context, nonce, seqNo uint64, manifestID, profile string, recordingEnabled bool) {
-	clog.V(logLevel).Infof(ctx, "Logging SourceSegmentAppeared... profile=%s", profile)
 	census.segmentSourceAppeared(ctx, nonce, seqNo, profile, recordingEnabled)
 }
 
@@ -1208,8 +1206,6 @@ func (cen *censusMetricsCounter) segmentSourceAppeared(ctx context.Context, nonc
 }
 
 func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Duration, uri string) {
-	clog.V(logLevel).Infof(ctx, "Logging SegmentUploaded... dur=%s", uploadDur)
-
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx,
 			tag.Insert(census.kOrchestratorURI, uri)),
@@ -1224,8 +1220,6 @@ func SegmentUploaded(ctx context.Context, nonce, seqNo uint64, uploadDur time.Du
 }
 
 func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur time.Duration) {
-	clog.V(logLevel).Infof(ctx, "Logging SegmentDownloaded... dur=%s", downloadDur)
-
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx),
 		census.mSegmentDownloaded.M(1),
@@ -1235,7 +1229,6 @@ func SegmentDownloaded(ctx context.Context, nonce, seqNo uint64, downloadDur tim
 }
 
 func SegSceneClassificationResult(ctx context.Context, seqNo uint64, class string, prob float64) {
-	clog.V(logLevel).Infof(ctx, "Logging SegSceneClassificationResult... class=%s prob=%v", class, prob)
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx, tag.Insert(census.kSegClassName, class)),
 		census.mSegmentClassProb.M(prob)); err != nil {
@@ -1244,7 +1237,6 @@ func SegSceneClassificationResult(ctx context.Context, seqNo uint64, class strin
 }
 
 func SegSceneClassificationDone(ctx context.Context, seqNo uint64) {
-	clog.V(logLevel).Infof(ctx, "Logging SegSceneClassificationDone... seqno=%v", seqNo)
 	if err := stats.RecordWithTags(census.ctx,
 		manifestIDTag(ctx),
 		census.mSceneClassification.M(1)); err != nil {
@@ -1318,7 +1310,6 @@ func SegmentUploadFailed(ctx context.Context, nonce, seqNo uint64, code SegmentU
 			code = SegmentUploadErrorSessionEnded
 		}
 	}
-	clog.Errorf(ctx, "Logging SegmentUploadFailed... code=%v reason='%s'", code, err.Error())
 
 	census.segmentUploadFailed(ctx, nonce, seqNo, code, permanent, uri)
 }
@@ -1347,7 +1338,6 @@ func (cen *censusMetricsCounter) segmentUploadFailed(ctx context.Context, nonce,
 func SegmentTranscoded(ctx context.Context, nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration, profiles string,
 	trusted, verified bool) {
 
-	clog.V(logLevel).Infof(ctx, "Logging SegmentTranscode nonce=%d seqNo=%d dur=%s trusted=%v verified=%v", nonce, seqNo, transcodeDur, trusted, verified)
 	census.segmentTranscoded(nonce, seqNo, sourceDur, transcodeDur, profiles, trusted, verified)
 }
 
@@ -1373,7 +1363,6 @@ func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDu
 }
 
 func SegmentTranscodeFailed(ctx context.Context, subType SegmentTranscodeError, nonce, seqNo uint64, err error, permanent bool) {
-	clog.Errorf(ctx, "Logging SegmentTranscodeFailed subtype=%v err=%q", subType, err.Error())
 	census.segmentTranscodeFailed(ctx, nonce, seqNo, subType, permanent)
 }
 
@@ -1474,7 +1463,6 @@ func newAverager(manifestID string) *segmentsAverager {
 }
 
 func StreamCreated(manifestID string, nonce uint64) {
-	glog.V(logLevel).Infof("Logging StreamCreated... nonce=%d manifestID=%s", nonce, manifestID)
 	census.streamCreated(manifestID, nonce)
 }
 
@@ -1486,7 +1474,6 @@ func (cen *censusMetricsCounter) streamCreated(manifestID string, nonce uint64) 
 }
 
 func StreamStarted(nonce uint64) {
-	glog.V(logLevel).Infof("Logging StreamStarted... nonce=%d", nonce)
 	census.streamStarted(nonce)
 }
 
@@ -1495,7 +1482,6 @@ func (cen *censusMetricsCounter) streamStarted(nonce uint64) {
 }
 
 func StreamEnded(ctx context.Context, nonce uint64) {
-	clog.V(logLevel).Infof(ctx, "Logging StreamEnded... nonce=%d", nonce)
 	census.streamEnded(nonce)
 }
 
