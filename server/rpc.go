@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -198,6 +199,12 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
+
+	// TODO: Inject worker.ServerInterface with actual implementation
+	aiHandler := worker.Handler(worker.Unimplemented{})
+	lp.transRPC.Handle("/text-to-image", aiHandler)
+	lp.transRPC.Handle("/image-to-image", aiHandler)
+	lp.transRPC.Handle("/image-to-video", aiHandler)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
