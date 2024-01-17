@@ -23,10 +23,9 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	aiHandler := worker.Handler(worker.Unimplemented{})
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
-	lp.transRPC.Handle("/image-to-video", aiHandler)
+	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 
 	return nil
 }
@@ -69,6 +68,33 @@ func (h *lphttp) ImageToImage() http.Handler {
 		clog.V(common.VERBOSE).Infof(r.Context(), "Received ImageToImage request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
 
 		resp, err := h.orchestrator.ImageToImage(r.Context(), req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (h *lphttp) ImageToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.ImageToVideoMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		clog.V(common.VERBOSE).Infof(r.Context(), "Received ImageToVideo request imageSize=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
+
+		resp, err := h.orchestrator.ImageToVideo(r.Context(), req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
