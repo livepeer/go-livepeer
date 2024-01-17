@@ -62,6 +62,7 @@ type Orchestrator interface {
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
+	ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance
