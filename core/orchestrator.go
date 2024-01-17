@@ -111,6 +111,10 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToIm
 	return orch.node.imageToImage(ctx, req)
 }
 
+func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+	return orch.node.imageToVideo(ctx, req)
+}
+
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
@@ -766,6 +770,10 @@ func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJS
 
 func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.ImageToImage(ctx, req)
+}
+
+func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+	return n.AIWorker.ImageToVideo(ctx, req)
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
