@@ -14,9 +14,11 @@ import (
 	"net/url"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -25,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -58,6 +61,9 @@ var (
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
+
+	aiWorkerContainerImageID     = "runner"
+	aiWorkerContainerStopTimeout = 5 * time.Second
 )
 
 const (
@@ -85,6 +91,7 @@ type LivepeerConfig struct {
 	HttpIngest             *bool
 	Orchestrator           *bool
 	Transcoder             *bool
+	AIWorker               *bool
 	Broadcaster            *bool
 	OrchSecret             *string
 	TranscodingOptions     *string
@@ -175,6 +182,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNetint := ""
 	defaultTestTranscoder := true
 
+	// AI:
+	defaultAIWorker := false
+
 	// Onchain:
 	defaultEthAcctAddr := ""
 	defaultEthPassword := ""
@@ -258,6 +268,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
 		TestTranscoder:       &defaultTestTranscoder,
+
+		// AI:
+		AIWorker: &defaultAIWorker,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -476,6 +489,50 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
 		}
+	}
+
+	if *cfg.AIWorker {
+		if *cfg.Nvidia == "" {
+			glog.Error("-nvidia required when using -aiworker")
+			return
+		}
+
+		modelDir := path.Join(*cfg.Datadir, "models")
+		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, *cfg.Nvidia, modelDir)
+		if err != nil {
+			glog.Errorf("Error starting AI worker: %v", err)
+			return
+		}
+
+		warmPipelines := map[string]string{
+			"text-to-image": "stabilityai/sd-turbo",
+		}
+
+		for pipeline, modelID := range warmPipelines {
+			if err := n.AIWorker.Warm(ctx, pipeline, modelID); err != nil {
+				glog.Errorf("Error AI worker warming %v container: %v", pipeline, err)
+				return
+			}
+		}
+
+		defer func() {
+			var stopContainerWg sync.WaitGroup
+			for pipeline := range warmPipelines {
+				stopContainerWg.Add(1)
+				go func(pipeline string) {
+					defer stopContainerWg.Done()
+					ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
+					defer cancel()
+					if err := n.AIWorker.Stop(ctx, pipeline); err != nil {
+						glog.Errorf("Error AI worker stopping %v container: %v", pipeline, err)
+						return
+					}
+				}(pipeline)
+			}
+
+			stopContainerWg.Wait()
+			glog.Infof("Stopped AI worker containers")
+		}()
 	}
 
 	if *cfg.Redeemer {

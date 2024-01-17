@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -100,6 +101,10 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
+}
+
+func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return orch.node.textToImage(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -749,6 +754,10 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
 	}
+}
+
+func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return n.AIWorker.TextToImage(ctx, req)
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {

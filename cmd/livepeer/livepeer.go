@@ -104,7 +104,7 @@ func main() {
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
 		cancel()
-		time.Sleep(time.Millisecond * 500) //Give time for other processes to shut down completely
+		time.Sleep(time.Second * 2) //Give time for other processes to shut down completely
 	case <-lc:
 	}
 }
@@ -148,6 +148,9 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.Nvidia = flag.String("nvidia", *cfg.Nvidia, "Comma-separated list of Nvidia GPU device IDs (or \"all\" for all available devices)")
 	cfg.Netint = flag.String("netint", *cfg.Netint, "Comma-separated list of NetInt device GUIDs (or \"all\" for all available devices)")
 	cfg.TestTranscoder = flag.Bool("testTranscoder", *cfg.TestTranscoder, "Test Nvidia GPU transcoding at startup")
+
+	// AI:
+	cfg.AIWorker = flag.Bool("aiworker", *cfg.AIWorker, "Set to true to run an AI worker")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
