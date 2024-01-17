@@ -61,6 +61,7 @@ type Orchestrator interface {
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
+	TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -200,11 +201,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
 
-	// TODO: Inject worker.ServerInterface with actual implementation
-	aiHandler := worker.Handler(worker.Unimplemented{})
-	lp.transRPC.Handle("/text-to-image", aiHandler)
-	lp.transRPC.Handle("/image-to-image", aiHandler)
-	lp.transRPC.Handle("/image-to-video", aiHandler)
+	if n.AIWorker != nil {
+		startAIServer(lp)
+	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
