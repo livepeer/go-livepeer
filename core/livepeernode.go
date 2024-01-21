@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/pm"
 
 	"github.com/livepeer/go-livepeer/common"
@@ -74,7 +73,7 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker *worker.Worker
+	AIWorker AI
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
