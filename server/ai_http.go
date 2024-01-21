@@ -51,6 +51,7 @@ func (h *lphttp) TextToImage() http.Handler {
 			return
 		}
 
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
 	})
