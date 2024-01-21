@@ -26,6 +26,43 @@ type aiRequestParams struct {
 	os   drivers.OSSession
 }
 
+func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	// Discover 1 orchestrator
+	// TODO: Discover multiple orchestrators
+	caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
+	orchDesc, err := params.node.OrchestratorPool.GetOrchestrators(ctx, 1, newSuspender(), caps, common.ScoreAtLeast(0))
+	if err != nil {
+		return nil, err
+	}
+	orchInfos := orchDesc.GetRemoteInfos()
+
+	if len(orchInfos) == 0 {
+		return nil, errors.New("no orchestrators available")
+	}
+
+	orchUrl := orchInfos[0].Transcoder
+	return submitTextToImage(ctx, orchUrl, req)
+}
+
+func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	client, err := worker.NewClientWithResponses(url, worker.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.TextToImageWithResponse(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON422 != nil {
+		// TODO: Handle JSON422 struct
+		return nil, errors.New("orchestrator returned 422")
+	}
+
+	return resp.JSON200, nil
+}
+
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {
 	// Discover 1 orchestrator
 	// TODO: Discover multiple orchestrators
