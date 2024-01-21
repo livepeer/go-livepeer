@@ -24,6 +24,7 @@ var errNoOrchestrators = errors.New("no orchestrators")
 type Router struct {
 	uris []*url.URL
 	srv  *grpc.Server
+	net.UnimplementedOrchestratorServer
 }
 
 func (r *Router) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {

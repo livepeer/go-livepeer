@@ -35,6 +35,7 @@ type Redeemer struct {
 	sm        localSenderMonitor
 	quit      chan struct{}
 	mu        sync.Mutex
+	net.UnimplementedTicketRedeemerServer
 }
 
 // NewRedeemer creates a new ticket redemption service instance

@@ -157,6 +157,8 @@ type lphttp struct {
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
 	node         *core.LivepeerNode
+	net.UnimplementedOrchestratorServer
+	net.UnimplementedTranscoderServer
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
