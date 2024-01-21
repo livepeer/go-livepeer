@@ -107,6 +107,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			}
 		}
 
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(&worker.ImageResponse{Images: videos})
 	})
