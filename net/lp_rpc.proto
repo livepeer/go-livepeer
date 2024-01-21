@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package net;
+option go_package = "./net";
 
 // RPC calls implemented by the orchestrator
 service Orchestrator {

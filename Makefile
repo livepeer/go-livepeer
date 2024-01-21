@@ -4,13 +4,14 @@ GO_BUILD_DIR?="./"
 all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
-	protoc -I=. --go_out=plugins=grpc:. $^
+	protoc -I=. --go_out=. --go-grpc_out=. $^
 
 net/redeemer.pb.go: net/redeemer.proto
-	protoc -I=. --go_out=plugins=grpc:. $^
+	protoc -I=. --go_out=. --go-grpc_out=. $^
 
-net/redeemer_mock.pb.go: net/redeemer.pb.go
-	mockgen -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net $^
+net/redeemer_mock.pb.go net/redeemer_grpc_mock.pb.go: net/redeemer.pb.go net/redeemer_grpc.pb.go
+	@mockgen -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net
+	@mockgen -source net/redeemer_grpc.pb.go -destination net/redeemer_grpc_mock.pb.go -package net
 
 core/test_segment.go:
 	core/test_segment.sh core/test_segment.go
