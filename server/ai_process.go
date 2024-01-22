@@ -63,6 +63,73 @@ func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJS
 	return resp.JSON200, nil
 }
 
+func processImageToImage(ctx context.Context, params aiRequestParams, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	// Discover 1 orchestrator
+	// TODO: Discover multiple orchestrators
+	caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
+	orchDesc, err := params.node.OrchestratorPool.GetOrchestrators(ctx, 1, newSuspender(), caps, common.ScoreAtLeast(0))
+	if err != nil {
+		return nil, err
+	}
+	orchInfos := orchDesc.GetRemoteInfos()
+
+	if len(orchInfos) == 0 {
+		return nil, errors.New("no orchestrators available")
+	}
+
+	orchUrl := orchInfos[0].Transcoder
+	return submitImageToImage(ctx, orchUrl, req)
+}
+
+func submitImageToImage(ctx context.Context, url string, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	writer, err := mw.CreateFormFile("image", req.Image.Filename())
+	if err != nil {
+		return nil, err
+	}
+	imageSize := req.Image.FileSize()
+	imageRdr, err := req.Image.Reader()
+	if err != nil {
+		return nil, err
+	}
+	copied, err := io.Copy(writer, imageRdr)
+	if err != nil {
+		return nil, err
+	}
+	if copied != imageSize {
+		return nil, fmt.Errorf("failed to copy image to multipart request imageBytes=%v copiedBytes=%v", imageSize, copied)
+	}
+
+	if err := mw.WriteField("prompt", req.Prompt); err != nil {
+		return nil, err
+	}
+	if err := mw.WriteField("model_id", *req.ModelId); err != nil {
+		return nil, err
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(url, worker.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.ImageToImageWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON422 != nil {
+		// TODO: Handle JSON422 struct
+		return nil, errors.New("orchestrator returned 422")
+	}
+
+	return resp.JSON200, nil
+}
+
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {
 	// Discover 1 orchestrator
 	// TODO: Discover multiple orchestrators

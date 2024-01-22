@@ -27,6 +27,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
 	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(ls.TextToImage()))
+	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(ls.ImageToImage()))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 
 	return nil
@@ -58,6 +59,45 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		took := time.Since(start)
 		clog.Infof(ctx, "Processed TextToImage request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) ImageToImage() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.ImageToImageMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToImage request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
+
+		params := aiRequestParams{
+			node: ls.LivepeerNode,
+		}
+
+		start := time.Now()
+		resp, err := processImageToImage(ctx, params, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		took := time.Since(start)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed ImageToImage request imageSize=%v prompt=%v model_id=%v took=%v", req.Image.FileSize(), req.Prompt, *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
