@@ -879,7 +879,10 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			ctx, cancel := clog.WithTimeout(context.Background(), ctx, recordSegmentsMaxTimeout)
 			defer cancel()
 			now := time.Now()
-			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 3)
+			fields := &drivers.FileProperties{
+				Metadata: map[string]string{"duration": segDurMs},
+			}
+			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, fields, 3)
 			took := time.Since(now)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%q",
@@ -1252,7 +1255,10 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := getSegDurMsString(seg)
 				now := time.Now()
-				uri, err := drivers.SaveRetried(ctx, bros, name, data, map[string]string{"duration": segDurMs}, 3)
+				fields := &drivers.FileProperties{
+					Metadata: map[string]string{"duration": segDurMs},
+				}
+				uri, err := drivers.SaveRetried(ctx, bros, name, data, fields, 3)
 				took := time.Since(now)
 				if err != nil {
 					clog.Errorf(ctx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%q", nonce, cxn.mid, name, err)
