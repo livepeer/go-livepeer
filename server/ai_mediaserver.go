@@ -48,6 +48,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		params := aiRequestParams{
 			node: ls.LivepeerNode,
+			os:   drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
 		}
 
 		start := time.Now()
@@ -87,6 +88,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 
 		params := aiRequestParams{
 			node: ls.LivepeerNode,
+			os:   drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
 		}
 
 		start := time.Now()

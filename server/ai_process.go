@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -41,7 +42,30 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 	}
 
 	orchUrl := orchInfos[0].Transcoder
-	return submitTextToImage(ctx, orchUrl, req)
+	resp, err := submitTextToImage(ctx, orchUrl, req)
+	if err != nil {
+		return nil, err
+	}
+
+	newMedia := make([]worker.Media, len(resp.Images))
+	for i, media := range resp.Images {
+		var data bytes.Buffer
+		if err := worker.ReadImageB64DataUrl(media.Url, bufio.NewWriter(&data)); err != nil {
+			return nil, err
+		}
+
+		name := string(core.RandomManifestID()) + ".png"
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		newMedia[i] = worker.Media{Url: newUrl}
+	}
+
+	resp.Images = newMedia
+
+	return resp, nil
 }
 
 func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -78,7 +102,30 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	orchUrl := orchInfos[0].Transcoder
-	return submitImageToImage(ctx, orchUrl, req)
+	resp, err := submitImageToImage(ctx, orchUrl, req)
+	if err != nil {
+		return nil, err
+	}
+
+	newMedia := make([]worker.Media, len(resp.Images))
+	for i, media := range resp.Images {
+		var data bytes.Buffer
+		if err := worker.ReadImageB64DataUrl(media.Url, bufio.NewWriter(&data)); err != nil {
+			return nil, err
+		}
+
+		name := string(core.RandomManifestID()) + ".png"
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		newMedia[i] = worker.Media{Url: newUrl}
+	}
+
+	resp.Images = newMedia
+
+	return resp, nil
 }
 
 func submitImageToImage(ctx context.Context, url string, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
