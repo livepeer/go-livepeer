@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -22,7 +23,12 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	}
 	swagger.Servers = nil
 
-	oapiReqValidator := middleware.OapiRequestValidator(swagger)
+	opts := &middleware.Options{
+		ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
+			clog.Errorf(context.Background(), "oapi validation error statusCode=%v message=%v", statusCode, message)
+		},
+	}
+	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 

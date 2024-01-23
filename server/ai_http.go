@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,7 +25,12 @@ func startAIServer(lp lphttp) error {
 	}
 	swagger.Servers = nil
 
-	oapiReqValidator := middleware.OapiRequestValidator(swagger)
+	opts := &middleware.Options{
+		ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
+			clog.Errorf(context.Background(), "oapi validation error statusCode=%v message=%v", statusCode, message)
+		},
+	}
+	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
