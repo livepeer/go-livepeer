@@ -95,6 +95,7 @@ type LivepeerConfig struct {
 	Broadcaster            *bool
 	OrchSecret             *string
 	TranscodingOptions     *string
+	AIModels               *string
 	MaxAttempts            *int
 	SelectRandWeight       *float64
 	SelectStakeWeight      *float64
@@ -184,6 +185,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 	// AI:
 	defaultAIWorker := false
+	defaultAIModels := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -271,6 +273,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// AI:
 		AIWorker: &defaultAIWorker,
+		AIModels: &defaultAIModels,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -504,11 +507,19 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		warmPipelines := map[string]string{
-			"text-to-image": "stabilityai/sd-turbo",
+		warmModels := make(map[string]string)
+		if *cfg.AIModels != "" {
+			models := strings.Split(*cfg.AIModels, ",")
+			for _, m := range models {
+				parts := strings.Split(m, ":")
+				pipeline := parts[0]
+				modelID := parts[1]
+
+				warmModels[pipeline] = modelID
+			}
 		}
 
-		for pipeline, modelID := range warmPipelines {
+		for pipeline, modelID := range warmModels {
 			if err := n.AIWorker.Warm(ctx, pipeline, modelID); err != nil {
 				glog.Errorf("Error AI worker warming %v container: %v", pipeline, err)
 				return
@@ -517,7 +528,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		defer func() {
 			var stopContainerWg sync.WaitGroup
-			for pipeline := range warmPipelines {
+			for pipeline := range warmModels {
 				stopContainerWg.Add(1)
 				go func(pipeline string) {
 					defer stopContainerWg.Done()
