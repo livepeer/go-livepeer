@@ -42,8 +42,8 @@ if [[ "$BUILDARCH" == "amd64" && "$BUILDOS" == "linux" && "$GOARCH" == "arm64" &
   export STRIP="llvm-strip-14"
   export AR="llvm-ar-14"
   export RANLIB="llvm-ranlib-14"
-  EXTRA_CFLAGS="--target=aarch64-linux-gnu -I/usr/local/cuda_arm64/include $EXTRA_CFLAGS"
-  EXTRA_LDFLAGS="-fuse-ld=lld --target=aarch64-linux-gnu -L/usr/local/cuda_arm64/lib64 $EXTRA_LDFLAGS"
+  EXTRA_CFLAGS="--target=aarch64-linux-gnu $EXTRA_CFLAGS"
+  EXTRA_LDFLAGS="-fuse-ld=lld --target=aarch64-linux-gnu $EXTRA_LDFLAGS"
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang --strip=llvm-strip-14"
   HOST_OS="--host=aarch64-linux-gnu"
 fi
@@ -184,11 +184,11 @@ if [[ "$BUILDOS" == "darwin" && "$GOOS" == "darwin" ]]; then
   EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS -framework CoreFoundation -framework Security"
 elif [[ "$GOOS" == "windows" ]]; then
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
-elif [[ -e "/usr/local/cuda/lib64" ]]; then
-  echo "CUDA SDK detected, building with GPU support"
-  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-nonfree --enable-cuda-nvcc --enable-libnpp --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_npp,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
+elif which clang >/dev/null; then
+    echo "clang detected, building with GPU support"
+    EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
 else
-  echo "No CUDA SDK detected, building without GPU support"
+  echo "No clang detected, building without GPU support"
 fi
 
 if [[ $BUILD_TAGS == *"debug-video"* ]]; then
