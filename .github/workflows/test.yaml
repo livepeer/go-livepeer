@@ -1,9 +1,9 @@
 name: Trigger test suite
 
 on:
-  pull_request:
-    branches:
-      - master
+  # pull_request:
+  #   branches:
+  #     - master
   push:
     branches:
       - master
