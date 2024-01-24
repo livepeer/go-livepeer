@@ -30,11 +30,11 @@ jobs:
             container: ubuntu:20.04
             type: cpu
 
-          - GOOS: linux
-            GOARCH: arm64
-            runner: ubuntu-20.04
-            container: ubuntu:20.04
-            type: cpu
+          # - GOOS: linux
+          #   GOARCH: arm64
+          #   runner: ubuntu-20.04
+          #   container: ubuntu:20.04
+          #   type: cpu
 
           - GOOS: linux
             GOARCH: amd64
@@ -42,11 +42,11 @@ jobs:
             container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
             type: gpu
 
-          - GOOS: linux
-            GOARCH: arm64
-            runner: ubuntu-20.04
-            container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
-            type: gpu
+          # - GOOS: linux
+          #   GOARCH: arm64
+          #   runner: ubuntu-20.04
+          #   container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
+          #   type: gpu
 
           - GOOS: windows
             GOARCH: amd64
