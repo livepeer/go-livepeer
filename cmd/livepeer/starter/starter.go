@@ -1437,9 +1437,8 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	prices, _ := common.ReadFromFile(broadcasterPrices)
 
 	err := json.Unmarshal([]byte(prices), &pricesSet)
-
 	if err != nil {
-		glog.Errorf("broadcaster prices could not be parsed")
+		glog.Errorf("broadcaster prices could not be parsed: %s", err)
 		return nil
 	}
 

@@ -20,6 +20,7 @@
 - #2911 Set default price with livepeer_cli option 20 (@eliteprox)
 - #2928 Added `startupAvailabilityCheck` param to skip the availability check on startup (@stronk-dev)
 - #2905 Add `reward_call_errors` Prometheus metric (@rickstaa)
+- #2958 Return parsing error when failing to parse B prices (@thomshutt)
 
 #### Transcoder
 
