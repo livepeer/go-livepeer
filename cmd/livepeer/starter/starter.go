@@ -62,7 +62,7 @@ var (
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
 
-	aiWorkerContainerImageID     = "runner"
+	aiWorkerContainerImageID     = "livepeer/ai-runner:latest"
 	aiWorkerContainerStopTimeout = 5 * time.Second
 )
 
