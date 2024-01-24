@@ -501,6 +501,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		modelDir := path.Join(*cfg.Datadir, "models")
+		if err := os.MkdirAll(modelDir, 0755); err != nil {
+			glog.Error("Error creating models dir %v", modelDir)
+			return
+		}
+
 		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, *cfg.Nvidia, modelDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
