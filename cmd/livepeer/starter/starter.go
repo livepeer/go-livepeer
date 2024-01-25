@@ -141,6 +141,7 @@ type LivepeerConfig struct {
 	MetadataAmqpExchange   *string
 	MetadataPublishTimeout *time.Duration
 	Datadir                *string
+	AIModelsDir            *string
 	Objectstore            *string
 	Recordstore            *string
 	FVfailGsBucket         *string
@@ -186,6 +187,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// AI:
 	defaultAIWorker := false
 	defaultAIModels := ""
+	defaultAIModelsDir := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -272,8 +274,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker: &defaultAIWorker,
-		AIModels: &defaultAIModels,
+		AIWorker:    &defaultAIWorker,
+		AIModels:    &defaultAIModels,
+		AIModelsDir: &defaultAIModelsDir,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -500,13 +503,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		modelDir := path.Join(*cfg.Datadir, "models")
-		if err := os.MkdirAll(modelDir, 0755); err != nil {
-			glog.Error("Error creating models dir %v", modelDir)
+		modelsDir := *cfg.AIModelsDir
+		if modelsDir == "" {
+			modelsDir = path.Join(*cfg.Datadir, "models")
+		}
+
+		if err := os.MkdirAll(modelsDir, 0755); err != nil {
+			glog.Error("Error creating models dir %v", modelsDir)
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, *cfg.Nvidia, modelDir)
+		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, *cfg.Nvidia, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
