@@ -46,7 +46,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		var req worker.TextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -60,7 +60,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -80,13 +80,13 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -100,7 +100,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -120,13 +120,13 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -140,7 +140,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 		start := time.Now()
 		urls, err := processImageToVideo(ctx, params, req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 

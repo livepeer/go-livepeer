@@ -45,7 +45,7 @@ func (h *lphttp) TextToImage() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req worker.TextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -53,7 +53,7 @@ func (h *lphttp) TextToImage() http.Handler {
 
 		resp, err := h.orchestrator.TextToImage(r.Context(), req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -67,13 +67,13 @@ func (h *lphttp) ImageToImage() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -98,13 +98,13 @@ func (h *lphttp) ImageToVideo() http.Handler {
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -112,13 +112,13 @@ func (h *lphttp) ImageToVideo() http.Handler {
 
 		results, err := h.orchestrator.ImageToVideo(ctx, req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		// TODO: Handle more than one video
 		if len(results) != 1 {
-			http.Error(w, "failed to return results", http.StatusInternalServerError)
+			respondWithError(w, "failed to return results", http.StatusInternalServerError)
 			return
 		}
 
@@ -157,7 +157,7 @@ func (h *lphttp) ImageToVideo() http.Handler {
 
 		buf, err := proto.Marshal(tr)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
