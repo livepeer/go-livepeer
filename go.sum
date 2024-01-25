@@ -533,8 +533,8 @@ github.com/libp2p/go-netroute v0.2.0 h1:0FpsbsvuSnAhXFnCY0VLFbJOzaK0VnP0r1QT/o4n
 github.com/libp2p/go-netroute v0.2.0/go.mod h1:Vio7LTzZ+6hoT4CMZi5/6CpY3Snzh2vgZhWgxMNwlQI=
 github.com/libp2p/go-openssl v0.1.0 h1:LBkKEcUv6vtZIQLVTegAil8jbNpJErQ9AnT+bWV+Ooo=
 github.com/libp2p/go-openssl v0.1.0/go.mod h1:OiOxwPpL3n4xlenjx2h7AwSGaFSC/KZvf6gNdOBQMtc=
-github.com/livepeer/ai-worker v0.0.0-20240122195647-e9f1bf74f978 h1:nfETSkDqO5QqpVV964Gb+idnJEH1cOwp3tUDpczMi4g=
-github.com/livepeer/ai-worker v0.0.0-20240122195647-e9f1bf74f978/go.mod h1:3+A2/SYTqs+551SKTPy20AVnB8b0Yp26Va5SY37eQ/4=
+github.com/livepeer/ai-worker v0.0.0-20240125194003-92b0d6bfe6ac h1:T6o8Z8+hzE8khv6IT8vqf8KiNmvbKgUXfED3TOBfE9I=
+github.com/livepeer/ai-worker v0.0.0-20240125194003-92b0d6bfe6ac/go.mod h1:3+A2/SYTqs+551SKTPy20AVnB8b0Yp26Va5SY37eQ/4=
 github.com/livepeer/go-tools v0.3.6-0.20240122195736-9b20c068ccd2 h1:wc1oiZyJF2qMlMuInvGQ1vINZdlBtjfq8M4RLB+vA6s=
 github.com/livepeer/go-tools v0.3.6-0.20240122195736-9b20c068ccd2/go.mod h1:hwJ5DKhl+pTanFWl+EUpw1H7ukPO/H+MFpgA7jjshzw=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cOQee+WqmaDOgGtP2oDMhcVvR4L0yA=

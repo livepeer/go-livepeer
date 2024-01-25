@@ -11,5 +11,5 @@ type AI interface {
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
 	Warm(context.Context, string, string) error
-	Stop(context.Context, string) error
+	Stop(context.Context) error
 }
