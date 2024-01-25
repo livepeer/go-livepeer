@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -502,6 +501,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Error("-nvidia required when using -aiworker")
 			return
 		}
+		gpus, err := common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
+		if err != nil {
+			glog.Errorf("Error parsing -nvidia for devices: %v", err)
+			return
+		}
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
@@ -513,7 +517,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, *cfg.Nvidia, modelsDir)
+		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -539,21 +543,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		defer func() {
-			var stopContainerWg sync.WaitGroup
-			for pipeline := range warmModels {
-				stopContainerWg.Add(1)
-				go func(pipeline string) {
-					defer stopContainerWg.Done()
-					ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
-					defer cancel()
-					if err := n.AIWorker.Stop(ctx, pipeline); err != nil {
-						glog.Errorf("Error AI worker stopping %v container: %v", pipeline, err)
-						return
-					}
-				}(pipeline)
+			ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
+			defer cancel()
+			if err := n.AIWorker.Stop(ctx); err != nil {
+				glog.Errorf("Error stopping AI worker containers: %v", err)
+				return
 			}
 
-			stopContainerWg.Wait()
 			glog.Infof("Stopped AI worker containers")
 		}()
 	}
