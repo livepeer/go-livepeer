@@ -152,6 +152,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	// AI:
 	cfg.AIWorker = flag.Bool("aiWorker", *cfg.AIWorker, "Set to true to run an AI worker")
 	cfg.AIModels = flag.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
+	cfg.AIModelsDir = flag.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
