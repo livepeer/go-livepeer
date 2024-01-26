@@ -535,6 +535,10 @@ github.com/libp2p/go-openssl v0.1.0 h1:LBkKEcUv6vtZIQLVTegAil8jbNpJErQ9AnT+bWV+O
 github.com/libp2p/go-openssl v0.1.0/go.mod h1:OiOxwPpL3n4xlenjx2h7AwSGaFSC/KZvf6gNdOBQMtc=
 github.com/livepeer/ai-worker v0.0.0-20240125194003-92b0d6bfe6ac h1:T6o8Z8+hzE8khv6IT8vqf8KiNmvbKgUXfED3TOBfE9I=
 github.com/livepeer/ai-worker v0.0.0-20240125194003-92b0d6bfe6ac/go.mod h1:3+A2/SYTqs+551SKTPy20AVnB8b0Yp26Va5SY37eQ/4=
+github.com/livepeer/ai-worker v0.0.0-20240126151305-f5ba038b95cf h1:xhbmrYtBFmMy4O135yM5yA5sBAHVpWs799bFvgZHaCA=
+github.com/livepeer/ai-worker v0.0.0-20240126151305-f5ba038b95cf/go.mod h1:3+A2/SYTqs+551SKTPy20AVnB8b0Yp26Va5SY37eQ/4=
+github.com/livepeer/ai-worker v0.0.0-20240126224247-72596a17c8d3 h1:f1TV81ip1OBJnE4daSJtXxPqfYlzMg7e/c0vC2GJe18=
+github.com/livepeer/ai-worker v0.0.0-20240126224247-72596a17c8d3/go.mod h1:3+A2/SYTqs+551SKTPy20AVnB8b0Yp26Va5SY37eQ/4=
 github.com/livepeer/go-tools v0.3.6-0.20240122195736-9b20c068ccd2 h1:wc1oiZyJF2qMlMuInvGQ1vINZdlBtjfq8M4RLB+vA6s=
 github.com/livepeer/go-tools v0.3.6-0.20240122195736-9b20c068ccd2/go.mod h1:hwJ5DKhl+pTanFWl+EUpw1H7ukPO/H+MFpgA7jjshzw=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cOQee+WqmaDOgGtP2oDMhcVvR4L0yA=
