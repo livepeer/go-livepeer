@@ -84,6 +84,10 @@ func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJS
 		return nil, errors.New("orchestrator returned 422")
 	}
 
+	if resp.JSON200 == nil {
+		return nil, errors.New("orchestrator did not return a response")
+	}
+
 	return resp.JSON200, nil
 }
 
@@ -172,6 +176,10 @@ func submitImageToImage(ctx context.Context, url string, req worker.ImageToImage
 	if resp.JSON422 != nil {
 		// TODO: Handle JSON422 struct
 		return nil, errors.New("orchestrator returned 422")
+	}
+
+	if resp.JSON200 == nil {
+		return nil, errors.New("orchestrator did not return a response")
 	}
 
 	return resp.JSON200, nil
