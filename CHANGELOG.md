@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.7.2
+
+### Breaking Changes 🚨🚨
+
+- None
+
+#### General
+- [#2938](https://github.com/livepeer/go-livepeer/pull/2938) Add `tmp` folder to `.gitignore` (@rickstaa)
+
+#### Broadcaster
+- [#2896](https://github.com/livepeer/go-livepeer/pull/2896) Use FPS of 60, rather than 120 for cost estimation (@thomshutt)
+- [#2948](https://github.com/livepeer/go-livepeer/pull/2948) Remove logging from metrics methods (@thomshutt)
+
+#### Orchestrator
+- [#2911](https://github.com/livepeer/go-livepeer/pull/2911) Set default price with livepeer_cli option 20 (@eliteprox)
+- [#2928](https://github.com/livepeer/go-livepeer/pull/2928) Added `startupAvailabilityCheck` param to skip the availability check on startup (@stronk-dev)
+- [#2905](https://github.com/livepeer/go-livepeer/pull/2905) Add `reward_call_errors` Prometheus metric (@rickstaa)
+- [#2958](https://github.com/livepeer/go-livepeer/pull/2958) Return parsing error when failing to parse B prices (@thomshutt)
+
+#### Transcoder
+
+### Bug Fixes 🐞
+- [#2914](https://github.com/livepeer/go-livepeer/pull/2914) fixes a bug that prevented `pricePerBroadcaster` JSON files with line-breaks from being parsed correctly (@rickstaa).
+
 ## v0.7.1
 
 ### Breaking Changes 🚨🚨
