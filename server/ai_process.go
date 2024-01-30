@@ -185,7 +185,7 @@ func submitImageToImage(ctx context.Context, url string, req worker.ImageToImage
 	return resp.JSON200, nil
 }
 
-func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {
+func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// Discover 1 orchestrator
 	// TODO: Discover multiple orchestrators
 	caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
@@ -205,7 +205,8 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 		return nil, err
 	}
 
-	newUrls := make([]string, len(urls))
+	// HACK: Re-use worker.ImageResponse to return results
+	videos := make([]worker.Media, len(urls))
 	for i, url := range urls {
 		data, err := downloadSeg(ctx, url)
 		if err != nil {
@@ -218,10 +219,13 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 			return nil, err
 		}
 
-		newUrls[i] = newUrl
+		videos[i] = worker.Media{
+			Url: newUrl,
+		}
 	}
 
-	return newUrls, nil
+	resp := &worker.ImageResponse{Images: videos}
+	return resp, nil
 }
 
 func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {

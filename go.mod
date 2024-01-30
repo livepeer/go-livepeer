@@ -13,7 +13,7 @@ require (
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/ai-worker v0.0.0-20240126224247-72596a17c8d3
-	github.com/livepeer/go-tools v0.3.6-0.20240122195736-9b20c068ccd2
+	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
 	github.com/livepeer/lpms v0.0.0-20240120150405-de94555cdc69
 	github.com/livepeer/m3u8 v0.11.1
