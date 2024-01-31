@@ -247,7 +247,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 		result := <-resultCh
 		if result.Error != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, result.Error.Error(), http.StatusInternalServerError)
 			return
 		}
 
