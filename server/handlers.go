@@ -1478,13 +1478,12 @@ func (err *APIError) Error() string { return err.Message }
 func handleAPIError(ctx context.Context, w io.Writer, err error, code int) {
 	clog.Errorf(ctx, "Error with API code=%v err=%v", code, err)
 
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || code == http.StatusInternalServerError {
-		// If the caller did not pass an APIError assume that the
-		// message should not be passed to API consumer
-		apiErr = &APIError{
-			Message: "Internal Server Error",
-		}
+	apiErr := &APIError{Message: err.Error()}
+
+	if code == http.StatusInternalServerError {
+		apiErr.Message = "Internal Server Error"
+	} else if code == http.StatusServiceUnavailable {
+		apiErr.Message = "Service Unavailable Error"
 	}
 
 	resp := &APIErrorResponse{Error: apiErr}
