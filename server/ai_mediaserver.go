@@ -32,8 +32,7 @@ type ImageToVideoResultResponse struct {
 
 type ImageToVideoResult struct {
 	*worker.ImageResponse
-	ErrorMsg string `json:"error,omitempty"`
-	Error    error  `json:"-"`
+	Error *APIError `json:"error,omitempty"`
 }
 
 type ImageToVideoStatus string
@@ -74,10 +73,12 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
 
 		var req worker.TextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
 
@@ -85,13 +86,13 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		params := aiRequestParams{
 			node: ls.LivepeerNode,
-			os:   drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
+			os:   drivers.NodeStorage.NewSession(requestID),
 		}
 
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 
@@ -108,16 +109,18 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
 
@@ -131,7 +134,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 
@@ -148,16 +151,18 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
 
@@ -167,96 +172,81 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			async = true
 		}
 
-		requestID := string(core.RandomManifestID())
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request request_id=%v imageSize=%v model_id=%v async=%v", requestID, req.Image.FileSize(), *req.ModelId, async)
+		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v async=%v", req.Image.FileSize(), *req.ModelId, async)
 
 		params := aiRequestParams{
 			node: ls.LivepeerNode,
 			os:   drivers.NodeStorage.NewSession(requestID),
 		}
 
-		resultCh := make(chan ImageToVideoResult)
-		go func(ctx context.Context) {
+		if !async {
 			start := time.Now()
 
-			if async {
-				// Use new context instead of request context for background processing
-				ctx = context.Background()
-
-				var data bytes.Buffer
-				if err := json.NewEncoder(&data).Encode(req); err != nil {
-					clog.Errorf(ctx, "Error JSON encoding ImageToVideo request request_id=%v err=%v", requestID, err)
-					return
-				}
-
-				path, err := params.os.SaveData(ctx, "request.json", bytes.NewReader(data.Bytes()), nil, 0)
-				if err != nil {
-					clog.Errorf(ctx, "Error saving ImageToVideo request to object store request_id=%v err=%v", requestID, err)
-					return
-				}
-
-				clog.Infof(ctx, "Saved ImageToVideo request request_id=%v path=%v", requestID, path)
-			}
-
 			resp, err := processImageToVideo(ctx, params, req)
-
-			result := ImageToVideoResult{
-				ImageResponse: resp,
-				Error:         err,
-			}
-
 			if err != nil {
-				clog.Errorf(ctx, "Error processing ImageToVideo request request_id=%v err=%v", requestID, err)
-
-				result.ErrorMsg = err.Error()
-			} else {
-				took := time.Since(start)
-				clog.Infof(ctx, "Processed ImageToVideo request request_id=%v imageSize=%v model_id=%v took=%v", requestID, req.Image.FileSize(), *req.ModelId, took)
-			}
-
-			// If async = false, then we expect a receiver on the channel and return early
-			// If async = true, then there is no receiver so we move on to save the result in the object store
-			select {
-			case resultCh <- result:
-				return
-			default:
-			}
-
-			var data bytes.Buffer
-			if err := json.NewEncoder(&data).Encode(result); err != nil {
-				clog.Errorf(ctx, "Error JSON encoding ImageToVideo result request_id=%v err=%v", requestID, err)
+				respondJsonError(ctx, w, err, http.StatusInternalServerError)
 				return
 			}
 
-			path, err := params.os.SaveData(ctx, "result.json", bytes.NewReader(data.Bytes()), nil, 0)
-			if err != nil {
-				clog.Errorf(ctx, "Error saving ImageToVideo result to object store request_id=%v err=%v", requestID, err)
-				return
-			}
+			took := time.Since(start)
+			clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
 
-			clog.Infof(ctx, "Saved ImageToVideo result request_id=%v path=%v", requestID, path)
-		}(ctx)
-
-		w.Header().Set("Content-Type", "application/json")
-
-		if async {
-			w.WriteHeader(http.StatusAccepted)
-			resp := &ImageToVideoResponseAsync{
-				RequestID: requestID,
-			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
-		result := <-resultCh
-		if result.Error != nil {
-			respondWithError(w, result.Error.Error(), http.StatusInternalServerError)
+		var data bytes.Buffer
+		if err := json.NewEncoder(&data).Encode(req); err != nil {
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(result.ImageResponse)
+		path, err := params.os.SaveData(ctx, "request.json", bytes.NewReader(data.Bytes()), nil, 0)
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Saved ImageToVideo request path=%v", requestID, path)
+
+		cctx := clog.Clone(context.Background(), ctx)
+		go func(ctx context.Context) {
+			start := time.Now()
+
+			var data bytes.Buffer
+			resp, err := processImageToVideo(ctx, params, req)
+			if err != nil {
+				clog.Errorf(ctx, "Error processing ImageToVideo request err=%v", err)
+
+				handleAPIError(ctx, &data, err, http.StatusInternalServerError)
+			} else {
+				took := time.Since(start)
+				clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
+
+				if err := json.NewEncoder(&data).Encode(resp); err != nil {
+					clog.Errorf(ctx, "Error JSON encoding ImageToVideo response err=%v", err)
+					return
+				}
+			}
+
+			path, err := params.os.SaveData(ctx, "result.json", bytes.NewReader(data.Bytes()), nil, 0)
+			if err != nil {
+				clog.Errorf(ctx, "Error saving ImageToVideo result to object store err=%v", err)
+				return
+			}
+
+			clog.Infof(ctx, "Saved ImageToVideo result path=%v", path)
+		}(cctx)
+
+		resp := &ImageToVideoResponseAsync{
+			RequestID: requestID,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 }
 
@@ -267,9 +257,11 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		var req ImageToVideoResultRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
+			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
 			return
 		}
+
+		ctx = clog.AddVal(ctx, "request_id", req.RequestID)
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideoResult request request_id=%v", req.RequestID)
 
@@ -277,8 +269,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		_, err := sess.ReadData(ctx, "request.json")
 		if err != nil {
-			clog.Errorf(ctx, "Error fetching ImageToVideo request err=%v", err)
-			respondWithError(w, "invalid request", http.StatusBadRequest)
+			respondJsonError(ctx, w, &APIError{Message: "invalid request ID"}, http.StatusBadRequest)
 			return
 		}
 
@@ -299,7 +290,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 		resp.Status = Complete
 
 		if err := json.NewDecoder(reader.Body).Decode(&resp.Result); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 

@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -16,6 +18,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -1460,6 +1463,41 @@ func respondJson(w http.ResponseWriter, v interface{}) {
 func respondJsonOk(w http.ResponseWriter, msg []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	respondOk(w, msg)
+}
+
+type APIErrorResponse struct {
+	Error error `json:"error"`
+}
+
+type APIError struct {
+	Message string `json:"message"`
+}
+
+func (err *APIError) Error() string { return err.Message }
+
+func handleAPIError(ctx context.Context, w io.Writer, err error, code int) {
+	clog.Errorf(ctx, "Error with API code=%v err=%v", code, err)
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || code == http.StatusInternalServerError {
+		// If the caller did not pass an APIError assume that the
+		// message should not be passed to API consumer
+		apiErr = &APIError{
+			Message: "Internal Server Error",
+		}
+	}
+
+	resp := &APIErrorResponse{Error: apiErr}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		clog.Errorf(ctx, "Error with API JSON encoding err=%v", err)
+	}
+}
+
+func respondJsonError(ctx context.Context, w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+
+	handleAPIError(ctx, w, err, code)
 }
 
 func respond500(w http.ResponseWriter, errMsg string) {
