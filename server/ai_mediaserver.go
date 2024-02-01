@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -78,7 +79,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		var req worker.TextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
@@ -92,6 +93,11 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
+			var e *ServiceUnavailableError
+			if errors.As(err, &e) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
@@ -114,13 +120,13 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
@@ -134,6 +140,11 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
+			var e *ServiceUnavailableError
+			if errors.As(err, &e) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
@@ -156,13 +167,13 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
 		var req worker.ImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
@@ -184,6 +195,12 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 			resp, err := processImageToVideo(ctx, params, req)
 			if err != nil {
+				var e *ServiceUnavailableError
+				if errors.As(err, &e) {
+					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+					return
+				}
+
 				respondJsonError(ctx, w, err, http.StatusInternalServerError)
 				return
 			}
@@ -257,7 +274,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		var req ImageToVideoResultRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJsonError(ctx, w, &APIError{Message: err.Error()}, http.StatusBadRequest)
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
@@ -269,7 +286,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		_, err := sess.ReadData(ctx, "request.json")
 		if err != nil {
-			respondJsonError(ctx, w, &APIError{Message: "invalid request ID"}, http.StatusBadRequest)
+			respondJsonError(ctx, w, errors.New("invalid request ID"), http.StatusBadRequest)
 			return
 		}
 

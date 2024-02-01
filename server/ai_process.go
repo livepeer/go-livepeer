@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
@@ -21,6 +23,18 @@ import (
 )
 
 const imageToVideoTimeout = 5 * time.Minute
+const textToImageRetryBackoff = 10 * time.Second
+const imageToImageRetryBackoff = 10 * time.Second
+const imageToVideoRetryBackoff = 1 * time.Minute
+const maxProcessingRetries = 4
+
+type ServiceUnavailableError struct {
+	err error
+}
+
+func (e *ServiceUnavailableError) Error() string {
+	return e.err.Error()
+}
 
 type aiRequestParams struct {
 	node *core.LivepeerNode
@@ -42,9 +56,20 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 	}
 
 	orchUrl := orchInfos[0].Transcoder
-	resp, err := submitTextToImage(ctx, orchUrl, req)
-	if err != nil {
-		return nil, err
+
+	var resp *worker.ImageResponse
+	op := func() error {
+		var err error
+		resp, err = submitTextToImage(ctx, orchUrl, req)
+		return err
+	}
+	notify := func(err error, dur time.Duration) {
+		clog.Infof(ctx, "Error submitting TextToImage request err=%v retrying after dur=%v", err, dur)
+	}
+
+	b := backoff.WithMaxRetries(backoff.NewConstantBackOff(textToImageRetryBackoff), maxProcessingRetries)
+	if err := backoff.RetryNotify(op, b, notify); err != nil {
+		return nil, &ServiceUnavailableError{err: err}
 	}
 
 	newMedia := make([]worker.Media, len(resp.Images))
@@ -106,9 +131,20 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	orchUrl := orchInfos[0].Transcoder
-	resp, err := submitImageToImage(ctx, orchUrl, req)
-	if err != nil {
-		return nil, err
+
+	var resp *worker.ImageResponse
+	op := func() error {
+		var err error
+		resp, err = submitImageToImage(ctx, orchUrl, req)
+		return err
+	}
+	notify := func(err error, dur time.Duration) {
+		clog.Infof(ctx, "Error submitting ImageToImage request err=%v retrying after dur=%v", err, dur)
+	}
+
+	b := backoff.WithMaxRetries(backoff.NewConstantBackOff(imageToImageRetryBackoff), maxProcessingRetries)
+	if err := backoff.RetryNotify(op, b, notify); err != nil {
+		return nil, &ServiceUnavailableError{err: err}
 	}
 
 	newMedia := make([]worker.Media, len(resp.Images))
@@ -200,9 +236,20 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	orchUrl := orchInfos[0].Transcoder
-	urls, err := submitImageToVideo(ctx, orchUrl, req)
-	if err != nil {
-		return nil, err
+
+	var urls []string
+	op := func() error {
+		var err error
+		urls, err = submitImageToVideo(ctx, orchUrl, req)
+		return err
+	}
+	notify := func(err error, dur time.Duration) {
+		clog.Infof(ctx, "Error submitting ImageToVideo request err=%v retrying after dur=%v", err, dur)
+	}
+
+	b := backoff.WithMaxRetries(backoff.NewConstantBackOff(imageToVideoRetryBackoff), maxProcessingRetries)
+	if err := backoff.RetryNotify(op, b, notify); err != nil {
+		return nil, &ServiceUnavailableError{err: err}
 	}
 
 	// HACK: Re-use worker.ImageResponse to return results
