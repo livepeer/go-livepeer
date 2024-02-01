@@ -32,7 +32,8 @@ type ImageToVideoResultResponse struct {
 
 type ImageToVideoResult struct {
 	*worker.ImageResponse
-	Error error `json:"error,omitempty"`
+	ErrorMsg string `json:"error,omitempty"`
+	Error    error  `json:"-"`
 }
 
 type ImageToVideoStatus string
@@ -199,16 +200,19 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			}
 
 			resp, err := processImageToVideo(ctx, params, req)
-			if err != nil {
-				clog.Errorf(ctx, "Error processing ImageToVideo request request_id=%v err=%v", requestID, err)
-			} else {
-				took := time.Since(start)
-				clog.Infof(ctx, "Processed ImageToVideo request request_id=%v imageSize=%v model_id=%v took=%v", requestID, req.Image.FileSize(), *req.ModelId, took)
-			}
 
 			result := ImageToVideoResult{
 				ImageResponse: resp,
 				Error:         err,
+			}
+
+			if err != nil {
+				clog.Errorf(ctx, "Error processing ImageToVideo request request_id=%v err=%v", requestID, err)
+
+				result.ErrorMsg = err.Error()
+			} else {
+				took := time.Since(start)
+				clog.Infof(ctx, "Processed ImageToVideo request request_id=%v imageSize=%v model_id=%v took=%v", requestID, req.Image.FileSize(), *req.ModelId, took)
 			}
 
 			// If async = false, then we expect a receiver on the channel and return early
