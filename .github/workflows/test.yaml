@@ -115,7 +115,7 @@ jobs:
           ./test_e2e.sh
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./cover.out
           name: ${{ github.event.repository.name }}
