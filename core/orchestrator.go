@@ -160,8 +160,6 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 	totalEV := big.NewRat(0, 1)
 	totalTickets := 0
 	totalWinningTickets := 0
-	totalFaceValue := big.NewInt(0)
-	totalWinProb := big.NewRat(0, 1)
 
 	var receiveErr error
 
@@ -196,8 +194,6 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 			ev := ticket.EV()
 			orch.node.Balances.Credit(sender, manifestID, ev)
 			totalEV.Add(totalEV, ev)
-			totalFaceValue.Add(totalFaceValue, ticket.FaceValue)
-			totalWinProb.Add(totalWinProb, ticket.WinProbRat())
 			totalTickets++
 		}
 
@@ -214,7 +210,7 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		}
 	}
 
-	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(totalFaceValue, "ETH"), totalWinProb.FloatString(10), totalEV.FloatString(2))
+	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v totalTickets=%v totalEV=%v", manifestID, eth.FormatUnits(ticketParams.FaceValue, "ETH"), ticketParams.WinProbRat().FloatString(10), totalTickets, totalEV.FloatString(2))
 
 	if lpmon.Enabled {
 		lpmon.TicketValueRecv(ctx, sender.Hex(), totalEV)
