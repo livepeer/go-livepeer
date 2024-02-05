@@ -5,9 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -167,32 +165,8 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 
 func submitImageToImage(ctx context.Context, url string, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	writer, err := mw.CreateFormFile("image", req.Image.Filename())
+	mw, err := worker.NewImageToImageMultipartWriter(&buf, req)
 	if err != nil {
-		return nil, err
-	}
-	imageSize := req.Image.FileSize()
-	imageRdr, err := req.Image.Reader()
-	if err != nil {
-		return nil, err
-	}
-	copied, err := io.Copy(writer, imageRdr)
-	if err != nil {
-		return nil, err
-	}
-	if copied != imageSize {
-		return nil, fmt.Errorf("failed to copy image to multipart request imageBytes=%v copiedBytes=%v", imageSize, copied)
-	}
-
-	if err := mw.WriteField("prompt", req.Prompt); err != nil {
-		return nil, err
-	}
-	if err := mw.WriteField("model_id", *req.ModelId); err != nil {
-		return nil, err
-	}
-
-	if err := mw.Close(); err != nil {
 		return nil, err
 	}
 
@@ -270,29 +244,8 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {
 	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	writer, err := mw.CreateFormFile("image", req.Image.Filename())
+	mw, err := worker.NewImageToVideoMultipartWriter(&buf, req)
 	if err != nil {
-		return nil, err
-	}
-	imageSize := req.Image.FileSize()
-	imageRdr, err := req.Image.Reader()
-	if err != nil {
-		return nil, err
-	}
-	copied, err := io.Copy(writer, imageRdr)
-	if err != nil {
-		return nil, err
-	}
-	if copied != imageSize {
-		return nil, fmt.Errorf("failed to copy image to multipart request imageBytes=%v copiedBytes=%v", imageSize, copied)
-	}
-
-	if err := mw.WriteField("model_id", *req.ModelId); err != nil {
-		return nil, err
-	}
-
-	if err := mw.Close(); err != nil {
 		return nil, err
 	}
 
