@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -104,13 +105,9 @@ func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJS
 		return nil, err
 	}
 
-	if resp.JSON422 != nil {
-		// TODO: Handle JSON422 struct
-		return nil, errors.New("orchestrator returned 422")
-	}
-
 	if resp.JSON200 == nil {
-		return nil, errors.New("orchestrator did not return a response")
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
 	}
 
 	return resp.JSON200, nil
@@ -209,13 +206,9 @@ func submitImageToImage(ctx context.Context, url string, req worker.ImageToImage
 		return nil, err
 	}
 
-	if resp.JSON422 != nil {
-		// TODO: Handle JSON422 struct
-		return nil, errors.New("orchestrator returned 422")
-	}
-
 	if resp.JSON200 == nil {
-		return nil, errors.New("orchestrator did not return a response")
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
 	}
 
 	return resp.JSON200, nil
