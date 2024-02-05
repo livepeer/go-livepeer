@@ -96,7 +96,7 @@ func (h *lphttp) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := h.orchestrator.ImageToImage(r.Context(), req)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
