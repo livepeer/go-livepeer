@@ -4,20 +4,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 )
 
@@ -84,7 +82,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 			return nil, err
 		}
 
-		newMedia[i] = worker.Media{Url: newUrl}
+		newMedia[i] = worker.Media{Url: newUrl, Seed: media.Seed}
 	}
 
 	resp.Images = newMedia
@@ -155,7 +153,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 			return nil, err
 		}
 
-		newMedia[i] = worker.Media{Url: newUrl}
+		newMedia[i] = worker.Media{Url: newUrl, Seed: media.Seed}
 	}
 
 	resp.Images = newMedia
@@ -204,10 +202,10 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	orchUrl := orchInfos[0].Transcoder
 
-	var urls []string
+	var resp *worker.ImageResponse
 	op := func() error {
 		var err error
-		urls, err = submitImageToVideo(ctx, orchUrl, req)
+		resp, err = submitImageToVideo(ctx, orchUrl, req)
 		return err
 	}
 	notify := func(err error, dur time.Duration) {
@@ -220,42 +218,43 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	// HACK: Re-use worker.ImageResponse to return results
-	videos := make([]worker.Media, len(urls))
-	for i, url := range urls {
-		data, err := downloadSeg(ctx, url)
+	videos := make([]worker.Media, len(resp.Images))
+	for i, media := range resp.Images {
+		data, err := downloadSeg(ctx, media.Url)
 		if err != nil {
 			return nil, err
 		}
 
-		name := filepath.Base(url)
+		name := filepath.Base(media.Url)
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
 			return nil, err
 		}
 
 		videos[i] = worker.Media{
-			Url: newUrl,
+			Url:  newUrl,
+			Seed: media.Seed,
 		}
 	}
 
-	resp := &worker.ImageResponse{Images: videos}
+	resp.Images = videos
+
 	return resp, nil
 }
 
-func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideoMultipartRequestBody) ([]string, error) {
+func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewImageToVideoMultipartWriter(&buf, req)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := http.NewRequestWithContext(ctx, "POST", url+"/image-to-video", &buf)
+	client, err := worker.NewClientWithResponses(url, worker.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, err
 	}
-	r.Header.Set("Content-Type", mw.FormDataContentType())
 
-	resp, err := sendReqWithTimeout(r, imageToVideoTimeout)
+	resp, err := client.ImageToVideoWithBody(ctx, mw.FormDataContentType(), &buf)
 	if err != nil {
 		return nil, err
 	}
@@ -270,25 +269,10 @@ func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideo
 		return nil, errors.New(string(data))
 	}
 
-	var tr net.TranscodeResult
-	if err := proto.Unmarshal(data, &tr); err != nil {
+	var res worker.ImageResponse
+	if err := json.Unmarshal(data, &res); err != nil {
 		return nil, err
 	}
 
-	var tdata *net.TranscodeData
-	switch res := tr.Result.(type) {
-	case *net.TranscodeResult_Error:
-		return nil, errors.New(res.Error)
-	case *net.TranscodeResult_Data:
-		tdata = res.Data
-	default:
-		return nil, errors.New("UnknownResponse")
-	}
-
-	urls := make([]string, len(tdata.Segments))
-	for i, seg := range tdata.Segments {
-		urls[i] = seg.Url
-	}
-
-	return urls, nil
+	return &res, nil
 }

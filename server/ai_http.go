@@ -1,20 +1,15 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/net"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 )
@@ -56,7 +51,7 @@ func (h *lphttp) TextToImage() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
 
 		start := time.Now()
 		resp, err := h.orchestrator.TextToImage(r.Context(), req)
@@ -129,61 +124,17 @@ func (h *lphttp) ImageToVideo() http.Handler {
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
 
 		start := time.Now()
-		results, err := h.orchestrator.ImageToVideo(ctx, req)
+		resp, err := h.orchestrator.ImageToVideo(ctx, req)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// TODO: Handle more than one video
-		if len(results) != 1 {
-			respondWithError(w, "failed to return results", http.StatusInternalServerError)
 			return
 		}
 
 		took := time.Since(start)
 		clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
 
-		res := results[0]
-
-		// Assume only single rendition right now
-		seg := res.TranscodeData.Segments[0]
-		name := fmt.Sprintf("%v.mp4", core.RandomManifestID())
-		segData := bytes.NewReader(seg.Data)
-		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
-		if err != nil {
-			clog.Errorf(ctx, "Could not upload segment err=%q", err)
-		}
-
-		var result net.TranscodeResult
-		if err != nil {
-			clog.Errorf(ctx, "Could not transcode err=%q", err)
-			result = net.TranscodeResult{Result: &net.TranscodeResult_Error{Error: err.Error()}}
-		} else {
-			result = net.TranscodeResult{
-				Result: &net.TranscodeResult_Data{
-					Data: &net.TranscodeData{
-						Segments: []*net.TranscodedSegmentData{
-							{Url: uri, Pixels: seg.Pixels},
-						},
-						Sig: res.Sig,
-					},
-				},
-			}
-		}
-
-		tr := &net.TranscodeResult{
-			Result: result.Result,
-			// TODO: Add other fields
-		}
-
-		buf, err := proto.Marshal(tr)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(buf)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 }
