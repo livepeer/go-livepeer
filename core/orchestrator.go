@@ -113,7 +113,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToIm
 	return orch.node.imageToImage(ctx, req)
 }
 
-func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) ([]*TranscodeResult, error) {
+func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToVideo(ctx, req)
 }
 
@@ -892,7 +892,7 @@ func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImage
 	return n.AIWorker.ImageToImage(ctx, req)
 }
 
-func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) ([]*TranscodeResult, error) {
+func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
 
@@ -911,8 +911,9 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 	clog.V(common.DEBUG).Infof(ctx, "Generating frames took=%v", took)
 
 	sessionID := string(RandomManifestID())
+	// HACK: Re-use worker.ImageResponse to return results
 	// Transcode frames into segments.
-	results := make([]*TranscodeResult, len(resp.Frames))
+	videos := make([]worker.Media, len(resp.Frames))
 	for i, batch := range resp.Frames {
 		// Create slice of frame urls for a batch
 		urls := make([]string, len(batch))
@@ -926,10 +927,25 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 			return nil, res.Err
 		}
 
-		results[i] = res
+		// Assume only single rendition right now
+		seg := res.TranscodeData.Segments[0]
+		name := fmt.Sprintf("%v.mp4", RandomManifestID())
+		segData := bytes.NewReader(seg.Data)
+		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		videos[i] = worker.Media{
+			Url: uri,
+		}
+
+		if len(batch) > 0 {
+			videos[i].Seed = batch[0].Seed
+		}
 	}
 
-	return results, nil
+	return &worker.ImageResponse{Images: videos}, nil
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
