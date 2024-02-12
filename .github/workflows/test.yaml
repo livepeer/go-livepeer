@@ -92,7 +92,7 @@ jobs:
           git diff --exit-code
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v4
         with:
           version: v1.52.2
           skip-pkg-cache: true
