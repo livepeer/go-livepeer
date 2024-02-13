@@ -24,6 +24,7 @@ func startAIServer(lp lphttp) error {
 	opts := &middleware.Options{
 		Options: openapi3filter.Options{
 			ExcludeRequestBody: true,
+			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
 		},
 		ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 			clog.Errorf(context.Background(), "oapi validation error statusCode=%v message=%v", statusCode, message)
