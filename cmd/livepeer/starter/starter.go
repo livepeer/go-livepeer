@@ -523,22 +523,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		warmModels := make(map[string]string)
 		if *cfg.AIModels != "" {
-			models := strings.Split(*cfg.AIModels, ",")
-			for _, m := range models {
-				parts := strings.Split(m, ":")
-				pipeline := parts[0]
-				modelID := parts[1]
-
-				warmModels[pipeline] = modelID
-			}
-		}
-
-		for pipeline, modelID := range warmModels {
-			if err := n.AIWorker.Warm(ctx, pipeline, modelID); err != nil {
-				glog.Errorf("Error AI worker warming %v container: %v", pipeline, err)
+			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
+			if err != nil {
+				glog.Error("Error parsing -aiModels: %v", err)
 				return
+			}
+
+			for _, config := range configs {
+				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, config.Endpoint); err != nil {
+					glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+					return
+				}
 			}
 		}
 
