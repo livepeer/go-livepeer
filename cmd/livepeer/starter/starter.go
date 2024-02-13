@@ -531,7 +531,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			for _, config := range configs {
-				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, config.Endpoint); err != nil {
+				endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
 					glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 					return
 				}
