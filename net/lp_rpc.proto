@@ -107,8 +107,14 @@ message Capabilities {
 
     // Non-binary capability constraints, such as supported ranges.
     message Constraints {
-            // Empty for now
+      message ModelConstraint {
+        bool warm = 1;
+      }
+
+      map<string, ModelConstraint> models = 1; 
     }
+
+    map<uint32, Constraints> constraints = 4;
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing

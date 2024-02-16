@@ -496,15 +496,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	}
 
+	var aiCaps []core.Capability
+	constraints := make(map[core.Capability]*core.Constraints)
+
 	if *cfg.AIWorker {
-		if *cfg.Nvidia == "" {
-			glog.Error("-nvidia required when using -aiworker")
-			return
-		}
-		gpus, err := common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
-		if err != nil {
-			glog.Errorf("Error parsing -nvidia for devices: %v", err)
-			return
+		gpus := []string{}
+		if *cfg.Nvidia != "" {
+			var err error
+			gpus, err = common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
+			if err != nil {
+				glog.Errorf("Error parsing -nvidia for devices: %v", err)
+				return
+			}
 		}
 
 		modelsDir := *cfg.AIModelsDir
@@ -531,10 +534,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			for _, config := range configs {
-				endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
-					glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-					return
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+
+				// If the config contains a URL we call Warm() anyway because AIWorker will just register
+				// the endpoint for an external container
+				if config.Warm || config.URL != "" {
+					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
+						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+						return
+					}
+				}
+
+				switch config.Pipeline {
+				case "text-to-image":
+					_, ok := constraints[core.Capability_TextToImage]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToImage)
+						constraints[core.Capability_TextToImage] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
 				}
 			}
 		}
@@ -1191,7 +1213,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
+	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), constraints)
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK

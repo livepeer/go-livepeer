@@ -11,13 +11,23 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+type ModelConstraints map[string]*ModelConstraint
+
+type ModelConstraint struct {
+	Warm bool
+}
+
 type Capability int
 type CapabilityString []uint64
-type Constraints struct{}
+type Constraints struct {
+	// Models contains a *ModelConstraint for each supported model ID
+	Models ModelConstraints
+}
+type CapabilityConstraints map[Capability]*Constraints
 type Capabilities struct {
 	bitstring   CapabilityString
 	mandatories CapabilityString
-	constraints Constraints
+	constraints CapabilityConstraints
 	capacities  map[Capability]int
 	mutex       sync.Mutex
 }
@@ -57,6 +67,7 @@ const (
 	Capability_H264_Decode_422_10bit
 	Capability_H264_Decode_420_10bit
 	Capability_SegmentSlicing
+	Capability_TextToImage
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -88,6 +99,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 	Capability_SegmentSlicing:             "Segment slicing",
+	Capability_TextToImage:                "Text to image",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -173,6 +185,7 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_444_10bit,
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
+		Capability_TextToImage,
 	}
 }
 
@@ -205,6 +218,43 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func (c1 CapabilityConstraints) CompatibleWith(c2 CapabilityConstraints) bool {
+	for c1Cap, c1Constraints := range c1 {
+		c2Constraints, ok := c2[c1Cap]
+		if !ok {
+			// No constraints on this capability so assume compatibility
+			continue
+		}
+
+		if !c1Constraints.CompatibleWith(c2Constraints) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (c1 *Constraints) CompatibleWith(c2 *Constraints) bool {
+	return c1.Models.CompatibleWith(c2.Models)
+}
+
+func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
+	for c1ModelID, c1ModelConstraint := range c1 {
+		c2ModelConstraint, ok := c2[c1ModelID]
+		if !ok {
+			// c2 does not support this model ID so it is incompatible
+			return false
+		}
+
+		if c1ModelConstraint.Warm && !c2ModelConstraint.Warm {
+			// c1 requires the model ID to be warm, but c2's model ID is not warm so it is incompatible
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -337,6 +387,11 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
+	orchConstraints := CapabilitiesFromNetCapabilities(orch).constraints
+	if !bcast.constraints.CompatibleWith(orchConstraints) {
+		return false
+	}
+
 	return bcast.bitstring.CompatibleWith(orch.Bitstring)
 }
 
@@ -346,9 +401,21 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32)}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32), Constraints: make(map[uint32]*net.Capabilities_Constraints)}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
+	}
+	for capability, constraints := range c.constraints {
+		models := make(map[string]*net.Capabilities_Constraints_ModelConstraint)
+		for modelID, modelConstraint := range constraints.Models {
+			models[modelID] = &net.Capabilities_Constraints_ModelConstraint{
+				Warm: modelConstraint.Warm,
+			}
+		}
+
+		netCaps.Constraints[uint32(capability)] = &net.Capabilities_Constraints{
+			Models: models,
+		}
 	}
 	return netCaps
 }
@@ -361,6 +428,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		bitstring:   caps.Bitstring,
 		mandatories: caps.Mandatories,
 		capacities:  make(map[Capability]int),
+		constraints: make(map[Capability]*Constraints),
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)
@@ -377,6 +445,18 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 			coreCaps.capacities[Capability(capabilityInt)] = int(capacity)
 		}
 	}
+
+	for capabilityInt, constraints := range caps.Constraints {
+		models := make(map[string]*ModelConstraint)
+		for modelID, modelConstraint := range constraints.Models {
+			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
+		}
+
+		coreCaps.constraints[Capability(capabilityInt)] = &Constraints{
+			Models: models,
+		}
+	}
+
 	return coreCaps
 }
 
@@ -392,6 +472,12 @@ func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
 	if len(m) > 0 {
 		c.mandatories = NewCapabilityString(m)
 	}
+	return c
+}
+
+func NewCapabilitiesWithConstraints(caps []Capability, m []Capability, constraints CapabilityConstraints) *Capabilities {
+	c := NewCapabilities(caps, m)
+	c.constraints = constraints
 	return c
 }
 
