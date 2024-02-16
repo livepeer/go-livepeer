@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 )
 
@@ -24,6 +26,7 @@ const textToImageRetryBackoff = 10 * time.Second
 const imageToImageRetryBackoff = 10 * time.Second
 const imageToVideoRetryBackoff = 1 * time.Minute
 const maxProcessingRetries = 4
+const aiRequestNumOrchs = 5
 
 type ServiceUnavailableError struct {
 	err error
@@ -38,35 +41,85 @@ type aiRequestParams struct {
 	os   drivers.OSSession
 }
 
-func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	// Discover 1 orchestrator
-	// TODO: Discover multiple orchestrators
-	caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
-	orchDesc, err := params.node.OrchestratorPool.GetOrchestrators(ctx, 1, newSuspender(), caps, common.ScoreAtLeast(0))
+func getOrchestratorsForAIRequest(ctx context.Context, params aiRequestParams, cap core.Capability, modelID string, numOrchs int) ([]*net.OrchestratorInfo, error) {
+	// No warm constraints applied here because we don't want to filter out orchs based on warm criteria at discovery time
+	// Instead, we want all orchs that support the model and then will prioritize orchs that have a warm model at selection time
+	constraints := map[core.Capability]*core.Constraints{
+		cap: {
+			Models: map[string]*core.ModelConstraint{
+				modelID: {
+					Warm: false,
+				},
+			},
+		},
+	}
+	caps := core.NewCapabilitiesWithConstraints(append(core.DefaultCapabilities(), cap), nil, constraints)
+
+	orchDesc, err := params.node.OrchestratorPool.GetOrchestrators(ctx, numOrchs, newSuspender(), caps, common.ScoreAtLeast(0))
 	if err != nil {
 		return nil, err
 	}
-	orchInfos := orchDesc.GetRemoteInfos()
+
+	return orchDesc.GetRemoteInfos(), nil
+}
+
+func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	modelID := ""
+	if req.ModelId != nil {
+		modelID = *req.ModelId
+	}
+
+	orchInfos, err := getOrchestratorsForAIRequest(ctx, params, core.Capability_TextToImage, modelID, aiRequestNumOrchs)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(orchInfos) == 0 {
 		return nil, errors.New("no orchestrators available")
 	}
 
-	orchUrl := orchInfos[0].Transcoder
+	// Sort and prioritize orchs that have warm model
+	sort.Slice(orchInfos, func(i, j int) bool {
+		iConstraints, ok := orchInfos[i].Capabilities.Constraints[uint32(core.Capability_TextToImage)]
+		if !ok {
+			return false
+		}
+
+		iModelConstraint, ok := iConstraints.Models[modelID]
+		if !ok {
+			return false
+		}
+
+		// If warm i goes before j, else j goes before i
+		return iModelConstraint.Warm
+	})
 
 	var resp *worker.ImageResponse
-	op := func() error {
+
+	// Round robin up to maxProcessingRetries times
+	orchIdx := 0
+	tries := 0
+	for tries < maxProcessingRetries {
+		orchUrl := orchInfos[orchIdx].Transcoder
+
 		var err error
 		resp, err = submitTextToImage(ctx, orchUrl, req)
-		return err
-	}
-	notify := func(err error, dur time.Duration) {
-		clog.Infof(ctx, "Error submitting TextToImage request err=%v retrying after dur=%v", err, dur)
+		if err == nil {
+			break
+		}
+
+		clog.Infof(ctx, "Error submitting TextToImage request try=%v orch=%v err=%v", tries, orchUrl, err)
+
+		tries++
+		orchIdx++
+		// Wrap back around
+		if orchIdx >= len(orchInfos) {
+			orchIdx = 0
+		}
 	}
 
-	b := backoff.WithMaxRetries(backoff.NewConstantBackOff(textToImageRetryBackoff), maxProcessingRetries)
-	if err := backoff.RetryNotify(op, b, notify); err != nil {
-		return nil, &ServiceUnavailableError{err: err}
+	if resp == nil {
+		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
 
 	newMedia := make([]worker.Media, len(resp.Images))
