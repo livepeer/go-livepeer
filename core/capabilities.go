@@ -68,6 +68,7 @@ const (
 	Capability_H264_Decode_420_10bit
 	Capability_SegmentSlicing
 	Capability_TextToImage
+	Capability_ImageToImage
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -100,6 +101,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 	Capability_SegmentSlicing:             "Segment slicing",
 	Capability_TextToImage:                "Text to image",
+	Capability_ImageToImage:               "Image to image",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -186,6 +188,7 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
 		Capability_TextToImage,
+		Capability_ImageToImage,
 	}
 }
 
