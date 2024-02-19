@@ -567,6 +567,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 
 					constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+				case "image-to-video":
+					_, ok := constraints[core.Capability_ImageToVideo]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
+						constraints[core.Capability_ImageToVideo] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
 				}
 			}
 		}
