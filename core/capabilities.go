@@ -69,6 +69,7 @@ const (
 	Capability_SegmentSlicing
 	Capability_TextToImage
 	Capability_ImageToImage
+	Capability_ImageToVideo
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -102,6 +103,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_SegmentSlicing:             "Segment slicing",
 	Capability_TextToImage:                "Text to image",
 	Capability_ImageToImage:               "Image to image",
+	Capability_ImageToVideo:               "Image to video",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -189,6 +191,7 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_420_10bit,
 		Capability_TextToImage,
 		Capability_ImageToImage,
+		Capability_ImageToVideo,
 	}
 }
 

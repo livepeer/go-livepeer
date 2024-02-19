@@ -10,9 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -21,11 +19,10 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 )
 
-const imageToVideoTimeout = 5 * time.Minute
-const imageToVideoRetryBackoff = 1 * time.Minute
 const maxProcessingRetries = 4
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
+const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 
 type ServiceUnavailableError struct {
 	err error
@@ -255,33 +252,45 @@ func submitImageToImage(ctx context.Context, url string, req worker.ImageToImage
 }
 
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
-	// Discover 1 orchestrator
-	// TODO: Discover multiple orchestrators
-	caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
-	orchDesc, err := params.node.OrchestratorPool.GetOrchestrators(ctx, 1, newSuspender(), caps, common.ScoreAtLeast(0))
+	modelID := defaultImageToVideoModelID
+	if req.ModelId != nil {
+		modelID = *req.ModelId
+	}
+
+	orchInfos, err := getOrchestratorsForAIRequest(ctx, params, core.Capability_ImageToVideo, modelID)
 	if err != nil {
 		return nil, err
 	}
-	orchInfos := orchDesc.GetRemoteInfos()
 
 	if len(orchInfos) == 0 {
 		return nil, errors.New("no orchestrators available")
 	}
 
-	orchUrl := orchInfos[0].Transcoder
-
 	var resp *worker.ImageResponse
-	op := func() error {
+
+	// Round robin up to maxProcessingRetries times
+	orchIdx := 0
+	tries := 0
+	for tries < maxProcessingRetries {
+		orchUrl := orchInfos[orchIdx].Transcoder
+
 		var err error
 		resp, err = submitImageToVideo(ctx, orchUrl, req)
-		return err
-	}
-	notify := func(err error, dur time.Duration) {
-		clog.Infof(ctx, "Error submitting ImageToVideo request err=%v retrying after dur=%v", err, dur)
+		if err == nil {
+			break
+		}
+
+		clog.Infof(ctx, "Error submitting ImageToVideo request try=%v orch=%v err=%v", tries, orchUrl, err)
+
+		tries++
+		orchIdx++
+		// Wrap back around
+		if orchIdx >= len(orchInfos) {
+			orchIdx = 0
+		}
 	}
 
-	b := backoff.WithMaxRetries(backoff.NewConstantBackOff(imageToVideoRetryBackoff), maxProcessingRetries)
-	if err := backoff.RetryNotify(op, b, notify); err != nil {
+	if resp == nil {
 		return nil, &ServiceUnavailableError{err: err}
 	}
 
