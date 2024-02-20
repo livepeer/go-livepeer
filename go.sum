@@ -538,6 +538,8 @@ github.com/livepeer/ai-worker v0.0.0-20240214164547-fbdca26a9b2d h1:YpBW6wqwpQ9f
 github.com/livepeer/ai-worker v0.0.0-20240214164547-fbdca26a9b2d/go.mod h1:JvUlcQktSgkEfzotuelfw9OpjGi2qZTW/3tWB/klb/c=
 github.com/livepeer/ai-worker v0.0.0-20240214223314-3d355743417a h1:LZwlUatQLU7rkICGMmca71DE67iGhln/QttAehEs8LA=
 github.com/livepeer/ai-worker v0.0.0-20240214223314-3d355743417a/go.mod h1:JvUlcQktSgkEfzotuelfw9OpjGi2qZTW/3tWB/klb/c=
+github.com/livepeer/ai-worker v0.0.0-20240220213200-59b5b237cd8b h1:zCQv/A3Pafdr/NutU7zLChkF+XcAdzY0ObjN1E4nr44=
+github.com/livepeer/ai-worker v0.0.0-20240220213200-59b5b237cd8b/go.mod h1:JvUlcQktSgkEfzotuelfw9OpjGi2qZTW/3tWB/klb/c=
 github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b h1:VQcnrqtCA2UROp7q8ljkh2XA/u0KRgVv0S1xoUvOweE=
 github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b/go.mod h1:hwJ5DKhl+pTanFWl+EUpw1H7ukPO/H+MFpgA7jjshzw=
 github.com/livepeer/joy4 v0.1.2-0.20191121080656-b2fea45cbded h1:ZQlvR5RB4nfT+cOQee+WqmaDOgGtP2oDMhcVvR4L0yA=
