@@ -291,7 +291,7 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	if resp == nil {
-		return nil, &ServiceUnavailableError{err: err}
+		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
 
 	// HACK: Re-use worker.ImageResponse to return results
