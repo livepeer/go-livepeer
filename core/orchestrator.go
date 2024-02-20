@@ -540,7 +540,7 @@ func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodi
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string) *TranscodeResult {
+func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
 
 	var fnamep *string
@@ -576,19 +576,10 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 	transcoder := n.Transcoder
 
 	md := &SegTranscodingMetadata{
-		Fname: path.Join(dirPath, "%d.png"),
-		ProfileIn: ffmpeg.VideoProfile{
-			Framerate:    7,
-			FramerateDen: 1,
-		},
+		Fname:     path.Join(dirPath, "%d.png"),
+		ProfileIn: inProfile,
 		Profiles: []ffmpeg.VideoProfile{
-			{
-				Name:        "image-to-video",
-				Resolution:  "1024x576",
-				AspectRatio: "16:9",
-				Bitrate:     "6000k",
-				Format:      ffmpeg.FormatMP4,
-			},
+			outProfile,
 		},
 		AuthToken: &net.AuthToken{SessionId: sessionID},
 	}
@@ -911,6 +902,28 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 	clog.V(common.DEBUG).Infof(ctx, "Generating frames took=%v", took)
 
 	sessionID := string(RandomManifestID())
+	framerate := 7
+	if req.Fps != nil {
+		framerate = *req.Fps
+	}
+	inProfile := ffmpeg.VideoProfile{
+		Framerate:    uint(framerate),
+		FramerateDen: 1,
+	}
+	height := 576
+	if req.Height != nil {
+		height = *req.Height
+	}
+	width := 1024
+	if req.Width != nil {
+		width = *req.Width
+	}
+	outProfile := ffmpeg.VideoProfile{
+		Name:       "image-to-video",
+		Resolution: fmt.Sprintf("%vx%v", width, height),
+		Bitrate:    "6000k",
+		Format:     ffmpeg.FormatMP4,
+	}
 	// HACK: Re-use worker.ImageResponse to return results
 	// Transcode frames into segments.
 	videos := make([]worker.Media, len(resp.Frames))
@@ -922,7 +935,7 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 		}
 
 		// Transcode slice of frame urls into a segment
-		res := n.transcodeFrames(ctx, sessionID, urls)
+		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
 		if res.Err != nil {
 			return nil, res.Err
 		}
