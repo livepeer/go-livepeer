@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -28,6 +29,7 @@ func main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	in := flag.String("in", "", "Input m3u8 manifest file")
+	inSegment := flag.String("in_segment", "", "Input segment")
 	live := flag.Bool("live", true, "Simulate live stream")
 	concurrentSessions := flag.Int("concurrentSessions", 1, "# of concurrent transcode sessions")
 	repeat := flag.Int("repeat", 1, "# of times benchmark will be repeated")
@@ -42,19 +44,34 @@ func main() {
 
 	flag.Parse()
 
-	if *in == "" {
-		glog.Errorf("Please provide the input manifest as `%s -in <input.m3u8>`", os.Args[0])
+	if *in == "" && *inSegment == "" {
+		glog.Errorf("Please provide the input manifest as `%s -in <input.m3u8>` or an input segment as `%s -in_segment <seg.ts>`", os.Args[0])
+		flag.Usage()
+		os.Exit(1)
+	}
+	if *in != "" && *inSegment != "" {
+		glog.Errorf("Please provide only one of -in OR -in_segment`")
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	profiles := parseVideoProfiles(*transcodingOptions)
 
-	f, err := os.Open(*in)
-	if err != nil {
-		glog.Exit("Couldn't open input manifest: ", err)
+	var manifestReader io.Reader
+	if *in != "" {
+		f, err := os.Open(*in)
+		if err != nil {
+			glog.Exit("Couldn't open input manifest: ", err)
+		}
+		manifestReader = bufio.NewReader(f)
+	} else {
+		// If we only received a single .ts file for transcoding then just fake a manifest with only that segment in
+		manifestReader = strings.NewReader(
+			fmt.Sprintf("#EXTM3U\n#EXTINF:10.0,\n%s", *inSegment),
+		)
 	}
-	p, _, err := m3u8.DecodeFrom(bufio.NewReader(f), true)
+
+	p, _, err := m3u8.DecodeFrom(manifestReader, true)
 	if err != nil {
 		glog.Exit("Couldn't decode input manifest: ", err)
 	}
@@ -121,6 +138,8 @@ func main() {
 	ffmpeg.InitFFmpegWithLogLevel(ffmpeg.FFLogWarning)
 	fmt.Println("timestamp,session,segment,seg_dur,transcode_time,frames")
 
+	var outputFilenames = []string{}
+
 	var mu sync.Mutex
 	for repeatCounter := 0; repeatCounter < *repeat; repeatCounter++ {
 		segCount := 0
@@ -130,7 +149,7 @@ func main() {
 		for i := 0; i < *concurrentSessions; i++ {
 			wg.Add(1)
 			go func(k int, wg *sync.WaitGroup) {
-				var tc *ffmpeg.Transcoder = ffmpeg.NewTranscoder()
+				var tc = ffmpeg.NewTranscoder()
 				for j, v := range pl.Segments {
 					iterStart := time.Now()
 					if *segs > 0 && j >= *segs {
@@ -156,6 +175,7 @@ func main() {
 							if *outPrefix != "" {
 								oname = fmt.Sprintf("%s_%s_%d_%d_%d.ts", *outPrefix, p.Name, n, k, j)
 								muxer = "mpegts"
+								outputFilenames = append(outputFilenames, oname)
 							} else {
 								oname = "-"
 								muxer = "null"
@@ -203,6 +223,11 @@ func main() {
 		wg.Wait()
 		if segCount == 0 || srcDur == 0.0 {
 			glog.Exit("Input manifest has no segments or total duration is 0s")
+		}
+		if *inSegment != "" {
+			for _, fn := range outputFilenames {
+				fmt.Printf("Outputted file: %s\n", fn)
+			}
 		}
 		statsTable := tablewriter.NewWriter(os.Stderr)
 		stats := [][]string{
