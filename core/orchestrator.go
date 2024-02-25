@@ -569,11 +569,12 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 		}
 	}
 
-	// Check if there's a transcoder available
-	if n.Transcoder == nil {
-		return terr(ErrTranscoderAvail)
-	}
-	transcoder := n.Transcoder
+	// Use local software transcoder instead of node's configured transcoder
+	// because if the node is using a nvidia transcoder there may be sporadic
+	// CUDA operation not permitted errors that are difficult to debug.
+	// The majority of the execution time for image-to-video is the frame generation
+	// so slower software transcoding should not be a big deal for now.
+	transcoder := NewLocalTranscoder(n.WorkDir)
 
 	md := &SegTranscodingMetadata{
 		Fname:     path.Join(dirPath, "%d.png"),
