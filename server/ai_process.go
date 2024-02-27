@@ -91,7 +91,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 	}
 
 	if len(orchInfos) == 0 {
-		return nil, errors.New("no orchestrators available")
+		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
 
 	var resp *worker.ImageResponse
@@ -174,7 +174,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	if len(orchInfos) == 0 {
-		return nil, errors.New("no orchestrators available")
+		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
 
 	var resp *worker.ImageResponse
@@ -263,7 +263,7 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	if len(orchInfos) == 0 {
-		return nil, errors.New("no orchestrators available")
+		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
 
 	var resp *worker.ImageResponse
