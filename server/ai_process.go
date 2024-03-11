@@ -33,8 +33,9 @@ func (e *ServiceUnavailableError) Error() string {
 }
 
 type aiRequestParams struct {
-	node *core.LivepeerNode
-	os   drivers.OSSession
+	node        *core.LivepeerNode
+	os          drivers.OSSession
+	sessManager *AISessionManager
 }
 
 func getOrchestratorsForAIRequest(ctx context.Context, params aiRequestParams, cap core.Capability, modelID string) ([]*net.OrchestratorInfo, error) {
@@ -85,37 +86,30 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		modelID = *req.ModelId
 	}
 
-	orchInfos, err := getOrchestratorsForAIRequest(ctx, params, core.Capability_TextToImage, modelID)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(orchInfos) == 0 {
-		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
-	}
-
 	var resp *worker.ImageResponse
 
-	// Round robin up to maxProcessingRetries times
-	orchIdx := 0
 	tries := 0
 	for tries < maxProcessingRetries {
-		orchUrl := orchInfos[orchIdx].Transcoder
+		sess, err := params.sessManager.Select(ctx, core.Capability_TextToImage, modelID)
+		if err != nil {
+			return nil, err
+		}
 
-		var err error
-		resp, err = submitTextToImage(ctx, orchUrl, req)
-		if err == nil {
+		if sess == nil {
 			break
 		}
 
-		clog.Infof(ctx, "Error submitting TextToImage request try=%v orch=%v err=%v", tries, orchUrl, err)
+		resp, err = submitTextToImage(ctx, params, sess, req)
+		if err == nil {
+			params.sessManager.Complete(ctx, sess)
+			break
+		}
+
+		clog.Infof(ctx, "Error submitting TextToImage request try=%v orch=%v err=%v", tries, sess.Transcoder(), err)
+
+		params.sessManager.Remove(ctx, sess)
 
 		tries++
-		orchIdx++
-		// Wrap back around
-		if orchIdx >= len(orchInfos) {
-			orchIdx = 0
-		}
 	}
 
 	if resp == nil {
@@ -143,8 +137,8 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 	return resp, nil
 }
 
-func submitTextToImage(ctx context.Context, url string, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	client, err := worker.NewClientWithResponses(url, worker.WithHTTPClient(httpClient))
+func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		return nil, err
 	}
