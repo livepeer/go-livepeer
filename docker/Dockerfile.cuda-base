@@ -6,7 +6,7 @@
 # 1. Download NVIDIA CUDA SDK for ARM64, extract, and copy into cuda/arm64/usr/local/cuda/
 # 2. Download NVIDIA CUDA SDK for Windows AMD64, extract, and copy npp libs into npp_win/
 
-FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.2.2-cudnn8-devel-ubuntu20.04
 
 COPY npp_win/lib/x64/* /usr/local/cuda/lib64/
 COPY npp_win/include/* /usr/local/cuda/include/
