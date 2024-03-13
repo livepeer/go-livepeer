@@ -512,7 +512,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
-			modelsDir = path.Join(*cfg.Datadir, "models")
+			var err error
+			modelsDir, err = filepath.Abs(path.Join(*cfg.Datadir, "models"))
+			if err != nil {
+				glog.Error("Error creating absolute path for models dir: %v", modelsDir)
+				return
+			}
 		}
 
 		if err := os.MkdirAll(modelsDir, 0755); err != nil {
