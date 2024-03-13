@@ -496,8 +496,6 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
 	} else if len(segData.FullProfiles) > 0 {
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
-	} else if len(segData.Profiles) > 0 {
-		profiles, err = common.BytesToVideoProfile(segData.Profiles)
 	}
 	if err != nil {
 		glog.Error("Unable to deserialize profiles ", err)
