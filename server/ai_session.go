@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ type AISessionPool struct {
 	selector  BroadcastSessionsSelector
 	sessMap   map[string]*BroadcastSession
 	suspender *suspender
+	mu        sync.RWMutex
 }
 
 func NewAISessionPool(selector BroadcastSessionsSelector, suspender *suspender) *AISessionPool {
@@ -32,10 +34,14 @@ func NewAISessionPool(selector BroadcastSessionsSelector, suspender *suspender) 
 		selector:  selector,
 		sessMap:   make(map[string]*BroadcastSession),
 		suspender: suspender,
+		mu:        sync.RWMutex{},
 	}
 }
 
 func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
 	for {
 		sess := pool.selector.Select(ctx)
 		if sess == nil {
@@ -52,6 +58,9 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 }
 
 func (pool *AISessionPool) Complete(sess *BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
 	existingSess, ok := pool.sessMap[sess.Transcoder()]
 	if !ok {
 		// If the session is not tracked by sessMap, skip returning it to the selector
@@ -68,6 +77,9 @@ func (pool *AISessionPool) Complete(sess *BroadcastSession) {
 }
 
 func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
 	// If we try to add new sessions to the pool the suspender
 	// should treat this as a refresh
 	pool.suspender.signalRefresh()
@@ -87,6 +99,9 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 }
 
 func (pool *AISessionPool) Remove(sess *BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
 	delete(pool.sessMap, sess.Transcoder())
 
 	// Magic number for now
@@ -94,6 +109,13 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	// If this method is called assume that the orch should be suspended
 	// as well
 	pool.suspender.suspend(sess.Transcoder(), penalty)
+}
+
+func (pool *AISessionPool) Size() int {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	return len(pool.sessMap)
 }
 
 type AISessionSelector struct {
@@ -145,7 +167,24 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 }
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
-	if time.Now().After(sel.lastRefreshTime.Add(sel.ttl)) {
+	shouldRefreshSelector := func() bool {
+		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
+		// 1/2 the total # of orchs that can be queried during discovery
+		discoveryPoolSize := sel.node.OrchestratorPool.Size()
+		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
+			return true
+		}
+
+		// Refresh if the selector has expired
+		if time.Now().After(sel.lastRefreshTime.Add(sel.ttl)) {
+			return true
+		}
+
+		return false
+	}
+
+	if shouldRefreshSelector() {
+		// Should this call be in a goroutine so the refresh can happen in the background?
 		if err := sel.Refresh(ctx); err != nil {
 			clog.Infof(ctx, "Error refreshing AISessionSelector err=%v", err)
 		}
@@ -249,7 +288,7 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 type AISessionManager struct {
 	node      *core.LivepeerNode
 	selectors map[string]*AISessionSelector
-	mu        *sync.Mutex
+	mu        sync.Mutex
 	ttl       time.Duration
 }
 
@@ -257,7 +296,7 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 	return &AISessionManager{
 		node:      node,
 		selectors: make(map[string]*AISessionSelector),
-		mu:        &sync.Mutex{},
+		mu:        sync.Mutex{},
 		ttl:       ttl,
 	}
 }
@@ -268,7 +307,23 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, err
 	}
 
-	return sel.Select(ctx), nil
+	sess := sel.Select(ctx)
+	if sess == nil {
+		return nil, nil
+	}
+
+	shouldRefresh, err := shouldRefreshSession(ctx, sess.BroadcastSession)
+	if err != nil {
+		return nil, err
+	}
+
+	if shouldRefresh {
+		if err := refreshSession(ctx, sess.BroadcastSession); err != nil {
+			return nil, err
+		}
+	}
+
+	return sess, nil
 }
 
 func (c *AISessionManager) Remove(ctx context.Context, sess *AISession) error {

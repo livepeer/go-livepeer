@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math/big"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
+	"github.com/livepeer/lpms/stream"
 )
 
 const maxProcessingRetries = 4
@@ -90,9 +93,12 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 
 	tries := 0
 	for tries < maxProcessingRetries {
+		tries++
+
 		sess, err := params.sessManager.Select(ctx, core.Capability_TextToImage, modelID)
 		if err != nil {
-			return nil, err
+			clog.Infof(ctx, "Error selecting TextToImage session err=%v", err)
+			continue
 		}
 
 		if sess == nil {
@@ -109,7 +115,6 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 
 		params.sessManager.Remove(ctx, sess)
 
-		tries++
 	}
 
 	if resp == nil {
@@ -143,9 +148,63 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	resp, err := client.TextToImageWithResponse(ctx, req)
+	// genSegCreds expects a stream.HLSSegment so in order to reuse it here we pass a dummy object
+	segCreds, err := genSegCreds(sess.BroadcastSession, &stream.HLSSegment{}, nil, false)
 	if err != nil {
 		return nil, err
+	}
+
+	priceInfo, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Height == nil {
+		req.Height = new(int)
+		*req.Height = 512
+	}
+	if req.Width == nil {
+		req.Width = new(int)
+		*req.Width = 512
+	}
+
+	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * steps
+	// If additional parameters that influence compute cost become configurable, then the formula should be reconsidered
+	outPixels := int64(*req.Height) * int64(*req.Height)
+	fee, err := estimateAIFee(outPixels, priceInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	balUpdate, err := newBalanceUpdate(sess.BroadcastSession, fee)
+	if err != nil {
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	payment, err := genPayment(ctx, sess.BroadcastSession, balUpdate.NumTickets)
+	if err != nil {
+		return nil, err
+	}
+
+	// As soon as the request is sent to the orch consider the balance update's credit as spent
+	balUpdate.Status = CreditSpent
+
+	setHeaders := func(_ context.Context, req *http.Request) error {
+		req.Header.Set(segmentHeader, segCreds)
+		req.Header.Set(paymentHeader, payment)
+		return nil
+	}
+
+	resp, err := client.TextToImageWithResponse(ctx, req, setHeaders)
+	if err != nil {
+		return nil, err
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	balUpdate.Status = ReceivedChange
+	if priceInfo != nil {
+		balUpdate.Debit = fee
 	}
 
 	if resp.JSON200 == nil {
@@ -346,4 +405,15 @@ func submitImageToVideo(ctx context.Context, url string, req worker.ImageToVideo
 	}
 
 	return &res, nil
+}
+
+func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
+	if priceInfo == nil {
+		return nil, nil
+	}
+
+	fee := new(big.Rat).SetInt64(outPixels)
+	fee.Mul(fee, priceInfo)
+
+	return fee, nil
 }
