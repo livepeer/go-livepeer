@@ -43,6 +43,9 @@ message OrchestratorRequest {
 
   // Broadcaster's signature over its address
   bytes sig   = 2;
+
+  // Features and constraints required by the broadcaster
+  Capabilities capabilities = 3;
 }
 
 /*

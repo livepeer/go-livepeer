@@ -279,7 +279,7 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 		return nil, nil
 	}
 
-	price, err := orch.priceInfo(sender, manifestID)
+	price, err := orch.priceInfo(sender, manifestID, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -294,10 +294,24 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 	}, nil
 }
 
-// priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
-func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID) (*big.Rat, error) {
-	basePrice := orch.node.GetBasePrice(sender.String())
+func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil, nil
+	}
 
+	price, err := orch.priceInfo(sender, manifestID, caps)
+	if err != nil {
+		return nil, err
+	}
+
+	return &net.PriceInfo{
+		PricePerUnit:  price.Num().Int64(),
+		PixelsPerUnit: price.Denom().Int64(),
+	}, nil
+}
+
+// priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
+func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
 	if manifestID != "" {
 		if balances, ok := orch.node.Balances.balances[sender]; ok {
@@ -308,8 +322,33 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	}
 
-	if basePrice == nil {
-		basePrice = orch.node.GetBasePrice("default")
+	var basePrice *big.Rat
+	if caps == nil {
+		basePrice = orch.node.GetBasePrice(sender.String())
+		if basePrice == nil {
+			basePrice = orch.node.GetBasePrice("default")
+		}
+	} else {
+		// The base price is the sum of the prices of individual capability + model ID pairs
+		basePrice = big.NewRat(0, 1)
+		for cap := range caps.Capacities {
+			// If the capability does not have constraints (and thus any model constraints) skip it
+			// because we only price a capability together with a model ID right now
+			constraints, ok := caps.Constraints[cap]
+			if !ok {
+				continue
+			}
+			for modelID := range constraints.Models {
+				price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
+				if price == nil {
+					price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+				}
+
+				if price != nil {
+					basePrice.Add(basePrice, price)
+				}
+			}
+		}
 	}
 
 	if !orch.node.AutoAdjustPrice {

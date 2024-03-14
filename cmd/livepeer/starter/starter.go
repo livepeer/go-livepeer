@@ -562,6 +562,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 
 					constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				case "image-to-image":
 					_, ok := constraints[core.Capability_ImageToImage]
 					if !ok {
@@ -572,6 +574,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 
 					constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				case "image-to-video":
 					_, ok := constraints[core.Capability_ImageToVideo]
 					if !ok {
@@ -582,6 +586,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 
 					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				}
 			}
 		}

@@ -1486,7 +1486,7 @@ func refreshSession(ctx context.Context, sess *BroadcastSession) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 
-	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri)
+	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri, sess.Params.Capabilities.ToNetCapabilities())
 	if err != nil {
 		return err
 	}
