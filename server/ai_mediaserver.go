@@ -135,8 +135,9 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToImage request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
 
 		params := aiRequestParams{
-			node: ls.LivepeerNode,
-			os:   drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
+			sessManager: ls.AISessionManager,
 		}
 
 		start := time.Now()
@@ -188,8 +189,9 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v async=%v", req.Image.FileSize(), *req.ModelId, async)
 
 		params := aiRequestParams{
-			node: ls.LivepeerNode,
-			os:   drivers.NodeStorage.NewSession(requestID),
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
 		}
 
 		if !async {
