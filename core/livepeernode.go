@@ -63,6 +63,49 @@ func (t NodeType) String() string {
 	return str
 }
 
+type CapabilityPriceMenu struct {
+	modelPrices map[string]*big.Rat
+}
+
+func NewCapabilityPriceMenu() CapabilityPriceMenu {
+	return CapabilityPriceMenu{
+		modelPrices: make(map[string]*big.Rat),
+	}
+}
+
+func (m CapabilityPriceMenu) SetPriceForModelID(modelID string, price *big.Rat) {
+	m.modelPrices[modelID] = price
+}
+
+func (m CapabilityPriceMenu) PriceForModelID(modelID string) *big.Rat {
+	return m.modelPrices[modelID]
+}
+
+type CapabilityPrices map[Capability]CapabilityPriceMenu
+
+func NewCapabilityPrices() CapabilityPrices {
+	return make(map[Capability]CapabilityPriceMenu)
+}
+
+func (cp CapabilityPrices) SetPriceForModelID(cap Capability, modelID string, price *big.Rat) {
+	menu, ok := cp[cap]
+	if !ok {
+		menu = NewCapabilityPriceMenu()
+		cp[cap] = menu
+	}
+
+	menu.SetPriceForModelID(modelID, price)
+}
+
+func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *big.Rat {
+	menu, ok := cp[cap]
+	if !ok {
+		return nil
+	}
+
+	return menu.PriceForModelID(modelID)
+}
+
 // LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
@@ -96,25 +139,27 @@ type LivepeerNode struct {
 	StorageConfigs map[string]*transcodeConfig
 	storageMutex   *sync.RWMutex
 	// Transcoder private fields
-	priceInfo    map[string]*big.Rat
-	serviceURI   url.URL
-	segmentMutex *sync.RWMutex
+	priceInfo        map[string]*big.Rat
+	priceInfoForCaps map[string]CapabilityPrices
+	serviceURI       url.URL
+	segmentMutex     *sync.RWMutex
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
 	return &LivepeerNode{
-		Eth:             e,
-		WorkDir:         wd,
-		Database:        dbh,
-		AutoAdjustPrice: true,
-		SegmentChans:    make(map[ManifestID]SegmentChan),
-		segmentMutex:    &sync.RWMutex{},
-		Capabilities:    &Capabilities{capacities: map[Capability]int{}},
-		priceInfo:       make(map[string]*big.Rat),
-		StorageConfigs:  make(map[string]*transcodeConfig),
-		storageMutex:    &sync.RWMutex{},
+		Eth:              e,
+		WorkDir:          wd,
+		Database:         dbh,
+		AutoAdjustPrice:  true,
+		SegmentChans:     make(map[ManifestID]SegmentChan),
+		segmentMutex:     &sync.RWMutex{},
+		Capabilities:     &Capabilities{capacities: map[Capability]int{}},
+		priceInfo:        make(map[string]*big.Rat),
+		priceInfoForCaps: make(map[string]CapabilityPrices),
+		StorageConfigs:   make(map[string]*transcodeConfig),
+		storageMutex:     &sync.RWMutex{},
 	}, nil
 }
 
@@ -153,6 +198,33 @@ func (n *LivepeerNode) GetBasePrices() map[string]*big.Rat {
 	defer n.mu.RUnlock()
 
 	return n.priceInfo
+}
+
+func (n *LivepeerNode) SetBasePriceForCap(b_eth_addr string, cap Capability, modelID string, price *big.Rat) {
+	addr := strings.ToLower(b_eth_addr)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	prices, ok := n.priceInfoForCaps[addr]
+	if !ok {
+		prices = NewCapabilityPrices()
+		n.priceInfoForCaps[addr] = prices
+	}
+
+	prices.SetPriceForModelID(cap, modelID, price)
+}
+
+func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, modelID string) *big.Rat {
+	addr := strings.ToLower(b_eth_addr)
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	prices, ok := n.priceInfoForCaps[addr]
+	if !ok {
+		return nil
+	}
+
+	return prices.PriceForModelID(cap, modelID)
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received

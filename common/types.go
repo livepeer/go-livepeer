@@ -3,12 +3,13 @@ package common
 import (
 	"context"
 	"encoding/json"
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/m3u8"
 	"math/big"
 	"net/url"
 	"sync"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/m3u8"
 )
 
 type RemoteTranscoderInfo struct {
@@ -48,6 +49,7 @@ type Broadcaster interface {
 type CapabilityComparator interface {
 	CompatibleWith(*net.Capabilities) bool
 	LegacyOnly() bool
+	ToNetCapabilities() *net.Capabilities
 }
 
 const (

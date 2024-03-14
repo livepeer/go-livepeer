@@ -106,7 +106,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		return caps.CompatibleWith(info.Capabilities)
 	}
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
-		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL)
+		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, caps.ToNetCapabilities())
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
 			od.RemoteInfo = info
 			infoCh <- od
