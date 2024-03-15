@@ -231,8 +231,9 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 		req.Width = new(int)
 		*req.Width = 1024
 	}
+	frames := int64(25)
 
-	outPixels := int64(*req.Height) * int64(*req.Width)
+	outPixels := int64(*req.Height) * int64(*req.Width) * frames
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		return nil, err
@@ -350,8 +351,8 @@ func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (wo
 		return nil, nil, err
 	}
 
-	// At the moment, outPixels is expected to just be height * width
-	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * steps
+	// At the moment, outPixels is expected to just be height * width * frames
+	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * frames * steps
 	// If additional parameters that influence compute cost become configurable, then the formula should be reconsidered
 	fee, err := estimateAIFee(outPixels, priceInfo)
 	if err != nil {
