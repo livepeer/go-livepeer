@@ -179,8 +179,10 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		if v.Width != nil {
 			width = int64(*v.Width)
 		}
+		// The # of frames outputted by stable-video-diffusion-img2vid-xt models
+		frames := int64(25)
 
-		outPixels = height * width
+		outPixels = height * width * int64(frames)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -222,8 +224,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	took := time.Since(start)
 	clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID, took)
 
-	// At the moment, outPixels is expected to just be height * width
-	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * steps
+	// At the moment, outPixels is expected to just be height * width * frames
+	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * frames * steps
 	// If additional parameters that influence compute cost become configurable, then the formula should be reconsidered
 	orch.DebitFees(sender, manifestID, payment.GetExpectedPrice(), outPixels)
 
