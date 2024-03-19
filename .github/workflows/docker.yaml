@@ -19,7 +19,7 @@ jobs:
     permissions:
       packages: write
       contents: read
-    runs-on: ubuntu-20.04
+    runs-on: [self-hosted, linux]
     steps:
       - name: Check out code
         uses: actions/checkout@v4.1.1
