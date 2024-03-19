@@ -19,7 +19,7 @@ jobs:
     permissions:
       packages: write
       contents: read
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, linux-amd64]
     steps:
       - name: Check out code
         uses: actions/checkout@v4.1.1
