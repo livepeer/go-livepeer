@@ -507,6 +507,21 @@ func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 	bs.lock.Unlock()
 }
 
+// Pop a SegFlightMetadata from a session's SegsInFlight
+// Returns the end length of a session's SegsInFlight and the popped SegFlightMetadata
+func (bs *BroadcastSession) popSegInFlight() (int, SegFlightMetadata) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	if len(bs.SegsInFlight) == 0 {
+		return 0, SegFlightMetadata{}
+	}
+
+	sm := bs.SegsInFlight[0]
+	bs.SegsInFlight = bs.SegsInFlight[1:]
+	return len(bs.SegsInFlight), sm
+}
+
 // selects number of sessions to use according to current algorithm
 func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*BroadcastSession, calcPerceptualHash bool, verified bool) {
 	bsm.sessLock.Lock()
