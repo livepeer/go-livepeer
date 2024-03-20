@@ -135,14 +135,18 @@ func parseCurrencies(description string) (currencyBase string, currencyQuote str
 }
 
 func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
+	return newTruncatedTickerMockable(ctx, d, time.Now, time.After)
+}
+
+func newTruncatedTickerMockable(ctx context.Context, d time.Duration, now func() time.Time, tickAfter func(d time.Duration) <-chan time.Time) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {
 		defer close(ch)
 
-		nextTick := time.Now().UTC().Truncate(d)
+		nextTick := now().UTC().Truncate(d)
 		for {
 			nextTick = nextTick.Add(d)
-			untilNextTick := nextTick.Sub(time.Now().UTC())
+			untilNextTick := nextTick.Sub(now().UTC())
 			if untilNextTick <= 0 {
 				continue
 			}
@@ -150,7 +154,7 @@ func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
 			select {
 			case <-ctx.Done():
 				return
-			case t := <-time.After(untilNextTick):
+			case t := <-tickAfter(untilNextTick):
 				ch <- t
 			}
 		}
