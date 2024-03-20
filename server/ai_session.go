@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-tools/drivers"
+	"github.com/livepeer/lpms/stream"
 )
 
 type AISession struct {
@@ -25,6 +27,7 @@ type AISession struct {
 type AISessionPool struct {
 	selector  BroadcastSessionsSelector
 	sessMap   map[string]*BroadcastSession
+	inUseSess []*BroadcastSession
 	suspender *suspender
 	mu        sync.RWMutex
 }
@@ -45,6 +48,13 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 	for {
 		sess := pool.selector.Select(ctx)
 		if sess == nil {
+			sess = pool.selectInUse()
+		} else {
+			// Track in-use session the first time it is returned by the selector
+			pool.inUseSess = append(pool.inUseSess, sess)
+		}
+
+		if sess == nil {
 			return nil
 		}
 
@@ -52,6 +62,9 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 			// If the session is not tracked by sessMap skip it
 			continue
 		}
+
+		// Track a dummy segment for the session in indicate an in-flight request
+		sess.pushSegInFlight(&stream.HLSSegment{})
 
 		return sess
 	}
@@ -73,6 +86,14 @@ func (pool *AISessionPool) Complete(sess *BroadcastSession) {
 		return
 	}
 
+	// If there are still in-flight requests for the session return early
+	// and do not return the session to the selector
+	inFlight, _ := sess.popSegInFlight()
+	if inFlight > 0 {
+		return
+	}
+
+	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 	pool.selector.Complete(sess)
 }
 
@@ -103,6 +124,7 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	defer pool.mu.Unlock()
 
 	delete(pool.sessMap, sess.Transcoder())
+	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
 	// Magic number for now
 	penalty := 3
@@ -116,6 +138,14 @@ func (pool *AISessionPool) Size() int {
 	defer pool.mu.RUnlock()
 
 	return len(pool.sessMap)
+}
+
+func (pool *AISessionPool) selectInUse() *BroadcastSession {
+	if len(pool.inUseSess) == 0 {
+		return nil
+	}
+	// Select a random in-use session
+	return pool.inUseSess[rand.Intn(len(pool.inUseSess))]
 }
 
 type AISessionSelector struct {
