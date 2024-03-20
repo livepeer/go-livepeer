@@ -85,7 +85,11 @@ func computePriceData(roundID, updatedAt, answer *big.Int, decimals uint8) Price
 	}
 }
 
-func isContractAddress(addr string, client *ethclient.Client) bool {
+type ethClient interface {
+	CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error)
+}
+
+func isContractAddress(addr string, client ethClient) bool {
 	if len(addr) == 0 {
 		return false
 	}
