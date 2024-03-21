@@ -16,6 +16,9 @@ const (
 	priceUpdatePeriod         = 1 * time.Hour
 )
 
+// PriceFeedWatcher monitors a Chainlink PriceFeed for updated pricing info. It
+// allows fetching the current price as well as listening for updates on the
+// PriceUpdated channel.
 type PriceFeedWatcher struct {
 	ctx            context.Context
 	baseRetryDelay time.Duration
@@ -27,6 +30,8 @@ type PriceFeedWatcher struct {
 	priceUpdated chan eth.PriceData
 }
 
+// NewPriceFeedWatcher creates a new PriceFeedWatcher instance. It will already
+// fetch the current price and start a goroutine to watch for updates.
 func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string) (*PriceFeedWatcher, error) {
 	priceFeed, err := eth.NewPriceFeedEthClient(ctx, rpcUrl, priceFeedAddr)
 	if err != nil {
@@ -73,10 +78,13 @@ func (w *PriceFeedWatcher) Currencies() (base string, quote string) {
 	return w.currencyBase, w.currencyQuote
 }
 
+// Current returns the latest fetched price data.
 func (w *PriceFeedWatcher) Current() eth.PriceData {
 	return w.current
 }
 
+// PriceUpdated returns a channel that will receive the updated price data as
+// soon as it changes.
 func (w *PriceFeedWatcher) PriceUpdated() <-chan eth.PriceData {
 	return w.priceUpdated
 }
@@ -122,6 +130,8 @@ func (w *PriceFeedWatcher) watch(ctx context.Context, ticker <-chan time.Time) {
 	}
 }
 
+// parseCurrencies parses the base and quote currencies from a price feed based
+// on Chainlink PriceFeed description pattern "FROM / TO".
 func parseCurrencies(description string) (currencyBase string, currencyQuote string, err error) {
 	currencies := strings.Split(description, "/")
 	if len(currencies) != 2 {
@@ -133,10 +143,13 @@ func parseCurrencies(description string) (currencyBase string, currencyQuote str
 	return
 }
 
+// newTruncatedTicker creates a ticker that ticks at the next time that is a
+// multiple of d, starting from the current time.
 func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
 	return newTruncatedTickerMockable(ctx, d, time.Now, time.After)
 }
 
+// Test helper so we can mock the time functions in tests.
 func newTruncatedTickerMockable(ctx context.Context, d time.Duration, now func() time.Time, tickAfter func(d time.Duration) <-chan time.Time) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {

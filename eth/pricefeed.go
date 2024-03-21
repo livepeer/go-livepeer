@@ -20,6 +20,8 @@ type PriceData struct {
 	UpdatedAt time.Time
 }
 
+// PriceFeedEthClient is an interface for fetching price data from a Chainlink
+// PriceFeed contract.
 type PriceFeedEthClient interface {
 	Description() (string, error)
 	FetchPriceData() (PriceData, error)
@@ -71,6 +73,8 @@ func (c *priceFeedClient) FetchPriceData() (PriceData, error) {
 	return computePriceData(data.RoundId, data.UpdatedAt, data.Answer, decimals), nil
 }
 
+// computePriceData transforms the raw data from the PriceFeed into the higher
+// level PriceData struct, more easily usable by the rest of the system.
 func computePriceData(roundID, updatedAt, answer *big.Int, decimals uint8) PriceData {
 	// Compute a big.int which is 10^decimals.
 	divisor := new(big.Int).Exp(
@@ -89,6 +93,8 @@ type ethClient interface {
 	CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error)
 }
 
+// isContractAddress checks if the given address is an address of a contract
+// deployed on the corresponding blockchain.
 func isContractAddress(addr string, client ethClient) bool {
 	if len(addr) == 0 {
 		return false
