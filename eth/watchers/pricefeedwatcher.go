@@ -13,12 +13,13 @@ import (
 const (
 	priceUpdateMaxRetries     = 5
 	priceUpdateBaseRetryDelay = 30 * time.Second
+	priceUpdatePeriod         = 1 * time.Hour
 )
 
 type PriceFeedWatcher struct {
-	ctx context.Context
+	ctx            context.Context
+	baseRetryDelay time.Duration
 
-	updatePeriod                time.Duration
 	priceFeed                   eth.PriceFeedEthClient
 	currencyBase, currencyQuote string
 
@@ -26,11 +27,7 @@ type PriceFeedWatcher struct {
 	priceUpdated chan eth.PriceData
 }
 
-func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string, updatePeriod time.Duration) (*PriceFeedWatcher, error) {
-	if updatePeriod <= 0 {
-		updatePeriod = 1 * time.Hour
-	}
-
+func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string) (*PriceFeedWatcher, error) {
 	priceFeed, err := eth.NewPriceFeedEthClient(ctx, rpcUrl, priceFeedAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create price feed client: %w", err)
@@ -47,19 +44,25 @@ func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string, upda
 	}
 
 	w := &PriceFeedWatcher{
-		ctx:           ctx,
-		updatePeriod:  updatePeriod,
-		priceFeed:     priceFeed,
-		currencyBase:  currencyFrom,
-		currencyQuote: currencyTo,
-		priceUpdated:  make(chan eth.PriceData, 1),
+		ctx:            ctx,
+		baseRetryDelay: priceUpdateBaseRetryDelay,
+		priceFeed:      priceFeed,
+		currencyBase:   currencyFrom,
+		currencyQuote:  currencyTo,
+		priceUpdated:   make(chan eth.PriceData, 1),
 	}
 
 	err = w.updatePrice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to update price: %w", err)
 	}
-	go w.watch()
+
+	go func() {
+		ctx, cancel := context.WithCancel(w.ctx)
+		defer cancel()
+		ticker := newTruncatedTicker(ctx, priceUpdatePeriod)
+		w.watch(ctx, ticker)
+	}()
 
 	return w, nil
 }
@@ -95,17 +98,13 @@ func (w *PriceFeedWatcher) updatePrice() error {
 	return nil
 }
 
-func (w *PriceFeedWatcher) watch() {
-	ctx, cancel := context.WithCancel(w.ctx)
-	defer cancel()
-	ticker := newTruncatedTicker(ctx, w.updatePeriod)
-
+func (w *PriceFeedWatcher) watch(ctx context.Context, ticker <-chan time.Time) {
 	for {
 		select {
 		case <-w.ctx.Done():
 			return
 		case <-ticker:
-			attempt, retryDelay := 1, priceUpdateBaseRetryDelay
+			attempt, retryDelay := 1, w.baseRetryDelay
 			for {
 				err := w.updatePrice()
 				if err == nil {
