@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,8 @@ var (
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
+
+	pricePerUnitRex = regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
 )
 
 const (
@@ -737,17 +740,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Can't divide by 0
 				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %d", *cfg.PixelsPerUnit))
 			}
+			pixelsPerUnit := new(big.Rat).SetInt64(int64(*cfg.PixelsPerUnit))
 			if cfg.PricePerUnit == nil {
 				// Prevent orchestrators from unknowingly providing free transcoding
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			}
-			pricePerUnit, err := strconv.ParseInt(*cfg.PricePerUnit, 10, 64)
+			pricePerUnit, _, err := parsePricePerUnit(*cfg.PricePerUnit)
 			if err != nil {
-				panic(fmt.Errorf("-pricePerUnit must be a valid integer, provided %v", *cfg.PricePerUnit))
-			} else if pricePerUnit < 0 {
-				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", pricePerUnit))
+				panic(fmt.Errorf("-pricePerUnit must be a valid integer with an optional currency, provided %v", *cfg.PricePerUnit))
+			} else if pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 			}
-			n.SetBasePrice("default", big.NewRat(pricePerUnit, int64(*cfg.PixelsPerUnit)))
+			n.SetBasePrice("default", new(big.Rat).Quo(pricePerUnit, pixelsPerUnit))
 			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 
 			if *cfg.PricePerBroadcaster != "" {
@@ -857,12 +861,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Can't divide by 0
 				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *cfg.PixelsPerUnit))
 			}
-			maxPricePerUnit, err := strconv.ParseInt(*cfg.MaxPricePerUnit, 10, 64)
+			pixelsPerUnit := new(big.Rat).SetInt64(int64(*cfg.PixelsPerUnit))
+			maxPricePerUnit, _, err := parsePricePerUnit(*cfg.MaxPricePerUnit)
 			if err != nil {
-				panic(fmt.Errorf("The maximum price per unit must be a valid integer, provided %v instead\n", *cfg.MaxPricePerUnit))
+				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
-			if maxPricePerUnit > 0 {
-				server.BroadcastCfg.SetMaxPrice(big.NewRat(maxPricePerUnit, int64(*cfg.PixelsPerUnit)))
+			if maxPricePerUnit.Sign() > 0 {
+				server.BroadcastCfg.SetMaxPrice(new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit))
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
@@ -1499,6 +1504,26 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
+	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
+	if match == nil {
+		return nil, "", fmt.Errorf("price must be in the format of <price><currency>, provided %v", pricePerUnitStr)
+	}
+	price, currency := match[1], match[3]
+
+	pricePerUnit, ok := new(big.Rat).SetString(price)
+	if !ok {
+		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
+	} else if pricePerUnit.Sign() < 0 {
+		return nil, "", fmt.Errorf("price must be >= 0, provided %v", pricePerUnit)
+	}
+	if currency == "" {
+		currency = "wei"
+	}
+
+	return pricePerUnit, currency, nil
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {

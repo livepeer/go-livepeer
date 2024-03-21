@@ -295,3 +295,91 @@ func TestUpdatePerfScore(t *testing.T) {
 	}
 	require.Equal(t, expScores, scores.Scores)
 }
+
+func TestParsePricePerUnit(t *testing.T) {
+	tests := []struct {
+		name             string
+		pricePerUnitStr  string
+		expectedPrice    *big.Rat
+		expectedCurrency string
+		expectError      bool
+	}{
+		{
+			name:             "Valid input with integer price",
+			pricePerUnitStr:  "100USD",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with fractional price",
+			pricePerUnitStr:  "0.13USD",
+			expectedPrice:    big.NewRat(13, 100),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with decimal price",
+			pricePerUnitStr:  "99.99EUR",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "EUR",
+			expectError:      false,
+		},
+		{
+			name:             "Lower case currency",
+			pricePerUnitStr:  "99.99eur",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "eur",
+			expectError:      false,
+		},
+		{
+			name:             "Currency with numbers",
+			pricePerUnitStr:  "420DOG3",
+			expectedPrice:    big.NewRat(420, 1),
+			expectedCurrency: "DOG3",
+			expectError:      false,
+		},
+		{
+			name:             "No specified currency, default to wei",
+			pricePerUnitStr:  "100",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "wei",
+			expectError:      false,
+		},
+		{
+			name:             "Explicit wei currency",
+			pricePerUnitStr:  "100wei",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "wei",
+			expectError:      false,
+		},
+		{
+			name:             "Invalid number",
+			pricePerUnitStr:  "abcUSD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+		{
+			name:             "Negative price",
+			pricePerUnitStr:  "-100USD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			price, currency, err := parsePricePerUnit(tt.pricePerUnitStr)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, tt.expectedPrice.Cmp(price) == 0)
+				assert.Equal(t, tt.expectedCurrency, currency)
+			}
+		})
+	}
+}
