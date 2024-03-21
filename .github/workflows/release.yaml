@@ -41,7 +41,7 @@ jobs:
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
       - name: Release to github
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: ${{ steps.match-tag.outputs.match != '' }}
         with:
           generate_release_notes: true
