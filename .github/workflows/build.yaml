@@ -140,7 +140,7 @@ jobs:
         run: ./upload_build.sh
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: releases/
@@ -240,7 +240,7 @@ jobs:
         run: ./upload_build.sh
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: releases/
