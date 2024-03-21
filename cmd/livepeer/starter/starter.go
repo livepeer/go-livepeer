@@ -126,6 +126,7 @@ type LivepeerConfig struct {
 	DepositMultiplier      *int
 	PricePerUnit           *string
 	PixelsPerUnit          *int
+	PriceFeedAddr          *string
 	AutoAdjustPrice        *bool
 	PricePerBroadcaster    *string
 	BlockPollingInterval   *int
@@ -200,6 +201,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
 	defaultPixelsPerUnit := 1
+	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
@@ -284,6 +286,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
+		PriceFeedAddr:          &defaultPriceFeedAddr,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
 		PricePerBroadcaster:    &defaultPricePerBroadcaster,
 		BlockPollingInterval:   &defaultBlockPollingInterval,
@@ -754,7 +757,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else if pricePerUnit.Sign() < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 			}
-			err = startPriceUpdateLoop(ctx, *cfg.EthUrl, "TODO", pricePerUnit, currency, func(price *big.Rat) {
+			err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, pricePerUnit, currency, func(price *big.Rat) {
 				n.SetBasePrice("default", new(big.Rat).Quo(pricePerUnit, pixelsPerUnit))
 				glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 			})
@@ -875,7 +878,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
 			if maxPricePerUnit.Sign() > 0 {
-				err = startPriceUpdateLoop(ctx, *cfg.EthUrl, "TODO", maxPricePerUnit, currency, func(price *big.Rat) {
+				err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, maxPricePerUnit, currency, func(price *big.Rat) {
 					server.BroadcastCfg.SetMaxPrice(new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit))
 					glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 				})
