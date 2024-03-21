@@ -91,4 +91,3 @@ func TestComputePriceData(t *testing.T) {
 		assert.Equal("2021-07-13 16:00:00 +0000 UTC", data.UpdatedAt.UTC().String(), "The updated at time did not match")
 	})
 }
-
