@@ -95,7 +95,7 @@ type LivepeerConfig struct {
 	SelectPriceExpFactor   *float64
 	OrchPerfStatsURL       *string
 	Region                 *string
-	MaxPricePerUnit        *int
+	MaxPricePerUnit        *string
 	MinPerfScore           *float64
 	MaxSessions            *string
 	CurrentManifest        *bool
@@ -118,7 +118,7 @@ type LivepeerConfig struct {
 	MaxTicketEV            *string
 	MaxTotalEV             *string
 	DepositMultiplier      *int
-	PricePerUnit           *int
+	PricePerUnit           *string
 	PixelsPerUnit          *int
 	AutoAdjustPrice        *bool
 	PricePerBroadcaster    *string
@@ -192,7 +192,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTicketEV := "3000000000000"
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
-	defaultMaxPricePerUnit := 0
+	defaultMaxPricePerUnit := "0"
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
 	defaultPricePerBroadcaster := ""
@@ -741,10 +741,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Prevent orchestrators from unknowingly providing free transcoding
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			}
-			if *cfg.PricePerUnit < 0 {
-				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
+			pricePerUnit, err := strconv.ParseInt(*cfg.PricePerUnit, 10, 64)
+			if err != nil {
+				panic(fmt.Errorf("-pricePerUnit must be a valid integer, provided %v", *cfg.PricePerUnit))
+			} else if pricePerUnit < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", pricePerUnit))
 			}
-			n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
+			n.SetBasePrice("default", big.NewRat(pricePerUnit, int64(*cfg.PixelsPerUnit)))
 			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 
 			if *cfg.PricePerBroadcaster != "" {
@@ -854,8 +857,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Can't divide by 0
 				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *cfg.PixelsPerUnit))
 			}
-			if *cfg.MaxPricePerUnit > 0 {
-				server.BroadcastCfg.SetMaxPrice(big.NewRat(int64(*cfg.MaxPricePerUnit), int64(*cfg.PixelsPerUnit)))
+			maxPricePerUnit, err := strconv.ParseInt(*cfg.MaxPricePerUnit, 10, 64)
+			if err != nil {
+				panic(fmt.Errorf("The maximum price per unit must be a valid integer, provided %v instead\n", *cfg.MaxPricePerUnit))
+			}
+			if maxPricePerUnit > 0 {
+				server.BroadcastCfg.SetMaxPrice(big.NewRat(maxPricePerUnit, int64(*cfg.PixelsPerUnit)))
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
