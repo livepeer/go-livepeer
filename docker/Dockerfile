@@ -55,9 +55,9 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
 
 FROM	livepeer-${TARGETARCH}-base
 
