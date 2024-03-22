@@ -1,7 +1,6 @@
 package eth
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -26,20 +25,15 @@ type PriceFeedEthClient interface {
 	FetchPriceData() (PriceData, error)
 }
 
-func NewPriceFeedEthClient(ctx context.Context, rpcUrl, priceFeedAddr string) (PriceFeedEthClient, error) {
-	client, err := ethclient.DialContext(ctx, rpcUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize client: %w", err)
-	}
-
+func NewPriceFeedEthClient(ethClient *ethclient.Client, priceFeedAddr string) (PriceFeedEthClient, error) {
 	addr := common.HexToAddress(priceFeedAddr)
-	priceFeed, err := chainlink.NewAggregatorV3Interface(addr, client)
+	priceFeed, err := chainlink.NewAggregatorV3Interface(addr, ethClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aggregator proxy: %w", err)
 	}
 
 	return &priceFeedClient{
-		client:    client,
+		client:    ethClient,
 		priceFeed: priceFeed,
 	}, nil
 }

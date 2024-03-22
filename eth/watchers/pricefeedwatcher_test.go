@@ -37,20 +37,21 @@ func TestPriceFeedWatcher_UpdatePrice(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil).Once()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	w := &PriceFeedWatcher{
-		ctx:           ctx,
 		priceFeed:     priceFeedMock,
 		currencyBase:  "ETH",
 		currencyQuote: "USD",
-		priceUpdated:  make(chan eth.PriceData, 1),
 	}
+
+	priceUpdated := make(chan eth.PriceData, 1)
+	sub := w.Subscribe(priceUpdated)
+	defer sub.Unsubscribe()
 
 	require.NoError(t, w.updatePrice())
 	require.Equal(t, priceData, w.current)
+
 	select {
-	case updatedPrice := <-w.priceUpdated:
+	case updatedPrice := <-priceUpdated:
 		require.Equal(t, priceData, updatedPrice)
 	case <-time.After(2 * time.Second):
 		t.Error("Updated price hasn't been received on channel")
@@ -62,15 +63,15 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 	priceFeedMock := new(mockPriceFeedEthClient)
 	defer priceFeedMock.AssertExpectations(t)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	w := &PriceFeedWatcher{
-		ctx:           ctx,
 		priceFeed:     priceFeedMock,
 		currencyBase:  "ETH",
 		currencyQuote: "USD",
-		priceUpdated:  make(chan eth.PriceData, 1),
 	}
+
+	priceUpdated := make(chan eth.PriceData, 1)
+	sub := w.Subscribe(priceUpdated)
+	defer sub.Unsubscribe()
 
 	priceData := eth.PriceData{
 		RoundID:   10,
@@ -79,7 +80,7 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 	}
 	checkPriceUpdated := func() {
 		select {
-		case updatedPrice := <-w.priceUpdated:
+		case updatedPrice := <-priceUpdated:
 			require.Equal(priceData, updatedPrice)
 			require.Equal(priceData, w.current)
 		case <-time.After(1 * time.Second):
@@ -89,7 +90,7 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 	}
 	checkNoPriceUpdate := func() {
 		select {
-		case <-w.priceUpdated:
+		case <-priceUpdated:
 			require.Fail("Unexpected price update given it hasn't changed")
 		case <-time.After(1 * time.Second):
 			// all good
@@ -99,8 +100,10 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 
 	// Start the watch loop
 	fakeTicker := make(chan time.Time, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		w.watch(ctx, fakeTicker)
+		w.watchTicker(ctx, fakeTicker)
 	}()
 
 	// First time should trigger an update
@@ -147,26 +150,28 @@ func TestPriceFeedWatcher_WatchErrorRetries(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	w := &PriceFeedWatcher{
-		ctx:            ctx,
 		baseRetryDelay: 5 * time.Millisecond,
 		priceFeed:      priceFeedMock,
 		currencyBase:   "ETH",
 		currencyQuote:  "USD",
-		priceUpdated:   make(chan eth.PriceData, 1),
 	}
+
+	priceUpdated := make(chan eth.PriceData, 1)
+	sub := w.Subscribe(priceUpdated)
+	defer sub.Unsubscribe()
 
 	// Start watch loop
 	fakeTicker := make(chan time.Time, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		w.watch(ctx, fakeTicker)
+		w.watchTicker(ctx, fakeTicker)
 	}()
 
 	fakeTicker <- time.Now()
 	select {
-	case updatedPrice := <-w.priceUpdated:
+	case updatedPrice := <-priceUpdated:
 		require.Equal(t, priceData, updatedPrice)
 	case <-time.After(2 * time.Second):
 		t.Error("Updated price hasn't been received on channel")

@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/eth"
 )
@@ -20,20 +23,20 @@ const (
 // allows fetching the current price as well as listening for updates on the
 // PriceUpdated channel.
 type PriceFeedWatcher struct {
-	ctx            context.Context
 	baseRetryDelay time.Duration
 
 	priceFeed                   eth.PriceFeedEthClient
 	currencyBase, currencyQuote string
 
-	current      eth.PriceData
-	priceUpdated chan eth.PriceData
+	mu             sync.RWMutex
+	current        eth.PriceData
+	priceEventFeed event.Feed
 }
 
 // NewPriceFeedWatcher creates a new PriceFeedWatcher instance. It will already
 // fetch the current price and start a goroutine to watch for updates.
-func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string) (*PriceFeedWatcher, error) {
-	priceFeed, err := eth.NewPriceFeedEthClient(ctx, rpcUrl, priceFeedAddr)
+func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (*PriceFeedWatcher, error) {
+	priceFeed, err := eth.NewPriceFeedEthClient(ethClient, priceFeedAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create price feed client: %w", err)
 	}
@@ -49,25 +52,16 @@ func NewPriceFeedWatcher(ctx context.Context, rpcUrl, priceFeedAddr string) (*Pr
 	}
 
 	w := &PriceFeedWatcher{
-		ctx:            ctx,
 		baseRetryDelay: priceUpdateBaseRetryDelay,
 		priceFeed:      priceFeed,
 		currencyBase:   currencyFrom,
 		currencyQuote:  currencyTo,
-		priceUpdated:   make(chan eth.PriceData, 1),
 	}
 
 	err = w.updatePrice()
 	if err != nil {
 		return nil, fmt.Errorf("failed to update price: %w", err)
 	}
-
-	go func() {
-		ctx, cancel := context.WithCancel(w.ctx)
-		defer cancel()
-		ticker := newTruncatedTicker(ctx, priceUpdatePeriod)
-		w.watch(ctx, ticker)
-	}()
 
 	return w, nil
 }
@@ -80,13 +74,17 @@ func (w *PriceFeedWatcher) Currencies() (base string, quote string) {
 
 // Current returns the latest fetched price data.
 func (w *PriceFeedWatcher) Current() eth.PriceData {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.current
 }
 
-// PriceUpdated returns a channel that will receive the updated price data as
-// soon as it changes.
-func (w *PriceFeedWatcher) PriceUpdated() <-chan eth.PriceData {
-	return w.priceUpdated
+// Subscribe allows one to subscribe to price updates emitted by the Watcher.
+// To unsubscribe, simply call `Unsubscribe` on the returned subscription.
+// The sink channel should have ample buffer space to avoid blocking other
+// subscribers. Slow subscribers are not dropped.
+func (w *PriceFeedWatcher) Subscribe(sub chan<- eth.PriceData) event.Subscription {
+	return w.priceEventFeed.Subscribe(sub)
 }
 
 func (w *PriceFeedWatcher) updatePrice() error {
@@ -96,20 +94,27 @@ func (w *PriceFeedWatcher) updatePrice() error {
 	}
 
 	if newPrice.UpdatedAt.After(w.current.UpdatedAt) {
+		w.mu.Lock()
 		w.current = newPrice
-		select {
-		case w.priceUpdated <- newPrice:
-		default:
-		}
+		w.mu.Unlock()
+		w.priceEventFeed.Send(newPrice)
 	}
 
 	return nil
 }
 
-func (w *PriceFeedWatcher) watch(ctx context.Context, ticker <-chan time.Time) {
+// Watch starts the watch process. It will periodically poll the price feed for
+// price updates until the given context is canceled. Typically, you want to
+// call Watch inside a goroutine.
+func (w *PriceFeedWatcher) Watch(ctx context.Context) {
+	ticker := newTruncatedTicker(ctx, priceUpdatePeriod)
+	w.watchTicker(ctx, ticker)
+}
+
+func (w *PriceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker:
 			attempt, retryDelay := 1, w.baseRetryDelay
@@ -124,7 +129,7 @@ func (w *PriceFeedWatcher) watch(ctx context.Context, ticker <-chan time.Time) {
 
 				clog.Warningf(ctx, "Failed to fetch updated price from PriceFeed, retrying after retryDelay=%d attempt=%d err=%q", retryDelay, attempt, err)
 				select {
-				case <-w.ctx.Done():
+				case <-ctx.Done():
 					return
 				case <-time.After(retryDelay):
 				}
