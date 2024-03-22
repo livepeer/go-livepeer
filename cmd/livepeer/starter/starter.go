@@ -721,6 +721,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
 
+		priceFeedWatcher, err := watchers.NewPriceFeedWatcher(ctx, backend, *cfg.PriceFeedAddr)
+		if err != nil {
+			glog.Errorf("Failed to set up price feed watcher: %v", err)
+			return
+		}
+		// The price feed watch loop is started on demand on first subscribe.
+
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
 
@@ -757,26 +764,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else if pricePerUnit.Sign() < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 			}
-			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
-			for _, p := range broadcasterPrices {
-				if p.Currency != currency {
-					panic(fmt.Errorf("Custom broadcaster prices must use same currency as default (%v). Provided %v for broadcaster %v", currency, p.Currency, p.EthAddress))
-				}
-			}
-
-			err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, currency, func(multiplier *big.Rat) {
+			err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
 				defaultPrice := toWeiPricePerPixel(pricePerUnit, multiplier, pixelsPerUnit)
 				n.SetBasePrice("default", defaultPrice)
 				glog.Infof("Price: %v wei per pixel", defaultPrice.RatString())
-
-				for _, p := range broadcasterPrices {
-					bPrice := toWeiPricePerPixel(p.PricePerUnit, multiplier, pixelsPerUnit)
-					n.SetBasePrice(p.EthAddress, bPrice)
-					glog.Infof("Price: %v wei per pixel for broadcaster %v", bPrice.RatString(), p.EthAddress)
-				}
 			})
 			if err != nil {
 				panic(fmt.Errorf("Error starting price update loop: %v", err))
+			}
+
+			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+			for _, p := range broadcasterPrices {
+				currency, pricePerUnit, ethAddress := p.Currency, p.PricePerUnit, p.EthAddress
+				err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
+					price := toWeiPricePerPixel(pricePerUnit, multiplier, pixelsPerUnit)
+					n.SetBasePrice(ethAddress, price)
+					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.RatString(), ethAddress)
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error starting broadcaster price update loop: %v", err))
+				}
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -883,7 +890,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
 			if maxPricePerUnit.Sign() > 0 {
-				err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, currency, func(multiplier *big.Rat) {
+				err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
 					price := toWeiPricePerPixel(maxPricePerUnit, multiplier, pixelsPerUnit)
 					server.BroadcastCfg.SetMaxPrice(price)
 					glog.Infof("Price: %v wei per pixel\n ", price.RatString())
@@ -1572,18 +1579,13 @@ func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
 	return pricePerUnit, currency, nil
 }
 
-func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, currency string, updatePrice func(multiplier *big.Rat)) error {
+func watchPriceUpdates(ctx context.Context, watcher *watchers.PriceFeedWatcher, currency string, updatePrice func(multiplier *big.Rat)) error {
 	if strings.ToLower(currency) == "wei" {
 		updatePrice(big.NewRat(1, 1))
 		return nil
 	} else if strings.ToUpper(currency) == "ETH" {
 		updatePrice(weiPerETH)
 		return nil
-	}
-
-	watcher, err := watchers.NewPriceFeedWatcher(ctx, rpcURL, priceFeedAddr)
-	if err != nil {
-		return err
 	}
 
 	base, quote := watcher.Currencies()
@@ -1593,14 +1595,22 @@ func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, cur
 	if base != currency && quote != currency {
 		return fmt.Errorf("price feed does not have %v as a currency (%v/%v)", currency, base, quote)
 	}
-	updatePrice(currencyToWeiMultiplier(watcher.Current(), base))
+
+	price, err := watcher.Current()
+	if err != nil {
+		return fmt.Errorf("error fetching price data: %v", err)
+	}
+	updatePrice(currencyToWeiMultiplier(price, base))
 
 	go func() {
+		priceUpdated := make(chan eth.PriceData, 1)
+		sub := watcher.Subscribe(priceUpdated)
+		defer sub.Unsubscribe()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case data := <-watcher.PriceUpdated():
+			case data := <-priceUpdated:
 				updatePrice(currencyToWeiMultiplier(data, base))
 			}
 		}
