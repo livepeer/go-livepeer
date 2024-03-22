@@ -765,6 +765,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("Error starting price update loop: %v", err))
 			}
 
+			// TODO: Make these per-broadcaster prices updateable too
 			if *cfg.PricePerBroadcaster != "" {
 				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
 				for _, p := range ppb {
