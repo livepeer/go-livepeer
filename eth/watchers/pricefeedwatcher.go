@@ -123,7 +123,11 @@ func (w *PriceFeedWatcher) watch(ctx context.Context, ticker <-chan time.Time) {
 				}
 
 				clog.Warningf(ctx, "Failed to fetch updated price from PriceFeed, retrying after retryDelay=%d attempt=%d err=%q", retryDelay, attempt, err)
-				time.Sleep(retryDelay)
+				select {
+				case <-w.ctx.Done():
+					return
+				case <-time.After(retryDelay):
+				}
 				attempt, retryDelay = attempt+1, retryDelay*2
 			}
 		}

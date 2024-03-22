@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"regexp"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -33,15 +32,10 @@ func NewPriceFeedEthClient(ctx context.Context, rpcUrl, priceFeedAddr string) (P
 		return nil, fmt.Errorf("failed to initialize client: %w", err)
 	}
 
-	ok := isContractAddress(priceFeedAddr, client)
-	if !ok {
-		return nil, fmt.Errorf("not a contract address: %s", priceFeedAddr)
-	}
-
 	addr := common.HexToAddress(priceFeedAddr)
 	priceFeed, err := chainlink.NewAggregatorV3Interface(addr, client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create mock aggregator proxy: %w", err)
+		return nil, fmt.Errorf("failed to create aggregator proxy: %w", err)
 	}
 
 	return &priceFeedClient{
@@ -87,31 +81,4 @@ func computePriceData(roundID, updatedAt, answer *big.Int, decimals uint8) Price
 		Price:     new(big.Rat).SetFrac(answer, divisor),
 		UpdatedAt: time.Unix(updatedAt.Int64(), 0),
 	}
-}
-
-type ethClient interface {
-	CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error)
-}
-
-// isContractAddress checks if the given address is an address of a contract
-// deployed on the corresponding blockchain.
-func isContractAddress(addr string, client ethClient) bool {
-	if len(addr) == 0 {
-		return false
-	}
-
-	// Ensure it is an Ethereum address: 0x followed by 40 hexadecimal characters.
-	re := regexp.MustCompile("^0x[0-9a-fA-F]{40}$")
-	if !re.MatchString(addr) {
-		return false
-	}
-
-	// Ensure it is a contract address.
-	address := common.HexToAddress(addr)
-	bytecode, err := client.CodeAt(context.Background(), address, nil) // nil is latest block
-	if err != nil {
-		return false
-	}
-	isContract := len(bytecode) > 0
-	return isContract
 }
