@@ -757,22 +757,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else if pricePerUnit.Sign() < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 			}
-			err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, pricePerUnit, currency, func(price *big.Rat) {
-				n.SetBasePrice("default", new(big.Rat).Quo(pricePerUnit, pixelsPerUnit))
-				glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
+			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+			for _, p := range broadcasterPrices {
+				if p.Currency != currency {
+					panic(fmt.Errorf("Custom broadcaster prices must use same currency as default (%v). Provided %v for broadcaster %v", currency, p.Currency, p.EthAddress))
+				}
+			}
+
+			err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, currency, func(multiplier *big.Rat) {
+				defaultPrice := toWeiPricePerPixel(pricePerUnit, multiplier, pixelsPerUnit)
+				n.SetBasePrice("default", defaultPrice)
+				glog.Infof("Price: %v wei per pixel", defaultPrice.RatString())
+
+				for _, p := range broadcasterPrices {
+					bPrice := toWeiPricePerPixel(p.PricePerUnit, multiplier, pixelsPerUnit)
+					n.SetBasePrice(p.EthAddress, bPrice)
+					glog.Infof("Price: %v wei per pixel for broadcaster %v", bPrice.RatString(), p.EthAddress)
+				}
 			})
 			if err != nil {
 				panic(fmt.Errorf("Error starting price update loop: %v", err))
-			}
-
-			// TODO: Make these per-broadcaster prices updateable too
-			if *cfg.PricePerBroadcaster != "" {
-				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
-				for _, p := range ppb {
-					price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
-					n.SetBasePrice(p.EthAddress, price)
-					glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
-				}
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -879,9 +883,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
 			if maxPricePerUnit.Sign() > 0 {
-				err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, maxPricePerUnit, currency, func(price *big.Rat) {
-					server.BroadcastCfg.SetMaxPrice(new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit))
-					glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
+				err = startPriceUpdateLoop(ctx, *cfg.EthUrl, *cfg.PriceFeedAddr, currency, func(multiplier *big.Rat) {
+					price := toWeiPricePerPixel(maxPricePerUnit, multiplier, pixelsPerUnit)
+					server.BroadcastCfg.SetMaxPrice(price)
+					glog.Infof("Price: %v wei per pixel\n ", price.RatString())
 				})
 				if err != nil {
 					panic(fmt.Errorf("Error starting price update loop: %v", err))
@@ -1450,29 +1455,52 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-// Format of broadcasterPrices json
-// {"broadcasters":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
-type BroadcasterPrices struct {
-	Prices []BroadcasterPrice `json:"broadcasters"`
-}
-
 type BroadcasterPrice struct {
-	EthAddress    string `json:"ethaddress"`
-	PricePerUnit  int64  `json:"priceperunit"`
-	PixelsPerUnit int64  `json:"pixelsperunit"`
+	EthAddress    string
+	PricePerUnit  *big.Rat
+	Currency      string
+	PixelsPerUnit int64
 }
 
 func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
-	var pricesSet BroadcasterPrices
-	prices, _ := common.ReadFromFile(broadcasterPrices)
+	if broadcasterPrices == "" {
+		return nil
+	}
 
-	err := json.Unmarshal([]byte(prices), &pricesSet)
+	// Format of broadcasterPrices json
+	// {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
+	var pricesSet struct {
+		Broadcasters []struct {
+			EthAddress    string          `json:"ethaddress"`
+			PricePerUnit  json.RawMessage `json:"priceperunit"`
+			Currency      string          `json:"currency"`
+			PixelsPerUnit int64           `json:"pixelsperunit"`
+		} `json:"broadcasters"`
+	}
+	pricesFileContent, _ := common.ReadFromFile(broadcasterPrices)
+
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
 	if err != nil {
 		glog.Errorf("broadcaster prices could not be parsed: %s", err)
 		return nil
 	}
 
-	return pricesSet.Prices
+	prices := make([]BroadcasterPrice, len(pricesSet.Broadcasters))
+	for i, p := range pricesSet.Broadcasters {
+		price, ok := new(big.Rat).SetString(string(p.PricePerUnit))
+		if !ok {
+			glog.Errorf("price could not be parsed for broadcaster %v. price must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
+			continue
+		}
+		prices[i] = BroadcasterPrice{
+			EthAddress:    p.EthAddress,
+			PricePerUnit:  price,
+			Currency:      p.Currency,
+			PixelsPerUnit: p.PixelsPerUnit,
+		}
+	}
+
+	return prices
 }
 
 func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
@@ -1544,13 +1572,12 @@ func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
 	return pricePerUnit, currency, nil
 }
 
-func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, pricePerUnit *big.Rat, currency string, updatePrice func(*big.Rat)) error {
+func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, currency string, updatePrice func(multiplier *big.Rat)) error {
 	if strings.ToLower(currency) == "wei" {
-		updatePrice(pricePerUnit)
+		updatePrice(big.NewRat(1, 1))
 		return nil
 	} else if strings.ToUpper(currency) == "ETH" {
-		weiPrice := new(big.Rat).Mul(pricePerUnit, weiPerETH)
-		updatePrice(weiPrice)
+		updatePrice(weiPerETH)
 		return nil
 	}
 
@@ -1566,7 +1593,7 @@ func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, pri
 	if base != currency && quote != currency {
 		return fmt.Errorf("price feed does not have %v as a currency (%v/%v)", currency, base, quote)
 	}
-	updatePrice(priceDataToWei(pricePerUnit, watcher.Current(), base))
+	updatePrice(currencyToWeiMultiplier(watcher.Current(), base))
 
 	go func() {
 		for {
@@ -1574,21 +1601,25 @@ func startPriceUpdateLoop(ctx context.Context, rpcURL, priceFeedAddr string, pri
 			case <-ctx.Done():
 				return
 			case data := <-watcher.PriceUpdated():
-				updatePrice(priceDataToWei(pricePerUnit, data, base))
+				updatePrice(currencyToWeiMultiplier(data, base))
 			}
 		}
 	}()
 	return nil
 }
 
-func priceDataToWei(pricePerUnit *big.Rat, data eth.PriceData, baseCurrency string) *big.Rat {
-	var ethPrice *big.Rat
+func currencyToWeiMultiplier(data eth.PriceData, baseCurrency string) *big.Rat {
+	ethMultipler := data.Price
 	if baseCurrency == "ETH" {
-		ethPrice = new(big.Rat).Quo(pricePerUnit, data.Price)
-	} else {
-		ethPrice = new(big.Rat).Mul(pricePerUnit, data.Price)
+		// Invert the multiplier if the quote is in the form ETH / X
+		ethMultipler = new(big.Rat).Inv(ethMultipler)
 	}
-	return new(big.Rat).Mul(ethPrice, weiPerETH)
+	return new(big.Rat).Mul(ethMultipler, weiPerETH)
+}
+
+func toWeiPricePerPixel(pricePerUnit *big.Rat, currencyMultiplier *big.Rat, pixelsPerUnit *big.Rat) *big.Rat {
+	weiPricePerUnit := new(big.Rat).Mul(pricePerUnit, currencyMultiplier)
+	return new(big.Rat).Quo(weiPricePerUnit, pixelsPerUnit)
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {

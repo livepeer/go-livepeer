@@ -96,8 +96,8 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	assert.NotNil(prices)
 	assert.Equal(2, len(prices))
 
-	price1 := big.NewRat(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
-	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, big.NewRat(prices[0].PixelsPerUnit, 1))
+	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, big.NewRat(prices[1].PixelsPerUnit, 1))
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
 }
@@ -387,30 +387,27 @@ func TestParsePricePerUnit(t *testing.T) {
 func TestPriceDataToWei(t *testing.T) {
 	tests := []struct {
 		name         string
-		pricePerUnit *big.Rat
 		data         eth.PriceData
 		baseCurrency string
 		expectedWei  *big.Rat
 	}{
 		{
 			name:         "Base currency is ETH",
-			pricePerUnit: big.NewRat(2, 1),                         // 2 USD
 			data:         eth.PriceData{Price: big.NewRat(500, 1)}, // 500 USD per ETH
 			baseCurrency: "ETH",
-			expectedWei:  big.NewRat(2e18, 500), // (2 USD / 500 USD/ETH) * 1e18 wei/ETH
+			expectedWei:  big.NewRat(1e18, 500), // (1 / 500 USD/ETH) * 1e18 wei/ETH
 		},
 		{
 			name:         "Base currency is not ETH",
-			pricePerUnit: big.NewRat(1000, 1),                       // 1000 USD
 			data:         eth.PriceData{Price: big.NewRat(1, 2000)}, // 1/2000 ETH per USD
 			baseCurrency: "USD",
-			expectedWei:  big.NewRat(5e17, 1), // (1000 USD * 1/2000 ETH/USD) * 1e18 wei/ETH
+			expectedWei:  big.NewRat(5e14, 1), // (1 * 1/2000 ETH/USD) * 1e18 wei/ETH
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := priceDataToWei(tt.pricePerUnit, tt.data, tt.baseCurrency)
+			result := currencyToWeiMultiplier(tt.data, tt.baseCurrency)
 			assert.Equal(t, 0, tt.expectedWei.Cmp(result))
 		})
 	}
