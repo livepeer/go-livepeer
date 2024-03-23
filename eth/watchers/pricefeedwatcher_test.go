@@ -43,12 +43,14 @@ func TestPriceFeedWatcher_UpdatePrice(t *testing.T) {
 		currencyQuote: "USD",
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
-	require.NoError(t, w.updatePrice())
-	require.Equal(t, priceData, w.current)
+	newPrice, err := w.updatePrice()
+	require.NoError(t, err)
+	require.Equal(t, priceData, newPrice)
 
 	select {
 	case updatedPrice := <-priceUpdated:
@@ -69,9 +71,10 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 		currencyQuote: "USD",
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
 	priceData := eth.PriceData{
 		RoundID:   10,
@@ -100,8 +103,6 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 
 	// Start the watch loop
 	fakeTicker := make(chan time.Time, 10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
 		w.watchTicker(ctx, fakeTicker)
 	}()
@@ -153,18 +154,15 @@ func TestPriceFeedWatcher_WatchErrorRetries(t *testing.T) {
 	w := &PriceFeedWatcher{
 		baseRetryDelay: 5 * time.Millisecond,
 		priceFeed:      priceFeedMock,
-		currencyBase:   "ETH",
-		currencyQuote:  "USD",
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
 	// Start watch loop
 	fakeTicker := make(chan time.Time, 10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
 		w.watchTicker(ctx, fakeTicker)
 	}()

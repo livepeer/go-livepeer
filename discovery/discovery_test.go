@@ -608,11 +608,11 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.True(t, pool.pred(oInfo))
 
 	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
+	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	assert.True(t, pool.pred(oInfo))
 
 	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
+	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
@@ -629,7 +629,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	expTranscoder := "transcoderFromTest"
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
 
-	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
+	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
@@ -823,7 +823,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		},
 	}
 
-	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
+	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex

@@ -33,6 +33,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
+	"github.com/livepeer/go-livepeer/monitor"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -59,11 +60,6 @@ var (
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
-
-	// Regular expression used to parse the price per unit CLI flags
-	pricePerUnitRex = regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
-	// Number of wei in 1 ETH
-	weiPerETH = big.NewRat(1e18, 1)
 )
 
 const (
@@ -721,7 +717,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
 
-		priceFeedWatcher, err := watchers.NewPriceFeedWatcher(ctx, backend, *cfg.PriceFeedAddr)
+		core.PriceFeedWatcher, err = watchers.NewPriceFeedWatcher(backend, *cfg.PriceFeedAddr)
 		if err != nil {
 			glog.Errorf("Failed to set up price feed watcher: %v", err)
 			return
@@ -764,26 +760,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else if pricePerUnit.Sign() < 0 {
 				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 			}
-			err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
-				defaultPrice := toWeiPricePerPixel(pricePerUnit, multiplier, pixelsPerUnit)
-				n.SetBasePrice("default", defaultPrice)
-				glog.Infof("Price: %v wei per pixel", defaultPrice.RatString())
+			pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+			autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+				glog.Infof("Price: %v wei per pixel\n ", price.RatString())
 			})
 			if err != nil {
-				panic(fmt.Errorf("Error starting price update loop: %v", err))
+				panic(fmt.Errorf("Error converting price: %v", err))
 			}
+			n.SetBasePrice("default", autoPrice)
 
 			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
 			for _, p := range broadcasterPrices {
-				currency, pricePerUnit, ethAddress := p.Currency, p.PricePerUnit, p.EthAddress
-				err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
-					price := toWeiPricePerPixel(pricePerUnit, multiplier, pixelsPerUnit)
-					n.SetBasePrice(ethAddress, price)
-					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.RatString(), ethAddress)
+				p := p
+				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.RatString(), p.EthAddress)
 				})
 				if err != nil {
-					panic(fmt.Errorf("Error starting broadcaster price update loop: %v", err))
+					panic(fmt.Errorf("Error converting price for broadcaster %s: %v", p.EthAddress, err))
 				}
+				n.SetBasePrice(p.EthAddress, autoPrice)
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -890,14 +886,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
 			if maxPricePerUnit.Sign() > 0 {
-				err = watchPriceUpdates(ctx, priceFeedWatcher, currency, func(multiplier *big.Rat) {
-					price := toWeiPricePerPixel(maxPricePerUnit, multiplier, pixelsPerUnit)
-					server.BroadcastCfg.SetMaxPrice(price)
-					glog.Infof("Price: %v wei per pixel\n ", price.RatString())
+				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					if monitor.Enabled {
+						monitor.MaxTranscodingPrice(price)
+					}
+					glog.Infof("Maximum transcoding price:: %v wei per pixel\n ", price.RatString())
 				})
 				if err != nil {
-					panic(fmt.Errorf("Error starting price update loop: %v", err))
+					panic(fmt.Errorf("Error converting price: %v", err))
 				}
+				server.BroadcastCfg.SetMaxPrice(autoPrice)
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
@@ -1560,6 +1559,7 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 }
 
 func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
+	pricePerUnitRex := regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
 	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
 	if match == nil {
 		return nil, "", fmt.Errorf("price must be in the format of <price><currency>, provided %v", pricePerUnitStr)
@@ -1569,67 +1569,12 @@ func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
 	pricePerUnit, ok := new(big.Rat).SetString(price)
 	if !ok {
 		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
-	} else if pricePerUnit.Sign() < 0 {
-		return nil, "", fmt.Errorf("price must be >= 0, provided %v", pricePerUnit)
 	}
 	if currency == "" {
 		currency = "wei"
 	}
 
 	return pricePerUnit, currency, nil
-}
-
-func watchPriceUpdates(ctx context.Context, watcher *watchers.PriceFeedWatcher, currency string, updatePrice func(multiplier *big.Rat)) error {
-	if strings.ToLower(currency) == "wei" {
-		updatePrice(big.NewRat(1, 1))
-		return nil
-	} else if strings.ToUpper(currency) == "ETH" {
-		updatePrice(weiPerETH)
-		return nil
-	}
-
-	base, quote := watcher.Currencies()
-	if base != "ETH" && quote != "ETH" {
-		return fmt.Errorf("price feed does not have ETH as a currency (%v/%v)", base, quote)
-	}
-	if base != currency && quote != currency {
-		return fmt.Errorf("price feed does not have %v as a currency (%v/%v)", currency, base, quote)
-	}
-
-	price, err := watcher.Current()
-	if err != nil {
-		return fmt.Errorf("error fetching price data: %v", err)
-	}
-	updatePrice(currencyToWeiMultiplier(price, base))
-
-	go func() {
-		priceUpdated := make(chan eth.PriceData, 1)
-		sub := watcher.Subscribe(priceUpdated)
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case data := <-priceUpdated:
-				updatePrice(currencyToWeiMultiplier(data, base))
-			}
-		}
-	}()
-	return nil
-}
-
-func currencyToWeiMultiplier(data eth.PriceData, baseCurrency string) *big.Rat {
-	ethMultipler := data.Price
-	if baseCurrency == "ETH" {
-		// Invert the multiplier if the quote is in the form ETH / X
-		ethMultipler = new(big.Rat).Inv(ethMultipler)
-	}
-	return new(big.Rat).Mul(ethMultipler, weiPerETH)
-}
-
-func toWeiPricePerPixel(pricePerUnit *big.Rat, currencyMultiplier *big.Rat, pixelsPerUnit *big.Rat) *big.Rat {
-	weiPricePerUnit := new(big.Rat).Mul(pricePerUnit, currencyMultiplier)
-	return new(big.Rat).Quo(weiPricePerUnit, pixelsPerUnit)
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {

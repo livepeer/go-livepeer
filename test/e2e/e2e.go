@@ -122,7 +122,7 @@ func lpCfg() starter.LivepeerConfig {
 	ethPassword := ""
 	network := "devnet"
 	blockPollingInterval := 1
-	pricePerUnit := 1
+	pricePerUnit := "1"
 	initializeRound := true
 
 	cfg := starter.DefaultLivepeerConfig()
