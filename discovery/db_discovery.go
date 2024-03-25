@@ -281,7 +281,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			return
 		}
 
-		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri)
+		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, nil)
 		if err != nil {
 			errc <- err
 			return

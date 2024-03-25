@@ -507,6 +507,21 @@ func (bs *BroadcastSession) pushSegInFlight(seg *stream.HLSSegment) {
 	bs.lock.Unlock()
 }
 
+// Pop a SegFlightMetadata from a session's SegsInFlight
+// Returns the end length of a session's SegsInFlight and the popped SegFlightMetadata
+func (bs *BroadcastSession) popSegInFlight() (int, SegFlightMetadata) {
+	bs.lock.Lock()
+	defer bs.lock.Unlock()
+
+	if len(bs.SegsInFlight) == 0 {
+		return 0, SegFlightMetadata{}
+	}
+
+	sm := bs.SegsInFlight[0]
+	bs.SegsInFlight = bs.SegsInFlight[1:]
+	return len(bs.SegsInFlight), sm
+}
+
 // selects number of sessions to use according to current algorithm
 func (bsm *BroadcastSessionsManager) selectSessions(ctx context.Context) (bs []*BroadcastSession, calcPerceptualHash bool, verified bool) {
 	bsm.sessLock.Lock()
@@ -879,7 +894,10 @@ func processSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSeg
 			ctx, cancel := clog.WithTimeout(context.Background(), ctx, recordSegmentsMaxTimeout)
 			defer cancel()
 			now := time.Now()
-			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, map[string]string{"duration": segDurMs}, 3)
+			fields := &drivers.FileProperties{
+				Metadata: map[string]string{"duration": segDurMs},
+			}
+			uri, err := drivers.SaveRetried(ctx, ros, name, seg.Data, fields, 3)
 			took := time.Since(now)
 			if err != nil {
 				clog.Errorf(ctx, "Error saving name=%s bytes=%d to record store err=%q",
@@ -1252,7 +1270,10 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 				name := fmt.Sprintf("%s/%d%s", profile.Name, seg.SeqNo, ext)
 				segDurMs := getSegDurMsString(seg)
 				now := time.Now()
-				uri, err := drivers.SaveRetried(ctx, bros, name, data, map[string]string{"duration": segDurMs}, 3)
+				fields := &drivers.FileProperties{
+					Metadata: map[string]string{"duration": segDurMs},
+				}
+				uri, err := drivers.SaveRetried(ctx, bros, name, data, fields, 3)
 				took := time.Since(now)
 				if err != nil {
 					clog.Errorf(ctx, "Error saving nonce=%d manifestID=%s name=%s to record store err=%q", nonce, cxn.mid, name, err)
@@ -1480,7 +1501,7 @@ func refreshSession(ctx context.Context, sess *BroadcastSession) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 
-	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri)
+	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri, sess.Params.Capabilities.ToNetCapabilities())
 	if err != nil {
 		return err
 	}

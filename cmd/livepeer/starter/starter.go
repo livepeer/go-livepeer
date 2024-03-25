@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -58,6 +60,9 @@ var (
 	cleanupInterval = 10 * time.Minute
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
+
+	aiWorkerContainerImageID     = "livepeer/ai-runner:latest"
+	aiWorkerContainerStopTimeout = 5 * time.Second
 )
 
 const (
@@ -85,9 +90,11 @@ type LivepeerConfig struct {
 	HttpIngest             *bool
 	Orchestrator           *bool
 	Transcoder             *bool
+	AIWorker               *bool
 	Broadcaster            *bool
 	OrchSecret             *string
 	TranscodingOptions     *string
+	AIModels               *string
 	MaxAttempts            *int
 	SelectRandWeight       *float64
 	SelectStakeWeight      *float64
@@ -133,6 +140,7 @@ type LivepeerConfig struct {
 	MetadataAmqpExchange   *string
 	MetadataPublishTimeout *time.Duration
 	Datadir                *string
+	AIModelsDir            *string
 	Objectstore            *string
 	Recordstore            *string
 	FVfailGsBucket         *string
@@ -174,6 +182,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultNvidia := ""
 	defaultNetint := ""
 	defaultTestTranscoder := true
+
+	// AI:
+	defaultAIWorker := false
+	defaultAIModels := ""
+	defaultAIModelsDir := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -258,6 +271,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
 		TestTranscoder:       &defaultTestTranscoder,
+
+		// AI:
+		AIWorker:    &defaultAIWorker,
+		AIModels:    &defaultAIModels,
+		AIModelsDir: &defaultAIModelsDir,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -476,6 +494,114 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
 		}
+	}
+
+	var aiCaps []core.Capability
+	constraints := make(map[core.Capability]*core.Constraints)
+
+	if *cfg.AIWorker {
+		gpus := []string{}
+		if *cfg.Nvidia != "" {
+			var err error
+			gpus, err = common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
+			if err != nil {
+				glog.Errorf("Error parsing -nvidia for devices: %v", err)
+				return
+			}
+		}
+
+		modelsDir := *cfg.AIModelsDir
+		if modelsDir == "" {
+			var err error
+			modelsDir, err = filepath.Abs(path.Join(*cfg.Datadir, "models"))
+			if err != nil {
+				glog.Error("Error creating absolute path for models dir: %v", modelsDir)
+				return
+			}
+		}
+
+		if err := os.MkdirAll(modelsDir, 0755); err != nil {
+			glog.Error("Error creating models dir %v", modelsDir)
+			return
+		}
+
+		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, gpus, modelsDir)
+		if err != nil {
+			glog.Errorf("Error starting AI worker: %v", err)
+			return
+		}
+
+		if *cfg.AIModels != "" {
+			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
+			if err != nil {
+				glog.Error("Error parsing -aiModels: %v", err)
+				return
+			}
+
+			for _, config := range configs {
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+
+				// If the config contains a URL we call Warm() anyway because AIWorker will just register
+				// the endpoint for an external container
+				if config.Warm || config.URL != "" {
+					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
+						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+						return
+					}
+				}
+
+				switch config.Pipeline {
+				case "text-to-image":
+					_, ok := constraints[core.Capability_TextToImage]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToImage)
+						constraints[core.Capability_TextToImage] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+				case "image-to-image":
+					_, ok := constraints[core.Capability_ImageToImage]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToImage)
+						constraints[core.Capability_ImageToImage] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+				case "image-to-video":
+					_, ok := constraints[core.Capability_ImageToVideo]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
+						constraints[core.Capability_ImageToVideo] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+				}
+			}
+		}
+
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
+			defer cancel()
+			if err := n.AIWorker.Stop(ctx); err != nil {
+				glog.Errorf("Error stopping AI worker containers: %v", err)
+				return
+			}
+
+			glog.Infof("Stopped AI worker containers")
+		}()
 	}
 
 	if *cfg.Redeemer {
@@ -1118,7 +1244,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
+	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), constraints)
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
