@@ -1570,9 +1570,6 @@ func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
 	}
-	if currency == "" {
-		currency = "wei"
-	}
 
 	return pricePerUnit, currency, nil
 }

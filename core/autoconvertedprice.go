@@ -43,7 +43,7 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 	if PriceFeedWatcher == nil {
 		return nil, fmt.Errorf("PriceFeedWatcher is not initialized")
 	}
-	if strings.ToLower(currency) == "wei" {
+	if currency == "" || strings.ToLower(currency) == "wei" {
 		return NewFixedPrice(basePrice), nil
 	} else if strings.ToUpper(currency) == "ETH" {
 		return NewFixedPrice(new(big.Rat).Mul(basePrice, weiPerETH)), nil
