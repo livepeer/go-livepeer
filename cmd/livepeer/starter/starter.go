@@ -718,11 +718,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		defer serviceRegistryWatcher.Stop()
 
 		core.PriceFeedWatcher, err = watchers.NewPriceFeedWatcher(backend, *cfg.PriceFeedAddr)
+		// The price feed watch loop is started on demand on first subscribe.
 		if err != nil {
 			glog.Errorf("Failed to set up price feed watcher: %v", err)
 			return
 		}
-		// The price feed watch loop is started on demand on first subscribe.
 
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
