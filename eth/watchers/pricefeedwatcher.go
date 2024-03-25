@@ -19,10 +19,16 @@ const (
 	priceUpdatePeriod         = 1 * time.Hour
 )
 
+type PriceFeedWatcher interface {
+	Currencies() (base string, quote string, err error)
+	Current() (eth.PriceData, error)
+	Subscribe(ctx context.Context, sink chan<- eth.PriceData)
+}
+
 // PriceFeedWatcher monitors a Chainlink PriceFeed for updated pricing info. It
 // allows fetching the current price as well as listening for updates on the
 // PriceUpdated channel.
-type PriceFeedWatcher struct {
+type priceFeedWatcher struct {
 	baseRetryDelay time.Duration
 
 	priceFeed eth.PriceFeedEthClient
@@ -37,12 +43,12 @@ type PriceFeedWatcher struct {
 
 // NewPriceFeedWatcher creates a new PriceFeedWatcher instance. It will already
 // fetch the current price and start a goroutine to watch for updates.
-func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (*PriceFeedWatcher, error) {
+func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (PriceFeedWatcher, error) {
 	priceFeed, err := eth.NewPriceFeedEthClient(ethClient, priceFeedAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create price feed client: %w", err)
 	}
-	w := &PriceFeedWatcher{
+	w := &priceFeedWatcher{
 		baseRetryDelay: priceUpdateBaseRetryDelay,
 		priceFeed:      priceFeed,
 	}
@@ -51,7 +57,7 @@ func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (*Pr
 
 // Currencies returns the base and quote currencies of the price feed.
 // i.e. base = CurrentPrice() * quote
-func (w *PriceFeedWatcher) Currencies() (base string, quote string, err error) {
+func (w *priceFeedWatcher) Currencies() (base string, quote string, err error) {
 	description, err := w.priceFeed.Description()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get description: %w", err)
@@ -66,7 +72,7 @@ func (w *PriceFeedWatcher) Currencies() (base string, quote string, err error) {
 
 // Current returns the latest fetched price data, or fetches it in case it has
 // not been fetched yet.
-func (w *PriceFeedWatcher) Current() (eth.PriceData, error) {
+func (w *priceFeedWatcher) Current() (eth.PriceData, error) {
 	w.mu.RLock()
 	current := w.current
 	w.mu.RUnlock()
@@ -84,7 +90,7 @@ func (w *PriceFeedWatcher) Current() (eth.PriceData, error) {
 // The watch loop is run automatically while there are active subscriptions. It
 // will be started when the first subscription is made and is automatically
 // stopped when the last subscription is closed.
-func (w *PriceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceData) {
+func (w *priceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceData) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.ensureWatchLocked()
@@ -96,7 +102,7 @@ func (w *PriceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceD
 // updatePrice fetches the latest price data from the price feed and updates the
 // current price if it is newer. If the price is updated, it will also send the
 // updated price to the price event feed.
-func (w *PriceFeedWatcher) updatePrice() (eth.PriceData, error) {
+func (w *priceFeedWatcher) updatePrice() (eth.PriceData, error) {
 	newPrice, err := w.priceFeed.FetchPriceData()
 	if err != nil {
 		return eth.PriceData{}, fmt.Errorf("failed to fetch price data: %w", err)
@@ -116,7 +122,7 @@ func (w *PriceFeedWatcher) updatePrice() (eth.PriceData, error) {
 // is already running in a locked context (w.mu). The watch process itself will
 // run in background and periodically poll the price feed for updates until the
 // `w.cancelWatch` function is called.
-func (w *PriceFeedWatcher) ensureWatchLocked() {
+func (w *priceFeedWatcher) ensureWatchLocked() {
 	if w.cancelWatch != nil {
 		// already running
 		return
@@ -131,7 +137,7 @@ func (w *PriceFeedWatcher) ensureWatchLocked() {
 // handleUnsubscribe waits for the provided Context to be done and then closes
 // the given subscription. It then stops the watch process if there are no more
 // active subscriptions.
-func (w *PriceFeedWatcher) handleUnsubscribe(ctx context.Context, sub event.Subscription) {
+func (w *priceFeedWatcher) handleUnsubscribe(ctx context.Context, sub event.Subscription) {
 loop:
 	for {
 		select {
@@ -154,7 +160,7 @@ loop:
 // watchTicker is the main loop that periodically fetches the latest price data
 // from the price feed. It's lifecycle is handled through the ensureWatch and
 // handleUnsubscribe functions.
-func (w *PriceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
+func (w *priceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
 	for {
 		select {
 		case <-ctx.Done():

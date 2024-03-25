@@ -13,11 +13,14 @@ import (
 
 // PriceFeedWatcher is a global instance of a PriceFeedWatcher. It must be
 // initialized before creating an AutoConvertedPrice instance.
-var PriceFeedWatcher *watchers.PriceFeedWatcher
+var PriceFeedWatcher watchers.PriceFeedWatcher
 
 // Number of wei in 1 ETH
 var weiPerETH = big.NewRat(1e18, 1)
 
+// AutoConvertedPrice represents a price that is automatically converted to wei
+// based on the current price of ETH in a given currency. It uses the static
+// PriceFeedWatcher that must be configured before creating an instance.
 type AutoConvertedPrice struct {
 	cancelSubscription func()
 	onUpdate           func(*big.Rat)
@@ -27,10 +30,15 @@ type AutoConvertedPrice struct {
 	current *big.Rat
 }
 
+// NewFixedPrice creates a new AutoConvertedPrice with a fixed price in wei.
 func NewFixedPrice(price *big.Rat) *AutoConvertedPrice {
 	return &AutoConvertedPrice{current: price}
 }
 
+// NewAutoConvertedPrice creates a new AutoConvertedPrice instance with the given
+// currency and base price. The onUpdate function is optional and gets called
+// whenever the price is updated (also with the initial price). The Stop function
+// must be called to free resources when the price is no longer needed.
 func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*big.Rat)) (*AutoConvertedPrice, error) {
 	if PriceFeedWatcher == nil {
 		return nil, fmt.Errorf("PriceFeedWatcher is not initialized")
@@ -64,40 +72,57 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 		basePrice:          basePrice,
 		current:            new(big.Rat).Mul(basePrice, currencyToWeiMultiplier(currencyPrice, base)),
 	}
-	go price.watch(ctx, base)
-	onUpdate(price.current)
+	// Trigger the initial update with the current price
+	if onUpdate != nil {
+		onUpdate(price.current)
+	}
+
+	price.startAutoConvertLoop(ctx, base)
 
 	return price, nil
 }
 
+// Value returns the current price in wei.
 func (a *AutoConvertedPrice) Value() *big.Rat {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.current
 }
 
+// Stop unsubscribes from the price feed and frees resources from the
+// auto-conversion loop.
 func (a *AutoConvertedPrice) Stop() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.cancelSubscription != nil {
 		a.cancelSubscription()
+		a.cancelSubscription = nil
 	}
 }
 
-func (a *AutoConvertedPrice) watch(ctx context.Context, baseCurrency string) {
+func (a *AutoConvertedPrice) startAutoConvertLoop(ctx context.Context, baseCurrency string) {
 	priceUpdated := make(chan eth.PriceData, 1)
 	PriceFeedWatcher.Subscribe(ctx, priceUpdated)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case currencyPrice := <-priceUpdated:
-			a.mu.Lock()
-			a.current = new(big.Rat).Mul(a.basePrice, currencyToWeiMultiplier(currencyPrice, baseCurrency))
-			a.mu.Unlock()
-			a.onUpdate(a.current)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case currencyPrice := <-priceUpdated:
+				a.mu.Lock()
+				a.current = new(big.Rat).Mul(a.basePrice, currencyToWeiMultiplier(currencyPrice, baseCurrency))
+				a.mu.Unlock()
+
+				if a.onUpdate != nil {
+					a.onUpdate(a.current)
+				}
+			}
 		}
-	}
+	}()
 }
 
+// currencyToWeiMultiplier calculates the multiplier to convert the value
+// specified in the custom currency to wei.
 func currencyToWeiMultiplier(data eth.PriceData, baseCurrency string) *big.Rat {
 	ethMultipler := data.Price
 	if baseCurrency == "ETH" {

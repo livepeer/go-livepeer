@@ -38,7 +38,7 @@ func TestPriceFeedWatcher_UpdatePrice(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil).Once()
 
-	w := &PriceFeedWatcher{priceFeed: priceFeedMock}
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,7 +62,7 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 	priceFeedMock := new(mockPriceFeedEthClient)
 	defer priceFeedMock.AssertExpectations(t)
 
-	w := &PriceFeedWatcher{priceFeed: priceFeedMock}
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
 	// Start a bunch of subscriptions and make sure only 1 watch loop gets started
 	observedCancelWatch := []context.CancelFunc{}
@@ -104,7 +104,7 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 	priceFeedMock := new(mockPriceFeedEthClient)
 	defer priceFeedMock.AssertExpectations(t)
 
-	w := &PriceFeedWatcher{priceFeed: priceFeedMock}
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -186,7 +186,7 @@ func TestPriceFeedWatcher_WatchErrorRetries(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil)
 
-	w := &PriceFeedWatcher{
+	w := &priceFeedWatcher{
 		baseRetryDelay: 5 * time.Millisecond,
 		priceFeed:      priceFeedMock,
 	}
