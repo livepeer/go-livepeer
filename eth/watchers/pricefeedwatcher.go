@@ -153,21 +153,18 @@ func parseCurrencies(description string) (currencyBase string, currencyQuote str
 }
 
 // newTruncatedTicker creates a ticker that ticks at the next time that is a
-// multiple of d, starting from the current time.
+// multiple of d, starting from the current time. This is a best-effort approach
+// to ensure that nodes update their prices around the same time to avoid too
+// big price discrepancies.
 func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
-	return newTruncatedTickerMockable(ctx, d, time.Now, time.After)
-}
-
-// Test helper so we can mock the time functions in tests.
-func newTruncatedTickerMockable(ctx context.Context, d time.Duration, now func() time.Time, tickAfter func(d time.Duration) <-chan time.Time) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {
 		defer close(ch)
 
-		nextTick := now().UTC().Truncate(d)
+		nextTick := time.Now().UTC().Truncate(d)
 		for {
 			nextTick = nextTick.Add(d)
-			untilNextTick := nextTick.Sub(now().UTC())
+			untilNextTick := nextTick.Sub(time.Now().UTC())
 			if untilNextTick <= 0 {
 				continue
 			}
@@ -175,7 +172,7 @@ func newTruncatedTickerMockable(ctx context.Context, d time.Duration, now func()
 			select {
 			case <-ctx.Done():
 				return
-			case t := <-tickAfter(untilNextTick):
+			case t := <-time.After(untilNextTick):
 				ch <- t
 			}
 		}
