@@ -158,7 +158,7 @@ func setBroadcastConfigHandler() http.Handler {
 					if monitor.Enabled {
 						monitor.MaxTranscodingPrice(price)
 					}
-					glog.Infof("Maximum transcoding price: %v wei per pixel\n", price.RatString())
+					glog.Infof("Maximum transcoding price: %v wei per pixel\n", price.FloatString(2))
 				})
 				if err != nil {
 					panic(fmt.Errorf("Error converting price: %v", err))
@@ -514,9 +514,9 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 	pricePerPixel := big.NewRat(pricePerUnit, pixelsPerUnit)
 	autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
 		if broadcasterEthAddr == "default" {
-			glog.Infof("Price: %v wei per pixel\n ", price.RatString())
+			glog.Infof("Price: %v wei per pixel\n ", price.FloatString(2))
 		} else {
-			glog.Infof("Price: %v wei per pixel for broadcaster %v", price.RatString(), broadcasterEthAddr)
+			glog.Infof("Price: %v wei per pixel for broadcaster %v", price.FloatString(2), broadcasterEthAddr)
 		}
 	})
 	if err != nil {

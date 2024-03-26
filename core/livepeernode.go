@@ -147,7 +147,11 @@ func (n *LivepeerNode) GetBasePrice(b_eth_addr string) *big.Rat {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return n.priceInfo[addr].Value()
+	price := n.priceInfo[addr]
+	if price == nil {
+		return nil
+	}
+	return price.Value()
 }
 
 func (n *LivepeerNode) GetBasePrices() map[string]*big.Rat {

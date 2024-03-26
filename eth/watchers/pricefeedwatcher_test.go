@@ -81,16 +81,16 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 		require.Equal(reflect.ValueOf(w.cancelWatch).Pointer(), reflect.ValueOf(observedCancelWatch[i]).Pointer())
 	}
 
-	// Stop all subscriptions and ensure watch loop stops running
-	for i := range cancelSub {
+	// Stop all but the last subscription and ensure watch loop stays running
+	for i := 0; i < 4; i++ {
 		cancelSub[i]()
-		if i < len(cancelSub)-1 {
-			require.NotNil(w.cancelWatch)
-		} else {
-			time.Sleep(1*time.Second)
-			require.Nil(w.cancelWatch)
-		}
+		require.NotNil(w.cancelWatch)
 	}
+
+	// Now stop the last subscription and ensure watch loop gets stopped
+	cancelSub[4]()
+	time.Sleep(1*time.Second)
+	require.Nil(w.cancelWatch)
 
 	// Finally, just make sure it can be started again after having been stopped
 	ctx, cancel := context.WithCancel(context.Background())
