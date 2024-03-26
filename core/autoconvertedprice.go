@@ -43,16 +43,25 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 	if PriceFeedWatcher == nil {
 		return nil, fmt.Errorf("PriceFeedWatcher is not initialized")
 	}
-	if currency == "" || strings.ToLower(currency) == "wei" {
-		return NewFixedPrice(basePrice), nil
-	} else if strings.ToUpper(currency) == "ETH" {
-		return NewFixedPrice(new(big.Rat).Mul(basePrice, weiPerETH)), nil
+	if onUpdate == nil {
+		onUpdate = func(*big.Rat) {}
+	}
+
+	// Default currency (wei/eth) doesn't need the converstion loop
+	if lcurr := strings.ToLower(currency); lcurr == "" || lcurr == "wei" || lcurr == "eth" {
+		price := basePrice
+		if lcurr == "eth" {
+			price = new(big.Rat).Mul(basePrice, weiPerETH)
+		}
+		onUpdate(price)
+		return NewFixedPrice(price), nil
 	}
 
 	base, quote, err := PriceFeedWatcher.Currencies()
 	if err != nil {
 		return nil, fmt.Errorf("error getting price feed currencies: %v", err)
 	}
+	base, quote, currency = strings.ToUpper(base), strings.ToUpper(quote), strings.ToUpper(currency)
 	if base != "ETH" && quote != "ETH" {
 		return nil, fmt.Errorf("price feed does not have ETH as a currency (%v/%v)", base, quote)
 	}
@@ -73,9 +82,7 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 		current:            new(big.Rat).Mul(basePrice, currencyToWeiMultiplier(currencyPrice, base)),
 	}
 	// Trigger the initial update with the current price
-	if onUpdate != nil {
-		onUpdate(price.current)
-	}
+	onUpdate(price.current)
 
 	price.startAutoConvertLoop(ctx, base)
 
@@ -113,9 +120,7 @@ func (a *AutoConvertedPrice) startAutoConvertLoop(ctx context.Context, baseCurre
 				a.current = new(big.Rat).Mul(a.basePrice, currencyToWeiMultiplier(currencyPrice, baseCurrency))
 				a.mu.Unlock()
 
-				if a.onUpdate != nil {
-					a.onUpdate(a.current)
-				}
+				a.onUpdate(a.current)
 			}
 		}
 	}()

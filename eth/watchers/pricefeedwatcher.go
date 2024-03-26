@@ -161,9 +161,11 @@ loop:
 // from the price feed. It's lifecycle is handled through the ensureWatch and
 // handleUnsubscribe functions.
 func (w *priceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
+	clog.V(6).Infof(ctx, "Starting PriceFeed watch loop")
 	for {
 		select {
 		case <-ctx.Done():
+			clog.V(6).Infof(ctx, "Stopping PriceFeed watch loop")
 			return
 		case <-ticker:
 			attempt, retryDelay := 1, w.baseRetryDelay

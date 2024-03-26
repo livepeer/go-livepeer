@@ -772,8 +772,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
 			for _, p := range broadcasterPrices {
 				p := p
-				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
-				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(p.Currency, pricePerPixel, func(price *big.Rat) {
 					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.FloatString(2), p.EthAddress)
 				})
 				if err != nil {
@@ -1465,7 +1465,7 @@ type BroadcasterPrice struct {
 	EthAddress    string
 	PricePerUnit  *big.Rat
 	Currency      string
-	PixelsPerUnit int64
+	PixelsPerUnit *big.Rat
 }
 
 func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
@@ -1503,7 +1503,7 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 			EthAddress:    p.EthAddress,
 			PricePerUnit:  price,
 			Currency:      p.Currency,
-			PixelsPerUnit: p.PixelsPerUnit,
+			PixelsPerUnit: big.NewRat(p.PixelsPerUnit, 1),
 		}
 	}
 
