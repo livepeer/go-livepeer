@@ -89,7 +89,7 @@ func TestPriceFeedWatcher_Subscribe(t *testing.T) {
 
 	// Now stop the last subscription and ensure watch loop gets stopped
 	cancelSub[4]()
-	time.Sleep(1*time.Second)
+	time.Sleep(1 * time.Second)
 	require.Nil(w.cancelWatch)
 
 	// Finally, just make sure it can be started again after having been stopped

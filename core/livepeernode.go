@@ -133,7 +133,6 @@ func (n *LivepeerNode) SetBasePrice(b_eth_addr string, price *AutoConvertedPrice
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-
 	prevPrice := n.priceInfo[addr]
 	n.priceInfo[addr] = price
 	if prevPrice != nil {
