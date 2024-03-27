@@ -96,8 +96,8 @@ func TestParseGetBroadcasterPrices(t *testing.T) {
 	assert.NotNil(prices)
 	assert.Equal(2, len(prices))
 
-	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, big.NewRat(prices[0].PixelsPerUnit, 1))
-	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, big.NewRat(prices[1].PixelsPerUnit, 1))
+	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
 }

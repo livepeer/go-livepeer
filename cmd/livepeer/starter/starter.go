@@ -121,7 +121,7 @@ type LivepeerConfig struct {
 	MaxTotalEV             *string
 	DepositMultiplier      *int
 	PricePerUnit           *string
-	PixelsPerUnit          *int
+	PixelsPerUnit          *string
 	PriceFeedAddr          *string
 	AutoAdjustPrice        *bool
 	PricePerBroadcaster    *string
@@ -196,7 +196,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
-	defaultPixelsPerUnit := 1
+	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
 	defaultPricePerBroadcaster := ""
@@ -745,11 +745,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if *cfg.Orchestrator {
 			// Set price per pixel base info
-			if *cfg.PixelsPerUnit <= 0 {
-				// Can't divide by 0
-				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %d", *cfg.PixelsPerUnit))
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
 			}
-			pixelsPerUnit := new(big.Rat).SetInt64(int64(*cfg.PixelsPerUnit))
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
 			if cfg.PricePerUnit == nil {
 				// Prevent orchestrators from unknowingly providing free transcoding
 				panic(fmt.Errorf("-pricePerUnit must be set"))
@@ -876,11 +879,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
-			if *cfg.PixelsPerUnit <= 0 {
-				// Can't divide by 0
-				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *cfg.PixelsPerUnit))
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
 			}
-			pixelsPerUnit := new(big.Rat).SetInt64(int64(*cfg.PixelsPerUnit))
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
 			maxPricePerUnit, currency, err := parsePricePerUnit(*cfg.MaxPricePerUnit)
 			if err != nil {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
@@ -1477,11 +1483,12 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 	// {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
 	var pricesSet struct {
 		Broadcasters []struct {
-			EthAddress    string          `json:"ethaddress"`
-			// priceperunit is specified as a number, but we don't want to lose precision so we store the raw characters here
+			EthAddress string `json:"ethaddress"`
+			// The fields below are specified as a number in the JSON, but we don't want to lose precision so we store the raw characters here and parse as a big.Rat.
+			// This also allows support for exponential notation for numbers, which is helpful for pricePerUnit which could be a value like 1e12.
+			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
 			PricePerUnit  json.RawMessage `json:"priceperunit"`
 			Currency      string          `json:"currency"`
-			PixelsPerUnit int64           `json:"pixelsperunit"`
 		} `json:"broadcasters"`
 	}
 	pricesFileContent, _ := common.ReadFromFile(broadcasterPrices)
@@ -1494,16 +1501,21 @@ func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
 
 	prices := make([]BroadcasterPrice, len(pricesSet.Broadcasters))
 	for i, p := range pricesSet.Broadcasters {
-		price, ok := new(big.Rat).SetString(string(p.PricePerUnit))
+		pixelsPerUnit, ok := new(big.Rat).SetString(string(p.PixelsPerUnit))
 		if !ok {
-			glog.Errorf("price could not be parsed for broadcaster %v. price must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
+			glog.Errorf("Pixels per unit could not be parsed for broadcaster %v. must be a valid number, provided %s", p.EthAddress, p.PixelsPerUnit)
+			continue
+		}
+		pricePerUnit, ok := new(big.Rat).SetString(string(p.PricePerUnit))
+		if !ok {
+			glog.Errorf("Price per unit could not be parsed for broadcaster %v. must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
 			continue
 		}
 		prices[i] = BroadcasterPrice{
 			EthAddress:    p.EthAddress,
-			PricePerUnit:  price,
 			Currency:      p.Currency,
-			PixelsPerUnit: big.NewRat(p.PixelsPerUnit, 1),
+			PricePerUnit:  pricePerUnit,
+			PixelsPerUnit: pixelsPerUnit,
 		}
 	}
 
