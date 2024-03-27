@@ -93,7 +93,7 @@ type LivepeerNode struct {
 	StorageConfigs map[string]*transcodeConfig
 	storageMutex   *sync.RWMutex
 	// Transcoder private fields
-	priceInfo    map[string]*big.Rat
+	priceInfo    map[string]*AutoConvertedPrice
 	serviceURI   url.URL
 	segmentMutex *sync.RWMutex
 }
@@ -109,7 +109,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		SegmentChans:    make(map[ManifestID]SegmentChan),
 		segmentMutex:    &sync.RWMutex{},
 		Capabilities:    &Capabilities{capacities: map[Capability]int{}},
-		priceInfo:       make(map[string]*big.Rat),
+		priceInfo:       make(map[string]*AutoConvertedPrice),
 		StorageConfigs:  make(map[string]*transcodeConfig),
 		storageMutex:    &sync.RWMutex{},
 	}, nil
@@ -128,12 +128,16 @@ func (n *LivepeerNode) SetServiceURI(newUrl *url.URL) {
 }
 
 // SetBasePrice sets the base price for an orchestrator on the node
-func (n *LivepeerNode) SetBasePrice(b_eth_addr string, price *big.Rat) {
+func (n *LivepeerNode) SetBasePrice(b_eth_addr string, price *AutoConvertedPrice) {
 	addr := strings.ToLower(b_eth_addr)
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	prevPrice := n.priceInfo[addr]
 	n.priceInfo[addr] = price
+	if prevPrice != nil {
+		prevPrice.Stop()
+	}
 }
 
 // GetBasePrice gets the base price for an orchestrator
@@ -142,14 +146,22 @@ func (n *LivepeerNode) GetBasePrice(b_eth_addr string) *big.Rat {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return n.priceInfo[addr]
+	price := n.priceInfo[addr]
+	if price == nil {
+		return nil
+	}
+	return price.Value()
 }
 
 func (n *LivepeerNode) GetBasePrices() map[string]*big.Rat {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	return n.priceInfo
+	prices := make(map[string]*big.Rat)
+	for addr, price := range n.priceInfo {
+		prices[addr] = price.Value()
+	}
+	return prices
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received

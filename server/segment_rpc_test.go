@@ -1679,7 +1679,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 		OrchestratorInfo: oinfo,
 	}
 
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 5)))
 	defer BroadcastCfg.SetMaxPrice(nil)
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)

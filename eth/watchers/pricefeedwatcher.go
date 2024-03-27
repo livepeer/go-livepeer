@@ -19,78 +19,93 @@ const (
 	priceUpdatePeriod         = 1 * time.Hour
 )
 
+type PriceFeedWatcher interface {
+	Currencies() (base string, quote string, err error)
+	Current() (eth.PriceData, error)
+	Subscribe(ctx context.Context, sink chan<- eth.PriceData)
+}
+
 // PriceFeedWatcher monitors a Chainlink PriceFeed for updated pricing info. It
 // allows fetching the current price as well as listening for updates on the
 // PriceUpdated channel.
-type PriceFeedWatcher struct {
+type priceFeedWatcher struct {
 	baseRetryDelay time.Duration
 
-	priceFeed                   eth.PriceFeedEthClient
-	currencyBase, currencyQuote string
+	priceFeed eth.PriceFeedEthClient
 
-	mu             sync.RWMutex
-	current        eth.PriceData
+	mu          sync.RWMutex
+	current     eth.PriceData
+	cancelWatch func()
+
 	priceEventFeed event.Feed
+	subscriptions  event.SubscriptionScope
 }
 
 // NewPriceFeedWatcher creates a new PriceFeedWatcher instance. It will already
 // fetch the current price and start a goroutine to watch for updates.
-func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (*PriceFeedWatcher, error) {
+func NewPriceFeedWatcher(ethClient *ethclient.Client, priceFeedAddr string) (PriceFeedWatcher, error) {
 	priceFeed, err := eth.NewPriceFeedEthClient(ethClient, priceFeedAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create price feed client: %w", err)
 	}
-
-	description, err := priceFeed.Description()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get description: %w", err)
-	}
-
-	currencyFrom, currencyTo, err := parseCurrencies(description)
-	if err != nil {
-		return nil, err
-	}
-
-	w := &PriceFeedWatcher{
+	w := &priceFeedWatcher{
 		baseRetryDelay: priceUpdateBaseRetryDelay,
 		priceFeed:      priceFeed,
-		currencyBase:   currencyFrom,
-		currencyQuote:  currencyTo,
 	}
-
-	err = w.updatePrice()
-	if err != nil {
-		return nil, fmt.Errorf("failed to update price: %w", err)
-	}
-
 	return w, nil
 }
 
 // Currencies returns the base and quote currencies of the price feed.
 // i.e. base = CurrentPrice() * quote
-func (w *PriceFeedWatcher) Currencies() (base string, quote string) {
-	return w.currencyBase, w.currencyQuote
+func (w *priceFeedWatcher) Currencies() (base string, quote string, err error) {
+	description, err := w.priceFeed.Description()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get description: %w", err)
+	}
+
+	base, quote, err = parseCurrencies(description)
+	if err != nil {
+		return "", "", err
+	}
+	return
 }
 
-// Current returns the latest fetched price data.
-func (w *PriceFeedWatcher) Current() eth.PriceData {
+// Current returns the latest fetched price data, or fetches it in case it has
+// not been fetched yet.
+func (w *priceFeedWatcher) Current() (eth.PriceData, error) {
 	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.current
+	current := w.current
+	w.mu.RUnlock()
+	if current.UpdatedAt.IsZero() {
+		return w.updatePrice()
+	}
+	return current, nil
 }
 
 // Subscribe allows one to subscribe to price updates emitted by the Watcher.
-// To unsubscribe, simply call `Unsubscribe` on the returned subscription.
 // The sink channel should have ample buffer space to avoid blocking other
-// subscribers. Slow subscribers are not dropped.
-func (w *PriceFeedWatcher) Subscribe(sub chan<- eth.PriceData) event.Subscription {
-	return w.priceEventFeed.Subscribe(sub)
+// subscribers. Slow subscribers are not dropped. The subscription is kept alive
+// until the passed Context is cancelled.
+//
+// The watch loop is run automatically while there are active subscriptions. It
+// will be started when the first subscription is made and is automatically
+// stopped when the last subscription is closed.
+func (w *priceFeedWatcher) Subscribe(ctx context.Context, sink chan<- eth.PriceData) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.ensureWatchLocked()
+
+	sub := w.subscriptions.Track(w.priceEventFeed.Subscribe(sink))
+	go w.handleUnsubscribe(ctx, sub)
 }
 
-func (w *PriceFeedWatcher) updatePrice() error {
+// updatePrice fetches the latest price data from the price feed and updates the
+// current price if it is newer. If the price is updated, it will also send the
+// updated price to the price event feed.
+func (w *priceFeedWatcher) updatePrice() (eth.PriceData, error) {
 	newPrice, err := w.priceFeed.FetchPriceData()
 	if err != nil {
-		return fmt.Errorf("failed to fetch price data: %w", err)
+		return eth.PriceData{}, fmt.Errorf("failed to fetch price data: %w", err)
 	}
 
 	if newPrice.UpdatedAt.After(w.current.UpdatedAt) {
@@ -100,26 +115,62 @@ func (w *PriceFeedWatcher) updatePrice() error {
 		w.priceEventFeed.Send(newPrice)
 	}
 
-	return nil
+	return newPrice, nil
 }
 
-// Watch starts the watch process. It will periodically poll the price feed for
-// price updates until the given context is canceled. Typically, you want to
-// call Watch inside a goroutine.
-func (w *PriceFeedWatcher) Watch(ctx context.Context) {
+// ensureWatchLocked makes sure that the watch process is running. It assumes it
+// is already running in a locked context (w.mu). The watch process itself will
+// run in background and periodically poll the price feed for updates until the
+// `w.cancelWatch` function is called.
+func (w *priceFeedWatcher) ensureWatchLocked() {
+	if w.cancelWatch != nil {
+		// already running
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancelWatch = cancel
+
 	ticker := newTruncatedTicker(ctx, priceUpdatePeriod)
-	w.watchTicker(ctx, ticker)
+	go w.watchTicker(ctx, ticker)
 }
 
-func (w *PriceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
+// handleUnsubscribe waits for the provided Context to be done and then closes
+// the given subscription. It then stops the watch process if there are no more
+// active subscriptions.
+func (w *priceFeedWatcher) handleUnsubscribe(ctx context.Context, sub event.Subscription) {
+loop:
 	for {
 		select {
 		case <-ctx.Done():
+			break loop
+		case <-sub.Err():
+			clog.Errorf(ctx, "PriceFeedWatcher subscription error: %v", sub.Err())
+		}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	sub.Unsubscribe()
+	if w.subscriptions.Count() == 0 && w.cancelWatch != nil {
+		w.cancelWatch()
+		w.cancelWatch = nil
+	}
+}
+
+// watchTicker is the main loop that periodically fetches the latest price data
+// from the price feed. It's lifecycle is handled through the ensureWatch and
+// handleUnsubscribe functions.
+func (w *priceFeedWatcher) watchTicker(ctx context.Context, ticker <-chan time.Time) {
+	clog.V(6).Infof(ctx, "Starting PriceFeed watch loop")
+	for {
+		select {
+		case <-ctx.Done():
+			clog.V(6).Infof(ctx, "Stopping PriceFeed watch loop")
 			return
 		case <-ticker:
 			attempt, retryDelay := 1, w.baseRetryDelay
 			for {
-				err := w.updatePrice()
+				_, err := w.updatePrice()
 				if err == nil {
 					break
 				} else if attempt >= priceUpdateMaxRetries {
@@ -159,7 +210,8 @@ func parseCurrencies(description string) (currencyBase string, currencyQuote str
 func newTruncatedTicker(ctx context.Context, d time.Duration) <-chan time.Time {
 	ch := make(chan time.Time, 1)
 	go func() {
-		defer close(ch)
+		// Do not close the channel, to prevent a concurrent goroutine reading from
+		// the channel from seeing an erroneous "tick" after its closed.
 
 		nextTick := time.Now().UTC().Truncate(d)
 		for {

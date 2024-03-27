@@ -550,7 +550,7 @@ func TestGenPayment(t *testing.T) {
 	s.Sender = sender
 
 	// Test invalid price
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 5)))
 	payment, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
 	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
@@ -687,12 +687,12 @@ func TestValidatePrice(t *testing.T) {
 	defer BroadcastCfg.SetMaxPrice(nil)
 
 	// B MaxPrice > O Price
-	BroadcastCfg.SetMaxPrice(big.NewRat(5, 1))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(5, 1)))
 	err = validatePrice(s)
 	assert.Nil(err)
 
 	// B MaxPrice == O Price
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 3))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 3)))
 	err = validatePrice(s)
 	assert.Nil(err)
 
@@ -713,7 +713,7 @@ func TestValidatePrice(t *testing.T) {
 
 	// B MaxPrice < O Price
 	s.InitialPrice = nil
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 5)))
 	err = validatePrice(s)
 	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
 

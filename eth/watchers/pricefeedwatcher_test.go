@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"reflect"
 	"testing"
 	"time"
 
@@ -37,18 +38,16 @@ func TestPriceFeedWatcher_UpdatePrice(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil).Once()
 
-	w := &PriceFeedWatcher{
-		priceFeed:     priceFeedMock,
-		currencyBase:  "ETH",
-		currencyQuote: "USD",
-	}
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
-	require.NoError(t, w.updatePrice())
-	require.Equal(t, priceData, w.current)
+	newPrice, err := w.updatePrice()
+	require.NoError(t, err)
+	require.Equal(t, priceData, newPrice)
 
 	select {
 	case updatedPrice := <-priceUpdated:
@@ -58,20 +57,59 @@ func TestPriceFeedWatcher_UpdatePrice(t *testing.T) {
 	}
 }
 
+func TestPriceFeedWatcher_Subscribe(t *testing.T) {
+	require := require.New(t)
+	priceFeedMock := new(mockPriceFeedEthClient)
+	defer priceFeedMock.AssertExpectations(t)
+
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
+
+	// Start a bunch of subscriptions and make sure only 1 watch loop gets started
+	observedCancelWatch := []context.CancelFunc{}
+	cancelSub := []context.CancelFunc{}
+	for i := 0; i < 5; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		w.Subscribe(ctx, make(chan eth.PriceData, 1))
+
+		observedCancelWatch = append(observedCancelWatch, w.cancelWatch)
+		cancelSub = append(cancelSub, cancel)
+	}
+
+	require.NotNil(w.cancelWatch)
+	for i := range observedCancelWatch {
+		require.Equal(reflect.ValueOf(w.cancelWatch).Pointer(), reflect.ValueOf(observedCancelWatch[i]).Pointer())
+	}
+
+	// Stop all but the last subscription and ensure watch loop stays running
+	for i := 0; i < 4; i++ {
+		cancelSub[i]()
+		require.NotNil(w.cancelWatch)
+	}
+
+	// Now stop the last subscription and ensure watch loop gets stopped
+	cancelSub[4]()
+	time.Sleep(1 * time.Second)
+	require.Nil(w.cancelWatch)
+
+	// Finally, just make sure it can be started again after having been stopped
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w.Subscribe(ctx, make(chan eth.PriceData, 1))
+	require.NotNil(w.cancelWatch)
+}
+
 func TestPriceFeedWatcher_Watch(t *testing.T) {
 	require := require.New(t)
 	priceFeedMock := new(mockPriceFeedEthClient)
 	defer priceFeedMock.AssertExpectations(t)
 
-	w := &PriceFeedWatcher{
-		priceFeed:     priceFeedMock,
-		currencyBase:  "ETH",
-		currencyQuote: "USD",
-	}
+	w := &priceFeedWatcher{priceFeed: priceFeedMock}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
 	priceData := eth.PriceData{
 		RoundID:   10,
@@ -100,8 +138,6 @@ func TestPriceFeedWatcher_Watch(t *testing.T) {
 
 	// Start the watch loop
 	fakeTicker := make(chan time.Time, 10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
 		w.watchTicker(ctx, fakeTicker)
 	}()
@@ -150,21 +186,18 @@ func TestPriceFeedWatcher_WatchErrorRetries(t *testing.T) {
 	}
 	priceFeedMock.On("FetchPriceData").Return(priceData, nil)
 
-	w := &PriceFeedWatcher{
+	w := &priceFeedWatcher{
 		baseRetryDelay: 5 * time.Millisecond,
 		priceFeed:      priceFeedMock,
-		currencyBase:   "ETH",
-		currencyQuote:  "USD",
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	priceUpdated := make(chan eth.PriceData, 1)
-	sub := w.Subscribe(priceUpdated)
-	defer sub.Unsubscribe()
+	w.Subscribe(ctx, priceUpdated)
 
 	// Start watch loop
 	fakeTicker := make(chan time.Time, 10)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	go func() {
 		w.watchTicker(ctx, fakeTicker)
 	}()
