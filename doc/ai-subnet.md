@@ -48,19 +48,22 @@ Orchestrators on the AI subnet can chose which models to support on their machin
     pip install huggingface_hub[cli,hf_transfer]
     ```
 
-3. **Create a Hugging Face Access Token**: Create a Hugging Face access token by fallowing the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-tokens) and make this token available under the `HG_TOKEN` environment variable. This token will be used to download [token-gated models](https://huggingface.co/docs/transformers.js/en/guides/private) from the Hugging Face model hub.
+3. **Create a Hugging Face Access Token**: Create a Hugging Face access token by fallowing the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-tokens) and make this token available under the `HF_TOKEN` environment variable. This token will be used to download [token-gated models](https://huggingface.co/docs/transformers.js/en/guides/private) from the Hugging Face model hub. *Additionally you can install your Hugging Face access token on your local machine using the Hugging Face CLI*
+```
+huggingface-cli login
+```
 
    > [!IMPORTANT]
-   > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model which currently also requires you to agree to the model's license agreement. If you want to advertice this models on the AI Subnet you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) login and accept their terms.
+   > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model which currently also requires you to agree to the model's license agreement. If you want to advertise this models on the AI Subnet you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) login and accept their terms. 
 
 4. **Download AI Models**: Download the models listed in `aiModels.json` to the `~/.lpData/models` directory using the [ld_checkpoints.sh](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) script from the [livepeer/ai-worker](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) repository. You can run the following in your terminal to do this:
 
     ```bash
-    curl -s https://raw.githubusercontent.com/livepeer/ai-worker/main/runner/dl_checkpoints.sh | bash -s --alpha
+    curl -s https://raw.githubusercontent.com/livepeer/ai-worker/main/runner/dl_checkpoints.sh | bash -s -alpha
     ```
 
     > [!IMPORTANT]
-    > The `--alpha` flag is used to only download the models that are currently supported by the Livepeer.inc gateway node on the AI Subnet. If you want to download all models and advertice them for other gateway nodes, you can remove this flag.
+    > The `-alpha` flag is used to only download the models that are currently supported by the Livepeer.inc gateway node on the AI Subnet. If you want to download all models and advertice them for other gateway nodes, you can remove this flag.
 
 #### Orchestrator Binary Setup
 
