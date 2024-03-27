@@ -48,7 +48,7 @@ Orchestrators on the AI subnet can chose which models to support on their machin
     pip install huggingface_hub[cli,hf_transfer]
     ```
 
-3. **Create a Hugging Face Access Token**: Create a Hugging Face access token by fallowing the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hf-cli/auth/) and make this token available under the `HG_TOKEN` environment variable. This token will be used to download token-gated models from the Hugging Face model hub.
+3. **Create a Hugging Face Access Token**: Create a Hugging Face access token by fallowing the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-tokens) and make this token available under the `HG_TOKEN` environment variable. This token will be used to download [token-gated models](https://huggingface.co/docs/transformers.js/en/guides/private) from the Hugging Face model hub.
 
    > [!IMPORTANT]
    > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model which currently also requires you to agree to the model's license agreement. If you want to advertice this models on the AI Subnet you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) login and accept their terms.
