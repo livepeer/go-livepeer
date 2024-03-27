@@ -36,6 +36,9 @@ const segmentHeader = "Livepeer-Segment"
 
 const pixelEstimateMultiplier = 1.02
 
+// Maximum price change allowed in orchestrator pricing before the session is swapped.
+var priceIncreaseThreshold = big.NewRat(2, 1)
+
 var errSegEncoding = errors.New("ErrorSegEncoding")
 var errSegSig = errors.New("ErrSegSig")
 var errFormat = errors.New("unrecognized profile output format")
@@ -826,13 +829,24 @@ func validatePrice(sess *BroadcastSession) error {
 		return errors.New("missing orchestrator price")
 	}
 
-	maxPrice := BroadcastCfg.MaxPrice()
-	if maxPrice != nil && oPrice.Cmp(maxPrice) == 1 {
-		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
+	initPrice, err := common.RatPriceInfo(sess.InitialPrice)
+	if err != nil {
+		glog.Warningf("Error parsing session initial price (%d / %d): %v",
+			sess.InitialPrice.PricePerUnit, sess.InitialPrice.PixelsPerUnit, err)
 	}
-	iPrice, err := common.RatPriceInfo(sess.InitialPrice)
-	if err == nil && iPrice != nil && oPrice.Cmp(iPrice) == 1 {
-		return fmt.Errorf("Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", oPrice, iPrice)
+	if initPrice != nil {
+		// Prices are dynamic if configured with a custom currency, so we need to allow some change during the session.
+		maxIncreasedPrice := new(big.Rat).Mul(initPrice, priceIncreaseThreshold)
+		if oPrice.Cmp(maxIncreasedPrice) > 0 {
+			return fmt.Errorf("Orchestrator price has more than doubled, Orchestrator price: %v, Orchestrator initial price: %v", oPrice.RatString(), initPrice.RatString())
+		}
+	}
+	if maxPrice := BroadcastCfg.MaxPrice(); maxPrice != nil {
+		// We sometimes pick an O with a price higher than maxPrice depending on availability.
+		// So we only fail here if the initial price was lower than maxPrice and now it is higher.
+		if (initPrice == nil || initPrice.Cmp(maxPrice) <= 0) && oPrice.Cmp(maxPrice) > 0 {
+			return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
+		}
 	}
 
 	return nil
