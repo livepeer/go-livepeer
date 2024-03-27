@@ -510,5 +510,5 @@ func formatPricePerPixel(price *big.Rat) string {
 	if price.IsInt() {
 		return fmt.Sprintf("%v wei/pixel", price.RatString())
 	}
-	return fmt.Sprintf("%v wei/pixel (%v/%v)", price.FloatString(2), price.Num(), price.Denom())
+	return fmt.Sprintf("%v wei/pixel (%v/%v)", price.FloatString(3), price.Num(), price.Denom())
 }

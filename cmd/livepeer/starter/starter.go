@@ -765,7 +765,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 			autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
-				glog.Infof("Price: %v wei per pixel\n ", price.FloatString(2))
+				glog.Infof("Price: %v wei per pixel\n ", price.FloatString(3))
 			})
 			if err != nil {
 				panic(fmt.Errorf("Error converting price: %v", err))
@@ -777,7 +777,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				p := p
 				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
 				autoPrice, err := core.NewAutoConvertedPrice(p.Currency, pricePerPixel, func(price *big.Rat) {
-					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.FloatString(2), p.EthAddress)
+					glog.Infof("Price: %v wei per pixel for broadcaster %v", price.FloatString(3), p.EthAddress)
 				})
 				if err != nil {
 					panic(fmt.Errorf("Error converting price for broadcaster %s: %v", p.EthAddress, err))
@@ -897,7 +897,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if monitor.Enabled {
 						monitor.MaxTranscodingPrice(price)
 					}
-					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(2))
+					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(3))
 				})
 				if err != nil {
 					panic(fmt.Errorf("Error converting price: %v", err))
