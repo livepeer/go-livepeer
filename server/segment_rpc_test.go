@@ -1679,13 +1679,13 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 		OrchestratorInfo: oinfo,
 		InitialPrice: &net.PriceInfo{
 			PricePerUnit:  1,
-			PixelsPerUnit: 5,
+			PixelsPerUnit: 7,
 		},
 	}
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualError(t, err, fmt.Sprintf("Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/5"))
+	assert.EqualError(t, err, fmt.Sprintf("Orchestrator price has more than doubled, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/7"))
 	balance.AssertCalled(t, "Credit", existingCredit)
 }
 
