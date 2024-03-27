@@ -1684,7 +1684,7 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualErrorf(t, err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+	assert.EqualError(t, err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
 	balance.AssertCalled(t, "Credit", existingCredit)
 }
 
