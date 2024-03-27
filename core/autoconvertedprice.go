@@ -44,7 +44,7 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 		onUpdate = func(*big.Rat) {}
 	}
 
-	// Default currency (wei/eth) doesn't need the converstion loop
+	// Default currency (wei/eth) doesn't need the conversion loop
 	if lcurr := strings.ToLower(currency); lcurr == "" || lcurr == "wei" || lcurr == "eth" {
 		price := basePrice
 		if lcurr == "eth" {
