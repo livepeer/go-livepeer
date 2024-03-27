@@ -22,7 +22,7 @@ Before starting with either the binary or Docker installation, ensure your syste
 
 #### AI Models Configuration
 
-Orchestrators on the AI subnet can chose which models to support on their machines. To do this:
+Orchestrators on the AI subnet can choose which models to support on their machines. To do this:
 
 1. **AI Model Configuration**: Create an `aiModels.json` file in the `~/.lpData` directory to specify the AI models to support in the AI Subnet. Refer to the provided example below for proper formatting:
 
@@ -48,19 +48,19 @@ Orchestrators on the AI subnet can chose which models to support on their machin
     pip install huggingface_hub[cli,hf_transfer]
     ```
 
-3. **Create a Hugging Face Access Token**: Create a Hugging Face access token by fallowing the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-tokens) and make this token available under the `HG_TOKEN` environment variable. This token will be used to download [token-gated models](https://huggingface.co/docs/transformers.js/en/guides/private) from the Hugging Face model hub.
+3. **Create a Hugging Face Access Token**: Follow the instructions in the [Hugging Face documentation](https://huggingface.co/docs/hub/en/security-tokens) to create a Hugging Face access token and make it available under the `HG_TOKEN` environment variable. This token will download [token-gated models](https://huggingface.co/docs/transformers.js/en/guides/private) from the Hugging Face model hub. Alternatively, you can also install your Hugging Face access token on your machine using [login command](https://huggingface.co/docs/huggingface_hub/en/guides/cli#huggingface-cli-login) of the Hugging Face CLI.
 
-   > [!IMPORTANT]
-   > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model which currently also requires you to agree to the model's license agreement. If you want to advertice this models on the AI Subnet you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) login and accept their terms.
+    > [!IMPORTANT]
+    > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model, which currently also requires you to agree to the model's license agreement. If you want to advertise this model on the AI Subnet, you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1), log in, and accept their terms.
 
 4. **Download AI Models**: Download the models listed in `aiModels.json` to the `~/.lpData/models` directory using the [ld_checkpoints.sh](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) script from the [livepeer/ai-worker](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) repository. You can run the following in your terminal to do this:
 
     ```bash
-    curl -s https://raw.githubusercontent.com/livepeer/ai-worker/main/runner/dl_checkpoints.sh | bash -s --alpha
+    curl -s https://raw.githubusercontent.com/livepeer/ai-worker/main/runner/dl_checkpoints.sh | bash -s -- --alpha
     ```
 
     > [!IMPORTANT]
-    > The `--alpha` flag is used to only download the models that are currently supported by the Livepeer.inc gateway node on the AI Subnet. If you want to download all models and advertice them for other gateway nodes, you can remove this flag.
+    > The `--alpha` flag is used to download only the models currently supported by the Livepeer.inc gateway node on the AI Subnet. You can remove this flag if you want to download all models and advertise them for other gateway nodes.
 
 #### Orchestrator Binary Setup
 
@@ -68,7 +68,7 @@ Orchestrators on the AI subnet can chose which models to support on their machin
 
 To run the AI Subnet Orchestrator off-chain using the pre-build binaries, follow these steps:
 
-1. **Obtain the Latest AI Subnet Binary**: Navigate to the [#🪛│builds Channel](https://discord.com/channels/423160867534929930/577736983036559360) in the [Livepeer community Discord](https://discord.com/channels/423160867534929930/577736983036559360). Look for the most recent message that mentions `Branch: ai-video`. This message will contain the latest AI Subnet binaries that are compatible with your system.
+1. **Obtain the Latest AI Subnet Binary**: Navigate to the [#🪛│builds Channel](https://discord.com/channels/423160867534929930/577736983036559360) in the [Livepeer community Discord](https://discord.com/channels/423160867534929930/577736983036559360). Look for the most recent message that mentions `Branch: ai-video`. This message will contain the latest AI Subnet binaries compatible with your system.
 2. **Extract and Configure the Binary**: Once downloaded, extract the binary to a directory of your choice.
 3. **Pull the Latest AI Runner docker image**: The Livepeer AI Subnet uses a containerized workflow to run the AI models. You can download the latest AI Runner container by running the following command:
 
@@ -82,7 +82,7 @@ To run the AI Subnet Orchestrator off-chain using the pre-build binaries, follow
     ./livepeer -orchestrator -transcoder -aiWorker -serviceAddr 0.0.0.0:8936 -v 6 -nvidia "all" -aiModels ~/.lpData/aiModels.json
     ```
 
-5. **Verify Setup**: Ensure that the AI Subnet Orchestrator runs on port 8936. Open port 8936 on your machine and forward it to the internet for external access.
+5. **Verify Setup**: Ensure the AI Subnet Orchestrator runs on port 8936. Open port 8936 on your machine and forward it to the internet for external access.
 
 > [!NOTE]
 > If no binaries are available for your system, you can build the [ai-video branch](https://github.com/livepeer/go-livepeer/tree/ai-video) of [go-livepeer](https://github.com/livepeer/go-livepeer) from source by following the instructions in the [Livepeer repository](https://docs.livepeer.org/orchestrators/guides/install-go-livepeer) or by reaching out to the Livepeer community on [Discord](https://discord.gg/livepeer).
