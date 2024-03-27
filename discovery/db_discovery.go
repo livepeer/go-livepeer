@@ -68,7 +68,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 	return dbo, nil
 }
 
-func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
+func (dbo *DBOrchestratorPoolCache) getURLs() (uris []*url.URL, ignoredMaxPrice bool, err error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			MaxPrice:       server.BroadcastCfg.MaxPrice(),
@@ -76,21 +76,33 @@ func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 			UpdatedLastDay: true,
 		},
 	)
-	if err != nil || len(orchs) <= 0 {
-		return nil, err
+	if err != nil {
+		return nil, false, err
+	}
+	// If there are no Os matching the max price per pixel, we accept any O to avoid disrupting service
+	if len(orchs) == 0 {
+		ignoredMaxPrice = true
+		orchs, err = dbo.store.SelectOrchs(
+			&common.DBOrchFilter{
+				CurrentRound:   dbo.rm.LastInitializedRound(),
+				UpdatedLastDay: true,
+			},
+		)
+		if err != nil || len(orchs) == 0 {
+			return nil, false, err
+		}
 	}
 
-	var uris []*url.URL
 	for _, orch := range orchs {
 		if uri, err := url.Parse(orch.ServiceURI); err == nil {
 			uris = append(uris, uri)
 		}
 	}
-	return uris, nil
+	return uris, ignoredMaxPrice, nil
 }
 
 func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
-	uris, _ := dbo.getURLs()
+	uris, _, _ := dbo.getURLs()
 	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
 	for _, uri := range uris {
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: common.Score_Untrusted})
@@ -101,7 +113,7 @@ func (dbo *DBOrchestratorPoolCache) GetInfos() []common.OrchestratorLocalInfo {
 func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
-	uris, err := dbo.getURLs()
+	uris, ignoreMaxPrice, err := dbo.getURLs()
 	if err != nil || len(uris) <= 0 {
 		return nil, err
 	}
@@ -137,7 +149,10 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 				price.FloatString(3),
 				maxPrice.FloatString(3),
 			)
-			return false
+			// Also ignore max price here if getURLs() ignored it
+			if !ignoreMaxPrice {
+				return false
+			}
 		}
 		return true
 	}
@@ -159,6 +174,15 @@ func (dbo *DBOrchestratorPoolCache) Size() int {
 			UpdatedLastDay: true,
 		},
 	)
+	// If there are no Os matching the max price per pixel, we accept any O to avoid disrupting service
+	if count == 0 {
+		count, _ = dbo.store.OrchCount(
+			&common.DBOrchFilter{
+				CurrentRound:   dbo.rm.LastInitializedRound(),
+				UpdatedLastDay: true,
+			},
+		)
+	}
 	return count
 }
 
