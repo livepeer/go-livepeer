@@ -147,7 +147,7 @@ func setBroadcastConfigHandler() http.Handler {
 				return
 			}
 			if px.Sign() <= 0 {
-				respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", px))
+				respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
 				return
 			}
 			pricePerPixel := new(big.Rat).Quo(pr, px)

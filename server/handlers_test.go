@@ -196,7 +196,7 @@ func TestSetBroadcastConfigHandler_ConvertPricePerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pricePerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
@@ -209,7 +209,7 @@ func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pixelsPerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_NegativePixelPerUnitError(t *testing.T) {
@@ -503,12 +503,17 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	// pricePerUnit is not an integer
 	err := s.setOrchestratorPriceInfo("default", "nil", "1", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pricePerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pricePerUnit value")
 
 	// pixelsPerUnit is not an integer
 	err = s.setOrchestratorPriceInfo("default", "1", "nil", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pixelsPerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pixelsPerUnit value")
+
+	// price feed watcher is not initialized and one attempts a custom currency
+	err = s.setOrchestratorPriceInfo("default", "1e12", "0.7", "USD")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "PriceFeedWatcher is not initialized")
 
 	err = s.setOrchestratorPriceInfo("default", "1", "1", "")
 	assert.Nil(t, err)

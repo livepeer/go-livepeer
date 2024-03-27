@@ -40,9 +40,6 @@ func NewFixedPrice(price *big.Rat) *AutoConvertedPrice {
 // whenever the price is updated (also with the initial price). The Stop function
 // must be called to free resources when the price is no longer needed.
 func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*big.Rat)) (*AutoConvertedPrice, error) {
-	if PriceFeedWatcher == nil {
-		return nil, fmt.Errorf("PriceFeedWatcher is not initialized")
-	}
 	if onUpdate == nil {
 		onUpdate = func(*big.Rat) {}
 	}
@@ -55,6 +52,10 @@ func NewAutoConvertedPrice(currency string, basePrice *big.Rat, onUpdate func(*b
 		}
 		onUpdate(price)
 		return NewFixedPrice(price), nil
+	}
+
+	if PriceFeedWatcher == nil {
+		return nil, fmt.Errorf("PriceFeedWatcher is not initialized")
 	}
 
 	base, quote, err := PriceFeedWatcher.Currencies()

@@ -340,10 +340,10 @@ func TestParsePricePerUnit(t *testing.T) {
 			expectError:      false,
 		},
 		{
-			name:             "No specified currency, default to wei",
+			name:             "No specified currency, empty currency",
 			pricePerUnitStr:  "100",
 			expectedPrice:    big.NewRat(100, 1),
-			expectedCurrency: "wei",
+			expectedCurrency: "",
 			expectError:      false,
 		},
 		{
