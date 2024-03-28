@@ -459,7 +459,7 @@ To help the AI SPE team monitor the _AI Subnet_ performance, you can opt to send
         -d \
         --name=ai_subnet_promtail \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        -v /etc/promtail/ai_subnet_promtail.yml:/etc/promtail/ai_subnet_promtail.yml \
+        -v /etc/promtail/:/etc/promtail/ \
         --network=host \
         grafana/promtail:2.9.4 \
         -config.file=/etc/promtail/ai_subnet_promtail.yml
