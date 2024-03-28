@@ -706,14 +706,30 @@ func TestValidatePrice(t *testing.T) {
 	err = validatePrice(s)
 	assert.Nil(err)
 
-	// O Initial Price lower than O Price
-	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 10}
+	// O Price higher but up to 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 6}
 	err = validatePrice(s)
-	assert.ErrorContains(err, "price has changed")
+	assert.Nil(err)
 
-	// B MaxPrice < O Price
-	s.InitialPrice = nil
+	// O Price higher than 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 6001}
+	err = validatePrice(s)
+	assert.ErrorContains(err, "price has more than doubled")
+
+	// B MaxPrice < O Price AND B MaxPrice < O Initial Price
+	// This checks the case when we pick an O with higher price than max, for availability
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 3}
 	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 5)))
+	err = validatePrice(s)
+	assert.NoError(err)
+
+	// B MaxPrice < O Price AND B MaxPrice > O Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 6}
+	err = validatePrice(s)
+	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
+
+	// B MaxPrice < O Price AND No Initial Price
+	s.InitialPrice = nil
 	err = validatePrice(s)
 	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
 

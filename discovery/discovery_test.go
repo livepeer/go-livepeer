@@ -620,7 +620,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.False(t, pool.pred(oInfo))
 }
 
-func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) {
+func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAll(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -697,15 +697,15 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 		assert.Contains(testOrchs, test)
 	}
 
-	// check size
-	assert.Equal(0, pool.Size())
+	// Functions should return all Os to avoid service disruption
+	assert.Equal(50, pool.Size())
 
 	urls := pool.GetInfos()
-	assert.Len(urls, 0)
+	assert.Len(urls, 50)
 	infos, err := pool.GetOrchestrators(context.TODO(), len(addresses), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(infos, 0)
+	assert.Len(infos, 50)
 }
 
 func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
