@@ -12,6 +12,8 @@
 
 #### Broadcaster
 
+- [#2985](https://github.com/livepeer/go-livepeer/pull/2985) Fallback to using any O in case none match maxPrice (@victorges)
+
 #### Orchestrator
 
 #### Transcoder
