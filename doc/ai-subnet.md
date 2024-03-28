@@ -58,7 +58,7 @@ Before starting with either the binary or Docker installation for the _Mainnet A
 
 ## Off-chain Setup
 
-For testing and development purposes, it's a good practice to first run the Orchestrator and Gateway nodes **off-chain**. This allows you to quickly test the _AI Subnet_ and ensure that your Orchestrator and Gateway are functioning correctly before connecting them to the **on-chain** [Livepeer protocol](https://livepeer.org/).
+For testing and development purposes, it's a good practice first to run the Orchestrator and Gateway nodes **off-chain**. This allows you to quickly test the _AI Subnet_ and ensure that your Orchestrator and Gateway nodes function correctly before connecting them to the **on-chain** [Livepeer protocol](https://livepeer.org/).
 
 ### Orchestrator Setup
 
@@ -94,7 +94,7 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
     - `pipeline`: This mandatory field specifies the type of inference you want to run. The currently supported pipelines are `text-to-image`, `image-to-video`, and `image-to-image`.
     - `model_id`: This mandatory field is the [Hugging Face model ID](https://huggingface.co/docs/transformers/en/main_classes/model) of the model you want to use.
     - `price_per_unit`: This mandatory field is the price in [Wei](https://ethdocs.org/en/latest/ether.html) per unit of work.
-    - `warm`: This optional field specifies if the model should be kept warm on the GPU. Keeping a model warm on the GPU reduces the time it takes to run the model as the model is already loaded on the GPU. In our current **alpha** phase, we only support one model per GPU. Therefore, if you have one GPU and one model warm, you cannot serve any other models.
+    - `warm`: This optional field specifies if the model should be kept warm on the GPU. Keeping a model warm on the GPU reduces the time it takes to run the model as it is already loaded on the GPU. We only support one model per GPU in our current **alpha** phase. Therefore, if you have one GPU and one model warm, you cannot serve any other models.
 
 2. **Install Hugging Face CLI**: Install the Hugging Face CLI by running the following command:
 
@@ -186,7 +186,7 @@ To run the _AI Subnet_ Orchestrator **off-chain** using Docker, follow these ste
         -aiModelsDir ~/.lpData/models
     ```
 
-    As outlined in the [Orchestrator Binary Setup](#orchestrator-binary-setup), the `-aiWorker`, `-aiModels`, and `-aiModelsDir` flags are unique to the _AI Subnet_ Orchestrator. The remaining flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) as detailed in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The AI-specific flags activate the _AI Subnet_ Orchestrator, specify the location of your AI models configuration, and define the directory for model storage on your machine. If `aiModelsDir` is not set, the _AI Subnet_ Orchestrator defaults to the `~/.lpData/<NETWORK>/models` directory for model storage.
+    As outlined in the [Orchestrator Binary Setup](#orchestrator-binary-setup), the `-aiWorker`, `-aiModels`, and `-aiModelsDir` flags are unique to the _AI Subnet_ Orchestrator. The remaining flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) as detailed in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The AI-specific flags activate the _AI Subnet_ Orchestrator, specify the location of your AI models configuration file, and define the directory for model storage on your machine. If `aiModelsDir` is not set, the _AI Subnet_ Orchestrator defaults to the `~/.lpData/<NETWORK>/models` directory for model storage.
 
 4. **Verify Setup**: Confirm that the _AI Subnet_ Orchestrator node is operating on port `8936`. To make the Gateway node accessible from the internet, unblock port `8936` on your machine and set up port forwarding on your router.
 
@@ -209,7 +209,7 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
         -httpIngest
     ```
 
-    The flags used here are also applicable to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer). For a comprehensive understanding of these flags, consult the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). Specifically, the `--orchAddr` and `--httpAddr` flags are crucial for routing the Gateway node to your local Orchestrator (i.e., `0.0.0.0:8936`) and facilitating **off-chain** communication between the Gateway and the Orchestrator.
+    The flags used here also apply to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer). To comprehensively understand these flags, consult the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). Specifically, the `--orchAddr` and `--httpAddr` flags are crucial for routing the Gateway node to your local Orchestrator (i.e., `0.0.0.0:8936`) and facilitating **off-chain** communication between the Gateway and the Orchestrator.
 
 3. **Verify Setup**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. To make the Gateway node accessible from the internet, unblock port `8937` on your machine and set up port forwarding on your router.
 
@@ -222,7 +222,7 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
     docker run -v ~/.lpData2/:/root/.lpData2 -p 8937:8937 --network host livepeer/go-livepeer:ai-video -datadir ~/.lpData2 -broadcaster -orchAddr <ORCH_LIST> -httpAddr 0.0.0.0:8937 -v 6 -httpIngest
     ```
 
-    As outlined in the [Gateway Binary Setup](#gateway-binary-setup) the flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) and are documented in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The `--orchAddr` and `--httpAddr` flags are essential for directing the Gateway node to your local Orchestrator and ensuring **off-chain** communication between the Gateway and the Orchestrator, respectively.
+    As outlined in the [Gateway Binary Setup](#gateway-binary-setup), the flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) and are documented in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The `--orchAddr` and `--httpAddr` flags are essential for directing the Gateway node to your local Orchestrator and ensuring **off-chain** communication between the Gateway and the Orchestrator, respectively.
 
 3. **Verify Setup**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. To make the Gateway node accessible from the internet, unblock port `8937` on your machine and set up port forwarding on your router.
 
@@ -231,11 +231,11 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
 > [!IMPORTANT]
 > If you're using the `warm` flag in your `aiModels.json` ensure you have the right pipeline running on your Orchestrator before submitting a job.
 
-To verify the correct functioning of your **off-chain** Gateway and Orchestrator nodes, submit an AI inference job for each of the supported pipelines.
+Submit an AI inference job for each of the supported pipelines to verify the correct functioning of your **off-chain** Gateway and Orchestrator nodes.
 
 #### Text-to-Image Inference Job
 
-To send an `text-to-image` inference job to the Gateway node and receive the result, follow these steps:
+To send a `text-to-image` inference job to the Gateway node and receive the result, follow these steps:
 
 1. **Job Submission**: Submit a job using the `curl` command:
 
@@ -255,7 +255,7 @@ To send an `text-to-image` inference job to the Gateway node and receive the res
     curl -O 0.0.0.0:8937/stream/34937c31/dc88c7c9.png
     ```
 
-Congratulations! You've successfully set up your **off-chain** _AI Subnet_ Orchestrator and Gateway nodes to process `text-to-image` inference jobs. 🎉 You can repeat the process for the `image-to-video` and `image-to-image` pipelines described below to ensure the correct functioning of all the AI inference pipelines you did setup in your `aiModels.json`.
+Congratulations! You've successfully set up your **off-chain** _AI Subnet_ Orchestrator and Gateway nodes to process `text-to-image` inference jobs. 🎉 You can repeat the process for the `image-to-video` and `image-to-image` pipelines described below to ensure the correct functioning of all the AI inference pipelines you did set up in your `aiModels.json`.
 
 #### Image-to-Image Inference Job
 
@@ -313,7 +313,7 @@ After successful **off-chain** testing of your Orchestrator and Gateway nodes, y
 
 To redeem _Mainnet AI Subnet_ tickets **on-chain**, ensure your _Mainnet Transcoding Network_ Orchestrator is set up and ranked in the top 100. Refer to the [Livepeer Orchestrator Setup Documentation](https://docs.livepeer.org/orchestrators/guides/mainnet-transcoding-network) for setup steps. Once set up, configure your _Mainnet AI Subnet_ Orchestrator **on-chain**. Run a separate Orchestrator for the _AI Subnet_ to avoid affecting your main Orchestrator. This Orchestrator will handle AI jobs on the _Mainnet AI Subnet_. If your main Orchestrator is operational, there are two methods for **on-chain** AI ticket redemption:
 
--   **Method 1 (Recommended)**: Redeem the AI tickets **on-chain** on your _Mainnet AI Subnet_ Orchestrator, using the `-ethOrchAddr` to set your _Mainnet Transcoding Network_ Orchestrator as the `recipient` of the tickets.
+-   **Method 1 (Recommended)**: Redeem the AI tickets **on-chain** on your _Mainnet AI Subnet_ Orchestrator, using the `-ethOrchAddr` to set your _Mainnet Transcoding Network_ Orchestrator as the tickets `recipient.
 -   **Method 2**: Set up a ticket redemption service using the `-redeemer` flag, and have your _Mainnet AI Subnet_ Orchestrator send the tickets to this service using the `redeemerAddr` flag.
 
 Detailed instructions for both methods are provided below.
@@ -322,7 +322,7 @@ Detailed instructions for both methods are provided below.
 
 The first and **recommended method** is to use the `ethOrchAddr` flag to set the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator as the recipient of the AI tickets. This ensures that the AI tickets are redeemed **on-chain** by your _AI Subnet_ Orchestrator, while the AI rewards are sent to your _Mainnet Transcoding Network_ Orchestrator. Follow these steps to set up your _Mainnet AI Subnet_ Orchestrator using this method:
 
-1. Create a new Ethereum account for your _Mainnet AI Subnet_ Orchestrator. For security reasons, it's recommended to use a separate account from your _Mainnet Transcoding Network_ Orchestrator.
+1. Create a new Ethereum account for your _Mainnet AI Subnet_ Orchestrator. It is recommended that you use a separate account from your _Mainnet Transcoding Network_ Orchestrator for security reasons.
 2. Fund the Ethereum account with enough ETH to cover the gas costs of redeeming the AI tickets **on-chain**.
 3. Open port `8936` on your machine and set up port forwarding on your router to make the _Mainnet AI Subnet_ Orchestrator accessible from the internet.
 
@@ -354,7 +354,7 @@ While most flags found in this command are similar to those used when running [M
 -   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
 -   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
 
-Setting these flags correctly ensures that your _Mainnet AI Subnet_ Orchestrator is correctly configured to redeem AI tickets **on-chain**. 🎉
+Setting these flags ensures that your _Mainnet AI Subnet_ Orchestrator is correctly configured to redeem AI tickets **on-chain**. 🎉
 
 #### Docker Startup Command
 
@@ -388,7 +388,7 @@ To start your _Mainnet AI Subnet_ Orchestrator using Docker, follow these steps:
          -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
     ```
 
-While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to note when setting up your Mainnet AI Subnet Orchestrator **on-chain** using docker:
+While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to note when setting up your Mainnet AI Subnet Orchestrator **on-chain** using Docker:
 
 -   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
 -   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
@@ -398,7 +398,7 @@ Additionaly since the _AI Subnet_ software using [Docker-out-of-Docker](http://t
 -   `--network host`: Enables communication between the Docker daemon inside the container and the [AI Runner](https://github.com/livepeer/ai-worker) containers for AI inference jobs.
 -   `--aiModelsDir`: Specifies the directory on your **host machine** where AI models are stored. The Docker daemon uses this path to mount the models in the AI Runner containers.
 
-Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator to redeem AI tickets **on-chain** successfully. 🎉
+Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator to successfully redeem AI tickets **on-chain**. 🎉
 
 #### Use a ticket Redemption Service
 
@@ -408,7 +408,7 @@ Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator t
 ### On-chain Gateway Setup
 
 > [!IMPORTANT]
-> During the **alpha** phase, to streamline our development process, we currently only support the Livepeer.inc Gateway node for **on-chain Gateway** operations. We aim to extend support to other **on-chain** Gateway nodes in the future. Consequently, we do not provide any documentation for setting up an **on-chain** Gateway node at this time.
+> During the **alpha** phase, we're focusing our development efforts on the Livepeer.inc Gateway node for **on-chain** operations. While we plan to support additional **on-chain** Gateway nodes in the future, we currently don't offer setup documentation for them.
 
 ## Issues
 
