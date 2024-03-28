@@ -81,6 +81,7 @@ func (dbo *DBOrchestratorPoolCache) getURLs() (uris []*url.URL, ignoredMaxPrice 
 	}
 	// If there are no Os matching the max price per pixel, we accept any O to avoid disrupting service
 	if len(orchs) == 0 {
+		// TODO: log when this happens so we can alert
 		ignoredMaxPrice = true
 		orchs, err = dbo.store.SelectOrchs(
 			&common.DBOrchFilter{
@@ -176,6 +177,7 @@ func (dbo *DBOrchestratorPoolCache) Size() int {
 	)
 	// If there are no Os matching the max price per pixel, we accept any O to avoid disrupting service
 	if count == 0 {
+		// TODO: log when this happens so we can alert
 		count, _ = dbo.store.OrchCount(
 			&common.DBOrchFilter{
 				CurrentRound:   dbo.rm.LastInitializedRound(),
