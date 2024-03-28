@@ -107,7 +107,7 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
     > [!IMPORTANT]
     > The `ld_checkpoints.sh` script contains the [SVD1.1](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1) model, which currently also requires you to agree to the model's license agreement. If you want to advertise this model on the _AI Subnet_, you need to go to the [model page](https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt-1-1), log in, and accept their terms.
 
-4. **Download AI Models**: Download the models listed in `aiModels.json` to the `~/.lpData/models` directory using the [ld_checkpoints.sh](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) script from the [livepeer/ai-worker](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) repository. You can run the following in your terminal to do this:
+4. **Download AI Models**: Download the models listed in `aiModels.json` to the `~/.lpData/models` directory using the [ld_checkpoints.sh](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) script from the [livepeer/ai-worker](https://github.com/livepeer/ai-worker/blob/main/runner/dl_checkpoints.sh) repository. To do this you can run the following in your terminal from the `.lpData` directory:
 
     ```bash
     curl -s https://raw.githubusercontent.com/livepeer/ai-worker/main/runner/dl_checkpoints.sh | bash -s -- --alpha
@@ -311,12 +311,12 @@ After successful **off-chain** testing of your Orchestrator and Gateway nodes, y
 
 ### On-chain AI Subnet Orchestrator Configuration
 
-To redeem _Mainnet AI Subnet_ tickets **on-chain**, your _Mainnet Transcoding Network_ Orchestrator needs to be set up and ranked within the top 100 Orchestrators. The setup steps are outlined in the [Livepeer Orchestrator Setup Documentation](https://docs.livepeer.org/orchestrators/guides/mainnet-transcoding-network). Once your _Mainnet Transcoding Network_ Orchestrator is set up, you can proceed with the **on-chain** configuration of your _mainnet AI Subnet_ Orchestrator. To do this without affecting your _Mainnet Transcoding Network_ Orchestrator, run a separate Orchestrator exclusively for the _AI Subnet_. This Orchestrator will process AI jobs on the _Mainnet AI Subnet_. If your _Mainnet Transcoding Network_ Orchestrator is up and running, there are two methods to have the AI tickets redeemed **on-chain** by your _Mainnet Transcoding Network_ Orchestrator:
+To redeem _Mainnet AI Subnet_ tickets **on-chain**, ensure your _Mainnet Transcoding Network_ Orchestrator is set up and ranked in the top 100. Refer to the [Livepeer Orchestrator Setup Documentation](https://docs.livepeer.org/orchestrators/guides/mainnet-transcoding-network) for setup steps. Once set up, configure your _Mainnet AI Subnet_ Orchestrator **on-chain**. Run a separate Orchestrator for the _AI Subnet_ to avoid affecting your main Orchestrator. This Orchestrator will handle AI jobs on the _Mainnet AI Subnet_. If your main Orchestrator is operational, there are two methods for **on-chain** AI ticket redemption:
 
--   **Method 1**: Redeem the AI tickets **on-chain** on your _Mainnet AI Subnet_ Orchestrator, using the `-ethOrchAddr` to set your _Mainnet Transcoding Network_ Orchestrator as the `recipient` of the tickets. **This method is recommended**.
+-   **Method 1 (Recommended)**: Redeem the AI tickets **on-chain** on your _Mainnet AI Subnet_ Orchestrator, using the `-ethOrchAddr` to set your _Mainnet Transcoding Network_ Orchestrator as the `recipient` of the tickets.
 -   **Method 2**: Set up a ticket redemption service using the `-redeemer` flag, and have your _Mainnet AI Subnet_ Orchestrator send the tickets to this service using the `redeemerAddr` flag.
 
-Both methods are detailed below.
+Detailed instructions for both methods are provided below.
 
 #### Set Ticket Recipient
 
@@ -325,61 +325,80 @@ The first and **recommended method** is to use the `ethOrchAddr` flag to set the
 1. Create a new Ethereum account for your _Mainnet AI Subnet_ Orchestrator. For security reasons, it's recommended to use a separate account from your _Mainnet Transcoding Network_ Orchestrator.
 2. Fund the Ethereum account with enough ETH to cover the gas costs of redeeming the AI tickets **on-chain**.
 3. Open port `8936` on your machine and set up port forwarding on your router to make the _Mainnet AI Subnet_ Orchestrator accessible from the internet.
-4. Start your _Mainnet AI Subnet_ Orchestrator with the `-ethOrchAddr` flag set to the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator. This flag specifies the recipient of the AI tickets.
 
-    **Binary Command**:
+After you have completed these steps, you can start your _Mainnet AI Subnet_ Orchestrator using the binary or Docker image.
+
+#### Binary Startup Command
+
+To start your _Mainnet AI Subnet_ Orchestrator using the [pre-built binaries](https://discord.com/channels/423160867534929930/577736983036559360), use the following command:
+
+```bash
+./livepeer \
+    -network arbitrum-one-mainnet \
+    -ethUrl https://arb1.arbitrum.io/rpc \
+    -orchestrator \
+    -transcoder \
+    -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
+    -v 6 \
+    -nvidia "all" \
+    -aiWorker \
+    -aiModels ~/.lpData/aiModels.json \
+    -aiModelsDir ~/.lpData/models \
+    -pricePerUnit 70 \
+    -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
+    -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
+```
+
+While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are two AI-specific flags to note when setting up your _Mainnet AI Subnet_ Orchestrator **on-chain**:
+
+-   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
+-   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
+
+Setting these flags correctly ensures that your _Mainnet AI Subnet_ Orchestrator is correctly configured to redeem AI tickets **on-chain**. 🎉
+
+#### Docker Startup Command
+
+To start your _Mainnet AI Subnet_ Orchestrator using Docker, follow these steps:
+
+1. **Mount the AI Subnet Orchestrator Wallet**: Ensure your AI Subnet Orchestrator wallet is available in the `~/.lpData/arbitrum-one-mainnet/keystore` directory.
+2. **Mount the AI Subnet Orchestrator Password File**: Ensure your AI Subnet Orchestrator password is available in the `~/.lpData/.eth_secret` file.
+3. **Run the Docker Command**: Execute the following command to start your _Mainnet AI Subnet_ Orchestrator:
 
     ```bash
-    ./livepeer \
-        -network arbitrum-one-mainnet \
-        -ethUrl https://arb1.arbitrum.io/rpc \
-        -orchestrator \
-        -transcoder \
-        -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
-        -v 6 \
-        -nvidia "all" \
-        -aiWorker \
-        -aiModels ~/.lpData/aiModels.json \
-        -aiModelsDir ~/.lpData/models \
-        -pricePerUnit 70 \
-        -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
-        -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
+     docker run \
+         -v ~/.lpData/:/root/.lpData/ \
+         -v /var/run/docker.sock:/var/run/docker.sock \
+         --network host \
+         --gpus all \
+         livepeer/go-livepeer:ai-video \
+         -network arbitrum-one-mainnet \
+         -ethUrl https://arb1.arbitrum.io/rpc \
+         -orchestrator \
+         -transcoder \
+         -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
+         -v 6 \
+         -nvidia "all" \
+         -aiWorker \
+         -aiModels /root/.lpData/aiModels.json \
+         -aiModelsDir ~/.lpData/models \
+         -pricePerUnit 70 \
+         -ethKeystorePath /root/.lpData/arbitrum-one-mainnet/keystore \
+         -ethPassword /root/.lpData/.eth_secret \
+         -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
+         -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
     ```
 
-    **Docker Command**:
+While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to note when setting up your Mainnet AI Subnet Orchestrator **on-chain** using docker:
 
-    ```bash
-    docker run \
-        -v ~/.lpData/:/root/.lpData/ \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        --network host \
-        --gpus all \
-        livepeer/go-livepeer:ai-video \
-        -network arbitrum-one-mainnet \
-        -ethUrl https://arb1.arbitrum.io/rpc \
-        -orchestrator \
-        -transcoder \
-        -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
-        -v 6 \
-        -nvidia "all" \
-        -aiWorker \
-        -aiModels /root/.lpData/aiModels.json \
-        -aiModelsDir ~/.lpData/models \
-        -pricePerUnit 70 \
-        -ethKeystorePath /root/.lpData/arbitrum-one-mainnet/keystore \
-        -ethPassword /root/.lpData/.eth_secret \
-        -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
-        -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
-    ```
+-   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
+-   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
 
-    In these configurations:
+Additionaly since the _AI Subnet_ software using [Docker-out-of-Docker](http://tdongsi.github.io/blog/2017/04/23/docker-out-of-docker/) to spin up the [AI Runner](https://github.com/livepeer/ai-worker) containers, two additional docker-specific flags are crucial:
 
-    - `<AI_SUBNET_ORCH_ETH_ADDRESS>` is the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
-    - `<MAIN_ORCH_ETH_ADDRESS>` is the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator, which will receive the AI rewards.
+-   `--network host`: Enables communication between the Docker daemon inside the container and the [AI Runner](https://github.com/livepeer/ai-worker) containers for AI inference jobs.
+-   `--aiModelsDir`: Specifies the directory on your **host machine** where AI models are stored. The Docker daemon uses this path to mount the models in the AI Runner containers.
 
-    The other flags are similar to those used in your [main Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference). Note that the `-pricePerUnit` flag, while not utilized by the _Mainnet AI Subnet_ Orchestrator, must be set to satisfy the transcoding client.
-
-Congratulations! You've successfully configured your _AI Subnet_ Orchestrator to redeem AI tickets **on-chain** and send the rewards to your _Mainnet Transcoding Network_ Orchestrator. 🎉
+Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator to redeem AI tickets **on-chain** successfully. 🎉
 
 #### Use a ticket Redemption Service
 
