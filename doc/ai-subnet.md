@@ -410,6 +410,68 @@ Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator t
 > [!IMPORTANT]
 > During the **alpha** phase, we're focusing our development efforts on the Livepeer.inc Gateway node for **on-chain** operations. While we plan to support additional **on-chain** Gateway nodes in the future, we currently don't offer setup documentation for them.
 
+## Provide Metrics to the AI SPE Team
+
+### Orchestrator Metrics
+
+> [!IMPORTANT]
+> Currently, only _AI Subnet_ Orchestrator nodes running inside a Docker container can send metrics. Binary installation does not support this feature.
+
+To help the AI SPE team monitor the _AI Subnet_ performance, you can opt to send metrics from your _AI Subnet_ Orchestrator. These metrics aid in understanding network health and identifying potential issues. Follow these steps:
+
+1. **Install Promtail**: Install [Promtail](https://grafana.com/docs/loki/latest/send-data/promtail/installation/) on your Orchestrator node:
+
+    ```bash
+    docker pull grafana/promtail:2.9.4
+    ```
+
+2. **Configure Promtail**: Create a Promtail folder at `/etc/promtail` and add a `ai_subnet_promtail.yml` configuration file in this directory:
+
+    ```yaml
+    # Replace placeholders with your details
+    clients:
+        - url: https://YOUR_NAME_HERE:YOUR_PASSWORD_HERE@dca-loki.livepeer.fun/loki/api/v1/push
+          external_labels:
+              node_name: YOUR_SERVER_NAME_HERE
+              operator: YOUR_NAME_HERE
+
+    scrape_configs:
+        - job_name: docker_logs
+          docker_sd_configs:
+              - host: unix:///var/run/docker.sock
+                refresh_interval: 5s
+          relabel_configs:
+              - source_labels: ["__meta_docker_container_name"]
+                regex: "/(.*)"
+                target_label: "container"
+              - source_labels: ["__meta_docker_container_log_stream"]
+                target_label: "logstream"
+              - source_labels: ["__meta_docker_container_label_logging_jobname"]
+                target_label: "job"
+    ```
+
+3. **Name Your Server**: Replace `YOUR_SERVER_NAME_HERE` with a unique server name.
+4. **Obtain Credentials**: Contact the AI SPE team on the [ai-video channel](https://discord.com/channels/423160867534929930/1187806216185974934) of the Livepeer community on [Discord](https://discord.gg/livepeer) for `YOUR_NAME_HERE`, `YOUR_PASSWORD`, and `YOUR_SERVER_NAME_HERE` values. Update these in the Promtail configuration file.
+5. **Start Promtail**: Run the following command:
+
+    ```bash
+    docker run \
+        -d \
+        --name=ai_subnet_promtail \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v /etc/promtail/ai_subnet_promtail.yml:/etc/promtail/ai_subnet_promtail.yml \
+        --network=host \
+        grafana/promtail:2.9.4 \
+        -config.file=/etc/promtail/ai_subnet_promtail.yml
+    ```
+
+Thank you for contributing to the AI SPE team's efforts to optimize the _AI Subnet_! 🚀
+
+### Gateway Metrics
+
+> [!IMPORTANT]
+> During the alpha phase, we only support the Livepeer.inc Gateway node for on-chain Gateway operations to streamline our development process. We plan to extend support to other on-chain Gateway nodes in the future. Therefore, we currently do not provide documentation for sending Gateway node metrics.
+
 ## Issues
 
 If you encounter any issues or have questions, feel free to reach out to us in the [ai-video channel](https://discord.com/channels/423160867534929930/1187806216185974934) of the Livepeer community on [Discord](https://discord.gg/livepeer).
