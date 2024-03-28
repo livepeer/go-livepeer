@@ -2,7 +2,7 @@
 
 Welcome to the [Livepeer Artificial Intelligence (AI) Subnet](https://explorer.livepeer.org/treasury/110409521297538895053642752647313688591695822800862508217133236436856613165807) 🤖! This comprehensive guide will assist you in setting up your Orchestrator or Gateway (formerly called Broadcaster) to utilize the AI Subnet of the [Livepeer protocol](https://livepeer.org/) for AI job processing.
 
-> [!ATTENTION]
+> [!CAUTION]
 > Please note that the AI Subnet is currently in **alpha** and under active development. Running it on the same machine as your main Orchestrator/Gateway node is not recommended due to potential stability issues. Proceed with caution and understand the associated risks.
 
 ## Background
@@ -69,7 +69,7 @@ Orchestrators on the AI subnet can select the [supported models](#supported-ai-m
             "warm": true
         },
         {
-            "pipeline": "text-to-image",
+            "pipeline": "image-to-image",
             "model_id": "ByteDance/SDXL-Lightning",
             "price_per_unit": 4768371
         },
@@ -80,6 +80,13 @@ Orchestrators on the AI subnet can select the [supported models](#supported-ai-m
         }
     ]
     ```
+
+    In this configuration:
+
+    - `pipeline`: This mandatory field specifies the type of inference you want to run. The currently supported pipelines are `text-to-image`, `image-to-video`, and `image-to-image`.
+    - `model_id`: This mandatory field is the [Hugging Face model ID](https://huggingface.co/docs/transformers/en/main_classes/model) of the model you want to use.
+    - `price_per_unit`: This mandatory field is the price in [Wei](https://ethdocs.org/en/latest/ether.html) per unit of work.
+    - `warm`: This optional field specifies if the model should be kept warm on the GPU. Keeping a model warm on the GPU reduces the time it takes to run the model as the model is already loaded on the GPU. In our current **alpha** phase, we only support one model per GPU. Therefore, if you have one GPU and one model warm, you cannot serve any other models.
 
 2. **Install Hugging Face CLI**: Install the Hugging Face CLI by running the following command:
 
@@ -213,9 +220,12 @@ Gateway nodes on the AI subnet can be set up using the [pre-built binaries](http
 
 #### AI Job Submission
 
+> [!IMPORTANT]
+> If you're using the `warm` flag in your `aiModels.json` ensure you have the right pipeline running on your orchestrator before submitting a job.
+
 To verify the correct functioning of your **off-chain** Gateway and Orchestrator nodes, submit an AI inference job for each of the supported pipelines.
 
-**Text-to-Image Inference Job**:
+#### Text-to-Image Inference Job
 
 To send an `text-to-image` inference job to the Gateway node and receive the result, follow these steps:
 
@@ -239,7 +249,9 @@ To send an `text-to-image` inference job to the Gateway node and receive the res
 
 Congratulations! You've successfully set up your **off-chain** AI Subnet Orchestrator and Gateway nodes to process `text-to-image` inference jobs 🎉. You can repeat the process for the `image-to-video` and `image-to-image` pipelines described below to ensure the correct functioning of all the AI inference pipelines you did setup in your `aiModels.json`.
 
-**Image-to-Image Inference Job**:
+#### Image-to-Image Inference Job
+
+<!-- TODO: Image-to-image steps not working.-->
 
 To send an `image-to-image` inference job to the Gateway node and receive the result, follow these steps:
 
@@ -258,26 +270,32 @@ To send an `image-to-image` inference job to the Gateway node and receive the re
     curl -O 0.0.0.0:8937/stream/dffff04c/6f247287.png
     ```
 
-**Image-to-Video Inference Job**:
+#### Image-to-Video Inference Job
+
+<!--TODO: Image-to-video steps not working.-->
 
 To send an `image-to-video` inference job to the Gateway node and receive the result, follow these steps:
 
 1. **Job Submission**: Submit a job using the `curl` command:
 
     ```bash
-    curl -X POST localhost:8936/image-to-video -F image=@<PATH_TO_IMAGE> -F model_id=stabilityai/stable-video-diffusion-img2vid-xt-1-
+    curl -X POST localhost:8937/image-to-video -F image=@<PATH_TO_IMAGE> -F model_id=stabilityai/stable-video-diffusion-img2vid-xt-1-1
     ```
 
     > [!NOTE]
     > Substitute `<PATH_TO_IMAGE>` with the **local path** of the image you want to use for video generation. This command employs [curl](https://curl.se/docs/manpage.html)'s `-F` flag to upload the image file to the Gateway node. Refer to the [curl documentation](https://curl.se/docs/manpage.html) for more details.
 
+    The output should look like:
+
+    ```bash
+    {"images":[{"seed":3865866304,"url":"/stream/8794a01b/1f9bc7f2.mp4"}]}
+    ```
+
 2. **Result Retrieval**: After job completion, you'll receive a JSON with a URL to download the result. Use `curl` to download:
 
     ```bash
-    curl -O 0.0.0.0:8937/stream/dffff04c/6f247287.png
+    curl -O localhost:8936/stream/8794a01b/1f9bc7f2.mp4
     ```
-
-% TODO: Done till here.
 
 ## On-chain Setup
 
