@@ -171,6 +171,7 @@ To run the _AI Subnet_ Orchestrator **off-chain** using Docker, follow these ste
 
     ```bash
     docker run \
+        --name livepeer_ai_orchestrator \
         -v ~/.lpData/:/root/.lpData/ \
         -v /var/run/docker.sock:/var/run/docker.sock \
         --network host \
@@ -219,7 +220,18 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
 2. **Run the AI Subnet Docker Image**: Execute the following command to start your _AI Subnet_ Gateway node:
 
     ```bash
-    docker run -v ~/.lpData2/:/root/.lpData2 -p 8937:8937 --network host livepeer/go-livepeer:ai-video -datadir ~/.lpData2 -broadcaster -orchAddr <ORCH_LIST> -httpAddr 0.0.0.0:8937 -v 6 -httpIngest
+    docker run \
+        --name livepeer_ai_gateway \
+        -v ~/.lpData2/:/root/.lpData2 \
+        -p 8937:8937 \
+        --network host \
+        livepeer/go-livepeer:ai-video \
+        -datadir ~/.lpData2 \
+        -broadcaster \
+        -orchAddr <ORCH_LIST> \
+        -httpAddr 0.0.0.0:8937 \
+        -v 6 \
+        -httpIngest
     ```
 
     As outlined in the [Gateway Binary Setup](#gateway-binary-setup), the flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) and are documented in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The `--orchAddr` and `--httpAddr` flags are essential for directing the Gateway node to your local Orchestrator and ensuring **off-chain** communication between the Gateway and the Orchestrator, respectively.
@@ -365,27 +377,28 @@ To start your _Mainnet AI Subnet_ Orchestrator using Docker, follow these steps:
 3. **Run the Docker Command**: Execute the following command to start your _Mainnet AI Subnet_ Orchestrator:
 
     ```bash
-     docker run \
-         -v ~/.lpData/:/root/.lpData/ \
-         -v /var/run/docker.sock:/var/run/docker.sock \
-         --network host \
-         --gpus all \
-         livepeer/go-livepeer:ai-video \
-         -network arbitrum-one-mainnet \
-         -ethUrl https://arb1.arbitrum.io/rpc \
-         -orchestrator \
-         -transcoder \
-         -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
-         -v 6 \
-         -nvidia "all" \
-         -aiWorker \
-         -aiModels /root/.lpData/aiModels.json \
-         -aiModelsDir ~/.lpData/models \
-         -pricePerUnit 70 \
-         -ethKeystorePath /root/.lpData/arbitrum-one-mainnet/keystore \
-         -ethPassword /root/.lpData/.eth_secret \
-         -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
-         -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
+    docker run \
+        --name livepeer_ai_orchestrator \
+        -v ~/.lpData/:/root/.lpData/ \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        --network host \
+        --gpus all \
+        livepeer/go-livepeer:ai-video \
+        -network arbitrum-one-mainnet \
+        -ethUrl https://arb1.arbitrum.io/rpc \
+        -orchestrator \
+        -transcoder \
+        -serviceAddr <PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT> \
+        -v 6 \
+        -nvidia "all" \
+        -aiWorker \
+        -aiModels /root/.lpData/aiModels.json \
+        -aiModelsDir ~/.lpData/models \
+        -pricePerUnit 70 \
+        -ethKeystorePath /root/.lpData/arbitrum-one-mainnet/keystore \
+        -ethPassword /root/.lpData/.eth_secret \
+        -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
+        -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
     ```
 
 While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to note when setting up your Mainnet AI Subnet Orchestrator **on-chain** using Docker:
