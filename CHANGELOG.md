@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.7.3
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2978](https://github.com/livepeer/go-livepeer/pull/2978) Update CUDA version from 11.x to 12.x (@leszko)
+- [#2973](https://github.com/livepeer/go-livepeer/pull/2973) Update ffmpeg version (@thomshutt)
+- [#2981](https://github.com/livepeer/go-livepeer/pull/2981) Add support for prices in custom currencies like USD (@victorges)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
 ## v0.7.2
 
 ### Breaking Changes 🚨🚨
@@ -562,7 +592,7 @@ Additional highlights of this release:
 - Support for EIP-1559 (otherwise known as type 2) Ethereum transactions which results in more predictable transaction confirmation times, reduces the chance of stuck pending transactions and avoids overpaying in gas fees. If you are interested in additional details on the implications of EIP-1559 transactions refer to this [resource](https://hackmd.io/@timbeiko/1559-resources).
 - An improvement in ticket parameter generation for orchestrators to prevent short lived gas price spikes on the Ethereum network from disrupting streams.
 - The node will automatically detect if the GPU enters an unrecoverable state and crash. The reason for crashing upon detecting an unrecoverable GPU state is that no transcoding will
-be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
+  be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 
