@@ -1,15 +1,11 @@
-# livepeer/cuda-base:11.7.1-cudnn8-devel-ubuntu20.04
+# livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
 #
-# Base CUDA Develop image which contains CUDA SDK libs for the following architectures: linux amd64, linux arm64, windows amd64
+# Base CUDA Develop image which contains CUDA SDK libs for the following architectures: linux amd64, linux arm64
 #
 # To build this image you need the following steps:
 # 1. Download NVIDIA CUDA SDK for ARM64, extract, and copy into cuda/arm64/usr/local/cuda/
-# 2. Download NVIDIA CUDA SDK for Windows AMD64, extract, and copy npp libs into npp_win/
 
-FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu20.04
-
-COPY npp_win/lib/x64/* /usr/local/cuda/lib64/
-COPY npp_win/include/* /usr/local/cuda/include/
+FROM nvidia/cuda:12.0.0-cudnn8-devel-ubuntu20.04
 
 RUN mkdir -p /usr/local/cuda_arm64/lib64/
 COPY cuda/arm64/usr/local/cuda/lib64/libnp* /usr/local/cuda_arm64/lib64/
