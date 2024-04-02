@@ -764,7 +764,7 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 
 	protoPayment := &net.Payment{
 		Sender:        sess.Broadcaster.Address().Bytes(),
-		ExpectedPrice: sess.OrchestratorInfo.PriceInfo,
+		ExpectedPrice: sess.InitialPrice,
 	}
 
 	if numTickets > 0 {
@@ -818,21 +818,14 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 }
 
 func validatePrice(sess *BroadcastSession) error {
-	oPrice, err := common.RatPriceInfo(sess.OrchestratorInfo.GetPriceInfo())
-	if err != nil {
-		return err
-	}
-	if oPrice == nil {
-		return errors.New("missing orchestrator price")
+	iPrice, err := common.RatPriceInfo(sess.InitialPrice)
+	if err != nil || iPrice == nil {
+		return errors.New("missing broadcast session price")
 	}
 
 	maxPrice := BroadcastCfg.MaxPrice()
-	if maxPrice != nil && oPrice.Cmp(maxPrice) == 1 {
+	if maxPrice != nil && iPrice.Cmp(maxPrice) == 1 {
 		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
-	}
-	iPrice, err := common.RatPriceInfo(sess.InitialPrice)
-	if err == nil && iPrice != nil && oPrice.Cmp(iPrice) == 1 {
-		return fmt.Errorf("Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", oPrice, iPrice)
 	}
 
 	return nil
