@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.7.4
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2989](https://github.com/livepeer/go-livepeer/pull/2989) Revert "Update ffmpeg version" (@thomshutt)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
 ## v0.7.3
 
 ### Breaking Changes 🚨🚨
