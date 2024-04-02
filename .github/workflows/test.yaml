@@ -52,9 +52,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('install_ffmpeg.sh') }}
+          key: ${{ runner.os }}-ffmpeg-${{ hashFiles('install_ffmpeg.sh') }}-2
           restore-keys: |
-            ${{ runner.os }}-ffmpeg
+            ${{ runner.os }}-ffmpeg-2
 
       - name: Install protobuf
         run: |
