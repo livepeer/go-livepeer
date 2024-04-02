@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /home/runner/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}-2
+          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Set build environment
         run: |
@@ -191,7 +191,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}-2
+          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
         run: brew install coreutils pkg-config
