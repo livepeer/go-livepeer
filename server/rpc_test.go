@@ -553,7 +553,7 @@ func TestGenPayment(t *testing.T) {
 	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 5}
 	payment, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
-	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+	assert.Errorf(err, "Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/5")
 
 	s.InitialPrice = nil
 
