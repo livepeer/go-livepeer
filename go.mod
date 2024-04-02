@@ -8,12 +8,12 @@ require (
 	github.com/ethereum/go-ethereum v1.13.5
 	github.com/golang/glog v1.1.1
 	github.com/golang/mock v1.6.0
-	github.com/golang/protobuf v1.5.3
+	github.com/golang/protobuf v1.5.4
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
 	github.com/livepeer/go-tools v0.0.0-20220805063103-76df6beb6506
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
-	github.com/livepeer/lpms v0.0.0-20240115103113-98566e26c007
+	github.com/livepeer/lpms v0.0.0-20240402101153-ced71c476bd0
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/olekukonko/tablewriter v0.0.5
@@ -28,7 +28,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.17.0
 	google.golang.org/grpc v1.57.1
-	google.golang.org/protobuf v1.30.0
+	google.golang.org/protobuf v1.33.0
 	pgregory.net/rapid v1.1.0
 )
 
