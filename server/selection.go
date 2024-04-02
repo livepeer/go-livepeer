@@ -185,6 +185,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 			prices[addr] = big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit)
 		}
 	}
+	maxPrice := BroadcastCfg.MaxPrice()
 
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	if err != nil {
@@ -201,7 +202,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		s.perfScore.Mu.Unlock()
 	}
 
-	selected := s.selectionAlgorithm.Select(addrs, stakes, prices, perfScores)
+	selected := s.selectionAlgorithm.Select(addrs, stakes, maxPrice, prices, perfScores)
 
 	for i, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {

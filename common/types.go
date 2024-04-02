@@ -105,7 +105,7 @@ type OrchestratorPool interface {
 }
 
 type SelectionAlgorithm interface {
-	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address
+	Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address
 }
 
 type PerfScore struct {

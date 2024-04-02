@@ -14,6 +14,8 @@ func TestFilter(t *testing.T) {
 	tests := []struct {
 		name             string
 		orchMinPerfScore float64
+		maxPrice         float64
+		prices           map[string]float64
 		orchPerfScores   map[string]float64
 		orchestrators    []string
 		want             []string
@@ -87,21 +89,126 @@ func TestFilter(t *testing.T) {
 				"0x0000000000000000000000000000000000000004",
 			},
 		},
+		{
+			name:             "All prices below max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         2000,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1500,
+				"0x0000000000000000000000000000000000000003": 1000,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+		},
+		{
+			name:             "All prices above max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         100,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1500,
+				"0x0000000000000000000000000000000000000003": 1000,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+		},
+		{
+			name:             "Mix of prices relative to max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         750,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1500,
+				"0x0000000000000000000000000000000000000003": 700,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.8,
+				"0x0000000000000000000000000000000000000002": 0.6,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000003",
+			},
+		},
+		{
+			name:             "Exact match with max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         1000,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1000, // exactly max
+				"0x0000000000000000000000000000000000000003": 1500,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.8,
+				"0x0000000000000000000000000000000000000002": 0.9,
+				"0x0000000000000000000000000000000000000003": 0.6,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var addrs []ethcommon.Address
+			var maxPrice *big.Rat
+			prices := map[ethcommon.Address]*big.Rat{}
 			perfScores := map[ethcommon.Address]float64{}
 			for _, o := range tt.orchestrators {
-				perfScores[ethcommon.HexToAddress(o)] = tt.orchPerfScores[o]
-				addrs = append(addrs, ethcommon.HexToAddress(o))
+				addr := ethcommon.HexToAddress(o)
+				addrs = append(addrs, addr)
+				perfScores[addr] = tt.orchPerfScores[o]
+				if price, ok := tt.prices[o]; ok {
+					prices[addr] = new(big.Rat).SetFloat64(price)
+				}
+			}
+			if tt.maxPrice > 0 {
+				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
 			}
 			sa := &ProbabilitySelectionAlgorithm{
 				MinPerfScore: tt.orchMinPerfScore,
 			}
 
-			res := sa.filter(addrs, perfScores)
+			res := sa.filter(addrs, maxPrice, prices, perfScores)
 
 			var exp []ethcommon.Address
 			for _, o := range tt.want {
