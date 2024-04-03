@@ -826,10 +826,6 @@ func validatePrice(sess *BroadcastSession) error {
 		return errors.New("missing orchestrator price")
 	}
 
-	maxPrice := BroadcastCfg.MaxPrice()
-	if maxPrice != nil && oPrice.Cmp(maxPrice) == 1 {
-		return fmt.Errorf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", maxPrice.Num().Int64(), maxPrice.Denom().Int64())
-	}
 	iPrice, err := common.RatPriceInfo(sess.InitialPrice)
 	if err == nil && iPrice != nil && oPrice.Cmp(iPrice) == 1 {
 		return fmt.Errorf("Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", oPrice, iPrice)

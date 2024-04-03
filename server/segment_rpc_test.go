@@ -1677,14 +1677,15 @@ func TestSubmitSegment_GenPaymentError_ValidatePriceError(t *testing.T) {
 		Sender:           sender,
 		Balance:          balance,
 		OrchestratorInfo: oinfo,
+		InitialPrice: &net.PriceInfo{
+			PricePerUnit:  1,
+			PixelsPerUnit: 5,
+		},
 	}
-
-	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 5)))
-	defer BroadcastCfg.SetMaxPrice(nil)
 
 	_, err := SubmitSegment(context.TODO(), s, &stream.HLSSegment{}, nil, 0, false, true)
 
-	assert.EqualErrorf(t, err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+	assert.EqualError(t, err, fmt.Sprintf("Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/5"))
 	balance.AssertCalled(t, "Credit", existingCredit)
 }
 

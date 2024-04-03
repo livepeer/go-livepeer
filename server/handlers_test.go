@@ -520,13 +520,13 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	assert.Zero(t, s.LivepeerNode.GetBasePrice("default").Cmp(big.NewRat(1, 1)))
 
 	err = s.setOrchestratorPriceInfo("default", "-5", "1", "")
-	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than or equal to 0, provided %d\n", -5)
+	assert.EqualError(t, err, fmt.Sprintf("price unit must be greater than or equal to 0, provided %d", -5))
 
 	// pixels per unit <= 0
 	err = s.setOrchestratorPriceInfo("default", "1", "0", "")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", 0)
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", 0))
 	err = s.setOrchestratorPriceInfo("default", "1", "-5", "")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", -5)
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", -5))
 
 }
 func TestSetPriceForBroadcasterHandler(t *testing.T) {
