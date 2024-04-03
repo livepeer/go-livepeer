@@ -550,10 +550,10 @@ func TestGenPayment(t *testing.T) {
 	s.Sender = sender
 
 	// Test changing O price
-	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 5}
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 7}
 	payment, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
-	assert.Errorf(err, "Orchestrator price has changed, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/5")
+	assert.Errorf(err, "Orchestrator price has more than doubled, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/7")
 
 	s.InitialPrice = nil
 
@@ -694,10 +694,15 @@ func TestValidatePrice(t *testing.T) {
 	err = validatePrice(s)
 	assert.Nil(err)
 
-	// O Initial Price lower than O Price
-	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 10}
+	// O Price higher but up to 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 6}
 	err = validatePrice(s)
-	assert.ErrorContains(err, "price has changed")
+	assert.Nil(err)
+
+	// O Price higher than 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 6001}
+	err = validatePrice(s)
+	assert.ErrorContains(err, "price has more than doubled")
 
 	// O.PriceInfo is nil
 	s.OrchestratorInfo.PriceInfo = nil

@@ -10,6 +10,8 @@
 
 #### Broadcaster
 
+- [#2995](https://github.com/livepeer/go-livepeer/pull/2995) server: Allow Os price to increase up to 2x mid-session (@victorges)
+
 #### Orchestrator
 
 #### Transcoder
