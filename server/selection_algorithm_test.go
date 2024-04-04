@@ -1,9 +1,11 @@
 package server
 
 import (
+	"math/big"
+	"testing"
+
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 const testPriceExpFactor = 100
@@ -160,13 +162,13 @@ func TestCalculateProbabilities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var orchs []ethcommon.Address
 			stakes := map[ethcommon.Address]int64{}
-			prices := map[ethcommon.Address]float64{}
+			prices := map[ethcommon.Address]*big.Rat{}
 			expProbs := map[ethcommon.Address]float64{}
 			for i, addrStr := range tt.addrs {
 				addr := ethcommon.HexToAddress(addrStr)
 				orchs = append(orchs, addr)
 				stakes[addr] = tt.stakes[i]
-				prices[addr] = tt.prices[i]
+				prices[addr] = new(big.Rat).SetFloat64(tt.prices[i])
 				expProbs[addr] = tt.want[i]
 			}
 

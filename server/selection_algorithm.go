@@ -1,11 +1,13 @@
 package server
 
 import (
-	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
 	"math"
+	"math/big"
 	"math/rand"
 	"time"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/golang/glog"
 )
 
 var random = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -20,7 +22,7 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceExpFactor float64
 }
 
-func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
 	filtered := sa.filter(addrs, perfScores)
 	probabilities := sa.calculateProbabilities(filtered, stakes, prices)
 	return selectBy(probabilities)
@@ -48,10 +50,10 @@ func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, scores
 	return res
 }
 
-func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64) map[ethcommon.Address]float64 {
+func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]*big.Rat) map[ethcommon.Address]float64 {
 	pricesNorm := map[ethcommon.Address]float64{}
 	for _, addr := range addrs {
-		p := prices[addr]
+		p, _ := prices[addr].Float64()
 		pricesNorm[addr] = math.Exp(-1 * p / sa.PriceExpFactor)
 	}
 
