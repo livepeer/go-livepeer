@@ -29,47 +29,53 @@ func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes
 }
 
 func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) []ethcommon.Address {
-	hasScores := sa.MinPerfScore > 0 && len(perfScores) > 0
-	hasMaxPrice := maxPrice != nil && len(prices) > 0
-	if !hasScores && !hasMaxPrice {
-		// No filters defined, return all Orchestrators
+	filteredByPerfScore := sa.filterByPerfScore(addrs, perfScores)
+	return sa.filterByMaxPrice(filteredByPerfScore, maxPrice, prices)
+}
+
+func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(addrs []ethcommon.Address, scores map[ethcommon.Address]float64) []ethcommon.Address {
+	if sa.MinPerfScore <= 0 || len(scores) == 0 {
+		// Performance Score filter not defined, return all Orchestrators
 		return addrs
 	}
 
-	applyFilter := func(pred func(ethcommon.Address) bool) []ethcommon.Address {
-		var res []ethcommon.Address
-		for _, addr := range addrs {
-			if pred(addr) {
-				res = append(res, addr)
-			}
+	var res []ethcommon.Address
+	for _, addr := range addrs {
+		if scores[addr] >= sa.MinPerfScore {
+			res = append(res, addr)
 		}
-		return res
 	}
 
-	filtered := applyFilter(func(addr ethcommon.Address) bool {
-		if hasScores && perfScores[addr] < sa.MinPerfScore {
-			return false
-		}
-		oPrice := prices[addr]
-		if hasMaxPrice && oPrice != nil && oPrice.Cmp(maxPrice) > 0 {
-			return false
-		}
-		return true
-	})
-	if len(filtered) == 0 && hasScores {
-		// If no orchestrators pass the filter, try ignoring the max price.
-		filtered = applyFilter(func(addr ethcommon.Address) bool {
-			return perfScores[addr] >= sa.MinPerfScore
-		})
-	}
-
-	if len(filtered) == 0 {
+	if len(res) == 0 {
 		// If no orchestrators pass the perf filter, return all Orchestrators.
 		// That may mean some issues with the PerfScore service.
 		glog.Warning("No Orchestrators passed min performance score filter, not using the filter")
 		return addrs
 	}
-	return filtered
+	return res
+}
+
+func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
+	if maxPrice == nil || len(prices) == 0 {
+		// Max price filter not defined, return all Orchestrators
+		return addrs
+	}
+
+	var res []ethcommon.Address
+	for _, addr := range addrs {
+		price := prices[addr]
+		if price != nil && price.Cmp(maxPrice) <= 0 {
+			res = append(res, addr)
+		}
+	}
+
+	if len(res) == 0 {
+		// If no orchestrators pass the filter, return all Orchestrators
+		// It means that no orchestrators are below the max price
+		glog.Warning("No Orchestrators passed max price filter, not using the filter")
+		return addrs
+	}
+	return res
 }
 
 func (sa ProbabilitySelectionAlgorithm) calculateProbabilities(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]*big.Rat) map[ethcommon.Address]float64 {
