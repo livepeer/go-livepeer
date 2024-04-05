@@ -145,7 +145,14 @@ To run the _AI Subnet_ Orchestrator **off-chain** using the [pre-build binaries]
 
     While most of these flags are already used in the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) (documented in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference)), the `-aiWorker`, `-aiModels`, and `-aiModelsDir` flags are new. They enable the _AI Subnet_ Orchestrator, define the location of your AI models configuration, and specify the directory where the models are stored on your machine, respectively. If the `aiModelsDir` flag is not set, the _AI Subnet_ Orchestrator will look for the models in the `~/.lpData/<NETWORK>/models` directory.
 
-5. **Verify Setup**: Confirm that the _AI Subnet_ Orchestrator node is operating on port `8936`. To make the Gateway node accessible from the internet, unblock port `8936` on your machine and set up port forwarding on your router.
+5. **Verify Setup**: If your _AI Subnet_ Orchestrator is running correctly, you should see the following output:
+
+    ```bash
+    I0405 22:03:17.427058 2655655 rpc.go:301] Connecting RPC to uri=https://0.0.0.0:8936
+    I0405 22:03:17.430371 2655655 rpc.go:254] Received Ping request
+    ```
+
+6. **Check Port Availability**: Confirm that the _AI Subnet_ Orchestrator node is operating on port `8936`. Unblock port `8936` on your machine and set up port forwarding on your router to make the Gateway node accessible from the internet.
 
 > [!NOTE]
 > If no binaries are available for your system, you can build the [ai-video branch](https://github.com/livepeer/go-livepeer/tree/ai-video) of [go-livepeer](https://github.com/livepeer/go-livepeer) from source by following the instructions in the [Livepeer repository](https://docs.livepeer.org/orchestrators/guides/install-go-livepeer) or by reaching out to the Livepeer community on [Discord](https://discord.gg/livepeer).
@@ -190,7 +197,14 @@ To run the _AI Subnet_ Orchestrator **off-chain** using Docker, follow these ste
 
     As outlined in the [Orchestrator Binary Setup](#orchestrator-binary-setup), the `-aiWorker`, `-aiModels`, and `-aiModelsDir` flags are unique to the _AI Subnet_ Orchestrator. The remaining flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) as detailed in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The AI-specific flags activate the _AI Subnet_ Orchestrator, specify the location of your AI models configuration file, and define the directory for model storage on your machine. If `aiModelsDir` is not set, the _AI Subnet_ Orchestrator defaults to the `~/.lpData/<NETWORK>/models` directory for model storage.
 
-4. **Verify Setup**: Confirm that the _AI Subnet_ Orchestrator node is operating on port `8936`. To make the Gateway node accessible from the internet, unblock port `8936` on your machine and set up port forwarding on your router.
+4. **Verify Setup**: If your _AI Subnet_ Orchestrator is running correctly, you should see the following output:
+
+    ```bash
+    I0405 22:03:17.427058 2655655 rpc.go:301] Connecting RPC to uri=https://0.0.0.0:8936
+    I0405 22:03:17.430371 2655655 rpc.go:254] Received Ping request
+    ```
+
+5. **Check Port Availability**: Confirm that the _AI Subnet_ Orchestrator node is operating on port `8936`. Unblock port `8936` on your machine and set up port forwarding on your router to make the Gateway node accessible from the internet.
 
 ### Gateway Setup
 
@@ -213,7 +227,14 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
 
     The flags used here also apply to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer). To comprehensively understand these flags, consult the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). Specifically, the `--orchAddr` and `--httpAddr` flags are crucial for routing the Gateway node to your local Orchestrator (i.e., `0.0.0.0:8936`) and facilitating **off-chain** communication between the Gateway and the Orchestrator.
 
-3. **Verify Setup**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. To make the Gateway node accessible from the internet, unblock port `8937` on your machine and set up port forwarding on your router.
+3. **Verify Setup**: If your _AI Subnet_ Gateway node is running correctly, you should see the following output:
+
+    ```bash
+    I0405 22:08:48.667588 2669536 mediaserver.go:226] HTTP Server listening on http://0.0.0.0:8937
+    I0405 22:08:48.667607 2669536 lpms.go:92] LPMS Server listening on rtmp://127.0.0.1:1935
+    ```
+
+4. **Check Port Availability**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. Unblock port `8937` on your machine and set up port forwarding on your router to make the Gateway node accessible from the internet.
 
 #### Gateway Docker Setup
 
@@ -237,7 +258,14 @@ Gateway nodes on the _AI Subnet_ can be set up using the [pre-built binaries](ht
 
     As outlined in the [Gateway Binary Setup](#gateway-binary-setup), the flags are common to the [Mainnet transcoding network](https://github.com/livepeer/go-livepeer) and are documented in the [Livepeer documentation](https://docs.livepeer.org/references/go-livepeer/cli-reference). The `--orchAddr` and `--httpAddr` flags are essential for directing the Gateway node to your local Orchestrator and ensuring **off-chain** communication between the Gateway and the Orchestrator, respectively.
 
-3. **Verify Setup**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. To make the Gateway node accessible from the internet, unblock port `8937` on your machine and set up port forwarding on your router.
+3. **Verify Setup**: If your _AI Subnet_ Gateway node is running correctly, you should see the following output:
+
+    ```bash
+    I0405 22:08:48.667588 2669536 mediaserver.go:226] HTTP Server listening on http://0.0.0.0:8937
+    I0405 22:08:48.667607 2669536 lpms.go:92] LPMS Server listening on rtmp://127.0.0.1:1935
+    ```
+
+4. **Check Port Availability**: Confirm that the _AI Subnet_ Gateway node is operating on port `8937`. Unblock port `8937` on your machine and set up port forwarding on your router to make the Gateway node accessible from the internet.
 
 #### AI Job Submission
 
@@ -416,11 +444,6 @@ Additionally since the _AI Subnet_ software using [Docker-out-of-Docker](http://
 
 Correctly setting these flags configures your _Mainnet AI Subnet_ Orchestrator to successfully redeem AI tickets **on-chain**. 🎉
 
-#### Use a ticket Redemption Service
-
-> [!NOTE]
-> Coming soon.
-
 ### On-chain Gateway Setup
 
 > [!IMPORTANT]
@@ -479,6 +502,23 @@ To help the AI SPE team monitor the _AI Subnet_ performance, you can opt to send
         --network=host \
         grafana/promtail:2.9.4 \
         -config.file=/etc/promtail/ai_subnet_promtail.yml
+    ```
+
+6. **Verify Setup**: Confirm that Promtail is running correctly by checking the logs:
+
+    ```bash
+    docker logs ai_subnet_promtail
+    ```
+
+    The output should look like:
+
+    ```bash
+    level=info ts=2024-04-05T20:19:44.284132548Z caller=promtail.go:133 msg="Reloading configuration file" md5sum=3d2b13da03e519c5fdcbdc424436d38f
+    level=info ts=2024-04-05T20:19:44.284653164Z caller=server.go:322 http=[::]:80 grpc=[::]:9095 msg="server listening on addresses"
+    level=info ts=2024-04-05T20:19:44.28473552Z caller=main.go:174 msg="Starting Promtail" version="(version=2.9.4, branch=HEAD, revision=f599ebc535)"
+    level=warn ts=2024-04-05T20:19:44.284751581Z caller=promtail.go:263 msg="enable watchConfig"
+    level=info ts=2024-04-05T20:19:49.285276484Z caller=target_group.go:128 msg="added Docker  target" containerID=2b8e274905d269f987f1a9ff889c7d82e3bcca3e31cc26084fe5662fb0f2d298
+    level=info ts=2024-04-05T20:19:49.285319906Z caller=target_group.go:128 msg="added Docker  target" containerID=e611b5dac9ced58bb553c5e42a415f7062c78e202f5a1baf38b223fc033cbb5c
     ```
 
 Thank you for contributing to the AI SPE team's efforts to optimize the _AI Subnet_! 🚀
