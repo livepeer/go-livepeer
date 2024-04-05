@@ -620,7 +620,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.False(t, pool.pred(oInfo))
 }
 
-func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) {
+func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -698,14 +698,15 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) 
 	}
 
 	// check size
-	assert.Equal(0, pool.Size())
+	assert.Equal(50, pool.Size())
 
 	urls := pool.GetInfos()
-	assert.Len(urls, 0)
+	assert.Len(urls, 50)
+
 	infos, err := pool.GetOrchestrators(context.TODO(), len(addresses), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(infos, 0)
+	assert.Len(infos, 50)
 }
 
 func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
@@ -899,22 +900,27 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		assert.Contains(testOrchs[25:], toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel))
 	}
 
-	// check size
-	assert.Equal(25, pool.Size())
+	// check pool returns all Os, not filtering by max price
+	assert.Equal(50, pool.Size())
 
 	infos := pool.GetInfos()
-	assert.Len(infos, 25)
+	assert.Len(infos, 50)
 	for _, info := range infos {
-		assert.Contains(addresses[25:], info.URL.String())
+		assert.Contains(addresses, info.URL.String())
 	}
 
 	oinfos, err := pool.GetOrchestrators(context.TODO(), len(orchestrators), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(oinfos, 25)
+	assert.Len(oinfos, 50)
+
+	seenAddrs := make(map[string]bool)
 	for _, info := range oinfos {
-		assert.Equal(info.RemoteInfo.Transcoder, "goodPriceTranscoder")
+		addr := info.LocalInfo.URL.String()
+		assert.Contains(addresses, addr)
+		seenAddrs[addr] = true
 	}
+	assert.Len(seenAddrs, 50)
 }
 
 func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {

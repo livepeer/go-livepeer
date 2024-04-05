@@ -4,10 +4,12 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"math/big"
+	"testing"
+
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/require"
-	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
@@ -89,7 +91,7 @@ func (r *stubStakeReader) SetStakes(stakes map[ethcommon.Address]int64) {
 
 type stubSelectionAlgorithm struct{}
 
-func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
 	if len(addrs) == 0 {
 		return ethcommon.Address{}
 	}
@@ -98,7 +100,7 @@ func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[et
 		// select lowest price
 		lowest := prices[addr]
 		for _, a := range addrs {
-			if prices[a] < lowest {
+			if prices[a].Cmp(lowest) < 0 {
 				addr = a
 				lowest = prices[a]
 			}
