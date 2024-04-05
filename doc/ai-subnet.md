@@ -94,7 +94,8 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
     - `pipeline`: This mandatory field specifies the type of inference you want to run. The currently supported pipelines are `text-to-image`, `image-to-video`, and `image-to-image`.
     - `model_id`: This mandatory field is the [Hugging Face model ID](https://huggingface.co/docs/transformers/en/main_classes/model) of the model you want to use.
     - `price_per_unit`: This mandatory field is the price in [Wei](https://ethdocs.org/en/latest/ether.html) per unit of work.
-    - `warm`: This optional field specifies if the model should be kept warm on the GPU. Keeping a model warm on the GPU reduces the time it takes to run the model as it is already loaded on the GPU. We only support one model per GPU in our current **alpha** phase. Therefore, if you have one GPU and one model warm, you cannot serve any other models.
+    - `warm`: By default, the Livepeer software dynamically loads the model onto the GPU as needed. However, if you set this flag to `true`, the model will be preloaded onto the GPU when the Orchestrator starts and will remain there, a state referred to as 'warm'. This approach reduces the model's runtime as it's already loaded onto the GPU when requests com in. Please note that in our current **alpha** phase, we only support one model per GPU. Consequently, if you have one GPU and one 'warm' model, you won't be able to serve any other models.
+    - `warm`: By default, the Livepeer software loads the AI model onto the GPU on-demand. If you set this flag to `true`, the model is preloaded onto the GPU when the Orchestrator starts, keeping it 'warm'. This means it stays loaded on the GPU, reducing the model's execution time as it's immediately available when requests come in. However, in our current **alpha** phase, we support only one model per GPU. So, if you have a single GPU and a 'warm' model, you won't be able to serve additional models.
 
 2. **Install Hugging Face CLI**: Install the Hugging Face CLI by running the following command:
 
@@ -357,6 +358,7 @@ To start your _Mainnet AI Subnet_ Orchestrator using the [pre-built binaries](ht
     -aiModels ~/.lpData/aiModels.json \
     -aiModelsDir ~/.lpData/models \
     -pricePerUnit 70 \
+    -ticketEV 2999999999999 \
     -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
     -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
 ```
@@ -395,6 +397,7 @@ To start your _Mainnet AI Subnet_ Orchestrator using Docker, follow these steps:
         -aiModels /root/.lpData/aiModels.json \
         -aiModelsDir ~/.lpData/models \
         -pricePerUnit 70 \
+        -ticketEV 2999999999999 \
         -ethKeystorePath /root/.lpData/arbitrum-one-mainnet/keystore \
         -ethPassword /root/.lpData/.eth_secret \
         -ethAcctAddr <AI_SUBNET_ORCH_ETH_ADDRESS> \
@@ -406,7 +409,7 @@ While most flags found in this command are similar to those used when running [M
 -   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
 -   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
 
-Additionaly since the _AI Subnet_ software using [Docker-out-of-Docker](http://tdongsi.github.io/blog/2017/04/23/docker-out-of-docker/) to spin up the [AI Runner](https://github.com/livepeer/ai-worker) containers, two additional docker-specific flags are crucial:
+Additionally since the _AI Subnet_ software using [Docker-out-of-Docker](http://tdongsi.github.io/blog/2017/04/23/docker-out-of-docker/) to spin up the [AI Runner](https://github.com/livepeer/ai-worker) containers, two additional docker-specific flags are crucial:
 
 -   `--network host`: Enables communication between the Docker daemon inside the container and the [AI Runner](https://github.com/livepeer/ai-worker) containers for AI inference jobs.
 -   `--aiModelsDir`: Specifies the directory on your **host machine** where AI models are stored. The Docker daemon uses this path to mount the models in the AI Runner containers.
