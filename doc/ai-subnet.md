@@ -329,7 +329,7 @@ To redeem _Mainnet AI Subnet_ tickets **on-chain**, ensure your _Mainnet Transco
 -   **Method 1 (Recommended)**: Redeem the AI tickets **on-chain** on your _Mainnet AI Subnet_ Orchestrator, using the `-ethOrchAddr` to set your _Mainnet Transcoding Network_ Orchestrator as the tickets `recipient.
 -   **Method 2**: Set up a ticket redemption service using the `-redeemer` flag, and have your _Mainnet AI Subnet_ Orchestrator send the tickets to this service using the `redeemerAddr` flag.
 
-Detailed instructions for both methods are provided below.
+Below, you'll find comprehensive instructions for the first method. While a [second method is available](https://docs.livepeer.org/references/go-livepeer/cli-reference#onchain), it's generally not advised due to its requirement for configuring a ticket redemption service directly on your primary Orchestrator. This setup could impact the Orchestrator's performance, introducing extra latency and the possibility of other complications.
 
 #### Set Ticket Recipient
 
@@ -363,7 +363,7 @@ To start your _Mainnet AI Subnet_ Orchestrator using the [pre-built binaries](ht
     -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
 ```
 
-While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are two AI-specific flags to note when setting up your _Mainnet AI Subnet_ Orchestrator **on-chain**:
+The `pricePerUnit` flag is disregarded by the _AI Subnet_ Orchestrator, as the pricing is determined by the [AI models configuration file](#ai-models-configuration). However, it's currently still necessary to initiate the Orchestrator. While the majority of the other flags in this command resemble those used when operating a [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are two AI-specific flags to be aware of when setting up your _Mainnet AI Subnet_ Orchestrator **on-chain** using Docker:
 
 -   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
 -   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
@@ -404,7 +404,7 @@ To start your _Mainnet AI Subnet_ Orchestrator using Docker, follow these steps:
         -ethOrchAddr <MAIN_ORCH_ETH_ADDRESS>
     ```
 
-While most flags found in this command are similar to those used when running [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to note when setting up your Mainnet AI Subnet Orchestrator **on-chain** using Docker:
+The `pricePerUnit` flag is disregarded by the _AI Subnet_ Orchestrator, as the pricing is determined by the [AI models configuration file](#ai-models-configuration). However, it's currently still necessary to initiate the Orchestrator. While the majority of the other flags in this command resemble those used when operating a [Mainnet transcoding Orchestrator](https://docs.livepeer.org/references/go-livepeer/cli-reference), there are four AI-specific flags to be aware of when setting up your _Mainnet AI Subnet_ Orchestrator **on-chain** using Docker:
 
 -   `-ethAcctAddr`: This flag specifies the Ethereum address of your _Mainnet AI Subnet_ Orchestrator.
 -   `-ethOrchAddr`: This flag specifies the Ethereum address of your _Mainnet Transcoding Network_ Orchestrator.
