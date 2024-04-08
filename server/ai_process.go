@@ -25,6 +25,7 @@ const maxProcessingRetries = 4
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
+const defaultTextToVideoModelID = "ByteDance/AnimateDiff-Lightning"
 
 type ServiceUnavailableError struct {
 	err error
@@ -268,6 +269,83 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	return &res, nil
 }
 
+func processTextToVideo(ctx context.Context, params aiRequestParams, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// HACK: Re-use worker.ImageResponse to return results
+	videos := make([]worker.Media, len(resp.Images))
+	for i, media := range resp.Images {
+		data, err := downloadSeg(ctx, media.Url)
+		if err != nil {
+			return nil, err
+		}
+
+		name := filepath.Base(media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		videos[i] = worker.Media{
+			Url:  newUrl,
+			Seed: media.Seed,
+		}
+	}
+
+	resp.Images = videos
+
+	return resp, nil
+}
+
+func submitTextToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Height == nil {
+		req.Height = new(int)
+		*req.Height = 576
+	}
+	if req.Width == nil {
+		req.Width = new(int)
+		*req.Width = 1024
+	}
+	frames := int64(25)
+
+	outPixels := int64(*req.Height) * int64(*req.Width) * frames
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	resp, err := client.TextToVideoWithResponse(ctx, req, setHeaders)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.ImageResponse
+	if err := json.Unmarshal(resp.Body, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (*worker.ImageResponse, error) {
 	var cap core.Capability
 	var modelID string
@@ -300,6 +378,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
 			return submitImageToVideo(ctx, params, sess, v)
+		}
+	case worker.TextToVideoJSONRequestBody:
+		cap = core.Capability_TextToVideo
+		modelID = defaultTextToVideoModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+			return submitTextToVideo(ctx, params, sess, v)
 		}
 	default:
 		return nil, errors.New("unknown AI request type")

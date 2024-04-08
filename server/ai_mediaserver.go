@@ -18,29 +18,29 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-type ImageToVideoResponseAsync struct {
+type VideoResponseAsync struct {
 	RequestID string `json:"request_id"`
 }
 
-type ImageToVideoResultRequest struct {
+type VideoResultRequest struct {
 	RequestID string `json:"request_id"`
 }
 
-type ImageToVideoResultResponse struct {
-	Result *ImageToVideoResult `json:"result,omitempty"`
-	Status ImageToVideoStatus  `json:"status"`
+type VideoResultResponse struct {
+	Result *VideoResult `json:"result,omitempty"`
+	Status VideoStatus  `json:"status"`
 }
 
-type ImageToVideoResult struct {
+type VideoResult struct {
 	*worker.ImageResponse
 	Error *APIError `json:"error,omitempty"`
 }
 
-type ImageToVideoStatus string
+type VideoStatus string
 
 const (
-	Processing ImageToVideoStatus = "processing"
-	Complete   ImageToVideoStatus = "complete"
+	Processing VideoStatus = "processing"
+	Complete   VideoStatus = "complete"
 )
 
 func startAIMediaServer(ls *LivepeerServer) error {
@@ -66,7 +66,9 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(ls.TextToImage()))
 	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(ls.ImageToImage()))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
-	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
+	ls.HTTPMux.Handle("/image-to-video/result", ls.VideoResult())
+	ls.HTTPMux.Handle("/text-to-video", oapiReqValidator(ls.TextToVideo()))
+	ls.HTTPMux.Handle("/text-to-video/result", ls.VideoResult())
 
 	return nil
 }
@@ -261,7 +263,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			clog.Infof(ctx, "Saved ImageToVideo result path=%v", path)
 		}(cctx)
 
-		resp := &ImageToVideoResponseAsync{
+		resp := &VideoResponseAsync{
 			RequestID: requestID,
 		}
 
@@ -271,12 +273,116 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
+func (ls *LivepeerServer) TextToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
+		var req worker.TextToVideoJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		var async bool
+		prefer := r.Header.Get("Prefer")
+		if prefer == "respond-async" {
+			async = true
+		}
+
+		clog.V(common.VERBOSE).Infof(ctx, "Received TextToVideo request prompt=%v model_id=%v async=%v", req.Prompt, *req.ModelId, async)
+
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+		}
+
+		if !async {
+			start := time.Now()
+
+			resp, err := processTextToVideo(ctx, params, req)
+			if err != nil {
+				var e *ServiceUnavailableError
+				if errors.As(err, &e) {
+					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+					return
+				}
+
+				respondJsonError(ctx, w, err, http.StatusInternalServerError)
+				return
+			}
+
+			took := time.Since(start)
+			clog.Infof(ctx, "Processed TextToVideo request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+
+		var data bytes.Buffer
+		if err := json.NewEncoder(&data).Encode(req); err != nil {
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		path, err := params.os.SaveData(ctx, "request.json", bytes.NewReader(data.Bytes()), nil, 0)
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Saved TextToVideo request path=%v", requestID, path)
+
+		cctx := clog.Clone(context.Background(), ctx)
+		go func(ctx context.Context) {
+			start := time.Now()
+
+			var data bytes.Buffer
+			resp, err := processTextToVideo(ctx, params, req)
+			if err != nil {
+				clog.Errorf(ctx, "Error processing TextToVideo request err=%v", err)
+
+				handleAPIError(ctx, &data, err, http.StatusInternalServerError)
+			} else {
+				took := time.Since(start)
+				clog.Infof(ctx, "Processed TextToVideo request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+
+				if err := json.NewEncoder(&data).Encode(resp); err != nil {
+					clog.Errorf(ctx, "Error JSON encoding TextToVideo response err=%v", err)
+					return
+				}
+			}
+
+			path, err := params.os.SaveData(ctx, "result.json", bytes.NewReader(data.Bytes()), nil, 0)
+			if err != nil {
+				clog.Errorf(ctx, "Error saving TextToVideo result to object store err=%v", err)
+				return
+			}
+
+			clog.Infof(ctx, "Saved TextToVideo result path=%v", path)
+		}(cctx)
+
+		resp := &VideoResponseAsync{
+			RequestID: requestID,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) VideoResult() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		var req ImageToVideoResultRequest
+		var req VideoResultRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -284,7 +390,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		ctx = clog.AddVal(ctx, "request_id", req.RequestID)
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideoResult request request_id=%v", req.RequestID)
+		clog.V(common.VERBOSE).Infof(ctx, "Received VideoResult request request_id=%v", req.RequestID)
 
 		sess := drivers.NodeStorage.NewSession(req.RequestID)
 
@@ -294,7 +400,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 			return
 		}
 
-		resp := ImageToVideoResultResponse{
+		resp := VideoResultResponse{
 			Status: Processing,
 		}
 

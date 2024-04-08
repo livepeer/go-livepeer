@@ -74,6 +74,25 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMu
 	return &resp, nil
 }
 
+func (w *FileWorker) TextToVideo(ctx context.Context, req worker.TextToVideoJSONRequestBody) (*worker.VideoResponse, error) {
+	fname, ok := w.files["text-to-video"]
+	if !ok {
+		return nil, errors.New("text-to-video response file not found")
+	}
+
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp worker.VideoResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 func (w *FileWorker) Warm(ctx context.Context, containerName, modelID string) error {
 	return nil
 }

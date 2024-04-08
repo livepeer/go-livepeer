@@ -40,6 +40,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
+	lp.transRPC.Handle("/text-to-video", oapiReqValidator(lp.TextToVideo()))
 
 	return nil
 }
@@ -100,6 +101,23 @@ func (h *lphttp) ImageToVideo() http.Handler {
 		var req worker.ImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) TextToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		var req worker.TextToVideoJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -168,6 +186,26 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
 			return orch.ImageToVideo(ctx, v)
+		}
+
+		// TODO: The orchestrator should require the broadcaster to always specify a height and width
+		height := int64(576)
+		if v.Height != nil {
+			height = int64(*v.Height)
+		}
+		width := int64(1024)
+		if v.Width != nil {
+			width = int64(*v.Width)
+		}
+		// The # of frames outputted by stable-video-diffusion-img2vid-xt models
+		frames := int64(25)
+
+		outPixels = height * width * int64(frames)
+	case worker.TextToVideoJSONRequestBody:
+		cap = core.Capability_TextToVideo
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+			return orch.TextToVideo(ctx, v)
 		}
 
 		// TODO: The orchestrator should require the broadcaster to always specify a height and width
