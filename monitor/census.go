@@ -1551,14 +1551,12 @@ func Reserve(sender string, reserve *big.Int) {
 }
 
 func MaxTranscodingPrice(maxPrice *big.Rat) {
-	floatWei, ok := maxPrice.Float64()
-	if ok {
-		if err := stats.RecordWithTags(census.ctx,
-			[]tag.Mutator{tag.Insert(census.kSender, "max")},
-			census.mTranscodingPrice.M(floatWei)); err != nil {
+	floatWei, _ := maxPrice.Float64()
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, "max")},
+		census.mTranscodingPrice.M(floatWei)); err != nil {
 
-			glog.Errorf("Error recording metrics err=%q", err)
-		}
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
@@ -1672,15 +1670,13 @@ func MaxGasPrice(maxGasPrice *big.Int) {
 
 // TranscodingPrice records the last transcoding price
 func TranscodingPrice(sender string, price *big.Rat) {
-	floatWei, ok := price.Float64()
-	if ok {
-		stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
-		if err := stats.RecordWithTags(census.ctx,
-			[]tag.Mutator{tag.Insert(census.kSender, sender)},
-			census.mTranscodingPrice.M(floatWei)); err != nil {
+	floatWei, _ := price.Float64()
+	stats.Record(census.ctx, census.mTranscodingPrice.M(floatWei))
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)},
+		census.mTranscodingPrice.M(floatWei)); err != nil {
 
-			glog.Errorf("Error recording metrics err=%q", err)
-		}
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
