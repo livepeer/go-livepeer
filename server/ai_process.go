@@ -25,7 +25,7 @@ const maxProcessingRetries = 4
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
-const defaultTextToVideoModelID = "ByteDance/AnimateDiff-Lightning"
+const defaultTextToVideoModelID = "ali-vilab/text-to-video-ms-1.7b"
 
 type ServiceUnavailableError struct {
 	err error
