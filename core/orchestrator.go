@@ -947,7 +947,7 @@ func (n *LivepeerNode) textToVideo(ctx context.Context, req worker.TextToVideoJS
 	}
 
 	if len(resp.Frames) != numVideos {
-		return nil, fmt.Errorf("unexpected number of image-to-video outputs expected=%v actual=%v", numVideos, len(resp.Frames))
+		return nil, fmt.Errorf("unexpected number of text-to-video outputs expected=%v actual=%v", numVideos, len(resp.Frames))
 	}
 
 	took := time.Since(start)
