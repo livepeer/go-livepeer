@@ -369,6 +369,54 @@ The first and **recommended method** is to use the `ethOrchAddr` flag to set the
 
 After you have completed these steps, you can start your _Mainnet AI Subnet_ Orchestrator using the binary or Docker image.
 
+#### Allow your AI Subnet Orchestrator to be Discovered
+
+To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, you need to write your service URI to the blockchain. This URI should be in the format `https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>`. To write your service URI to the blockchain, follow these steps:
+
+1. Install the [Foundry](https://book.getfoundry.sh/getting-started/installation) smart contract development toolchain:
+
+    ```bash
+    curl -L https://foundry.paradigm.xyz | bash
+    source /home/<USERNAME>/.bashrc
+    foundryup
+    ```
+
+2. Connect your wallet to the Foundry cast using the following command:
+
+    ```bash
+    cast wallet import <WALLET_NAME> --private-key <YOUR_PRIVATE_WALLET_KEY>
+    ```
+
+3. Call the `SetServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x73f1755F34C2e769209E0F91a0c385722Ed81B9C) contract using the following command:
+
+    ```bash
+    cast send --account <WALLET_NAME> --rpc-url <ARBITRUM_RPC_URI> 0x73f1755F34C2e769209E0F91a0c385722Ed81B9C "setServiceURI(string)" https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>
+    ```
+
+    If everything was successful, you should see the following output:
+
+    ```bash
+    blockHash               0x214a65d2dffd1732e971bd3662dcb681663c2eb0c95a33c8918bab0a44e2d3ed
+    blockNumber             200370198
+    contractAddress
+    cumulativeGasUsed       555214
+    effectiveGasPrice       11048000
+    ```
+
+4. To check if your service URI was successfully written to the blockchain, call the `getServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x73f1755F34C2e769209E0F91a0c385722Ed81B9C) contract using the following command:
+
+    ```bash
+    cast call --rpc-url <ARBITRUM_RPC_URI> 0x73f1755F34C2e769209E0F91a0c385722Ed81B9C "getServiceURI(address)" <PUBLIC_WALLET_KEY> | xxd -r -p
+    ```
+
+    If successful, you should see the following output:
+
+    ```bash
+    https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>
+    ```
+
+Congratulations! Your _Mainnet AI Subnet_ Orchestrator is now set up to be discovered by _AI Gateway_ nodes on the _AI Subnet_. 🚀
+
 #### Binary Startup Command
 
 To start your _Mainnet AI Subnet_ Orchestrator using the [pre-built binaries](https://discord.com/channels/423160867534929930/577736983036559360), use the following command:

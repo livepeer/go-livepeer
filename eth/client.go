@@ -211,7 +211,9 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
 
-	serviceRegistryAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
+	// TODO: Replace with call to controller once `AIServiceRegistry` is added to the controller.
+	// serviceRegistryAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
+	serviceRegistryAddr := ethcommon.HexToAddress("0x73f1755F34C2e769209E0F91a0c385722Ed81B9C")
 	if err != nil {
 		glog.Errorf("Error getting ServiceRegistry address: %v", err)
 		return err
