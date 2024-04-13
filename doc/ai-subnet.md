@@ -371,7 +371,7 @@ After you have completed these steps, you can start your _Mainnet AI Subnet_ Orc
 
 #### Allow your AI Subnet Orchestrator to be Discovered
 
-To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, you need to write your service URI to the blockchain. This URI should be in the format `https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>`. To write your service URI to the blockchain, follow these steps:
+To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, you need to write your service URI to the blockchain. This URI should be in the format `https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>`. To write your service URI to the blockchain, go to the machine that contains your _Mainnet AI Subnet_ Orchestrator wallet and follow these steps:
 
 1. Install the [Foundry](https://book.getfoundry.sh/getting-started/installation) smart contract development toolchain:
 
@@ -381,7 +381,7 @@ To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, yo
     foundryup
     ```
 
-2. Connect your wallet to the Foundry cast using the following command:
+2. Connect your _Mainnet Transcoding Network_ Orchestrator wallet to the Foundry cast using the following command:
 
     ```bash
     cast wallet import <WALLET_NAME> --private-key <YOUR_PRIVATE_WALLET_KEY>
