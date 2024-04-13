@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Go-livepeer Question
+    url: https://github.com/livepeer/go-livepeer/discussions
+    about: Please ask and answer questions related to the go-livepeer software here.
+  - name: Livepeer Question
+    url: https://discord.gg/livepeer
+    about: "Have a general Livepeer question? Join us in the Livepeer Discord server. We're here to help!"
