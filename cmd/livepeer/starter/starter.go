@@ -588,6 +588,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
 
 					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+				case "text-to-video":
+					_, ok := constraints[core.Capability_TextToVideo]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToVideo)
+						constraints[core.Capability_TextToVideo] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_TextToVideo].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_TextToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				}
 			}
 		}
