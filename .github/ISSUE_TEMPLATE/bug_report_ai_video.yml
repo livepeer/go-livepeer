@@ -1,8 +1,8 @@
 name: AI Bug report
 description: Create a report to help us improve.
 labels:
-  - "bug"
-  - "ai"
+  - "type: bug"
+  - "AI"
 body:
   - type: markdown
     attributes:
