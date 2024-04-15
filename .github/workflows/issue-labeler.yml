@@ -1,11 +1,13 @@
-name: Label issues
+name: Label issues and pull requests
 on:
   issues:
-    types:
-      - reopened
-      - opened
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened]
+
 jobs:
   label_issues:
+    if: ${{ github.event_name == 'issues' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -16,3 +18,12 @@ jobs:
           add-labels: "status: triage"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           ignore-if-assigned: false
+  
+  label_pull_requests:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/labeler@v5
