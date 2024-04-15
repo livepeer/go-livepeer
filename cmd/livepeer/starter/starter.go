@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -538,6 +539,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
+			var once sync.Once
 			for _, config := range configs {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
 
@@ -545,10 +547,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
+				}
+
+				// Show warning if people set OptimizationFlags but not Warm.
+				if len(config.OptimizationFlags) > 0 && !config.Warm {
+					once.Do(func() {
+						glog.Warningf("OptimizationFlags set for model %v but Warm is not set. OptimizationFlags are currently only used for warm containers.", config.ModelID)
+					})
 				}
 
 				switch config.Pipeline {
