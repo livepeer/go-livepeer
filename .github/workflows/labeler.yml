@@ -18,7 +18,7 @@ jobs:
           add-labels: "status: triage"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           ignore-if-assigned: false
-  
+
   label_pull_requests:
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
@@ -26,4 +26,4 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-    - uses: actions/labeler@v5
+      - uses: actions/labeler@v5
