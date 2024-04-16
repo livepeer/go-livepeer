@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
@@ -539,7 +538,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
-			var once sync.Once
 			for _, config := range configs {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
 
@@ -555,9 +553,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {
-					once.Do(func() {
-						glog.Warningf("OptimizationFlags set for model %v but Warm is not set. OptimizationFlags are currently only used for warm containers.", config.ModelID)
-					})
+					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
 				}
 
 				switch config.Pipeline {
