@@ -64,6 +64,8 @@ For testing and development purposes, it's a good practice first to run the Orch
 
 #### AI Models Configuration
 
+##### How to Configure
+
 Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai-models) they wish to advertise and process. To do this:
 
 1. **AI Model Configuration**: Create an `aiModels.json` file in the `~/.lpData` directory to specify the AI models to support in the _AI Subnet_. Refer to the provided example below for proper formatting:
@@ -84,7 +86,11 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
         {
             "pipeline": "image-to-video",
             "model_id": "stabilityai/stable-video-diffusion-img2vid-xt-1-1",
-            "price_per_unit": 3390842
+            "price_per_unit": 3390842,
+            "warm": true,
+            "optimization_flags": {
+                "SFAST": true
+            }
         }
     ]
     ```
@@ -96,6 +102,7 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
     - `price_per_unit`: This mandatory field is the price in [Wei](https://ethdocs.org/en/latest/ether.html) per unit of work.
     - `warm`: By default, the Livepeer software dynamically loads the model onto the GPU as needed. However, if you set this flag to `true`, the model will be preloaded onto the GPU when the Orchestrator starts and will remain there, a state referred to as 'warm'. This approach reduces the model's runtime as it's already loaded onto the GPU when requests com in. Please note that in our current **alpha** phase, we only support one model per GPU. Consequently, if you have one GPU and one 'warm' model, you won't be able to serve any other models.
     - `warm`: By default, the Livepeer software loads the AI model onto the GPU on-demand. If you set this flag to `true`, the model is preloaded onto the GPU when the Orchestrator starts, keeping it 'warm'. This means it stays loaded on the GPU, reducing the model's execution time as it's immediately available when requests come in. However, in our current **alpha** phase, we support only one model per GPU. So, if you have a single GPU and a 'warm' model, you won't be able to serve additional models.
+    - `optimization_flags`: This optional field allows you to enable specific optimizations for the pipeline (see [Optimization Flags](#optimization-flags)).
 
 2. **Install Hugging Face CLI**: Install the Hugging Face CLI by running the following command:
 
@@ -116,6 +123,17 @@ Orchestrators on the _AI Subnet_ can select the [supported models](#supported-ai
 
     > [!NOTE]
     > The `--alpha` flag is used to download only the models currently supported by the Livepeer.inc Gateway node on the _AI Subnet_. You can remove this flag if you want to download all models and advertise them for other Gateway nodes.
+
+##### Optimization Flags
+
+> [!WARNING]
+> The flags described below are experimental and may not function as anticipated. If you encounter any issues, please report them to the [go-livepeer](https://github.com/livepeer/go-livepeer/issues/new/choose) repository.
+
+The `optimization_flags` attribute in the `aiModels.json` file provides a way to activate specific performance enhancements for the pipeline. Currently, the following flags are available:
+
+-   `SFAST`: Enables the [stable-fast](https://github.com/chengzeyi/stable-fast) optimization, enhancing inference performance.
+    -   **Usage**: Add `"SFAST": true` to the `optimization_flags` section in the `aiModels.json` file.
+    -   **Limitations**: Currently, the `SFAST` flag is only effective for `warm` models in the `image-to-video` pipeline. While it accelerates inference times by approximately 25%, it also extends the Node startup time.
 
 #### Orchestrator Binary Setup
 
