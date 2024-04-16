@@ -545,10 +545,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint); err != nil {
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
+				}
+
+				// Show warning if people set OptimizationFlags but not Warm.
+				if len(config.OptimizationFlags) > 0 && !config.Warm {
+					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
 				}
 
 				switch config.Pipeline {

@@ -15,18 +15,19 @@ type AI interface {
 	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
-	Warm(context.Context, string, string, worker.RunnerEndpoint) error
+	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 }
 
 type AIModelConfig struct {
-	Pipeline      string `json:"pipeline"`
-	ModelID       string `json:"model_id"`
-	URL           string `json:"url,omitempty"`
-	Token         string `json:"token,omitempty"`
-	Warm          bool   `json:"warm,omitempty"`
-	PricePerUnit  int64  `json:"price_per_unit,omitempty"`
-	PixelsPerUnit int64  `json:"pixels_per_unit,omitempty"`
+	Pipeline          string                   `json:"pipeline"`
+	ModelID           string                   `json:"model_id"`
+	URL               string                   `json:"url,omitempty"`
+	Token             string                   `json:"token,omitempty"`
+	Warm              bool                     `json:"warm,omitempty"`
+	PricePerUnit      int64                    `json:"price_per_unit,omitempty"`
+	PixelsPerUnit     int64                    `json:"pixels_per_unit,omitempty"`
+	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
 }
 
 func (config *AIModelConfig) UnmarshalJSON(data []byte) error {

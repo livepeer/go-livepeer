@@ -12,7 +12,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
-	github.com/livepeer/ai-worker v0.0.0-20240220213200-59b5b237cd8b
+	github.com/livepeer/ai-worker v0.0.0-20240416102817-db751cd47fdc
 	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
 	github.com/livepeer/lpms v0.0.0-20240120150405-de94555cdc69
@@ -32,6 +32,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.19.0
 	google.golang.org/grpc v1.57.1
+	google.golang.org/protobuf v1.31.0
 	pgregory.net/rapid v1.1.0
 )
 
@@ -197,7 +198,6 @@ require (
 	google.golang.org/genproto v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
