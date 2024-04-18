@@ -1,8 +1,6 @@
-name: Label issues and pull requests
+name: Label issues
 on:
   issues:
-    types: [opened, reopened]
-  pull_request:
     types: [opened, reopened]
 
 jobs:
@@ -18,13 +16,3 @@ jobs:
           add-labels: "status: triage"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           ignore-if-assigned: false
-
-  label_pull_requests:
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/labeler@v5
