@@ -3,6 +3,8 @@ description: Create a report to help us improve.
 labels:
   - "type: bug"
   - "AI"
+assignees:
+  - rickstaa
 body:
   - type: markdown
     attributes:

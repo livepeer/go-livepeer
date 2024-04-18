@@ -3,6 +3,8 @@ description: Suggest an idea for this project.
 labels:
   - "type: feature"
   - "AI"
+assignees:
+  - rickstaa
 body:
   - type: markdown
     attributes:
