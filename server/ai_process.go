@@ -49,9 +49,11 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 	newMedia := make([]worker.Media, len(resp.Images))
 	for i, media := range resp.Images {
 		var data bytes.Buffer
-		if err := worker.ReadImageB64DataUrl(media.Url, bufio.NewWriter(&data)); err != nil {
+		writer := bufio.NewWriter(&data)
+		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
 			return nil, err
 		}
+		writer.Flush()
 
 		name := string(core.RandomManifestID()) + ".png"
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
@@ -116,9 +118,11 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 	newMedia := make([]worker.Media, len(resp.Images))
 	for i, media := range resp.Images {
 		var data bytes.Buffer
-		if err := worker.ReadImageB64DataUrl(media.Url, bufio.NewWriter(&data)); err != nil {
+		writer := bufio.NewWriter(&data)
+		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
 			return nil, err
 		}
+		writer.Flush()
 
 		name := string(core.RandomManifestID()) + ".png"
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
