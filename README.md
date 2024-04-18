@@ -1,5 +1,5 @@
 <!-- show-on-docup
-<br />
+<br /> TEST
 -->
 
 [![go-livepeer](https://user-images.githubusercontent.com/555740/117340053-78210e80-ae6e-11eb-892c-d98085fe6824.png)](https://github.com/livepeer/go-livepeer)
@@ -21,10 +21,10 @@ serve as the live media layer in the decentralized development (Web3) stack.
 
 ## Table of Contents
 
+- [Table of Contents](#table-of-contents)
 - [Requirements](#requirements)
 - [Getting Started](#getting-started)
 - [Contributing](#contributing)
-- [Other Documentation](#documentation)
 - [Resources](#resources)
 
 <!-- hide-on-docup-stop -->
