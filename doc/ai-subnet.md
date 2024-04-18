@@ -381,16 +381,10 @@ To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, yo
     foundryup
     ```
 
-2. Connect your _Mainnet Transcoding Network_ Orchestrator wallet to the Foundry cast using the following command:
+2. Invoke the `SetServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x04C0b249740175999E5BF5c9ac1dA92431EF34C5) contract. Use the KeyStore file and password from your _Mainnet Transcoding Network_ Orchestrator wallet to execute this command:
 
     ```bash
-    cast wallet import <WALLET_NAME> --private-key <YOUR_PRIVATE_WALLET_KEY>
-    ```
-
-3. Call the `SetServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x73f1755F34C2e769209E0F91a0c385722Ed81B9C) contract using the following command:
-
-    ```bash
-    cast send --account <WALLET_NAME> --rpc-url <ARBITRUM_RPC_URI> 0x73f1755F34C2e769209E0F91a0c385722Ed81B9C "setServiceURI(string)" https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>
+    cast send --keystore '<PATH_TO_KEYSTORE_FILE>' --password '<PASSWORD>' --rpc-url <ARBITRUM_RPC_URI> 0x04C0b249740175999E5BF5c9ac1dA92431EF34C5 "setServiceURI(string)" https://<PUBLIC_ORCH_IP_OR_URL>:<PUBLIC_ORCH_PORT>
     ```
 
     If everything was successful, you should see the following output:
@@ -403,10 +397,10 @@ To ensure that _AI Gateway_ nodes can discover your _AI Subnet_ Orchestrator, yo
     effectiveGasPrice       11048000
     ```
 
-4. To check if your service URI was successfully written to the blockchain, call the `getServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x73f1755F34C2e769209E0F91a0c385722Ed81B9C) contract using the following command:
+3. To check if your service URI was successfully written to the blockchain, call the `getServiceURI` function on the [AIServiceRegistry](https://arbiscan.io/address/0x5d31637eb0f442376053d5dea2347f663c4019dc) contract using the following command:
 
     ```bash
-    cast call --rpc-url <ARBITRUM_RPC_URI> 0x73f1755F34C2e769209E0F91a0c385722Ed81B9C "getServiceURI(address)" <PUBLIC_WALLET_KEY> | xxd -r -p
+    cast call --rpc-url <ARBITRUM_RPC_URI> 0x04C0b249740175999E5BF5c9ac1dA92431EF34C5 "getServiceURI(address)" <PUBLIC_WALLET_KEY> | xxd -r -p
     ```
 
     If successful, you should see the following output:
