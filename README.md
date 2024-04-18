@@ -17,7 +17,7 @@ serve as the live media layer in the decentralized development (Web3) stack.
 
 `go-livepeer` is a Go implementation of the [Livepeer](https://livepeer.org) protocol which powers the Livepeer Network. Specifically, `go-livepeer` contains implementations of Broadcaster, Orchestrator, and Transcoder nodes (roles) in the Livepeer Network ecosystem.
 
-<!-- hide-on-docup-start -->
+<!-- hide-on-docup-start -->test
 
 ## Table of Contents
 
