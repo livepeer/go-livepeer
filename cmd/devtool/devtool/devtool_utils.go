@@ -5,6 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"math/big"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
@@ -13,11 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/eth"
-	"io/ioutil"
-	"math/big"
-	"os"
-	"strings"
-	"time"
 )
 
 const (
@@ -35,6 +36,7 @@ type DevtoolConfig struct {
 	Account                   string
 	KeystoreDir               string
 	IsBroadcaster             bool
+	BondAmount                *big.Int
 }
 
 func NewDevtoolConfig() DevtoolConfig {
@@ -300,7 +302,7 @@ func (d *Devtool) RegisterOrchestrator(cfg DevtoolConfig) error {
 	// curl -d "blockRewardCut=10&feeShare=5&amount=500" --data-urlencode "serviceURI=https://$transcoderServiceAddr" \
 	//   -H "Content-Type: application/x-www-form-urlencoded" \
 	//   -X "POST" http://localhost:$transcoderCliPort/activateTranscoder\
-	var amount *big.Int = big.NewInt(int64(500))
+	var amount = cfg.BondAmount
 	glog.Infof("Bonding %v to %s", amount, cfg.Account)
 
 	tx, err := d.Client.Bond(amount, ethcommon.HexToAddress(cfg.Account))
