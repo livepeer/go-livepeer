@@ -7,6 +7,12 @@ An on-chain workflow testing tool that supports the following:
 
 ## Prerequisites
 
+-   [Docker](https://docs.docker.com/get-docker/)
+-   [Go](https://golang.org/doc/install)
+-   [Go-livepeer](https://github.com/livepeer/go-livepeer) build from source (see [the docs](https://docs.livepeer.org/orchestrators/guides/install-go-livepeer#build-from-source)).
+
+## Setting Up an On-Chain Development Environment
+
 ### Step 1: Set up a private ETH network with Livepeer protocol deployed
 
 ```bash
@@ -29,3 +35,9 @@ This command will submit the setup transactions for an orchestrator/transcoder a
 
 -   `run_orchestrator_with_transcoder_<ETH_ACCOUNT>.sh` which can be used to start an orchestrator node that contains a transcoder (combined OT)
 -   `run_orchestrator_standalone_<ETH_ACCOUNT>.sh` and `run_transcoder_<ETH_ACCOUNT>.sh` which can be used to start separate orchestrator and transcoder nodes (split O/T)
+
+## Extra Resources
+
+### Scripts
+
+Some helpful scripts are provided in the `scripts` directory.
