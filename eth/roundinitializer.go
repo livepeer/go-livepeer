@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/glog"
 )
@@ -104,23 +103,7 @@ func (r *RoundInitializer) tryInitialize() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	currentL1Blk := r.tw.LastSeenL1Block()
-	lastInitializedL1BlkHash := r.tw.LastInitializedL1BlockHash()
-
-	epochSeed := r.currentEpochSeed(currentL1Blk, r.nextRoundStartL1Block, lastInitializedL1BlkHash)
-
-	ok, err := r.shouldInitialize(epochSeed)
-	if err != nil {
-		return err
-	}
-
-	// Noop if the caller should not initialize the round
-	if !ok {
-		return nil
-	}
-
 	currentRound := new(big.Int).Add(r.tw.LastInitializedRound(), big.NewInt(1))
-
 	glog.Infof("New round - preparing to initialize round to join active set, current round is %d", currentRound)
 
 	tx, err := r.client.InitializeRound()
@@ -135,56 +118,4 @@ func (r *RoundInitializer) tryInitialize() error {
 	glog.Infof("Initialized round %d", currentRound)
 
 	return nil
-}
-
-func (r *RoundInitializer) shouldInitialize(epochSeed *big.Int) (bool, error) {
-	transcoders, err := r.client.TranscoderPool()
-	if err != nil {
-		return false, err
-	}
-
-	numActive := big.NewInt(int64(len(transcoders)))
-
-	// Should not initialize if the upcoming active set is empty
-	if numActive.Cmp(big.NewInt(0)) == 0 {
-		return false, nil
-	}
-
-	// Find the caller's rank in the upcoming active set
-	rank := int64(-1)
-	maxRank := numActive.Int64()
-	caller := r.client.Account().Address
-	for i := int64(0); i < maxRank; i++ {
-		if transcoders[i].Address == caller {
-			rank = i
-			break
-		}
-	}
-
-	// Should not initialize if the caller is not in the upcoming active set
-	if rank == -1 {
-		return false, nil
-	}
-
-	// Use the seed to select a position within the active set
-	selection := new(big.Int).Mod(epochSeed, numActive)
-	// Should not initialize if the selection does not match the caller's rank in the active set
-	if selection.Int64() != int64(rank) {
-		return false, nil
-	}
-
-	// If the selection matches the caller's rank the caller should initialize the round
-	return true, nil
-}
-
-// Returns the seed used to select a round initializer in the current epoch for the current round
-// This seed is not meant to be unpredictable. The only requirement for the seed is that it is calculated the same way for each
-// party running the round initializer
-func (r *RoundInitializer) currentEpochSeed(currentL1Block, roundStartL1Block *big.Int, lastInitializedL1BlkHash [32]byte) *big.Int {
-	epochNum := new(big.Int).Sub(currentL1Block, roundStartL1Block)
-	epochNum.Div(epochNum, epochL1Blocks)
-
-	// The seed for the current epoch is calculated as:
-	// keccak256(lastInitializedL1BlkHash | epochNum)
-	return crypto.Keccak256Hash(append(lastInitializedL1BlkHash[:], epochNum.Bytes()...)).Big()
 }
