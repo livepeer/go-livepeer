@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -21,7 +22,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const maxProcessingRetries = 4
+const maxProcessingRetryDuration = 500 * time.Millisecond
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
@@ -312,7 +313,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	var resp *worker.ImageResponse
 
 	tries := 0
-	for tries < maxProcessingRetries {
+	retryDuration := time.Now().Add(maxProcessingRetryDuration)
+	for time.Now().Before(retryDuration) {
 		tries++
 
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
