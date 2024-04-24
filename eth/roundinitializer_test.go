@@ -16,84 +16,6 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func TestRoundInitializer_CurrentEpochSeed(t *testing.T) {
-	initializer := NewRoundInitializer(nil, nil)
-
-	assert := assert.New(t)
-
-	// Test epochNum = 0
-	blkHash := [32]byte{123}
-
-	epochSeed := initializer.currentEpochSeed(big.NewInt(5), big.NewInt(5), blkHash)
-	// epochNum = (5 - 5) / 5 = 0
-	// epochSeed = keccak256(blkHash | 0) = 53205358842179480591542570540016728811976439286094436690881169143335261643310
-	expEpochSeed, _ := new(big.Int).SetString("53205358842179480591542570540016728811976439286094436690881169143335261643310", 10)
-	assert.Equal(expEpochSeed, epochSeed)
-
-	// Test epochNum > 0
-	epochSeed = initializer.currentEpochSeed(big.NewInt(20), big.NewInt(5), blkHash)
-	// epochNum = (20 - 5) / 5 = 3
-	// epochSeed = keccak256(blkHash | 3) = 42541119854153860846042329644941941146216657514071318786342840580076059276721
-	expEpochSeed.SetString("42541119854153860846042329644941941146216657514071318786342840580076059276721", 10)
-	assert.Equal(expEpochSeed, epochSeed)
-
-	// Test epochNum > 0 with some # of blocks into the epoch
-	epochSeed = initializer.currentEpochSeed(big.NewInt(20), big.NewInt(4), blkHash)
-	// epochNum = (20 - 4) / 5 = 3.2 -> 3
-	assert.Equal(expEpochSeed, epochSeed)
-}
-
-func TestRoundInitializer_ShouldInitialize(t *testing.T) {
-	client := &MockClient{}
-	tw := &stubTimeWatcher{}
-	initializer := NewRoundInitializer(client, tw)
-
-	assert := assert.New(t)
-
-	// Test error getting transcoders
-	expErr := errors.New("TranscoderPool error")
-	client.On("TranscoderPool").Return(nil, expErr).Once()
-
-	ok, err := initializer.shouldInitialize(nil)
-	assert.EqualError(err, expErr.Error())
-	assert.False(ok)
-
-	// Test active set is empty because no registered transcoders
-	client.On("TranscoderPool").Return([]*lpTypes.Transcoder{}, nil).Once()
-	ok, err = initializer.shouldInitialize(nil)
-	assert.Nil(err)
-	assert.False(ok)
-
-	// Test that caller is not in active set because it is not registered
-	caller := ethcommon.BytesToAddress([]byte("foo"))
-	client.On("Account").Return(accounts.Account{Address: caller})
-
-	registered := []*lpTypes.Transcoder{
-		{Address: ethcommon.BytesToAddress([]byte("jar"))},
-		{Address: ethcommon.BytesToAddress([]byte("bar"))},
-	}
-	client.On("TranscoderPool").Return(registered, nil).Once()
-
-	ok, err = initializer.shouldInitialize(nil)
-	assert.Nil(err)
-	assert.False(ok)
-
-	// Test not selected
-	registered = append(registered, &lpTypes.Transcoder{Address: caller})
-	client.On("TranscoderPool").Return(registered, nil)
-
-	seed := big.NewInt(3)
-	ok, err = initializer.shouldInitialize(seed)
-	assert.Nil(err)
-	assert.False(ok)
-
-	// Test caller selected
-	seed = big.NewInt(5)
-	ok, err = initializer.shouldInitialize(seed)
-	assert.Nil(err)
-	assert.True(ok)
-}
-
 func TestRoundInitializer_TryInitialize(t *testing.T) {
 	client := &MockClient{}
 	tw := &stubTimeWatcher{
@@ -101,45 +23,17 @@ func TestRoundInitializer_TryInitialize(t *testing.T) {
 		lastInitializedRound:     big.NewInt(100),
 		lastInitializedBlockHash: [32]byte{123},
 	}
-	initializer := NewRoundInitializer(client, tw)
+	initializer := NewRoundInitializer(client, tw, 0)
 	initializer.nextRoundStartL1Block = big.NewInt(5)
 	assert := assert.New(t)
-
-	// Test error checking should initialize
-	expErr := errors.New("shouldInitialize error")
-	client.On("TranscoderPool").Return(nil, expErr).Once()
-
-	err := initializer.tryInitialize()
-	assert.EqualError(err, expErr.Error())
-
-	// Test should not initialize
-	caller := ethcommon.BytesToAddress([]byte("foo"))
-	client.On("Account").Return(accounts.Account{Address: caller})
-
-	registered := []*lpTypes.Transcoder{
-		{Address: ethcommon.BytesToAddress([]byte("jar"))},
-	}
-	client.On("TranscoderPool").Return(registered, nil).Once()
-
-	err = initializer.tryInitialize()
-	assert.Nil(err)
-
-	// Test error when submitting initialization tx
-	registered = []*lpTypes.Transcoder{{Address: caller}}
-	client.On("TranscoderPool").Return(registered, nil)
-	expErr = errors.New("InitializeRound error")
-	client.On("InitializeRound").Return(nil, expErr).Once()
-
-	err = initializer.tryInitialize()
-	assert.EqualError(err, expErr.Error())
 
 	// Test error checking initialization tx
 	tx := &types.Transaction{}
 	client.On("InitializeRound").Return(tx, nil)
-	expErr = errors.New("CheckTx error")
+	expErr := errors.New("CheckTx error")
 	client.On("CheckTx", mock.Anything).Return(expErr).Once()
 
-	err = initializer.tryInitialize()
+	err := initializer.tryInitialize()
 	assert.EqualError(err, expErr.Error())
 
 	// Test success
