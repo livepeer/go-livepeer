@@ -534,7 +534,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.AIModels != "" {
 			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
 			if err != nil {
-				glog.Error("Error parsing -aiModels: %v", err)
+				glog.Errorf("Error parsing -aiModels: %v", err)
 				return
 			}
 
@@ -601,6 +601,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
 				}
 			}
+		} else {
+			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+			return
 		}
 
 		defer func() {
