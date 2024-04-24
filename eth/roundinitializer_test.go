@@ -23,7 +23,7 @@ func TestRoundInitializer_TryInitialize(t *testing.T) {
 		lastInitializedRound:     big.NewInt(100),
 		lastInitializedBlockHash: [32]byte{123},
 	}
-	initializer := NewRoundInitializer(client, tw)
+	initializer := NewRoundInitializer(client, tw, 0)
 	initializer.nextRoundStartL1Block = big.NewInt(5)
 	assert := assert.New(t)
 

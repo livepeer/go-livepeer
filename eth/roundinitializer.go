@@ -2,7 +2,9 @@ package eth
 
 import (
 	"math/big"
+	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
@@ -28,20 +30,22 @@ type timeWatcher interface {
 // This selection process is purely a client side implementation that attempts to minimize on-chain transaction collisions, but
 // collisions are still possible if initialization transactions are submitted by parties that are not using this selection process
 type RoundInitializer struct {
-	client LivepeerEthClient
-	tw     timeWatcher
-	quit   chan struct{}
+	maxDelay time.Duration
+	client   LivepeerEthClient
+	tw       timeWatcher
+	quit     chan struct{}
 
 	nextRoundStartL1Block *big.Int
 	mu                    sync.Mutex
 }
 
 // NewRoundInitializer creates a RoundInitializer instance
-func NewRoundInitializer(client LivepeerEthClient, tw timeWatcher) *RoundInitializer {
+func NewRoundInitializer(client LivepeerEthClient, tw timeWatcher, maxDelay time.Duration) *RoundInitializer {
 	return &RoundInitializer{
-		client: client,
-		tw:     tw,
-		quit:   make(chan struct{}),
+		maxDelay: maxDelay,
+		client:   client,
+		tw:       tw,
+		quit:     make(chan struct{}),
 	}
 }
 
@@ -100,6 +104,17 @@ func (r *RoundInitializer) Stop() {
 }
 
 func (r *RoundInitializer) tryInitialize() error {
+	if r.maxDelay > 0 {
+		randDelay := time.Duration(rand.Int63n(int64(r.maxDelay)))
+		glog.Infof("Waiting %v before attempting to initialize round", randDelay)
+		time.Sleep(randDelay)
+
+		if r.tw.LastSeenL1Block().Cmp(r.nextRoundStartL1Block) < 0 {
+			glog.Infof("Round is already initialized, not initializing")
+			return nil
+		}
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
