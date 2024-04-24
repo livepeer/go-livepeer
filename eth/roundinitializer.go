@@ -104,6 +104,14 @@ func (r *RoundInitializer) Stop() {
 }
 
 func (r *RoundInitializer) tryInitialize() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.tw.LastSeenL1Block().Cmp(r.nextRoundStartL1Block) < 0 {
+		// Round already initialized
+		return nil
+	}
+
 	if r.maxDelay > 0 {
 		randDelay := time.Duration(rand.Int63n(int64(r.maxDelay)))
 		glog.Infof("Waiting %v before attempting to initialize round", randDelay)
@@ -114,9 +122,6 @@ func (r *RoundInitializer) tryInitialize() error {
 			return nil
 		}
 	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	currentRound := new(big.Int).Add(r.tw.LastInitializedRound(), big.NewInt(1))
 	glog.Infof("New round - preparing to initialize round to join active set, current round is %d", currentRound)
