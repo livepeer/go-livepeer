@@ -210,6 +210,35 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aiPoolInfoResp := make(map[string]interface{})
+		capPools := make(map[string]interface{})
+		poolInfo := make(map[string]interface{})
+		glog.V(common.DEBUG).Infof("getting AI pool info for %d selectors", len(s.AISessionManager.selectors))
+		s.AISessionManager.mu.Lock()
+		defer s.AISessionManager.mu.Unlock()
+		for cap, pool := range s.AISessionManager.selectors {
+			glog.Infof("getting AI pool info for %s", cap)
+			//get warmPool info
+			poolInfo["Size"] = pool.warmPool.Size()
+			poolInfo["InUse"] = len(pool.warmPool.inUseSess)
+			poolInfo["Suspended"] = len(pool.warmPool.suspender.list)
+			capPools["Warm"] = poolInfo
+			//get coldPool info
+			poolInfo["Size"] = pool.coldPool.Size()
+			poolInfo["InUse"] = len(pool.coldPool.inUseSess)
+			poolInfo["Suspended"] = len(pool.coldPool.suspender.list)
+			capPools["Cold"] = poolInfo
+
+			aiPoolInfoResp[cap] = capPools
+		}
+
+		glog.V(common.DEBUG).Infof("sending AI pool info for %d selectors", len(s.AISessionManager.selectors))
+		respondJson(w, aiPoolInfoResp)
+	})
+}
+
 // Rounds
 func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
