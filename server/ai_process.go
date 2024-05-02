@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -21,7 +22,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const maxProcessingRetries = 4
+const processingRetryTimeout = 2 * time.Second
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
@@ -311,8 +312,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp *worker.ImageResponse
 
+	cctx, cancel := context.WithTimeout(context.Background(), processingRetryTimeout)
+	defer cancel()
+
 	tries := 0
-	for tries < maxProcessingRetries {
+	for {
 		tries++
 
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
@@ -334,6 +338,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
 
 		params.sessManager.Remove(ctx, sess)
+
+		if cctx.Err() == context.DeadlineExceeded {
+			break
+		}
 	}
 
 	if resp == nil {
