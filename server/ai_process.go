@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"io"
 	"math/big"
@@ -341,7 +342,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		select {
 		case <-cctx.Done():
-			return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available: operation timed out")}
+			return nil, &ServiceUnavailableError{err: fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)}
 		default:
 		}
 	}
