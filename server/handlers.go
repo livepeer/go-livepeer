@@ -226,7 +226,6 @@ func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
 			//get warmPool info
 			warmPoolInfo["Size"] = pool.warmPool.Size()
 			warmPoolInfo["InUse"] = len(pool.warmPool.inUseSess)
-			warmPoolInfo["Suspended"] = len(pool.warmPool.suspender.list)
 			if showDetail != "" {
 				var warmOrchInfos []interface{}
 				for _, sess := range pool.warmPool.sessMap {
@@ -234,7 +233,6 @@ func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
 					orchInfo["Url"] = sess.Transcoder()
 					orchInfo["Latency"] = sess.LatencyScore
 					orchInfo["InFlight"] = len(sess.SegsInFlight)
-
 					warmOrchInfos = append(warmOrchInfos, orchInfo)
 				}
 				warmPoolInfo["Orchestrators"] = warmOrchInfos
@@ -243,7 +241,6 @@ func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
 			//get coldPool info
 			coldPoolInfo["Size"] = pool.coldPool.Size()
 			coldPoolInfo["InUse"] = len(pool.coldPool.inUseSess)
-			coldPoolInfo["Suspended"] = len(pool.coldPool.suspender.list)
 			if showDetail != "" {
 				var coldOrchInfos []interface{}
 				for _, sess := range pool.coldPool.sessMap {
@@ -251,12 +248,20 @@ func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
 					orchInfo["Url"] = sess.Transcoder()
 					orchInfo["Latency"] = sess.LatencyScore
 					orchInfo["InFlight"] = len(sess.SegsInFlight)
-
 					coldOrchInfos = append(coldOrchInfos, orchInfo)
 				}
 				coldPoolInfo["Orchestrators"] = coldOrchInfos
 			}
 			capPools["Cold"] = coldPoolInfo
+			//get info on suspended orchestrators
+			suspendedInfo := make(map[string]interface{})
+			suspendedInfo["Count"] = len(pool.suspender.list)
+			suspendedInfo["CurrentRefresh"] = pool.suspender.count
+			if showDetail != "" {
+				suspendedInfo["Orchestrators"] = pool.suspender.list
+			}
+
+			capPools["Suspended"] = suspendedInfo
 
 			aiPoolInfoResp[cap] = capPools
 		}
