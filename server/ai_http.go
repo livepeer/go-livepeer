@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"net/http"
 	"strconv"
@@ -122,12 +123,14 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	var cap core.Capability
+	var pipeline string
 	var modelID string
 	var submitFn func(context.Context) (*worker.ImageResponse, error)
 	var outPixels int64
 
 	switch v := req.(type) {
 	case worker.TextToImageJSONRequestBody:
+		pipeline = "text-to-image"
 		cap = core.Capability_TextToImage
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
@@ -146,6 +149,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 		outPixels = height * width
 	case worker.ImageToImageMultipartRequestBody:
+		pipeline = "image-to-image"
 		cap = core.Capability_ImageToImage
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
@@ -164,6 +168,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
 	case worker.ImageToVideoMultipartRequestBody:
+		pipeline = "image-to-video"
 		cap = core.Capability_ImageToVideo
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
@@ -193,6 +198,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
 
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)
+
+	// Check if there is capacity for the request.
+	if !orch.CheckAICapacity(pipeline, modelID) {
+		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+		return
+	}
 
 	// Known limitation:
 	// This call will set a fixed price for all requests in a session identified by a manifestID.
