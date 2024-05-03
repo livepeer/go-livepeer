@@ -312,7 +312,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp *worker.ImageResponse
 
-	cctx, cancel := context.WithTimeout(context.Background(), processingRetryTimeout)
+	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
 	tries := 0
@@ -339,8 +339,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		params.sessManager.Remove(ctx, sess)
 
-		if cctx.Err() == context.DeadlineExceeded {
-			break
+		select {
+		case <-cctx.Done():
+			return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available: operation timed out")}
+		default:
 		}
 	}
 
