@@ -93,7 +93,9 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
+	start := time.Now()
 	resp, err := client.TextToImageWithResponse(ctx, req, setHeaders)
+	took := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +109,13 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
 	}
+
+	// TODO: Refine this rough estimate in future iterations
+	numImages := 1
+	if req.NumImagesPerPrompt != nil {
+		numImages = *req.NumImagesPerPrompt
+	}
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / float64(numImages)
 
 	return resp.JSON200, nil
 }
@@ -168,7 +177,9 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
+	start := time.Now()
 	resp, err := client.ImageToImageWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -182,6 +193,9 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
 	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = took.Seconds() / float64(outPixels)
 
 	return resp.JSON200, nil
 }
@@ -246,7 +260,9 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
+	start := time.Now()
 	resp, err := client.ImageToVideoWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +286,9 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	if err := json.Unmarshal(data, &res); err != nil {
 		return nil, err
 	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = took.Seconds() / float64(outPixels)
 
 	return &res, nil
 }
