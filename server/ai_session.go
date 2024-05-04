@@ -371,6 +371,8 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, err
 	}
 
+	clog.Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
+
 	return sess, nil
 }
 
