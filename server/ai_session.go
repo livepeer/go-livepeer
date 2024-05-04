@@ -101,10 +101,6 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	// If we try to add new sessions to the pool the suspender
-	// should treat this as a refresh
-	pool.suspender.signalRefresh()
-
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
 		if _, ok := pool.sessMap[sess.Transcoder()]; ok {
@@ -272,6 +268,10 @@ func (sel *AISessionSelector) Remove(sess *AISession) {
 }
 
 func (sel *AISessionSelector) Refresh(ctx context.Context) error {
+	// If we try to add new sessions to the pool the suspender
+	// should treat this as a refresh
+	sel.suspender.signalRefresh()
+
 	sessions, err := sel.getSessions(ctx)
 	if err != nil {
 		return err
