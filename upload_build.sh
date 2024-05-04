@@ -114,6 +114,25 @@ stringToSign="PUT\n\n${contentType}\n${dateValue}\n${resource}"
 signature="$(echo -en ${stringToSign} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64)"
 fullUrl="https://storage.googleapis.com${resource}"
 
+# Create temporary latest url for the 'ai-video' branch
+# TODO: Once 'ai-video' is merged into the main branch, this section should be removed.
+BRANCH="ai-video"
+if [[ $BRANCH == "ai-video" ]]; then
+  BUCKET_PATH_LATEST="${PROJECT}/$BRANCH/latest/${FILE}"
+  resource_latest="/${BUCKET}/${BUCKET_PATH_LATEST}"
+  stringToSignLatest="PUT\n\n${contentType}\n${dateValue}\n${resource_latest}"
+  signatureLatest="$(echo -en ${stringToSignLatest} | openssl sha1 -hmac ${GCLOUD_SECRET} -binary | base64)"
+  fullUrlLatest="https://storage.googleapis.com${resource_latest}"
+
+  # Upload the latest ai-video build
+  curl -X PUT -T "${FILE}" \
+    -H "Host: storage.googleapis.com" \
+    -H "Date: ${dateValue}" \
+    -H "Content-Type: ${contentType}" \
+    -H "Authorization: AWS ${GCLOUD_KEY}:${signatureLatest}" \
+    $fullUrlLatest
+fi
+
 # Failsafe - don't overwrite existing uploads!
 if curl --head --fail $fullUrl 2>/dev/null; then
   echo "$fullUrl already exists, not overwriting!"
