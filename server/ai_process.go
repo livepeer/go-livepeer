@@ -318,8 +318,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	tries := 0
 	for {
-		tries++
+		select {
+		case <-cctx.Done():
+			return nil, &ServiceUnavailableError{err: fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)}
+		default:
+		}
 
+		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session cap=%v modelID=%v err=%v", cap, modelID, err)
@@ -339,12 +344,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
 
 		params.sessManager.Remove(ctx, sess)
-
-		select {
-		case <-cctx.Done():
-			return nil, &ServiceUnavailableError{err: fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)}
-		default:
-		}
 	}
 
 	if resp == nil {
