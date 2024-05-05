@@ -213,16 +213,17 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 func (s *LivepeerServer) getAIPoolsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		aiPoolInfoResp := make(map[string]interface{})
-		capPools := make(map[string]interface{})
-		warmPoolInfo := make(map[string]interface{})
-		coldPoolInfo := make(map[string]interface{})
 
 		glog.V(common.DEBUG).Infof("getting AI pool info for %d selectors", len(s.AISessionManager.selectors))
 		s.AISessionManager.mu.Lock()
 		defer s.AISessionManager.mu.Unlock()
 		showDetail := r.Header.Get("Show-Detail")
 		for cap, pool := range s.AISessionManager.selectors {
+			capPools := make(map[string]interface{})
 			glog.Infof("getting AI pool info for %s", cap)
+
+			warmPoolInfo := make(map[string]interface{})
+			coldPoolInfo := make(map[string]interface{})
 			//get warmPool info
 			warmPoolInfo["Size"] = pool.warmPool.Size()
 			warmPoolInfo["InUse"] = len(pool.warmPool.inUseSess)
