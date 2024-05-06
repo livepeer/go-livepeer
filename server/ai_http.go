@@ -287,6 +287,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if !orch.CheckModelExists(modelID) {
+		//Orch should log, but don't tell broadcaster the exact error maybe?
+		respondWithError(w, fmt.Sprintf("Insufficient capacity for modelID=%v", modelID), http.StatusServiceUnavailable)
+		return
+	}
+
 	// Known limitation:
 	// This call will set a fixed price for all requests in a session identified by a manifestID.
 	// Since all requests for a capability + modelID are treated as "session" with a single manifestID, all
