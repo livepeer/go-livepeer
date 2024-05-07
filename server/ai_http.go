@@ -288,7 +288,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	if !orch.CheckModelExists(modelID) {
-		//Orch should log, but don't tell broadcaster the exact error maybe?
 		respondWithError(w, fmt.Sprintf("Insufficient capacity for modelID=%v", modelID), http.StatusServiceUnavailable)
 		return
 	}
