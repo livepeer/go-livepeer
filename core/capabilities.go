@@ -13,10 +13,13 @@ import (
 
 type Capability int
 type CapabilityString []uint64
-type Constraints struct{}
+type Constraints struct {
+	minVersion string
+}
 type Capabilities struct {
 	bitstring   CapabilityString
 	mandatories CapabilityString
+	version     string
 	constraints Constraints
 	capacities  map[Capability]int
 	mutex       sync.Mutex
@@ -326,6 +329,10 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
+	if bcast.constraints.minVersion != orch.Version {
+		return false
+	}
+
 	// For now, check this:
 	// ( orch.mandatories  AND bcast.bitstring ) == orch.mandatories &&
 	// ( bcast.bitstring   AND orch.bitstring  ) == bcast.bitstring
@@ -346,7 +353,7 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Capacities: make(map[uint32]uint32)}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32)}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
 	}
@@ -361,6 +368,8 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		bitstring:   caps.Bitstring,
 		mandatories: caps.Mandatories,
 		capacities:  make(map[Capability]int),
+		version:     caps.Version,
+		constraints: Constraints{minVersion: caps.Constraints.GetMinVersion()},
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)

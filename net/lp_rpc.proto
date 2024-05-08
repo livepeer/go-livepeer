@@ -105,9 +105,13 @@ message Capabilities {
     // Capacity corresponding to each capability
     map<uint32, uint32> capacities = 3;
 
+    string version = 4;
+
+    Constraints constraints = 5;
+
     // Non-binary capability constraints, such as supported ranges.
     message Constraints {
-            // Empty for now
+            string minVersion = 1;
     }
 }
 

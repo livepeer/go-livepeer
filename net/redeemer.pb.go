@@ -319,7 +319,6 @@ func file_net_redeemer_proto_init() {
 	if File_net_redeemer_proto != nil {
 		return
 	}
-	file_net_lp_rpc_proto_init()
 	if !protoimpl.UnsafeEnabled {
 		file_net_redeemer_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Ticket); i {
