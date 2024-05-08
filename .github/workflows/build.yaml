@@ -194,7 +194,7 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
-        run: brew install coreutils pkg-config
+        run: brew install coreutils pkg-config gcc
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
