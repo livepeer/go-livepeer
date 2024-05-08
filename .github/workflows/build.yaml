@@ -157,7 +157,7 @@ jobs:
         target:
           - GOOS: darwin
             GOARCH: amd64
-            runner: macos-latest
+            runner: macos-14-large
 
           - GOOS: darwin
             GOARCH: arm64
