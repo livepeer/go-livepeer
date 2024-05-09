@@ -144,6 +144,7 @@ type LivepeerConfig struct {
 	AuthWebhookURL          *string
 	OrchWebhookURL          *string
 	OrchBlacklist           *string
+	OrchMinLivepeerVersion  *string
 	TestOrchAvail           *bool
 }
 
@@ -1169,6 +1170,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
+	if cfg.OrchMinLivepeerVersion != nil {
+		n.Capabilities.AddMinVersion(core.NewMinVersionContraint(*cfg.OrchMinLivepeerVersion))
+	}
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK

@@ -329,6 +329,7 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
+	// TODO Compare bcast.constraints.minVersion <= orch.Version instead of this mock equality check
 	if bcast.constraints.minVersion != orch.Version {
 		return false
 	}
@@ -353,7 +354,7 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32)}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion}}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
 	}
@@ -389,8 +390,12 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	return coreCaps
 }
 
+func NewMinVersionContraint(minVersion string) *Capabilities {
+	return &Capabilities{constraints: Constraints{minVersion: minVersion}}
+}
+
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{capacities: make(map[Capability]int)}
+	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
@@ -575,4 +580,10 @@ func (bcast *Capabilities) LegacyOnly() bool {
 		return false
 	}
 	return bcast.bitstring.CompatibleWith(legacyCapabilityString)
+}
+
+func (bcast *Capabilities) AddMinVersion(capabilities *Capabilities) {
+	if capabilities.constraints.minVersion != "" {
+		bcast.constraints.minVersion = capabilities.constraints.minVersion
+	}
 }
