@@ -417,10 +417,6 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	return coreCaps
 }
 
-func NewMinVersionContraint(minVersion string) *Capabilities {
-	return &Capabilities{constraints: Constraints{minVersion: minVersion}}
-}
-
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
 	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion}
 	if len(caps) > 0 {
