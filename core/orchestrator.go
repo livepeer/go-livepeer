@@ -1035,7 +1035,7 @@ func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {
 	panic("shouldn't be called on RemoteTranscoderManager")
 }
 
-// completeStreamSessions end a stream session for a remote transcoder and decrements its load
+// completeStreamSession end a stream session for a remote transcoder and decrements its load
 // caller should hold the mutex lock
 func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 	t, ok := rtm.streamSessions[sessionId]
