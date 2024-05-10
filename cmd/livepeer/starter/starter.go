@@ -231,6 +231,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
+	defaultMinLivepeerVersion := ""
 
 	// Flags
 	defaultTestOrchAvail := true
@@ -315,8 +316,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
-		AuthWebhookURL: &defaultAuthWebhookURL,
-		OrchWebhookURL: &defaultOrchWebhookURL,
+		AuthWebhookURL:         &defaultAuthWebhookURL,
+		OrchWebhookURL:         &defaultOrchWebhookURL,
+		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
