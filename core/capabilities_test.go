@@ -331,6 +331,20 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	orch = NewCapabilities(nil, nil)
 	bcast = NewCapabilities(nil, []Capability{1})
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// broadcaster is not compatible with orchestrator - old O's version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.4.1"
+	orch.version = "0.4.0"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// broadcaster is not compatible with orchestrator - the same version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.4.1"
+	orch.version = "0.4.1"
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
 func TestCapability_RoundTrip_Net(t *testing.T) {

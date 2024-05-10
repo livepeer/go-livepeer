@@ -245,7 +245,10 @@ func TestSelectTranscoder(t *testing.T) {
 	strm := &StubTranscoderServer{manager: m, WithholdResults: false}
 	strm2 := &StubTranscoderServer{manager: m}
 
+	LivepeerVersion = "0.4.1"
 	capabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	LivepeerVersion = "undefined"
+
 	richCapabilities := NewCapabilities(append(DefaultCapabilities(), Capability_HEVC_Encode), []Capability{})
 	allCapabilities := NewCapabilities(append(DefaultCapabilities(), OptionalCapabilities()...), []Capability{})
 
@@ -259,7 +262,7 @@ func TestSelectTranscoder(t *testing.T) {
 	go func() { m.Manage(strm, 1, capabilities.ToNetCapabilities()) }()
 	time.Sleep(1 * time.Millisecond) // allow time for first stream to register
 	go func() { m.Manage(strm2, 1, richCapabilities.ToNetCapabilities()); wg.Done() }()
-	time.Sleep(1 * time.Millisecond) // allow time for second stream to register
+	time.Sleep(1 * time.Millisecond) // allow time for second stream to register e for third stream to register
 
 	assert.NotNil(m.liveTranscoders[strm])
 	assert.NotNil(m.liveTranscoders[strm2])
@@ -341,6 +344,20 @@ func TestSelectTranscoder(t *testing.T) {
 	assert.Equal(1, t1.load)
 	m.completeStreamSession(testSessionId)
 	assert.Equal(0, t1.load)
+
+	// assert one transcoder with the correct Livepeer version is selected
+	minVersionCapabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	minVersionCapabilities.SetMinVersionConstraint("0.4.0")
+	currentTranscoder, err = m.selectTranscoder(testSessionId, minVersionCapabilities)
+	assert.Nil(err)
+	m.completeStreamSession(testSessionId)
+
+	// assert no transcoders available for min version higher than any transcoder
+	minVersionHighCapabilities := NewCapabilities(DefaultCapabilities(), []Capability{})
+	minVersionHighCapabilities.SetMinVersionConstraint("0.4.2")
+	currentTranscoder, err = m.selectTranscoder(testSessionId, minVersionHighCapabilities)
+	assert.NotNil(err)
+	m.completeStreamSession(testSessionId)
 }
 
 func TestCompleteStreamSession(t *testing.T) {
