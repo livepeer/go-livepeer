@@ -448,7 +448,7 @@ func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*Broadcas
 }
 
 func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
-	params.Capabilities.AddMinVersion(node.Capabilities)
+	params.Capabilities.SetMinVersionConstraint(node.Capabilities.MinVersionConstraint())
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
 		trustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreAtLeast(common.Score_Trusted)))

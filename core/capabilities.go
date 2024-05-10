@@ -3,10 +3,10 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/Masterminds/semver/v3"
-	"github.com/golang/glog"
 	"sync"
 
+	"github.com/Masterminds/semver/v3"
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -609,8 +609,15 @@ func (bcast *Capabilities) LegacyOnly() bool {
 	return bcast.bitstring.CompatibleWith(legacyCapabilityString)
 }
 
-func (bcast *Capabilities) AddMinVersion(capabilities *Capabilities) {
-	if capabilities.constraints.minVersion != "" {
-		bcast.constraints.minVersion = capabilities.constraints.minVersion
+func (bcast *Capabilities) SetMinVersionConstraint(minVersionConstraint string) {
+	if bcast != nil {
+		bcast.constraints.minVersion = minVersionConstraint
 	}
+}
+
+func (bcast *Capabilities) MinVersionConstraint() string {
+	if bcast != nil {
+		return bcast.constraints.minVersion
+	}
+	return ""
 }

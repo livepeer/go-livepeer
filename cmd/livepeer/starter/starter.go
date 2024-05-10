@@ -1171,7 +1171,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	n.Capabilities = core.NewCapabilities(transcoderCaps, core.MandatoryOCapabilities())
 	if cfg.OrchMinLivepeerVersion != nil {
-		n.Capabilities.AddMinVersion(core.NewMinVersionContraint(*cfg.OrchMinLivepeerVersion))
+		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
 
 	if drivers.NodeStorage == nil {
