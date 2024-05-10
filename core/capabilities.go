@@ -3,7 +3,8 @@ package core
 import (
 	"errors"
 	"fmt"
-
+	"github.com/Masterminds/semver/v3"
+	"github.com/golang/glog"
 	"sync"
 
 	"github.com/livepeer/go-livepeer/net"
@@ -320,14 +321,31 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 }
 
 func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities) bool {
-	if bcast == nil {
+	if bcast == nil || orch == nil || bcast.constraints.minVersion == "" {
+		// should not happen, but just in case, return true by default
+		return true
+	}
+	if orch.Version == "" || orch.Version == "undefined" {
+		// Orchestrator/Transcoder version is not set, so it's incompatible
 		return false
 	}
-	// TODO Compare bcast.constraints.minVersion <= orch.Version instead of this mock equality check
-	if bcast.constraints.minVersion != orch.Version {
+
+	minVer, err := semver.NewVersion(bcast.constraints.minVersion)
+	if err != nil {
+		glog.Warningf("error while parsing minVersion: %v", err)
+		return true
+	}
+	ver, err := semver.NewVersion(orch.Version)
+	if err != nil {
+		glog.Warningf("error while parsing version: %v", err)
 		return false
 	}
-	return bcast.constraints.minVersion == orch.Version
+
+	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	minVerNoSuffix, _ := minVer.SetPrerelease("")
+	verNoSuffix, _ := ver.SetPrerelease("")
+
+	return !verNoSuffix.LessThan(&minVerNoSuffix)
 }
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
