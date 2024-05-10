@@ -319,6 +319,17 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 	return &Capabilities{bitstring: NewCapabilityString(capList)}, nil
 }
 
+func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities) bool {
+	if bcast == nil {
+		return false
+	}
+	// TODO Compare bcast.constraints.minVersion <= orch.Version instead of this mock equality check
+	if bcast.constraints.minVersion != orch.Version {
+		return false
+	}
+	return bcast.constraints.minVersion == orch.Version
+}
+
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 	// Ensure bcast and orch are compatible with one another.
 
@@ -328,9 +339,7 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		// cf. common.CapabilityComparator
 		return false
 	}
-
-	// TODO Compare bcast.constraints.minVersion <= orch.Version instead of this mock equality check
-	if bcast.constraints.minVersion != orch.Version {
+	if !bcast.LivepeerVersionCompatibleWith(orch) {
 		return false
 	}
 
