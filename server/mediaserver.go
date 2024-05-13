@@ -433,6 +433,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 	return func(url *url.URL, rtmpStrm stream.RTMPVideoStream) error {
 		params := streamParams(rtmpStrm.AppData())
+		params.Capabilities.SetMinVersionConstraint(s.LivepeerNode.Capabilities.MinVersionConstraint())
 		if params == nil {
 			return errMismatchedParams
 		}

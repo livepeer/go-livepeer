@@ -981,7 +981,9 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 	findCompatibleTranscoder := func(rtm *RemoteTranscoderManager) int {
 		for i := len(rtm.remoteTranscoders) - 1; i >= 0; i-- {
 			// no capabilities = default capabilities, all transcoders must support them
-			if caps == nil || caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) {
+			if caps == nil ||
+				(caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) &&
+					caps.LivepeerVersionCompatibleWith(rtm.remoteTranscoders[i].capabilities.ToNetCapabilities())) {
 				return i
 			}
 		}
