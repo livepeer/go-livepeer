@@ -91,6 +91,7 @@ type LivepeerConfig struct {
 	Orchestrator           *bool
 	Transcoder             *bool
 	AIWorker               *bool
+	Gateway                *bool
 	Broadcaster            *bool
 	OrchSecret             *string
 	TranscodingOptions     *string
@@ -167,6 +168,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchestrator := false
 	defaultTranscoder := false
 	defaultBroadcaster := false
+	defaultGateway := false
 	defaultOrchSecret := ""
 	defaultTranscodingOptions := "P240p30fps16x9,P360p30fps16x9"
 	defaultMaxAttempts := 3
@@ -255,6 +257,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// Transcoding:
 		Orchestrator:         &defaultOrchestrator,
 		Transcoder:           &defaultTranscoder,
+		Gateway:              &defaultGateway,
 		Broadcaster:          &defaultBroadcaster,
 		OrchSecret:           &defaultOrchSecret,
 		TranscodingOptions:   &defaultTranscodingOptions,
@@ -629,6 +632,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
 	} else if *cfg.Broadcaster {
+		n.NodeType = core.BroadcasterNode
+		glog.Warning("-broadcaster flag is deprecated and will be removed in a future release. Please use -gateway instead")
+	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
 		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
@@ -1357,7 +1363,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	case core.OrchestratorNode:
 		glog.Infof("***Livepeer Running in Orchestrator Mode***")
 	case core.BroadcasterNode:
-		glog.Infof("***Livepeer Running in Broadcaster Mode***")
+		glog.Infof("***Livepeer Running in Gateway Mode***")
 		glog.Infof("Video Ingest Endpoint - rtmp://%v", *cfg.RtmpAddr)
 	case core.TranscoderNode:
 		glog.Infof("**Liveepeer Running in Transcoder Mode***")
