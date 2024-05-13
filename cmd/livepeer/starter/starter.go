@@ -879,19 +879,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if *cfg.Orchestrator {
 			// Set price per pixel base info
-			if *cfg.PixelsPerUnit <= 0 {
-				// Can't divide by 0
-				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %d", *cfg.PixelsPerUnit))
-			}
-			if cfg.PricePerUnit == nil {
+			if cfg.PricePerUnit == nil && !*cfg.AIWorker {
 				// Prevent orchestrators from unknowingly providing free transcoding
 				panic(fmt.Errorf("-pricePerUnit must be set"))
+			} else if cfg.PricePerUnit != nil {
+				if *cfg.PricePerUnit < 0 {
+					panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
+				}
+
+				n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
+				glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 			}
-			if *cfg.PricePerUnit < 0 {
-				panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
-			}
-			n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
-			glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
 
 			if *cfg.PricePerBroadcaster != "" {
 				ppb := getBroadcasterPrices(*cfg.PricePerBroadcaster)
