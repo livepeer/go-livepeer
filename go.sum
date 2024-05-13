@@ -452,6 +452,8 @@ github.com/livepeer/lpms v0.0.0-20240115103113-98566e26c007 h1:0xr1TeIanBDdzI3sE
 github.com/livepeer/lpms v0.0.0-20240115103113-98566e26c007/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/livepeer/lpms v0.0.0-20240402101153-ced71c476bd0 h1:Ch+HRjVJHpNo3kySGJgyDqb+l0KPWehyqZfA1wOafgY=
 github.com/livepeer/lpms v0.0.0-20240402101153-ced71c476bd0/go.mod h1:z5ROP1l5OzAKSoqVRLc34MjUdueil6wHSecQYV7llIw=
+github.com/livepeer/lpms v0.0.0-20240513161533-11a5584d691d h1:RehRsei/f2mv1RCWD1e3FWRkPl/+eKlHq6syU9c4WJE=
+github.com/livepeer/lpms v0.0.0-20240513161533-11a5584d691d/go.mod h1:z5ROP1l5OzAKSoqVRLc34MjUdueil6wHSecQYV7llIw=
 github.com/livepeer/m3u8 v0.11.1 h1:VkUJzfNTyjy9mqsgp5JPvouwna8wGZMvd/gAfT5FinU=
 github.com/livepeer/m3u8 v0.11.1/go.mod h1:IUqAtwWPAG2CblfQa4SVzTQoDcEMPyfNOaBSxqHMS04=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ81pIr0yLvtUWk2if982qA3F3QD6H4=
