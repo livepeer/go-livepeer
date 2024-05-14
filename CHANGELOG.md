@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.7.5
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#3050](https://github.com/livepeer/go-livepeer/pull/3050) Create option to filter Os by min livepeer version used (@leszko)
+- [#3029](https://github.com/livepeer/go-livepeer/pull/3029) Initialize round by any B/O who has the initializeRound flag set to true (@leszko)
+- [#3040](https://github.com/livepeer/go-livepeer/pull/3040) Fix function names (@kevincatty)
+
+#### Broadcaster
+
+- [#2995](https://github.com/livepeer/go-livepeer/pull/2995) server: Allow Os price to increase up to 2x mid-session (@victorges)
+- [#2999](https://github.com/livepeer/go-livepeer/pull/2999) server,discovery: Allow B to use any O in case none match maxPrice (@victorges)
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+- [#2994](https://github.com/livepeer/go-livepeer/pull/2994) server: Skip redundant maxPrice check in ongoing session (@victorges)
+
+#### Orchestrator
+
+- [#3001](https://github.com/livepeer/go-livepeer/pull/3001) Fix transcoding price metrics (@leszko)
+
+#### Transcoder
+
+- [#3003](https://github.com/livepeer/go-livepeer/pull/3003) Fix issue in the transcoding layer for WebRTC input (@j0sh)
+
 ## v0.7.4
 
 ### Breaking Changes 🚨🚨
