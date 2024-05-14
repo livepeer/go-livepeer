@@ -228,6 +228,48 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		caps := core.NewCapabilitiesWithConstraints(core.DefaultCapabilities(), nil, nil)
+
+		ods, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(context.Background(), 100, newSuspender(), caps, common.ScoreAtLeast(0))
+		if err != nil {
+			respond500(w, "failed to get orchestrator info: "+err.Error())
+		}
+
+		//orch_info_resp := make(map[string]interface{})
+
+		capModels := make(map[string][]interface{})
+		remoteInfos := ods.GetRemoteInfos()
+		glog.V(common.SHORT).Infof("getting network capabilities for %d orchestrators", len(remoteInfos))
+		for idx, orch_info := range remoteInfos {
+			glog.V(common.DEBUG).Infof("getting capabilities for orchestrator %d", idx)
+			//parse the capabilities and capacities
+			if orch_info.GetCapabilities() != nil {
+				for cap, constraints := range orch_info.Capabilities.Constraints {
+					capName, err := core.CapabilityToName(core.Capability(int(cap)))
+					if err != nil {
+						continue
+					}
+
+					modelsForCap := make(map[string]bool)
+					models := constraints.GetModels()
+					for model, constraint := range models {
+						modelsForCap[model] = constraint.GetWarm()
+					}
+
+					capModels[capName] = append(capModels[capName], modelsForCap)
+				}
+			}
+
+		}
+
+		respondJson(w, capModels)
+
+	})
+}
+
 // Rounds
 func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
