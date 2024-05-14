@@ -37,6 +37,8 @@
 
 #### Transcoder
 
+- [#3003](https://github.com/livepeer/go-livepeer/pull/3003) Fix issue in the transcoding layer for WebRTC input (@j0sh)
+
 ## v0.7.4
 
 ### Breaking Changes 🚨🚨
@@ -52,8 +54,6 @@
 #### Orchestrator
 
 #### Transcoder
-
-- [#3003](https://github.com/livepeer/go-livepeer/pull/3003) Fix issue in the transcoding layer for WebRTC input (@j0sh)
 
 ### Bug Fixes 🐞
 
