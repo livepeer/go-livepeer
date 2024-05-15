@@ -240,7 +240,7 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 			respond500(w, "failed to get orchestrator info: "+err.Error())
 		}
 
-		capModels := make(map[string][]interface{})
+		capModels := make(map[string]interface{})
 		remoteInfos := ods.GetRemoteInfos()
 		glog.V(common.SHORT).Infof("getting network capabilities for %d orchestrators", len(remoteInfos))
 		for idx, orch_info := range remoteInfos {
@@ -253,13 +253,26 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 						continue
 					}
 
-					modelsForCap := make(map[string]bool)
-					models := constraints.GetModels()
-					for model, constraint := range models {
-						modelsForCap[model] = constraint.GetWarm()
+					if _, ok := capModels[capName]; !ok {
+						capModels[capName] = make(map[string]interface{})
 					}
 
-					capModels[capName] = append(capModels[capName], modelsForCap)
+					models := constraints.GetModels()
+					for model, constraint := range models {
+						networkCap := capModels[capName].(map[string]interface{})
+						if _, ok := networkCap[model]; !ok {
+							networkCap[model] = make(map[string]int)
+							modelData := networkCap[model].(map[string]int)
+							modelData["Warm"] = 0
+							modelData["Cold"] = 0
+						}
+						modelData := networkCap[model].(map[string]int)
+						if constraint.GetWarm() {
+							modelData["Warm"] += 1
+						} else {
+							modelData["Cold"] += 1
+						}
+					}
 				}
 			}
 
