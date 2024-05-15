@@ -127,7 +127,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.ref_name }}
-          regex: '^(main|master|v[0-9]+\.\d+\.\d+)$'
+          regex: '^(main|master|ai-video|v[0-9]+\.\d+\.\d+)$'
 
       - name: Get build tags
         id: build-tag
