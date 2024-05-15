@@ -190,7 +190,6 @@ type ClientInfo struct {
 }
 
 type LatencyRouter struct {
-	srv                    *grpc.Server
 	testBroadcasterIP      string
 	workDir                string
 	roundRobin             bool
@@ -209,6 +208,8 @@ type LatencyRouter struct {
 
 	cmu     sync.RWMutex
 	clients map[url.URL]*LatencyCheckClient
+	srv     *grpc.Server
+	net.UnimplementedOrchestratorServer
 }
 
 type OrchNode struct {
@@ -519,7 +520,7 @@ func (r *LatencyRouter) getOrchestratorInfoClosestToB(ctx context.Context, req *
 				cached_info, err = r.GetOrchestratorInfo(ctx, client_info, req, cachedOrchResp.OrchUri)
 			}
 			if err == nil {
-				expires_in := (cached_info.AuthToken.Expiration - time.Now().Unix()) / 60 
+				expires_in := (cached_info.AuthToken.Expiration - time.Now().Unix()) / 60
 				glog.Infof("%v  returning orchestrator cached %s ago  orch addr: %v priceperunit: %v ticket_params_expiration: %v minutes", client_addr, time_since_cached.Round(time.Second), cached_info.GetTranscoder(), cached_info.PriceInfo.GetPricePerUnit(), expires_in)
 				return cached_info, nil
 			}
