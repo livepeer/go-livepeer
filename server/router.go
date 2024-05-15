@@ -889,7 +889,20 @@ func (r *LatencyRouter) GetDistanceFromB(ctx context.Context, orch_ip string, b_
 	}
 	defer db.Close()
 
+	//if the IP is a hostname, then get the IP.
 	o_ip := gonet.ParseIP(orch_ip)
+	if o_ip == nil {
+		ips, err := gonet.LookupIP(orch_ip)
+		if err != nil {
+			glog.Infof("%v  failed to lookup IP for orch ip %v", b_ip, orch_ip)
+			glog.Error(err)
+		}
+		if len(ips) > 0 {
+			o_ip = ips[0]
+			glog.Infof("DNS name: got IP %s for %s", ips[0], orch_ip)
+		}
+	}
+
 	o_record, err := db.City(o_ip)
 	if err != nil {
 		glog.Infof("%v  failed to parse orch ip for geo distance calc  %v", b_ip, orch_ip)
