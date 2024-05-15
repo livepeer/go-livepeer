@@ -4,7 +4,7 @@ GO_BUILD_DIR?="./"
 MOCKGEN=go run github.com/golang/mock/mockgen
 ABIGEN=go run github.com/ethereum/go-ethereum/cmd/abigen
 
-all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
+all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go net/router.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
@@ -12,6 +12,9 @@ net/lp_rpc.pb.go: net/lp_rpc.proto
 net/redeemer.pb.go: net/redeemer.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
 
+net/router.pb.go: net/router.proto
+	protoc -I=. --go_out=plugins=grpc:. $^
+	
 net/redeemer_mock.pb.go net/redeemer_grpc_mock.pb.go: net/redeemer.pb.go net/redeemer_grpc.pb.go
 	@$(MOCKGEN) -source net/redeemer.pb.go -destination net/redeemer_mock.pb.go -package net
 	@$(MOCKGEN) -source net/redeemer_grpc.pb.go -destination net/redeemer_grpc_mock.pb.go -package net

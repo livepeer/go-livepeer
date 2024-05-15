@@ -1,0 +1,27 @@
+syntax =  "proto3";
+
+package net;
+
+service LatencyCheck {
+    rpc GetLatency(LatencyCheckReq) returns (LatencyCheckRes) {}
+    rpc UpdateRouter(ClosestOrchestratorReq) returns (ClosestOrchestratorRes) {}
+}
+
+message LatencyCheckReq {
+    string uri = 1;
+}
+
+message LatencyCheckRes {
+    double respTime = 1;
+}
+
+message ClosestOrchestratorReq {
+    string broadcasterUri = 1;
+    string orchestratorUri = 2;
+    double respTime = 3;
+    double distance = 4;
+}
+
+message ClosestOrchestratorRes {
+    bool updated = 1;
+}
