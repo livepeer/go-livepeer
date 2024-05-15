@@ -112,15 +112,15 @@ export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-}:$ROOT/compiled/lib/pkgconfig"
 mkdir -p "$ROOT/"
 
 # NVENC only works on Windows/Linux
-if [[ "$GOOS" != "darwin" ]]; then
-  if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
-    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
-    cd $ROOT/nv-codec-headers
-    git checkout n9.1.23.1
-    make -e PREFIX="$ROOT/compiled"
-    make install -e PREFIX="$ROOT/compiled"
-  fi
-fi
+#if [[ "$GOOS" != "darwin" ]]; then
+#  if [[ ! -e "$ROOT/nv-codec-headers" ]]; then
+#    git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git "$ROOT/nv-codec-headers"
+#    cd $ROOT/nv-codec-headers
+#    git checkout n9.1.23.1
+#    make -e PREFIX="$ROOT/compiled"
+#    make install -e PREFIX="$ROOT/compiled"
+#  fi
+#fi
 
 if [[ "$GOOS" != "windows" && "$GOARCH" == "amd64" ]]; then
   if [[ ! -e "$ROOT/nasm-2.14.02" ]]; then
@@ -184,9 +184,9 @@ if [[ "$BUILDOS" == "darwin" && "$GOOS" == "darwin" ]]; then
   EXTRA_FFMPEG_LDFLAGS="$EXTRA_FFMPEG_LDFLAGS -framework CoreFoundation -framework Security"
 elif [[ "$GOOS" == "windows" ]]; then
   EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_cuda,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
-elif [[ -e "/usr/local/cuda/lib64" ]]; then
-  echo "CUDA SDK detected, building with GPU support"
-  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-nonfree --enable-cuda-nvcc --enable-libnpp --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_npp,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
+#elif [[ -e "/usr/local/cuda/lib64" ]]; then
+#  echo "CUDA SDK detected, building with GPU support"
+#  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --enable-nonfree --enable-cuda-nvcc --enable-libnpp --enable-cuda --enable-cuda-llvm --enable-cuvid --enable-nvenc --enable-decoder=h264_cuvid,hevc_cuvid,vp8_cuvid,vp9_cuvid --enable-filter=scale_npp,signature_cuda,hwupload_cuda --enable-encoder=h264_nvenc,hevc_nvenc"
 else
   echo "No CUDA SDK detected, building without GPU support"
 fi
