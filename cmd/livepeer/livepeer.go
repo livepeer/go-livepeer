@@ -140,7 +140,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	// Transcoding:
 	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
 	cfg.Transcoder = flag.Bool("transcoder", *cfg.Transcoder, "Set to true to be a transcoder")
-	cfg.Broadcaster = flag.Bool("broadcaster", *cfg.Broadcaster, "Set to true to be a broadcaster")
+	cfg.Gateway = flag.Bool("gateway", *cfg.Broadcaster, "Set to true to be a gateway")
+	cfg.Broadcaster = flag.Bool("broadcaster", *cfg.Broadcaster, "Set to true to be a broadcaster (**Deprecated**, use -gateway)")
 	cfg.OrchSecret = flag.String("orchSecret", *cfg.OrchSecret, "Shared secret with the orchestrator as a standalone transcoder or path to file")
 	cfg.TranscodingOptions = flag.String("transcodingOptions", *cfg.TranscodingOptions, "Transcoding options for broadcast job, or path to json config")
 	cfg.MaxAttempts = flag.Int("maxAttempts", *cfg.MaxAttempts, "Maximum transcode attempts")
