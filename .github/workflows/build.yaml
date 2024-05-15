@@ -217,7 +217,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.ref_name }}
-          regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
+          regex: '^(master|main|ai-video|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
         if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
