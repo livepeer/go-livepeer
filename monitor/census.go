@@ -306,8 +306,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTicketValueSent = stats.Float64("ticket_value_sent", "TicketValueSent", "gwei")
 	census.mTicketsSent = stats.Int64("tickets_sent", "TicketsSent", "tot")
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
-	census.mDeposit = stats.Float64("broadcaster_deposit", "Current remaining deposit for the broadcaster node", "gwei")
-	census.mReserve = stats.Float64("broadcaster_reserve", "Current remaining reserve for the broadcaster node", "gwei")
+	census.mDeposit = stats.Float64("gateway_deposit", "Current remaining deposit for the gateway node", "gwei")
+	census.mReserve = stats.Float64("gateway_reserve", "Current remaining reserve for the gateway node", "gwei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -691,16 +691,31 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.Sum(),
 		},
 		{
+			Name:        "gateway_deposit",
+			Measure:     census.mDeposit,
+			Description: "Current remaining deposit for the gateway node",
+			TagKeys:     baseTagsWithEthAddr,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "gateway_reserve",
+			Measure:     census.mReserve,
+			Description: "Current remaining reserve for the gateway node",
+			TagKeys:     baseTagsWithEthAddr,
+			Aggregation: view.LastValue(),
+		},
+		// TODO: Keep the old names for backwards compatibility, remove in the future
+		{
 			Name:        "broadcaster_deposit",
 			Measure:     census.mDeposit,
-			Description: "Current remaining deposit for the broadcaster node",
+			Description: "Current remaining deposit for the gateway node",
 			TagKeys:     baseTagsWithEthAddr,
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "broadcaster_reserve",
 			Measure:     census.mReserve,
-			Description: "Current remaining reserve for the broadcaster node",
+			Description: "Current remaining reserve for the gateway node",
 			TagKeys:     baseTagsWithEthAddr,
 			Aggregation: view.LastValue(),
 		},
@@ -1533,7 +1548,7 @@ func PaymentCreateError(ctx context.Context) {
 	}
 }
 
-// Deposit records the current deposit for the broadcaster
+// Deposit records the current deposit for the gateway
 func Deposit(sender string, deposit *big.Int) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mDeposit.M(wei2gwei(deposit))); err != nil {
