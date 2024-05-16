@@ -787,7 +787,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			n.SetBasePrice("default", autoPrice)
 
-			if cfg.PricePerBroadcaster != nil {
+			if *cfg.PricePerBroadcaster != "" {
 				glog.Warning("-PricePerBroadcaster flag is deprecated and will be removed in a future release. Please use -PricePerGateway instead")
 				cfg.PricePerGateway = cfg.PricePerBroadcaster
 			}
