@@ -161,11 +161,12 @@ type SessionPool struct {
 	// Accessing or changing any of the below requires ownership of this mutex
 	lock sync.Mutex
 
-	sel      BroadcastSessionsSelector
-	lastSess []*BroadcastSession
-	sessMap  map[string]*BroadcastSession
-	numOrchs int // how many orchs to request at once
-	poolSize int
+	sel            BroadcastSessionsSelector
+	lastSess       []*BroadcastSession
+	sessMap        map[string]*BroadcastSession
+	numOrchs       int // how many orchs to request at once
+	poolSize       int
+	naiveSelection bool
 
 	refreshing bool // only allow one refresh in-flight
 	finished   bool // set at stream end
@@ -176,7 +177,7 @@ type SessionPool struct {
 }
 
 func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator, cleanupSession sessionsCleanup,
-	sel BroadcastSessionsSelector) *SessionPool {
+	naiveSelection bool, sel BroadcastSessionsSelector) *SessionPool {
 
 	return &SessionPool{
 		mid:            mid,
@@ -187,6 +188,7 @@ func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender,
 		createSessions: createSession,
 		cleanupSession: cleanupSession,
 		sus:            sus,
+		naiveSelection: naiveSelection,
 	}
 }
 
@@ -380,7 +382,10 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 		// Re-use last session if oldest segment is in-flight for < segDur
 		gotFromLast := false
-		sess = selectSession(ctx, sp.lastSess, selectedSessions, 1)
+		if !sp.naiveSelection {
+			//try and re-use session
+			sess = selectSession(ctx, sp.lastSess, selectedSessions, 1)
+		}
 		if sess == nil {
 			// Or try a new session from the available ones
 			sess = sp.sel.Select(ctx)
@@ -510,8 +515,9 @@ type BroadcastSessionsManager struct {
 
 	finished bool // set at stream end
 
-	trustedPool   *SessionPool
-	untrustedPool *SessionPool
+	trustedPool    *SessionPool
+	untrustedPool  *SessionPool
+	naiveSelection bool
 
 	verifiedSession *BroadcastSession
 }
@@ -560,11 +566,12 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, cleanupSession, node.NaiveSelection, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities, node.NaiveSelection)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, cleanupSession, node.NaiveSelection, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities, node.NaiveSelection)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)
+	bsm.naiveSelection = node.NaiveSelection
 	clog.V(common.DEBUG).Infof(ctx, "New session manager created: trustedPoolSize=%v, untrustedPoolSize=%v", len(bsm.trustedPool.sessMap), len(bsm.untrustedPool.sessMap))
 	return bsm
 }

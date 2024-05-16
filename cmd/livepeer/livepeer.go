@@ -140,6 +140,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.MinPerfScore = flag.Float64("minPerfScore", *cfg.MinPerfScore, "The minimum orchestrator's performance score a broadcaster is willing to accept")
 	cfg.DiscoveryTimeout = flag.Duration("discoveryTimeout", *cfg.DiscoveryTimeout, "Time to wait for orchestrators to return info to be included in transcoding sessions for manifest (default = 500ms)")
 	cfg.GatewayHost = flag.String("gatewayHost", *cfg.GatewayHost, "External hostname on which the Gateway node is running. Used when telling external services how to reach the node.")
+	cfg.NaiveSelection = flag.Bool("naiveSelection", *cfg.NaiveSelection, "Do not save sessions in selector after selected. Select from selector pool without considering past performance for stream")
 
 	// Transcoding:
 	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
