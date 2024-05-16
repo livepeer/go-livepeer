@@ -126,6 +126,7 @@ type LivepeerConfig struct {
 	PixelsPerUnit           *string
 	PriceFeedAddr           *string
 	AutoAdjustPrice         *bool
+	PricePerGateway         *string
 	PricePerBroadcaster     *string
 	BlockPollingInterval    *int
 	Redeemer                *bool
@@ -204,6 +205,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
+	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
@@ -292,6 +294,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
+		PricePerGateway:         &defaultPricePerGateway,
 		PricePerBroadcaster:     &defaultPricePerBroadcaster,
 		BlockPollingInterval:    &defaultBlockPollingInterval,
 		Redeemer:                &defaultRedeemer,
@@ -784,6 +787,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			n.SetBasePrice("default", autoPrice)
 
+			// TODO: Keep old flag for backwards compatibility, remove in the future
+			if cfg.PricePerBroadcaster != nil {
+				glog.Warning("-PricePerBroadcaster flag is deprecated and will be removed in a future release. Please use -PricePerGateway instead")
+				cfg.PricePerGateway = cfg.PricePerBroadcaster
+			}
 			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
 			for _, p := range broadcasterPrices {
 				p := p
