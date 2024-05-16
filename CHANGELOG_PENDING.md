@@ -2,6 +2,8 @@
 
 ## vX.X
 
+-   [#3055](https://github.com/livepeer/go-livepeer/pull/3055) census: Rename broadcaster metrics to gateway metrics
+
 ### Breaking Changes 🚨🚨
 
 ### Features ⚒
