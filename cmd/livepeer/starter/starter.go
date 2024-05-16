@@ -791,7 +791,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Warning("-PricePerBroadcaster flag is deprecated and will be removed in a future release. Please use -PricePerGateway instead")
 				cfg.PricePerGateway = cfg.PricePerBroadcaster
 			}
-			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerGateway)
 			for _, p := range broadcasterPrices {
 				p := p
 				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
@@ -1489,20 +1489,20 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-type BroadcasterPrice struct {
+type GatewayPrice struct {
 	EthAddress    string
 	PricePerUnit  *big.Rat
 	Currency      string
 	PixelsPerUnit *big.Rat
 }
 
-func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
-	if broadcasterPrices == "" {
+func getGatewayPrices(gatewayPrices string) []BroadcasterPrice {
+	if gatewayPrices == "" {
 		return nil
 	}
 
-	// Format of broadcasterPrices json
-	// {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
+	// Format of gatewayPrices json
+	// {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
 	var pricesSet struct {
 		Broadcasters []struct {
 			EthAddress string `json:"ethaddress"`
