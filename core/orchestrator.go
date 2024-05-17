@@ -359,7 +359,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 
 		// If no priced capabilities were signaled by the broadcaster assume that they are requesting
 		// transcoding and set the base price to the transcode price
-		if basePrice.Cmp(big.NewRat(0, 1)) == 0 {
+		if transcodePrice != nil && (basePrice == nil || basePrice.Cmp(big.NewRat(0, 1)) == 0) {
 			basePrice = transcodePrice
 		}
 	}
