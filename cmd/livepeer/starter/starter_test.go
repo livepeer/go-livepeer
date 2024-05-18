@@ -88,7 +88,7 @@ func TestIsLocalURL(t *testing.T) {
 	assert.False(isLocal)
 }
 
-func TestParseGetBroadcasterPrices(t *testing.T) {
+func TestParseGetGatewayPrices(t *testing.T) {
 	assert := assert.New(t)
 
 	// TODO: Keep checking old field for backwards compatibility, remove in future
