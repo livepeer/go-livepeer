@@ -126,6 +126,7 @@ type LivepeerConfig struct {
 	PixelsPerUnit           *string
 	PriceFeedAddr           *string
 	AutoAdjustPrice         *bool
+	PricePerGateway         *string
 	PricePerBroadcaster     *string
 	BlockPollingInterval    *int
 	Redeemer                *bool
@@ -204,6 +205,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
+	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
@@ -292,6 +294,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
+		PricePerGateway:         &defaultPricePerGateway,
 		PricePerBroadcaster:     &defaultPricePerBroadcaster,
 		BlockPollingInterval:    &defaultBlockPollingInterval,
 		Redeemer:                &defaultRedeemer,
@@ -784,7 +787,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			n.SetBasePrice("default", autoPrice)
 
-			broadcasterPrices := getBroadcasterPrices(*cfg.PricePerBroadcaster)
+			if *cfg.PricePerBroadcaster != "" {
+				glog.Warning("-PricePerBroadcaster flag is deprecated and will be removed in a future release. Please use -PricePerGateway instead")
+				cfg.PricePerGateway = cfg.PricePerBroadcaster
+			}
+			broadcasterPrices := getGatewayPrices(*cfg.PricePerGateway)
 			for _, p := range broadcasterPrices {
 				p := p
 				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
@@ -1482,51 +1489,64 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 	return nil
 }
 
-type BroadcasterPrice struct {
+type GatewayPrice struct {
 	EthAddress    string
 	PricePerUnit  *big.Rat
 	Currency      string
 	PixelsPerUnit *big.Rat
 }
 
-func getBroadcasterPrices(broadcasterPrices string) []BroadcasterPrice {
-	if broadcasterPrices == "" {
+func getGatewayPrices(gatewayPrices string) []GatewayPrice {
+	if gatewayPrices == "" {
 		return nil
 	}
 
 	// Format of broadcasterPrices json
-	// {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
+	// {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
 	var pricesSet struct {
+		Gateways []struct {
+			EthAddress    string          `json:"ethaddress"`
+			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
+			PricePerUnit  json.RawMessage `json:"priceperunit"`
+			Currency      string          `json:"currency"`
+		} `json:"gateways"`
+		// TODO: Keep the old name for backwards compatibility, remove in the future
 		Broadcasters []struct {
-			EthAddress string `json:"ethaddress"`
-			// The fields below are specified as a number in the JSON, but we don't want to lose precision so we store the raw characters here and parse as a big.Rat.
-			// This also allows support for exponential notation for numbers, which is helpful for pricePerUnit which could be a value like 1e12.
+			EthAddress    string          `json:"ethaddress"`
 			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
 			PricePerUnit  json.RawMessage `json:"priceperunit"`
 			Currency      string          `json:"currency"`
 		} `json:"broadcasters"`
 	}
-	pricesFileContent, _ := common.ReadFromFile(broadcasterPrices)
+	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
 
 	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
 	if err != nil {
-		glog.Errorf("broadcaster prices could not be parsed: %s", err)
+		glog.Errorf("gateway prices could not be parsed: %s", err)
 		return nil
 	}
 
-	prices := make([]BroadcasterPrice, len(pricesSet.Broadcasters))
-	for i, p := range pricesSet.Broadcasters {
+	// Check if broadcasters field is used and display a warning
+	if len(pricesSet.Broadcasters) > 0 {
+		glog.Warning("The 'broadcaster' property in the 'pricePerGateway' config is deprecated and will be removed in a future release. Please use 'gateways' instead.")
+	}
+
+	// Combine broadcasters and gateways into a single slice
+	allGateways := append(pricesSet.Broadcasters, pricesSet.Gateways...)
+
+	prices := make([]GatewayPrice, len(allGateways))
+	for i, p := range allGateways {
 		pixelsPerUnit, ok := new(big.Rat).SetString(string(p.PixelsPerUnit))
 		if !ok {
-			glog.Errorf("Pixels per unit could not be parsed for broadcaster %v. must be a valid number, provided %s", p.EthAddress, p.PixelsPerUnit)
+			glog.Errorf("Pixels per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PixelsPerUnit)
 			continue
 		}
 		pricePerUnit, ok := new(big.Rat).SetString(string(p.PricePerUnit))
 		if !ok {
-			glog.Errorf("Price per unit could not be parsed for broadcaster %v. must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
+			glog.Errorf("Price per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
 			continue
 		}
-		prices[i] = BroadcasterPrice{
+		prices[i] = GatewayPrice{
 			EthAddress:    p.EthAddress,
 			Currency:      p.Currency,
 			PricePerUnit:  pricePerUnit,

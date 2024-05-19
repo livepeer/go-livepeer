@@ -2,6 +2,7 @@ package starter
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -87,19 +88,25 @@ func TestIsLocalURL(t *testing.T) {
 	assert.False(isLocal)
 }
 
-func TestParseGetBroadcasterPrices(t *testing.T) {
+func TestParseGetGatewayPrices(t *testing.T) {
 	assert := assert.New(t)
 
-	j := `{"broadcasters":[{"ethaddress":"0x0000000000000000000000000000000000000000","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"0x1000000000000000000000000000000000000000","priceperunit":2000,"pixelsperunit":3}]}`
+	// TODO: Keep checking old field for backwards compatibility, remove in future
+	jsonTemplate := `{"%s":[{"ethaddress":"0x0000000000000000000000000000000000000000","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"0x1000000000000000000000000000000000000000","priceperunit":2000,"pixelsperunit":3}]}`
+	testCases := []string{"gateways", "broadcasters"}
 
-	prices := getBroadcasterPrices(j)
-	assert.NotNil(prices)
-	assert.Equal(2, len(prices))
+	for _, tc := range testCases {
+		jsonStr := fmt.Sprintf(jsonTemplate, tc)
 
-	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
-	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
-	assert.Equal(big.NewRat(1000, 1), price1)
-	assert.Equal(big.NewRat(2000, 3), price2)
+		prices := getGatewayPrices(jsonStr)
+		assert.NotNil(prices)
+		assert.Equal(2, len(prices))
+
+		price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+		price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+		assert.Equal(big.NewRat(1000, 1), price1)
+		assert.Equal(big.NewRat(2000, 3), price2)
+	}
 }
 
 // Address provided to keystore file
