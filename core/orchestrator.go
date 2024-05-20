@@ -334,7 +334,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 
 	basePrice := big.NewRat(0, 1)
 	if caps == nil {
-		if transcodePrice == nil {
+		if transcodePrice != nil {
 			basePrice = transcodePrice
 		}
 	} else {
