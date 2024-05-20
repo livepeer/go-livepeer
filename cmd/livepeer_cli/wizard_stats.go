@@ -219,6 +219,10 @@ func (w *wizard) orchestratorStats() {
 	fmt.Println("+------------------+")
 
 	table := tablewriter.NewWriter(os.Stdout)
+	basePrice := "n/a"
+	if priceInfo != nil {
+		basePrice = fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())
+	}
 	data := [][]string{
 		{"Status", t.Status},
 		{"Active", strconv.FormatBool(t.Active)},
@@ -227,7 +231,7 @@ func (w *wizard) orchestratorStats() {
 		{"Reward Cut (%)", eth.FormatPerc(t.RewardCut)},
 		{"Fee Cut (%)", eth.FormatPerc(flipPerc(t.FeeShare))},
 		{"Last Reward Round", t.LastRewardRound.String()},
-		{"Base price per pixel", fmt.Sprintf("%v wei / %v pixels", priceInfo.Num(), priceInfo.Denom())},
+		{"Base price per pixel", basePrice},
 		{"Base price for broadcasters", b_prices},
 	}
 
