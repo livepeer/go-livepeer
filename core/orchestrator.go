@@ -337,12 +337,13 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		transcodePrice = orch.node.GetBasePrice("default")
 	}
 
-	var basePrice *big.Rat
+	basePrice := big.NewRat(0, 1)
 	if caps == nil {
-		basePrice = transcodePrice
+		if transcodePrice != nil {
+			basePrice = transcodePrice
+		}
 	} else {
 		// The base price is the sum of the prices of individual capability + model ID pairs
-		basePrice = big.NewRat(0, 1)
 		for cap := range caps.Capacities {
 			// If the capability does not have constraints (and thus any model constraints) skip it
 			// because we only price a capability together with a model ID right now
@@ -364,7 +365,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 
 		// If no priced capabilities were signaled by the broadcaster assume that they are requesting
 		// transcoding and set the base price to the transcode price
-		if basePrice.Cmp(big.NewRat(0, 1)) == 0 {
+		if transcodePrice != nil && basePrice.Cmp(big.NewRat(0, 1)) == 0 {
 			basePrice = transcodePrice
 		}
 	}
