@@ -44,6 +44,7 @@ const (
 	BroadcasterNode
 	OrchestratorNode
 	TranscoderNode
+	AIWorkerNode
 	RedeemerNode
 )
 
@@ -52,6 +53,7 @@ var nodeTypeStrs = map[NodeType]string{
 	BroadcasterNode:  "broadcaster",
 	OrchestratorNode: "orchestrator",
 	TranscoderNode:   "transcoder",
+	AIWorkerNode:     "aiworker",
 	RedeemerNode:     "redeemer",
 }
 
@@ -116,7 +118,8 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker AI
+	AIWorker        AI
+	AIWorkerManager *RemoteAIWorkerManager
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan

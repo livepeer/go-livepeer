@@ -106,6 +106,10 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 	orch.node.serveTranscoder(stream, capacity, capabilities)
 }
 
+func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
+	orch.node.serveAIWorker(stream, capacity, capabilities)
+}
+
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
@@ -913,6 +917,17 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 		clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
 	}
 }
+func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
+	from := common.GetConnectionAddr(stream.Context())
+	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
+	n.Capabilities.AddCapacity(coreCaps)
+	defer n.Capabilities.RemoveCapacity(coreCaps)
+	glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
+
+	// Manage blocks while transcoder is connected
+	n.AIWorkerManager.Manage(stream, capacity, capabilities)
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
+}
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
@@ -1033,6 +1048,15 @@ func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTra
 	remoteChan <- res
 }
 
+type RemoteAIWorker struct {
+	manager      *RemoteAIWorkerManager
+	stream       net.AIWorker_RegisterAIWorkerServer
+	capabilities *Capabilities
+	eof          chan struct{}
+	addr         string
+	capacity     int
+}
+
 type RemoteTranscoder struct {
 	manager      *RemoteTranscoderManager
 	stream       net.Transcoder_RegisterTranscoderServer
@@ -1048,6 +1072,11 @@ type RemoteTranscoderFatalError struct {
 	error
 }
 
+// RemoteAIworkerFatalError wraps error to indicate that error is fatal
+type RemoteAIworkerFatalError struct {
+	error
+}
+
 // NewRemoteTranscoderFatalError creates new RemoteTranscoderFatalError
 // Exported here to be used in other packages
 func NewRemoteTranscoderFatalError(err error) error {
@@ -1057,6 +1086,14 @@ func NewRemoteTranscoderFatalError(err error) error {
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 var ErrNoTranscodersAvailable = errors.New("no transcoders available")
 var ErrNoCompatibleTranscodersAvailable = errors.New("no transcoders can provide requested capabilities")
+
+func (rt *RemoteAIWorker) done() {
+	// select so we don't block indefinitely if there's no listener
+	select {
+	case rt.eof <- struct{}{}:
+	default:
+	}
+}
 
 func (rt *RemoteTranscoder) done() {
 	// select so we don't block indefinitely if there's no listener
@@ -1146,6 +1183,30 @@ func NewRemoteTranscoderManager() *RemoteTranscoderManager {
 	}
 }
 
+func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, capacity int, caps *Capabilities) *RemoteAIWorker {
+	return &RemoteAIWorker{
+		manager:      m,
+		stream:       stream,
+		capacity:     capacity,
+		eof:          make(chan struct{}, 1),
+		addr:         common.GetConnectionAddr(stream.Context()),
+		capabilities: caps,
+	}
+}
+
+func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
+	return &RemoteAIWorkerManager{
+		remoteAIWorkers: []*RemoteAIWorker{},
+		liveAIWorkers:   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker{},
+		RTmutex:         sync.Mutex{},
+
+		taskMutex: &sync.RWMutex{},
+		taskChans: make(map[int64]TranscoderChan),
+
+		streamSessions: make(map[string]*RemoteAIWorker),
+	}
+}
+
 type byLoadFactor []*RemoteTranscoder
 
 func loadFactor(r *RemoteTranscoder) float64 {
@@ -1156,6 +1217,20 @@ func (r byLoadFactor) Len() int      { return len(r) }
 func (r byLoadFactor) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
 func (r byLoadFactor) Less(i, j int) bool {
 	return loadFactor(r[j]) < loadFactor(r[i]) // sort descending
+}
+
+type RemoteAIWorkerManager struct {
+	remoteAIWorkers []*RemoteAIWorker
+	liveAIWorkers   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker
+	RTmutex         sync.Mutex
+
+	// For tracking tasks assigned to remote aiworkers
+	taskMutex *sync.RWMutex
+	taskChans map[int64]TranscoderChan
+	taskCount int64
+
+	// Map for keeping track of sessions and their respective aiworkers
+	streamSessions map[string]*RemoteAIWorker
 }
 
 type RemoteTranscoderManager struct {
@@ -1188,6 +1263,32 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 	}
 	rtm.RTmutex.Unlock()
 	return res
+}
+
+// Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
+func (rtm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
+	from := common.GetConnectionAddr(stream.Context())
+	aiworker := NewRemoteAIWorker(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities))
+	go func() {
+		ctx := stream.Context()
+		<-ctx.Done()
+		err := ctx.Err()
+		glog.Errorf("Stream closed for aiworker=%s, err=%q", from, err)
+		aiworker.done()
+	}()
+
+	rtm.RTmutex.Lock()
+	rtm.liveAIWorkers[aiworker.stream] = aiworker
+	rtm.remoteAIWorkers = append(rtm.remoteAIWorkers, aiworker)
+	// sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
+	rtm.RTmutex.Unlock()
+
+	<-aiworker.eof
+	glog.Infof("Got aiworker=%s eof, removing from live aiworkers map", from)
+
+	rtm.RTmutex.Lock()
+	delete(rtm.liveAIWorkers, aiworker.stream)
+	rtm.RTmutex.Unlock()
 }
 
 // Manage adds transcoder to list of live transcoders. Doesn't return until transcoder disconnects

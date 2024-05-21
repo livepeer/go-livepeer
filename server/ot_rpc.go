@@ -43,6 +43,30 @@ var errZeroCapacity = errors.New("zero capacity")
 var errInterrupted = errors.New("execution interrupted")
 var errCapabilities = errors.New("incompatible segment capabilities")
 
+// Standalone AIWorker
+
+// RunAIWorker is main routing of standalone aiworker
+// Exiting it will terminate executable
+func RunAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
+	glog.Info("starting aiworker to ", orchAddr)
+
+	expb := backoff.NewExponentialBackOff()
+	expb.MaxInterval = time.Minute
+	expb.MaxElapsedTime = 0
+	backoff.Retry(func() error {
+		glog.Info("Registering aiworker to ", orchAddr)
+		err := runAIWorker(n, orchAddr, capacity, caps)
+		glog.Info("Unregistering aiworker: ", err)
+		if _, fatal := err.(core.RemoteAIworkerFatalError); fatal {
+			glog.Info("Terminating aiworker because of ", err)
+			// Returning nil here will make `backoff` to stop trying to reconnect and exit
+			return nil
+		}
+		// By returning error we tell `backoff` to try to connect again
+		return err
+	}, expb)
+}
+
 // Standalone Transcoder
 
 // RunTranscoder is main routing of standalone transcoder
@@ -79,6 +103,66 @@ func checkTranscoderError(err error) error {
 		}
 	}
 	return err
+}
+
+func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
+	glog.Infof("runAIWorker orchAddr=%v ", orchAddr)
+
+	tlsConfig := &tls.Config{InsecureSkipVerify: true}
+	conn, err := grpc.Dial(orchAddr,
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	if err != nil {
+		glog.Error("Did not connect aiworker to orchesrator: ", err)
+		return err
+	}
+	defer conn.Close()
+
+	c := net.NewAIWorkerClient(conn)
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	// Silence linter
+	defer cancel()
+	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+	if err := checkTranscoderError(err); err != nil {
+		glog.Error("Could not register aiworker to orchestrator ", err)
+		return err
+	}
+
+	// Catch interrupt signal to shut down transcoder
+	exitc := make(chan os.Signal)
+	signal.Notify(exitc, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(exitc)
+	go func() {
+		select {
+		case sig := <-exitc:
+			glog.Infof("Exiting Livepeer AIWorker: %v", sig)
+			// Cancelling context will close connection to orchestrator
+			cancel()
+			return
+		}
+	}()
+
+	httpc := &http.Client{Transport: &http2.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	var wg sync.WaitGroup
+	for {
+		notify, err := r.Recv()
+		if err := checkTranscoderError(err); err != nil {
+			glog.Infof(`End of stream receive cycle because of err=%q, waiting for running aiworker jobs to complete`, err)
+			wg.Wait()
+			return err
+		}
+		wg.Add(1)
+		go func() {
+			runAIWork(n, orchAddr, httpc, notify)
+			wg.Done()
+		}()
+
+	}
+}
+
+func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIWork) {
+	glog.Infof("runAIWork Value=%d ", notify.Value)
 }
 
 func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
@@ -293,6 +377,26 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 }
 
 // Orchestrator gRPC
+func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.AIWorker_RegisterAIWorkerServer) error {
+	from := common.GetConnectionAddr(stream.Context())
+	glog.Infof("Got a RegisterAIWorker request from aiworker=%s ", from)
+
+	if req.Secret != h.orchestrator.TranscoderSecret() {
+		glog.Errorf("err=%q", errSecret.Error())
+		return errSecret
+	}
+	if req.Capacity <= 0 {
+		glog.Errorf("err=%q", errZeroCapacity.Error())
+		return errZeroCapacity
+	}
+	// handle case of legacy Transcoder which do not advertise capabilities
+	if req.Capabilities == nil {
+		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
+	}
+	// blocks until stream is finished
+	h.orchestrator.ServeAIWorker(stream, int(req.Capacity), req.Capabilities)
+	return nil
+}
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
 	from := common.GetConnectionAddr(stream.Context())

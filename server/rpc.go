@@ -53,6 +53,7 @@ type Orchestrator interface {
 	CheckCapacity(core.ManifestID) error
 	CheckAICapacity(pipeline, modelID string) bool
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
@@ -166,6 +167,7 @@ type lphttp struct {
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
+	net.UnimplementedAIWorkerServer
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -191,7 +193,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAiWorkers bool, n *core.LivepeerNode) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -205,9 +207,13 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
+	if acceptRemoteAiWorkers {
+		net.RegisterAIWorkerServer(s, &lp)
+		// lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 
-	if n.AIWorker != nil {
-		startAIServer(lp)
+		if n.AIWorker != nil {
+			startAIServer(lp)
+		}
 	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)

@@ -12,6 +12,13 @@ service Orchestrator {
   rpc Ping(PingPong) returns (PingPong);
 }
 
+service AIWorker {
+
+  // Called by the aiworker to register to an orchestrator. The orchestrator
+  // notifies registered aiworkers of jobs as they come in.
+  rpc RegisterAIWorker(RegisterAIWorkerRequest) returns (stream NotifyAIWork);
+}
+
 service Transcoder {
 
   // Called by the transcoder to register to an orchestrator. The orchestrator
@@ -115,7 +122,7 @@ message Capabilities {
         uint32 capacity = 2;
       }
 
-      map<string, ModelConstraint> models = 1; 
+      map<string, ModelConstraint> models = 1;
     }
 
     map<uint32, Constraints> constraints = 4;
@@ -320,7 +327,23 @@ message TranscodeResult {
     // Used to notify a broadcaster of updated orchestrator information
     OrchestratorInfo info = 16;
 }
+// Sent by the aiworker to register itself to the orchestrator.
+message RegisterAIWorkerRequest {
 
+    // Shared secret for auth
+    string secret = 1;
+
+    // AIWorker capacity
+    int64 capacity = 2;
+
+    // AIWorker capabilities
+    Capabilities capabilities = 3;
+}
+
+// Sent by the orchestrator to the aiworker
+message NotifyAIWork {
+  bytes value = 1;
+}
 // Sent by the transcoder to register itself to the orchestrator.
 message RegisterRequest {
 
