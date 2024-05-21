@@ -61,7 +61,6 @@ var (
 	// The time to live for cached max float values for PM senders (else they will be cleaned up) in seconds
 	smTTL = 172800 // 2 days
 
-	aiWorkerContainerImageID     = "livepeer/ai-runner:latest"
 	aiWorkerContainerStopTimeout = 5 * time.Second
 )
 
@@ -151,6 +150,7 @@ type LivepeerConfig struct {
 	OrchWebhookURL         *string
 	OrchBlacklist          *string
 	TestOrchAvail          *bool
+	AIRunnerImage          *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -190,6 +190,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIWorker := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
+	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -278,9 +279,10 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:    &defaultAIWorker,
-		AIModels:    &defaultAIModels,
-		AIModelsDir: &defaultAIModelsDir,
+		AIWorker:      &defaultAIWorker,
+		AIModels:      &defaultAIModels,
+		AIModelsDir:   &defaultAIModelsDir,
+		AIRunnerImage: &defaultAIRunnerImage,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -531,7 +533,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(aiWorkerContainerImageID, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
