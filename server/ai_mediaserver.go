@@ -13,6 +13,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
@@ -106,6 +107,11 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 
 		took := time.Since(start)
 		clog.Infof(ctx, "Processed TextToImage request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+
+		//Log round trip time for text-to-image job
+		if monitor.Enabled {
+			monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, took)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
