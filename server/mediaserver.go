@@ -44,12 +44,15 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-var errAlreadyExists = errors.New("StreamAlreadyExists")
-var errStorage = errors.New("ErrStorage")
-var errDiscovery = errors.New("ErrDiscovery")
-var errNoOrchs = errors.New("ErrNoOrchs")
-var errUnknownStream = errors.New("ErrUnknownStream")
-var errMismatchedParams = errors.New("Mismatched type for stream params")
+var (
+	errAlreadyExists    = errors.New("StreamAlreadyExists")
+	errStorage          = errors.New("ErrStorage")
+	errDiscovery        = errors.New("ErrDiscovery")
+	errNoOrchs          = errors.New("ErrNoOrchs")
+	errUnknownStream    = errors.New("ErrUnknownStream")
+	errMismatchedParams = errors.New("Mismatched type for stream params")
+	errForbidden        = errors.New("authentication denied")
+)
 
 const HLSWaitInterval = time.Second
 const HLSBufferCap = uint(43200) //12 hrs assuming 1s segment
@@ -258,7 +261,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		if resp, err = authenticateStream(AuthWebhookURL, url.String()); err != nil {
 			errMsg := fmt.Sprintf("Forbidden: Authentication denied for streamID url=%s err=%q", url.String(), err)
 			clog.Errorf(ctx, errMsg)
-			return nil, fmt.Errorf(errMsg)
+			return nil, errForbidden
 		}
 
 		// If we've received auth in header AND callback URL forms then for now, we reject cases where they're
@@ -828,7 +831,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	if !exists {
 		appData, err := (createRTMPStreamIDHandler(ctx, s, authHeaderConfig))(r.URL)
 		if err != nil {
-			if strings.HasPrefix(err.Error(), "Forbidden") {
+			if errors.Is(err, errForbidden) {
 				errorOut(http.StatusForbidden, "Could not create stream ID: url=%s", r.URL)
 				return
 			} else {
