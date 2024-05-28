@@ -1037,7 +1037,7 @@ func TestPush_ForAuthWebhookFailure(t *testing.T) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	require.Nil(t, err)
-	assert.Equal(http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(http.StatusForbidden, resp.StatusCode)
 	assert.Contains(strings.TrimSpace(string(body)), "Could not create stream ID")
 }
 
