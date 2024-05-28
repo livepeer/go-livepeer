@@ -294,7 +294,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mSuccessRatePerStream = stats.Float64("success_rate_per_stream", "Success rate, per stream", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
-	census.mAIRoundtripTime = stats.Float64("inference_time_seconds", "Inference time", "sec")
+	census.mAIRoundtripTime = stats.Float64("ai_roundtrip_time_seconds", "AI Roundtrip time", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
@@ -557,7 +557,7 @@ func InitCensus(nodeType NodeType, version string) {
 		{
 			Name:        "ai_roundtrip_time_seconds",
 			Measure:     census.mAIRoundtripTime,
-			Description: "AIRoundtripTime, seconds",
+			Description: "AI Roundtrip time, seconds",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestIDAndIP...),
 			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
 		},
