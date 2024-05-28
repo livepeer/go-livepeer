@@ -259,8 +259,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
 		if resp, err = authenticateStream(AuthWebhookURL, url.String()); err != nil {
-			errMsg := fmt.Sprintf("Forbidden: Authentication denied for streamID url=%s err=%q", url.String(), err)
-			clog.Errorf(ctx, errMsg)
+			clog.Errorf(ctx, fmt.Sprintf("Forbidden: Authentication denied for streamID url=%s err=%q", url.String(), err))
 			return nil, errForbidden
 		}
 
