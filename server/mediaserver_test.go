@@ -451,7 +451,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
 	params, err := createSid(u)
-	require.NoError(t, err)
+	require.Error(t, err)
 	if params != nil {
 		t.Error("Stream should be denied because of capacity cap")
 	}
@@ -473,7 +473,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
 	sid, err := createSid(u)
-	assert.NoError(err)
+	assert.Error(err)
 	assert.Nil(sid, "Webhook auth failed")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -509,14 +509,14 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts2 := makeServer(`{"manifestID":""}`)
 	defer ts2.Close()
 	sid, err = createSid(u)
-	assert.NoError(err)
+	assert.Error(err)
 	assert.Nil(sid, "Should not pass if returned manifest id is empty")
 
 	// invalid json
 	ts3 := makeServer(`{manifestID:"XX"}`)
 	defer ts3.Close()
 	sid, err = createSid(u)
-	assert.NoError(err)
+	assert.Error(err)
 	assert.Nil(sid, "Should not pass if returned json is invalid")
 
 	// set manifestID
@@ -613,7 +613,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": "hello"}]}`)
 	defer ts8.Close()
 	appData, err := createSid(u)
-	require.NoError(t, err)
+	require.Error(t, err)
 	params, ok := appData.(*core.StreamParameters)
 	assert.False(ok)
 	assert.Nil(params)
@@ -667,14 +667,14 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts15 := makeServer(`{"manifestID":"a2", "objectStore": "invalid://object.store", "recordObjectStore": ""}`)
 	defer ts15.Close()
 	sid, err = createSid(u)
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Nil(sid)
 
 	// do not create stream if RecordObjectStore URL is invalid
 	ts16 := makeServer(`{"manifestID":"a2", "objectStore": "", "recordObjectStore": "invalid://object.store"}`)
 	defer ts16.Close()
 	sid, err = createSid(u)
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Nil(sid)
 
 	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
