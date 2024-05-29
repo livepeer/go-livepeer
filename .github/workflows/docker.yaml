@@ -81,7 +81,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},prefix=v
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ github.event.pull_request.head.ref }}
-            type=raw,value=stable,enable=${{ startsWith(github.event.ref, 'refs/tags/v') && is_default_branch }}
+            type=raw,value=stable,enable=${{ startsWith(github.event.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/master' }}
 
       - name: Build and push livepeer docker image
         uses: docker/build-push-action@v5
