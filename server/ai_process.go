@@ -223,7 +223,9 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 		videos[i] = worker.Media{
 			Url:  newUrl,
 			Seed: media.Seed,
+			Nsfw: media.Nsfw,
 		}
+
 	}
 
 	resp.Images = videos

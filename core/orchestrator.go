@@ -1003,8 +1003,10 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 			return nil, err
 		}
 
+		//Nsfw is only checked on input image.
 		videos[i] = worker.Media{
-			Url: uri,
+			Url:  uri,
+			Nsfw: batch[0].Nsfw,
 		}
 
 		if len(batch) > 0 {
