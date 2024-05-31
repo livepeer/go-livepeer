@@ -116,6 +116,7 @@ type (
 		kPipeline                     tag.Key
 		kModelName                    tag.Key
 		mAIRoundtripTime              *stats.Float64Measure
+		mModelsRequested              *stats.Int64Measure
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -294,6 +295,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mSuccessRate = stats.Float64("success_rate", "Success rate", "per")
 	census.mSuccessRatePerStream = stats.Float64("success_rate_per_stream", "Success rate, per stream", "per")
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
+	census.mModelsRequested = stats.Int64("ai_models_requested", "Number of models requested over time", "tot")
 	census.mAIRoundtripTime = stats.Float64("ai_roundtrip_time_seconds", "AI Roundtrip time", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
@@ -560,6 +562,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "AI Roundtrip time, seconds",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestIDAndIP...),
 			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+		},
+		{
+			Name:        "ai_models_requested",
+			Measure:     census.mModelsRequested,
+			Description: "Count of Models Requested over time",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestID...),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "transcode_overall_latency_seconds",
@@ -953,6 +962,7 @@ func LogDiscoveryError(ctx context.Context, uri, code string) {
 			[]tag.Mutator{tag.Insert(census.kErrorCode, code),
 				tag.Insert(census.kOrchestratorURI, uri)},
 			census.mDiscoveryError.M(1)); err != nil {
+			//0530 18:08:28.399899 1767400 census.go:965] clientIP=192.168.10.155 request_id=d5303ff3 Error recording metrics err="invalid value: only ASCII characters accepted; max length must be 255 characters"
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
 	}
@@ -1358,6 +1368,10 @@ func AiJobProcessed(ctx context.Context, Pipeline string, Model string, response
 	census.aiJobProcessed(Pipeline, Model, responseDuration)
 }
 
+func RecordModelRequested(Pipeline string, Model string) {
+	census.recordModelRequested(Pipeline, Model)
+}
+
 func (cen *censusMetricsCounter) aiJobProcessed(Pipeline string, Model string, responseDuration time.Duration) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
@@ -1369,6 +1383,15 @@ func (cen *censusMetricsCounter) aiJobProcessed(Pipeline string, Model string, r
 	}
 
 	stats.Record(ctx, census.mAIRoundtripTime.M(responseDuration.Seconds()))
+}
+
+func (cen *censusMetricsCounter) recordModelRequested(pipeline, modelName string) {
+	ctx, err := tag.New(cen.ctx, tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelName))
+	if err != nil {
+		glog.Errorf("Failed to create context with tags: %v", err)
+		return
+	}
+	stats.Record(ctx, census.mModelsRequested.M(1))
 }
 
 func (cen *censusMetricsCounter) segmentTranscoded(nonce, seqNo uint64, sourceDur time.Duration, transcodeDur time.Duration,

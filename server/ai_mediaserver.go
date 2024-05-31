@@ -86,6 +86,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		}
 
 		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
+		monitor.RecordModelRequested("text-to-image", *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -108,7 +109,6 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		took := time.Since(start)
 		clog.Infof(ctx, "Processed TextToImage request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
 
-		//Log round trip time for text-to-image job
 		if monitor.Enabled {
 			monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, took)
 		}
@@ -139,6 +139,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		}
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToImage request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
+		monitor.RecordModelRequested("image-to-image", *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -160,6 +161,9 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 
 		took := time.Since(start)
 		clog.V(common.VERBOSE).Infof(ctx, "Processed ImageToImage request imageSize=%v prompt=%v model_id=%v took=%v", req.Image.FileSize(), req.Prompt, *req.ModelId, took)
+		if monitor.Enabled {
+			monitor.AiJobProcessed(ctx, "image-to-image", *req.ModelId, took)
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -193,6 +197,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 		}
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v async=%v", req.Image.FileSize(), *req.ModelId, async)
+		monitor.RecordModelRequested("image-to-video", *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -217,7 +222,9 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 			took := time.Since(start)
 			clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
-
+			if monitor.Enabled {
+				monitor.AiJobProcessed(ctx, "image-to-video", *req.ModelId, took)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(resp)
