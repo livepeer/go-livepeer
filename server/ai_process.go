@@ -63,7 +63,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 			return nil, err
 		}
 
-		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Url: newUrl, Seed: media.Seed}
+		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
 	resp.Images = newMedia
@@ -141,7 +141,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 			return nil, err
 		}
 
-		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Url: newUrl, Seed: media.Seed}
+		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
 	resp.Images = newMedia
@@ -221,9 +221,9 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 		}
 
 		videos[i] = worker.Media{
-			Url:  newUrl,
-			Seed: media.Seed,
 			Nsfw: media.Nsfw,
+			Seed: media.Seed,
+			Url:  newUrl,
 		}
 
 	}
