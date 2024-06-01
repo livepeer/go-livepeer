@@ -61,7 +61,7 @@ func main() {
 	if !goodToGo {
 		fmt.Println(`
     Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder [nodeIndex]
-        It will create initilize eth account (on private testnet) to be used for broadcaster or transcoder
+        It will create initialize eth account (on private testnet) to be used for broadcaster or transcoder
         and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.
         Node index indicates how much to offset node's port. Orchestrator node's index by default is 1.
         For example:
