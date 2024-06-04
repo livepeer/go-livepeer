@@ -115,7 +115,13 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	if req.NumImagesPerPrompt != nil {
 		numImages = *req.NumImagesPerPrompt
 	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / float64(numImages)
+
+	numInferenceSteps := float64(1)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / (float64(numImages) * float64(numInferenceSteps))
 
 	return resp.JSON200, nil
 }
