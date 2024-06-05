@@ -182,7 +182,7 @@ type stubOSSession struct {
 	err      error
 }
 
-func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta map[string]string, timeout time.Duration) (string, error) {
+func (s *stubOSSession) SaveData(ctx context.Context, name string, data io.Reader, meta *drivers.FileProperties, timeout time.Duration) (string, error) {
 	s.saved = append(s.saved, name)
 	return "saved_" + name, s.err
 }
@@ -205,6 +205,15 @@ func (s *stubOSSession) ReadData(ctx context.Context, name string) (*drivers.Fil
 }
 func (s *stubOSSession) OS() drivers.OSDriver {
 	return nil
+}
+func (os *stubOSSession) DeleteFile(ctx context.Context, name string) error {
+	return nil
+}
+func (os *stubOSSession) Presign(url string, dur time.Duration) (string, error) {
+	return "https://presigned.url", nil
+}
+func (os *stubOSSession) ReadDataRange(ctx context.Context, name, byteRange string) (*drivers.FileInfoReader, error) {
+	return nil, nil
 }
 
 type stubPlaylistManager struct {
@@ -385,7 +394,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
 	orchInfoCalled := 0
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 		orchInfoCalled++
 		return successOrchInfoUpdate, nil
 	}
@@ -604,7 +613,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
 
@@ -1503,7 +1512,7 @@ func TestRefreshSession(t *testing.T) {
 	assert.Contains(err.Error(), "invalid control character in URL")
 
 	// trigger getOrchestratorInfo error
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 		return nil, errors.New("some error")
 	}
 	sess = StubBroadcastSession("foo")
@@ -1511,7 +1520,7 @@ func TestRefreshSession(t *testing.T) {
 	assert.EqualError(err, "some error")
 
 	// trigger update
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
 	err = refreshSession(context.TODO(), sess)
@@ -1522,7 +1531,7 @@ func TestRefreshSession(t *testing.T) {
 	oldRefreshTimeout := refreshTimeout
 	defer func() { refreshTimeout = oldRefreshTimeout }()
 	refreshTimeout = 10 * time.Millisecond
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 		// Wait until the refreshTimeout has elapsed
 		select {
 		case <-ctx.Done():

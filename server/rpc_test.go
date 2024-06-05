@@ -33,6 +33,8 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
+
+	"github.com/livepeer/ai-worker/worker"
 )
 
 type mockBalance struct {
@@ -183,6 +185,23 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
+
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
+func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{}, nil
+}
+func (r *stubOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
+}
+func (r *stubOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
+}
+func (r *stubOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
+}
+
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -192,7 +211,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b)
+	req, err := genOrchestratorReq(b, nil)
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -224,7 +243,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b)
+	_, err = genOrchestratorReq(b, nil)
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -1357,6 +1376,21 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 		return args.Get(0).(*net.AuthToken)
 	}
 	return nil
+}
+func (o *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
+func (o *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{}, nil
+}
+func (o *mockOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
+}
+func (o *mockOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
+}
+func (o *mockOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{}, nil
 }
 
 func defaultTicketParams() *net.TicketParams {
