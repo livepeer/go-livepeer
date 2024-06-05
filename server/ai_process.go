@@ -110,18 +110,18 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		balUpdate.Status = ReceivedChange
 	}
 
-	// TODO: Refine this rough estimate in future iterations
-	numImages := 1
+	// TODO: Refine this rough estimate in future iterations.
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numImages := float64(1)
 	if req.NumImagesPerPrompt != nil {
-		numImages = *req.NumImagesPerPrompt
+		numImages = float64(*req.NumImagesPerPrompt)
 	}
-
-	numInferenceSteps := float64(1)
+	numInferenceSteps := float64(50)
 	if req.NumInferenceSteps != nil {
 		numInferenceSteps = float64(*req.NumInferenceSteps)
 	}
-
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / (float64(numImages) * float64(numInferenceSteps))
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 
 	return resp.JSON200, nil
 }
