@@ -27,6 +27,7 @@ const processingRetryTimeout = 2 * time.Second
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
+const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 
 type ServiceUnavailableError struct {
 	err error
@@ -206,6 +207,86 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	return resp.JSON200, nil
 }
 
+func processUpscale(ctx context.Context, params aiRequestParams, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	newMedia := make([]worker.Media, len(resp.Images))
+	for i, media := range resp.Images {
+		var data bytes.Buffer
+		writer := bufio.NewWriter(&data)
+		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
+			return nil, err
+		}
+		writer.Flush()
+
+		name := string(core.RandomManifestID()) + ".png"
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
+	}
+
+	resp.Images = newMedia
+
+	return resp, nil
+}
+
+func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewUpscaleMultipartWriter(&buf, req)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	imageRdr, err := req.Image.Reader()
+	if err != nil {
+		return nil, err
+	}
+	config, _, err := image.DecodeConfig(imageRdr)
+	if err != nil {
+		return nil, err
+	}
+	outPixels := int64(config.Height) * int64(config.Width)
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.UpscaleImageWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = took.Seconds() / float64(outPixels)
+
+	return resp.JSON200, nil
+}
+
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
@@ -333,6 +414,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
 			return submitImageToVideo(ctx, params, sess, v)
+		}
+	case worker.UpscaleImageMultipartRequestBody:
+		cap = core.Capability_Upscale
+		modelID = defaultUpscaleModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+			return submitUpscale(ctx, params, sess, v)
 		}
 	default:
 		return nil, errors.New("unknown AI request type")

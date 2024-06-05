@@ -74,6 +74,25 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMu
 	return &resp, nil
 }
 
+func (w *FileWorker) Upscale(ctx context.Context, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	fname, ok := w.files["upscale"]
+	if !ok {
+		return nil, errors.New("upscale response file not found")
+	}
+
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp worker.ImageResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 func (w *FileWorker) Warm(ctx context.Context, containerName, modelID string) error {
 	return nil
 }
