@@ -41,6 +41,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
+	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 
 	return nil
 }
@@ -108,6 +109,29 @@ func (h *lphttp) ImageToVideo() http.Handler {
 	})
 }
 
+func (h *lphttp) Upscale() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.UpscaleMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -154,6 +178,25 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
 			return orch.ImageToImage(ctx, v)
+		}
+
+		imageRdr, err := v.Image.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		config, _, err := image.DecodeConfig(imageRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.UpscaleMultipartRequestBody:
+		pipeline = "upscale"
+		cap = core.Capability_Upscale
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+			return orch.Upscale(ctx, v)
 		}
 
 		imageRdr, err := v.Image.Reader()

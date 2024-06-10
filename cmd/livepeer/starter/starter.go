@@ -601,6 +601,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
 
 					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+				case "upscale":
+					_, ok := constraints[core.Capability_Upscale]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_Upscale)
+						constraints[core.Capability_Upscale] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				}
 
 				if len(aiCaps) > 0 {
