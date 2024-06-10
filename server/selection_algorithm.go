@@ -49,7 +49,7 @@ func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(addrs []ethcommon.Addr
 	if len(res) == 0 {
 		// If no orchestrators pass the perf filter, return all Orchestrators.
 		// That may mean some issues with the PerfScore service.
-		glog.Warning("No Orchestrators passed min performance score filter, not using the filter")
+		glog.Warning("No Orchestrators passed min performance score filter, not using the filter, minPerfScore=%v, scores=%v", sa.MinPerfScore, scores)
 		return addrs
 	}
 	return res
@@ -72,7 +72,7 @@ func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(addrs []ethcommon.Addre
 	if len(res) == 0 {
 		// If no orchestrators pass the filter, return all Orchestrators
 		// It means that no orchestrators are below the max price
-		glog.Warning("No Orchestrators passed max price filter, not using the filter")
+		glog.Warning("No Orchestrators passed max price filter, not using the filter, maxPrice=%v, prices=%v", maxPrice, prices)
 		return addrs
 	}
 	return res
