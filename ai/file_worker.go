@@ -74,7 +74,7 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMu
 	return &resp, nil
 }
 
-func (w *FileWorker) Upscale(ctx context.Context, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (w *FileWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	fname, ok := w.files["upscale"]
 	if !ok {
 		return nil, errors.New("upscale response file not found")

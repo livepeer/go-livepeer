@@ -14,8 +14,8 @@ import (
 type AI interface {
 	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
-	Upscale(context.Context, worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
+	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool

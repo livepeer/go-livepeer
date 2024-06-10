@@ -117,11 +117,13 @@ func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImag
 func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToImage(ctx, req)
 }
-func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	return orch.node.upscale(ctx, req)
-}
+
 func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToVideo(ctx, req)
+}
+
+func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return orch.node.upscale(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -938,7 +940,8 @@ func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJS
 func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.ImageToImage(ctx, req)
 }
-func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleImageMultipartRequestBody) (*worker.ImageResponse, error) {
+
+func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.Upscale(ctx, req)
 }
 

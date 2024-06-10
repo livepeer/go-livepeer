@@ -122,7 +122,7 @@ func (h *lphttp) Upscale() http.Handler {
 			return
 		}
 
-		var req worker.UpscaleImageMultipartRequestBody
+		var req worker.UpscaleMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -191,7 +191,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
-	case worker.UpscaleImageMultipartRequestBody:
+	case worker.UpscaleMultipartRequestBody:
 		pipeline = "upscale"
 		cap = core.Capability_Upscale
 		modelID = *v.ModelId
