@@ -96,10 +96,22 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+
+	// TODO: check if transcoding capabilities are defined
+
+	tR, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
 		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
+		return err
+	}
+
+	// TODO check if ai capabilities are defined
+	aiR, err := c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+	// TODO: add checking AI errors to checkTranscoderError
+	if err := checkTranscoderError(err); err != nil {
+		glog.Error("Could not register AI worker to orchestrator ", err)
 		return err
 	}
 
@@ -119,23 +131,63 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 
 	httpc := &http.Client{Transport: &http2.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	var wg sync.WaitGroup
+
+	// Channels to receive messages
+	tRChan := make(chan *net.NotifySegment)
+	aiRChan := make(chan *net.NotifyAIJob)
+	errChan := make(chan error)
+
+	go func() {
+		for {
+			notify, err := tR.Recv()
+			if err != nil {
+				errChan <- err
+				return
+			}
+			tRChan <- notify
+		}
+
+	}()
+
+	go func() {
+		for {
+			aiJob, err := aiR.Recv()
+			if err != nil {
+				errChan <- err
+				return
+			}
+			aiRChan <- aiJob
+		}
+	}()
+
 	for {
-		notify, err := r.Recv()
-		if err := checkTranscoderError(err); err != nil {
-			glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
-			wg.Wait()
-			return err
+		select {
+		case notify := <-tRChan:
+
+			if notify.SegData != nil && notify.SegData.AuthToken != nil && len(notify.SegData.AuthToken.SessionId) > 0 && len(notify.Url) == 0 {
+				// session teardown signal
+				n.Transcoder.EndTranscodingSession(notify.SegData.AuthToken.SessionId)
+			} else {
+				wg.Add(1)
+				go func() {
+					runTranscode(n, orchAddr, httpc, notify)
+					wg.Done()
+				}()
+			}
+		case aiJob := <-aiRChan:
+			if aiJob == nil {
+				glog.Error("Received nil AI job")
+				continue
+			}
+		case err := <-errChan:
+			if err := checkTranscoderError(err); err != nil {
+				glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
+				wg.Wait()
+				return err
+			}
+
 		}
-		if notify.SegData != nil && notify.SegData.AuthToken != nil && len(notify.SegData.AuthToken.SessionId) > 0 && len(notify.Url) == 0 {
-			// session teardown signal
-			n.Transcoder.EndTranscodingSession(notify.SegData.AuthToken.SessionId)
-		} else {
-			wg.Add(1)
-			go func() {
-				runTranscode(n, orchAddr, httpc, notify)
-				wg.Done()
-			}()
-		}
+
 	}
 }
 
