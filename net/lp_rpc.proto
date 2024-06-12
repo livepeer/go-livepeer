@@ -370,7 +370,8 @@ enum AIRequestType {
 // Sent by the orchestrator to the remote AI worker
 message NotifyAIJob {
   AIRequestType type = 1;
-  bytes data = 2; // json
+  int64 taskId = 2;
+  bytes data = 3; // json
 }
 
 // Required parameters for probabilistic micropayment tickets
