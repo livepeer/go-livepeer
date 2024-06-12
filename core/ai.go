@@ -10,7 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 )
 
@@ -30,6 +32,10 @@ type RemoteAIWorkerManager struct {
 	remoteWorkers []*RemoteAIWorker
 	liveWorkers   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker
 	workersMutex  sync.Mutex
+
+	// tasks
+	// TODO: how to id tasks/sessions ?
+	taskMutex sync.Mutex
 }
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
@@ -39,6 +45,33 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 		workersMutex:  sync.Mutex{},
 	}
 }
+
+func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+	from := common.GetConnectionAddr(stream.Context())
+	worker := NewRemoteAIWorker(m, stream, from, CapabilitiesFromNetCapabilities(capabilities))
+	go func() {
+		ctx := stream.Context()
+		<-ctx.Done()
+		err := ctx.Err()
+		glog.Errorf("Stream closed for remote AI worker=%s err=%q", from, err)
+		worker.done()
+	}()
+
+	m.workersMutex.Lock()
+	m.remoteWorkers = append(m.remoteWorkers, worker)
+	m.liveWorkers[stream] = worker
+	m.workersMutex.Unlock()
+
+	<-worker.eof
+	glog.Infof("Remote AI worker=%s done, removing from live AI workers map", from)
+
+	m.workersMutex.Lock()
+	delete(m.liveWorkers, stream)
+	// TODO: remove from remoteWorkers
+	m.workersMutex.Unlock()
+}
+
+func (m *RemoteAIWorkerManager) handleAIRequest()
 
 func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return nil, nil
@@ -71,17 +104,27 @@ func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 
 type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
+	stream       net.Transcoder_RegisterAIWorkerServer
 	addr         string
 	capabilities *Capabilities // TODO: AI capabilities only
 	eof          chan struct{}
 }
 
-func NewRemoteAIWorker(manager *RemoteAIWorkerManager, addr string, capabilities *Capabilities) *RemoteAIWorker {
+func NewRemoteAIWorker(manager *RemoteAIWorkerManager, stream net.Transcoder_RegisterAIWorkerServer, addr string, capabilities *Capabilities) *RemoteAIWorker {
 	return &RemoteAIWorker{
 		manager:      manager,
+		stream:       stream,
 		addr:         addr,
 		capabilities: capabilities,
 		eof:          make(chan struct{}),
+	}
+}
+
+func (w *RemoteAIWorker) done() {
+	// select so we don't block indefinitely if there's no listener
+	select {
+	case w.eof <- struct{}{}:
+	default:
 	}
 }
 
