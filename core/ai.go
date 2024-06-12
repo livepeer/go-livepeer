@@ -54,7 +54,7 @@ func (s StringInt) String() string {
 	return string(s)
 }
 
-type RemoteAIResultChan chan interface{}
+type RemoteAIResultChan chan *RemoteAIWorkerResult
 
 type RemoteAIWorkerManager struct {
 	// TODO Mapping by pipeline
@@ -108,9 +108,37 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 	m.workersMutex.Unlock()
 }
 
-func (m *RemoteAIWorkerManager) handleAIRequest()
+func (m *RemoteAIWorkerManager) handleAIRequest(req *net.NotifyAIJob) {
+	// send request to selected remote worker
+}
 
 func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	taskID, taskChan := m.addTaskChan()
+	defer m.removeTaskChan(taskID)
+
+	// send request to remote worker
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteReq := &net.NotifyAIJob{
+		Type:   net.AIRequestType_TextToImage,
+		TaskID: taskID,
+		Data:   jsonData,
+	}
+	m.handleAIRequest(remoteReq) // task id, pipeline
+
+	select {
+	case <-ctx.Done():
+		// return EOF signal
+	case chanData := <-taskChan:
+		var res worker.ImageResponse
+		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
+			return nil, err
+		}
+		return &res, nil
+	}
 	return nil, nil
 
 }
