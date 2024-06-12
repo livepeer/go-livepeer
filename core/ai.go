@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ type AI interface {
 	HasCapacity(pipeline, modelID string) bool
 }
 
+type RemoteAIResultChan chan interface{}
 type RemoteAIWorkerManager struct {
 	// TODO Mapping by pipeline
 	remoteWorkers []*RemoteAIWorker
@@ -33,7 +35,9 @@ type RemoteAIWorkerManager struct {
 
 	// tasks
 	// TODO: how to id tasks/sessions ?
-	taskMutex sync.Mutex
+	taskChans map[int64]RemoteAIResultChan
+	taskMutex sync.RWMutex
+	taskCount int64
 }
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
@@ -98,6 +102,39 @@ func (m *RemoteAIWorkerManager) Stop(ctx context.Context) error {
 
 func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 	return false
+}
+
+func (m *RemoteAIWorkerManager) getTaskChan(taskID int64) (RemoteAIResultChan, error) {
+	m.taskMutex.RLock()
+	defer m.taskMutex.RUnlock()
+	if tc, ok := m.taskChans[taskID]; ok {
+		return tc, nil
+	}
+	return nil, fmt.Errorf("No AI job channel")
+}
+
+func (m *RemoteAIWorkerManager) addTaskChan() (int64, RemoteAIResultChan) {
+	m.taskMutex.Lock()
+	defer m.taskMutex.Unlock()
+	taskID := m.taskCount
+	m.taskCount++
+	if tc, ok := m.taskChans[taskID]; ok {
+		// should really never happen
+		glog.V(common.DEBUG).Info("AI job channel already exists for ", taskID)
+		return taskID, tc
+	}
+	m.taskChans[taskID] = make(RemoteAIResultChan, 1)
+	return taskID, m.taskChans[taskID]
+}
+
+func (m *RemoteAIWorkerManager) removeTaskChan(taskID int64) {
+	m.taskMutex.Lock()
+	defer m.taskMutex.Unlock()
+	if _, ok := m.taskChans[taskID]; !ok {
+		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
+		return
+	}
+	delete(m.taskChans, taskID)
 }
 
 type RemoteAIWorker struct {
