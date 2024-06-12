@@ -68,6 +68,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/upscale", oapiReqValidator(ls.Upscale()))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
+	ls.HTTPMux.Handle("/speech-to-text", oapiReqValidator(ls.SpeechToText()))
 
 	return nil
 }
@@ -313,6 +314,55 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 
 		took := time.Since(start)
 		clog.V(common.VERBOSE).Infof(ctx, "Processed Upscale request imageSize=%v prompt=%v model_id=%v took=%v", req.Image.FileSize(), req.Prompt, *req.ModelId, took)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) SpeechToText() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		var req worker.SpeechToTextMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		//TODO: add duration to log here
+		clog.V(common.VERBOSE).Infof(ctx, "Received SpeechToText request model_id=%v", *req.ModelId)
+
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
+			sessManager: ls.AISessionManager,
+		}
+
+		start := time.Now()
+		resp, err := processSpeechToText(ctx, params, req)
+		if err != nil {
+			var e *ServiceUnavailableError
+			if errors.As(err, &e) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		took := time.Since(start)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed SpeechToText request model_id=%v took=%v", *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

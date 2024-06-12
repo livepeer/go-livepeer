@@ -28,6 +28,7 @@ const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
+const defaultSpeechToTextModelID = "openai/whisper-large-v3"
 
 type ServiceUnavailableError struct {
 	err error
@@ -49,8 +50,10 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -67,9 +70,9 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -133,8 +136,10 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -151,9 +156,9 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -214,8 +219,11 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	// HACK: Re-use worker.ImageResponse to return results
-	videos := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	// TODO: Refactor to return worker.VideoResponse
+	imgResp := resp.(*worker.ImageResponse)
+
+	videos := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		data, err := downloadSeg(ctx, media.Url)
 		if err != nil {
 			return nil, err
@@ -235,9 +243,9 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	}
 
-	resp.Images = videos
+	imgResp.Images = videos
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -308,8 +316,10 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -326,9 +336,9 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -382,10 +392,76 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
-func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (*worker.ImageResponse, error) {
+func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.SpeechToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewSpeechToTextMultipartWriter(&buf, req)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, err
+	}
+
+	// 	//TODO: Setting static for now until pipeline is functional (50 pixels)
+	outPixels := int64(50)
+	// 	//TODO: Measure length of auto and implement pricing unit
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.SpeechToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.TextResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		return nil, err
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = took.Seconds() / float64(outPixels)
+
+	return &res, nil
+}
+
+func processSpeechToText(ctx context.Context, params aiRequestParams, req worker.SpeechToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.TextResponse)
+
+	return txtResp, nil
+}
+
+func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
-	var submitFn func(context.Context, aiRequestParams, *AISession) (*worker.ImageResponse, error)
+	var submitFn func(context.Context, aiRequestParams, *AISession) (interface{}, error)
 
 	switch v := req.(type) {
 	case worker.TextToImageJSONRequestBody:
@@ -394,7 +470,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToImage(ctx, params, sess, v)
 		}
 	case worker.ImageToImageMultipartRequestBody:
@@ -403,7 +479,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToImage(ctx, params, sess, v)
 		}
 	case worker.ImageToVideoMultipartRequestBody:
@@ -412,7 +488,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		// Assuming submitImageToVideo returns a VideoResponse
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToVideo(ctx, params, sess, v)
 		}
 	case worker.UpscaleMultipartRequestBody:
@@ -421,14 +498,25 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitUpscale(ctx, params, sess, v)
 		}
+	case worker.SpeechToTextMultipartRequestBody:
+		cap = core.Capability_SpeechToText
+		modelID = defaultSpeechToTextModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitSpeechToText(ctx, params, sess, v)
+		}
+	// Add more cases as needed...
 	default:
-		return nil, errors.New("unknown AI request type")
+		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 
-	var resp *worker.ImageResponse
+	//var resp *worker.ImageResponse
+	var resp interface{}
 
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
@@ -457,17 +545,14 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			params.sessManager.Complete(ctx, sess)
 			break
 		}
-
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
-
 		params.sessManager.Remove(ctx, sess)
 	}
 
 	if resp == nil {
 		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
-
-	return resp, nil
+	return resp.(interface{}), nil
 }
 
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {
