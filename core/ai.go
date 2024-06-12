@@ -8,8 +8,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 type AI interface {
@@ -21,6 +23,66 @@ type AI interface {
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
+}
+
+type RemoteAIWorkerManager struct {
+	// TODO Mapping by pipeline
+	remoteWorkers []*RemoteAIWorker
+	liveWorkers   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker
+	workersMutex  sync.Mutex
+}
+
+func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
+	return &RemoteAIWorkerManager{
+		remoteWorkers: []*RemoteAIWorker{},
+		liveWorkers:   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker{},
+		workersMutex:  sync.Mutex{},
+	}
+}
+
+func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+
+}
+
+func (m *RemoteAIWorkerManager) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (m *RemoteAIWorkerManager) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+	return nil, nil
+}
+
+func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (m *RemoteAIWorkerManager) Warm(ctx context.Context, pipeline, modelID string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
+	return nil
+}
+
+func (m *RemoteAIWorkerManager) Stop(ctx context.Context) error {
+	return nil
+}
+
+func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
+	return false
+}
+
+type RemoteAIWorker struct {
+	manager      *RemoteAIWorkerManager
+	addr         string
+	capabilities *Capabilities // TODO: AI capabilities only
+	eof          chan struct{}
+}
+
+func NewRemoteAIWorker(manager *RemoteAIWorkerManager, addr string, capabilities *Capabilities) *RemoteAIWorker {
+	return &RemoteAIWorker{
+		manager:      manager,
+		addr:         addr,
+		capabilities: capabilities,
+		eof:          make(chan struct{}),
+	}
 }
 
 type AIModelConfig struct {
