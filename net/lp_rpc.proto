@@ -370,7 +370,7 @@ enum AIRequestType {
 // Sent by the orchestrator to the remote AI worker
 message NotifyAIJob {
   AIRequestType type = 1;
-  int64 taskId = 2;
+  int64 taskID = 2;
   bytes data = 3; // json
 }
 
