@@ -64,6 +64,7 @@ type Orchestrator interface {
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	ServeRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities)
+	AIResult(res *core.RemoteAIWorkerResult)
 	TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 	ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error)

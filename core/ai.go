@@ -68,6 +68,12 @@ type RemoteAIWorkerManager struct {
 	taskMutex sync.RWMutex
 	taskCount int64
 }
+type RemoteAIWorkerResult struct {
+	JobType net.AIRequestType
+	TaskID  int64
+	Bytes   []byte
+	Err     error
+}
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	return &RemoteAIWorkerManager{
@@ -131,6 +137,15 @@ func (m *RemoteAIWorkerManager) Stop(ctx context.Context) error {
 
 func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 	return false
+}
+
+func (m *RemoteAIWorkerManager) aiResult(res *RemoteAIWorkerResult) {
+	tc, err := m.getTaskChan(res.TaskID)
+	if err != nil {
+		glog.V(common.DEBUG).Info("No AI job channel for ", res.TaskID)
+		return
+	}
+	tc <- res
 }
 
 func (m *RemoteAIWorkerManager) getTaskChan(taskID int64) (RemoteAIResultChan, error) {

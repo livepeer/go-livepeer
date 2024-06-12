@@ -95,7 +95,7 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
+	return true
 }
 
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
@@ -112,6 +112,10 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 
 func (orch *orchestrator) ServeRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 	orch.node.serveRemoteAIWorker(stream, capabilities)
+}
+
+func (orch *orchestrator) AIResult(res *RemoteAIWorkerResult) {
+	orch.node.AIManager.aiResult(res)
 }
 
 func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
