@@ -383,7 +383,7 @@ func (h *lphttp) RegisterRemoteAIWorker(req *net.RegisterRequest, stream net.Tra
 	if req.Capabilities == nil {
 		// TODO: return error No AI capabilities
 	}
-	// h.orchestrator.ServeRemoteAIWorker()
+	h.orchestrator.ServeRemoteAIWorker(stream, req.Capabilities)
 	return nil
 }
 
@@ -407,6 +407,8 @@ func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: handle results
+	// Get session channel for session
+	// Send result over session channel
 
 }
 

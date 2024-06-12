@@ -110,6 +110,10 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
+func (orch *orchestrator) ServeRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+	orch.node.serveRemoteAIWorker(stream, capabilities)
+}
+
 func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.textToImage(ctx, req)
 }
@@ -912,6 +916,19 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	if exists {
 		clog.V(common.DEBUG).Infof(logCtx, "Transcoding session ended by the Broadcaster for sessionID=%v", sessionId)
 	}
+}
+
+func (n *LivepeerNode) serveRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+	from := common.GetConnectionAddr(stream.Context())
+	// aiCaps := CapabilitiesFromNetCapabilities(capabilities)
+
+	// TODO: expand n.Capabilitiers with AI capabilities
+	// defer removing the same capabilities
+
+	// Blocks while AIWorker is connected
+	n.AIManager.Manage(stream, capabilities)
+	glog.V(common.DEBUG).Infof("Closing AIWorker=%s channel", from)
+
 }
 
 func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
