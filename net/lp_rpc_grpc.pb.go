@@ -185,6 +185,9 @@ type TranscoderClient interface {
 	// Called by the transcoder to register to an orchestrator. The orchestrator
 	// notifies registered transcoders of segments as they come in.
 	RegisterTranscoder(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (Transcoder_RegisterTranscoderClient, error)
+	// Called by the transcoder to register a `RemoteAIWorker` worker to an orchestrator
+	// notifies the registered `RemoteAIWorker` of AI jobs as they come in.
+	RegisterAIWorker(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (Transcoder_RegisterAIWorkerClient, error)
 }
 
 type transcoderClient struct {
@@ -227,6 +230,38 @@ func (x *transcoderRegisterTranscoderClient) Recv() (*NotifySegment, error) {
 	return m, nil
 }
 
+func (c *transcoderClient) RegisterAIWorker(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (Transcoder_RegisterAIWorkerClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Transcoder_ServiceDesc.Streams[1], "/net.Transcoder/RegisterAIWorker", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &transcoderRegisterAIWorkerClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Transcoder_RegisterAIWorkerClient interface {
+	Recv() (*NotifyAIJob, error)
+	grpc.ClientStream
+}
+
+type transcoderRegisterAIWorkerClient struct {
+	grpc.ClientStream
+}
+
+func (x *transcoderRegisterAIWorkerClient) Recv() (*NotifyAIJob, error) {
+	m := new(NotifyAIJob)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // TranscoderServer is the server API for Transcoder service.
 // All implementations must embed UnimplementedTranscoderServer
 // for forward compatibility
@@ -234,6 +269,9 @@ type TranscoderServer interface {
 	// Called by the transcoder to register to an orchestrator. The orchestrator
 	// notifies registered transcoders of segments as they come in.
 	RegisterTranscoder(*RegisterRequest, Transcoder_RegisterTranscoderServer) error
+	// Called by the transcoder to register a `RemoteAIWorker` worker to an orchestrator
+	// notifies the registered `RemoteAIWorker` of AI jobs as they come in.
+	RegisterAIWorker(*RegisterRequest, Transcoder_RegisterAIWorkerServer) error
 	mustEmbedUnimplementedTranscoderServer()
 }
 
@@ -243,6 +281,9 @@ type UnimplementedTranscoderServer struct {
 
 func (UnimplementedTranscoderServer) RegisterTranscoder(*RegisterRequest, Transcoder_RegisterTranscoderServer) error {
 	return status.Errorf(codes.Unimplemented, "method RegisterTranscoder not implemented")
+}
+func (UnimplementedTranscoderServer) RegisterAIWorker(*RegisterRequest, Transcoder_RegisterAIWorkerServer) error {
+	return status.Errorf(codes.Unimplemented, "method RegisterAIWorker not implemented")
 }
 func (UnimplementedTranscoderServer) mustEmbedUnimplementedTranscoderServer() {}
 
@@ -278,6 +319,27 @@ func (x *transcoderRegisterTranscoderServer) Send(m *NotifySegment) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Transcoder_RegisterAIWorker_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(RegisterRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(TranscoderServer).RegisterAIWorker(m, &transcoderRegisterAIWorkerServer{stream})
+}
+
+type Transcoder_RegisterAIWorkerServer interface {
+	Send(*NotifyAIJob) error
+	grpc.ServerStream
+}
+
+type transcoderRegisterAIWorkerServer struct {
+	grpc.ServerStream
+}
+
+func (x *transcoderRegisterAIWorkerServer) Send(m *NotifyAIJob) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Transcoder_ServiceDesc is the grpc.ServiceDesc for Transcoder service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -289,6 +351,11 @@ var Transcoder_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "RegisterTranscoder",
 			Handler:       _Transcoder_RegisterTranscoder_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "RegisterAIWorker",
+			Handler:       _Transcoder_RegisterAIWorker_Handler,
 			ServerStreams: true,
 		},
 	},
