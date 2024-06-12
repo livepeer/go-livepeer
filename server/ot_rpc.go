@@ -367,7 +367,48 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	return nil
 }
 
+func (h *lphttp) RegisterRemoteAIWorker(req *net.RegisterRequest, stream net.Transcoder_RegisterAIWorkerServer) error {
+	from := common.GetConnectionAddr(stream.Context())
+	glog.Infof("Got a RegisterAIWorker request from transcoder=%s capacity=%d", from, req.Capacity)
+
+	if req.Secret != h.orchestrator.TranscoderSecret() {
+		glog.Errorf("err=%q", errSecret.Error())
+		return errSecret
+	}
+	if req.Capacity <= 0 {
+		glog.Errorf("err=%q", errZeroCapacity.Error())
+		return errZeroCapacity
+	}
+	// handle
+	if req.Capabilities == nil {
+		// TODO: return error No AI capabilities
+	}
+	// h.orchestrator.ServeRemoteAIWorker()
+	return nil
+}
+
 // Orchestrator HTTP
+
+func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
+	orch := h.orchestrator
+
+	authType := r.Header.Get("Authorization")
+	creds := r.Header.Get("Credentials")
+	if protoVerLPT != authType {
+		glog.Error("Invalid auth type ", authType)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if creds != orch.TranscoderSecret() {
+		glog.Error("Invalid shared secret")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// TODO: handle results
+
+}
 
 func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
