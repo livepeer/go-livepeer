@@ -36,7 +36,6 @@ type RemoteAIWorkerManager struct {
 	workersMutex  sync.Mutex
 
 	// tasks
-	// TODO: how to id tasks/sessions ?
 	taskChans map[int64]RemoteAIResultChan
 	taskMutex sync.RWMutex
 	taskCount int64
