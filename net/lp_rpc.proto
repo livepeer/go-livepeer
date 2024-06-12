@@ -17,6 +17,9 @@ service Transcoder {
   // Called by the transcoder to register to an orchestrator. The orchestrator
   // notifies registered transcoders of segments as they come in.
   rpc RegisterTranscoder(RegisterRequest) returns (stream NotifySegment);
+  // Called by the transcoder to register a `RemoteAIWorker` worker to an orchestrator
+  // notifies the registered `RemoteAIWorker` of AI jobs as they come in.
+  rpc RegisterAIWorker(RegisterRequest) returns (stream NotifyAIJob);
 }
 
 message PingPong {
@@ -356,6 +359,18 @@ message NotifySegment {
 
     // Deprecated by segData. Transcoding configuration to use.
     reserved 33; // Formerly "repeated VideoProfile fullProfiles"
+}
+
+enum AIRequestType {
+  TextToImage= 0;
+  ImageToText= 1;
+  ImageToImage= 2;
+  Upscale = 3;
+}
+// Sent by the orchestrator to the remote AI worker
+message NotifyAIJob {
+  AIRequestType type = 1;
+  bytes data = 2; // json
 }
 
 // Required parameters for probabilistic micropayment tickets
