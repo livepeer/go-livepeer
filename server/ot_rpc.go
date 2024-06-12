@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -389,6 +390,13 @@ func (h *lphttp) RegisterRemoteAIWorker(req *net.RegisterRequest, stream net.Tra
 
 // Orchestrator HTTP
 
+type RemoteAIWorkerResult struct {
+	JobType net.AIRequestType
+	TaskID  int64
+	Bytes   []byte
+	Err     error
+}
+
 func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
@@ -406,10 +414,18 @@ func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: handle results
-	// Get session channel for session
-	// Send result over session channel
+	var req core.RemoteAIWorkerResult
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
+	if req.Err != nil {
+		respondWithError(w, req.Err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	orch.AIResult(&req)
 }
 
 func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
