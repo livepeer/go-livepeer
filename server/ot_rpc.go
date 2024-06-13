@@ -368,7 +368,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 	return nil
 }
 
-func (h *lphttp) RegisterRemoteAIWorker(req *net.RegisterRequest, stream net.Transcoder_RegisterAIWorkerServer) error {
+func (h *lphttp) RegisterAIWorker(req *net.RegisterRequest, stream net.Transcoder_RegisterAIWorkerServer) error {
 	from := common.GetConnectionAddr(stream.Context())
 	glog.Infof("Got a RegisterAIWorker request from transcoder=%s capacity=%d", from, req.Capacity)
 
