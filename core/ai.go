@@ -115,6 +115,9 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 	taskID, taskChan := m.addTaskChan()
 	defer m.removeTaskChan(taskID)
 
+	// select a remote worker
+	w := m.remoteWorkers[0]
+
 	// send request to remote worker
 	jsonData, err := json.Marshal(req)
 	if err != nil {
@@ -127,6 +130,10 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 		Data:   jsonData,
 	}
 	m.handleAIRequest(remoteReq) // task id, pipeline
+
+	if err := w.stream.Send(remoteReq); err != nil {
+		return nil, err
+	}
 
 	select {
 	case <-ctx.Done():
