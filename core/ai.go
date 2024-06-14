@@ -3,13 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"slices"
-	"strconv"
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
@@ -70,23 +67,13 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 		}
 
 		return configs, nil
-	}
-
-	models := strings.Split(config, ",")
-	for _, m := range models {
-		parts := strings.Split(m, ":")
-		if len(parts) < 3 {
-			return nil, errors.New("invalid AI model config expected <pipeline>:<model_id>:<warm>")
+	} else {
+		if info == nil {
+			//config is a string not a file, try to parse it
+			if err := json.Unmarshal([]byte(config), &configs); err != nil {
+				return nil, err
+			}
 		}
-
-		pipeline := parts[0]
-		modelID := parts[1]
-		warm, err := strconv.ParseBool(parts[3])
-		if err != nil {
-			return nil, err
-		}
-
-		configs = append(configs, AIModelConfig{Pipeline: pipeline, ModelID: modelID, Warm: warm})
 	}
 
 	return configs, nil
