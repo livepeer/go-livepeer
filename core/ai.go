@@ -35,6 +35,25 @@ type AIModelConfig struct {
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
 }
 
+func PipelineToCapability(pipeline string) Capability {
+	switch pipeline {
+	case "text-to-image":
+		return Capability_TextToImage
+	case "image-to-image":
+		return Capability_ImageToImage
+	case "image-to-video":
+		return Capability_ImageToVideo
+	case "upscale":
+		return Capability_Unused
+	case "frame-interpolation":
+		return Capability_Unused
+	case "speech-to-text":
+		return Capability_Unused
+	default:
+		return Capability_Unused
+	}
+}
+
 func (config *AIModelConfig) UnmarshalJSON(data []byte) error {
 	// Custom type to avoid recursive calls to UnmarshalJSON
 	type AIModelConfigAlias AIModelConfig
