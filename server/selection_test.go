@@ -91,7 +91,7 @@ func (r *stubStakeReader) SetStakes(stakes map[ethcommon.Address]int64) {
 
 type stubSelectionAlgorithm struct{}
 
-func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+func (sa stubSelectionAlgorithm) Select(ctx context.Context, addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
 	if len(addrs) == 0 {
 		return ethcommon.Address{}
 	}

@@ -1,13 +1,14 @@
 package server
 
 import (
+	"context"
 	"math"
 	"math/big"
 	"math/rand"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 )
 
 var random = rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -22,18 +23,18 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceExpFactor float64
 }
 
-func (sa ProbabilitySelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
-	filtered := sa.filter(addrs, maxPrice, prices, perfScores)
+func (sa ProbabilitySelectionAlgorithm) Select(ctx context.Context, addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+	filtered := sa.filter(ctx, addrs, maxPrice, prices, perfScores)
 	probabilities := sa.calculateProbabilities(filtered, stakes, prices)
 	return selectBy(probabilities)
 }
 
-func (sa ProbabilitySelectionAlgorithm) filter(addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) []ethcommon.Address {
-	filteredByPerfScore := sa.filterByPerfScore(addrs, perfScores)
-	return sa.filterByMaxPrice(filteredByPerfScore, maxPrice, prices)
+func (sa ProbabilitySelectionAlgorithm) filter(ctx context.Context, addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) []ethcommon.Address {
+	filteredByPerfScore := sa.filterByPerfScore(ctx, addrs, perfScores)
+	return sa.filterByMaxPrice(ctx, filteredByPerfScore, maxPrice, prices)
 }
 
-func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(addrs []ethcommon.Address, scores map[ethcommon.Address]float64) []ethcommon.Address {
+func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(ctx context.Context, addrs []ethcommon.Address, scores map[ethcommon.Address]float64) []ethcommon.Address {
 	if sa.MinPerfScore <= 0 || len(scores) == 0 {
 		// Performance Score filter not defined, return all Orchestrators
 		return addrs
@@ -49,13 +50,13 @@ func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(addrs []ethcommon.Addr
 	if len(res) == 0 {
 		// If no orchestrators pass the perf filter, return all Orchestrators.
 		// That may mean some issues with the PerfScore service.
-		glog.Warningf("No Orchestrators passed min performance score filter, not using the filter, numAddrs=%d, minPerfScore=%v, scores=%v, addrs=%v", len(addrs), sa.MinPerfScore, scores, addrs)
+		clog.Warningf(ctx, "No Orchestrators passed min performance score filter, not using the filter, numAddrs=%d, minPerfScore=%v, scores=%v, addrs=%v", len(addrs), sa.MinPerfScore, scores, addrs)
 		return addrs
 	}
 	return res
 }
 
-func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
+func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(ctx context.Context, addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
 	if maxPrice == nil || len(prices) == 0 {
 		// Max price filter not defined, return all Orchestrators
 		return addrs
@@ -72,7 +73,7 @@ func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(addrs []ethcommon.Addre
 	if len(res) == 0 {
 		// If no orchestrators pass the filter, return all Orchestrators
 		// It means that no orchestrators are below the max price
-		glog.Warningf("No Orchestrators passed max price filter, not using the filter, numAddrs=%d, maxPrice=%v, prices=%v, addrs=%v", len(addrs), maxPrice, prices, addrs)
+		clog.Warningf(ctx, "No Orchestrators passed max price filter, not using the filter, numAddrs=%d, maxPrice=%v, prices=%v, addrs=%v", len(addrs), maxPrice, prices, addrs)
 		return addrs
 	}
 	return res

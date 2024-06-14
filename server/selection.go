@@ -202,7 +202,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		s.perfScore.Mu.Unlock()
 	}
 
-	selected := s.selectionAlgorithm.Select(addrs, stakes, maxPrice, prices, perfScores)
+	selected := s.selectionAlgorithm.Select(ctx, addrs, stakes, maxPrice, prices, perfScores)
 
 	for i, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
