@@ -14,7 +14,8 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm bool
+	Warm     bool
+	Capacity uint32
 }
 
 type Capability int
@@ -418,7 +419,8 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 		models := make(map[string]*net.Capabilities_Constraints_ModelConstraint)
 		for modelID, modelConstraint := range constraints.Models {
 			models[modelID] = &net.Capabilities_Constraints_ModelConstraint{
-				Warm: modelConstraint.Warm,
+				Warm:     modelConstraint.Warm,
+				Capacity: modelConstraint.Capacity,
 			}
 		}
 
@@ -458,11 +460,11 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	for capabilityInt, constraints := range caps.Constraints {
 		models := make(map[string]*ModelConstraint)
 		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
-		}
+			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: modelConstraint.Capacity}
 
-		coreCaps.constraints[Capability(capabilityInt)] = &Constraints{
-			Models: models,
+			coreCaps.constraints[Capability(capabilityInt)] = &Constraints{
+				Models: models,
+			}
 		}
 	}
 
@@ -522,6 +524,38 @@ func (cap *Capabilities) RemoveCapacity(goneCaps *Capabilities) {
 			cap.bitstring.removeCapability(capability)
 		} else {
 			cap.capacities[capability] = newCapacity
+		}
+	}
+}
+
+func (c *CapabilityConstraints) AddConstraint(cap Capability, constraint *Constraints) {
+	if constraint == nil {
+		return
+	}
+
+	//the capability should be added by AddCapacity
+	for model_id, modelConstraint := range constraint.Models {
+		if _, ok := (*c)[cap].Models[model_id]; ok {
+			if (*c)[cap].Models[model_id].Warm == modelConstraint.Warm {
+				(*c)[cap].Models[model_id].Capacity += 1
+			} else {
+				(*c)[cap].Models[model_id] = modelConstraint
+				(*c)[cap].Models[model_id].Capacity = 1
+			}
+		} else {
+			(*c)[cap].Models[model_id] = modelConstraint
+		}
+	}
+}
+
+func (c *CapabilityConstraints) RemoveConstraint(cap Capability, constraint *Constraints) {
+	if constraint == nil {
+		return
+	}
+
+	for model_id, modelConstraint := range constraint.Models {
+		if (*c)[cap].Models[model_id].Warm == modelConstraint.Warm {
+			(*c)[cap].Models[model_id].Capacity -= 1
 		}
 	}
 }

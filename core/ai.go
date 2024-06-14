@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 type AI interface {
@@ -84,4 +90,147 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 	}
 
 	return configs, nil
+}
+
+func (n *LivepeerNode) AddAIConfigs(ctx context.Context, configs []AIModelConfig) ([]Capability, map[Capability]*Constraints, error) {
+	var aiCaps []Capability
+	constraints := make(map[Capability]*Constraints)
+
+	for _, config := range configs {
+		modelConstraint := &ModelConstraint{Warm: config.Warm, Capacity: 1}
+		pipelineCap := PipelineToCapability(config.Pipeline)
+
+		if pipelineCap > Capability_Unused {
+			// If the config contains a URL we call Warm() anyway because AIWorker will just register
+			// the endpoint for an external container
+			if config.Warm || config.URL != "" {
+				endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+					return nil, nil, fmt.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+				}
+			}
+
+			// Show warning if people set OptimizationFlags but not Warm.
+			if len(config.OptimizationFlags) > 0 && !config.Warm {
+				glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
+			}
+			_, ok := constraints[pipelineCap]
+			if !ok {
+				aiCaps = append(aiCaps, pipelineCap)
+				constraints[pipelineCap] = &Constraints{
+					Models: make(map[string]*ModelConstraint),
+				}
+			}
+
+			_, model_exists := constraints[pipelineCap].Models[config.ModelID]
+			if model_exists {
+				if constraints[pipelineCap].Models[config.ModelID].Warm == modelConstraint.Warm {
+					constraints[pipelineCap].Models[config.ModelID].Capacity += 1
+				} else {
+					constraints[pipelineCap].Models[config.ModelID] = modelConstraint
+				}
+			} else {
+				constraints[pipelineCap].Models[config.ModelID] = modelConstraint
+			}
+
+			n.SetBasePriceForCap("default", pipelineCap, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+
+		}
+
+		if len(aiCaps) > 0 {
+			capability := aiCaps[len(aiCaps)-1]
+			price := n.GetBasePriceForCap("default", capability, config.ModelID)
+			glog.V(common.DEBUG).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit (%+v)", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom(), modelConstraint)
+		}
+	}
+
+	return aiCaps, constraints, nil
+}
+func (n *LivepeerNode) RemoveAIConfigs(ctx context.Context, configs []AIModelConfig) ([]Capability, map[Capability]*Constraints, error) {
+	var aiCaps []Capability
+	constraints := make(map[Capability]*Constraints)
+
+	for _, config := range configs {
+		modelConstraint := &ModelConstraint{Warm: config.Warm, Capacity: 1}
+		pipelineCap := PipelineToCapability(config.Pipeline)
+
+		if pipelineCap > Capability_Unused {
+			constraints[pipelineCap] = &Constraints{
+				Models: make(map[string]*ModelConstraint),
+			}
+
+			aiCaps = append(aiCaps, pipelineCap)
+			constraints[pipelineCap].Models[config.ModelID] = modelConstraint
+		}
+	}
+
+	return aiCaps, constraints, nil
+}
+
+func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints map[Capability]*Constraints) error {
+	currentCaps := n.Capabilities.ToNetCapabilities()
+	//all capabilities are in capacities (note: capacity is always 1 if the capability exists right now)
+	for capability, capacity := range currentCaps.Capacities {
+		if capacity > 0 && slices.Contains(aiCaps, Capability(capability)) {
+			currentCaps.Capacities[capability] -= 1
+			if currentCaps.Capacities[capability] == 0 {
+				delete(currentCaps.Capacities, capability)
+			}
+		}
+	}
+
+	for capability, constraint := range aiConstraints {
+		_, ok := currentCaps.Constraints[uint32(capability)]
+		if ok {
+			for model_id, _ := range constraint.Models {
+				currentCaps.Constraints[uint32(capability)].Models[model_id].Capacity -= 1
+				if currentCaps.Constraints[uint32(capability)].Models[model_id].Capacity == 0 {
+					delete(currentCaps.Constraints, uint32(capability))
+				}
+			}
+		}
+	}
+
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
+
+	n.Capabilities = CapabilitiesFromNetCapabilities(currentCaps)
+
+	return nil
+}
+
+func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints map[Capability]*Constraints) error {
+	currentCaps := n.Capabilities.ToNetCapabilities()
+
+	//all capabilities are in capacities (note: capacity is always 1 if the capability exists right now)
+	for _, aiCapability := range aiCaps {
+		currentCaps.Capacities[uint32(aiCapability)] += 1
+	}
+
+	for aiCapability, aiConstraint := range aiConstraints {
+		_, ok := currentCaps.Constraints[uint32(aiCapability)]
+		if !ok {
+			currentCaps.Constraints[uint32(aiCapability)] = &net.Capabilities_Constraints{
+				Models: make(map[string]*net.Capabilities_Constraints_ModelConstraint),
+			}
+		}
+
+		for model_id, modelConstraint := range aiConstraint.Models {
+			_, model_exists := currentCaps.Constraints[uint32(aiCapability)].Models[model_id]
+			if model_exists {
+				currentCaps.Constraints[uint32(aiCapability)].Models[model_id].Capacity += 1
+			} else {
+				currentCaps.Constraints[uint32(aiCapability)].Models[model_id] = &net.Capabilities_Constraints_ModelConstraint{Warm: modelConstraint.Warm, Capacity: modelConstraint.Capacity}
+			}
+		}
+	}
+
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
+	caps := CapabilitiesFromNetCapabilities(currentCaps)
+	n.Capabilities = caps
+
+	return nil
 }
