@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"github.com/livepeer/go-livepeer/clog"
 	"math"
 	"math/big"
 	"math/rand"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/clog"
 )
 
 var random = rand.New(rand.NewSource(time.Now().UnixNano()))
