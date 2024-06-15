@@ -64,10 +64,10 @@ type Orchestrator interface {
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
-	TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
-	ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
-	ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error)
-	Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
+	TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
+	ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
+	ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error)
+	Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance

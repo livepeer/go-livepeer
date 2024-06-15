@@ -47,17 +47,15 @@ var errCapabilities = errors.New("incompatible segment capabilities")
 
 // RunAIWorker is main routing of standalone aiworker
 // Exiting it will terminate executable
-func RunAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
-	glog.Info("starting aiworker to ", orchAddr)
-
+func RunAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.Capabilities) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
-		glog.Info("Registering aiworker to ", orchAddr)
+		glog.Info("Registering AI worker to ", orchAddr)
 		err := runAIWorker(n, orchAddr, capacity, caps)
-		glog.Info("Unregistering aiworker: ", err)
-		if _, fatal := err.(core.RemoteAIworkerFatalError); fatal {
+		glog.Info("Unregistering AI worker: ", err)
+		if _, fatal := err.(core.RemoteAIWorkerFatalError); fatal {
 			glog.Info("Terminating aiworker because of ", err)
 			// Returning nil here will make `backoff` to stop trying to reconnect and exit
 			return nil
@@ -105,14 +103,30 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
-func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
+func checkAIWorkerError(err error) error {
+	if err != nil {
+		s := status.Convert(err)
+		if s.Message() == errSecret.Error() { // consider this unrecoverable
+			return core.NewRemoteAIWorkerFatalError(errSecret)
+		}
+		if s.Message() == errZeroCapacity.Error() { // consider this unrecoverable
+			return core.NewRemoteAIWorkerFatalError(errZeroCapacity)
+		}
+		if status.Code(err) == codes.Canceled {
+			return core.NewRemoteAIWorkerFatalError(errInterrupted)
+		}
+	}
+	return err
+}
+
+func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.Capabilities) error {
 	glog.Infof("runAIWorker orchAddr=%v ", orchAddr)
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	if err != nil {
-		glog.Error("Did not connect aiworker to orchesrator: ", err)
+		glog.Error("Did not connect AI worker to orchesrator: ", err)
 		return err
 	}
 	defer conn.Close()
@@ -123,8 +137,8 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []cor
 	// Silence linter
 	defer cancel()
 	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
-	if err := checkTranscoderError(err); err != nil {
+		Capabilities: caps})
+	if err := checkAIWorkerError(err); err != nil {
 		glog.Error("Could not register aiworker to orchestrator ", err)
 		return err
 	}
@@ -147,7 +161,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []cor
 	var wg sync.WaitGroup
 	for {
 		notify, err := r.Recv()
-		if err := checkTranscoderError(err); err != nil {
+		if err := checkAIWorkerError(err); err != nil {
 			glog.Infof(`End of stream receive cycle because of err=%q, waiting for running aiworker jobs to complete`, err)
 			wg.Wait()
 			return err
@@ -159,10 +173,6 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps []cor
 		}()
 
 	}
-}
-
-func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIWork) {
-	glog.Infof("runAIWork Value=%d ", notify.Value)
 }
 
 func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
@@ -221,6 +231,10 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 			}()
 		}
 	}
+}
+
+func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
+	glog.Infof("Processing AI job taskID=%d url=%s", notify.TaskId, notify.Url)
 }
 
 func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifySegment) {

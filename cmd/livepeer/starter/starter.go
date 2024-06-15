@@ -578,7 +578,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		if !*cfg.AIWorker {
 			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-			//n.AIWorker = n.AIWorkerManager
+			n.AIWorker = nil
 		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
@@ -1320,7 +1320,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Missing -orchAddr")
 		}
 
-		go server.RunAIWorker(n, orchURLs[0].Host, 1, transcoderCaps)
+		go server.RunAIWorker(n, orchURLs[0].Host, 1, n.Capabilities.ToNetCapabilities())
 	}
 	switch n.NodeType {
 	case core.OrchestratorNode:

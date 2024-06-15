@@ -16,7 +16,7 @@ service AIWorker {
 
   // Called by the aiworker to register to an orchestrator. The orchestrator
   // notifies registered aiworkers of jobs as they come in.
-  rpc RegisterAIWorker(RegisterAIWorkerRequest) returns (stream NotifyAIWork);
+  rpc RegisterAIWorker(RegisterAIWorkerRequest) returns (stream NotifyAIJob);
 }
 
 service Transcoder {
@@ -341,9 +341,23 @@ message RegisterAIWorkerRequest {
 }
 
 // Sent by the orchestrator to the aiworker
-message NotifyAIWork {
-  bytes value = 1;
+message NotifyAIJob {
+    // URL of the input to use.
+    string url      = 1;
+
+    // pipeline to use for the job
+    string pipeline = 2;
+
+    // model to process job with
+    string modelID = 3;
+
+    // Configuration for the transcoding job
+    bytes requestData = 3;
+
+    // ID for this particular transcoding task.
+    int64 taskId   = 4;
 }
+
 // Sent by the transcoder to register itself to the orchestrator.
 message RegisterRequest {
 

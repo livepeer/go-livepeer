@@ -3,17 +3,24 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
+	"io"
+	"io/ioutil"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 )
@@ -38,10 +45,13 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
+	//routes used be gateway to send requests
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
+	//router remote ai worker uses to send results back
+	lp.transRPC.Handle("/aiResults", lp.AIResults())
 
 	return nil
 }
@@ -146,6 +156,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	requestID := string(core.RandomManifestID())
+
 	var cap core.Capability
 	var pipeline string
 	var modelID string
@@ -158,7 +170,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_TextToImage
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
-			return orch.TextToImage(ctx, v)
+			return orch.TextToImage(ctx, requestID, v)
 		}
 
 		// TODO: The orchestrator should require the broadcaster to always specify a height and width
@@ -177,7 +189,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_ImageToImage
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
-			return orch.ImageToImage(ctx, v)
+			return orch.ImageToImage(ctx, requestID, v)
 		}
 
 		imageRdr, err := v.Image.Reader()
@@ -196,7 +208,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_Upscale
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
-			return orch.Upscale(ctx, v)
+			return orch.Upscale(ctx, requestID, v)
 		}
 
 		imageRdr, err := v.Image.Reader()
@@ -215,7 +227,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_ImageToVideo
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
-			return orch.ImageToVideo(ctx, v)
+			return orch.ImageToVideo(ctx, requestID, v)
 		}
 
 		// TODO: The orchestrator should require the broadcaster to always specify a height and width
@@ -235,8 +247,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
 	}
-
-	requestID := string(core.RandomManifestID())
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
 
@@ -286,4 +296,119 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (h *lphttp) AIResults() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		authType := r.Header.Get("Authorization")
+		creds := r.Header.Get("Credentials")
+		//if protoVerLPT != authType {
+		//	glog.Error("Invalid auth type ", authType)
+		//	http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		//	return
+		//}
+
+		if creds != orch.TranscoderSecret() {
+			glog.Error("Invalid shared secret")
+			respondWithError(w, err.Error(), http.StatusUnauthorized)
+		}
+
+		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			glog.Error("Error getting mime type ", err)
+			http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+			return
+		}
+
+		tid, err := strconv.ParseInt(r.Header.Get("TaskId"), 10, 64)
+		if err != nil {
+			glog.Error("Could not parse task ID ", err)
+			http.Error(w, "Invalid Task ID", http.StatusBadRequest)
+			return
+		}
+
+		var res core.RemoteTranscoderResult
+		if transcodingErrorMimeType == mediaType {
+			w.Write([]byte("OK"))
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				glog.Errorf("Unable to read transcoding error body taskId=%v err=%q", tid, err)
+				res.Err = err
+			} else {
+				res.Err = fmt.Errorf(string(body))
+			}
+			glog.Errorf("Transcoding error for taskId=%v err=%q", tid, res.Err)
+			orch.TranscoderResults(tid, &res)
+			return
+		}
+
+		decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
+		if err != nil {
+			glog.Error("Could not parse decoded pixels", err)
+			http.Error(w, "Invalid Pixels", http.StatusBadRequest)
+			return
+		}
+
+		var segments []*core.TranscodedSegmentData
+		if mediaType == "multipart/mixed" {
+			start := time.Now()
+			mr := multipart.NewReader(r.Body, params["boundary"])
+			for {
+				p, err := mr.NextPart()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					glog.Error("Could not process multipart part ", err)
+					res.Err = err
+					break
+				}
+				body, err := common.ReadAtMost(p, common.MaxSegSize)
+				if err != nil {
+					glog.Error("Error reading body ", err)
+					res.Err = err
+					break
+				}
+
+				if len(p.Header.Values("Pixels")) > 0 {
+					encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+					if err != nil {
+						glog.Error("Error getting pixels in header:", err)
+						res.Err = err
+						break
+					}
+					segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
+				} else if p.Header.Get("Content-Type") == "application/octet-stream" {
+					// Perceptual hash data for last segment
+					if len(segments) > 0 {
+						segments[len(segments)-1].PHash = body
+					} else {
+						err := errors.New("Unknown perceptual hash")
+						glog.Error("No previous segment present to attach perceptual hash data to: ", err)
+						res.Err = err
+						break
+					}
+				}
+			}
+			res.TranscodeData = &core.TranscodeData{
+				Segments: segments,
+				Pixels:   decodedPixels,
+			}
+			dlDur := time.Since(start)
+			glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
+
+			if monitor.Enabled {
+				monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
+			}
+
+			orch.TranscoderResults(tid, &res)
+		}
+		if res.Err != nil {
+			http.Error(w, res.Err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("OK"))
+	})
 }
