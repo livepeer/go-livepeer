@@ -352,10 +352,10 @@ message NotifyAIJob {
     string modelID = 3;
 
     // Configuration for the transcoding job
-    bytes requestData = 3;
+    bytes requestData = 4;
 
     // ID for this particular transcoding task.
-    int64 taskId   = 4;
+    int64 taskId   = 5;
 }
 
 // Sent by the transcoder to register itself to the orchestrator.
