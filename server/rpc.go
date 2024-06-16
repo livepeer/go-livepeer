@@ -56,6 +56,7 @@ type Orchestrator interface {
 	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
+	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)

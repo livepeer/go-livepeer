@@ -137,7 +137,7 @@ func NewRemoteAIWorkerFatalError(err error) error {
 }
 
 // Process does actual AI job using remote worker from the pool
-func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req interface{}) (interface{}, error) {
+func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req interface{}) (*RemoteAIWorkerResult, error) {
 	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
 	if err != nil {
 		return nil, err
@@ -157,6 +157,7 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 		}
 		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
 	}
+
 	return res, err
 }
 
@@ -238,12 +239,13 @@ func removeFromRemoteWorkers(rw *RemoteAIWorker, remoteWorkers []*RemoteAIWorker
 	return newRemoteWs
 }
 
-type RemoteWorkerResult struct {
-	ResultData interface{}
-	Err        error
+type RemoteAIWorkerResult struct {
+	Results *worker.ImageResponse
+	Files   map[string][]byte
+	Err     error
 }
 
-type AIWorkerChan chan *RemoteWorkerResult
+type AIWorkerChan chan *RemoteAIWorkerResult
 
 func (rwm *RemoteAIWorkerManager) getTaskChan(taskID int64) (AIWorkerChan, error) {
 	rwm.taskMutex.RLock()
@@ -251,7 +253,7 @@ func (rwm *RemoteAIWorkerManager) getTaskChan(taskID int64) (AIWorkerChan, error
 	if tc, ok := rwm.taskChans[taskID]; ok {
 		return tc, nil
 	}
-	return nil, fmt.Errorf("No transcoder channel")
+	return nil, fmt.Errorf("No AI Worker channel")
 }
 
 func (rwm *RemoteAIWorkerManager) addTaskChan() (int64, AIWorkerChan) {
@@ -261,7 +263,7 @@ func (rwm *RemoteAIWorkerManager) addTaskChan() (int64, AIWorkerChan) {
 	rwm.taskCount++
 	if tc, ok := rwm.taskChans[taskID]; ok {
 		// should really never happen
-		glog.V(common.DEBUG).Info("Transcoder channel already exists for ", taskID)
+		glog.V(common.DEBUG).Info("AI Worker channel already exists for ", taskID)
 		return taskID, tc
 	}
 	rwm.taskChans[taskID] = make(AIWorkerChan, 1)
@@ -272,20 +274,20 @@ func (rwm *RemoteAIWorkerManager) removeTaskChan(taskID int64) {
 	rwm.taskMutex.Lock()
 	defer rwm.taskMutex.Unlock()
 	if _, ok := rwm.taskChans[taskID]; !ok {
-		glog.V(common.DEBUG).Info("Transcoder channel nonexistent for job ", taskID)
+		glog.V(common.DEBUG).Info("AI Worker channel nonexistent for job ", taskID)
 		return
 	}
 	delete(rwm.taskChans, taskID)
 }
 
 // Process does actual AI processing by sending work to remote ai worker and waiting for the result
-func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, modelID string, fname string, req interface{}) (interface{}, error) {
+func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, modelID string, fname string, req interface{}) (*RemoteAIWorkerResult, error) {
 	taskID, taskChan := rw.manager.addTaskChan()
 	defer rw.manager.removeTaskChan(taskID)
 
-	signalEOF := func(err error) (interface{}, error) {
+	signalEOF := func(err error) (*RemoteAIWorkerResult, error) {
 		rw.done()
-		clog.Errorf(logCtx, "Fatal error with remote worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID, err)
+		clog.Errorf(logCtx, "Fatal error with remote AI worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID, err)
 		return nil, RemoteTranscoderFatalError{err}
 	}
 
@@ -321,7 +323,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	case chanData := <-taskChan:
 		clog.InfofErr(logCtx, "Successfully received results from remote worker=%s taskId=%d pipeline=%s model_id=%s dur=%v",
 			rw.addr, taskID, pipeline, modelID, time.Since(start), chanData.Err)
-		return chanData.ResultData, chanData.Err
+		return chanData, chanData.Err
 	}
 }
 
@@ -336,8 +338,8 @@ func (n *LivepeerNode) getAIJobChan(ctx context.Context, requestID string) (AIJo
 
 type AIResult struct {
 	Err    error
-	Result interface{}
-	OS     drivers.OSSession
+	Result *worker.ImageResponse
+	Files  map[string]string
 }
 
 type AIChanData struct {
@@ -353,6 +355,39 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
 }
 
+func (orch *orchestrator) AIResults(tcID int64, res *RemoteAIWorkerResult) {
+	orch.node.AIWorkerManager.aiResults(tcID, res)
+}
+
+func (rwm *RemoteAIWorkerManager) aiResults(tcID int64, res *RemoteAIWorkerResult) {
+	remoteChan, err := rwm.getTaskChan(tcID)
+	if err != nil {
+		return // do we need to return anything?
+	}
+	remoteChan <- res
+}
+
+func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorkerResult, requestID string) (*RemoteAIWorkerResult, error) {
+	for idx, _ := range results.Results.Images {
+		fileName := results.Results.Images[idx].Url
+
+		storage, ok := n.StorageConfigs[requestID]
+		if !ok {
+			return nil, fmt.Errorf("node storage does not exist for requestID=%s", requestID)
+		}
+		//save the file data to node and provide url for download
+		url, err := storage.LocalOS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		results.Results.Images[idx].Url = url
+		results.Files[fileName] = nil
+	}
+
+	return results, nil
+}
+
 func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	//no input file needed for processing
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", req)
@@ -360,12 +395,12 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		return nil, err
 	}
 
-	imgResp, ok := res.(*worker.ImageResponse)
-	if ok {
-		return imgResp, nil
-	} else {
-		return nil, errors.New("response not in expected format")
+	res, err = orch.node.saveAIResults(ctx, res, requestID)
+	if err != nil {
+		return nil, err
 	}
+
+	return res.Results, nil
 
 }
 
@@ -383,12 +418,12 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	imgResp, ok := res.(*worker.ImageResponse)
-	if ok {
-		return imgResp, nil
-	} else {
-		return nil, errors.New("response not in expected format")
+	res, err = orch.node.saveAIResults(ctx, res, requestID)
+	if err != nil {
+		return nil, err
 	}
+
+	return res.Results, nil
 }
 
 func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -405,12 +440,12 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	imgResp, ok := res.(*worker.ImageResponse)
-	if ok {
-		return imgResp, nil
-	} else {
-		return nil, errors.New("response not in expected format")
+	res, err = orch.node.saveAIResults(ctx, res, requestID)
+	if err != nil {
+		return nil, err
 	}
+
+	return res.Results, nil
 }
 
 func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -427,12 +462,12 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		return nil, err
 	}
 
-	imgResp, ok := res.(*worker.ImageResponse)
-	if ok {
-		return imgResp, nil
-	} else {
-		return nil, errors.New("response not in expected format")
+	res, err = orch.node.saveAIResults(ctx, res, requestID)
+	if err != nil {
+		return nil, err
 	}
+
+	return res.Results, nil
 }
 
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
@@ -551,7 +586,7 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 		seg := res.TranscodeData.Segments[0]
 		name := fmt.Sprintf("%v.mp4", RandomManifestID())
 		segData := bytes.NewReader(seg.Data)
-		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
+		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0) //this is localOS, uri is file path
 		if err != nil {
 			return nil, err
 		}

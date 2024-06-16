@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -33,6 +32,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
+
+const aiWorkerErrorMimeType = "livepeer/ai-worker-error"
 
 // Standalone AIWorker
 
@@ -158,6 +159,16 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		// See https://github.com/livepeer/go-livepeer/issues/1518
 	}
 
+	//check working directory exists, create if not
+	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
+		err = os.Mkdir(n.WorkDir, 0700)
+		if err != nil {
+			clog.Errorf(ctx, "AI Worker cannot create workdir err=%q", err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+			return
+		}
+	}
+
 	//download the input file if applicable
 	var input []byte
 	if notify.Url != "" {
@@ -169,14 +180,6 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		}
 
 		// Write it to disk
-		if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
-			err = os.Mkdir(n.WorkDir, 0700)
-			if err != nil {
-				clog.Errorf(ctx, "AI Worker cannot create workdir err=%q", err)
-				sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
-				return
-			}
-		}
 		// Create input file from segment. Removed after transcoding done
 		fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
 		if err = os.WriteFile(fname, input, 0600); err != nil {
@@ -190,27 +193,34 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	}
 
 	start := time.Now()
-	var resp *worker.ImageResponse
-	var respVid *worker.VideoResponse
-
+	var resp *worker.ImageResponse //this is used for video as well because Frames received are transcoded to an MP4
+	expectBase64 := true
+	var resultType string
 	switch params.(type) {
 	case worker.TextToImageJSONRequestBody:
+		resultType = "image/png"
 		req := params.(worker.TextToImageJSONRequestBody)
-		resp, err = n.AIWorker.TextToImage(ctx, req)
+		resp, err = n.TextToImage(ctx, req)
 	case worker.ImageToImageMultipartRequestBody:
+		resultType = "image/png"
 		req := params.(worker.ImageToImageMultipartRequestBody)
 		req.Image.InitFromBytes(input, "image")
-		resp, err = n.AIWorker.ImageToImage(ctx, req)
-	case worker.ImageToVideoMultipartRequestBody:
-		req := params.(worker.ImageToVideoMultipartRequestBody)
-		respVid, err = n.AIWorker.ImageToVideo(ctx, req)
+		resp, err = n.ImageToImage(ctx, req)
 	case worker.UpscaleMultipartRequestBody:
+		resultType = "image/png"
 		req := params.(worker.UpscaleMultipartRequestBody)
-		resp, err = n.AIWorker.Upscale(ctx, req)
+		req.Image.InitFromBytes(input, "image")
+		resp, err = n.Upscale(ctx, req)
+	case worker.ImageToVideoMultipartRequestBody:
+		resultType = "video/mp4"
+		expectBase64 = false
+		req := params.(worker.ImageToVideoMultipartRequestBody)
+		req.Image.InitFromBytes(input, "image")
+		resp, err = n.ImageToVideo(ctx, req)
 	default:
 		resp = nil
 		err = errors.New("AI request pipeline type not supported")
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
 		return
 	}
 
@@ -225,49 +235,82 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 
 	boundary := common.RandName()
 	w := multipart.NewWriter(&body)
-	for i, v := range tData.Segments {
-		ctyp, err := common.ProfileFormatMimeType(profiles[i].Format)
-		if err != nil {
-			clog.Errorf(ctx, "Could not find mime type err=%q", err)
-			continue
+
+	if resp != nil {
+		if expectBase64 {
+			//read the base64 data in the url field and save to file
+			//TODO improve this by adding helper in ai-worker that returns the ContentType and []byte data
+			//     to use in the multipart response.
+			//     should this move to the n.TextToImage (etc) so we will always expect a local file in the response? the file name is used for
+			for i, image := range resp.Images {
+				resultFieldName := string(core.RandomManifestID()) + strconv.Itoa(i)
+				resultFile := resultFieldName + ".png"
+				fname := path.Join(n.WorkDir, resultFile)
+				if err := worker.SaveImageB64DataUrl(image.Url, fname); err != nil {
+					clog.Errorf(ctx, "AI Worker failed to save image from url err=%q", err)
+					sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+					return
+				}
+				resp.Images[i].Url = resultFile //update json response to track filename attached
+				defer os.Remove(fname)
+			}
 		}
+
+		//create the multipart/mixed response to send to Orchestrator
+		//add the json to the response
+		jsonResp, err := json.Marshal(resp)
 		w.SetBoundary(boundary)
 		hdrs := textproto.MIMEHeader{
-			"Content-Type":   {ctyp},
-			"Content-Length": {strconv.Itoa(len(v.Data))},
-			"Pixels":         {strconv.FormatInt(v.Pixels, 10)},
+			"Content-Type":   {"application/json"},
+			"Content-Length": {strconv.Itoa(len(jsonResp))},
 		}
 		fw, err := w.CreatePart(hdrs)
 		if err != nil {
 			clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 		}
-		io.Copy(fw, bytes.NewBuffer(v.Data))
-		// Add perceptual hash data as a part if generated
-		if md.CalcPerceptualHash {
+		io.Copy(fw, bytes.NewBuffer(jsonResp))
+
+		//add the results to the response
+		//TODO make the Content-Type more dynamic to support other image formats
+		for _, image := range resp.Images {
+			//read back the file saved for the result
+			fname := path.Join(n.WorkDir, image.Url)
+			result, err := os.ReadFile(fname)
+			if err != nil {
+				clog.Errorf(ctx, "AI Worker failed to read image from url err=%q", err)
+				sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
+				return
+			}
+			//create the part
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{
-				"Content-Type":   {"application/octet-stream"},
-				"Content-Length": {strconv.Itoa(len(v.PHash))},
+				"Content-Type":        {resultType + " ; name=" + image.Url},
+				"Content-Length":      {strconv.Itoa(len(result))},
+				"Content-Disposition": {"attachment; filename=" + image.Url},
 			}
 			fw, err := w.CreatePart(hdrs)
 			if err != nil {
 				clog.Errorf(ctx, "Could not create multipart part err=%q", err)
+				sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
+				return
 			}
-			io.Copy(fw, bytes.NewBuffer(v.PHash))
+			io.Copy(fw, bytes.NewBuffer(result))
 		}
+
 	}
+
 	w.Close()
 	contentType = "multipart/mixed; boundary=" + boundary
-	sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+	sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, nil)
 }
 
 func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob,
-	contentType string, body *bytes.Buffer, tData *core.TranscodeData, err error,
+	contentType string, body *bytes.Buffer, addlData interface{}, err error,
 ) {
 	if err != nil {
 		clog.Errorf(ctx, "Unable to process AI job err=%q", err)
 		body.Write([]byte(err.Error()))
-		contentType = transcodingErrorMimeType
+		contentType = aiWorkerErrorMimeType
 	}
 	req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResults", body)
 	if err != nil {
@@ -275,22 +318,23 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 			notify.TaskId, notify.Url, err)
 		return
 	}
-	req.Header.Set("Authorization", protoVerLPT)
+	//req.Header.Set("Authorization", protoVerLPT)  should we require a version number?
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
 
-	pixels := int64(0)
-	if tData != nil {
-		pixels = tData.Pixels
-	}
-	req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
+	//TODO do we want to include additional information in response header
+	//pixels := int64(0)
+	//if tData != nil {
+	//	pixels = tData.Pixels
+	//}
+	//req.Header.Set("Pixels", strconv.FormatInt(pixels, 10))
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
 	if err != nil {
 		clog.Errorf(ctx, "Error submitting results err=%q", err)
 	} else {
-		rbody, rerr := ioutil.ReadAll(resp.Body)
+		rbody, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			if rerr != nil {

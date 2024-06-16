@@ -3,11 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"image"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -298,12 +296,17 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+//
+// Orchestrator receiving results from the remote AI worker
+//
+
 func (h *lphttp) AIResults() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
 
-		authType := r.Header.Get("Authorization")
 		creds := r.Header.Get("Credentials")
+		//TODO do we want to restrict processing to specific versions of go-livepeer?
+		//authType := r.Header.Get("Authorization")
 		//if protoVerLPT != authType {
 		//	glog.Error("Invalid auth type ", authType)
 		//	http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -312,7 +315,7 @@ func (h *lphttp) AIResults() http.Handler {
 
 		if creds != orch.TranscoderSecret() {
 			glog.Error("Invalid shared secret")
-			respondWithError(w, err.Error(), http.StatusUnauthorized)
+			respondWithError(w, errSecret.Error(), http.StatusUnauthorized)
 		}
 
 		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -329,29 +332,21 @@ func (h *lphttp) AIResults() http.Handler {
 			return
 		}
 
-		var res core.RemoteTranscoderResult
-		if transcodingErrorMimeType == mediaType {
+		var workerResult core.RemoteAIWorkerResult
+		if aiWorkerErrorMimeType == mediaType {
 			w.Write([]byte("OK"))
-			body, err := ioutil.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				glog.Errorf("Unable to read transcoding error body taskId=%v err=%q", tid, err)
-				res.Err = err
+				glog.Errorf("Unable to read ai worker error body taskId=%v err=%q", tid, err)
+				workerResult.Err = err
 			} else {
-				res.Err = fmt.Errorf(string(body))
+				workerResult.Err = fmt.Errorf(string(body))
 			}
-			glog.Errorf("Transcoding error for taskId=%v err=%q", tid, res.Err)
-			orch.TranscoderResults(tid, &res)
+			glog.Errorf("AI Worker error for taskId=%v err=%q", tid, workerResult.Err)
+			orch.AIResults(tid, &workerResult)
 			return
 		}
 
-		decodedPixels, err := strconv.ParseInt(r.Header.Get("Pixels"), 10, 64)
-		if err != nil {
-			glog.Error("Could not parse decoded pixels", err)
-			http.Error(w, "Invalid Pixels", http.StatusBadRequest)
-			return
-		}
-
-		var segments []*core.TranscodedSegmentData
 		if mediaType == "multipart/mixed" {
 			start := time.Now()
 			mr := multipart.NewReader(r.Body, params["boundary"])
@@ -362,53 +357,51 @@ func (h *lphttp) AIResults() http.Handler {
 				}
 				if err != nil {
 					glog.Error("Could not process multipart part ", err)
-					res.Err = err
+					workerResult.Err = err
 					break
 				}
-				body, err := common.ReadAtMost(p, common.MaxSegSize)
+				body, err := common.ReadAtMost(p, common.MaxSegSize) //reuse transcoding limit on response size
 				if err != nil {
 					glog.Error("Error reading body ", err)
-					res.Err = err
+					workerResult.Err = err
 					break
 				}
 
-				if len(p.Header.Values("Pixels")) > 0 {
-					encodedPixels, err := strconv.ParseInt(p.Header.Get("Pixels"), 10, 64)
+				//this is where we would include metadata on each result if want to separate
+				//instead the multipart response includes the json and the files separately with the json "url" field matching to part names
+				cDisp := p.Header.Get("Content-Disposition")
+				if p.Header.Get("Content-Type") == "application/json" {
+					var results *worker.ImageResponse
+					err := json.Unmarshal(body, results)
 					if err != nil {
-						glog.Error("Error getting pixels in header:", err)
-						res.Err = err
+						glog.Error("Error getting results json:", err)
+						workerResult.Err = err
 						break
 					}
-					segments = append(segments, &core.TranscodedSegmentData{Data: body, Pixels: encodedPixels})
-				} else if p.Header.Get("Content-Type") == "application/octet-stream" {
-					// Perceptual hash data for last segment
-					if len(segments) > 0 {
-						segments[len(segments)-1].PHash = body
-					} else {
-						err := errors.New("Unknown perceptual hash")
-						glog.Error("No previous segment present to attach perceptual hash data to: ", err)
-						res.Err = err
-						break
-					}
+
+					workerResult.Results = results
+				} else if cDisp != "" {
+					//these are the result files binary data
+					resultName := p.FileName()
+					workerResult.Files[resultName] = body
 				}
 			}
-			res.TranscodeData = &core.TranscodeData{
-				Segments: segments,
-				Pixels:   decodedPixels,
-			}
+
 			dlDur := time.Since(start)
-			glog.V(common.VERBOSE).Infof("Downloaded results from remote transcoder=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
+			glog.V(common.VERBOSE).Infof("Downloaded results from remote worker=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
 
 			if monitor.Enabled {
 				monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
 			}
 
-			orch.TranscoderResults(tid, &res)
+			orch.AIResults(tid, &workerResult)
 		}
-		if res.Err != nil {
-			http.Error(w, res.Err.Error(), http.StatusInternalServerError)
+
+		if workerResult.Err != nil {
+			http.Error(w, workerResult.Err.Error(), http.StatusInternalServerError)
 			return
 		}
+
 		w.Write([]byte("OK"))
 	})
 }
