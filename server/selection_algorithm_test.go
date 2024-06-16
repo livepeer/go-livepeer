@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"math/big"
 	"testing"
 
@@ -208,7 +209,7 @@ func TestFilter(t *testing.T) {
 				MinPerfScore: tt.orchMinPerfScore,
 			}
 
-			res := sa.filter(addrs, maxPrice, prices, perfScores)
+			res := sa.filter(context.Background(), addrs, maxPrice, prices, perfScores)
 
 			var exp []ethcommon.Address
 			for _, o := range tt.want {
