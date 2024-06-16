@@ -36,6 +36,8 @@ require (
 	pgregory.net/rapid v1.1.0
 )
 
+require github.com/tcolgate/mp3 v0.0.0-20170426193717-e79c5a46d300
+
 require (
 	cloud.google.com/go v0.110.2 // indirect
 	cloud.google.com/go/compute v1.20.0 // indirect
