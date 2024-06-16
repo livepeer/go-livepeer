@@ -240,3 +240,19 @@ func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints map[
 
 	return nil
 }
+
+func (n *LivepeerNode) CheckWorkerAICapability(pipeline string, modelID string) bool {
+	nodeCaps := n.Capabilities.ToNetCapabilities()
+	cap := PipelineToCapability(pipeline)
+	if cap > Capability_Unused {
+		for modelCap, constraints := range nodeCaps.Constraints {
+			if cap == Capability(modelCap) {
+				_, ok := constraints.Models[modelID]
+				return ok
+			}
+		}
+	} else {
+		return false
+	}
+
+}
