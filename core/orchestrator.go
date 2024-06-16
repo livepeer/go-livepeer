@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -21,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 
-	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -32,7 +30,6 @@ import (
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -576,116 +573,6 @@ func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodi
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
-	ctx = clog.AddOrchSessionID(ctx, sessionID)
-
-	var fnamep *string
-	terr := func(err error) *TranscodeResult {
-		if fnamep != nil {
-			if err := os.RemoveAll(*fnamep); err != nil {
-				clog.Errorf(ctx, "Transcoder failed to cleanup %v", *fnamep)
-			}
-		}
-		return &TranscodeResult{Err: err}
-	}
-
-	// We only support base64 png data urls right now
-	// We will want to support HTTP and file urls later on as well
-	dirPath := path.Join(n.WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
-	fnamep = &dirPath
-	if err := os.MkdirAll(dirPath, 0700); err != nil {
-		clog.Errorf(ctx, "Transcoder cannot create frames dir err=%q", err)
-		return terr(err)
-	}
-	for i, url := range urls {
-		fname := path.Join(dirPath, strconv.Itoa(i)+".png")
-		if err := worker.SaveImageB64DataUrl(url, fname); err != nil {
-			clog.Errorf(ctx, "Transcoder failed to save image from url err=%q", err)
-			return terr(err)
-		}
-	}
-
-	// Use local software transcoder instead of node's configured transcoder
-	// because if the node is using a nvidia transcoder there may be sporadic
-	// CUDA operation not permitted errors that are difficult to debug.
-	// The majority of the execution time for image-to-video is the frame generation
-	// so slower software transcoding should not be a big deal for now.
-	transcoder := NewLocalTranscoder(n.WorkDir)
-
-	md := &SegTranscodingMetadata{
-		Fname:     path.Join(dirPath, "%d.png"),
-		ProfileIn: inProfile,
-		Profiles: []ffmpeg.VideoProfile{
-			outProfile,
-		},
-		AuthToken: &net.AuthToken{SessionId: sessionID},
-	}
-
-	los := drivers.NodeStorage.NewSession(sessionID)
-
-	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
-	go func() {
-		ctx, cancel := transcodeLoopContext()
-		defer cancel()
-		<-ctx.Done()
-		los.EndSession()
-		clog.Infof(ctx, "Ended image-to-video session sessionID=%v", sessionID)
-	}()
-
-	start := time.Now()
-	tData, err := transcoder.Transcode(ctx, md)
-	if err != nil {
-		if _, ok := err.(UnrecoverableError); ok {
-			panic(err)
-		}
-		clog.Errorf(ctx, "Error transcoding frames dirPath=%s err=%q", dirPath, err)
-		return terr(err)
-	}
-
-	took := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Transcoding frames took=%v", took)
-
-	transcoder.EndTranscodingSession(md.AuthToken.SessionId)
-
-	tSegments := tData.Segments
-	if len(tSegments) != len(md.Profiles) {
-		clog.Errorf(ctx, "Did not receive the correct number of transcoded segments; got %v expected %v", len(tSegments),
-			len(md.Profiles))
-		return terr(fmt.Errorf("MismatchedSegments"))
-	}
-
-	// Prepare the result object
-	var tr TranscodeResult
-	segHashes := make([][]byte, len(tSegments))
-
-	for i := range md.Profiles {
-		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			clog.Errorf(ctx, "Cannot find transcoded segment for bytes=%d", len(tSegments[i].Data))
-			return terr(fmt.Errorf("ZeroSegments"))
-		}
-		clog.V(common.DEBUG).Infof(ctx, "Transcoded segment profile=%s bytes=%d",
-			md.Profiles[i].Name, len(tSegments[i].Data))
-		hash := crypto.Keccak256(tSegments[i].Data)
-		segHashes[i] = hash
-	}
-	if err := os.RemoveAll(dirPath); err != nil {
-		clog.Errorf(ctx, "Transcoder failed to cleanup %v", dirPath)
-	}
-	tr.OS = los
-	tr.TranscodeData = tData
-
-	if n == nil || n.Eth == nil {
-		return &tr
-	}
-
-	segHash := crypto.Keccak256(segHashes...)
-	tr.Sig, tr.Err = n.Eth.Sign(segHash)
-	if tr.Err != nil {
-		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%q", tr.Err)
-	}
-	return &tr
-}
-
 func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
@@ -912,113 +799,12 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	}
 }
 
-func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.TextToImage(ctx, req)
-}
-
-func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.ImageToImage(ctx, req)
-}
-
-func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.Upscale(ctx, req)
-}
-
-func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
-	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
-	numVideos := 1
-
-	// Generate frames
-	start := time.Now()
-	resp, err := n.AIWorker.ImageToVideo(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(resp.Frames) != numVideos {
-		return nil, fmt.Errorf("unexpected number of image-to-video outputs expected=%v actual=%v", numVideos, len(resp.Frames))
-	}
-
-	took := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Generating frames took=%v", took)
-
-	sessionID := string(RandomManifestID())
-	framerate := 7
-	if req.Fps != nil {
-		framerate = *req.Fps
-	}
-	inProfile := ffmpeg.VideoProfile{
-		Framerate:    uint(framerate),
-		FramerateDen: 1,
-	}
-	height := 576
-	if req.Height != nil {
-		height = *req.Height
-	}
-	width := 1024
-	if req.Width != nil {
-		width = *req.Width
-	}
-	outProfile := ffmpeg.VideoProfile{
-		Name:       "image-to-video",
-		Resolution: fmt.Sprintf("%vx%v", width, height),
-		Bitrate:    "6000k",
-		Format:     ffmpeg.FormatMP4,
-	}
-	// HACK: Re-use worker.ImageResponse to return results
-	// Transcode frames into segments.
-	videos := make([]worker.Media, len(resp.Frames))
-	for i, batch := range resp.Frames {
-		// Create slice of frame urls for a batch
-		urls := make([]string, len(batch))
-		for j, frame := range batch {
-			urls[j] = frame.Url
-		}
-
-		// Transcode slice of frame urls into a segment
-		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
-		if res.Err != nil {
-			return nil, res.Err
-		}
-
-		// Assume only single rendition right now
-		seg := res.TranscodeData.Segments[0]
-		name := fmt.Sprintf("%v.mp4", RandomManifestID())
-		segData := bytes.NewReader(seg.Data)
-		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
-		if err != nil {
-			return nil, err
-		}
-
-		videos[i] = worker.Media{
-			Url: uri,
-		}
-
-		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
-		if len(batch) > 0 {
-			videos[i].Nsfw = batch[0].Nsfw
-			videos[i].Seed = batch[0].Seed
-		}
-	}
-
-	return &worker.ImageResponse{Images: videos}, nil
-}
-
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
 	remoteChan, err := rtm.getTaskChan(tcID)
 	if err != nil {
 		return // do we need to return anything?
 	}
 	remoteChan <- res
-}
-
-type RemoteAIWorker struct {
-	manager      *RemoteAIWorkerManager
-	stream       net.AIWorker_RegisterAIWorkerServer
-	capabilities *Capabilities
-	eof          chan struct{}
-	addr         string
-	capacity     map[uint32]*net.Capabilities_Constraints
 }
 
 type RemoteTranscoder struct {
@@ -1045,14 +831,6 @@ func NewRemoteTranscoderFatalError(err error) error {
 var ErrRemoteTranscoderTimeout = errors.New("Remote transcoder took too long")
 var ErrNoTranscodersAvailable = errors.New("no transcoders available")
 var ErrNoCompatibleTranscodersAvailable = errors.New("no transcoders can provide requested capabilities")
-
-func (rt *RemoteAIWorker) done() {
-	// select so we don't block indefinitely if there's no listener
-	select {
-	case rt.eof <- struct{}{}:
-	default:
-	}
-}
 
 func (rt *RemoteTranscoder) done() {
 	// select so we don't block indefinitely if there's no listener
