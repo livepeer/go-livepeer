@@ -81,7 +81,7 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	}
 }
 
-func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
 	orch.node.serveAIWorker(stream, capabilities)
 }
 

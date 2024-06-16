@@ -48,7 +48,7 @@ func RunAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 		err := runAIWorker(n, orchAddr, capacity, caps)
 		glog.Info("Unregistering AI worker: ", err)
 		if _, fatal := err.(core.RemoteAIWorkerFatalError); fatal {
-			glog.Info("Terminating aiworker because of ", err)
+			glog.Info("Terminating AI Worker because of ", err)
 			// Returning nil here will make `backoff` to stop trying to reconnect and exit
 			return nil
 		}
@@ -74,8 +74,6 @@ func checkAIWorkerError(err error) error {
 }
 
 func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.Capabilities) error {
-	glog.Infof("runAIWorker orchAddr=%v ", orchAddr)
-
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))

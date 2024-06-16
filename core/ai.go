@@ -249,10 +249,10 @@ func (n *LivepeerNode) CheckWorkerAICapability(pipeline string, modelID string) 
 			if cap == Capability(modelCap) {
 				_, ok := constraints.Models[modelID]
 				return ok
+
 			}
 		}
-	} else {
-		return false
 	}
 
+	return false
 }

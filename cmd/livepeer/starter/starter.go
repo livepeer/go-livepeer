@@ -554,6 +554,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		} else {
 			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag or connect remote workers.")
+			//return
 		}
 
 		defer func() {
@@ -576,21 +577,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
 		}
-		if !*cfg.AIWorker {
-			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-			n.AIWorker = nil
-		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
-	} else if *cfg.AIWorker {
-		n.NodeType = core.AIWorkerNode
 	} else if *cfg.Broadcaster {
 		n.NodeType = core.BroadcasterNode
 		glog.Warning("-broadcaster flag is deprecated and will be removed in a future release. Please use -gateway instead")
 	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -aiWorker, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -1281,7 +1276,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
-			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, true, n)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
 			if err != nil {
 				exit("Error starting Transcoder node: err=%q", err)
 			}
@@ -1312,16 +1307,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
 
-	if n.NodeType == core.AIWorkerNode {
-		if n.OrchSecret == "" {
-			glog.Exit("Missing -orchSecret")
-		}
-		if len(orchURLs) <= 0 {
-			glog.Exit("Missing -orchAddr")
-		}
-
-		go server.RunAIWorker(n, orchURLs[0].Host, 1, n.Capabilities.ToNetCapabilities())
-	}
 	switch n.NodeType {
 	case core.OrchestratorNode:
 		glog.Infof("***Livepeer Running in Orchestrator Mode***")
