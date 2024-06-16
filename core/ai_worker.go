@@ -92,7 +92,6 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 	n.AddAICapabilities(nil, coreCaps.constraints)
 	defer n.Capabilities.RemoveCapacity(coreCaps)
 	defer n.RemoveAICapabilities(nil, coreCaps.constraints)
-	glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
 
 	// Manage blocks while transcoder is connected
 	n.AIWorkerManager.Manage(stream, capabilities)

@@ -48,8 +48,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
-	//router remote ai worker uses to send results back
-	lp.transRPC.Handle("/aiResults", lp.AIResults())
+	//aiResults endpoint registered in server/rpc.go
 
 	return nil
 }

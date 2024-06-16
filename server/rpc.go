@@ -194,7 +194,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAiWorkers bool, n *core.LivepeerNode) error {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAIWorkers bool, n *core.LivepeerNode) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -208,9 +208,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
-	if acceptRemoteAiWorkers {
+	if acceptRemoteAIWorkers {
 		net.RegisterAIWorkerServer(s, &lp)
-		// lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
+		lp.transRPC.Handle("/aiResults", lp.AIResults())
 
 		if n.AIWorker != nil {
 			startAIServer(lp)
