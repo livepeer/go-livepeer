@@ -268,7 +268,7 @@ func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestr
 	return r, nil
 }
 
-// EndSession - the broadcaster calls EndTranscodingSession to tear down sessions used for verification only once
+// EndTranscodingSession - the broadcaster calls EndTranscodingSession to tear down sessions used for verification only once
 func EndTranscodingSession(ctx context.Context, sess *BroadcastSession) error {
 	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
