@@ -35,6 +35,8 @@ import (
 
 const aiWorkerErrorMimeType = "livepeer/ai-worker-error"
 
+var downloadInputFile = core.GetSegmentData
+
 // Standalone AIWorker
 
 // RunAIWorker is main routing of standalone aiworker
@@ -172,7 +174,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	//download the input file if applicable
 	var input []byte
 	if notify.Url != "" {
-		input, err = core.GetSegmentData(ctx, notify.Url)
+		input, err = downloadInputFile(ctx, notify.Url)
 		if err != nil {
 			clog.Errorf(ctx, "AI Worker cannot get input file from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
@@ -265,8 +267,8 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 			//     to use in the multipart response.
 			//     should this move to the n.TextToImage (etc) so we will always expect a local file in the response? the file name is used for
 			for i, image := range resp.Images {
-				resultFieldName := string(core.RandomManifestID()) + strconv.Itoa(i)
-				resultFile := resultFieldName + ".png"
+				resultName := string(core.RandomManifestID()) + strconv.Itoa(i)
+				resultFile := resultName + ".png"
 				fname := path.Join(n.WorkDir, resultFile)
 				if err := worker.SaveImageB64DataUrl(image.Url, fname); err != nil {
 					clog.Errorf(ctx, "AI Worker failed to save image from url err=%q", err)

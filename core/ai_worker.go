@@ -192,7 +192,7 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 		if _, ok := rwm.liveAIWorkers[worker.stream]; !ok {
 			// Remove the stream session because the worker is no longer live
 			if sessionExists {
-				rwm.completeAIRequest(requestID)
+				rwm.completeAIRequest(requestID, pipeline, modelID)
 			}
 			// worker does not exist in table; remove and retry
 			rwm.remoteAIWorkers = removeFromRemoteWorkers(worker, rwm.remoteAIWorkers)
@@ -213,14 +213,21 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 
 // completeRequestSessions end a AI request session for a remote ai worker
 // caller should hold the mutex lock
-func (rtm *RemoteAIWorkerManager) completeAIRequest(requestID string) {
-	_, ok := rtm.requestSessions[requestID]
+func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID string) {
+	worker, ok := rwm.requestSessions[requestID]
 	if !ok {
 		return
 	}
-
+	for idx, remoteWorker := range rwm.remoteAIWorkers {
+		if worker.addr == remoteWorker.addr {
+			cap := PipelineToCapability(pipeline)
+			if cap > Capability_Unused {
+				rwm.remoteAIWorkers[idx].capacity[uint32(cap)].Models[modelID].Capacity += 1
+			}
+		}
+	}
 	//sort.Sort(byLoadFactor(rtm.remoteTranscoders))
-	delete(rtm.requestSessions, requestID)
+	delete(rwm.requestSessions, requestID)
 }
 
 func removeFromRemoteWorkers(rw *RemoteAIWorker, remoteWorkers []*RemoteAIWorker) []*RemoteAIWorker {
@@ -408,8 +415,20 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 		}
 
 		results.Results.Images[idx].Url = url
-		results.Files[fileName] = nil
+		delete(results.Files, fileName)
 	}
+
+	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
+	go func() {
+		ctx, cancel := transcodeLoopContext()
+		defer cancel()
+		<-ctx.Done()
+		n.storageMutex.Lock()
+		n.StorageConfigs[requestID].LocalOS.EndSession()
+		delete(n.StorageConfigs, requestID)
+		n.storageMutex.Unlock()
+		clog.Infof(ctx, "Ended session requestID=%v", requestID)
+	}()
 
 	return results, nil
 }
