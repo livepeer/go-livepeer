@@ -212,9 +212,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 
-		if n.AIWorker != nil {
-			startAIServer(lp)
-		}
+		startAIServer(lp)
 	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
