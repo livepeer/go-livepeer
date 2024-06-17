@@ -128,7 +128,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 }
 
 func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
-	glog.Infof("Processing AI job taskID=%d url=%s", notify.TaskId, notify.Url)
+	glog.Infof("Processing AI job taskID=%d pipeline=%s modelID=%s url=%s", notify.TaskId, notify.Pipeline, notify.ModelID, notify.Url)
 
 	var contentType, fname string
 	var body bytes.Buffer
@@ -141,14 +141,16 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	//}
 	//ctx = clog.AddSeqNo(ctx, uint64(md.Seq))
 	ctx := clog.AddVal(context.Background(), "taskId", strconv.FormatInt(notify.TaskId, 10))
-	if !n.CheckWorkerAICapability(notify.Pipeline, notify.Url) {
-		clog.Errorf(ctx, "Requested capabilities for AI job are not compatible with this node taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, errCapabilities)
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
+
+	//reserve the capabilities to process this request, release after work is done
+	err := n.ReserveAICapability(notify.Pipeline, notify.ModelID)
+	if err != nil {
+		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, core.ErrNoCompatibleWorkersAvailable)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, core.ErrNoCompatibleWorkersAvailable)
 		return
 	}
+	defer n.ReleaseAICapability(notify.Pipeline, notify.ModelID)
 
-	var params interface{}
-	err := json.Unmarshal(notify.RequestData, &params)
 	if err != nil {
 		glog.Errorf("Unable to parse requestData taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, err)
 		sendAIResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, tData, err)
@@ -194,28 +196,50 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	var resp *worker.ImageResponse //this is used for video as well because Frames received are transcoded to an MP4
 	expectBase64 := true
 	var resultType string
-	switch params.(type) {
-	case worker.TextToImageJSONRequestBody:
+	reqOk := true
+
+	var params interface{}
+	err = json.Unmarshal(notify.RequestData, &params)
+	switch notify.Pipeline {
+	case "text-to-image":
+		var req worker.TextToImageJSONRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+
+		if err != nil {
+			reqOk = false
+		}
 		resultType = "image/png"
-		req := params.(worker.TextToImageJSONRequestBody)
 		resp, err = n.TextToImage(ctx, req)
-	case worker.ImageToImageMultipartRequestBody:
+	case "image-to-image":
+		req, ok := params.(worker.ImageToImageMultipartRequestBody)
+		if !ok {
+			reqOk = false
+		}
 		resultType = "image/png"
-		req := params.(worker.ImageToImageMultipartRequestBody)
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToImage(ctx, req)
-	case worker.UpscaleMultipartRequestBody:
+	case "upscale":
+		req, ok := params.(worker.UpscaleMultipartRequestBody)
+		if !ok {
+			reqOk = false
+		}
 		resultType = "image/png"
-		req := params.(worker.UpscaleMultipartRequestBody)
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.Upscale(ctx, req)
-	case worker.ImageToVideoMultipartRequestBody:
+	case "image-to-video":
+		req, ok := params.(worker.ImageToVideoMultipartRequestBody)
+		if !ok {
+			reqOk = false
+		}
 		resultType = "video/mp4"
 		expectBase64 = false
-		req := params.(worker.ImageToVideoMultipartRequestBody)
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToVideo(ctx, req)
 	default:
+		reqOk = false
+	}
+
+	if !reqOk {
 		resp = nil
 		err = errors.New("AI request pipeline type not supported")
 		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
@@ -227,7 +251,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
 		}
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
 		return
 	}
 
@@ -282,7 +306,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 			//create the part
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{
-				"Content-Type":        {resultType + " ; name=" + image.Url},
+				"Content-Type":        {resultType},
 				"Content-Length":      {strconv.Itoa(len(result))},
 				"Content-Disposition": {"attachment; filename=" + image.Url},
 			}
@@ -305,6 +329,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob,
 	contentType string, body *bytes.Buffer, addlData interface{}, err error,
 ) {
+	glog.Infof("sending results back to Orchestrator")
 	if err != nil {
 		clog.Errorf(ctx, "Unable to process AI job err=%q", err)
 		body.Write([]byte(err.Error()))
@@ -343,7 +368,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 		}
 	}
 	uploadDur := time.Since(uploadStart)
-	clog.V(common.VERBOSE).InfofErr(ctx, "Transcoding done results sent for taskId=%d url=%s uploadDur=%v", notify.TaskId, notify.Url, uploadDur, err)
+	clog.V(common.VERBOSE).InfofErr(ctx, "AI job processing done results sent for taskId=%d pipeline=%s modelID=%s uploadDur=%v", notify.TaskId, notify.Pipeline, notify.ModelID, uploadDur, err)
 
 	if monitor.Enabled {
 		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur, "")

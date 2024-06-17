@@ -332,6 +332,8 @@ func (h *lphttp) AIResults() http.Handler {
 		}
 
 		var workerResult core.RemoteAIWorkerResult
+		workerResult.Files = make(map[string][]byte)
+
 		if aiWorkerErrorMimeType == mediaType {
 			w.Write([]byte("OK"))
 			body, err := io.ReadAll(r.Body)
@@ -370,15 +372,15 @@ func (h *lphttp) AIResults() http.Handler {
 				//instead the multipart response includes the json and the files separately with the json "url" field matching to part names
 				cDisp := p.Header.Get("Content-Disposition")
 				if p.Header.Get("Content-Type") == "application/json" {
-					var results *worker.ImageResponse
-					err := json.Unmarshal(body, results)
+					var results worker.ImageResponse
+					err := json.Unmarshal(body, &results)
 					if err != nil {
 						glog.Error("Error getting results json:", err)
 						workerResult.Err = err
 						break
 					}
 
-					workerResult.Results = results
+					workerResult.Results = &results
 				} else if cDisp != "" {
 					//these are the result files binary data
 					resultName := p.FileName()

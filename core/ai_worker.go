@@ -183,7 +183,7 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 		worker, sessionExists := rwm.requestSessions[requestID]
 		newWorker := findCompatibleWorker(rwm)
 		if newWorker == -1 {
-			return nil, ErrNoCompatibleTranscodersAvailable
+			return nil, ErrNoCompatibleWorkersAvailable
 		}
 		if !sessionExists {
 			worker = rwm.remoteAIWorkers[newWorker]
@@ -351,7 +351,17 @@ type AIJobChan chan *AIChanData
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
+	if orch.node.AIWorker != nil {
+		//confirm local worker has capacity
+		return orch.node.AIWorker.HasCapacity(pipeline, modelID)
+	} else {
+		//remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
+		if orch.node.AIWorkerManager != nil {
+			return true
+		} else {
+			return false
+		}
+	}
 }
 
 func (orch *orchestrator) AIResults(tcID int64, res *RemoteAIWorkerResult) {
@@ -363,6 +373,7 @@ func (rwm *RemoteAIWorkerManager) aiResults(tcID int64, res *RemoteAIWorkerResul
 	if err != nil {
 		return // do we need to return anything?
 	}
+
 	remoteChan <- res
 }
 
@@ -370,10 +381,26 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 	for idx, _ := range results.Results.Images {
 		fileName := results.Results.Images[idx].Url
 
-		storage, ok := n.StorageConfigs[requestID]
-		if !ok {
-			return nil, fmt.Errorf("node storage does not exist for requestID=%s", requestID)
+		if drivers.NodeStorage == nil {
+			return nil, fmt.Errorf("Missing local storage")
 		}
+
+		los := drivers.NodeStorage.NewSession(requestID)
+
+		// determine appropriate OS to use
+		//os := drivers.NewSession(FromNetOsInfo(md.OS))
+		//if os == nil {
+		//	// no preference (or unknown pref), so use our own
+		//	os = los
+		//}
+		storage := transcodeConfig{
+			OS:      los,
+			LocalOS: los,
+		}
+		n.storageMutex.Lock()
+		n.StorageConfigs[requestID] = &storage
+		n.storageMutex.Unlock()
+
 		//save the file data to node and provide url for download
 		url, err := storage.LocalOS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
 		if err != nil {

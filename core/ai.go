@@ -241,18 +241,44 @@ func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints map[
 	return nil
 }
 
-func (n *LivepeerNode) CheckWorkerAICapability(pipeline string, modelID string) bool {
+func (n *LivepeerNode) ReserveAICapability(pipeline string, modelID string) error {
 	nodeCaps := n.Capabilities.ToNetCapabilities()
 	cap := PipelineToCapability(pipeline)
 	if cap > Capability_Unused {
 		for modelCap, constraints := range nodeCaps.Constraints {
 			if cap == Capability(modelCap) {
 				_, ok := constraints.Models[modelID]
-				return ok
-
+				if ok {
+					nodeCaps.Constraints[modelCap].Models[modelID].Capacity -= 1
+					n.Capabilities.mutex.Lock()
+					defer n.Capabilities.mutex.Unlock()
+					n.Capabilities = CapabilitiesFromNetCapabilities(nodeCaps)
+					return nil
+				}
 			}
 		}
 	}
 
-	return false
+	return ErrNoCompatibleWorkersAvailable
+}
+
+func (n *LivepeerNode) ReleaseAICapability(pipeline string, modelID string) error {
+	nodeCaps := n.Capabilities.ToNetCapabilities()
+	cap := PipelineToCapability(pipeline)
+	if cap > Capability_Unused {
+		for modelCap, constraints := range nodeCaps.Constraints {
+			if cap == Capability(modelCap) {
+				_, ok := constraints.Models[modelID]
+				if ok {
+					nodeCaps.Constraints[modelCap].Models[modelID].Capacity += 1
+					n.Capabilities.mutex.Lock()
+					defer n.Capabilities.mutex.Unlock()
+					n.Capabilities = CapabilitiesFromNetCapabilities(nodeCaps)
+					return nil
+				}
+			}
+		}
+	}
+
+	return ErrNoCompatibleWorkersAvailable
 }
