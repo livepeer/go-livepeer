@@ -221,7 +221,6 @@ func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID
 	}
 
 	for idx, remoteWorker := range rwm.remoteAIWorkers {
-		glog.Infof("worker.addr=%s  remoteWorker.addr=%s", worker.addr, remoteWorker.addr)
 		if worker.addr == remoteWorker.addr {
 			cap := PipelineToCapability(pipeline)
 			if cap > Capability_Unused {

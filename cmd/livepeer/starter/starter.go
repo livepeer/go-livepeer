@@ -553,6 +553,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
+			if !*cfg.Transcoder {
+				aiCaps = append(aiCaps, core.DefaultCapabilities()...) //need to have default Capabilities
+			}
+
 		} else {
 			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag or connect remote workers.")
 			//return
