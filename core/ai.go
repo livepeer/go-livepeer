@@ -44,7 +44,7 @@ func PipelineToCapability(pipeline string) Capability {
 	case "image-to-video":
 		return Capability_ImageToVideo
 	case "upscale":
-		return Capability_Unused
+		return Capability_Upscale
 	case "frame-interpolation":
 		return Capability_Unused
 	case "speech-to-text":
