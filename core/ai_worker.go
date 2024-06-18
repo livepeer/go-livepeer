@@ -46,7 +46,7 @@ func (rw *RemoteAIWorker) done() {
 type RemoteAIWorkerManager struct {
 	remoteAIWorkers []*RemoteAIWorker
 	liveAIWorkers   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker
-	RTmutex         sync.Mutex
+	RWmutex         sync.Mutex
 
 	// For tracking tasks assigned to remote aiworkers
 	taskMutex *sync.RWMutex
@@ -72,7 +72,7 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	return &RemoteAIWorkerManager{
 		remoteAIWorkers: []*RemoteAIWorker{},
 		liveAIWorkers:   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker{},
-		RTmutex:         sync.Mutex{},
+		RWmutex:         sync.Mutex{},
 
 		taskMutex: &sync.RWMutex{},
 		taskChans: make(map[int64]AIWorkerChan),
@@ -93,7 +93,7 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 	defer n.Capabilities.RemoveCapacity(coreCaps)
 	defer n.RemoveAICapabilities(nil, coreCaps.constraints)
 
-	// Manage blocks while transcoder is connected
+	// Manage blocks while AI worker is connected
 	n.AIWorkerManager.Manage(stream, capabilities)
 	glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
 }
@@ -110,18 +110,18 @@ func (rtm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 		aiworker.done()
 	}()
 
-	rtm.RTmutex.Lock()
+	rtm.RWmutex.Lock()
 	rtm.liveAIWorkers[aiworker.stream] = aiworker
 	rtm.remoteAIWorkers = append(rtm.remoteAIWorkers, aiworker)
 	// sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
-	rtm.RTmutex.Unlock()
+	rtm.RWmutex.Unlock()
 
 	<-aiworker.eof
 	glog.Infof("Got aiworker=%s eof, removing from live aiworkers map", from)
 
-	rtm.RTmutex.Lock()
+	rtm.RWmutex.Lock()
 	delete(rtm.liveAIWorkers, aiworker.stream)
-	rtm.RTmutex.Unlock()
+	rtm.RWmutex.Unlock()
 }
 
 // RemoteAIworkerFatalError wraps error to indicate that error is fatal
@@ -143,26 +143,24 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 	}
 	res, err := worker.Process(ctx, pipeline, modelID, fname, req)
 	if err != nil {
-		rwm.RTmutex.Lock()
-		rwm.completeAIRequest(requestID)
-		rwm.RTmutex.Unlock()
+		rwm.completeAIRequest(requestID, pipeline, modelID)
 	}
 	_, fatal := err.(RemoteAIWorkerFatalError)
 	if fatal {
 		// Don't retry if we've timed out; gateway likely to have moved on
-		// XXX problematic for VOD when we *should* retry
 		if err.(RemoteAIWorkerFatalError).error == ErrRemoteTranscoderTimeout {
 			return res, err
 		}
 		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
 	}
 
+	rwm.completeAIRequest(requestID, pipeline, modelID)
 	return res, err
 }
 
 func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string, modelID string) (*RemoteAIWorker, error) {
-	rwm.RTmutex.Lock()
-	defer rwm.RTmutex.Unlock()
+	rwm.RWmutex.Lock()
+	defer rwm.RWmutex.Unlock()
 
 	checkWorkers := func(rtm *RemoteAIWorkerManager) bool {
 		return len(rtm.remoteAIWorkers) > 0
@@ -200,10 +198,10 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 		}
 
 		if !sessionExists {
-			// Assinging transcoder to session for future use
+			// Assinging worker to session for future use
 			rwm.requestSessions[requestID] = worker
 			//TODO add sorting by inference time for each pipeline/model
-			//sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+			//sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
 		}
 		return worker, nil
 	}
@@ -214,11 +212,16 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 // completeRequestSessions end a AI request session for a remote ai worker
 // caller should hold the mutex lock
 func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID string) {
+	rwm.RWmutex.Lock()
+	defer rwm.RWmutex.Unlock()
+
 	worker, ok := rwm.requestSessions[requestID]
 	if !ok {
 		return
 	}
+
 	for idx, remoteWorker := range rwm.remoteAIWorkers {
+		glog.Infof("worker.addr=%s  remoteWorker.addr=%s", worker.addr, remoteWorker.addr)
 		if worker.addr == remoteWorker.addr {
 			cap := PipelineToCapability(pipeline)
 			if cap > Capability_Unused {
@@ -226,13 +229,14 @@ func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID
 			}
 		}
 	}
-	//sort.Sort(byLoadFactor(rtm.remoteTranscoders))
+	//TODO add sorting by inference time for each pipeline/model
+	//sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
 	delete(rwm.requestSessions, requestID)
 }
 
 func removeFromRemoteWorkers(rw *RemoteAIWorker, remoteWorkers []*RemoteAIWorker) []*RemoteAIWorker {
 	if len(remoteWorkers) == 0 {
-		// No transcoders to remove, return
+		// No workers to remove, return
 		return remoteWorkers
 	}
 
@@ -294,7 +298,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	signalEOF := func(err error) (*RemoteAIWorkerResult, error) {
 		rw.done()
 		clog.Errorf(logCtx, "Fatal error with remote AI worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID, err)
-		return nil, RemoteTranscoderFatalError{err}
+		return nil, RemoteAIWorkerFatalError{err}
 	}
 
 	reqParams, err := json.Marshal(req)
@@ -424,8 +428,11 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 		defer cancel()
 		<-ctx.Done()
 		n.storageMutex.Lock()
-		n.StorageConfigs[requestID].LocalOS.EndSession()
-		delete(n.StorageConfigs, requestID)
+		_, ok := n.StorageConfigs[requestID]
+		if ok {
+			n.StorageConfigs[requestID].LocalOS.EndSession()
+			delete(n.StorageConfigs, requestID)
+		}
 		n.storageMutex.Unlock()
 		clog.Infof(ctx, "Ended session requestID=%v", requestID)
 	}()
