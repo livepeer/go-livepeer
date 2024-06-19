@@ -461,10 +461,10 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, url)
+	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, input_url)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, "", req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, input_url, req)
 	if err != nil {
 		return nil, err
 	}
@@ -483,10 +483,10 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, url)
+	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, input_url)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, "", req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, input_url, req)
 	if err != nil {
 		return nil, err
 	}
@@ -505,10 +505,10 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		return nil, err
 	}
 
-	url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, url)
+	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, input_url)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, "", req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, input_url, req)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +557,6 @@ func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID stri
 	}
 
 	return url, nil
-
 }
 
 //

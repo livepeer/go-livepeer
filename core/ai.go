@@ -174,7 +174,11 @@ func (n *LivepeerNode) RemoveAIConfigs(ctx context.Context, configs []AIModelCon
 }
 
 func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints map[Capability]*Constraints) error {
+	//ToNetCapabilities locks the capabilities mutex, caller grabs lock after to reliably update capabilities
 	currentCaps := n.Capabilities.ToNetCapabilities()
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
 	//all capabilities are in capacities (note: capacity is always 1 if the capability exists right now)
 	for capability, capacity := range currentCaps.Capacities {
 		if capacity > 0 && slices.Contains(aiCaps, Capability(capability)) {
@@ -197,18 +201,17 @@ func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints m
 		}
 	}
 
-	//update node capabilities after adjustments
-	n.Capabilities.mutex.Lock()
-	defer n.Capabilities.mutex.Unlock()
-
 	n.Capabilities = CapabilitiesFromNetCapabilities(currentCaps)
 
 	return nil
 }
 
 func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints map[Capability]*Constraints) error {
+	//ToNetCapabilities locks the capabilities mutex, caller grabs lock after to reliably update capabilities
 	currentCaps := n.Capabilities.ToNetCapabilities()
-
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
 	//all capabilities are in capacities (note: capacity is always 1 if the capability exists right now)
 	for _, aiCapability := range aiCaps {
 		currentCaps.Capacities[uint32(aiCapability)] += 1
@@ -232,9 +235,6 @@ func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints map[
 		}
 	}
 
-	//update node capabilities after adjustments
-	n.Capabilities.mutex.Lock()
-	defer n.Capabilities.mutex.Unlock()
 	caps := CapabilitiesFromNetCapabilities(currentCaps)
 	n.Capabilities = caps
 
