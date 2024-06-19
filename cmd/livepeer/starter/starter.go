@@ -1321,7 +1321,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		//start the transcoder
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
-	if n.NodeType == core.AIWorkerNode {
+
+	if n.AIWorker != nil {
 		//start the aiworker
 		go server.RunAIWorker(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities.ToNetCapabilities())
 	}

@@ -177,7 +177,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		input, err = downloadInputFile(ctx, notify.Url)
 		if err != nil {
 			clog.Errorf(ctx, "AI Worker cannot get input file from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
 			return
 		}
 
@@ -186,17 +186,16 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
 		if err = os.WriteFile(fname, input, 0600); err != nil {
 			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
 			return
 		}
 		defer os.Remove(fname)
 		clog.V(common.DEBUG).Infof(ctx, "AI job input file from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
-
 	}
 
 	start := time.Now()
 	var resp *worker.ImageResponse //this is used for video as well because Frames received are transcoded to an MP4
-	expectBase64 := true
+	resultIsBase64 := true
 	var resultType string
 	reqOk := true
 
@@ -213,8 +212,9 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		resultType = "image/png"
 		resp, err = n.TextToImage(ctx, req)
 	case "image-to-image":
-		req, ok := params.(worker.ImageToImageMultipartRequestBody)
-		if !ok {
+		var req worker.ImageToImageMultipartRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+		if err != nil {
 			reqOk = false
 		}
 		resultType = "image/png"
@@ -234,7 +234,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 			reqOk = false
 		}
 		resultType = "video/mp4"
-		expectBase64 = false
+		resultIsBase64 = false
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToVideo(ctx, req)
 	default:
@@ -261,7 +261,7 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	w := multipart.NewWriter(&body)
 
 	if resp != nil {
-		if expectBase64 {
+		if resultIsBase64 {
 			//read the base64 data in the url field and save to file
 			//TODO improve this by adding helper in ai-worker that returns the ContentType and []byte data
 			//     to use in the multipart response.

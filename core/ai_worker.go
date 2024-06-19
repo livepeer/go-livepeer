@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path"
 	"strconv"
@@ -412,7 +414,7 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 		n.storageMutex.Unlock()
 
 		//save the file data to node and provide url for download
-		url, err := storage.LocalOS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+		url, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +431,7 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 		n.storageMutex.Lock()
 		_, ok := n.StorageConfigs[requestID]
 		if ok {
-			n.StorageConfigs[requestID].LocalOS.EndSession()
+			n.StorageConfigs[requestID].OS.EndSession()
 			delete(n.StorageConfigs, requestID)
 		}
 		n.storageMutex.Unlock()
@@ -462,7 +464,8 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	}
 
 	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, input_url)
+
+	req.Image.InitFromBytes(createSubImg(), input_url)
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, input_url, req)
 	if err != nil {
@@ -521,6 +524,17 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	return res.Results, nil
 }
 
+func createSubImg() []byte {
+	newImgSetup := image.NewRGBA(image.Rectangle{image.Point{0, 0}, image.Point{1, 1}})
+	var newImgBuf bytes.Buffer
+	err := png.Encode(&newImgBuf, newImgSetup)
+	if err != nil {
+		return nil
+	}
+
+	return newImgBuf.Bytes()
+}
+
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
 	if drivers.NodeStorage == nil {
@@ -551,7 +565,7 @@ func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID stri
 
 	// TODO should we try and serve from disk similar to transcoding if local AI worker?
 	// We do not know if it will be local ai worker that does the job at this point in process.
-	url, err := storageConfig.LocalOS.SaveData(ctx, inName, bytes.NewReader(fileData), nil, 0)
+	url, err := storageConfig.OS.SaveData(ctx, inName, bytes.NewReader(fileData), nil, 0)
 	if err != nil {
 		return "", err
 	}
