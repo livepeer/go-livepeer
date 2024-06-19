@@ -294,7 +294,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			frameCount++
 		}
 		audio.Close()
-		outPixels = int64(totalDuration * 1024)
+		outPixels = int64(totalDuration)
 
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
