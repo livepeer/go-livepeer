@@ -957,8 +957,6 @@ func (n *LivepeerNode) speechToText(ctx context.Context, req worker.SpeechToText
 	}
 
 	return resp, nil
-	//return &worker.ImageResponse{Images: videos}, nil
-
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {

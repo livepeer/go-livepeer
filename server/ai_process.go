@@ -404,10 +404,15 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 		return nil, err
 	}
 
-	// 	//TODO: Setting static for now until pipeline is functional (50 pixels)
-	outPixels := int64(50)
-	// 	//TODO: Measure length of auto and implement pricing unit
+	audio, err := req.Audio.Reader()
+	if err != nil {
+		return nil, err
+	}
 
+	outPixels, err := common.CalculateAudioDuration(audio)
+	if err != nil {
+		return nil, err
+	}
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		return nil, err

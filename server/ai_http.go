@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,8 +16,6 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
-	"github.com/oapi-codegen/runtime/types"
-	"github.com/tcolgate/mp3"
 )
 
 func startAIServer(lp lphttp) error {
@@ -269,33 +266,11 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		audio, err := v.Audio.Reader()
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
 		}
-		decoder := mp3.NewDecoder(audio)
-		defer func() {
-			if r := recover(); r != nil {
-				audio.Close()
-				respondWithError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}()
-		totalDuration := 0.0
-		var frame mp3.Frame
-		var skipped int
-		var frameCount int
-		for {
-			if err := decoder.Decode(&frame, &skipped); err != nil {
-				if err == io.EOF {
-					break
-				}
-				return
-			}
-			totalDuration += frame.Duration().Seconds()
-			frameCount++
+		outPixels, err = common.CalculateAudioDuration(audio)
+		if err != nil {
+			respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
 		}
-		audio.Close()
-		outPixels = int64(totalDuration)
-
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -351,9 +326,4 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func getAudioDuration(file types.File) {
-
-	panic("unimplemented")
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
+	"github.com/tcolgate/mp3"
 	"google.golang.org/grpc/peer"
 )
 
@@ -529,4 +530,30 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 		}
 	}
 	return "", errors.New("Error parsing address from keyfile")
+}
+
+// determines the duration of an mp3 audio file by reading the frames
+func CalculateAudioDuration(audio io.ReadCloser) (int64, error) {
+	decoder := mp3.NewDecoder(audio)
+	defer func() {
+		if r := recover(); r != nil {
+			audio.Close()
+			return
+		}
+	}()
+	totalDuration := 0.0
+	var frame mp3.Frame
+	var skipped int
+	var frameCount int
+	for {
+		if err := decoder.Decode(&frame, &skipped); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, err
+		}
+		totalDuration += frame.Duration().Seconds()
+		frameCount++
+	}
+	return int64(totalDuration), nil
 }

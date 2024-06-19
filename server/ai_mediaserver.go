@@ -340,7 +340,6 @@ func (ls *LivepeerServer) SpeechToText() http.Handler {
 			return
 		}
 
-		//TODO: add duration to log here
 		clog.V(common.VERBOSE).Infof(ctx, "Received SpeechToText request model_id=%v", *req.ModelId)
 
 		params := aiRequestParams{
