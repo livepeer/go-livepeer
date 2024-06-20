@@ -73,6 +73,8 @@ const (
 	TranscoderCliPort   = "6935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
+
+	MinAITicketEV = "2999999999999"
 )
 
 type LivepeerConfig struct {
@@ -921,6 +923,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
+
+			if *cfg.AIWorker && *cfg.TicketEV < MinAITicketEV {
+				*cfg.TicketEV = MinAITicketEV
+			}
 
 			ev, _ := new(big.Int).SetString(*cfg.TicketEV, 10)
 			if ev == nil {
