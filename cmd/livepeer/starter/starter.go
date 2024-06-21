@@ -638,6 +638,90 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 	}
 
+	if *cfg.AIModels != "" {
+		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+
+		for _, config := range configs {
+			modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+
+			// If the config contains a URL we call Warm() anyway because AIWorker will just register
+			// the endpoint for an external container
+			if config.Warm || config.URL != "" {
+				endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+					glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+					return
+				}
+			}
+
+			// Show warning if people set OptimizationFlags but not Warm.
+			if len(config.OptimizationFlags) > 0 && !config.Warm {
+				glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
+			}
+
+			switch config.Pipeline {
+			case "text-to-image":
+				_, ok := constraints[core.Capability_TextToImage]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_TextToImage)
+					constraints[core.Capability_TextToImage] = &core.Constraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+
+				n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+			case "image-to-image":
+				_, ok := constraints[core.Capability_ImageToImage]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_ImageToImage)
+					constraints[core.Capability_ImageToImage] = &core.Constraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+
+				n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+			case "image-to-video":
+				_, ok := constraints[core.Capability_ImageToVideo]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_ImageToVideo)
+					constraints[core.Capability_ImageToVideo] = &core.Constraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
+
+				n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+			case "upscale":
+				_, ok := constraints[core.Capability_Upscale]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_Upscale)
+					constraints[core.Capability_Upscale] = &core.Constraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				constraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
+
+				n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+			}
+
+			if len(aiCaps) > 0 {
+				capability := aiCaps[len(aiCaps)-1]
+				price := n.GetBasePriceForCap("default", capability, config.ModelID)
+				glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+			}
+		}
+	}
+
 	if *cfg.Redeemer {
 		n.NodeType = core.RedeemerNode
 	} else if *cfg.Orchestrator {
