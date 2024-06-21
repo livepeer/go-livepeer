@@ -199,13 +199,10 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	var resultType string
 	reqOk := true
 
-	var params interface{}
-	err = json.Unmarshal(notify.RequestData, &params)
 	switch notify.Pipeline {
 	case "text-to-image":
 		var req worker.TextToImageJSONRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
-
 		if err != nil {
 			reqOk = false
 		}
@@ -221,16 +218,18 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToImage(ctx, req)
 	case "upscale":
-		req, ok := params.(worker.UpscaleMultipartRequestBody)
-		if !ok {
+		var req worker.UpscaleMultipartRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+		if err != nil {
 			reqOk = false
 		}
 		resultType = "image/png"
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.Upscale(ctx, req)
 	case "image-to-video":
-		req, ok := params.(worker.ImageToVideoMultipartRequestBody)
-		if !ok {
+		var req worker.ImageToVideoMultipartRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+		if err != nil {
 			reqOk = false
 		}
 		resultType = "video/mp4"
@@ -238,12 +237,14 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToVideo(ctx, req)
 	default:
-		reqOk = false
+		resp = nil
+		err = errors.New("AI request pipeline type not supported")
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+		return
 	}
 
 	if !reqOk {
 		resp = nil
-		err = errors.New("AI request pipeline type not supported")
 		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
 		return
 	}
@@ -261,12 +262,13 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 	w := multipart.NewWriter(&body)
 
 	if resp != nil {
-		if resultIsBase64 {
-			//read the base64 data in the url field and save to file
-			//TODO improve this by adding helper in ai-worker that returns the ContentType and []byte data
-			//     to use in the multipart response.
-			//     should this move to the n.TextToImage (etc) so we will always expect a local file in the response? the file name is used for
-			for i, image := range resp.Images {
+		//read the base64 data in the url field and save to file
+		// image-to-video saves results file during transcoding and is not base64 encoded
+		//TODO improve this by adding helper in ai-worker that returns the ContentType and []byte data to use in the multipart response
+		//     should this move to the n.TextToImage (etc) so we will always expect a local file or []byte data in the response?
+		for i, image := range resp.Images {
+			defer os.Remove(fname) //clean up the temp file
+			if resultIsBase64 {
 				resultName := string(core.RandomManifestID()) + strconv.Itoa(i)
 				resultFile := resultName + ".png"
 				fname := path.Join(n.WorkDir, resultFile)
@@ -276,7 +278,6 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 					return
 				}
 				resp.Images[i].Url = resultFile //update json response to track filename attached
-				defer os.Remove(fname)
 			}
 		}
 
@@ -300,11 +301,13 @@ func runAIWork(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify
 			//read back the file saved for the result
 			fname := path.Join(n.WorkDir, image.Url)
 			result, err := os.ReadFile(fname)
+
 			if err != nil {
-				clog.Errorf(ctx, "AI Worker failed to read image from url err=%q", err)
+				clog.Errorf(ctx, "AI Worker failed to read file err=%q", err)
 				sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
 				return
 			}
+
 			//create the part
 			w.SetBoundary(boundary)
 			hdrs := textproto.MIMEHeader{

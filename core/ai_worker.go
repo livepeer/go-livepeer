@@ -28,6 +28,9 @@ var ErrRemoteWorkerTimeout = errors.New("Remote worker took too long")
 var ErrNoCompatibleWorkersAvailable = errors.New("no workers can process job requested")
 var ErrNoWorkersAvailable = errors.New("no workers available")
 
+// TODO: consider making this dynamic for each pipeline
+var aiWorkerResultsTimeout = 10 * time.Minute
+
 type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
 	stream       net.AIWorker_RegisterAIWorkerServer
@@ -425,7 +428,7 @@ func (n *LivepeerNode) saveAIResults(ctx context.Context, results *RemoteAIWorke
 
 	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
 	go func() {
-		ctx, cancel := transcodeLoopContext()
+		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerResultsTimeout)
 		defer cancel()
 		<-ctx.Done()
 		n.storageMutex.Lock()
@@ -648,16 +651,17 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 
 		// Assume only single rendition right now
 		seg := res.TranscodeData.Segments[0]
-		name := fmt.Sprintf("%v.mp4", RandomManifestID())
-		segData := bytes.NewReader(seg.Data)
-		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0) //this is localOS, uri is file path
-		if err != nil {
+		resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
+		fname := path.Join(n.WorkDir, resultFile)
+		if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
+			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
 			return nil, err
 		}
 
 		videos[i] = worker.Media{
-			Url: uri,
+			Url: resultFile,
 		}
+		glog.Infof(videos[i].Url)
 
 		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
 		if len(batch) > 0 {
@@ -718,7 +722,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
 	go func() {
-		ctx, cancel := transcodeLoopContext()
+		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerResultsTimeout)
 		defer cancel()
 		<-ctx.Done()
 		los.EndSession()
