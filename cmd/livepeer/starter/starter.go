@@ -745,6 +745,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if !*cfg.AIWorker {
 			n.AIManager = core.NewRemoteAIWorkerManager()
 			n.AIWorker = n.AIManager
+			// set transcoder capabilties since we don't use transcoder flag here
+			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
 		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
