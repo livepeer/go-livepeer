@@ -269,7 +269,7 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 
 		pipeline := parts[0]
 		modelID := parts[1]
-		warm, err := strconv.ParseBool(parts[3])
+		warm, err := strconv.ParseBool(parts[2])
 		if err != nil {
 			return nil, err
 		}
