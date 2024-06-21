@@ -53,6 +53,10 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 		remoteWorkers: []*RemoteAIWorker{},
 		liveWorkers:   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker{},
 		workersMutex:  sync.Mutex{},
+
+		taskChans: map[int64]RemoteAIResultChan{},
+		taskMutex: sync.RWMutex{},
+		taskCount: 0,
 	}
 }
 
