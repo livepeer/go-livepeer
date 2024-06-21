@@ -288,7 +288,9 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 	checkSessions := func(m *SessionPool) bool {
 		numSess := m.sel.Size()
-		if numSess < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0))) {
+		refreshThreshold := int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0)))
+		clog.Infof(ctx, "Checking if the session refresh is needed, numSess=%v, refreshThreshold=%v", numSess, refreshThreshold)
+		if numSess < refreshThreshold {
 			go m.refreshSessions(ctx)
 		}
 		return (numSess > 0 || len(sp.lastSess) > 0)
