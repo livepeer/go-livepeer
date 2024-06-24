@@ -73,8 +73,6 @@ const (
 	TranscoderCliPort   = "6935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
-
-	MinAITicketEV = "2999999999999"
 )
 
 type LivepeerConfig struct {
@@ -924,10 +922,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
 			n.AutoAdjustPrice = *cfg.AutoAdjustPrice
 
-			if *cfg.AIWorker && *cfg.TicketEV < MinAITicketEV {
-				*cfg.TicketEV = MinAITicketEV
-			}
-
 			ev, _ := new(big.Int).SetString(*cfg.TicketEV, 10)
 			if ev == nil {
 				glog.Errorf("-ticketEV must be a valid integer, but %v provided. Restart the node with a different valid value for -ticketEV", *cfg.TicketEV)
@@ -936,6 +930,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			if ev.Cmp(big.NewInt(0)) < 0 {
 				glog.Errorf("-ticketEV must be greater than 0, but %v provided. Restart the node with a different valid value for -ticketEV", *cfg.TicketEV)
+				return
+			}
+
+			//Validate ticket EV by largest price offered by the orchestrator
+			largestPrice := getLargestPrice(n, constraints, gatewayPrices)
+
+			if new(big.Int).Quo(ev, largestPrice).Cmp(big.NewInt(629145)) < 0 {
+				glog.Errorf("Ticket EV ratio to largest price is too low. Restart the node with a valid value for -ticketEV", *cfg.TicketEV)
 				return
 			}
 
@@ -1439,6 +1441,37 @@ func parseOrchAddrs(addrs string) []*url.URL {
 		}
 	}
 	return res
+}
+
+// Returns the largest from from AI constraints, gateway prices, and default transcoding price
+func getLargestPrice(n *core.LivepeerNode, constraints map[core.Capability]*core.Constraints, gatewayPrices []GatewayPrice) *big.Int {
+	var largestPrice *big.Rat
+	for capability, constraint := range constraints {
+		for model, _ := range constraint.Models {
+			basePrice := n.GetBasePriceForCap("default", capability, model)
+			if largestPrice == nil || basePrice.Cmp(largestPrice) > 0 {
+				largestPrice = basePrice
+			}
+		}
+	}
+
+	for _, p := range gatewayPrices {
+		price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+		if largestPrice == nil || price.Cmp(largestPrice) > 0 {
+			largestPrice = price
+		}
+	}
+
+	defaultTransacodePrice := n.GetBasePrice("default")
+	if defaultTransacodePrice != nil {
+		if (defaultTransacodePrice).Cmp(largestPrice) > 0 {
+			largestPrice = defaultTransacodePrice
+		}
+	}
+
+	largestPriceInt := new(big.Int)
+	largestPriceInt.SetString(largestPrice.FloatString(0), 10)
+	return largestPriceInt
 }
 
 func parseOrchBlacklist(b *string) []string {
