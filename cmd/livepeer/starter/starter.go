@@ -937,7 +937,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			largestPrice := getLargestPrice(n, constraints, gatewayPrices)
 
 			if new(big.Int).Quo(ev, largestPrice).Cmp(big.NewInt(629145)) < 0 {
-				glog.Errorf("Ticket EV ratio to largest price is too low. Restart the node with a valid value for -ticketEV", *cfg.TicketEV)
+				glog.Errorf("Ticket EV ratio to largest price is too low. Restart the node with a valid value for -ticketEV, consider a ticket EV of %v or higher", new(big.Int).Mul(big.NewInt(629145), ev))
 				return
 			}
 
