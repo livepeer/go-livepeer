@@ -553,7 +553,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags, config.Gpus); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
