@@ -16,7 +16,7 @@ type AI interface {
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
 	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
-	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
+	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags, []int) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
 }
@@ -24,6 +24,7 @@ type AI interface {
 type AIModelConfig struct {
 	Pipeline          string                   `json:"pipeline"`
 	ModelID           string                   `json:"model_id"`
+	Gpus              []int                    `json:"gpus,omitempty"`
 	URL               string                   `json:"url,omitempty"`
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
@@ -80,7 +81,17 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 			return nil, err
 		}
 
-		configs = append(configs, AIModelConfig{Pipeline: pipeline, ModelID: modelID, Warm: warm})
+		gpuStrings := strings.Split(parts[4], ",")
+		gpus := make([]int, len(gpuStrings))
+		for i, gpuString := range gpuStrings {
+			gpu, err := strconv.Atoi(gpuString)
+			if err != nil {
+				return nil, err
+			}
+			gpus[i] = gpu
+		}
+
+		configs = append(configs, AIModelConfig{Pipeline: pipeline, ModelID: modelID, Warm: warm, Gpus: gpus})
 	}
 
 	return configs, nil
