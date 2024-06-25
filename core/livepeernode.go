@@ -11,6 +11,7 @@ package core
 
 import (
 	"errors"
+	"log"
 	"math/big"
 	"math/rand"
 	"net/url"
@@ -253,4 +254,22 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	defer n.TranscoderManager.RTmutex.Unlock()
 	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
 	return totalCapacity
+}
+
+// TODO: Need a way to get the prefered GPUs
+func (n *LivepeerNode) GetPreferredGpus(capability Capability, modelName string) []int {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	modelConstraints := n.Capabilities.constraints[capability]
+	//	models := n.Capabilities.ToNetCapabilities()
+	log.Println(modelConstraints)
+
+	//	n.Capabilities.ToNetCapabilities().GetConstraints()
+	// modelConstraints.
+
+	//	return modelConstraints.Constraints[capability].Models[modelName].Gpus;
+
+	return []int{}
+
 }

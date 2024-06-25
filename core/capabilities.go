@@ -14,7 +14,8 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm bool
+	Warm          bool
+	PreferredGpus []int
 }
 
 type Capability int

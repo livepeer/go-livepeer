@@ -547,7 +547,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			for _, config := range configs {
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, PreferredGpus: config.Gpus}
 
 				// If the config contains a URL we call Warm() anyway because AIWorker will just register
 				// the endpoint for an external container
