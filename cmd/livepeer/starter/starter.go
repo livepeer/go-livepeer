@@ -1462,10 +1462,10 @@ func getLargestPrice(n *core.LivepeerNode, constraints map[core.Capability]*core
 		}
 	}
 
-	defaultTransacodePrice := n.GetBasePrice("default")
-	if defaultTransacodePrice != nil {
-		if (defaultTransacodePrice).Cmp(largestPrice) > 0 {
-			largestPrice = defaultTransacodePrice
+	defaultTranscodePrice := n.GetBasePrice("default")
+	if defaultTranscodePrice != nil {
+		if (defaultTranscodePrice).Cmp(largestPrice) > 0 {
+			largestPrice = defaultTranscodePrice
 		}
 	}
 
