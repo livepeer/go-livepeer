@@ -404,15 +404,11 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 		return nil, err
 	}
 
-	audio, err := req.Audio.Reader()
+	outPixels, err := common.EstimateAudioDuration(req.Audio)
 	if err != nil {
 		return nil, err
 	}
-
-	outPixels, err := common.CalculateAudioDuration(audio)
-	if err != nil {
-		return nil, err
-	}
+	outPixels *= 1000 // Convert to milliseconds
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		return nil, err

@@ -263,14 +263,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.SpeechToText(ctx, v)
 		}
 
-		audio, err := v.Audio.Reader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-		}
-		outPixels, err = common.CalculateAudioDuration(audio)
+		outPixels, err = common.EstimateAudioDuration(v.Audio)
 		if err != nil {
 			respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
 		}
+		outPixels *= 1000 // Convert to milliseconds
+
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
