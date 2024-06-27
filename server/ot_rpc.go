@@ -154,13 +154,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	go func() {
 		for {
 			aiJob, err := aiR.Recv()
-			glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
-			var aiRequest worker.TextToImageJSONRequestBody
-			if err := json.Unmarshal(aiJob.Data, &aiRequest); err != nil {
-				glog.Errorf("Unable to unmarshal AI job data err=%q", err)
-				continue
-			}
-			glog.Infof("AI Job decoded model=%v prompt=%v", aiRequest.ModelId, aiRequest.Prompt)
+
 			if err != nil {
 				errChan <- err
 				return
@@ -188,6 +182,61 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 				glog.Error("Received nil AI job")
 				continue
 			}
+			glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
+			var aiRequest worker.TextToImageJSONRequestBody
+			if err := json.Unmarshal(aiJob.Data, &aiRequest); err != nil {
+				glog.Errorf("Unable to unmarshal AI job data err=%q", err)
+				continue
+			}
+			glog.Infof("AI Job decoded model=%v prompt=%v", aiRequest.ModelId, aiRequest.Prompt)
+
+			// Send job to worker
+			res, err := n.AIWorker.TextToImage(context.Background(), aiRequest)
+			if err != nil {
+				glog.Errorf("AI job failed err=%q", err)
+				continue
+			}
+			// marshal res to json bytes
+			jsonBytes, err := json.Marshal(res)
+			if err != nil {
+				glog.Errorf("Unable to marshal AI job response err=%q", err)
+				continue
+			}
+
+			aiResult := &core.RemoteAIWorkerResult{
+				JobType: aiJob.Type,
+				TaskID:  aiJob.TaskID,
+				Bytes:   jsonBytes,
+				Err:     err,
+			}
+
+			// Create a bytes.Buffer and write the JSON data to it
+			var body bytes.Buffer
+			jsonAiResult, err := json.Marshal(aiResult)
+			if err != nil {
+				glog.Errorf("Error marshaling JSON err=%q", err)
+				continue
+			}
+			body.Write(jsonAiResult)
+
+			// Post result back to orchestrator
+			req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResult", &body)
+			if err != nil {
+				glog.Errorf("Error posting results to orch=%s taskId=%d type=%s err=%q", orchAddr,
+					aiResult.TaskID, aiResult.JobType, err)
+				continue
+			}
+			req.Header.Set("Authorization", protoVerLPT)
+			req.Header.Set("Credentials", n.OrchSecret)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := httpc.Do(req)
+			if err != nil {
+				glog.Errorf("Error submitting results err=%q", err)
+				continue
+			}
+			defer resp.Body.Close()
+
 		case err := <-errChan:
 			if err := checkTranscoderError(err); err != nil {
 				glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
