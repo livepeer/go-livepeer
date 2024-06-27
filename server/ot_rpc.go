@@ -191,11 +191,13 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 			glog.Infof("AI Job decoded model=%v prompt=%v", aiRequest.ModelId, aiRequest.Prompt)
 
 			// Send job to worker
-			res, err := n.AIWorker.TextToImage(context.Background(), aiRequest)
-			if err != nil {
-				glog.Errorf("AI job failed err=%q", err)
-				continue
-			}
+			// res, err := n.AIWorker.TextToImage(context.Background(), aiRequest)
+			// if err != nil {
+			// 	glog.Errorf("AI job failed err=%q", err)
+			// 	continue
+			// }
+
+			res := &worker.ImageResponse{}
 			// marshal res to json bytes
 			jsonBytes, err := json.Marshal(res)
 			if err != nil {
