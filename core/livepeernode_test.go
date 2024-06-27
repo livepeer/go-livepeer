@@ -179,3 +179,39 @@ func TestSetAndGetBasePrice(t *testing.T) {
 	assert.Zero(n.GetBasePrices()[addr1].Cmp(price1))
 	assert.Zero(n.GetBasePrices()[addr2].Cmp(price2))
 }
+
+func TestSetandGetPricePerCabability(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	price := big.NewRat(1, 1)
+	price2 := big.NewRat(2, 1)
+	t2iPrice := big.NewRat(1, 10)
+	i2iPrice := big.NewRat(1, 11)
+
+	addr1 := "0x0000000000000000000000000000000000000000"
+	addr2 := "0x1000000000000000000000000000000000000000"
+	addr3 := "0x2000000000000000000000000000000000000000"
+
+	n.SetBasePriceForCap("default", Capability_TextToImage, "fancy_model", price)
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", t2iPrice)
+	n.SetBasePriceForCap(addr1, Capability_ImageToImage, "awesome_model", price)
+	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "awesome_model", price2)
+	n.SetBasePriceForCap("default", Capability_ImageToImage, "awesome_model", i2iPrice)
+	n.SetBasePriceForCap("default", Capability_ImageToImage, "default", i2iPrice)
+
+	//model price set
+	assert.Equal(n.GetBasePriceForCap("default", Capability_TextToImage, "fancy_model"), price)
+	//unknown model receives default price for capability
+	assert.Equal(n.GetBasePriceForCap("default", Capability_TextToImage, "new_model"), t2iPrice)
+	//unknown gateway gets default price set for known model
+	assert.Equal(n.GetBasePriceForCap(addr3, Capability_ImageToImage, "awesome_model"), i2iPrice)
+	//default price for capabilities are different
+	assert.NotEqual(n.GetBasePriceForCap("default", Capability_TextToImage, "default"), n.GetBasePriceForCap("default", Capability_ImageToImage, "default"))
+	//gateway prices are different for capability
+	assert.NotEqual(n.GetBasePriceForCap(addr1, Capability_TextToImage, "fancy_model"), n.GetBasePriceForCap(addr2, Capability_ImageToImage, "fancy_model"))
+
+}

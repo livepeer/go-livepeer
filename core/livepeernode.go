@@ -73,18 +73,36 @@ func NewCapabilityPriceMenu() CapabilityPriceMenu {
 	}
 }
 
+func (m CapabilityPriceMenu) Models() map[string]*big.Rat {
+	return m.modelPrices
+}
+
 func (m CapabilityPriceMenu) SetPriceForModelID(modelID string, price *big.Rat) {
 	m.modelPrices[modelID] = price
 }
 
 func (m CapabilityPriceMenu) PriceForModelID(modelID string) *big.Rat {
-	return m.modelPrices[modelID]
+	price, ok := m.modelPrices[modelID]
+	if ok {
+		return price
+	} else {
+		defaultPrice, ok := m.modelPrices["default"]
+		if ok {
+			return defaultPrice
+		} else {
+			return nil
+		}
+	}
 }
 
 type CapabilityPrices map[Capability]CapabilityPriceMenu
 
 func NewCapabilityPrices() CapabilityPrices {
 	return make(map[Capability]CapabilityPriceMenu)
+}
+
+func (cp CapabilityPrices) CapabilityPrices() map[Capability]CapabilityPriceMenu {
+	return cp
 }
 
 func (cp CapabilityPrices) SetPriceForModelID(cap Capability, modelID string, price *big.Rat) {
@@ -225,6 +243,13 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 	}
 
 	return prices.PriceForModelID(cap, modelID)
+}
+
+func (n *LivepeerNode) GetCapabilityPrices() map[string]CapabilityPrices {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	return n.priceInfoForCaps
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received

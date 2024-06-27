@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/m3u8"
 )
@@ -38,6 +39,7 @@ type NodeStatus struct {
 	RegisteredTranscoders       []RemoteTranscoderInfo
 	LocalTranscoding            bool // Indicates orchestrator that is also transcoder
 	BroadcasterPrices           map[string]*big.Rat
+	CapabilityPrices            map[string]core.CapabilityPrices
 	// xxx add transcoder's version here
 }
 

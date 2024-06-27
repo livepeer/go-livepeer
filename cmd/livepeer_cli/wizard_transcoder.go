@@ -328,12 +328,56 @@ func (w *wizard) setPriceForBroadcaster() {
 		"pixelsPerUnit":      {fmt.Sprintf("%v", strconv.Itoa(pixels))},
 		"broadcasterEthAddr": {fmt.Sprintf("%v", ethaddr)},
 	}
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForBroadcaster", w.host, w.httpPort), data)
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForCapability", w.host, w.httpPort), data)
 	if ok {
 		fmt.Printf("Price for broadcaster %v set to %v gwei per %v pixels", ethaddr, price, pixels)
 		return
 	} else {
 		fmt.Printf("Error setting price for broadcaster: %v", result)
+		return
+	}
+
+}
+
+func (w *wizard) setPriceForCapability() {
+	fmt.Println("Enter the ETH address of the gateway (default=default)")
+	ethaddr := w.readStringAndValidate(func(in string) (string, error) {
+		if "" == in {
+			in = "default"
+		}
+		if in != "default" && (in[0:2] != "0x" || len(in) != 42) {
+			return "", fmt.Errorf("gateway eth address input not in correct format")
+		}
+
+		return in, nil
+	})
+
+	fmt.Println("Enter price per unit:")
+	price := w.readDefaultInt(0)
+	fmt.Println("Enter pixels per unit:")
+	pixels := w.readDefaultInt(1)
+	fmt.Println("Enter pipeline")
+	pipeline := w.readDefaultString("")
+	if pipeline == "" {
+		fmt.Errorf("must input pipeline (e.g. text-to-image)")
+		return
+	}
+	fmt.Println("Enter model id (default=default)")
+	model_id := w.readDefaultString("default")
+
+	data := url.Values{
+		"pricePerUnit":   {fmt.Sprintf("%v", strconv.Itoa(price))},
+		"pixelsPerUnit":  {fmt.Sprintf("%v", strconv.Itoa(pixels))},
+		"gatewayEthAddr": {fmt.Sprintf("%v", ethaddr)},
+		"pipeline":       {pipeline},
+		"model_id":       {model_id},
+	}
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForCapability", w.host, w.httpPort), data)
+	if ok {
+		fmt.Printf("Capability price for gateway %v set to %v wei per %v pixels for %s/%s", ethaddr, price, pixels, pipeline, model_id)
+		return
+	} else {
+		fmt.Printf("Error setting price for capability: %v", result)
 		return
 	}
 

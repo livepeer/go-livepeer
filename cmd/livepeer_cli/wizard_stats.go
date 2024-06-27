@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
 	lcommon "github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/olekukonko/tablewriter"
@@ -504,6 +505,41 @@ func (w *wizard) getBroadcasterPrices() (string, error) {
 		for b, p := range broadcasterPrices.(map[string]interface{}) {
 			if b != "default" {
 				fmt.Fprintf(prices, "%s: %s per pixel\n", b, p)
+			}
+		}
+	}
+
+	return prices.String(), nil
+}
+
+func (w *wizard) getCapabilityPrices() (string, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%v:%v/status", w.host, w.httpPort))
+
+	if err != nil {
+		return "", err
+	}
+
+	defer resp.Body.Close()
+	result, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var status map[string]interface{}
+	err = json.Unmarshal(result, &status)
+	if err != nil {
+		return "", err
+	}
+
+	prices := new(bytes.Buffer)
+
+	if capabilityPrices, ok := status["CapabilityPrices"]; ok {
+		for b, capabilities := range capabilityPrices.(map[string]core.CapabilityPrices) {
+			for cap, models := range capabilities.CapabilityPrices() {
+				for m, price := range models.Models() {
+					pipeline := core.CapabilityNameLookup[cap]
+					fmt.Fprintf(prices, "%s: ^s_%s=%s\n", b, pipeline, m, price)
+				}
 			}
 		}
 	}

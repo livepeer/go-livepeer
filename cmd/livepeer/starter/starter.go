@@ -130,6 +130,7 @@ type LivepeerConfig struct {
 	AutoAdjustPrice        *bool
 	PricePerGateway        *string
 	PricePerBroadcaster    *string
+	PricePerCapability     *string
 	BlockPollingInterval   *int
 	Redeemer               *bool
 	RedeemerAddr           *string
@@ -214,6 +215,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAutoAdjustPrice := true
 	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
+	defaultPricePerCapability := ""
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
@@ -279,10 +281,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:      &defaultAIWorker,
-		AIModels:      &defaultAIModels,
-		AIModelsDir:   &defaultAIModelsDir,
-		AIRunnerImage: &defaultAIRunnerImage,
+		AIWorker:           &defaultAIWorker,
+		AIModels:           &defaultAIModels,
+		AIModelsDir:        &defaultAIModelsDir,
+		AIRunnerImage:      &defaultAIRunnerImage,
+		PricePerCapability: &defaultPricePerCapability,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -929,6 +932,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
 				n.SetBasePrice(p.EthAddress, price)
 				glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
+			}
+			capabilityPrices := getCapabilityPrices(*cfg.PricePerCapability)
+			for _, p := range capabilityPrices {
+				price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+				n.SetBasePriceForCap(p.Gateway, core.PipelineToCapability(p.Pipeline), p.ModelID, price)
+				glog.Infof("Price: %v set for gateway %v for %v/%v", price.RatString(), p.Gateway, p.Pipeline, p.ModelID)
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -1651,6 +1660,68 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 		}
 		prices[i] = GatewayPrice{
 			EthAddress:    p.EthAddress,
+			PricePerUnit:  pricePerUnit,
+			PixelsPerUnit: pixelsPerUnit,
+		}
+	}
+
+	return prices
+}
+
+type ModelPrice struct {
+	Gateway       string `json:"gateway"`
+	Pipeline      string `json:"pipeline"`
+	ModelID       string `json:"model_id"`
+	PricePerUnit  int64  `json:"priceperunit"`
+	PixelsPerUnit int64  `json:"pixelsperunit"`
+}
+
+func getCapabilityPrices(modelPrices string) []ModelPrice {
+	if modelPrices == "" {
+		return nil
+	}
+
+	// Format of modelPrices json
+	// model_id can be set to "default" to price all models in the pipeline
+	// {"models": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
+	var pricesSet struct {
+		Models []struct {
+			Gateway       string          `json:"gateway"`
+			Pipeline      string          `json:"pipeline"`
+			ModelID       string          `json:"model_id"`
+			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
+			PricePerUnit  json.RawMessage `json:"priceperunit"`
+		} `json:"models"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(modelPrices)
+
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("model prices could not be parsed: %s", err)
+		return nil
+	}
+
+	prices := make([]ModelPrice, len(pricesSet.Models))
+	for i, p := range pricesSet.Models {
+		if p.Gateway == "" {
+			p.Gateway = "default"
+		}
+
+		pixelsPerUnit, err := strconv.ParseInt(string(p.PixelsPerUnit), 10, 64)
+		if err != nil {
+			glog.Errorf("Pixels per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.Gateway, p.PixelsPerUnit)
+			continue
+		}
+		pricePerUnit, err := strconv.ParseInt(string(p.PricePerUnit), 10, 64)
+		if err != nil {
+			glog.Errorf("Price per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.Gateway, p.PricePerUnit)
+			continue
+		}
+		prices[i] = ModelPrice{
+			Gateway:       p.Gateway,
+			Pipeline:      p.Pipeline,
+			ModelID:       p.ModelID,
 			PricePerUnit:  pricePerUnit,
 			PixelsPerUnit: pixelsPerUnit,
 		}

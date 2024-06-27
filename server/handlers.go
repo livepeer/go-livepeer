@@ -389,7 +389,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 		pixels := r.FormValue("pixelsPerUnit")
 		price := r.FormValue("pricePerUnit")
 		if pixels != "" && price != "" {
-			if err := s.setOrchestratorPriceInfo("default", price, pixels); err != nil {
+			if err := s.setOrchestratorPriceInfo("default", price, pixels, "", ""); err != nil {
 				respond400(w, err.Error())
 				return
 			}
@@ -461,7 +461,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 	}))
 }
 
-func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr string) error {
+func (s *LivepeerServer) setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, model_id string) error {
 	ok, err := regexp.MatchString("^[0-9]+$", pricePerUnitStr)
 	if err != nil {
 		return err
@@ -478,12 +478,12 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 		return fmt.Errorf("pixelsPerUnit is not a valid integer, provided %v", pixelsPerUnitStr)
 	}
 
-	ok, err = regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", broadcasterEthAddr)
+	ok, err = regexp.MatchString("^0x[0-9a-fA-F]{40}|default$", gatewayEthAddr)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("broadcasterEthAddr is not a valid eth address, provided %v", broadcasterEthAddr)
+		return fmt.Errorf("gatewayEthAddr is not a valid eth address, provided %v", gatewayEthAddr)
 	}
 
 	pricePerUnit, err := strconv.ParseInt(pricePerUnitStr, 10, 64)
@@ -502,11 +502,19 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 		return fmt.Errorf("pixels per unit must be greater than 0, provided %d", pixelsPerUnit)
 	}
 
-	s.LivepeerNode.SetBasePrice(broadcasterEthAddr, big.NewRat(pricePerUnit, pixelsPerUnit))
-	if broadcasterEthAddr == "default" {
-		glog.Infof("Price per pixel set to %d wei for %d pixels\n", pricePerUnit, pixelsPerUnit)
+	price := big.NewRat(pricePerUnit, pixelsPerUnit)
+	if pipeline == "" {
+		s.LivepeerNode.SetBasePrice(gatewayEthAddr, price)
+		glog.Infof("Price per unit set to %d wei for %d pixels for %s gateway", pricePerUnit, pixelsPerUnit, gatewayEthAddr)
 	} else {
-		glog.Infof("Price per pixel set to %d wei for %d pixels for broadcaster %s\n", pricePerUnit, pixelsPerUnit, broadcasterEthAddr)
+		cap := core.PipelineToCapability(pipeline)
+		if cap > core.Capability_Unused {
+			s.LivepeerNode.SetBasePriceForCap(gatewayEthAddr, cap, model_id, price)
+			glog.Infof("Price per unit set to %d for gateway=%s pipeline=%s model_id=%s", price.RatString(), gatewayEthAddr, pipeline, model_id)
+		} else {
+			return fmt.Errorf("Price per unit not set, capability does not exist for pipeline %v", pipeline)
+		}
+
 	}
 
 	return nil
@@ -569,14 +577,39 @@ func (s *LivepeerServer) setPriceForBroadcaster() http.Handler {
 			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
 			broadcasterEthAddr := r.FormValue("broadcasterEthAddr")
 
-			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr)
+			err := s.setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUnitStr, pixelsPerUnitStr, "", "")
 			if err == nil {
-				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for broadcaster %s\n", pricePerUnitStr, pixelsPerUnitStr, broadcasterEthAddr)))
+				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for broadcaster %s", pricePerUnitStr, pixelsPerUnitStr, broadcasterEthAddr)))
 			} else {
 				respond400(w, err.Error())
 			}
 		} else {
-			respond400(w, "Node must be orchestrator node to set price for broadcaster")
+			respond400(w, "Node must be orchestrator node to set price for gateway")
+		}
+	})
+}
+
+func (s *LivepeerServer) setPriceForCapability() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.OrchestratorNode {
+			pricePerUnitStr := r.FormValue("pricePerUnit")
+			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
+			gatewayEthAddr := r.FormValue("gatewayEthAddr")
+			pipeline := r.FormValue("pipeline")
+			model_id := r.FormValue("model_id")
+
+			if pipeline == "" || model_id == "" {
+				respond400(w, "pipeline and model_id must be set")
+			}
+
+			err := s.setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, model_id)
+			if err == nil {
+				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for gateway %s", pricePerUnitStr, pixelsPerUnitStr, gatewayEthAddr)))
+			} else {
+				respond400(w, err.Error())
+			}
+		} else {
+			respond400(w, "Node must be orchestrator node to set price for gateway")
 		}
 	})
 }
