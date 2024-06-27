@@ -147,6 +147,7 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
 			return nil, err
 		}
+		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
 		return &res, nil
 	}
 	return nil, nil
