@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -153,6 +154,13 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	go func() {
 		for {
 			aiJob, err := aiR.Recv()
+			glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
+			var aiRequest worker.TextToImageJSONRequestBody
+			if err := json.Unmarshal(aiJob.Data, &aiRequest); err != nil {
+				glog.Errorf("Unable to unmarshal AI job data err=%q", err)
+				continue
+			}
+			glog.Infof("AI Job decoded model=%v prompt=%v", aiRequest.ModelId, aiRequest.Prompt)
 			if err != nil {
 				errChan <- err
 				return
