@@ -222,7 +222,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 			body.Write(jsonAiResult)
 
 			// Post result back to orchestrator
-			req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResult", &body)
+			req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResults", &body)
 			if err != nil {
 				glog.Errorf("Error posting results to orch=%s taskId=%d type=%s err=%q", orchAddr,
 					aiResult.TaskID, aiResult.JobType, err)
