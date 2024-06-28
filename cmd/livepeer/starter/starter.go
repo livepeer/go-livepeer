@@ -1676,8 +1676,8 @@ type ModelPrice struct {
 	PixelsPerUnit int64  `json:"pixelsperunit"`
 }
 
-func getCapabilityPrices(modelPrices string) []ModelPrice {
-	if modelPrices == "" {
+func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
+	if capabilitiesPrices == "" {
 		return nil
 	}
 
@@ -1694,8 +1694,7 @@ func getCapabilityPrices(modelPrices string) []ModelPrice {
 		} `json:"capabilities_prices"`
 	}
 
-	pricesFileContent, _ := common.ReadFromFile(modelPrices)
-
+	pricesFileContent, _ := common.ReadFromFile(capabilitiesPrices)
 	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
 	if err != nil {
 		glog.Errorf("model prices could not be parsed: %s", err)

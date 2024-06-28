@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/golang/glog"
 	lcommon "github.com/livepeer/go-livepeer/common"
-	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/olekukonko/tablewriter"
@@ -539,12 +538,12 @@ func (w *wizard) getCapabilityPrices() (string, error) {
 	prices := new(bytes.Buffer)
 
 	if capabilityPrices, ok := status["CapabilityPrices"]; ok {
-		for b, capabilities := range capabilityPrices.(map[string]core.CapabilityPrices) {
-			for cap, models := range capabilities.CapabilityPrices() {
-				for m, price := range models.Models() {
-					pipeline := core.CapabilityNameLookup[cap]
-					fmt.Fprintf(prices, "%s: ^s_%s=%s\n", b, pipeline, m, price)
-				}
+		pricePerGateway := capabilityPrices.(map[string]interface{})
+		for b, capabilities := range pricePerGateway {
+			capPrices := capabilities.(map[string]interface{})
+			for cap, price := range capPrices {
+
+				fmt.Fprintf(prices, "%s: %s=%s\n", b, cap, price)
 			}
 		}
 	}

@@ -1595,6 +1595,7 @@ func (s *LivepeerServer) GetNodeStatus() *common.NodeStatus {
 		RegisteredTranscoders: []common.RemoteTranscoderInfo{},
 		LocalTranscoding:      s.LivepeerNode.TranscoderManager == nil,
 		BroadcasterPrices:     make(map[string]*big.Rat),
+		CapabilityPrices:      make(map[string]map[string]string),
 	}
 	for k, v := range s.internalManifests {
 		res.InternalManifests[string(k)] = string(v)

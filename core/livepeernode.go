@@ -245,11 +245,25 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 	return prices.PriceForModelID(cap, modelID)
 }
 
-func (n *LivepeerNode) GetCapabilityPrices() map[string]CapabilityPrices {
+func (n *LivepeerNode) GetCapabilityPrices() map[string]map[string]string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+	capPrices := make(map[string]map[string]string)
+	for b, prices := range n.priceInfoForCaps {
+		_, ok := capPrices[b]
+		if !ok {
+			capPrices[b] = make(map[string]string)
+		}
+		for cap, priceMenu := range prices.CapabilityPrices() {
+			for model, price := range priceMenu.modelPrices {
+				capStr := CapabilityNameLookup[cap]
+				capPrices[b][capStr+"_"+model] = price.RatString()
+			}
+		}
 
-	return n.priceInfoForCaps
+	}
+
+	return capPrices
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received
