@@ -174,9 +174,15 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 	findCompatibleWorker := func(rtm *RemoteAIWorkerManager) int {
 		cap := PipelineToCapability(pipeline)
 		for idx, worker := range rwm.remoteAIWorkers {
-			if worker.capacity[uint32(cap)].Models[modelID].Capacity > 0 {
-				worker.capacity[uint32(cap)].Models[modelID].Capacity -= 1
-				return idx
+			rw, hasCap := worker.capacity[uint32(cap)]
+			if hasCap {
+				_, hasModel := rw.Models[modelID]
+				if hasModel {
+					if worker.capacity[uint32(cap)].Models[modelID].Capacity > 0 {
+						worker.capacity[uint32(cap)].Models[modelID].Capacity -= 1
+						return idx
+					}
+				}
 			}
 		}
 		return -1
