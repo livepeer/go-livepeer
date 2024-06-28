@@ -215,6 +215,10 @@ func (w *wizard) orchestratorStats() {
 		glog.Errorf("Error getting broadcaster prices: %v", err)
 	}
 
+	cap_prices, err := w.getCapabilityPrices()
+	if err != nil {
+		glog.Errorf("Error getting capability prices: %v", err)
+	}
 	fmt.Println("+------------------+")
 	fmt.Println("|ORCHESTRATOR STATS|")
 	fmt.Println("+------------------+")
@@ -234,6 +238,7 @@ func (w *wizard) orchestratorStats() {
 		{"Last Reward Round", t.LastRewardRound.String()},
 		{"Base price per pixel", basePrice},
 		{"Base price for broadcasters", b_prices},
+		{"Base price for capabilities", cap_prices},
 	}
 
 	for _, v := range data {

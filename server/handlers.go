@@ -294,7 +294,7 @@ func (s *LivepeerServer) activateOrchestratorHandler(client eth.LivepeerEthClien
 			return
 		}
 
-		if err := s.setOrchestratorPriceInfo("default", r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit")); err != nil {
+		if err := s.setOrchestratorPriceInfo("default", r.FormValue("pricePerUnit"), r.FormValue("pixelsPerUnit"), "", ""); err != nil {
 			respond400(w, err.Error())
 			return
 		}
