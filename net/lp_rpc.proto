@@ -363,8 +363,8 @@ message NotifySegment {
 
 enum AIRequestType {
   TextToImage= 0;
-  ImageToText= 1;
-  ImageToImage= 2;
+  ImageToImage= 1;
+  ImageToVideo= 2;
   Upscale = 3;
 }
 // Sent by the orchestrator to the remote AI worker
