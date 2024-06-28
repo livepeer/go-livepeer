@@ -1683,15 +1683,15 @@ func getCapabilityPrices(modelPrices string) []ModelPrice {
 
 	// Format of modelPrices json
 	// model_id can be set to "default" to price all models in the pipeline
-	// {"models": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
+	// {"capabilities": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
 	var pricesSet struct {
-		Models []struct {
+		CapabilitiesPrices []struct {
 			Gateway       string          `json:"gateway"`
 			Pipeline      string          `json:"pipeline"`
 			ModelID       string          `json:"model_id"`
 			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
 			PricePerUnit  json.RawMessage `json:"priceperunit"`
-		} `json:"models"`
+		} `json:"capabilities_prices"`
 	}
 
 	pricesFileContent, _ := common.ReadFromFile(modelPrices)
@@ -1702,8 +1702,8 @@ func getCapabilityPrices(modelPrices string) []ModelPrice {
 		return nil
 	}
 
-	prices := make([]ModelPrice, len(pricesSet.Models))
-	for i, p := range pricesSet.Models {
+	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
+	for i, p := range pricesSet.CapabilitiesPrices {
 		if p.Gateway == "" {
 			p.Gateway = "default"
 		}
