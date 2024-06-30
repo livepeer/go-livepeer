@@ -266,6 +266,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		outPixels, err = common.EstimateAudioDuration(v.Audio)
 		if err != nil {
 			respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
+			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
 

@@ -352,12 +352,17 @@ func (ls *LivepeerServer) SpeechToText() http.Handler {
 		resp, err := processSpeechToText(ctx, params, req)
 		if err != nil {
 			var e *ServiceUnavailableError
+			var reqError *BadRequestError
 			if errors.As(err, &e) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 				return
+			} else if errors.As(err, &reqError) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			} else {
+				respondJsonError(ctx, w, err, http.StatusInternalServerError)
+				return
 			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
 		}
 
 		took := time.Since(start)

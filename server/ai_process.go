@@ -34,6 +34,14 @@ type ServiceUnavailableError struct {
 	err error
 }
 
+type BadRequestError struct {
+	err error
+}
+
+func (e *BadRequestError) Error() string {
+	return e.err.Error()
+}
+
 func (e *ServiceUnavailableError) Error() string {
 	return e.err.Error()
 }
@@ -546,6 +554,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			params.sessManager.Complete(ctx, sess)
 			break
 		}
+		if errors.Is(err, common.ErrorCalculatingDuration) || errors.Is(err, common.ErrUnsupportedFormat) {
+			return nil, &BadRequestError{err}
+		}
+
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess)
 	}

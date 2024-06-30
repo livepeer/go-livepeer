@@ -540,6 +540,9 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 }
 
 // determines the duration of an mp3 audio file by reading the frames
+var ErrUnsupportedFormat = errors.New("Unsupported audio file format. Supported formats: mp3, wav, mp4, m4a, webm, flac")
+var ErrorCalculatingDuration = errors.New("Error calculating duration")
+
 func EstimateAudioDuration(audio types.File) (int64, error) {
 	read, err := audio.Reader()
 	if err != nil {
@@ -563,11 +566,9 @@ func EstimateAudioDuration(audio types.File) (int64, error) {
 		return GetDuration_MP3(read)
 
 	default:
-		return 0, errors.New("unsupported audio format")
+		return 0, ErrUnsupportedFormat
 	}
 }
-
-var ErrorCalculatingDuration = errors.New("Error calculating duration")
 
 func GetDuration_WAV(audio io.ReadCloser) (int64, error) {
 	seeker, err := GetReadSeeker(audio)
