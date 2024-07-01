@@ -412,7 +412,7 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 		return nil, err
 	}
 
-	outPixels, err := common.EstimateAudioDuration(req.Audio)
+	outPixels, err := common.CalculateAudioDuration(req.Audio)
 	if err != nil {
 		return nil, err
 	}

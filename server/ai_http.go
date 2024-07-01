@@ -263,7 +263,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.SpeechToText(ctx, v)
 		}
 
-		outPixels, err = common.EstimateAudioDuration(v.Audio)
+		outPixels, err = common.CalculateAudioDuration(v.Audio)
 		if err != nil {
 			respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
 			return

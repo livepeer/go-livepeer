@@ -543,7 +543,7 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 var ErrUnsupportedFormat = errors.New("Unsupported audio file format. Supported formats: mp3, wav, mp4, m4a, webm, flac")
 var ErrorCalculatingDuration = errors.New("Error calculating duration")
 
-func EstimateAudioDuration(audio types.File) (int64, error) {
+func CalculateAudioDuration(audio types.File) (int64, error) {
 	read, err := audio.Reader()
 	if err != nil {
 		return 0, err
