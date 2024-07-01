@@ -213,6 +213,17 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 						aiResultBytes, unmarshalResErr = json.Marshal(res)
 					}
 				}
+			case net.AIRequestType_Upscale:
+				var req worker.UpscaleMultipartRequestBody
+				var res *worker.ImageResponse
+				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+					glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
+					// res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
+					res = &worker.ImageResponse{} // mock response
+					if aiReqErr == nil {
+						aiResultBytes, unmarshalResErr = json.Marshal(res)
+					}
+				}
 			default:
 				glog.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
 				continue
