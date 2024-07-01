@@ -128,7 +128,44 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 
 }
 
+// TODO: DRY these?
 func (m *RemoteAIWorkerManager) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	taskID, taskChan := m.addTaskChan()
+	defer m.removeTaskChan(taskID)
+
+	// select a remote worker
+	w := m.remoteWorkers[0]
+
+	// send request to remote worker
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteReq := &net.NotifyAIJob{
+		Type:   net.AIRequestType_ImageToImage,
+		TaskID: taskID,
+		Data:   jsonData,
+	}
+
+	m.handleAIRequest(remoteReq) // task id, pipeline
+
+	if err := w.stream.Send(remoteReq); err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		// return EOF signal
+	case chanData := <-taskChan:
+		var res worker.ImageResponse
+		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
+			return nil, err
+		}
+		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
+		return &res, nil
+	}
+
 	return nil, nil
 }
 
@@ -137,6 +174,42 @@ func (m *RemoteAIWorkerManager) ImageToVideo(ctx context.Context, req worker.Ima
 }
 
 func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	taskID, taskChan := m.addTaskChan()
+	defer m.removeTaskChan(taskID)
+
+	// select a remote worker
+	w := m.remoteWorkers[0]
+
+	// send request to remote worker
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteReq := &net.NotifyAIJob{
+		Type:   net.AIRequestType_Upscale,
+		TaskID: taskID,
+		Data:   jsonData,
+	}
+
+	m.handleAIRequest(remoteReq) // task id, pipeline
+
+	if err := w.stream.Send(remoteReq); err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		// return EOF signal
+	case chanData := <-taskChan:
+		var res worker.ImageResponse
+		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
+			return nil, err
+		}
+		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
+		return &res, nil
+	}
+
 	return nil, nil
 }
 
