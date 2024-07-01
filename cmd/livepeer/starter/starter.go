@@ -76,81 +76,82 @@ const (
 )
 
 type LivepeerConfig struct {
-	Network                *string
-	RtmpAddr               *string
-	CliAddr                *string
-	HttpAddr               *string
-	ServiceAddr            *string
-	OrchAddr               *string
-	VerifierURL            *string
-	EthController          *string
-	VerifierPath           *string
-	LocalVerify            *bool
-	HttpIngest             *bool
-	Orchestrator           *bool
-	Transcoder             *bool
-	AIWorker               *bool
-	Gateway                *bool
-	Broadcaster            *bool
-	OrchSecret             *string
-	TranscodingOptions     *string
-	AIModels               *string
-	MaxAttempts            *int
-	SelectRandWeight       *float64
-	SelectStakeWeight      *float64
-	SelectPriceWeight      *float64
-	SelectPriceExpFactor   *float64
-	OrchPerfStatsURL       *string
-	Region                 *string
-	MaxPricePerUnit        *int
-	MinPerfScore           *float64
-	MaxSessions            *string
-	CurrentManifest        *bool
-	Nvidia                 *string
-	Netint                 *string
-	TestTranscoder         *bool
-	EthAcctAddr            *string
-	EthPassword            *string
-	EthKeystorePath        *string
-	EthOrchAddr            *string
-	EthUrl                 *string
-	TxTimeout              *time.Duration
-	MaxTxReplacements      *int
-	GasLimit               *int
-	MinGasPrice            *int64
-	MaxGasPrice            *int
-	InitializeRound        *bool
-	TicketEV               *string
-	MaxFaceValue           *string
-	MaxTicketEV            *string
-	MaxTotalEV             *string
-	DepositMultiplier      *int
-	PricePerUnit           *int
-	PixelsPerUnit          *int
-	AutoAdjustPrice        *bool
-	PricePerGateway        *string
-	PricePerBroadcaster    *string
-	BlockPollingInterval   *int
-	Redeemer               *bool
-	RedeemerAddr           *string
-	Reward                 *bool
-	Monitor                *bool
-	MetricsPerStream       *bool
-	MetricsExposeClientIP  *bool
-	MetadataQueueUri       *string
-	MetadataAmqpExchange   *string
-	MetadataPublishTimeout *time.Duration
-	Datadir                *string
-	AIModelsDir            *string
-	Objectstore            *string
-	Recordstore            *string
-	FVfailGsBucket         *string
-	FVfailGsKey            *string
-	AuthWebhookURL         *string
-	OrchWebhookURL         *string
-	OrchBlacklist          *string
-	TestOrchAvail          *bool
-	AIRunnerImage          *string
+	Network                     *string
+	RtmpAddr                    *string
+	CliAddr                     *string
+	HttpAddr                    *string
+	ServiceAddr                 *string
+	OrchAddr                    *string
+	VerifierURL                 *string
+	EthController               *string
+	VerifierPath                *string
+	LocalVerify                 *bool
+	HttpIngest                  *bool
+	Orchestrator                *bool
+	Transcoder                  *bool
+	AIWorker                    *bool
+	Gateway                     *bool
+	Broadcaster                 *bool
+	OrchSecret                  *string
+	TranscodingOptions          *string
+	AIModels                    *string
+	AIWorkerNoManagedContainers *bool
+	MaxAttempts                 *int
+	SelectRandWeight            *float64
+	SelectStakeWeight           *float64
+	SelectPriceWeight           *float64
+	SelectPriceExpFactor        *float64
+	OrchPerfStatsURL            *string
+	Region                      *string
+	MaxPricePerUnit             *int
+	MinPerfScore                *float64
+	MaxSessions                 *string
+	CurrentManifest             *bool
+	Nvidia                      *string
+	Netint                      *string
+	TestTranscoder              *bool
+	EthAcctAddr                 *string
+	EthPassword                 *string
+	EthKeystorePath             *string
+	EthOrchAddr                 *string
+	EthUrl                      *string
+	TxTimeout                   *time.Duration
+	MaxTxReplacements           *int
+	GasLimit                    *int
+	MinGasPrice                 *int64
+	MaxGasPrice                 *int
+	InitializeRound             *bool
+	TicketEV                    *string
+	MaxFaceValue                *string
+	MaxTicketEV                 *string
+	MaxTotalEV                  *string
+	DepositMultiplier           *int
+	PricePerUnit                *int
+	PixelsPerUnit               *int
+	AutoAdjustPrice             *bool
+	PricePerGateway             *string
+	PricePerBroadcaster         *string
+	BlockPollingInterval        *int
+	Redeemer                    *bool
+	RedeemerAddr                *string
+	Reward                      *bool
+	Monitor                     *bool
+	MetricsPerStream            *bool
+	MetricsExposeClientIP       *bool
+	MetadataQueueUri            *string
+	MetadataAmqpExchange        *string
+	MetadataPublishTimeout      *time.Duration
+	Datadir                     *string
+	AIModelsDir                 *string
+	Objectstore                 *string
+	Recordstore                 *string
+	FVfailGsBucket              *string
+	FVfailGsKey                 *string
+	AuthWebhookURL              *string
+	OrchWebhookURL              *string
+	OrchBlacklist               *string
+	TestOrchAvail               *bool
+	AIRunnerImage               *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -191,6 +192,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIWorkerNoManagedContainers := false
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -279,10 +281,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:      &defaultAIWorker,
-		AIModels:      &defaultAIModels,
-		AIModelsDir:   &defaultAIModelsDir,
-		AIRunnerImage: &defaultAIRunnerImage,
+		AIWorker:                    &defaultAIWorker,
+		AIModels:                    &defaultAIModels,
+		AIModelsDir:                 &defaultAIModelsDir,
+		AIRunnerImage:               &defaultAIRunnerImage,
+		AIWorkerNoManagedContainers: &defaultAIWorkerNoManagedContainers,
 
 		// Onchain:
 		EthAcctAddr:            &defaultEthAcctAddr,
@@ -533,7 +536,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir, *cfg.AIWorkerNoManagedContainers)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return

@@ -155,6 +155,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.AIModels = flag.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
 	cfg.AIModelsDir = flag.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 	cfg.AIRunnerImage = flag.String("aiRunnerImage", *cfg.AIRunnerImage, "Set the docker image for the AI runner: Example - livepeer/ai-runner:0.0.1")
+	cfg.AIWorkerNoManagedContainers = flag.Bool("aiWorkerNoManagedContainers", *cfg.AIWorkerNoManagedContainers, "set to true if want to no use managed containers with AI worker")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")
