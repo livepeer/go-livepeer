@@ -196,7 +196,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 				var res *worker.ImageResponse
 				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
 					glog.Infof("Text-to-Image AI Job decoded model=%v prompt=%v", req.ModelId, req.Prompt)
-					// res, aiReqErr = n.AIWorker.TextToImage(context.Background(), req)
+					res, aiReqErr = n.AIWorker.TextToImage(context.Background(), req)
 					res = &worker.ImageResponse{} // mock response
 					if aiReqErr == nil {
 						aiResultBytes, unmarshalResErr = json.Marshal(res)
@@ -207,7 +207,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 				var res *worker.ImageResponse
 				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
 					glog.Infof("Image-to-Image AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-					// res, aiReqErr = n.AIWorker.ImageToImage(context.Background(), req)
+					res, aiReqErr = n.AIWorker.ImageToImage(context.Background(), req)
 					res = &worker.ImageResponse{} // mock response
 					if aiReqErr == nil {
 						aiResultBytes, unmarshalResErr = json.Marshal(res)
@@ -218,7 +218,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 				var res *worker.ImageResponse
 				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
 					glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-					// res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
+					res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
 					res = &worker.ImageResponse{} // mock response
 					if aiReqErr == nil {
 						aiResultBytes, unmarshalResErr = json.Marshal(res)
