@@ -638,7 +638,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 	}
 
-	if *cfg.AIModels != "" {
+	if !*cfg.AIWorker && *cfg.AIModels != "" {
 		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
 		if err != nil {
 			glog.Errorf("Error parsing -aiModels: %v", err)
