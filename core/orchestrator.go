@@ -928,10 +928,8 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 
 func (n *LivepeerNode) serveRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
-	// aiCaps := CapabilitiesFromNetCapabilities(capabilities)
-
-	// TODO: expand n.Capabilitiers with AI capabilities
-	// defer removing the same capabilities
+	n.Capabilities.AddCapacity(CapabilitiesFromNetCapabilities(capabilities))
+	defer n.Capabilities.RemoveCapacity(CapabilitiesFromNetCapabilities(capabilities))
 
 	// Blocks while AIWorker is connected
 	n.AIManager.Manage(stream, capabilities)

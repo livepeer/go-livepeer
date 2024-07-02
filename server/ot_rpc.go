@@ -110,7 +110,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 
 	// TODO check if ai capabilities are defined
 	aiR, err := c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+		Capabilities: n.Capabilities.ToNetCapabilities()})
 	// TODO: add checking AI errors to checkTranscoderError
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register AI worker to orchestrator ", err)
