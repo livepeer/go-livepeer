@@ -190,8 +190,8 @@ github.com/ebml-go/ebml v0.0.0-20160925193348-ca8851a10894 h1:N1Navg94Gvv0DkkFJF
 github.com/ebml-go/ebml v0.0.0-20160925193348-ca8851a10894/go.mod h1:nW0Kn5hTb57MDQW6vhOAUsT5/z6o9RQcMs8wmOcZtWw=
 github.com/ebml-go/webm v0.0.0-20221117133942-84fa5245cf70 h1:O0HjSbA6P3KVwZsDBn1Kil38PkS9eMOpIhCMyNPk0js=
 github.com/ebml-go/webm v0.0.0-20221117133942-84fa5245cf70/go.mod h1:H6o03B1Zd3dem8QXDw0MBAmShfDPkwtzmqUUebZ2HKo=
-github.com/eliteprox/ai-worker v0.0.0-20240627194509-7748c9f4fa60 h1:fNcmANJSD7htUWIhFDpjMQ1Zxr/cbvptcJzmNFfSDeE=
-github.com/eliteprox/ai-worker v0.0.0-20240627194509-7748c9f4fa60/go.mod h1:Xlnb0nFG2VsGeMG9hZmReVQXeFt0Dv28ODiUT2ooyLE=
+github.com/eliteprox/ai-worker v0.0.0-20240702184631-61c475f5b608 h1:ZPWBCV/mUac6QqM6hwWNKxMuuKNmlTlEjs4bBxnmRMY=
+github.com/eliteprox/ai-worker v0.0.0-20240702184631-61c475f5b608/go.mod h1:Xlnb0nFG2VsGeMG9hZmReVQXeFt0Dv28ODiUT2ooyLE=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
