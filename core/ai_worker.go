@@ -347,15 +347,6 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	}
 }
 
-func (n *LivepeerNode) getAIJobChan(ctx context.Context, requestID string) (AIJobChan, error) {
-	n.aiJobMutex.Lock()
-	defer n.aiJobMutex.Unlock()
-
-	ac := make(AIJobChan, 1)
-	n.AIJobChans[ManifestID(requestID)] = ac
-	return ac, nil
-}
-
 type AIResult struct {
 	Err    error
 	Result *worker.ImageResponse
