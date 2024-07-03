@@ -173,7 +173,6 @@ require (
 	github.com/status-im/keycard-go v0.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
-	github.com/thanhpk/randstr v1.0.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
@@ -210,4 +209,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/livepeer/ai-worker => github.com/ad-astra-video/ai-worker v0.0.0-20240627233341-d439094ac610
+replace github.com/livepeer/ai-worker => github.com/ad-astra-video/ai-worker v0.0.0-20240703045504-39733e954a7c
