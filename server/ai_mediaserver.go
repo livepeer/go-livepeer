@@ -137,7 +137,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
+			os:          drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
 			sessManager: ls.AISessionManager,
 		}
 
@@ -295,7 +295,7 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
+			os:          drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
 			sessManager: ls.AISessionManager,
 		}
 
