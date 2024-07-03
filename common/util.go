@@ -550,7 +550,7 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 	}
 
 	//TODO: Develop some input validation logic
-	if len(mediaFormat.Vcodec) == 0 {
+	if len(mediaFormat.Acodec) == 0 {
 		return 0, ErrUnsupportedFormat
 	}
 
