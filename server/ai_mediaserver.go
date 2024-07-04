@@ -68,7 +68,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/upscale", oapiReqValidator(ls.Upscale()))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
-	ls.HTTPMux.Handle("/speech-to-text", oapiReqValidator(ls.SpeechToText()))
+	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(ls.AudioToText()))
 
 	return nil
 }
@@ -321,7 +321,7 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) SpeechToText() http.Handler {
+func (ls *LivepeerServer) AudioToText() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
@@ -334,13 +334,13 @@ func (ls *LivepeerServer) SpeechToText() http.Handler {
 			return
 		}
 
-		var req worker.SpeechToTextMultipartRequestBody
+		var req worker.AudioToTextMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received SpeechToText request model_id=%v", *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received AudioToText request model_id=%v", *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -349,7 +349,7 @@ func (ls *LivepeerServer) SpeechToText() http.Handler {
 		}
 
 		start := time.Now()
-		resp, err := processSpeechToText(ctx, params, req)
+		resp, err := processAudioToText(ctx, params, req)
 		if err != nil {
 			var e *ServiceUnavailableError
 			var reqError *BadRequestError
@@ -366,7 +366,7 @@ func (ls *LivepeerServer) SpeechToText() http.Handler {
 		}
 
 		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed SpeechToText request model_id=%v took=%v", *req.ModelId, took)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed AudioToText request model_id=%v took=%v", *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
