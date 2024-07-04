@@ -210,11 +210,11 @@ if [[ ! -e "$ROOT/ffmpeg/libavcodec/libavcodec.a" ]]; then
     --enable-protocol=rtmp,file,pipe \
     --enable-muxer=mp3,wav,flac,mpegts,hls,segment,mp4,hevc,matroska,webm,null --enable-demuxer=mp3,wav,flac,flv,mpegts,mp4,mov,webm,matroska,image2 \
     --enable-bsf=h264_mp4toannexb,aac_adtstoasc,h264_metadata,h264_redundant_pps,hevc_mp4toannexb,extract_extradata \
-    --enable-parser=mpegaudio,aac,aac_latm,h264,hevc,vp8,vp9,png \
+    --enable-parser=mpegaudio,vorbis,opus,flac,aac,aac_latm,h264,hevc,vp8,vp9,png \
     --enable-filter=abuffer,buffer,abuffersink,buffersink,afifo,fifo,aformat,format \
     --enable-filter=aresample,asetnsamples,fps,scale,hwdownload,select,livepeer_dnn,signature \
-    --enable-encoder=aac,opus,libx264 \
-    --enable-decoder=mp3,vorbis,aac,opus,h264,png \
+    --enable-encoder=mp3,vorbis,flac,aac,opus,libx264 \
+    --enable-decoder=mp3,vorbis,flac,aac,opus,h264,png \
     --extra-cflags="${EXTRA_CFLAGS} -I${ROOT}/compiled/include -I/usr/local/cuda/include" \
     --extra-ldflags="${EXTRA_FFMPEG_LDFLAGS} -L${ROOT}/compiled/lib -L/usr/local/cuda/lib64" \
     --prefix="$ROOT/compiled" \

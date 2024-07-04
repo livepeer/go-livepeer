@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -416,6 +417,7 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("Submitting speech-to-text media with duration: %d seconds", outPixels)
 	outPixels *= 1000 // Convert to milliseconds
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {

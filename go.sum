@@ -182,8 +182,8 @@ github.com/dop251/goja_nodejs v0.0.0-20210225215109-d91c329300e7/go.mod h1:hn7BA
 github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d/go.mod h1:DngW8aVqWbuLRMHItjPUyqdj+HWPvnQe8V8y1nDpIbM=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
-github.com/eliteprox/ai-worker v0.0.0-20240627194509-7748c9f4fa60 h1:fNcmANJSD7htUWIhFDpjMQ1Zxr/cbvptcJzmNFfSDeE=
-github.com/eliteprox/ai-worker v0.0.0-20240627194509-7748c9f4fa60/go.mod h1:Xlnb0nFG2VsGeMG9hZmReVQXeFt0Dv28ODiUT2ooyLE=
+github.com/eliteprox/ai-worker v0.0.0-20240704214018-ce7332b2492a h1:zzbedC+YkkcZ/odcPoW6xikDUxUzEHFUHPoidxDAbL4=
+github.com/eliteprox/ai-worker v0.0.0-20240704214018-ce7332b2492a/go.mod h1:Xlnb0nFG2VsGeMG9hZmReVQXeFt0Dv28ODiUT2ooyLE=
 github.com/eliteprox/lpms v0.0.0-20240703230710-0e84f60a46a3 h1:IBmvTlg33ZL0OEjT+BCn+tVQLUSZ2p+li1Sq9rr8eiI=
 github.com/eliteprox/lpms v0.0.0-20240703230710-0e84f60a46a3/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=

@@ -533,7 +533,7 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 }
 
 // determines the duration of an mp3 audio file by reading the frames
-var ErrUnsupportedFormat = errors.New("Unsupported audio file format. Supported formats: mp3, wav, mp4, m4a, webm, flac")
+var ErrUnsupportedFormat = errors.New("Unsupported audio file format")
 var ErrorCalculatingDuration = errors.New("Error calculating duration")
 
 func CalculateAudioDuration(audio types.File) (int64, error) {
@@ -546,16 +546,13 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 	bytearr, _ := audio.Bytes()
 	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
 	if err != nil {
-		return 0, errors.New("Error getting codec info url")
+		return 0, errors.New("Error getting codec info")
 	}
 
-	//TODO: Develop some input validation logic
-	if len(mediaFormat.Acodec) == 0 {
-		return 0, ErrUnsupportedFormat
+	duration := int64(mediaFormat.Dur)
+	if duration <= 0 {
+		return 0, ErrorCalculatingDuration
 	}
 
-	// log the duration
-	glog.Infof("Audio duration: %d", int64(mediaFormat.Dur))
-
-	return int64(mediaFormat.Dur), nil
+	return duration, nil
 }
