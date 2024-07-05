@@ -16,7 +16,7 @@ type AI interface {
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
 	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
-	SpeechToText(context.Context, worker.SpeechToTextMultipartRequestBody) (*worker.TextResponse, error)
+	AudioToText(context.Context, worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool

@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -12,7 +11,6 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,20 +18,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abema/go-mp4"
-	"github.com/ebml-go/webm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/go-audio/wav"
 	"github.com/golang/glog"
 	"github.com/jaypipes/ghw"
 	"github.com/jaypipes/ghw/pkg/gpu"
 	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
-	"github.com/mewkiz/flac"
 	"github.com/oapi-codegen/runtime/types"
 	"github.com/pkg/errors"
-	"github.com/tcolgate/mp3"
 	"google.golang.org/grpc/peer"
 )
 
@@ -540,7 +533,7 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 }
 
 // determines the duration of an mp3 audio file by reading the frames
-var ErrUnsupportedFormat = errors.New("Unsupported audio file format. Supported formats: mp3, wav, mp4, m4a, webm, flac")
+var ErrUnsupportedFormat = errors.New("Unsupported audio file format")
 var ErrorCalculatingDuration = errors.New("Error calculating duration")
 
 func CalculateAudioDuration(audio types.File) (int64, error) {
@@ -550,118 +543,16 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 	}
 	defer read.Close()
 
-	fileExt := filepath.Ext(audio.Filename())
-	switch fileExt {
-	case ".wav":
-		return GetDuration_WAV(read)
-	case ".mp4":
-		return GetDuration_MP4(read)
-	case ".m4a":
-		return GetDuration_MP4(read)
-	case ".webm":
-		return GetDuration_WEBM(read)
-	case ".flac":
-		return GetDuration_FLAC(read)
-	case ".mp3":
-		return GetDuration_MP3(read)
-
-	default:
-		return 0, ErrUnsupportedFormat
-	}
-}
-
-func GetDuration_WAV(audio io.ReadCloser) (int64, error) {
-	seeker, err := GetReadSeeker(audio)
+	bytearr, _ := audio.Bytes()
+	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
 	if err != nil {
+		return 0, errors.New("Error getting codec info")
+	}
+
+	duration := int64(mediaFormat.Dur)
+	if duration <= 0 {
 		return 0, ErrorCalculatingDuration
 	}
 
-	decoder := wav.NewDecoder(seeker)
-	decoder.ReadInfo()
-	duration, err := decoder.Duration()
-	if err != nil {
-		return 0, ErrorCalculatingDuration
-	}
-
-	return int64(duration.Seconds()), nil
-}
-
-func GetDuration_MP4(audio io.ReadCloser) (int64, error) {
-	seeker, err := GetReadSeeker(audio)
-	if err != nil {
-		return 0, ErrorCalculatingDuration
-	}
-
-	path := mp4.BoxPath{mp4.BoxTypeMoov(), mp4.BoxTypeMvhd()}
-	boxes, err := mp4.ExtractBoxWithPayload(seeker, nil, path)
-	for _, box := range boxes {
-		if box.Info.Type == mp4.BoxTypeMvhd() {
-			if mvhdBox, ok := box.Payload.(*mp4.Mvhd); ok {
-				durationInSeconds := float64(mvhdBox.GetDuration()) / float64(mvhdBox.Timescale)
-				return int64(durationInSeconds), nil
-			}
-		}
-	}
-
-	return 0, ErrorCalculatingDuration
-}
-
-func GetDuration_WEBM(audio io.ReadCloser) (int64, error) {
-	seeker, err := GetReadSeeker(audio)
-	if err != nil {
-		return 0, ErrorCalculatingDuration
-	}
-
-	var webmData webm.WebM
-	if _, err := webm.Parse(seeker, &webmData); err != nil {
-		return 0, ErrorCalculatingDuration
-	}
-
-	return int64(webmData.GetDuration().Seconds()), nil
-}
-
-func GetDuration_FLAC(audio io.ReadCloser) (int64, error) {
-	stream, err := flac.Parse(audio)
-	if err != nil {
-		return 0, ErrorCalculatingDuration
-	}
-
-	durationInSeconds := float64(stream.Info.NSamples) / float64(stream.Info.SampleRate)
-	return int64(durationInSeconds), nil
-}
-
-func GetDuration_MP3(audio io.ReadCloser) (int64, error) {
-	decoder := mp3.NewDecoder(audio)
-	defer func() {
-		if r := recover(); r != nil {
-			audio.Close()
-			return
-		}
-	}()
-	totalDuration := 0.0
-	var frame mp3.Frame
-	var skipped int
-	var frameCount int
-	for {
-		if err := decoder.Decode(&frame, &skipped); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return 0, err
-		}
-		totalDuration += frame.Duration().Seconds()
-		frameCount++
-	}
-	return int64(totalDuration), nil
-}
-
-func GetReadSeeker(audio io.ReadCloser) (io.ReadSeeker, error) {
-	data, err := ioutil.ReadAll(audio)
-	if err != nil {
-		return nil, errors.New("Error in file reader")
-	}
-	reader := bytes.NewReader(data)
-	_, err = reader.Seek(0, io.SeekStart)
-
-	return reader, nil
+	return duration, nil
 }

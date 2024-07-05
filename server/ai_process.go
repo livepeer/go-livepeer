@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -28,7 +29,7 @@ const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
-const defaultSpeechToTextModelID = "openai/whisper-large-v3"
+const defaultAudioToTextModelID = "openai/whisper-large-v3"
 
 type ServiceUnavailableError struct {
 	err error
@@ -400,9 +401,9 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
-func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.SpeechToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	var buf bytes.Buffer
-	mw, err := worker.NewSpeechToTextMultipartWriter(&buf, req)
+	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
 	if err != nil {
 		return nil, err
 	}
@@ -416,6 +417,7 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 	if err != nil {
 		return nil, err
 	}
+	glog.Infof("Submitting audio-to-text media with duration: %d seconds", outPixels)
 	outPixels *= 1000 // Convert to milliseconds
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
@@ -424,7 +426,7 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	start := time.Now()
-	resp, err := client.SpeechToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.AudioToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
 	took := time.Since(start)
 	if err != nil {
 		return nil, err
@@ -456,7 +458,7 @@ func submitSpeechToText(ctx context.Context, params aiRequestParams, sess *AISes
 	return &res, nil
 }
 
-func processSpeechToText(ctx context.Context, params aiRequestParams, req worker.SpeechToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func processAudioToText(ctx context.Context, params aiRequestParams, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
@@ -510,14 +512,14 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitUpscale(ctx, params, sess, v)
 		}
-	case worker.SpeechToTextMultipartRequestBody:
-		cap = core.Capability_SpeechToText
-		modelID = defaultSpeechToTextModelID
+	case worker.AudioToTextMultipartRequestBody:
+		cap = core.Capability_AudioToText
+		modelID = defaultAudioToTextModelID
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
-			return submitSpeechToText(ctx, params, sess, v)
+			return submitAudioToText(ctx, params, sess, v)
 		}
 	// Add more cases as needed...
 	default:
