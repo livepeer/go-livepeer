@@ -57,8 +57,8 @@ func (s StringInt) String() string {
 type RemoteAIResultChan chan *RemoteAIWorkerResult
 
 type RemoteAIWorkerManager struct {
-	// TODO Mapping by pipeline
-	remoteWorkers []*RemoteAIWorker
+	// TODO: account for pipeline
+	remoteWorkers map[string][]*RemoteAIWorker
 	liveWorkers   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker
 	workersMutex  sync.Mutex
 
@@ -76,7 +76,7 @@ type RemoteAIWorkerResult struct {
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	return &RemoteAIWorkerManager{
-		remoteWorkers: []*RemoteAIWorker{},
+		remoteWorkers: map[string][]*RemoteAIWorker{},
 		liveWorkers:   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker{},
 		workersMutex:  sync.Mutex{},
 
@@ -98,7 +98,11 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 	}()
 
 	m.workersMutex.Lock()
-	m.remoteWorkers = append(m.remoteWorkers, worker)
+	for _, constraints := range capabilities.Constraints {
+		for modelID, _ := range constraints.Models {
+			m.remoteWorkers[modelID] = append(m.remoteWorkers[modelID], worker)
+		}
+	}
 	m.liveWorkers[stream] = worker
 	m.workersMutex.Unlock()
 
@@ -119,8 +123,17 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 	taskID, taskChan := m.addTaskChan()
 	defer m.removeTaskChan(taskID)
 
+	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	if workerCount == 0 {
+		return nil, ErrOrchCap
+	}
+
 	// select a remote worker
-	w := m.remoteWorkers[0]
+	w := m.remoteWorkers[*req.ModelId][0]
+	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
+	if workerCount > 1 {
+		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+	}
 
 	// send request to remote worker
 	jsonData, err := json.Marshal(req)
@@ -159,8 +172,17 @@ func (m *RemoteAIWorkerManager) ImageToImage(ctx context.Context, req worker.Ima
 	taskID, taskChan := m.addTaskChan()
 	defer m.removeTaskChan(taskID)
 
+	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	if workerCount == 0 {
+		return nil, ErrOrchCap
+	}
+
 	// select a remote worker
-	w := m.remoteWorkers[0]
+	w := m.remoteWorkers[*req.ModelId][0]
+	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
+	if workerCount > 1 {
+		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+	}
 
 	// send request to remote worker
 	jsonData, err := json.Marshal(req)
@@ -204,7 +226,17 @@ func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleM
 	defer m.removeTaskChan(taskID)
 
 	// select a remote worker
-	w := m.remoteWorkers[0]
+	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	if workerCount == 0 {
+		return nil, ErrOrchCap
+	}
+
+	// select a remote worker
+	w := m.remoteWorkers[*req.ModelId][0]
+	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
+	if workerCount > 1 {
+		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+	}
 
 	// send request to remote worker
 	jsonData, err := json.Marshal(req)
