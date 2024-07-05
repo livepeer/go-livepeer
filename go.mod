@@ -209,4 +209,4 @@ require (
 
 replace github.com/livepeer/ai-worker => github.com/eliteprox/ai-worker v0.0.0-20240704234154-f04146510a50
 
-replace github.com/livepeer/lpms v0.0.0-20240120150405-de94555cdc69 => github.com/eliteprox/lpms v0.0.0-20240703230710-0e84f60a46a3
+replace github.com/livepeer/lpms => github.com/eliteprox/lpms v0.0.0-20240705040132-bad849896d4e
