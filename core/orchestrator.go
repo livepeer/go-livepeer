@@ -95,7 +95,7 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+	return len(orch.node.AIManager.remoteWorkers[modelID]) > 0
 }
 
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
