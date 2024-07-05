@@ -526,7 +526,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 
-	//var resp *worker.ImageResponse
 	var resp interface{}
 
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
