@@ -31,8 +31,8 @@ type AI interface {
 type RemoteAIResultChan chan *RemoteAIWorkerResult
 
 type RemoteAIWorkerManager struct {
-	// TODO: account for pipeline
-	remoteWorkers map[string][]*RemoteAIWorker
+	// workers mapped by Pipeline(Capability) + ModelID
+	remoteWorkers map[Capability]map[string][]*RemoteAIWorker
 	liveWorkers   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker
 	workersMutex  sync.Mutex
 
@@ -50,7 +50,7 @@ type RemoteAIWorkerResult struct {
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	return &RemoteAIWorkerManager{
-		remoteWorkers: map[string][]*RemoteAIWorker{},
+		remoteWorkers: map[Capability]map[string][]*RemoteAIWorker{},
 		liveWorkers:   map[net.Transcoder_RegisterAIWorkerServer]*RemoteAIWorker{},
 		workersMutex:  sync.Mutex{},
 
@@ -72,9 +72,9 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 	}()
 
 	m.workersMutex.Lock()
-	for _, constraints := range capabilities.Constraints {
+	for cap, constraints := range capabilities.Constraints {
 		for modelID, _ := range constraints.Models {
-			m.remoteWorkers[modelID] = append(m.remoteWorkers[modelID], worker)
+			m.remoteWorkers[Capability(cap)][modelID] = append(m.remoteWorkers[Capability(cap)][modelID], worker)
 		}
 	}
 	m.liveWorkers[stream] = worker
@@ -97,16 +97,16 @@ func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.Text
 	taskID, taskChan := m.addTaskChan()
 	defer m.removeTaskChan(taskID)
 
-	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	var workerCount = len(m.remoteWorkers[Capability_TextToImage][*req.ModelId])
 	if workerCount == 0 {
 		return nil, ErrOrchCap
 	}
 
 	// select a remote worker
-	w := m.remoteWorkers[*req.ModelId][0]
+	w := m.remoteWorkers[Capability_TextToImage][*req.ModelId][0]
 	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
 	if workerCount > 1 {
-		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+		m.remoteWorkers[Capability_TextToImage][*req.ModelId] = append(m.remoteWorkers[Capability_TextToImage][*req.ModelId][1:], m.remoteWorkers[Capability_TextToImage][*req.ModelId][0])
 	}
 
 	// send request to remote worker
@@ -146,16 +146,16 @@ func (m *RemoteAIWorkerManager) ImageToImage(ctx context.Context, req worker.Ima
 	taskID, taskChan := m.addTaskChan()
 	defer m.removeTaskChan(taskID)
 
-	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	var workerCount = len(m.remoteWorkers[Capability_ImageToImage][*req.ModelId])
 	if workerCount == 0 {
 		return nil, ErrOrchCap
 	}
 
 	// select a remote worker
-	w := m.remoteWorkers[*req.ModelId][0]
+	w := m.remoteWorkers[Capability_ImageToImage][*req.ModelId][0]
 	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
 	if workerCount > 1 {
-		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+		m.remoteWorkers[Capability_ImageToImage][*req.ModelId] = append(m.remoteWorkers[Capability_ImageToImage][*req.ModelId][1:], m.remoteWorkers[Capability_ImageToImage][*req.ModelId][0])
 	}
 
 	// send request to remote worker
@@ -200,16 +200,16 @@ func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleM
 	defer m.removeTaskChan(taskID)
 
 	// select a remote worker
-	var workerCount = len(m.remoteWorkers[*req.ModelId])
+	var workerCount = len(m.remoteWorkers[Capability_Upscale][*req.ModelId])
 	if workerCount == 0 {
 		return nil, ErrOrchCap
 	}
 
 	// select a remote worker
-	w := m.remoteWorkers[*req.ModelId][0]
+	w := m.remoteWorkers[Capability_Upscale][*req.ModelId][0]
 	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
 	if workerCount > 1 {
-		m.remoteWorkers[*req.ModelId] = append(m.remoteWorkers[*req.ModelId][1:], m.remoteWorkers[*req.ModelId][0])
+		m.remoteWorkers[Capability_Upscale][*req.ModelId] = append(m.remoteWorkers[Capability_Upscale][*req.ModelId][1:], m.remoteWorkers[Capability_Upscale][*req.ModelId][0])
 	}
 
 	// send request to remote worker
