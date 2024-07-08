@@ -193,10 +193,10 @@ type (
 		mSceneClassification *stats.Int64Measure
 
 		// Metrics for AI jobs
-		mAIModelsRequested *stats.Int64Measure
-		mAILatencyScore    *stats.Float64Measure
-		mAIPricePerUnit    *stats.Float64Measure
-		mAIRequestError    *stats.Int64Measure
+		mAIModelsRequested     *stats.Int64Measure
+		mAIRequestLatencyScore *stats.Float64Measure
+		mAIRequestPrice        *stats.Float64Measure
+		mAIRequestError        *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -356,9 +356,9 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// Metrics for AI jobs
 	census.mAIModelsRequested = stats.Int64("ai_models_requested", "Number of AI models requested over time", "tot")
-	census.mAILatencyScore = stats.Float64("ai_latency_score", "Orchestrator AI request latency score, based on smallest pipeline unit", "")
-	census.mAIPricePerUnit = stats.Float64("ai_price_per_unit", "Price paid per AI pipeline unit", "")
-	census.mAIRequestError = stats.Int64("ai_request_errors", "AIRequestErrors", "tot")
+	census.mAIRequestLatencyScore = stats.Float64("ai_request_latency_score", "AI orchestrator request latency score, based on smallest pipeline unit", "")
+	census.mAIRequestPrice = stats.Float64("ai_request_price", "Price paid per AI request unit", "")
+	census.mAIRequestError = stats.Int64("ai_request_errors", "Errors when processing AI requests", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -881,29 +881,29 @@ func InitCensus(nodeType NodeType, version string) {
 		{
 			Name:        "ai_models_requested",
 			Measure:     census.mAIModelsRequested,
-			Description: "Count of AI model requests over time",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestID...),
+			Description: "Number of AI models requested over time",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "ai_request_latency_score",
+			Measure:     census.mAIRequestLatencyScore,
+			Description: "AI orchestrator request latency score",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "ai_latency_score",
-			Measure:     census.mAILatencyScore,
-			Description: "Orchestrator AI request latency score",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestIDAndIP...),
-			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
-		},
-		{
-			Name:        "ai_price_per_unit",
-			Measure:     census.mAIPricePerUnit,
-			Description: "Price paid per AI pipeline unit",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithManifestIDAndIP...),
-			Aggregation: view.Distribution(0, .250, .500, .750, 1.000, 1.250, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+			Name:        "ai_request_price",
+			Measure:     census.mAIRequestPrice,
+			Description: "AI request price per unit",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_request_errors",
 			Measure:     census.mAIRequestError,
-			Description: "Errors processing AI requests",
-			TagKeys:     baseTags,
+			Description: "Errors when processing AI requests",
+			TagKeys:     append([]tag.Key{census.kErrorCode, census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
 			Aggregation: view.Sum(),
 		},
 	}
@@ -1006,7 +1006,6 @@ func LogDiscoveryError(ctx context.Context, uri, code string) {
 			[]tag.Mutator{tag.Insert(census.kErrorCode, code),
 				tag.Insert(census.kOrchestratorURI, uri)},
 			census.mDiscoveryError.M(1)); err != nil {
-			//0530 18:08:28.399899 1767400 census.go:965] clientIP=192.168.10.155 request_id=d5303ff3 Error recording metrics err="invalid value: only ASCII characters accepted; max length must be 255 characters"
 			clog.Errorf(ctx, "Error recording metrics err=%q", err)
 		}
 	}
@@ -1763,53 +1762,51 @@ func RewardCallError(sender string) {
 
 // AIJobProccessed records metrics from AI jobs
 func AiJobProcessed(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, orchInfo *lpnet.OrchestratorInfo) {
-	census.modelRequested(pipeline, model, orchInfo)
+	census.modelRequested(pipeline, model)
 	census.recordAILatencyScore(pipeline, model, jobInfo.LatencyScore, orchInfo)
-	census.recordAIPricePerUnit(pipeline, model, jobInfo.PricePerUnit, orchInfo)
+	census.recordAIPricePerUnit(pipeline, model, jobInfo.PricePerUnit)
 }
 
-func (cen *censusMetricsCounter) modelRequested(pipeline, modelName string, orchInfo *lpnet.OrchestratorInfo) {
-	ctx, err := tag.New(cen.ctx, tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelName), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()))
-	if err != nil {
-		glog.Errorf("Failed to create context with tags: %v", err)
-		return
+// modelRequested records the number of requests per pipeline and model
+func (cen *censusMetricsCounter) modelRequested(pipeline, modelName string) {
+	cen.lock.Lock()
+	defer cen.lock.Unlock()
+
+	if err := stats.RecordWithTags(cen.ctx,
+		[]tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, modelName)}, cen.mAIModelsRequested.M(1)); err != nil {
+		glog.Errorf("Failed to record metrics with tags: %v", err)
 	}
-
-	stats.Record(ctx, census.mAIModelsRequested.M(1))
 }
 
+// recordAILatencyScore records the latency score for an AI job
 func (cen *censusMetricsCounter) recordAILatencyScore(Pipeline string, Model string, latencyScore float64, orchInfo *lpnet.OrchestratorInfo) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
-	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()))
-	if err != nil {
-		glog.Error("Error creating context", err)
-		return
+	if err := stats.RecordWithTags(cen.ctx,
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder())},
+		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
-
-	stats.Record(ctx, census.mAILatencyScore.M(latencyScore))
 }
 
-func (cen *censusMetricsCounter) recordAIPricePerUnit(Pipeline string, Model string, pricePerUnit float64, orchInfo *lpnet.OrchestratorInfo) {
+// recordAIPricePerUnit records the price per unit for an AI job
+func (cen *censusMetricsCounter) recordAIPricePerUnit(Pipeline string, Model string, pricePerUnit float64) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
-	ctx, err := tag.New(cen.ctx, tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()))
-	if err != nil {
-		glog.Error("Error creating context", err)
-		return
+	if err := stats.RecordWithTags(cen.ctx,
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model)},
+		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
-
-	stats.Record(ctx, census.mAIPricePerUnit.M(pricePerUnit))
 }
 
-// RewardCallError records an error during the AI job request
-func AIRequestError(sender string) {
+// AIRequestError records an error during the AI job request
+func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.OrchestratorInfo) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kSender, sender)},
-		census.mRewardCallError.M(1)); err != nil {
-
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
+		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
