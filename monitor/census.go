@@ -1804,8 +1804,13 @@ func (cen *censusMetricsCounter) recordAIPricePerUnit(Pipeline string, Model str
 
 // AIRequestError records an error during the AI job request
 func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.OrchestratorInfo) {
+	orchAddr := ""
+	if addr := orchInfo.GetAddress(); addr != nil {
+		orchAddr = common.BytesToAddress(addr).String()
+	}
+
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
