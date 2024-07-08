@@ -86,6 +86,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 
 func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-image", *req.ModelId, sess.OrchestratorInfo)
@@ -647,6 +648,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
+	capName, _ := core.CapabilityToName(cap)
 
 	var resp interface{}
 
@@ -657,7 +659,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	for {
 		select {
 		case <-cctx.Done():
-			return nil, &ServiceUnavailableError{err: fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)}
+			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
+			if monitor.Enabled {
+				monitor.AIRequestError(err.Error(), capName, modelID, nil)
+			}
+			return nil, &ServiceUnavailableError{err: err}
 		default:
 		}
 
@@ -687,7 +693,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	}
 
 	if resp == nil {
-		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
+		errMsg := "no orchestrators available"
+		if monitor.Enabled {
+			monitor.AIRequestError(errMsg, capName, modelID, nil)
+		}
+		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
 }
