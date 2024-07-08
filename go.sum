@@ -184,8 +184,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/eliteprox/ai-worker v0.0.0-20240705062703-0908b518eb12 h1:LCnOJCD97i2jmR7gY5gJieYLS+01XHnbWkCpmHC1t28=
 github.com/eliteprox/ai-worker v0.0.0-20240705062703-0908b518eb12/go.mod h1:Xlnb0nFG2VsGeMG9hZmReVQXeFt0Dv28ODiUT2ooyLE=
-github.com/eliteprox/lpms v0.0.0-20240705040132-bad849896d4e h1:KeX9oyrfxV63TQQPpr7dARppyzNkAcepwYScmfRh7Ns=
-github.com/eliteprox/lpms v0.0.0-20240705040132-bad849896d4e/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
+github.com/eliteprox/lpms v0.0.0-20240708144644-e6389f243db9 h1:HHnrIZN8HeB9L9fXyBRkDArp8fZBidkNe/tCjrWG/xU=
+github.com/eliteprox/lpms v0.0.0-20240708144644-e6389f243db9/go.mod h1:Hr/JhxxPDipOVd4ZrGYWrdJfpVF8/SEI0nNr2ctAlkM=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
