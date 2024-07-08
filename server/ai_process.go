@@ -215,8 +215,14 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		balUpdate.Status = ReceivedChange
 	}
 
-	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	// TODO: Refine this rough estimate in future iterations.
+	// TODO: Default values for the number of images is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = float64(*req.NumImagesPerPrompt)
+	}
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / numImages
 
 	return resp.JSON200, nil
 }
