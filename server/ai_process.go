@@ -88,7 +88,7 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "text-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "text-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "text-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	mw, err := worker.NewImageToImageMultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -205,7 +205,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -213,14 +213,14 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	imageRdr, err := req.Image.Reader()
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
 	config, _, err := image.DecodeConfig(imageRdr)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -278,7 +278,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
 			pricePerUnit = float64(priceInfo.PricePerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+		monitor.AiJobProcessed(ctx, "image-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
@@ -325,7 +325,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	mw, err := worker.NewImageToVideoMultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -352,7 +352,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -363,7 +363,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -389,7 +389,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	var res worker.ImageResponse
 	if err := json.Unmarshal(data, &res); err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "image-to-video", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -408,7 +408,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
 			pricePerUnit = float64(priceInfo.PricePerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+		monitor.AiJobProcessed(ctx, "image-to-video", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
 	}
 
 	return &res, nil
@@ -450,7 +450,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	mw, err := worker.NewUpscaleMultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -466,14 +466,14 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	imageRdr, err := req.Image.Reader()
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
 	config, _, err := image.DecodeConfig(imageRdr)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -490,7 +490,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error())
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
 			pricePerUnit = float64(priceInfo.PricePerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+		monitor.AiJobProcessed(ctx, "upscale", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
