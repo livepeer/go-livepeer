@@ -607,11 +607,21 @@ func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (wo
 
 	payment, err := genPayment(ctx, sess.BroadcastSession, balUpdate.NumTickets)
 	if err != nil {
+		clog.Errorf(ctx, "Could not create payment err=%q", err)
+
+		if monitor.Enabled {
+			monitor.PaymentCreateError(ctx)
+		}
+
 		return nil, nil, err
 	}
 
 	// As soon as the request is sent to the orch consider the balance update's credit as spent
 	balUpdate.Status = CreditSpent
+	if monitor.Enabled {
+		monitor.TicketValueSent(ctx, balUpdate.NewCredit)
+		monitor.TicketsSent(ctx, balUpdate.NumTickets)
+	}
 
 	setHeaders := func(_ context.Context, req *http.Request) error {
 		req.Header.Set(segmentHeader, segCreds)
