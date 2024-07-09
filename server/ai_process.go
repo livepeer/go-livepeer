@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -28,6 +28,8 @@ const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
+
+var downloadResult = core.GetSegmentData
 
 type ServiceUnavailableError struct {
 	err error
@@ -51,15 +53,9 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 
 	newMedia := make([]worker.Media, len(resp.Images))
 	for i, media := range resp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
-
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		name := filepath.Base(media.Url)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -135,15 +131,11 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 
 	newMedia := make([]worker.Media, len(resp.Images))
 	for i, media := range resp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
+		name := filepath.Base(media.Url)
+		glog.Infof("image: %+v", media)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -316,15 +308,9 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 
 	newMedia := make([]worker.Media, len(resp.Images))
 	for i, media := range resp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
-
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		name := filepath.Base(media.Url)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
 			return nil, err
 		}

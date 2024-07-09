@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
@@ -64,6 +65,68 @@ func TestCapability_Capacities(t *testing.T) {
 		assert.True(exist)
 		assert.Equal(1, v)
 	}
+}
+
+func TestCapabilities_CapabilityConstraints(t *testing.T) {
+	assert := assert.New(t)
+	//create capabilities
+	capabilities := []Capability{Capability_TextToImage}
+	mandatories := []Capability{4}
+
+	//create model constraints
+	model_id1 := "Model1"
+	model_id2 := "Model2"
+	constraints := make(map[Capability]*Constraints)
+	constraints[Capability_TextToImage] = &Constraints{
+		Models: make(map[string]*ModelConstraint),
+	}
+	model1Constraint := &ModelConstraint{Warm: true, Capacity: 1}
+	constraints[Capability_TextToImage].Models[model_id1] = &ModelConstraint{Warm: true, Capacity: 1}
+
+	//create capabilities with only Model1
+	caps := NewCapabilitiesWithConstraints(capabilities, mandatories, constraints)
+	_, model1ConstraintExists := caps.constraints[Capability_TextToImage].Models[model_id1]
+	assert.True(model1ConstraintExists)
+
+	newModelConstraint := &Constraints{
+		Models: make(map[string]*ModelConstraint),
+	}
+	model2Constraint := &ModelConstraint{Warm: true, Capacity: 1}
+	newModelConstraint.Models[model_id2] = model2Constraint
+
+	//add another model
+	caps.constraints.AddConstraint(Capability_TextToImage, &Constraints{Models: newModelConstraint.Models})
+
+	checkCapsConstraints := make(map[Capability]*Constraints)
+	checkCapsConstraints = caps.constraints
+	glog.Infof("%+v", checkCapsConstraints)
+
+	checkConstraint, model2ConstraintExists := checkCapsConstraints[Capability_TextToImage].Models[model_id2]
+
+	assert.True(model1ConstraintExists)
+	assert.True(model2ConstraintExists)
+	assert.Equal(model2Constraint, checkConstraint)
+	assert.Equal(model1Constraint, model2Constraint)
+
+	//add another to Model2
+	caps.constraints.AddConstraint(Capability_TextToImage, newModelConstraint)
+	checkCapsConstraints = caps.constraints
+	//check capacity increased to 2
+	checkConstraintCapacity := checkCapsConstraints[Capability_TextToImage].Models["Model2"].Capacity
+	assert.Equal(checkConstraintCapacity, 2)
+	//confirm Model1 capacity is still 1
+	checkConstraintCapacity = checkCapsConstraints[Capability_TextToImage].Models["Model1"].Capacity
+	assert.Equal(checkConstraintCapacity, 1)
+
+	//remove constraint and make sure is 1
+	caps.constraints.RemoveConstraint(Capability_TextToImage, newModelConstraint)
+	assert.Equal(len(caps.constraints[Capability_TextToImage].Models), 2)
+	assert.Equal(caps.constraints[Capability_TextToImage].Models["Model2"].Capacity, 1)
+
+	//remove constraint and make sure is 0
+	caps.constraints.RemoveConstraint(Capability_TextToImage, newModelConstraint)
+	assert.Equal(len(caps.constraints[Capability_TextToImage].Models), 2)
+	assert.Equal(caps.constraints[Capability_TextToImage].Models["Model2"].Capacity, 0)
 }
 
 func TestCapability_NewString(t *testing.T) {

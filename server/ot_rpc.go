@@ -293,6 +293,26 @@ func sendTranscodeResult(ctx context.Context, n *core.LivepeerNode, orchAddr str
 }
 
 // Orchestrator gRPC
+func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.AIWorker_RegisterAIWorkerServer) error {
+	from := common.GetConnectionAddr(stream.Context())
+	glog.Infof("Got a RegisterAIWorker request from aiworker=%s ", from)
+
+	if req.Secret != h.orchestrator.TranscoderSecret() {
+		glog.Errorf("err=%q", errSecret.Error())
+		return errSecret
+	}
+	if req.Capacity <= 0 {
+		glog.Errorf("err=%q", errZeroCapacity.Error())
+		return errZeroCapacity
+	}
+	// handle case of legacy Transcoder which do not advertise capabilities
+	if req.Capabilities == nil {
+		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
+	}
+	// blocks until stream is finished
+	h.orchestrator.ServeAIWorker(stream, int(req.Capacity), req.Capabilities)
+	return nil
+}
 
 func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transcoder_RegisterTranscoderServer) error {
 	from := common.GetConnectionAddr(stream.Context())

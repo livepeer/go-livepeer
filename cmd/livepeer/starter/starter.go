@@ -71,6 +71,7 @@ const (
 	OrchestratorRpcPort = "8935"
 	OrchestratorCliPort = "7935"
 	TranscoderCliPort   = "6935"
+	AIWorkerCliPort     = "4935"
 
 	RefreshPerfScoreInterval = 10 * time.Minute
 )
@@ -546,83 +547,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
-			for _, config := range configs {
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
-
-				// If the config contains a URL we call Warm() anyway because AIWorker will just register
-				// the endpoint for an external container
-				if config.Warm || config.URL != "" {
-					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
-						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-						return
-					}
-				}
-
-				// Show warning if people set OptimizationFlags but not Warm.
-				if len(config.OptimizationFlags) > 0 && !config.Warm {
-					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
-				}
-
-				switch config.Pipeline {
-				case "text-to-image":
-					_, ok := constraints[core.Capability_TextToImage]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						constraints[core.Capability_TextToImage] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "image-to-image":
-					_, ok := constraints[core.Capability_ImageToImage]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						constraints[core.Capability_ImageToImage] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "image-to-video":
-					_, ok := constraints[core.Capability_ImageToVideo]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						constraints[core.Capability_ImageToVideo] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "upscale":
-					_, ok := constraints[core.Capability_Upscale]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_Upscale)
-						constraints[core.Capability_Upscale] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				}
-
-				if len(aiCaps) > 0 {
-					capability := aiCaps[len(aiCaps)-1]
-					price := n.GetBasePriceForCap("default", capability, config.ModelID)
-					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
-				}
+			aiCaps, constraints, err = n.AddAIConfigs(ctx, configs)
+			if err != nil {
+				glog.Errorf("Error adding AI worker capabilities: %v", err)
+				return
 			}
+
+			if !*cfg.Transcoder {
+				aiCaps = append(aiCaps, core.DefaultCapabilities()...) //need to have default Capabilities
+			}
+
 		} else {
-			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
 			return
 		}
 
@@ -646,6 +582,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
 		}
+		if !*cfg.AIWorker {
+			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
+		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
 	} else if *cfg.Broadcaster {
@@ -653,8 +592,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Warning("-broadcaster flag is deprecated and will be removed in a future release. Please use -gateway instead")
 	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
+	} else if *cfg.AIWorker {
+		n.NodeType = core.AIWorkerNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -aiWorker, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -681,6 +622,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			nodeType = lpmon.Transcoder
 		case core.RedeemerNode:
 			nodeType = lpmon.Redeemer
+		case core.AIWorkerNode:
+			nodeType = lpmon.AIWorker
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
@@ -1279,6 +1222,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 	} else if n.NodeType == core.TranscoderNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
+	} else if n.NodeType == core.AIWorkerNode {
+		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
 	}
 
 	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), constraints)
@@ -1345,7 +1290,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		orch := core.NewOrchestrator(s.LivepeerNode, timeWatcher)
 
 		go func() {
-			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n)
+			err = server.StartTranscodeServer(orch, *cfg.HttpAddr, s.HTTPMux, n.WorkDir, n.TranscoderManager != nil, n.AIWorkerManager != nil, n)
 			if err != nil {
 				exit("Error starting Transcoder node: err=%q", err)
 			}
@@ -1365,15 +1310,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	}()
 
-	if n.NodeType == core.TranscoderNode {
+	if n.NodeType == core.TranscoderNode || n.NodeType == core.AIWorkerNode {
 		if n.OrchSecret == "" {
 			glog.Exit("Missing -orchSecret")
 		}
 		if len(orchURLs) <= 0 {
 			glog.Exit("Missing -orchAddr")
 		}
-
+	}
+	if n.NodeType == core.TranscoderNode {
+		//start the transcoder
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+	}
+
+	if n.NodeType == core.AIWorkerNode {
+		//start the aiworker
+		go server.RunAIWorker(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities.ToNetCapabilities())
 	}
 
 	switch n.NodeType {
@@ -1386,6 +1338,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Infof("**Liveepeer Running in Transcoder Mode***")
 	case core.RedeemerNode:
 		glog.Infof("**Livepeer Running in Redeemer Mode**")
+	case core.AIWorkerNode:
+		glog.Infof("**Livepeer Running in AI Worker Mode**")
 	}
 
 	glog.Infof("Livepeer Node version: %v", core.LivepeerVersion)
