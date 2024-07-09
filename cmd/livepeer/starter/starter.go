@@ -558,8 +558,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 		} else {
-			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag or connect remote workers.")
-			//return
+			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+			return
 		}
 
 		defer func() {
@@ -581,7 +581,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if !*cfg.Transcoder {
 			n.TranscoderManager = core.NewRemoteTranscoderManager()
 			n.Transcoder = n.TranscoderManager
-
+		}
+		if !*cfg.AIWorker {
 			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
 		}
 	} else if *cfg.Transcoder {
@@ -1322,7 +1323,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
 	}
 
-	if n.AIWorker != nil {
+	if n.NodeType == core.AIWorkerNode {
 		//start the aiworker
 		go server.RunAIWorker(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities.ToNetCapabilities())
 	}

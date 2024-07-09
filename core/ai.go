@@ -152,26 +152,6 @@ func (n *LivepeerNode) AddAIConfigs(ctx context.Context, configs []AIModelConfig
 
 	return aiCaps, constraints, nil
 }
-func (n *LivepeerNode) RemoveAIConfigs(ctx context.Context, configs []AIModelConfig) ([]Capability, map[Capability]*Constraints, error) {
-	var aiCaps []Capability
-	constraints := make(map[Capability]*Constraints)
-
-	for _, config := range configs {
-		modelConstraint := &ModelConstraint{Warm: config.Warm, Capacity: 1}
-		pipelineCap := PipelineToCapability(config.Pipeline)
-
-		if pipelineCap > Capability_Unused {
-			constraints[pipelineCap] = &Constraints{
-				Models: make(map[string]*ModelConstraint),
-			}
-
-			aiCaps = append(aiCaps, pipelineCap)
-			constraints[pipelineCap].Models[config.ModelID] = modelConstraint
-		}
-	}
-
-	return aiCaps, constraints, nil
-}
 
 func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints map[Capability]*Constraints) error {
 	//ToNetCapabilities locks the capabilities mutex, caller grabs lock after to reliably update capabilities
