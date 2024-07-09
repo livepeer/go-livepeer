@@ -351,10 +351,10 @@ message NotifyAIJob {
     // model to process job with
     string modelID = 3;
 
-    // Configuration for the transcoding job
+    // Configuration for the AI job
     bytes requestData = 4;
 
-    // ID for this particular transcoding task.
+    // ID for this particular AI task.
     int64 taskId   = 5;
 }
 
