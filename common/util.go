@@ -549,7 +549,7 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 		return 0, errors.New("Error getting codec info")
 	}
 
-	duration := int64(mediaFormat.Dur)
+	duration := int64(mediaFormat.DurSecs)
 	if duration <= 0 {
 		return 0, ErrorCalculatingDuration
 	}
