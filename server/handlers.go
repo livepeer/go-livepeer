@@ -29,6 +29,12 @@ import (
 const MainnetChainId = 1
 const RinkebyChainId = 4
 
+func (s *LivepeerServer) healthzHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, nil)
+	})
+}
+
 // Status
 func (s *LivepeerServer) statusHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
