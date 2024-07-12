@@ -35,7 +35,6 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	db := s.LivepeerNode.Database
 
 	// Status
-	mux.Handle("/healthz", s.healthzHandler())
 	mux.Handle("/status", s.statusHandler())
 	mux.Handle("/streamID", s.streamIdHandler())
 	mux.Handle("/manifestID", s.manifestIdHandler())
