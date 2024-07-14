@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"path/filepath"
@@ -42,6 +43,24 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+}
+
+// CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
+func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImageJSONRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+	}
+	numInferenceSteps := float64(50)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+
+	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 }
 
 func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -125,25 +144,32 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	// TODO: Refine this rough estimate in future iterations.
 	// TODO: Default values for the number of images and inference steps are currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = float64(*req.NumImagesPerPrompt)
-	}
-	numInferenceSteps := float64(50)
-	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
-	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
+	sess.LatencyScore = CalculateTextToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
-		pricePerUnit := 0.0
-		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
-			pricePerUnit = float64(priceInfo.PricePerUnit)
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+
+		monitor.AIRequestFinished(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
+}
+
+// CalculateImageToImageLatencyScore computes the time taken per pixel for an image-to-image request.
+func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToImageMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+	}
+
+	return took.Seconds() / float64(outPixels) / numImages
 }
 
 func processImageToImage(ctx context.Context, params aiRequestParams, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -241,21 +267,27 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	// TODO: Refine this rough estimate in future iterations.
 	// TODO: Default values for the number of images is currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = float64(*req.NumImagesPerPrompt)
-	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / numImages
+	sess.LatencyScore = CalculateImageToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
-		pricePerUnit := 0.0
-		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
-			pricePerUnit = float64(priceInfo.PricePerUnit)
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "image-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+
+		monitor.AIRequestFinished(ctx, "image-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
+}
+
+// CalculateImageToVideoLatencyScore computes the time taken per pixel for an image-to-video request.
+func CalculateImageToVideoLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
 }
 
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -366,17 +398,27 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	sess.LatencyScore = CalculateImageToVideoLatencyScore(took, outPixels)
 
 	if monitor.Enabled {
-		pricePerUnit := 0.0
-		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
-			pricePerUnit = float64(priceInfo.PricePerUnit)
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "image-to-video", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+
+		monitor.AIRequestFinished(ctx, "image-to-video", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return &res, nil
+}
+
+// CalculateUpscaleLatencyScore computes the time taken per pixel for an upscale request.
+func CalculateUpscaleLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
 }
 
 func processUpscale(ctx context.Context, params aiRequestParams, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -469,14 +511,15 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	sess.LatencyScore = CalculateUpscaleLatencyScore(took, outPixels)
 
 	if monitor.Enabled {
-		pricePerUnit := 0.0
-		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil {
-			pricePerUnit = float64(priceInfo.PricePerUnit)
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
-		monitor.AiJobProcessed(ctx, "upscale", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerUnit}, sess.OrchestratorInfo)
+
+		monitor.AIRequestFinished(ctx, "upscale", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil

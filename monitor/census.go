@@ -357,8 +357,8 @@ func InitCensus(nodeType NodeType, version string) {
 	// Metrics for AI jobs
 	census.mAIModelsRequested = stats.Int64("ai_models_requested", "Number of AI models requested over time", "tot")
 	census.mAIRequestLatencyScore = stats.Float64("ai_request_latency_score", "AI request latency score, based on smallest pipeline unit", "")
-	census.mAIRequestPrice = stats.Float64("ai_request_price", "Price paid per AI request unit", "")
-	census.mAIRequestError = stats.Int64("ai_request_errors", "Errors when processing AI requests", "tot")
+	census.mAIRequestPrice = stats.Float64("ai_request_price", "AI request price per unit, based on smallest pipeline unit", "")
+	census.mAIRequestError = stats.Int64("ai_request_errors", "Errors during AI request processing", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -380,6 +380,7 @@ func InitCensus(nodeType NodeType, version string) {
 	baseTagsWithEthAddr := baseTags
 	baseTagsWithManifestIDAndEthAddr := baseTags
 	baseTagsWithOrchInfo := baseTags
+	baseTagsWithGatewayInfo := baseTags
 	if PerStreamMetrics {
 		baseTagsWithManifestID = []tag.Key{census.kNodeID, census.kNodeType, census.kManifestID}
 		baseTagsWithEthAddr = []tag.Key{census.kNodeID, census.kNodeType, census.kSender}
@@ -391,7 +392,16 @@ func InitCensus(nodeType NodeType, version string) {
 	}
 	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
 	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
+	baseTagsWithGatewayInfo = append([]tag.Key{census.kSender}, baseTags...)
 	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
+
+	// Add node type specific tags.
+	baseTagsWithNodeInfo := baseTags
+	if nodeType == Orchestrator {
+		baseTagsWithNodeInfo = baseTagsWithOrchInfo
+	} else {
+		baseTagsWithNodeInfo = baseTagsWithGatewayInfo
+	}
 
 	views := []*view.View{
 		{
@@ -889,21 +899,21 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_request_latency_score",
 			Measure:     census.mAIRequestLatencyScore,
 			Description: "AI request latency score",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_request_price",
 			Measure:     census.mAIRequestPrice,
 			Description: "AI request price per unit",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_request_errors",
 			Measure:     census.mAIRequestError,
 			Description: "Errors when processing AI requests",
-			TagKeys:     append([]tag.Key{census.kErrorCode, census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
+			TagKeys:     append([]tag.Key{census.kErrorCode, census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
 			Aggregation: view.Sum(),
 		},
 	}
@@ -1760,15 +1770,8 @@ func RewardCallError(sender string) {
 	}
 }
 
-// AIJobProccessed records metrics from AI jobs
-func AiJobProcessed(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, orchInfo *lpnet.OrchestratorInfo) {
-	census.modelRequested(pipeline, model)
-	census.recordAILatencyScore(pipeline, model, jobInfo.LatencyScore, orchInfo)
-	census.recordAIPricePerUnit(pipeline, model, jobInfo.PricePerUnit, orchInfo)
-}
-
-// modelRequested records the number of requests per pipeline and model
-func (cen *censusMetricsCounter) modelRequested(pipeline, modelName string) {
+// recordModelRequested increments request count for a specific AI model and pipeline.
+func (cen *censusMetricsCounter) recordModelRequested(pipeline, modelName string) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
@@ -1778,31 +1781,38 @@ func (cen *censusMetricsCounter) modelRequested(pipeline, modelName string) {
 	}
 }
 
-// recordAILatencyScore records the latency score for an AI job
-func (cen *censusMetricsCounter) recordAILatencyScore(Pipeline string, Model string, latencyScore float64, orchInfo *lpnet.OrchestratorInfo) {
+// AIRequestFinished records gateway AI job request metrics.
+func AIRequestFinished(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, orchInfo *lpnet.OrchestratorInfo) {
+	census.recordModelRequested(pipeline, model)
+	census.recordAIRequestLatencyScore(pipeline, model, jobInfo.LatencyScore, orchInfo)
+	census.recordAIRequestPricePerUnit(pipeline, model, jobInfo.PricePerUnit, orchInfo)
+}
+
+// recordAIRequestLatencyScore records the latency score for a AI job request.
+func (cen *censusMetricsCounter) recordAIRequestLatencyScore(Pipeline string, Model string, latencyScore float64, orchInfo *lpnet.OrchestratorInfo) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
 	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(cen.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
 		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
-// recordAIPricePerUnit records the price per unit for an AI job
-func (cen *censusMetricsCounter) recordAIPricePerUnit(Pipeline string, Model string, pricePerUnit float64, orchInfo *lpnet.OrchestratorInfo) {
+// recordAIRequestPricePerUnit records the price per unit for a AI job request.
+func (cen *censusMetricsCounter) recordAIRequestPricePerUnit(Pipeline string, Model string, pricePerUnit float64, orchInfo *lpnet.OrchestratorInfo) {
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
 	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(cen.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
 		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
-// AIRequestError records an error during the AI job request
+// AIRequestError logs an error in a gateway AI job request.
 func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.OrchestratorInfo) {
 	orchAddr := ""
 	if addr := orchInfo.GetAddress(); addr != nil {
@@ -1811,6 +1821,46 @@ func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.
 
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)},
+		census.mAIRequestError.M(1)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+// AIJobProcessed records orchestrator AI job processing metrics.
+func AIJobProcessed(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, sender string) {
+	census.recordModelRequested(pipeline, model)
+	census.recordAIJobLatencyScore(pipeline, model, jobInfo.LatencyScore, sender)
+	census.recordAIJobPricePerUnit(pipeline, model, jobInfo.PricePerUnit, sender)
+}
+
+// recordAIJobLatencyScore records the latency score for a processed AI job.
+func (cen *censusMetricsCounter) recordAIJobLatencyScore(Pipeline string, Model string, latencyScore float64, sender string) {
+	cen.lock.Lock()
+	defer cen.lock.Unlock()
+
+	if err := stats.RecordWithTags(cen.ctx,
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kSender, sender)},
+		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+// recordAIJobPricePerUnit logs the cost per unit of a processed AI job.
+func (cen *censusMetricsCounter) recordAIJobPricePerUnit(Pipeline string, Model string, pricePerUnit float64, sender string) {
+	cen.lock.Lock()
+	defer cen.lock.Unlock()
+
+	if err := stats.RecordWithTags(cen.ctx,
+		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kSender, sender)},
+		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+// AIProcessingError logs errors in orchestrator AI job processing.
+func AIProcessingError(code string, Pipeline string, Model string, sender string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
