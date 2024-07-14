@@ -340,29 +340,29 @@ func (ls *LivepeerServer) AudioToText() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received AudioToText request model_id=%v", *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received AudioToText request audioSize=%v model_id=%v", req.Audio.FileSize(), *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(string(core.RandomManifestID())),
+			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 		}
 
 		start := time.Now()
 		resp, err := processAudioToText(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			var reqError *BadRequestError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 				return
-			} else if errors.As(err, &reqError) {
+			}
+			if errors.As(err, &badRequestErr) {
 				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
-			} else {
-				respondJsonError(ctx, w, err, http.StatusInternalServerError)
-				return
 			}
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
 		}
 
 		took := time.Since(start)
