@@ -35,15 +35,15 @@ type ServiceUnavailableError struct {
 	err error
 }
 
+func (e *ServiceUnavailableError) Error() string {
+	return e.err.Error()
+}
+
 type BadRequestError struct {
 	err error
 }
 
 func (e *BadRequestError) Error() string {
-	return e.err.Error()
-}
-
-func (e *ServiceUnavailableError) Error() string {
 	return e.err.Error()
 }
 
@@ -419,13 +419,13 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	outPixels, err := common.CalculateAudioDuration(req.Audio)
+	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
 	if err != nil {
 		return nil, err
 	}
-	glog.Infof("Submitting audio-to-text media with duration: %d seconds", outPixels)
-	outPixels *= 1000 // Convert to milliseconds
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+
+	glog.Infof("Submitting audio-to-text media with duration: %d seconds", durationSeconds)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, durationSeconds*1000)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +459,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	sess.LatencyScore = took.Seconds() / float64(durationSeconds)
 
 	return &res, nil
 }
@@ -505,7 +505,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		// Assuming submitImageToVideo returns a VideoResponse
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToVideo(ctx, params, sess, v)
 		}
@@ -527,7 +526,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
 		}
-	// Add more cases as needed...
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
@@ -561,18 +559,19 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			params.sessManager.Complete(ctx, sess)
 			break
 		}
-		if errors.Is(err, common.ErrorCalculatingDuration) || errors.Is(err, common.ErrUnsupportedFormat) {
-			return nil, &BadRequestError{err}
-		}
 
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess)
+
+		if errors.Is(err, common.ErrAudioDurationCalculation) || errors.Is(err, common.ErrUnsupportedAudioFormat) {
+			return nil, &BadRequestError{err}
+		}
 	}
 
 	if resp == nil {
 		return nil, &ServiceUnavailableError{err: errors.New("no orchestrators available")}
 	}
-	return resp.(interface{}), nil
+	return resp, nil
 }
 
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {

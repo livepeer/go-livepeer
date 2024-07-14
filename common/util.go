@@ -75,6 +75,9 @@ var (
 	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
+	ErrUnsupportedAudioFormat   = fmt.Errorf("audio format unsupported")
+	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
+
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
 		".mp4": "video/mp4",
@@ -532,10 +535,8 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 	return "", errors.New("Error parsing address from keyfile")
 }
 
-// determines the duration of an mp3 audio file by reading the frames
-var ErrUnsupportedFormat = errors.New("Unsupported audio file format")
-var ErrorCalculatingDuration = errors.New("Error calculating duration")
-
+// Determines the duration of an mp3 audio file by reading the frames # TODO: Improve docstring!
+// CalculateAudioDuration determines the duration of an audio file using
 func CalculateAudioDuration(audio types.File) (int64, error) {
 	read, err := audio.Reader()
 	if err != nil {
@@ -551,7 +552,7 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 
 	duration := int64(mediaFormat.DurSecs)
 	if duration <= 0 {
-		return 0, ErrorCalculatingDuration
+		return 0, ErrAudioDurationCalculation
 	}
 
 	return duration, nil
