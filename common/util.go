@@ -75,7 +75,6 @@ var (
 	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
-	ErrUnsupportedAudioFormat   = fmt.Errorf("audio format unsupported")
 	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
 
 	ext2mime = map[string]string{
