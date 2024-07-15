@@ -269,7 +269,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
-
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return

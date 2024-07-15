@@ -950,9 +950,7 @@ func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartR
 }
 
 func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-
-	resp, err := n.AIWorker.AudioToText(ctx, req)
-	return resp, err
+	return n.AIWorker.AudioToText(ctx, req)
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
