@@ -562,7 +562,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess)
 
-		if errors.Is(err, common.ErrAudioDurationCalculation) || errors.Is(err, common.ErrUnsupportedAudioFormat) {
+		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
 		}
 	}
