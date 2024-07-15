@@ -199,6 +199,9 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	// Store ctx to later use as cancel signal for watchdog goroutine
 	s.context = ctx
 
+	// health endpoint
+	s.HTTPMux.Handle("/healthz", s.healthzHandler())
+
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s, nil), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
