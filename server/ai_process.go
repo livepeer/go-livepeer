@@ -129,6 +129,13 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	outPixels := int64(*req.Height) * int64(*req.Width)
+
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+		outPixels = int64(float64(outPixels) * numImages)
+	}
+
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
@@ -165,6 +172,7 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		var pricePerAIUnit float64
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+			pricePerAIUnit *= numImages
 		}
 
 		monitor.AIRequestFinished(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
@@ -260,7 +268,14 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		}
 		return nil, err
 	}
+
 	outPixels := int64(config.Height) * int64(config.Width)
+
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+		outPixels = int64(float64(outPixels) * numImages)
+	}
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
@@ -298,6 +313,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		var pricePerAIUnit float64
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+			pricePerAIUnit *= numImages
 		}
 
 		monitor.AIRequestFinished(ctx, "image-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
