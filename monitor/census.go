@@ -896,7 +896,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_request_price",
 			Measure:     census.mAIRequestPrice,
 			Description: "AI request price per unit",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithOrchInfo...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
