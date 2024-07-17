@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"net/http"
@@ -271,6 +272,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
+	err = errors.New("fake error for testing")
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())

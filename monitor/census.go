@@ -397,10 +397,12 @@ func InitCensus(nodeType NodeType, version string) {
 
 	// Add node type specific tags.
 	baseTagsWithNodeInfo := baseTags
+	aiRequestLatencyScoreTags := baseTags
 	if nodeType == Orchestrator {
-		baseTagsWithNodeInfo = baseTagsWithOrchInfo
-	} else {
 		baseTagsWithNodeInfo = baseTagsWithGatewayInfo
+	} else {
+		baseTagsWithNodeInfo = baseTagsWithOrchInfo
+		aiRequestLatencyScoreTags = baseTagsWithOrchInfo
 	}
 
 	views := []*view.View{
@@ -899,14 +901,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_request_latency_score",
 			Measure:     census.mAIRequestLatencyScore,
 			Description: "AI request latency score",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, aiRequestLatencyScoreTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_request_price",
 			Measure:     census.mAIRequestPrice,
 			Description: "AI request price per unit",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
