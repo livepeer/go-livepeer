@@ -131,6 +131,10 @@ func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipa
 	return orch.node.upscale(ctx, req)
 }
 
+func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return orch.node.AudioToText(ctx, req)
+}
+
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
@@ -948,6 +952,10 @@ func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImage
 
 func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.Upscale(ctx, req)
+}
+
+func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return n.AIWorker.AudioToText(ctx, req)
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {

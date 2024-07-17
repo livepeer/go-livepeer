@@ -25,6 +25,7 @@ import (
 	"github.com/jaypipes/ghw/pkg/pci"
 	"github.com/livepeer/go-livepeer/net"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
+	"github.com/oapi-codegen/runtime/types"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/peer"
 )
@@ -73,6 +74,8 @@ var (
 	ErrProfProto    = fmt.Errorf("unknown VideoProfile profile for protobufs")
 	ErrProfEncoder  = fmt.Errorf("unknown VideoProfile encoder for protobufs")
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
+
+	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
 
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
@@ -529,4 +532,26 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 		}
 	}
 	return "", errors.New("Error parsing address from keyfile")
+}
+
+// CalculateAudioDuration calculates audio file duration using the lpms/ffmpeg package.
+func CalculateAudioDuration(audio types.File) (int64, error) {
+	read, err := audio.Reader()
+	if err != nil {
+		return 0, err
+	}
+	defer read.Close()
+
+	bytearr, _ := audio.Bytes()
+	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
+	if err != nil {
+		return 0, errors.New("Error getting codec info")
+	}
+
+	duration := int64(mediaFormat.DurSecs)
+	if duration <= 0 {
+		return 0, ErrAudioDurationCalculation
+	}
+
+	return duration, nil
 }
