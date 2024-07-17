@@ -9,13 +9,13 @@ require (
 	github.com/getkin/kin-openapi v0.124.0
 	github.com/golang/glog v1.1.1
 	github.com/golang/mock v1.6.0
-	github.com/golang/protobuf v1.5.3
+	github.com/golang/protobuf v1.5.4
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
-	github.com/livepeer/ai-worker v0.0.8
+	github.com/livepeer/ai-worker v0.1.0
 	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
-	github.com/livepeer/lpms v0.0.0-20240120150405-de94555cdc69
+	github.com/livepeer/lpms v0.0.0-20240711175220-227325841434
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/oapi-codegen/nethttp-middleware v1.0.1
@@ -32,7 +32,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/net v0.25.0
 	google.golang.org/grpc v1.57.1
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.33.0
 	pgregory.net/rapid v1.1.0
 )
 
@@ -85,6 +85,7 @@ require (
 	github.com/go-openapi/swag v0.22.8 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
+	github.com/go-test/deep v1.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
