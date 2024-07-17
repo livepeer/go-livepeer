@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -84,4 +85,20 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 	}
 
 	return configs, nil
+}
+
+// parseStepsFromModelID parses the number of inference steps from the model ID suffix.
+func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
+	numInferenceSteps := defaultSteps
+
+	// Regular expression to find "_<number>step" pattern anywhere in the model ID.
+	stepPattern := regexp.MustCompile(`_(\d+)step`)
+	matches := stepPattern.FindStringSubmatch(*modelID)
+	if len(matches) == 2 {
+		if parsedSteps, err := strconv.Atoi(matches[1]); err == nil {
+			numInferenceSteps = float64(parsedSteps)
+		}
+	}
+
+	return numInferenceSteps
 }
