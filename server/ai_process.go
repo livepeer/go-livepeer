@@ -122,6 +122,11 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	if req.NumInferenceSteps != nil {
 		numInferenceSteps = float64(*req.NumInferenceSteps)
 	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
+	}
+
 	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 
 	return resp.JSON200, nil
@@ -202,13 +207,22 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations.
-	// TODO: Default values for the number of images is currently hardcoded.
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	numImages := float64(1)
 	if req.NumImagesPerPrompt != nil {
 		numImages = float64(*req.NumImagesPerPrompt)
 	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / numImages
+	numInferenceSteps := float64(100)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
+	}
+
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 
 	return resp.JSON200, nil
 }
@@ -303,7 +317,13 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(25)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / numInferenceSteps
 
 	return &res, nil
 }
@@ -383,7 +403,13 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(outPixels)
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(75)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+	sess.LatencyScore = took.Seconds() / float64(outPixels) / numInferenceSteps
 
 	return resp.JSON200, nil
 }
