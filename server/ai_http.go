@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"image"
 	"net/http"
@@ -44,6 +43,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 
 	return nil
 }
@@ -134,6 +134,29 @@ func (h *lphttp) Upscale() http.Handler {
 	})
 }
 
+func (h *lphttp) AudioToText() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.AudioToTextMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -151,7 +174,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	var cap core.Capability
 	var pipeline string
 	var modelID string
-	var submitFn func(context.Context) (*worker.ImageResponse, error)
+	var submitFn func(context.Context) (interface{}, error)
 	var outPixels int64
 
 	switch v := req.(type) {
@@ -159,7 +182,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		pipeline = "text-to-image"
 		cap = core.Capability_TextToImage
 		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.TextToImage(ctx, v)
 		}
 
@@ -178,7 +201,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		pipeline = "image-to-image"
 		cap = core.Capability_ImageToImage
 		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.ImageToImage(ctx, v)
 		}
 
@@ -197,7 +220,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		pipeline = "upscale"
 		cap = core.Capability_Upscale
 		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.Upscale(ctx, v)
 		}
 
@@ -216,7 +239,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		pipeline = "image-to-video"
 		cap = core.Capability_ImageToVideo
 		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.ImageToVideo(ctx, v)
 		}
 
@@ -233,6 +256,20 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		frames := int64(25)
 
 		outPixels = height * width * int64(frames)
+	case worker.AudioToTextMultipartRequestBody:
+		pipeline = "audio-to-text"
+		cap = core.Capability_AudioToText
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.AudioToText(ctx, v)
+		}
+
+		outPixels, err = common.CalculateAudioDuration(v.Audio)
+		if err != nil {
+			respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
+			return
+		}
+		outPixels *= 1000 // Convert to milliseconds
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -272,7 +309,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
-	err = errors.New("fake error for testing")
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
@@ -297,9 +333,14 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		case worker.ImageToImageMultipartRequestBody:
 			latencyScore = CalculateImageToImageLatencyScore(took, v, outPixels)
 		case worker.ImageToVideoMultipartRequestBody:
-			latencyScore = CalculateImageToVideoLatencyScore(took, outPixels)
+			latencyScore = CalculateImageToVideoLatencyScore(took, v, outPixels)
 		case worker.UpscaleMultipartRequestBody:
-			latencyScore = CalculateUpscaleLatencyScore(took, outPixels)
+			latencyScore = CalculateUpscaleLatencyScore(took, v, outPixels)
+		case worker.AudioToTextMultipartRequestBody:
+			durationSeconds, err := common.CalculateAudioDuration(v.Audio)
+			if err == nil {
+				latencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
+			}
 		}
 
 		var pricePerAIUnit float64
@@ -307,7 +348,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			pricePerAIUnit = float64(priceInfo.GetPricePerUnit()) / float64(priceInfo.GetPixelsPerUnit())
 		}
 
-		monitor.AIJobProcessed(ctx, pipeline, modelID, monitor.AIJobInfo{LatencyScore: latencyScore, PricePerUnit: pricePerAIUnit}, sender.Hex())
+		monitor.AIJobProcessed(ctx, pipeline, modelID, monitor.AIJobInfo{LatencyScore: latencyScore, PricePerUnit: pricePerAIUnit})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

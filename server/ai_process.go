@@ -30,12 +30,21 @@ const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
+const defaultAudioToTextModelID = "openai/whisper-large-v3"
 
 type ServiceUnavailableError struct {
 	err error
 }
 
 func (e *ServiceUnavailableError) Error() string {
+	return e.err.Error()
+}
+
+type BadRequestError struct {
+	err error
+}
+
+func (e *BadRequestError) Error() string {
 	return e.err.Error()
 }
 
@@ -51,6 +60,8 @@ func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImage
 		return 0
 	}
 
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	numImages := float64(1)
 	if req.NumImagesPerPrompt != nil {
 		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
@@ -58,6 +69,10 @@ func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImage
 	numInferenceSteps := float64(50)
 	if req.NumInferenceSteps != nil {
 		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
 	}
 
 	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
@@ -69,8 +84,10 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -87,9 +104,9 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -142,8 +159,6 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	// TODO: Refine this rough estimate in future iterations.
-	// TODO: Default values for the number of images and inference steps are currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	sess.LatencyScore = CalculateTextToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
@@ -164,12 +179,22 @@ func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToIma
 		return 0
 	}
 
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	numImages := float64(1)
 	if req.NumImagesPerPrompt != nil {
 		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
 	}
+	numInferenceSteps := float64(100)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
+	}
 
-	return took.Seconds() / float64(outPixels) / numImages
+	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 }
 
 func processImageToImage(ctx context.Context, params aiRequestParams, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -178,8 +203,10 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -196,9 +223,9 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -265,8 +292,6 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations.
-	// TODO: Default values for the number of images is currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	sess.LatencyScore = CalculateImageToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
@@ -282,12 +307,19 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 }
 
 // CalculateImageToVideoLatencyScore computes the time taken per pixel for an image-to-video request.
-func CalculateImageToVideoLatencyScore(took time.Duration, outPixels int64) float64 {
+func CalculateImageToVideoLatencyScore(took time.Duration, req worker.ImageToVideoMultipartRequestBody, outPixels int64) float64 {
 	if outPixels <= 0 {
 		return 0
 	}
 
-	return took.Seconds() / float64(outPixels)
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(25)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -297,8 +329,11 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 	}
 
 	// HACK: Re-use worker.ImageResponse to return results
-	videos := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	// TODO: Refactor to return worker.VideoResponse
+	imgResp := resp.(*worker.ImageResponse)
+
+	videos := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		data, err := downloadSeg(ctx, media.Url)
 		if err != nil {
 			return nil, err
@@ -318,9 +353,9 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	}
 
-	resp.Images = videos
+	imgResp.Images = videos
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -398,7 +433,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = CalculateImageToVideoLatencyScore(took, outPixels)
+	sess.LatencyScore = CalculateImageToVideoLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -413,12 +448,19 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 }
 
 // CalculateUpscaleLatencyScore computes the time taken per pixel for an upscale request.
-func CalculateUpscaleLatencyScore(took time.Duration, outPixels int64) float64 {
+func CalculateUpscaleLatencyScore(took time.Duration, req worker.UpscaleMultipartRequestBody, outPixels int64) float64 {
 	if outPixels <= 0 {
 		return 0
 	}
 
-	return took.Seconds() / float64(outPixels)
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(75)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = float64(*req.NumInferenceSteps)
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processUpscale(ctx context.Context, params aiRequestParams, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -427,8 +469,10 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 		return nil, err
 	}
 
-	newMedia := make([]worker.Media, len(resp.Images))
-	for i, media := range resp.Images {
+	imgResp := resp.(*worker.ImageResponse)
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
 		var data bytes.Buffer
 		writer := bufio.NewWriter(&data)
 		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
@@ -445,9 +489,9 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
 	}
 
-	resp.Images = newMedia
+	imgResp.Images = newMedia
 
-	return resp, nil
+	return imgResp, nil
 }
 
 func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -486,6 +530,9 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "upscale", *req.ModelId, sess.OrchestratorInfo)
+		}
 		return nil, err
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
@@ -511,7 +558,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = CalculateUpscaleLatencyScore(took, outPixels)
+	sess.LatencyScore = CalculateUpscaleLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -525,10 +572,117 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
-func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (*worker.ImageResponse, error) {
+// CalculateAudioToTextLatencyScore computes the time taken per second of audio for an audio-to-text request.
+func CalculateAudioToTextLatencyScore(took time.Duration, durationSeconds int64) float64 {
+	if durationSeconds <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(durationSeconds)
+}
+
+func processAudioToText(ctx context.Context, params aiRequestParams, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.TextResponse)
+
+	return txtResp, nil
+}
+
+func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	clog.V(common.VERBOSE).Infof(ctx, "Submitting audio-to-text media with duration: %d seconds", durationSeconds)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, durationSeconds*1000)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.AudioToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.TextResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "audio-to-text", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
+func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
-	var submitFn func(context.Context, aiRequestParams, *AISession) (*worker.ImageResponse, error)
+	var submitFn func(context.Context, aiRequestParams, *AISession) (interface{}, error)
 
 	switch v := req.(type) {
 	case worker.TextToImageJSONRequestBody:
@@ -537,7 +691,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToImage(ctx, params, sess, v)
 		}
 	case worker.ImageToImageMultipartRequestBody:
@@ -546,7 +700,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToImage(ctx, params, sess, v)
 		}
 	case worker.ImageToVideoMultipartRequestBody:
@@ -555,7 +709,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToVideo(ctx, params, sess, v)
 		}
 	case worker.UpscaleMultipartRequestBody:
@@ -564,15 +718,24 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
-		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (*worker.ImageResponse, error) {
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitUpscale(ctx, params, sess, v)
 		}
+	case worker.AudioToTextMultipartRequestBody:
+		cap = core.Capability_AudioToText
+		modelID = defaultAudioToTextModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitAudioToText(ctx, params, sess, v)
+		}
 	default:
-		return nil, errors.New("unknown AI request type")
+		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName, _ := core.CapabilityToName(cap)
 
-	var resp *worker.ImageResponse
+	var resp interface{}
 
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
@@ -607,8 +770,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
-
 		params.sessManager.Remove(ctx, sess)
+
+		if errors.Is(err, common.ErrAudioDurationCalculation) {
+			return nil, &BadRequestError{err}
+		}
 	}
 
 	if resp == nil {
@@ -618,7 +784,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
-
 	return resp, nil
 }
 
