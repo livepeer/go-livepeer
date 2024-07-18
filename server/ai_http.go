@@ -14,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 )
@@ -314,6 +315,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	start := time.Now()
 	resp, err := submitFn(ctx)
 	if err != nil {
+		if monitor.Enabled {
+			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
+		}
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -325,6 +329,32 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	// If the # of inference/denoising steps becomes configurable, a possible updated formula could be height * width * frames * steps
 	// If additional parameters that influence compute cost become configurable, then the formula should be reconsidered
 	orch.DebitFees(sender, manifestID, payment.GetExpectedPrice(), outPixels)
+
+	if monitor.Enabled {
+		var latencyScore float64
+		switch v := req.(type) {
+		case worker.TextToImageJSONRequestBody:
+			latencyScore = CalculateTextToImageLatencyScore(took, v, outPixels)
+		case worker.ImageToImageMultipartRequestBody:
+			latencyScore = CalculateImageToImageLatencyScore(took, v, outPixels)
+		case worker.ImageToVideoMultipartRequestBody:
+			latencyScore = CalculateImageToVideoLatencyScore(took, v, outPixels)
+		case worker.UpscaleMultipartRequestBody:
+			latencyScore = CalculateUpscaleLatencyScore(took, v, outPixels)
+		case worker.AudioToTextMultipartRequestBody:
+			durationSeconds, err := common.CalculateAudioDuration(v.Audio)
+			if err == nil {
+				latencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
+			}
+		}
+
+		var pricePerAIUnit float64
+		if priceInfo := payment.GetExpectedPrice(); priceInfo != nil && priceInfo.GetPixelsPerUnit() != 0 {
+			pricePerAIUnit = float64(priceInfo.GetPricePerUnit()) / float64(priceInfo.GetPixelsPerUnit())
+		}
+
+		monitor.AIJobProcessed(ctx, pipeline, modelID, monitor.AIJobInfo{LatencyScore: latencyScore, PricePerUnit: pricePerAIUnit})
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
