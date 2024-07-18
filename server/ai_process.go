@@ -72,7 +72,7 @@ func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImage
 	}
 	// Handle special case for SDXL-Lightning model.
 	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
-		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
+		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
 	}
 
 	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
@@ -187,11 +187,11 @@ func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToIma
 	}
 	numInferenceSteps := float64(100)
 	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
 	}
 	// Handle special case for SDXL-Lightning model.
 	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
-		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
+		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
 	}
 
 	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
@@ -316,7 +316,7 @@ func CalculateImageToVideoLatencyScore(took time.Duration, req worker.ImageToVid
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	numInferenceSteps := float64(25)
 	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
 	}
 
 	return took.Seconds() / float64(outPixels) / numInferenceSteps
@@ -457,7 +457,7 @@ func CalculateUpscaleLatencyScore(took time.Duration, req worker.UpscaleMultipar
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
 	numInferenceSteps := float64(75)
 	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
 	}
 
 	return took.Seconds() / float64(outPixels) / numInferenceSteps
