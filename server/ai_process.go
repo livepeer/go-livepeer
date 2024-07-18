@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"path/filepath"
@@ -51,6 +52,30 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+}
+
+// CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
+func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImageJSONRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+	}
+	numInferenceSteps := float64(50)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
+	}
+
+	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 }
 
 func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -134,22 +159,7 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	// TODO: Refine this rough estimate in future iterations.
-	// TODO: Default values for the number of images and inference steps are currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = float64(*req.NumImagesPerPrompt)
-	}
-	numInferenceSteps := float64(50)
-	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
-	}
-	// Handle special case for SDXL-Lightning model.
-	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
-		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
-	}
-
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
+	sess.LatencyScore = CalculateTextToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -161,6 +171,30 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	return resp.JSON200, nil
+}
+
+// CalculateImageToImageLatencyScore computes the time taken per pixel for an image-to-image request.
+func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToImageMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numImages := float64(1)
+	if req.NumImagesPerPrompt != nil {
+		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
+	}
+	numInferenceSteps := float64(100)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+	// Handle special case for SDXL-Lightning model.
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
+	}
+
+	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
 }
 
 func processImageToImage(ctx context.Context, params aiRequestParams, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -258,22 +292,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations.
-	// TODO: Default values for the number of images and inference steps are currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = float64(*req.NumImagesPerPrompt)
-	}
-	numInferenceSteps := float64(100)
-	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
-	}
-	// Handle special case for SDXL-Lightning model.
-	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
-		numInferenceSteps = core.ParseStepsFromModelID(req.ModelId, 8)
-	}
-
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
+	sess.LatencyScore = CalculateImageToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -285,6 +304,22 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	return resp.JSON200, nil
+}
+
+// CalculateImageToVideoLatencyScore computes the time taken per pixel for an image-to-video request.
+func CalculateImageToVideoLatencyScore(took time.Duration, req worker.ImageToVideoMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(25)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processImageToVideo(ctx context.Context, params aiRequestParams, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -398,13 +433,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	// TODO: Default values for the number of inference steps is currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numInferenceSteps := float64(25)
-	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
-	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / numInferenceSteps
+	sess.LatencyScore = CalculateImageToVideoLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -416,6 +445,22 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 
 	return &res, nil
+}
+
+// CalculateUpscaleLatencyScore computes the time taken per pixel for an upscale request.
+func CalculateUpscaleLatencyScore(took time.Duration, req worker.UpscaleMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(75)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processUpscale(ctx context.Context, params aiRequestParams, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -513,13 +558,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	// TODO: Default values for the number of inference steps is currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numInferenceSteps := float64(75)
-	if req.NumInferenceSteps != nil {
-		numInferenceSteps = float64(*req.NumInferenceSteps)
-	}
-	sess.LatencyScore = took.Seconds() / float64(outPixels) / numInferenceSteps
+	sess.LatencyScore = CalculateUpscaleLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -531,6 +570,26 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	}
 
 	return resp.JSON200, nil
+}
+
+// CalculateAudioToTextLatencyScore computes the time taken per second of audio for an audio-to-text request.
+func CalculateAudioToTextLatencyScore(took time.Duration, durationSeconds int64) float64 {
+	if durationSeconds <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(durationSeconds)
+}
+
+func processAudioToText(ctx context.Context, params aiRequestParams, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.TextResponse)
+
+	return txtResp, nil
 }
 
 func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
@@ -606,7 +665,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = took.Seconds() / float64(durationSeconds)
+	sess.LatencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -618,17 +677,6 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	return &res, nil
-}
-
-func processAudioToText(ctx context.Context, params aiRequestParams, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	resp, err := processAIRequest(ctx, params, req)
-	if err != nil {
-		return nil, err
-	}
-
-	txtResp := resp.(*worker.TextResponse)
-
-	return txtResp, nil
 }
 
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
