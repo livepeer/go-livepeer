@@ -103,3 +103,22 @@ func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
 
 	return numInferenceSteps
 }
+
+func PipelineToCapability(pipeline string) Capability {
+	switch pipeline {
+	case "text-to-image":
+		return Capability_TextToImage
+	case "image-to-image":
+		return Capability_ImageToImage
+	case "image-to-video":
+		return Capability_ImageToVideo
+	case "upscale":
+		return Capability_Upscale
+	case "audio-to-text":
+		return Capability_AudioToText
+	case "frame-interpolation":
+		return Capability_Unused
+	default:
+		return Capability_Unused
+	}
+}
