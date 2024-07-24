@@ -242,3 +242,5 @@ require (
 )
 
 replace github.com/livepeer/lpms => /home/ricks/development/livepeer/ai/lpms
+
+replace github.com/livepeer/ai-worker => /home/ricks/development/livepeer/ai/ai-worker

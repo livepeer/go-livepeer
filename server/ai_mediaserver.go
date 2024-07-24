@@ -69,6 +69,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
 	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(ls.AudioToText()))
+	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(ls.TextToSpeech()))
 
 	return nil
 }
@@ -420,5 +421,55 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) TextToSpeech() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
+		var req worker.TextToSpeechJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		// clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToSpeech request prompt=%v model_id=%v", req.text_input, *req.model_id)
+
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+		}
+
+		// start := time.Now()
+		_, err := processTextToSpeech(ctx, params, req)
+		if err != nil {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		// took := time.Since(start)
+		// clog.Infof(ctx, "Processed TextToSpeech request prompt=%v model_id=%v took=%v", req.text_input, *req.ModelId, took)
+
+		w.Header().Set("Content-Type", "audio/mp4")
+		w.WriteHeader(http.StatusOK)
+
+		// if _, err := w.Write(resp.content); err != nil {
+		// 	clog.Errorf(ctx, "Failed to write audio response: %v", err)
+		// }
 	})
 }
