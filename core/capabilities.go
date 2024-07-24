@@ -201,6 +201,25 @@ func OptionalCapabilities() []Capability {
 	}
 }
 
+func AICapabilities() []Capability {
+	return []Capability{
+		Capability_TextToImage,
+		Capability_ImageToImage,
+		Capability_ImageToVideo,
+		Capability_Upscale,
+	}
+}
+
+func ContainsAICapabilities(caps []Capability) bool {
+	for _, c := range caps {
+		switch c {
+		case Capability_TextToImage, Capability_ImageToImage, Capability_ImageToVideo, Capability_Upscale:
+			return true
+		}
+	}
+	return false
+}
+
 func MandatoryOCapabilities() []Capability {
 	// Add to this list as certain features become mandatory.
 	// Use sparingly, as adding to this is a hard break with older nodes

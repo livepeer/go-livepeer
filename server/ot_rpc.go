@@ -99,47 +99,42 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	// Silence linter
 	defer cancel()
 
-	// TODO: check if transcoding capabilities are defined
-
+	// // TODO: check if transcoding capabilities are defined
+	netCaps := core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()
+	// coreCaps.CompatibleWith(core.NewCapabilities(core.DefaultCapabilities(), []core.Capability{}).ToNetCapabilities())
 	tR, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+		Capabilities: netCaps})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
 	}
 
-	// TODO check if ai capabilities are defined
-	aiR, err := c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: n.Capabilities.ToNetCapabilities()})
-	// TODO: add checking AI errors to checkTranscoderError
-	if err := checkTranscoderError(err); err != nil {
-		glog.Error("Could not register AI worker to orchestrator ", err)
-		return err
+	var aiR net.Transcoder_RegisterAIWorkerClient
+	if core.ContainsAICapabilities(caps) {
+		aiR, err = c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+			Capabilities: netCaps})
+		// TODO: add checking AI errors to checkTranscoderError
+		if err := checkTranscoderError(err); err != nil {
+			glog.Error("Could not register AI worker to orchestrator ", err)
+			return err
+		}
 	}
 
 	// Catch interrupt signal to shut down transcoder
 	exitc := make(chan os.Signal)
 	signal.Notify(exitc, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(exitc)
-	go func() {
-		select {
-		case sig := <-exitc:
-			glog.Infof("Exiting Livepeer Transcoder: %v", sig)
-			// Cancelling context will close connection to orchestrator
-			cancel()
-			return
-		}
-	}()
+	defer close(exitc)
 
 	httpc := &http.Client{Transport: &http2.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	var wg sync.WaitGroup
-
+	errChan := make(chan error, 2)
 	// Channels to receive messages
 	tRChan := make(chan *net.NotifySegment)
 	aiRChan := make(chan *net.NotifyAIJob)
-	errChan := make(chan error)
 
 	go func() {
+		defer close(tRChan)
 		for {
 			notify, err := tR.Recv()
 			if err != nil {
@@ -152,6 +147,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	}()
 
 	go func() {
+		defer close(aiRChan)
 		for {
 			aiJob, err := aiR.Recv()
 
@@ -165,8 +161,9 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 
 	for {
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case notify := <-tRChan:
-
 			if notify.SegData != nil && notify.SegData.AuthToken != nil && len(notify.SegData.AuthToken.SessionId) > 0 && len(notify.Url) == 0 {
 				// session teardown signal
 				n.Transcoder.EndTranscodingSession(notify.SegData.AuthToken.SessionId)
@@ -178,112 +175,129 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 				}()
 			}
 		case aiJob := <-aiRChan:
-			if aiJob == nil {
-				glog.Error("Received nil AI job")
-				continue
-			}
-			glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
-
-			// var aiResult *core.RemoteAIWorkerResult
-			var aiResultBytes []byte
-			var unmarshalReqErr error
-			var unmarshalResErr error
-			var aiReqErr error
-
-			switch aiJob.Type {
-			case net.AIRequestType_TextToImage:
-				var req worker.TextToImageJSONRequestBody
-				var res *worker.ImageResponse
-				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
-					glog.Infof("Text-to-Image AI Job decoded model=%v prompt=%v", req.ModelId, req.Prompt)
-					res, aiReqErr = n.AIWorker.TextToImage(context.Background(), req)
-					if aiReqErr == nil {
-						aiResultBytes, unmarshalResErr = json.Marshal(res)
-					}
-				}
-			case net.AIRequestType_ImageToImage:
-				var req worker.ImageToImageMultipartRequestBody
-				var res *worker.ImageResponse
-				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
-					glog.Infof("Image-to-Image AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-					res, aiReqErr = n.AIWorker.ImageToImage(context.Background(), req)
-					if aiReqErr == nil {
-						aiResultBytes, unmarshalResErr = json.Marshal(res)
-					}
-				}
-			case net.AIRequestType_Upscale:
-				var req worker.UpscaleMultipartRequestBody
-				var res *worker.ImageResponse
-				if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
-					glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-					res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
-					if aiReqErr == nil {
-						aiResultBytes, unmarshalResErr = json.Marshal(res)
-					}
-				}
-			default:
-				glog.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
-				continue
-			}
-
-			if unmarshalReqErr != nil {
-				glog.Errorf("Unable to unmarshal AI job data taskID=%v err=%q", aiJob.TaskID, unmarshalReqErr)
-				continue
-			}
-
-			if aiReqErr != nil {
-				glog.Errorf("AI job failed ID=%v err=%v", aiJob.TaskID, aiReqErr)
-				continue
-			}
-
-			if unmarshalResErr != nil {
-				glog.Errorf("Unable to marshal AI job response ID=%v err=%q", aiJob.TaskID, unmarshalResErr)
-				continue
-			}
-
-			aiResult := &core.RemoteAIWorkerResult{
-				JobType: aiJob.Type,
-				TaskID:  aiJob.TaskID,
-				Bytes:   aiResultBytes,
-				Err:     err,
-			}
-
-			// Create a bytes.Buffer and write the JSON data to it
-			var body bytes.Buffer
-			jsonAiResult, err := json.Marshal(aiResult)
-			if err != nil {
-				glog.Errorf("Error marshaling JSON err=%q", err)
-				continue
-			}
-			body.Write(jsonAiResult)
-
-			// Post result back to orchestrator
-			req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResults", &body)
-			if err != nil {
-				glog.Errorf("Error posting results to orch=%s taskId=%d type=%s err=%q", orchAddr,
-					aiResult.TaskID, aiResult.JobType, err)
-				continue
-			}
-			req.Header.Set("Authorization", protoVerLPT)
-			req.Header.Set("Credentials", n.OrchSecret)
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := httpc.Do(req)
-			if err != nil {
-				glog.Errorf("Error submitting results err=%q", err)
-				continue
-			}
-			defer resp.Body.Close()
-
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				runAIJob(ctx, aiJob, n, orchAddr, httpc)
+			}()
 		case err := <-errChan:
 			if err := checkTranscoderError(err); err != nil {
-				glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode jobs to complete`, err)
+				glog.Infof(`End of stream receive cycle because of err=%q, waiting for running transcode and ai jobs to complete`, err)
 				wg.Wait()
 				return err
 			}
+		case sig := <-exitc:
+			glog.Infof("Exiting Livepeer Transcoder: %v", sig)
+			// Cancelling context will close connection to orchestrator
+			cancel()
+			return nil
+		}
+	}
+}
 
+func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode, orchAddr string, httpc *http.Client) {
+	// Process the transcoding job
+	select {
+	case <-ctx.Done():
+		glog.Info("Received cancellation signal err=%q", ctx.Err())
+		return
+	default:
+		if aiJob == nil {
+			glog.Error("Received nil AI job")
+			return
+		}
+		glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
+
+		// var aiResult *core.RemoteAIWorkerResult
+		var aiResultBytes []byte
+		var unmarshalReqErr error
+		var unmarshalResErr error
+		var aiReqErr error
+
+		switch aiJob.Type {
+		case net.AIRequestType_TextToImage:
+			var req worker.TextToImageJSONRequestBody
+			var res *worker.ImageResponse
+			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+				glog.Infof("Text-to-Image AI Job decoded model=%v prompt=%v", req.ModelId, req.Prompt)
+				res, aiReqErr = n.AIWorker.TextToImage(context.Background(), req)
+				if aiReqErr == nil {
+					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				}
+			}
+		case net.AIRequestType_ImageToImage:
+			var req worker.ImageToImageMultipartRequestBody
+			var res *worker.ImageResponse
+			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+				glog.Infof("Image-to-Image AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
+				res, aiReqErr = n.AIWorker.ImageToImage(context.Background(), req)
+				if aiReqErr == nil {
+					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				}
+			}
+		case net.AIRequestType_Upscale:
+			var req worker.UpscaleMultipartRequestBody
+			var res *worker.ImageResponse
+			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+				glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
+				res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
+				if aiReqErr == nil {
+					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				}
+			}
+		default:
+			glog.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
+			return
 		}
 
+		if unmarshalReqErr != nil {
+			glog.Errorf("Unable to unmarshal AI job data taskID=%v err=%q", aiJob.TaskID, unmarshalReqErr)
+			return
+		}
+
+		if aiReqErr != nil {
+			glog.Errorf("AI job failed ID=%v err=%v", aiJob.TaskID, aiReqErr)
+			return
+		}
+
+		if unmarshalResErr != nil {
+			glog.Errorf("Unable to marshal AI job response ID=%v err=%q", aiJob.TaskID, unmarshalResErr)
+			return
+		}
+
+		aiResult := &core.RemoteAIWorkerResult{
+			JobType: aiJob.Type,
+			TaskID:  aiJob.TaskID,
+			Bytes:   aiResultBytes,
+			Err:     aiReqErr,
+		}
+
+		// Create a bytes.Buffer and write the JSON data to it
+		var body bytes.Buffer
+		jsonAiResult, err := json.Marshal(aiResult)
+		if err != nil {
+			glog.Errorf("Error marshaling JSON err=%q", err)
+			return
+		}
+		body.Write(jsonAiResult)
+
+		// Post result back to orchestrator
+		req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResults", &body)
+		if err != nil {
+			glog.Errorf("Error posting results to orch=%s taskId=%d type=%s err=%q", orchAddr,
+				aiResult.TaskID, aiResult.JobType, err)
+			return
+		}
+		req.Header.Set("Authorization", protoVerLPT)
+		req.Header.Set("Credentials", n.OrchSecret)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := httpc.Do(req)
+		if err != nil {
+			glog.Errorf("Error submitting results err=%q", err)
+			return
+		}
+		defer resp.Body.Close()
 	}
 }
 
