@@ -111,164 +111,135 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 
 	m.workersMutex.Lock()
 	delete(m.liveWorkers, stream)
-	// TODO: remove from remoteWorkers
+
+	// Remove worker from remoteWorkers
+	for cap, modelMap := range m.remoteWorkers {
+		for modelID, workers := range modelMap {
+			for i, w := range workers {
+				if w == worker {
+					// Remove the worker from the slice
+					m.remoteWorkers[cap][modelID] = append(workers[:i], workers[i+1:]...)
+					break
+				}
+			}
+			// If the worker list is empty, remove the modelID entry
+			if len(m.remoteWorkers[cap][modelID]) == 0 {
+				delete(m.remoteWorkers[cap], modelID)
+			}
+		}
+		// If the capability map is empty, remove the capability entry
+		if len(m.remoteWorkers[cap]) == 0 {
+			delete(m.remoteWorkers, cap)
+		}
+	}
+
 	m.workersMutex.Unlock()
 }
 
-func (m *RemoteAIWorkerManager) handleAIRequest(req *net.NotifyAIJob) {
-	// send request to selected remote worker
+func (m *RemoteAIWorkerManager) processAIRequest(ctx context.Context, capability Capability, req interface{}, aiRequestType net.AIRequestType) (interface{}, error) {
+	taskID, taskChan := m.addTaskChan()
+	defer m.removeTaskChan(taskID)
+
+	modelID := getModelID(req)
+
+	w, err := m.selectWorker(capability, modelID)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteReq := &net.NotifyAIJob{
+		Type:   aiRequestType,
+		TaskID: taskID,
+		Data:   jsonData,
+	}
+
+	if err := w.stream.Send(remoteReq); err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case chanData := <-taskChan:
+		var res interface{}
+		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
+			return nil, err
+		}
+		glog.Infof("Received AI result for task %d", chanData.TaskID)
+		return res, nil
+	}
+}
+
+func (m *RemoteAIWorkerManager) selectWorker(capability Capability, modelID string) (*RemoteAIWorker, error) {
+	m.workersMutex.Lock()
+	defer m.workersMutex.Unlock()
+	workers := m.remoteWorkers[capability][modelID]
+
+	if len(workers) == 0 {
+		return nil, ErrOrchCap
+	}
+
+	w := workers[0]
+	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, modelID, len(workers))
+
+	if len(workers) > 1 {
+		m.remoteWorkers[capability][modelID] = append(workers[1:], workers[0])
+	}
+
+	return w, nil
 }
 
 func (m *RemoteAIWorkerManager) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	taskID, taskChan := m.addTaskChan()
-	defer m.removeTaskChan(taskID)
-
-	var workerCount = len(m.remoteWorkers[Capability_TextToImage][*req.ModelId])
-	if workerCount == 0 {
-		return nil, ErrOrchCap
-	}
-
-	// select a remote worker
-	w := m.remoteWorkers[Capability_TextToImage][*req.ModelId][0]
-	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
-	if workerCount > 1 {
-		m.remoteWorkers[Capability_TextToImage][*req.ModelId] = append(m.remoteWorkers[Capability_TextToImage][*req.ModelId][1:], m.remoteWorkers[Capability_TextToImage][*req.ModelId][0])
-	}
-
-	// send request to remote worker
-	jsonData, err := json.Marshal(req)
+	res, err := m.processAIRequest(ctx, Capability_TextToImage, req, net.AIRequestType_TextToImage)
 	if err != nil {
 		return nil, err
 	}
-
-	remoteReq := &net.NotifyAIJob{
-		Type:   net.AIRequestType_TextToImage,
-		TaskID: taskID,
-		Data:   jsonData,
-	}
-	m.handleAIRequest(remoteReq) // task id, pipeline
-
-	if err := w.stream.Send(remoteReq); err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-ctx.Done():
-		// return EOF signal
-	case chanData := <-taskChan:
-		var res worker.ImageResponse
-		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
-			return nil, err
-		}
-		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
-		return &res, nil
-	}
-	return nil, nil
-
+	return res.(*worker.ImageResponse), nil
 }
 
-// TODO: DRY these?
 func (m *RemoteAIWorkerManager) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	taskID, taskChan := m.addTaskChan()
-	defer m.removeTaskChan(taskID)
-
-	var workerCount = len(m.remoteWorkers[Capability_ImageToImage][*req.ModelId])
-	if workerCount == 0 {
-		return nil, ErrOrchCap
-	}
-
-	// select a remote worker
-	w := m.remoteWorkers[Capability_ImageToImage][*req.ModelId][0]
-	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
-	if workerCount > 1 {
-		m.remoteWorkers[Capability_ImageToImage][*req.ModelId] = append(m.remoteWorkers[Capability_ImageToImage][*req.ModelId][1:], m.remoteWorkers[Capability_ImageToImage][*req.ModelId][0])
-	}
-
-	// send request to remote worker
-	jsonData, err := json.Marshal(req)
+	res, err := m.processAIRequest(ctx, Capability_ImageToImage, req, net.AIRequestType_ImageToImage)
 	if err != nil {
 		return nil, err
 	}
-
-	remoteReq := &net.NotifyAIJob{
-		Type:   net.AIRequestType_ImageToImage,
-		TaskID: taskID,
-		Data:   jsonData,
-	}
-
-	m.handleAIRequest(remoteReq) // task id, pipeline
-
-	if err := w.stream.Send(remoteReq); err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-ctx.Done():
-		// return EOF signal
-	case chanData := <-taskChan:
-		var res worker.ImageResponse
-		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
-			return nil, err
-		}
-		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
-		return &res, nil
-	}
-
-	return nil, nil
-}
-
-func (m *RemoteAIWorkerManager) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
-	return nil, nil
+	return res.(*worker.ImageResponse), nil
 }
 
 func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	taskID, taskChan := m.addTaskChan()
-	defer m.removeTaskChan(taskID)
-
-	// select a remote worker
-	var workerCount = len(m.remoteWorkers[Capability_Upscale][*req.ModelId])
-	if workerCount == 0 {
-		return nil, ErrOrchCap
-	}
-
-	// select a remote worker
-	w := m.remoteWorkers[Capability_Upscale][*req.ModelId][0]
-	glog.Infof("Selected worker %s for model %s; Total worker count: %v", w.addr, *req.ModelId, workerCount)
-	if workerCount > 1 {
-		m.remoteWorkers[Capability_Upscale][*req.ModelId] = append(m.remoteWorkers[Capability_Upscale][*req.ModelId][1:], m.remoteWorkers[Capability_Upscale][*req.ModelId][0])
-	}
-
-	// send request to remote worker
-	jsonData, err := json.Marshal(req)
+	res, err := m.processAIRequest(ctx, Capability_Upscale, req, net.AIRequestType_Upscale)
 	if err != nil {
 		return nil, err
 	}
+	return res.(*worker.ImageResponse), nil
+}
 
-	remoteReq := &net.NotifyAIJob{
-		Type:   net.AIRequestType_Upscale,
-		TaskID: taskID,
-		Data:   jsonData,
+// Helper function to get ModelId from different request types
+func getModelID(req interface{}) string {
+	switch r := req.(type) {
+	case worker.TextToImageJSONRequestBody:
+		return *r.ModelId
+	case worker.ImageToImageMultipartRequestBody:
+		return *r.ModelId
+	case worker.UpscaleMultipartRequestBody:
+		return *r.ModelId
+	case worker.ImageToVideoMultipartRequestBody:
+		return *r.ModelId
+	default:
+		return ""
 	}
+}
 
-	m.handleAIRequest(remoteReq) // task id, pipeline
-
-	if err := w.stream.Send(remoteReq); err != nil {
+func (m *RemoteAIWorkerManager) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+	res, err := m.processAIRequest(ctx, Capability_ImageToVideo, req, net.AIRequestType_ImageToVideo)
+	if err != nil {
 		return nil, err
 	}
-
-	select {
-	case <-ctx.Done():
-		// return EOF signal
-	case chanData := <-taskChan:
-		var res worker.ImageResponse
-		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
-			return nil, err
-		}
-		glog.Infof("Received AI result for task %d images=%s", chanData.TaskID, res.Images)
-		return &res, nil
-	}
-
-	return nil, nil
+	return res.(*worker.VideoResponse), nil
 }
 
 func (m *RemoteAIWorkerManager) Warm(ctx context.Context, pipeline, modelID string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
