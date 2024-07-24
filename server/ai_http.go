@@ -157,6 +157,23 @@ func (h *lphttp) AudioToText() http.Handler {
 	})
 }
 
+func (h *lphttp) TextToSpeech() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		var req worker.TextToImageJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -270,6 +287,15 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
+	case worker.TextToSpeechJSONRequestBody:
+		pipeline = "text-to-speech"
+		cap = core.Capability_TextToSpeech
+		modelID = *v.ModelID
+
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.TextToSpeech(ctx, v)
+		}
+		outPixels = 10000 // TODO: (pschroedl) replace with sane default or calculation using length of input/output
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return

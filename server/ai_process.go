@@ -31,6 +31,7 @@ const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
+const defaultAudioToTextModelID = "espnet/fastspeech2_conformer"
 
 type ServiceUnavailableError struct {
 	err error
@@ -674,6 +675,95 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 		}
 
 		monitor.AIRequestFinished(ctx, "audio-to-text", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
+func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.TextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	audioResp := resp.(*worker.AudioResponse)
+
+	return audioResp, nil
+}
+
+func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewTextToSpeechWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	textLength := len(req.Text)
+	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, textLength*1000)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.TextToSpeechWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.AudioResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	sess.LatencyScore = CalculateTextToSpeechLatencyScore(took, textLength)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "text-to-speech", *req.ModelID, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return &res, nil
