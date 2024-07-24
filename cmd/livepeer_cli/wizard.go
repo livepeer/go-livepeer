@@ -76,7 +76,7 @@ func (w *wizard) readStringAndValidate(validate func(in string) (string, error))
 	}
 }
 
-// readStringYesOrNot reads a single line from stdin, trims spaces and
+// readStringYesOrNo reads a single line from stdin, trims spaces and
 // checks that the string is either y or n
 func (w *wizard) readStringYesOrNo() string {
 	return w.readStringAndValidate(func(in string) (string, error) {

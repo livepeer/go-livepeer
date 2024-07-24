@@ -43,7 +43,7 @@ type Recipient interface {
 	RedeemWinningTicket(ticket *Ticket, sig []byte, seed *big.Int) error
 
 	// TicketParams returns the recipient's currently accepted ticket parameters
-	// for a provided sender ETH adddress
+	// for a provided sender ETH address
 	TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error)
 
 	// TxCostMultiplier returns the tx cost multiplier for an address

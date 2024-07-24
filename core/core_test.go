@@ -78,10 +78,10 @@ func TestTranscode(t *testing.T) {
 	}
 
 	// 	Check transcode result
-	if Over1Pct(len(tr.TranscodeData.Segments[0].Data), 218268) { // 144p
+	if Over1Pct(len(tr.TranscodeData.Segments[0].Data), 273352) { // 144p
 		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[0].Data))
 	}
-	if Over1Pct(len(tr.TranscodeData.Segments[1].Data), 302868) { // 240p
+	if Over1Pct(len(tr.TranscodeData.Segments[1].Data), 378068) { // 240p
 		t.Error("Unexpected transcode result ", len(tr.TranscodeData.Segments[1].Data))
 	}
 

@@ -113,7 +113,7 @@ func (s *sender) CreateTicketBatch(sessionID string, size int) (*TicketBatch, er
 	ticketParams := &session.ticketParams
 
 	expirationParams := ticketParams.ExpirationParams
-	// Ensure backwards compatbility
+	// Ensure backwards compatibility
 	// If no expirationParams are included by O
 	// B sets the values based upon its last seen round
 	if expirationParams == nil || expirationParams.CreationRound == 0 || expirationParams.CreationRoundBlockHash == (ethcommon.Hash{}) {

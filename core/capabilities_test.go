@@ -331,6 +331,20 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	orch = NewCapabilities(nil, nil)
 	bcast = NewCapabilities(nil, []Capability{1})
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// broadcaster is not compatible with orchestrator - old O's version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.4.1"
+	orch.version = "0.4.0"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// broadcaster is not compatible with orchestrator - the same version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.4.1"
+	orch.version = "0.4.1"
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
 func TestCapability_RoundTrip_Net(t *testing.T) {
@@ -473,4 +487,93 @@ func TestCapabilities_LegacyCheck(t *testing.T) {
 	assert.True(capStr.CompatibleWith(legacyCapabilityString))
 
 	assert.Len(legacyCapabilities, legacyLen) // sanity check no modifications
+}
+
+func TestLiveeerVersionCompatibleWith(t *testing.T) {
+	tests := []struct {
+		name                  string
+		broadcasterMinVersion string
+		transcoderVersion     string
+		expected              bool
+	}{
+		{
+			name:                  "broadcaster required version is the same as the transcoder version",
+			broadcasterMinVersion: "0.4.1",
+			transcoderVersion:     "0.4.1",
+			expected:              true,
+		},
+		{
+			name:                  "broadcaster required version is less than the transcoder version",
+			broadcasterMinVersion: "0.4.0",
+			transcoderVersion:     "0.4.1",
+			expected:              true,
+		},
+		{
+			name:                  "broadcaster required version is more than the transcoder version",
+			broadcasterMinVersion: "0.4.2",
+			transcoderVersion:     "0.4.1",
+			expected:              false,
+		},
+		{
+			name:                  "broadcaster required version is the same as the transcoder dirty version",
+			broadcasterMinVersion: "0.4.1",
+			transcoderVersion:     "0.4.1-b3278dce-dirty",
+			expected:              true,
+		},
+		{
+			name:                  "broadcaster required version is before the transcoder dirty version",
+			broadcasterMinVersion: "0.4.0",
+			transcoderVersion:     "0.4.1-b3278dce-dirty",
+			expected:              true,
+		},
+		{
+			name:                  "broadcaster required version is after the transcoder dirty version",
+			broadcasterMinVersion: "0.4.2",
+			transcoderVersion:     "0.4.1-b3278dce-dirty",
+			expected:              false,
+		},
+		{
+			name:                  "broadcaster required version is empty",
+			broadcasterMinVersion: "",
+			transcoderVersion:     "0.4.1",
+			expected:              true,
+		},
+		{
+			name:                  "both versions are undefined",
+			broadcasterMinVersion: "",
+			transcoderVersion:     "",
+			expected:              true,
+		},
+		{
+			name:                  "transcoder version is empty",
+			broadcasterMinVersion: "0.4.0",
+			transcoderVersion:     "",
+			expected:              false,
+		},
+		{
+			name:                  "transcoder version is undefined",
+			broadcasterMinVersion: "0.4.0",
+			transcoderVersion:     "undefined",
+			expected:              false,
+		},
+		{
+			name:                  "unparsable broadcaster's min version",
+			broadcasterMinVersion: "nonparsablesemversion",
+			transcoderVersion:     "0.4.1",
+			expected:              true,
+		},
+		{
+			name:                  "unparsable transcoder's version",
+			broadcasterMinVersion: "0.4.1",
+			transcoderVersion:     "nonparsablesemversion",
+			expected:              false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bCapabilities := &Capabilities{constraints: Constraints{minVersion: tt.broadcasterMinVersion}}
+			tCapabilities := &Capabilities{version: tt.transcoderVersion}
+			assert.Equal(t, tt.expected, bCapabilities.LivepeerVersionCompatibleWith(tCapabilities.ToNetCapabilities()))
+		})
+	}
 }
