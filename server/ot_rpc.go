@@ -49,7 +49,7 @@ var errCapabilities = errors.New("incompatible segment capabilities")
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
-func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps *core.Capabilities) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
@@ -83,7 +83,7 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps *core.Capabilities) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -99,11 +99,8 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	// Silence linter
 	defer cancel()
 
-	// // TODO: check if transcoding capabilities are defined
-	netCaps := core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()
-	// coreCaps.CompatibleWith(core.NewCapabilities(core.DefaultCapabilities(), []core.Capability{}).ToNetCapabilities())
 	tR, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: netCaps})
+		Capabilities: caps.ToNetCapabilities()})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
@@ -112,7 +109,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	var aiR net.Transcoder_RegisterAIWorkerClient
 	if core.ContainsAICapabilities(caps) {
 		aiR, err = c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-			Capabilities: netCaps})
+			Capabilities: caps.ToNetCapabilities()})
 		// TODO: add checking AI errors to checkTranscoderError
 		if err := checkTranscoderError(err); err != nil {
 			glog.Error("Could not register AI worker to orchestrator ", err)

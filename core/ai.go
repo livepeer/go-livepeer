@@ -99,8 +99,17 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 
 	m.workersMutex.Lock()
 	for cap, constraints := range capabilities.Constraints {
+		c := Capability(cap)
+		// Initialize the inner map if it's nil
+		if m.remoteWorkers[c] == nil {
+			m.remoteWorkers[c] = make(map[string][]*RemoteAIWorker)
+		}
 		for modelID, _ := range constraints.Models {
-			m.remoteWorkers[Capability(cap)][modelID] = append(m.remoteWorkers[Capability(cap)][modelID], worker)
+			// Initialize the remoteWorkers slice if it's nil
+			if m.remoteWorkers[Capability(cap)][modelID] == nil {
+				m.remoteWorkers[Capability(cap)][modelID] = []*RemoteAIWorker{}
+			}
+			m.remoteWorkers[c][modelID] = append(m.remoteWorkers[c][modelID], worker)
 		}
 	}
 	m.liveWorkers[stream] = worker
@@ -166,11 +175,22 @@ func (m *RemoteAIWorkerManager) processAIRequest(ctx context.Context, capability
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case chanData := <-taskChan:
-		var res interface{}
-		if err := json.Unmarshal(chanData.Bytes, &res); err != nil {
-			return nil, err
-		}
 		glog.Infof("Received AI result for task %d", chanData.TaskID)
+		var res interface{}
+		switch aiRequestType {
+		case net.AIRequestType_ImageToVideo:
+			var videoRes worker.VideoResponse
+			if err := json.Unmarshal(chanData.Bytes, &videoRes); err != nil {
+				return nil, err
+			}
+			res = &videoRes
+		default:
+			var imgRes worker.ImageResponse
+			if err := json.Unmarshal(chanData.Bytes, &imgRes); err != nil {
+				return nil, err
+			}
+			res = &imgRes
+		}
 		return res, nil
 	}
 }
@@ -251,7 +271,23 @@ func (m *RemoteAIWorkerManager) Stop(ctx context.Context) error {
 }
 
 func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
-	return false
+	m.workersMutex.Lock()
+	defer m.workersMutex.Unlock()
+	// TODO: Pass cap instead? Considering it's a public function might be
+	// better to pass the string directly
+	var cap Capability
+	switch pipeline {
+	case "text-to-image":
+		cap = Capability_TextToImage
+	case "image-to-image":
+		cap = Capability_ImageToImage
+	case "upscale":
+		cap = Capability_Upscale
+	default:
+		return false
+	}
+
+	return len(m.remoteWorkers[cap][modelID]) > 0
 }
 
 func (m *RemoteAIWorkerManager) aiResult(res *RemoteAIWorkerResult) {

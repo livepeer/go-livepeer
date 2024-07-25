@@ -1477,7 +1477,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Missing -orchAddr")
 		}
 
-		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, append(transcoderCaps, aiCaps...))
+		go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities)
 	}
 
 	switch n.NodeType {
