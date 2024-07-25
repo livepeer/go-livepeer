@@ -1,6 +1,6 @@
 # Verification
 
-The Livepeer node supports two types of verification when running with the `-broadcaster` flag:
+The Livepeer node supports two types of verification when running with the `-gateway` flag:
 
 - Local verification
     - This currently involves pixel count and signature verification.
