@@ -97,18 +97,7 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	// TODO: Pass cap instead? Considering it's a public function might be
 	// better to pass the string directly
-	var cap Capability
-	switch pipeline {
-	case "text-to-image":
-		cap = Capability_TextToImage
-	case "image-to-image":
-		cap = Capability_ImageToImage
-	case "upscale":
-		cap = Capability_Upscale
-	default:
-		return false
-	}
-	return len(orch.node.AIManager.remoteWorkers[cap][modelID]) > 0
+	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
 }
 
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {

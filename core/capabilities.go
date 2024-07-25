@@ -210,9 +210,9 @@ func AICapabilities() []Capability {
 	}
 }
 
-func ContainsAICapabilities(caps []Capability) bool {
-	for _, c := range caps {
-		switch c {
+func ContainsAICapabilities(caps *Capabilities) bool {
+	for cap, _ := range caps.capacities {
+		switch cap {
 		case Capability_TextToImage, Capability_ImageToImage, Capability_ImageToVideo, Capability_Upscale:
 			return true
 		}
