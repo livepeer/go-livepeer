@@ -549,13 +549,13 @@ func TestGenPayment(t *testing.T) {
 	sender := &pm.MockSender{}
 	s.Sender = sender
 
-	// Test invalid price
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	// Test changing O price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 7}
 	payment, err = genPayment(context.TODO(), s, 1)
 	assert.Equal("", payment)
-	assert.Errorf(err, err.Error(), "Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5))
+	assert.Errorf(err, "Orchestrator price has more than doubled, Orchestrator price: %v, Orchestrator initial price: %v", "1/3", "1/7")
 
-	BroadcastCfg.SetMaxPrice(nil)
+	s.InitialPrice = nil
 
 	// Test CreateTicketBatch error
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(nil, errors.New("CreateTicketBatch error")).Once()
@@ -680,20 +680,8 @@ func TestValidatePrice(t *testing.T) {
 		PMSessionID:      "foo",
 	}
 
-	// B's MaxPrice is nil
+	// O's Initial Price is nil
 	err := validatePrice(s)
-	assert.Nil(err)
-
-	defer BroadcastCfg.SetMaxPrice(nil)
-
-	// B MaxPrice > O Price
-	BroadcastCfg.SetMaxPrice(big.NewRat(5, 1))
-	err = validatePrice(s)
-	assert.Nil(err)
-
-	// B MaxPrice == O Price
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 3))
-	err = validatePrice(s)
 	assert.Nil(err)
 
 	// O Initial Price == O Price
@@ -706,16 +694,15 @@ func TestValidatePrice(t *testing.T) {
 	err = validatePrice(s)
 	assert.Nil(err)
 
-	// O Initial Price lower than O Price
-	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 10}
+	// O Price higher but up to 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 6}
 	err = validatePrice(s)
-	assert.ErrorContains(err, "price has changed")
+	assert.Nil(err)
 
-	// B MaxPrice < O Price
-	s.InitialPrice = nil
-	BroadcastCfg.SetMaxPrice(big.NewRat(1, 5))
+	// O Price higher than 2x Initial Price
+	s.InitialPrice = &net.PriceInfo{PricePerUnit: 1000, PixelsPerUnit: 6001}
 	err = validatePrice(s)
-	assert.EqualError(err, fmt.Sprintf("Orchestrator price higher than the set maximum price of %v wei per %v pixels", int64(1), int64(5)))
+	assert.ErrorContains(err, "price has more than doubled")
 
 	// O.PriceInfo is nil
 	s.OrchestratorInfo.PriceInfo = nil

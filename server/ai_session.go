@@ -259,7 +259,7 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	var coldSessions []*BroadcastSession
 	for _, sess := range sessions {
 		// If the constraints are missing for this capability skip this session
-		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints[uint32(sel.cap)]
+		constraints, ok := sess.OrchestratorInfo.Capabilities.CapabilityConstraints[uint32(sel.cap)]
 		if !ok {
 			continue
 		}
@@ -288,7 +288,7 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSession, error) {
 	// No warm constraints applied here because we don't want to filter out orchs based on warm criteria at discovery time
 	// Instead, we want all orchs that support the model and then will filter for orchs that have a warm model separately
-	constraints := map[core.Capability]*core.Constraints{
+	capabilityConstraints := map[core.Capability]*core.PerCapabilityConstraints{
 		sel.cap: {
 			Models: map[string]*core.ModelConstraint{
 				sel.modelID: {
@@ -297,7 +297,7 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 			},
 		},
 	}
-	caps := core.NewCapabilitiesWithConstraints(append(core.DefaultCapabilities(), sel.cap), nil, constraints)
+	caps := core.NewCapabilitiesWithConstraints(append(core.DefaultCapabilities(), sel.cap), nil, core.Constraints{}, capabilityConstraints)
 
 	// Set numOrchs to the pool size so that discovery tries to find maximum # of compatible orchs within a timeout
 	numOrchs := sel.node.OrchestratorPool.Size()

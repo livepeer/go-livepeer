@@ -56,7 +56,7 @@ var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *
 var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
-	maxPrice *big.Rat
+	maxPrice *core.AutoConvertedPrice
 	mu       sync.RWMutex
 }
 
@@ -68,16 +68,19 @@ type SegFlightMetadata struct {
 func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	return cfg.maxPrice
+	if cfg.maxPrice == nil {
+		return nil
+	}
+	return cfg.maxPrice.Value()
 }
 
-func (cfg *BroadcastConfig) SetMaxPrice(price *big.Rat) {
+func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
+	prevPrice := cfg.maxPrice
 	cfg.maxPrice = price
-
-	if monitor.Enabled {
-		monitor.MaxTranscodingPrice(price)
+	if prevPrice != nil {
+		prevPrice.Stop()
 	}
 }
 
@@ -285,7 +288,9 @@ func (sp *SessionPool) selectSessions(ctx context.Context, sessionsNum int) []*B
 
 	checkSessions := func(m *SessionPool) bool {
 		numSess := m.sel.Size()
-		if numSess < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0))) {
+		refreshThreshold := int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(m.numOrchs)/2.0)))
+		clog.Infof(ctx, "Checking if the session refresh is needed, numSess=%v, refreshThreshold=%v", numSess, refreshThreshold)
+		if numSess < refreshThreshold {
 			go m.refreshSessions(ctx)
 		}
 		return (numSess > 0 || len(sp.lastSess) > 0)
@@ -445,6 +450,9 @@ func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*Broadcas
 }
 
 func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
+	if node.Capabilities != nil {
+		params.Capabilities.SetMinVersionConstraint(node.Capabilities.MinVersionConstraint())
+	}
 	var trustedPoolSize, untrustedPoolSize float64
 	if node.OrchestratorPool != nil {
 		trustedPoolSize = float64(node.OrchestratorPool.SizeWith(common.ScoreAtLeast(common.Score_Trusted)))

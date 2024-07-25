@@ -162,8 +162,8 @@ func TestSetAndGetBasePrice(t *testing.T) {
 
 	price := big.NewRat(1, 1)
 
-	n.SetBasePrice("default", price)
-	assert.Zero(n.priceInfo["default"].Cmp(price))
+	n.SetBasePrice("default", NewFixedPrice(price))
+	assert.Zero(n.priceInfo["default"].Value().Cmp(price))
 	assert.Zero(n.GetBasePrice("default").Cmp(price))
 	assert.Zero(n.GetBasePrices()["default"].Cmp(price))
 
@@ -172,10 +172,10 @@ func TestSetAndGetBasePrice(t *testing.T) {
 	price1 := big.NewRat(2, 1)
 	price2 := big.NewRat(3, 1)
 
-	n.SetBasePrice(addr1, price1)
-	n.SetBasePrice(addr2, price2)
-	assert.Zero(n.priceInfo[addr1].Cmp(price1))
-	assert.Zero(n.priceInfo[addr2].Cmp(price2))
+	n.SetBasePrice(addr1, NewFixedPrice(price1))
+	n.SetBasePrice(addr2, NewFixedPrice(price2))
+	assert.Zero(n.priceInfo[addr1].Value().Cmp(price1))
+	assert.Zero(n.priceInfo[addr2].Value().Cmp(price2))
 	assert.Zero(n.GetBasePrices()[addr1].Cmp(price1))
 	assert.Zero(n.GetBasePrices()[addr2].Cmp(price2))
 }
