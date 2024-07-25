@@ -229,7 +229,7 @@ func createRunScript(ethController string, dataDir, serviceHost string, cfg devt
 	} else {
 		args = append(
 			args,
-			"-broadcaster=true",
+			"-gateway=true",
 			fmt.Sprintf("-rtmpAddr %s:%d", serviceHost, rtmpPort),
 		)
 

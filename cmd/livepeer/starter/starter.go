@@ -666,7 +666,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -gateway, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
