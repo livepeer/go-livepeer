@@ -630,7 +630,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				if len(aiCaps) > 0 {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
-					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+					if price != nil {
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+					}
 				}
 			}
 		} else {
@@ -729,7 +731,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if len(aiCaps) > 0 {
 				capability := aiCaps[len(aiCaps)-1]
 				price := n.GetBasePriceForCap("default", capability, config.ModelID)
-				glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+				if price != nil {
+					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+				}
 			}
 		}
 	}
