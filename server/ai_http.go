@@ -44,6 +44,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.TextToSpeech()))
 
 	return nil
 }
@@ -164,7 +165,7 @@ func (h *lphttp) TextToSpeech() http.Handler {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		var req worker.TextToImageJSONRequestBody
+		var req worker.TextToSpeechJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
@@ -290,7 +291,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	case worker.TextToSpeechJSONRequestBody:
 		pipeline = "text-to-speech"
 		cap = core.Capability_TextToSpeech
-		modelID = *v.ModelID
+		modelID = *v.model_id
 
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.TextToSpeech(ctx, v)

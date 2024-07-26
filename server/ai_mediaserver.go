@@ -437,7 +437,7 @@ func (ls *LivepeerServer) TextToSpeech() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToSpeech request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
+		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToSpeech request prompt=%v model_id=%v", req.text_input, *req.model_id)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -458,7 +458,7 @@ func (ls *LivepeerServer) TextToSpeech() http.Handler {
 		}
 
 		took := time.Since(start)
-		clog.Infof(ctx, "Processed TextToSpeech request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+		clog.Infof(ctx, "Processed TextToSpeech request prompt=%v model_id=%v took=%v", req.text_input, *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "audio/mp4")
 		w.WriteHeader(http.StatusOK)
