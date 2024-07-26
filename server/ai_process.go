@@ -695,55 +695,57 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		}
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
 		return nil, err
 	}
 
-	textLength := len(req.text_input)
-	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+	// textLength := len(req.text_input)
+	// clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
 	// TODO (pschroedl): include tokenizer hjere to calculate price
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, textLength*1000)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, 1000)
 	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		}
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
 		return nil, err
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	resp, err := client.TextToSpeechWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.TextToSpeechWithResponse(ctx, req, setHeaders)
 
 	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		}
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// if err != nil {
+	// 	if monitor.Enabled {
+	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+	// 	}
+	// 	return nil, err
+	// }
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
-		}
-		return nil, err
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
 	}
 
-	if resp.StatusCode != 200 {
-		return nil, errors.New(string(data))
-	}
+	// var res worker.AudioResponse
+	// if err := json.Unmarshal(data, &res); err != nil {
+	// 	if monitor.Enabled {
+	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+	// 	}
+	// 	return nil, err
+	// }
 
-	var res worker.AudioResponse
-	if err := json.Unmarshal(data, &res); err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-
-	return &res, nil
+	return resp.JSON200, nil
 }
 
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
@@ -796,6 +798,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
+		}
+	case worker.TextToSpeechJSONRequestBody:
+		cap = core.Capability_TextToSpeech
+		modelID = defaultTextToSpeechModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitTextToSpeech(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

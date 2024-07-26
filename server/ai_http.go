@@ -291,7 +291,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	case worker.TextToSpeechJSONRequestBody:
 		pipeline = "text-to-speech"
 		cap = core.Capability_TextToSpeech
-		modelID = *v.model_id
+		modelID = "testing"
 
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.TextToSpeech(ctx, v)

@@ -437,7 +437,7 @@ func (ls *LivepeerServer) TextToSpeech() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToSpeech request prompt=%v model_id=%v", req.text_input, *req.model_id)
+		// clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToSpeech request prompt=%v model_id=%v", req.text_input, *req.model_id)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -445,25 +445,31 @@ func (ls *LivepeerServer) TextToSpeech() http.Handler {
 			sessManager: ls.AISessionManager,
 		}
 
-		start := time.Now()
-		resp, err := processTextToSpeech(ctx, params, req)
+		// start := time.Now()
+		_, err := processTextToSpeech(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 
-		took := time.Since(start)
-		clog.Infof(ctx, "Processed TextToSpeech request prompt=%v model_id=%v took=%v", req.text_input, *req.ModelId, took)
+		// took := time.Since(start)
+		// clog.Infof(ctx, "Processed TextToSpeech request prompt=%v model_id=%v took=%v", req.text_input, *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "audio/mp4")
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(resp.AudioData); err != nil {
-			clog.Errorf(ctx, "Failed to write audio response: %v", err)
-		}
+
+		// if _, err := w.Write(resp.content); err != nil {
+		// 	clog.Errorf(ctx, "Failed to write audio response: %v", err)
+		// }
 	})
 }
