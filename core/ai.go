@@ -273,8 +273,6 @@ func (m *RemoteAIWorkerManager) Stop(ctx context.Context) error {
 func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 	m.workersMutex.Lock()
 	defer m.workersMutex.Unlock()
-	// TODO: Pass cap instead? Considering it's a public function might be
-	// better to pass the string directly
 	var cap Capability
 	switch pipeline {
 	case "text-to-image":
@@ -283,11 +281,13 @@ func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 		cap = Capability_ImageToImage
 	case "upscale":
 		cap = Capability_Upscale
+	case "image-to-video":
+		cap = Capability_ImageToVideo
 	default:
 		return false
 	}
-
 	return len(m.remoteWorkers[cap][modelID]) > 0
+
 }
 
 func (m *RemoteAIWorkerManager) aiResult(res *RemoteAIWorkerResult) {
