@@ -36,6 +36,8 @@ require (
 	pgregory.net/rapid v1.1.0
 )
 
+replace github.com/livepeer/ai-worker => /home/user/ai-worker
+
 require (
 	cloud.google.com/go v0.110.2 // indirect
 	cloud.google.com/go/compute v1.20.0 // indirect
