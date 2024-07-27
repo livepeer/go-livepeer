@@ -207,66 +207,54 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 
 		// var aiResult *core.RemoteAIWorkerResult
 		var aiResultBytes []byte
-		var unmarshalReqErr error
-		var unmarshalResErr error
-		var aiReqErr error
+
+		var err error
 
 		switch aiJob.Type {
 		case net.AIRequestType_TextToImage:
 			var req worker.TextToImageJSONRequestBody
 			var res *worker.ImageResponse
-			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
 				glog.Infof("Text-to-Image AI Job decoded model=%v prompt=%v", req.ModelId, req.Prompt)
-				res, aiReqErr = n.AIWorker.TextToImage(context.Background(), req)
-				if aiReqErr == nil {
-					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				res, err = n.AIWorker.TextToImage(context.Background(), req)
+				if err == nil {
+					aiResultBytes, err = json.Marshal(res)
 				}
 			}
 		case net.AIRequestType_ImageToImage:
 			var req worker.ImageToImageMultipartRequestBody
 			var res *worker.ImageResponse
-			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
 				glog.Infof("Image-to-Image AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-				res, aiReqErr = n.AIWorker.ImageToImage(context.Background(), req)
-				if aiReqErr == nil {
-					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				res, err = n.AIWorker.ImageToImage(context.Background(), req)
+				if err == nil {
+					aiResultBytes, err = json.Marshal(res)
 				}
 			}
 		case net.AIRequestType_Upscale:
 			var req worker.UpscaleMultipartRequestBody
 			var res *worker.ImageResponse
-			if unmarshalReqErr = json.Unmarshal(aiJob.Data, &req); unmarshalReqErr == nil {
+			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
 				glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
-				res, aiReqErr = n.AIWorker.Upscale(context.Background(), req)
-				if aiReqErr == nil {
-					aiResultBytes, unmarshalResErr = json.Marshal(res)
+				res, err = n.AIWorker.Upscale(context.Background(), req)
+				if err == nil {
+					aiResultBytes, err = json.Marshal(res)
 				}
 			}
 		default:
 			glog.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
-			return
+			err = fmt.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
 		}
 
-		if unmarshalReqErr != nil {
-			glog.Errorf("Unable to unmarshal AI job data taskID=%v err=%q", aiJob.TaskID, unmarshalReqErr)
-			return
-		}
-
-		if aiReqErr != nil {
-			glog.Errorf("AI job failed ID=%v err=%v", aiJob.TaskID, aiReqErr)
-			return
-		}
-
-		if unmarshalResErr != nil {
-			glog.Errorf("Unable to marshal AI job response ID=%v err=%q", aiJob.TaskID, unmarshalResErr)
-			return
+		if err != nil {
+			glog.Errorf("AI job failed ID=%v err=%v", aiJob.TaskID, err)
 		}
 
 		aiResult := &core.RemoteAIWorkerResult{
 			JobType: aiJob.Type,
 			TaskID:  aiJob.TaskID,
 			Bytes:   aiResultBytes,
-			Err:     aiReqErr,
+			Err:     err,
 		}
 
 		// Create a bytes.Buffer and write the JSON data to it

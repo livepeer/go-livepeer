@@ -6,7 +6,6 @@ import (
 
 	"sync"
 
-	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -520,7 +519,6 @@ func (cap *Capabilities) AddCapacity(newCaps *Capabilities) {
 		curCapacity, e := cap.capacities[capability]
 		if !e {
 			cap.capacities[capability] = 0
-			glog.Infof("Adding new capability %v", capability)
 		}
 		cap.capacities[capability] = curCapacity + capacity
 		arrIdx := int(capability) / 64
