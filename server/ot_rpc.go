@@ -205,9 +205,7 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 		}
 		glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
 
-		// var aiResult *core.RemoteAIWorkerResult
 		var aiResultBytes []byte
-
 		var err error
 
 		switch aiJob.Type {
@@ -254,7 +252,7 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 			JobType: aiJob.Type,
 			TaskID:  aiJob.TaskID,
 			Bytes:   aiResultBytes,
-			Err:     err,
+			Err:     err.Error(),
 		}
 
 		// Create a bytes.Buffer and write the JSON data to it
@@ -484,13 +482,6 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterRequest, stream net.Transcode
 
 // Orchestrator HTTP
 
-type RemoteAIWorkerResult struct {
-	JobType net.AIRequestType
-	TaskID  int64
-	Bytes   []byte
-	Err     error
-}
-
 func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
@@ -514,8 +505,8 @@ func (h *lphttp) AIWorkerResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Err != nil {
-		respondWithError(w, req.Err.Error(), http.StatusInternalServerError)
+	if req.Err != "" {
+		respondWithError(w, req.Err, http.StatusInternalServerError)
 		return
 	}
 

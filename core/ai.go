@@ -45,7 +45,7 @@ type RemoteAIWorkerResult struct {
 	JobType net.AIRequestType
 	TaskID  int64
 	Bytes   []byte
-	Err     error
+	Err     string
 }
 
 func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
@@ -149,8 +149,8 @@ func (m *RemoteAIWorkerManager) processAIRequest(ctx context.Context, capability
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case chanData := <-taskChan:
-		if chanData.Err != nil {
-			return nil, chanData.Err
+		if chanData.Err != "" {
+			return nil, fmt.Errorf("%v", chanData.Err)
 		}
 		glog.Infof("Received AI result for task %d", chanData.TaskID)
 		var res interface{}
