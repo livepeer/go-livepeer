@@ -559,7 +559,6 @@ func (cap *Capabilities) AddCapacity(newCaps *Capabilities) {
 		curCapacity, e := cap.capacities[capability]
 		if !e {
 			cap.capacities[capability] = 0
-			glog.Infof("Adding new capability %v", capability)
 		}
 		cap.capacities[capability] = curCapacity + capacity
 		arrIdx := int(capability) / 64
