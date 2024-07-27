@@ -200,10 +200,8 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 		return
 	default:
 		if aiJob == nil {
-			glog.Error("Received nil AI job")
 			return
 		}
-		glog.Infof("Received AI job %v type: %v", aiJob.TaskID, aiJob.Type)
 
 		var aiResultBytes []byte
 		var err error
@@ -213,7 +211,7 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 			var req worker.TextToImageJSONRequestBody
 			var res *worker.ImageResponse
 			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
-				glog.Infof("Text-to-Image AI Job decoded model=%v prompt=%v", req.ModelId, req.Prompt)
+				glog.V(common.DEBUG).Infof("Text-to-Image AI Job received model=%v prompt=%v", req.ModelId, req.Prompt)
 				res, err = n.AIWorker.TextToImage(context.Background(), req)
 				if err == nil {
 					aiResultBytes, err = json.Marshal(res)
@@ -223,7 +221,7 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 			var req worker.ImageToImageMultipartRequestBody
 			var res *worker.ImageResponse
 			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
-				glog.Infof("Image-to-Image AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
+				glog.V(common.DEBUG).Infof("Image-to-Image AI Job received model=%v image=%v", req.ModelId, req.Image.Filename())
 				res, err = n.AIWorker.ImageToImage(context.Background(), req)
 				if err == nil {
 					aiResultBytes, err = json.Marshal(res)
@@ -233,15 +231,25 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 			var req worker.UpscaleMultipartRequestBody
 			var res *worker.ImageResponse
 			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
-				glog.Infof("Upscale AI Job decoded model=%v image=%v", req.ModelId, req.Image.Filename())
+				glog.V(common.DEBUG).Infof("Upscale AI Job received model=%v image=%v", req.ModelId, req.Image.Filename())
 				res, err = n.AIWorker.Upscale(context.Background(), req)
 				if err == nil {
 					aiResultBytes, err = json.Marshal(res)
 				}
 			}
+		case net.AIRequestType_ImageToVideo:
+			var req worker.ImageToVideoMultipartRequestBody
+			var res *worker.VideoResponse
+			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
+				glog.V(common.DEBUG).Infof("Image-to-Video AI Job received model=%v image=%v", req.ModelId, req.Image.Filename())
+				res, err = n.AIWorker.ImageToVideo(context.Background(), req)
+				if err == nil {
+					aiResultBytes, err = json.Marshal(res)
+				}
+			}
 		default:
-			glog.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
 			err = fmt.Errorf("Invalid Job type decoded taskID=%v type=%v", aiJob.TaskID, aiJob.Type)
+			glog.Error(err)
 		}
 
 		if err != nil {
@@ -260,7 +268,6 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 		jsonAiResult, err := json.Marshal(aiResult)
 		if err != nil {
 			glog.Errorf("Error marshaling JSON err=%q", err)
-			return
 		}
 		body.Write(jsonAiResult)
 
