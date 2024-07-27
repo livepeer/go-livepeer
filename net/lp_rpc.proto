@@ -366,6 +366,7 @@ enum AIRequestType {
   ImageToImage= 1;
   ImageToVideo= 2;
   Upscale = 3;
+  AudioToText = 4;
 }
 // Sent by the orchestrator to the remote AI worker
 message NotifyAIJob {

@@ -137,7 +137,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipa
 }
 
 func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	return orch.node.AudioToText(ctx, req)
+	return orch.node.audioToText(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -970,7 +970,7 @@ func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartR
 	return n.AIWorker.Upscale(ctx, req)
 }
 
-func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (n *LivepeerNode) audioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
 
