@@ -175,6 +175,9 @@ func (m *RemoteAIWorkerManager) processAIRequest(ctx context.Context, capability
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case chanData := <-taskChan:
+		if chanData.Err != nil {
+			return nil, chanData.Err
+		}
 		glog.Infof("Received AI result for task %d", chanData.TaskID)
 		var res interface{}
 		switch aiRequestType {
