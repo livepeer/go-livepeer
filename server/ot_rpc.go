@@ -237,12 +237,23 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 					aiResultBytes, err = json.Marshal(res)
 				}
 			}
+		// TODO: apparently this uses imageReponse for now (?)
 		case net.AIRequestType_ImageToVideo:
 			var req worker.ImageToVideoMultipartRequestBody
 			var res *worker.VideoResponse
 			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
 				glog.V(common.DEBUG).Infof("Image-to-Video AI Job received model=%v image=%v", req.ModelId, req.Image.Filename())
 				res, err = n.AIWorker.ImageToVideo(context.Background(), req)
+				if err == nil {
+					aiResultBytes, err = json.Marshal(res)
+				}
+			}
+		case net.AIRequestType_AudioToText:
+			var req worker.AudioToTextMultipartRequestBody
+			var res *worker.TextResponse
+			if err = json.Unmarshal(aiJob.Data, &req); err == nil {
+				glog.V(common.DEBUG).Infof("Audio-to-Text AI Job received model=%v audio=%v", req.ModelId, req.Audio.Filename())
+				res, err = n.AIWorker.AudioToText(context.Background(), req)
 				if err == nil {
 					aiResultBytes, err = json.Marshal(res)
 				}

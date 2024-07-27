@@ -237,6 +237,12 @@ func (m *RemoteAIWorkerManager) processWorkerResponse(chanData *RemoteAIWorkerRe
 			return nil, fmt.Errorf("failed to unmarshal video response: %w", err)
 		}
 		res = &videoRes
+	case net.AIRequestType_AudioToText:
+		var textRes worker.TextResponse
+		if err := json.Unmarshal(chanData.Bytes, &textRes); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal text response: %w", err)
+		}
+		res = &textRes
 	default:
 		var imgRes worker.ImageResponse
 		if err := json.Unmarshal(chanData.Bytes, &imgRes); err != nil {
@@ -271,28 +277,20 @@ func (m *RemoteAIWorkerManager) Upscale(ctx context.Context, req worker.UpscaleM
 	return res.(*worker.ImageResponse), nil
 }
 
-// Helper function to get ModelId from different request types
-func getModelID(req interface{}) string {
-	switch r := req.(type) {
-	case worker.TextToImageJSONRequestBody:
-		return *r.ModelId
-	case worker.ImageToImageMultipartRequestBody:
-		return *r.ModelId
-	case worker.UpscaleMultipartRequestBody:
-		return *r.ModelId
-	case worker.ImageToVideoMultipartRequestBody:
-		return *r.ModelId
-	default:
-		return ""
-	}
-}
-
 func (m *RemoteAIWorkerManager) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	res, err := m.processAIRequest(ctx, Capability_ImageToVideo, req, net.AIRequestType_ImageToVideo)
 	if err != nil {
 		return nil, err
 	}
 	return res.(*worker.VideoResponse), nil
+}
+
+func (m *RemoteAIWorkerManager) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	res, err := m.processAIRequest(ctx, Capability_AudioToText, req, net.AIRequestType_AudioToText)
+	if err != nil {
+		return nil, err
+	}
+	return res.(*worker.TextResponse), nil
 }
 
 func (m *RemoteAIWorkerManager) Warm(ctx context.Context, pipeline, modelID string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
@@ -316,6 +314,8 @@ func (m *RemoteAIWorkerManager) HasCapacity(pipeline, modelID string) bool {
 		cap = Capability_Upscale
 	case "image-to-video":
 		cap = Capability_ImageToVideo
+	case "audio-to-text":
+		cap = Capability_AudioToText
 	default:
 		return false
 	}
@@ -470,4 +470,19 @@ func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
 	}
 
 	return numInferenceSteps
+}
+
+func getModelID(req interface{}) string {
+	var holder struct {
+		ModelId *string `json:"model_id"`
+	}
+
+	b, err := json.Marshal(req)
+	if err == nil {
+		json.Unmarshal(b, &holder)
+		if holder.ModelId != nil {
+			return *holder.ModelId
+		}
+	}
+	return ""
 }
