@@ -263,15 +263,17 @@ func runAIJob(ctx context.Context, aiJob *net.NotifyAIJob, n *core.LivepeerNode,
 			glog.Error(err)
 		}
 
+		var errString string
 		if err != nil {
 			glog.Errorf("AI job failed ID=%v err=%v", aiJob.TaskID, err)
+			errString = err.Error()
 		}
 
 		aiResult := &core.RemoteAIWorkerResult{
 			JobType: aiJob.Type,
 			TaskID:  aiJob.TaskID,
 			Bytes:   aiResultBytes,
-			Err:     err.Error(),
+			Err:     errString,
 		}
 
 		// Create a bytes.Buffer and write the JSON data to it
