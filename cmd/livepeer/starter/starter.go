@@ -204,7 +204,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxPricePerUnit := "0"
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
-	defaultAutoAdjustPrice := true
+	defaultAutoAdjustPrice := false
 	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
