@@ -396,26 +396,35 @@ type stubOS struct {
 	storageType int32
 }
 
+func (os *stubOS) OS() drivers.OSDriver {
+	return nil
+}
+func (os *stubOS) SaveData(context.Context, string, io.Reader, *drivers.FileProperties, time.Duration) (string, error) {
+	return "", nil
+}
+func (os *stubOS) EndSession() {}
 func (os *stubOS) GetInfo() *drivers.OSInfo {
 	if os.storageType == stubOSMagic {
 		return nil
 	}
 	return &drivers.OSInfo{StorageType: drivers.OSInfo_StorageType(os.storageType)}
 }
-func (os *stubOS) EndSession() {}
-func (os *stubOS) SaveData(context.Context, string, io.Reader, map[string]string, time.Duration) (string, error) {
-	return "", nil
-}
 func (os *stubOS) IsExternal() bool      { return false }
 func (os *stubOS) IsOwn(url string) bool { return true }
 func (os *stubOS) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
+func (os *stubOS) DeleteFile(ctx context.Context, name string) error {
+	return nil
+}
 func (os *stubOS) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
 	return nil, nil
 }
-func (os *stubOS) OS() drivers.OSDriver {
-	return nil
+func (os *stubOS) ReadDataRange(ctx context.Context, name, byteRange string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (os *stubOS) Presign(name string, expire time.Duration) (string, error) {
+	return "", nil
 }
 
 func TestCapability_StorageToCapability(t *testing.T) {

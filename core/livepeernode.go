@@ -64,20 +64,20 @@ func (t NodeType) String() string {
 }
 
 type CapabilityPriceMenu struct {
-	modelPrices map[string]*big.Rat
+	modelPrices map[string]*AutoConvertedPrice
 }
 
 func NewCapabilityPriceMenu() CapabilityPriceMenu {
 	return CapabilityPriceMenu{
-		modelPrices: make(map[string]*big.Rat),
+		modelPrices: make(map[string]*AutoConvertedPrice),
 	}
 }
 
-func (m CapabilityPriceMenu) SetPriceForModelID(modelID string, price *big.Rat) {
+func (m CapabilityPriceMenu) SetPriceForModelID(modelID string, price *AutoConvertedPrice) {
 	m.modelPrices[modelID] = price
 }
 
-func (m CapabilityPriceMenu) PriceForModelID(modelID string) *big.Rat {
+func (m CapabilityPriceMenu) PriceForModelID(modelID string) *AutoConvertedPrice {
 	return m.modelPrices[modelID]
 }
 
@@ -87,7 +87,7 @@ func NewCapabilityPrices() CapabilityPrices {
 	return make(map[Capability]CapabilityPriceMenu)
 }
 
-func (cp CapabilityPrices) SetPriceForModelID(cap Capability, modelID string, price *big.Rat) {
+func (cp CapabilityPrices) SetPriceForModelID(cap Capability, modelID string, price *AutoConvertedPrice) {
 	menu, ok := cp[cap]
 	if !ok {
 		menu = NewCapabilityPriceMenu()
@@ -97,7 +97,7 @@ func (cp CapabilityPrices) SetPriceForModelID(cap Capability, modelID string, pr
 	menu.SetPriceForModelID(modelID, price)
 }
 
-func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *big.Rat {
+func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *AutoConvertedPrice {
 	menu, ok := cp[cap]
 	if !ok {
 		return nil
@@ -212,7 +212,7 @@ func (n *LivepeerNode) GetBasePrices() map[string]*big.Rat {
 	return prices
 }
 
-func (n *LivepeerNode) SetBasePriceForCap(b_eth_addr string, cap Capability, modelID string, price *big.Rat) {
+func (n *LivepeerNode) SetBasePriceForCap(b_eth_addr string, cap Capability, modelID string, price *AutoConvertedPrice) {
 	addr := strings.ToLower(b_eth_addr)
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -236,7 +236,7 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 		return nil
 	}
 
-	return prices.PriceForModelID(cap, modelID)
+	return prices.PriceForModelID(cap, modelID).Value()
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -23,14 +24,40 @@ type AI interface {
 	HasCapacity(pipeline, modelID string) bool
 }
 
+// Custom type to handle both string and int but store as string.
+type StringInt string
+
+// UnmarshalJSON method to handle both string and int.
+func (s *StringInt) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as int.
+	var intValue int64
+	if err := json.Unmarshal(data, &intValue); err == nil {
+		*s = StringInt(strconv.FormatInt(intValue, 10))
+		return nil
+	}
+
+	var strValue string
+	if err := json.Unmarshal(data, &strValue); err == nil {
+		*s = StringInt(strValue)
+		return nil
+	}
+
+	return fmt.Errorf("invalid value for StringInt: %s", data)
+}
+
+// String converts the StringInt type to a string.
+func (s StringInt) String() string {
+	return string(s)
+}
+
 type AIModelConfig struct {
 	Pipeline          string                   `json:"pipeline"`
 	ModelID           string                   `json:"model_id"`
 	URL               string                   `json:"url,omitempty"`
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
-	PricePerUnit      int64                    `json:"price_per_unit,omitempty"`
-	PixelsPerUnit     int64                    `json:"pixels_per_unit,omitempty"`
+	PricePerUnit      StringInt                `json:"price_per_unit,omitempty"`
+	PixelsPerUnit     StringInt                `json:"pixels_per_unit,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
 }
 
@@ -39,7 +66,7 @@ func (config *AIModelConfig) UnmarshalJSON(data []byte) error {
 	type AIModelConfigAlias AIModelConfig
 	// Set default values for fields
 	defaultConfig := &AIModelConfigAlias{
-		PixelsPerUnit: 1,
+		PixelsPerUnit: "1",
 	}
 
 	if err := json.Unmarshal(data, defaultConfig); err != nil {

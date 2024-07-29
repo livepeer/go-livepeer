@@ -479,7 +479,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		capacities:            make(map[Capability]int),
 		version:               caps.Version,
 		constraints:           Constraints{minVersion: caps.Constraints.GetMinVersion()},
-		capabilityConstraints: make(map[Capability]*PerCapabilityConstraints),
+		capabilityConstraints: make(CapabilityConstraints),
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)
@@ -512,7 +512,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 }
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion}
+	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion, capabilityConstraints: make(CapabilityConstraints)}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
