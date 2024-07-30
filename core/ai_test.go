@@ -114,55 +114,64 @@ func TestProcessAIRequest(t *testing.T) {
 
 	res, err := manager.processAIRequest(context.Background(), Capability_TextToImage, req, net.AIRequestType_TextToImage)
 
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error")
 
 	imgRes, ok := res.(*aiworker.ImageResponse)
-	if !ok {
-		t.Fatalf("Expected *ImageResponse, got %T", res)
-	}
+	require.True(t, ok, "Expected *ImageResponse")
 
-	if len(imgRes.Images) != 1 || imgRes.Images[0].Url != "test-image" {
-		t.Errorf("Unexpected response: %+v", imgRes)
-	}
+	assert.Len(t, imgRes.Images, 1, "Expected 1 image in response")
+	assert.Equal(t, "test-image", imgRes.Images[0].Url, "Unexpected image URL")
 }
 
 func TestSelectWorker(t *testing.T) {
 	manager := NewRemoteAIWorkerManager()
-	worker1 := NewRemoteAIWorker(manager, nil, "addr1", nil)
-	worker2 := NewRemoteAIWorker(manager, nil, "addr2", nil)
+	cap1 := &Capabilities{
+		capabilityConstraints: CapabilityConstraints{
+			Capability_TextToImage: &PerCapabilityConstraints{
+				Models: ModelConstraints{
+					"model1": &ModelConstraint{},
+				},
+			},
+		},
+	}
+	cap2 := &Capabilities{
+		capabilityConstraints: CapabilityConstraints{
+			Capability_TextToImage: &PerCapabilityConstraints{
+				Models: ModelConstraints{
+					"model2": &ModelConstraint{},
+				},
+			},
+		},
+	}
+
+	worker1 := NewRemoteAIWorker(manager, nil, "addr1", cap1)
+	worker2 := NewRemoteAIWorker(manager, nil, "addr2", cap2)
+	worker3 := NewRemoteAIWorker(manager, nil, "addr3", cap1)
 
 	manager.remoteWorkers[Capability_TextToImage] = map[string][]*RemoteAIWorker{
-		"model1": {worker1, worker2},
+		"model1": {worker1, worker3},
+		"model2": {worker2},
 	}
 
 	// First selection
 	selected, err := manager.selectWorker(Capability_TextToImage, "model1")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if selected.addr != "addr1" {
-		t.Errorf("Expected addr1, got %s", selected.addr)
-	}
+	require.NoError(t, err, "Unexpected error")
+	assert.Equal(t, "addr1", selected.addr, "Expected addr1")
 
 	// Second selection (should rotate)
 	selected, err = manager.selectWorker(Capability_TextToImage, "model1")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if selected.addr != "addr2" {
-		t.Errorf("Expected addr2, got %s", selected.addr)
-	}
+	require.NoError(t, err, "Unexpected error")
+	assert.Equal(t, "addr3", selected.addr, "Expected addr3")
 
 	// Third selection (should rotate back to first)
 	selected, err = manager.selectWorker(Capability_TextToImage, "model1")
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if selected.addr != "addr1" {
-		t.Errorf("Expected addr1, got %s", selected.addr)
-	}
+	require.NoError(t, err, "Unexpected error")
+	assert.Equal(t, "addr1", selected.addr, "Expected addr1")
+
+	// model2
+	selected, err = manager.selectWorker(Capability_TextToImage, "model2")
+	require.NoError(t, err, "Unexpected error")
+	assert.Equal(t, "addr2", selected.addr, "Expected addr2")
 }
 
 func TestHasCapacity(t *testing.T) {
@@ -173,42 +182,26 @@ func TestHasCapacity(t *testing.T) {
 		"model1": {worker},
 	}
 
-	if !manager.HasCapacity("text-to-image", "model1") {
-		t.Error("Expected HasCapacity to return true for text-to-image model1")
-	}
-	if manager.HasCapacity("text-to-image", "model2") {
-		t.Error("Expected HasCapacity to return false for text-to-image model2")
-	}
-	if manager.HasCapacity("image-to-image", "model1") {
-		t.Error("Expected HasCapacity to return false for image-to-image model1")
-	}
+	assert.True(t, manager.HasCapacity("text-to-image", "model1"), "Expected HasCapacity to return true for text-to-image model1")
+	assert.False(t, manager.HasCapacity("text-to-image", "model2"), "Expected HasCapacity to return false for text-to-image model2")
+	assert.False(t, manager.HasCapacity("image-to-image", "model1"), "Expected HasCapacity to return false for image-to-image model1")
 }
 
 func TestAddRemoveTaskChan(t *testing.T) {
 	manager := NewRemoteAIWorkerManager()
 
 	taskID, taskChan := manager.addTaskChan()
-	if taskID != 0 {
-		t.Errorf("Expected taskID 0, got %d", taskID)
-	}
-	if taskChan == nil {
-		t.Error("Expected non-nil taskChan")
-	}
+	assert.Equal(t, int64(0), taskID, "Expected taskID 0")
+	assert.NotNil(t, taskChan, "Expected non-nil taskChan")
 
 	retrievedChan, err := manager.getTaskChan(taskID)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	if taskChan != retrievedChan {
-		t.Error("Retrieved channel does not match added channel")
-	}
+	require.NoError(t, err, "Unexpected error")
+	assert.Equal(t, taskChan, retrievedChan, "Retrieved channel does not match added channel")
 
 	manager.removeTaskChan(taskID)
 
 	_, err = manager.getTaskChan(taskID)
-	if err == nil {
-		t.Error("Expected error after removing task channel, got nil")
-	}
+	assert.Error(t, err, "Expected error after removing task channel")
 }
 
 func TestTextToImage(t *testing.T) {
