@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -374,4 +375,103 @@ func TestRemoteTranscoder_Error(t *testing.T) {
 	assert.NotNil(body)
 	assert.Equal("some error", string(body))
 	assert.True(panicked)
+}
+
+func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
+	var l lphttp
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
+	require.NoError(t, err)
+
+	l.AIWorkerResults(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
+}
+
+func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "BAD CREDENTIALS")
+
+	l.AIWorkerResults(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Contains(t, w.Body.String(), "Unauthorized")
+}
+
+func TestAIWorkerResults_ErrorsWhenBodyInvalid(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", bytes.NewBufferString("invalid json"))
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "application/json")
+
+	l.AIWorkerResults(w, r)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "invalid character")
+}
+
+func TestAIWorkerResults_ErrorsWhenAIResultHasError(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	result := core.RemoteAIWorkerResult{
+		Err: "AI processing error",
+	}
+	body, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", bytes.NewBuffer(body))
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "application/json")
+
+	l.AIWorkerResults(w, r)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "AI processing error")
+}
+
+func TestAIWorkerResults_SuccessfulProcessing(t *testing.T) {
+	var l lphttp
+	mockOrch := newStubOrchestrator()
+	l.orchestrator = mockOrch
+	var w = httptest.NewRecorder()
+
+	result := core.RemoteAIWorkerResult{
+		JobType: 1,
+		TaskID:  123,
+		Bytes:   []byte("AI result data"),
+	}
+	body, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", bytes.NewBuffer(body))
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerLPT)
+	r.Header.Set("Credentials", "")
+	r.Header.Set("Content-Type", "application/json")
+
+	l.AIWorkerResults(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, result.TaskID, mockOrch.lastAIResultPost.TaskID)
+	assert.Equal(t, result.JobType, mockOrch.lastAIResultPost.JobType)
+	assert.Equal(t, result.Bytes, mockOrch.lastAIResultPost.Bytes)
 }

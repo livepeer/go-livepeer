@@ -25,6 +25,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/crypto"
@@ -64,17 +65,28 @@ func (m *mockBalance) Clear() {
 }
 
 type stubOrchestrator struct {
-	priv         *ecdsa.PrivateKey
-	block        *big.Int
-	signErr      error
-	sessCapErr   error
-	ticketParams *net.TicketParams
-	priceInfo    *net.PriceInfo
-	serviceURI   string
-	res          *core.TranscodeResult
-	offchain     bool
-	caps         *core.Capabilities
-	authToken    *net.AuthToken
+	priv             *ecdsa.PrivateKey
+	block            *big.Int
+	signErr          error
+	sessCapErr       error
+	ticketParams     *net.TicketParams
+	priceInfo        *net.PriceInfo
+	serviceURI       string
+	res              *core.TranscodeResult
+	offchain         bool
+	caps             *core.Capabilities
+	authToken        *net.AuthToken
+	lastAIResultPost *core.RemoteAIWorkerResult
+}
+
+// PriceInfoForCaps implements Orchestrator.
+func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	panic("unimplemented")
+}
+
+// ServeRemoteAIWorker implements Orchestrator.
+func (r *stubOrchestrator) ServeRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+	panic("unimplemented")
 }
 
 func (r *stubOrchestrator) ServiceURI() *url.URL {
@@ -183,6 +195,35 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
+
+func (orch *stubOrchestrator) AIResult(res *core.RemoteAIWorkerResult) {
+	orch.lastAIResultPost = res
+}
+
+func (orch *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return false
+}
+
+func (orch *stubOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *stubOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *stubOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *stubOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *stubOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -192,7 +233,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b)
+	req, err := genOrchestratorReq(b, &net.Capabilities{})
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -224,7 +265,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b)
+	_, err = genOrchestratorReq(b, &net.Capabilities{})
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -1258,6 +1299,16 @@ type mockOrchestrator struct {
 	mock.Mock
 }
 
+// PriceInfoForCaps implements Orchestrator.
+func (o *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	panic("unimplemented")
+}
+
+// ServeRemoteAIWorker implements Orchestrator.
+func (o *mockOrchestrator) ServeRemoteAIWorker(stream net.Transcoder_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+	panic("unimplemented")
+}
+
 func (o *mockOrchestrator) ServiceURI() *url.URL {
 	args := o.Called()
 	if args.Get(0) != nil {
@@ -1344,6 +1395,33 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 		return args.Get(0).(*net.AuthToken)
 	}
 	return nil
+}
+
+func (orch *mockOrchestrator) AIResult(res *core.RemoteAIWorkerResult) {
+}
+
+func (orch *mockOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *mockOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *mockOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *mockOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+
+func (orch *mockOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+
+func (orch *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return false
 }
 
 func defaultTicketParams() *net.TicketParams {
