@@ -369,7 +369,7 @@ type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
 	stream       net.Transcoder_RegisterAIWorkerServer
 	addr         string
-	capabilities *Capabilities // TODO: AI capabilities only
+	capabilities *Capabilities
 	eof          chan struct{}
 }
 
