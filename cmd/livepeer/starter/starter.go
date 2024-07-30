@@ -1106,18 +1106,19 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
+			// Set price per unit base info.
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+			}
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
+
 			for _, config := range configs {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
 
-				// Set price per unit base info.
-				pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
-				if !ok || !pixelsPerUnit.IsInt() {
-					panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
-				}
-				if pixelsPerUnit.Sign() <= 0 {
-					// Can't divide by 0
-					panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
-				}
 				pricePerUnit, currency, err := parsePricePerUnit(config.PricePerUnit.String())
 				if err != nil {
 					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
