@@ -569,15 +569,16 @@ func (cap *Capabilities) AddCapacity(newCaps *Capabilities) {
 		cap.bitstring[arrIdx] |= uint64(1 << bitIdx)
 	}
 
-	for capability, constraints := range newCaps.constraints {
-		if cap.constraints[capability] == nil {
-			cap.constraints[capability] = constraints
+	for capability, constraints := range newCaps.capabilityConstraints {
+		if cap.capabilityConstraints[capability] == nil {
+			cap.capabilityConstraints[capability] = constraints
 		} else {
 			for modelID, modelConstraint := range constraints.Models {
-				if cap.constraints[capability].Models[modelID] == nil {
-					// TODO: this re-writes Warm; check
-					cap.constraints[capability].Models[modelID] = modelConstraint
+				if modelConstraints := cap.capabilityConstraints[capability].Models[modelID]; modelConstraints != nil && modelConstraints.Warm {
+					// already available warm, don't overwrite
+					continue
 				}
+				cap.capabilityConstraints[capability].Models[modelID] = modelConstraint
 			}
 		}
 	}
@@ -600,12 +601,12 @@ func (cap *Capabilities) RemoveCapacity(goneCaps *Capabilities) {
 		}
 	}
 
-	for capability, constraints := range goneCaps.constraints {
-		if cap.constraints[capability] == nil {
+	for capability, constraints := range goneCaps.capabilityConstraints {
+		if cap.capabilityConstraints[capability] == nil {
 			continue
 		}
 		for modelID := range constraints.Models {
-			delete(cap.constraints[capability].Models, modelID)
+			delete(cap.capabilityConstraints[capability].Models, modelID)
 		}
 	}
 }

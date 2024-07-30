@@ -102,7 +102,7 @@ func (m *RemoteAIWorkerManager) Manage(stream net.Transcoder_RegisterAIWorkerSer
 	}()
 
 	m.workersMutex.Lock()
-	for cap, constraints := range capabilities.Constraints {
+	for cap, constraints := range capabilities.CapabilityConstraints {
 		c := Capability(cap)
 		// Initialize the inner map if it's nil
 		if m.remoteWorkers[c] == nil {

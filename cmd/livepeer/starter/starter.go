@@ -1232,6 +1232,93 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}()
 	}
 
+	if !*cfg.AIWorker && *cfg.AIModels != "" {
+		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+
+		// Set price per unit base info.
+		pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+		if !ok || !pixelsPerUnit.IsInt() {
+			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+		}
+		if pixelsPerUnit.Sign() <= 0 {
+			// Can't divide by 0
+			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+
+		for _, config := range configs {
+			modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+
+			pricePerUnit, currency, err := parsePricePerUnit(config.PricePerUnit.String())
+			if err != nil {
+				panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+			} else if pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+			}
+			pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+			autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
+			if err != nil {
+				panic(fmt.Errorf("error converting price: %v", err))
+			}
+
+			switch config.Pipeline {
+			case "text-to-image":
+				_, ok := capabilityConstraints[core.Capability_TextToImage]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_TextToImage)
+					capabilityConstraints[core.Capability_TextToImage] = &core.PerCapabilityConstraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				capabilityConstraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+
+				n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, autoPrice)
+			case "image-to-image":
+				_, ok := capabilityConstraints[core.Capability_ImageToImage]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_ImageToImage)
+					capabilityConstraints[core.Capability_ImageToImage] = &core.PerCapabilityConstraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, autoPrice)
+			case "image-to-video":
+				_, ok := capabilityConstraints[core.Capability_ImageToVideo]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_ImageToVideo)
+					capabilityConstraints[core.Capability_ImageToVideo] = &core.PerCapabilityConstraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, autoPrice)
+			case "upscale":
+				_, ok := capabilityConstraints[core.Capability_Upscale]
+				if !ok {
+					aiCaps = append(aiCaps, core.Capability_Upscale)
+					capabilityConstraints[core.Capability_Upscale] = &core.PerCapabilityConstraints{
+						Models: make(map[string]*core.ModelConstraint),
+					}
+				}
+
+				n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, autoPrice)
+			}
+
+			if len(aiCaps) > 0 {
+				capability := aiCaps[len(aiCaps)-1]
+				price := n.GetBasePriceForCap("default", capability, config.ModelID)
+				if price != nil {
+					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
+				}
+			}
+		}
+	}
+
 	if *cfg.Objectstore != "" {
 		prepared, err := drivers.PrepareOSURL(*cfg.Objectstore)
 		if err != nil {
