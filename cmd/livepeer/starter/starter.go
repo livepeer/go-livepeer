@@ -1124,7 +1124,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 				}
 				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
-				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
+				var autoPrice *core.AutoConvertedPrice
+				if *cfg.Network == "offchain" {
+					autoPrice = core.NewFixedPrice(pricePerPixel)
+				} else {
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
+				}
 				if err != nil {
 					panic(fmt.Errorf("error converting price: %v", err))
 				}
