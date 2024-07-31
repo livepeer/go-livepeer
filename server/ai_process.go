@@ -32,6 +32,7 @@ const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-x
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultLlmGenerateModelID = "meta-llama/llama-3.1-8B-Instruct"
 
 type ServiceUnavailableError struct {
 	err error
@@ -792,6 +793,159 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+func CalculateLlmGenerateLatencyScore(took time.Duration, tokensUsed int) float64 {
+	if tokensUsed <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(tokensUsed)
+}
+
+func processLlmGenerate(ctx context.Context, params aiRequestParams, req worker.LlmGenerateFormdataRequestBody) (interface{}, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Stream != nil && *req.Stream {
+		streamChan, ok := resp.(chan worker.LlmStreamChunk)
+		if !ok {
+			return nil, errors.New("unexpected response type for streaming request")
+		}
+		return streamChan, nil
+	}
+
+	llmResp, ok := resp.(*worker.LlmResponse)
+	if !ok {
+		return nil, errors.New("unexpected response type")
+	}
+
+	return llmResp, nil
+}
+
+func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISession, req worker.LlmGenerateFormdataRequestBody) (interface{}, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewLlmGenerateMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, nil)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: calculate payment
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, 0)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.LlmGenerateWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	if req.Stream != nil && *req.Stream {
+		return handleSSEStream(ctx, resp.Body, sess, req, start)
+	}
+
+	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
+}
+
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.LlmGenerateFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
+	streamChan := make(chan worker.LlmStreamChunk, 100)
+	go func() {
+		defer close(streamChan)
+		scanner := bufio.NewScanner(body)
+		var totalTokens int
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					streamChan <- worker.LlmStreamChunk{Done: true, TokensUsed: totalTokens}
+					break
+				}
+				var chunk worker.LlmStreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
+					continue
+				}
+				totalTokens += chunk.TokensUsed
+				streamChan <- chunk
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			clog.Errorf(ctx, "Error reading SSE stream: %v", err)
+		}
+
+		took := time.Since(start)
+		sess.LatencyScore = CalculateLlmGenerateLatencyScore(took, totalTokens)
+
+		if monitor.Enabled {
+			var pricePerAIUnit float64
+			if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+				pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+			}
+			monitor.AIRequestFinished(ctx, "llm-generate", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		}
+	}()
+
+	return streamChan, nil
+}
+
+func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.LlmGenerateFormdataRequestBody, start time.Time) (*worker.LlmResponse, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	var res worker.LlmResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	took := time.Since(start)
+	sess.LatencyScore = CalculateLlmGenerateLatencyScore(took, res.TokensUsed)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+		monitor.AIRequestFinished(ctx, "llm-generate", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -851,6 +1005,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.LlmGenerateFormdataRequestBody:
+		cap = core.Capability_LlmGenerate
+		modelID = defaultLlmGenerateModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLlmGenerate(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

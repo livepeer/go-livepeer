@@ -79,6 +79,7 @@ const (
 	Capability_Upscale
 	Capability_AudioToText
 	Capability_SegmentAnything2
+	Capability_LlmGenerate
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -116,6 +117,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
+	Capability_LlmGenerate:                "LLM Generate",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
