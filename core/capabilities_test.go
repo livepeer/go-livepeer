@@ -353,6 +353,13 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	orch.version = "0.4.1-0.21000000000000-06f1f383fb18"
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 
+	// broadcaster is not compatible with orchestrator - no pre-release O's version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.4.1-0.20000000000000-06f1f383fb18"
+	orch.version = "0.4.1"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
 	// broadcaster is not compatible with orchestrator pre-release - old O's version
 	orch = NewCapabilities(nil, nil)
 	bcast = NewCapabilities(nil, nil)
@@ -366,7 +373,6 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	bcast.constraints.minVersion = "0.4.1-0.20000000000000-06f1f383fb18"
 	orch.version = "0.4.1-0.21000000000000-06f1f383fb18"
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
 }
 
 func TestCapability_RoundTrip_Net(t *testing.T) {
@@ -598,6 +604,30 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 			broadcasterMinVersion: "0.4.1",
 			transcoderVersion:     "nonparsablesemversion",
 			expected:              false,
+		},
+		{
+			name:                  "broadcaster required version has no pre-release",
+			broadcasterMinVersion: "0.4.1",
+			transcoderVersion:     "0.4.1-0.21000000000000-06f1f383fb18",
+			expected:              true,
+		},
+		{
+			name:                  "transcoder version has no pre-release",
+			broadcasterMinVersion: "0.4.1-0.21000000000000-06f1f383fb18",
+			transcoderVersion:     "0.4.1",
+			expected:              false,
+		},
+		{
+			name:                  "broadcaster required pre-release version is higher than transcoder pre-release version",
+			broadcasterMinVersion: "0.4.1-0.21000000000000-06f1f383fb18",
+			transcoderVersion:     "0.4.1-0.20000000000000-06f1f383fb18",
+			expected:              false,
+		},
+		{
+			name:                  "broadcaster required pre-release version is lower than transcoder pre-release version",
+			broadcasterMinVersion: "0.4.1-0.20000000000000-06f1f383fb18",
+			transcoderVersion:     "0.4.1-0.21000000000000-06f1f383fb18",
+			expected:              true,
 		},
 	}
 	for _, tt := range tests {

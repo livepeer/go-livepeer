@@ -405,13 +405,19 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 		return false
 	}
 
-	// If minVersion has no pre-release component, ignore pre-release versions by
-	// default as in go-livepeer, we define post-release suffixes.
-	if minVer.Prerelease() == "" {
+	// If minVersion has no pre-release component, ignore pre-release versions.
+	// If versions match without pre-release, but only minVersion has a suffix, return false.
+	// Needed because we use post-release suffixes in go-livepeer.
+	minVerHasSuffix := minVer.Prerelease() != ""
+	verHasSuffix := ver.Prerelease() != ""
+	if minVer.Prerelease() == "" || ver.Prerelease() == "" {
 		minVerNoSuffix, _ := minVer.SetPrerelease("")
 		verNoSuffix, _ := ver.SetPrerelease("")
 		minVer = &minVerNoSuffix
 		ver = &verNoSuffix
+	}
+	if minVer.Equal(ver) && minVerHasSuffix && !verHasSuffix {
+		return false
 	}
 
 	return !ver.LessThan(minVer)
