@@ -103,6 +103,7 @@ type LivepeerConfig struct {
 	OrchPerfStatsURL       *string
 	Region                 *string
 	MaxPricePerUnit        *int
+	MaxPricePerCapability  *string
 	MinPerfScore           *float64
 	MaxSessions            *string
 	CurrentManifest        *bool
@@ -211,6 +212,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := 0
+	defaultMaxPricePerCapability := ""
 	defaultPixelsPerUnit := 1
 	defaultAutoAdjustPrice := true
 	defaultPricePerGateway := ""
@@ -305,6 +307,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTotalEV:             &defaultMaxTotalEV,
 		DepositMultiplier:      &defaultDepositMultiplier,
 		MaxPricePerUnit:        &defaultMaxPricePerUnit,
+		MaxPricePerCapability:  &defaultMaxPricePerCapability,
 		PixelsPerUnit:          &defaultPixelsPerUnit,
 		AutoAdjustPrice:        &defaultAutoAdjustPrice,
 		PricePerGateway:        &defaultPricePerGateway,
@@ -1044,6 +1047,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
 			}
+			if *cfg.MaxPricePerCapability != "" {
+				capabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
+				for _, p := range capabilityPrices {
+					price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+					server.BroadcastCfg.SetCapabilityMaxPrice(core.PipelineToCapability(p.Pipeline), p.ModelID, price)
+					glog.Infof("Price: %v set for %v/%v", price.RatString(), p.Pipeline, p.ModelID)
+				}
+			}
 		}
 
 		if n.NodeType == core.RedeemerNode {
@@ -1683,7 +1694,8 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 
 	// Format of modelPrices json
 	// model_id can be set to "default" to price all models in the pipeline
-	// {"capabilities": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
+	// same format can be used for gateway and orchestrator.  Setting maxPricePerCapability will not use the gateway field.
+	// {"capabilities_prices": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
 	var pricesSet struct {
 		CapabilitiesPrices []struct {
 			Gateway       string          `json:"gateway"`
