@@ -338,7 +338,6 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	}
 
 	// currently, orchestrator == transcoder
-
 	if req.Capabilities == nil {
 		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
 	}

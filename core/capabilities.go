@@ -447,8 +447,8 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
-	orchConstraints := CapabilitiesFromNetCapabilities(orch).capabilityConstraints
-	if !bcast.capabilityConstraints.CompatibleWith(orchConstraints) {
+	orchCapabilityConstraints := CapabilitiesFromNetCapabilities(orch).capabilityConstraints
+	if !bcast.capabilityConstraints.CompatibleWith(orchCapabilityConstraints) {
 		return false
 	}
 
