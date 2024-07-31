@@ -44,6 +44,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
+	lp.transRPC.Handle("/llm-generate", oapiReqValidator(lp.LlmGenerate()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 
 	return nil
@@ -181,6 +182,29 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 	})
 }
 
+func (h *lphttp) LlmGenerate() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenLLMFormdataRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -305,6 +329,15 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
+	case worker.GenLLMFormdataRequestBody:
+		pipeline = "llm-generate"
+		cap = core.Capability_LlmGenerate
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.LlmGenerate(ctx, v)
+		}
+
+		// TODO: handle tokens for pricing
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		pipeline = "segment-anything-2"
 		cap = core.Capability_SegmentAnything2
@@ -407,7 +440,37 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		monitor.AIJobProcessed(ctx, pipeline, modelID, monitor.AIJobInfo{LatencyScore: latencyScore, PricePerUnit: pricePerAIUnit})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	// Check if the response is a streaming response
+	if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+		// Set headers for SSE
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+			return
+		}
+
+		for chunk := range streamChan {
+			data, err := json.Marshal(chunk)
+			if err != nil {
+				clog.Errorf(ctx, "Error marshaling stream chunk: %v", err)
+				continue
+			}
+
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+
+			if chunk.Done {
+				break
+			}
+		}
+	} else {
+		// Non-streaming response
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	}
 }
