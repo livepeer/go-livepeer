@@ -1694,7 +1694,7 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 
 	// Format of modelPrices json
 	// model_id can be set to "default" to price all models in the pipeline
-	// same format can be used for gateway and orchestrator.  Setting maxPricePerCapability will not use the gateway field.
+	// same format is used for gateway and orchestrator.  Setting maxPricePerCapability will not use the gateway field.
 	// {"capabilities_prices": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
 	var pricesSet struct {
 		CapabilitiesPrices []struct {
