@@ -299,7 +299,6 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 	}
 	caps := core.NewCapabilitiesWithConstraints(append(core.DefaultCapabilities(), sel.cap), nil, core.Constraints{}, capabilityConstraints)
 	caps.SetMinVersionConstraint(sel.node.Capabilities.MinVersionConstraint())
-	caps.SetIgnorePreReleaseVersions(sel.node.Capabilities.IgnorePreReleaseVersions())
 
 	// Set numOrchs to the pool size so that discovery tries to find maximum # of compatible orchs within a timeout
 	numOrchs := sel.node.OrchestratorPool.Size()
