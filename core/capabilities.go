@@ -21,7 +21,8 @@ type ModelConstraint struct {
 type Capability int
 type CapabilityString []uint64
 type Constraints struct {
-	minVersion string
+	minVersion               string
+	ignorePreReleaseVersions bool
 }
 type PerCapabilityConstraints struct {
 	// Models contains a *ModelConstraint for each supported model ID
@@ -405,11 +406,15 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 		return false
 	}
 
-	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
-	minVerNoSuffix, _ := minVer.SetPrerelease("")
-	verNoSuffix, _ := ver.SetPrerelease("")
+	// By default ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	if bcast.constraints.ignorePreReleaseVersions {
+		minVerNoSuffix, _ := minVer.SetPrerelease("")
+		verNoSuffix, _ := ver.SetPrerelease("")
+		minVer = &minVerNoSuffix
+		ver = &verNoSuffix
+	}
 
-	return !verNoSuffix.LessThan(&minVerNoSuffix)
+	return !ver.LessThan(minVer)
 }
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
@@ -450,7 +455,7 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion}, CapabilityConstraints: make(map[uint32]*net.Capabilities_CapabilityConstraints)}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion, IgnorePreReleaseVersions: c.constraints.ignorePreReleaseVersions}, CapabilityConstraints: make(map[uint32]*net.Capabilities_CapabilityConstraints)}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
 	}
@@ -478,7 +483,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		mandatories:           caps.Mandatories,
 		capacities:            make(map[Capability]int),
 		version:               caps.Version,
-		constraints:           Constraints{minVersion: caps.Constraints.GetMinVersion()},
+		constraints:           Constraints{minVersion: caps.Constraints.GetMinVersion(), ignorePreReleaseVersions: caps.Constraints.GetIgnorePreReleaseVersions()},
 		capabilityConstraints: make(CapabilityConstraints),
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
@@ -717,4 +722,17 @@ func (bcast *Capabilities) MinVersionConstraint() string {
 		return bcast.constraints.minVersion
 	}
 	return ""
+}
+
+func (bcast *Capabilities) SetIgnorePreReleaseVersions(ignorePreReleaseVersions bool) {
+	if bcast != nil {
+		bcast.constraints.ignorePreReleaseVersions = ignorePreReleaseVersions
+	}
+}
+
+func (bcast *Capabilities) IgnorePreReleaseVersions() bool {
+	if bcast != nil {
+		return bcast.constraints.ignorePreReleaseVersions
+	}
+	return false
 }

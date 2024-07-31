@@ -115,6 +115,7 @@ message Capabilities {
     // Non-binary general constraints.
     message Constraints {
       string minVersion = 1;
+      bool ignorePreReleaseVersions = 2;
     }
 
     // Non-binary capability constraints, such as supported ranges.
