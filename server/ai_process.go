@@ -841,8 +841,12 @@ func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	// TODO: calculate payment
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, 0)
+	// TODO: Improve pricing
+	if req.MaxTokens == nil {
+		req.MaxTokens = new(int)
+		*req.MaxTokens = 256
+	}
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, int64(*req.MaxTokens))
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)

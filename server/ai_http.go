@@ -333,7 +333,13 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.LlmGenerate(ctx, v)
 		}
 
-		// TODO: handle tokens for pricing
+		if v.MaxTokens == nil {
+			respondWithError(w, "MaxTokens not specified", http.StatusBadRequest)
+			return
+		}
+
+		// TODO: Improve pricing
+		outPixels = int64(*v.MaxTokens)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
