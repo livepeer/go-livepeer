@@ -1704,17 +1704,17 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 	// {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
 	var pricesSet struct {
 		Gateways []struct {
-			EthAddress    string          `json:"ethaddress"`
-			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
-			PricePerUnit  json.RawMessage `json:"priceperunit"`
-			Currency      string          `json:"currency"`
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
 		} `json:"gateways"`
 		// TODO: Keep the old name for backwards compatibility, remove in the future
 		Broadcasters []struct {
-			EthAddress    string          `json:"ethaddress"`
-			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
-			PricePerUnit  json.RawMessage `json:"priceperunit"`
-			Currency      string          `json:"currency"`
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
 		} `json:"broadcasters"`
 	}
 	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
@@ -1735,21 +1735,11 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 
 	prices := make([]GatewayPrice, len(allGateways))
 	for i, p := range allGateways {
-		pixelsPerUnit, ok := new(big.Rat).SetString(string(p.PixelsPerUnit))
-		if !ok {
-			glog.Errorf("Pixels per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PixelsPerUnit)
-			continue
-		}
-		pricePerUnit, ok := new(big.Rat).SetString(string(p.PricePerUnit))
-		if !ok {
-			glog.Errorf("Price per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
-			continue
-		}
 		prices[i] = GatewayPrice{
 			EthAddress:    p.EthAddress,
 			Currency:      p.Currency,
-			PricePerUnit:  pricePerUnit,
-			PixelsPerUnit: pixelsPerUnit,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
 		}
 	}
 

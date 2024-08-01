@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"regexp"
 	"strconv"
@@ -24,30 +25,20 @@ type AI interface {
 	HasCapacity(pipeline, modelID string) bool
 }
 
-// Custom type to handle both string and int but store as string.
-type StringInt string
+// Custom type to parse a big.Rat from a JSON number.
+type JSONRat struct{ *big.Rat }
 
-// UnmarshalJSON method to handle both string and int.
-func (s *StringInt) UnmarshalJSON(data []byte) error {
-	// Try to unmarshal as int.
-	var intValue int64
-	if err := json.Unmarshal(data, &intValue); err == nil {
-		*s = StringInt(strconv.FormatInt(intValue, 10))
-		return nil
+func (s *JSONRat) UnmarshalJSON(data []byte) error {
+	rat, ok := new(big.Rat).SetString(string(data))
+	if !ok {
+		return fmt.Errorf("value is not a number: %s", data)
 	}
-
-	var strValue string
-	if err := json.Unmarshal(data, &strValue); err == nil {
-		*s = StringInt(strValue)
-		return nil
-	}
-
-	return fmt.Errorf("invalid value for StringInt: %s", data)
+	*s = JSONRat{rat}
+	return nil
 }
 
-// String converts the StringInt type to a string.
-func (s StringInt) String() string {
-	return string(s)
+func (s JSONRat) String() string {
+	return s.FloatString(2)
 }
 
 type AIModelConfig struct {
@@ -56,8 +47,8 @@ type AIModelConfig struct {
 	URL               string                   `json:"url,omitempty"`
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
-	PricePerUnit      StringInt                `json:"price_per_unit,omitempty"`
-	PixelsPerUnit     StringInt                `json:"pixels_per_unit,omitempty"`
+	PricePerUnit      JSONRat                  `json:"price_per_unit,omitempty"`
+	PixelsPerUnit     JSONRat                  `json:"pixels_per_unit,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
 }
 
@@ -66,7 +57,7 @@ func (config *AIModelConfig) UnmarshalJSON(data []byte) error {
 	type AIModelConfigAlias AIModelConfig
 	// Set default values for fields
 	defaultConfig := &AIModelConfigAlias{
-		PixelsPerUnit: "1",
+		PixelsPerUnit: JSONRat{new(big.Rat).SetInt64(1)},
 	}
 
 	if err := json.Unmarshal(data, defaultConfig); err != nil {
