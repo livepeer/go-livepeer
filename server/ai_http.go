@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/daulet/tokenizers"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -44,7 +45,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.TextToSpeech()))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
 
 	return nil
 }
@@ -296,7 +297,50 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.TextToSpeech(ctx, v)
 		}
-		outPixels = 10000 // TODO: (pschroedl) replace with sane default or calculation using length of input/output
+
+		tokenizerJSON := `{
+			"architectures": [
+			  "BertForMaskedLM"
+			],
+			"attention_probs_dropout_prob": 0.1,
+			"gradient_checkpointing": false,
+			"hidden_act": "gelu",
+			"hidden_dropout_prob": 0.1,
+			"hidden_size": 768,
+			"initializer_range": 0.02,
+			"intermediate_size": 3072,
+			"layer_norm_eps": 1e-12,
+			"max_position_embeddings": 512,
+			"model_type": "bert",
+			"num_attention_heads": 12,
+			"num_hidden_layers": 12,
+			"pad_token_id": 0,
+			"position_embedding_type": "absolute",
+			"transformers_version": "4.6.0.dev0",
+			"type_vocab_size": 2,
+			"use_cache": true,
+			"vocab_size": 30522
+		  }`
+
+		// Convert the JSON string to a byte slice
+		tokenizerBytes := []byte(tokenizerJSON)
+
+		// Config could also be loaded FromFile
+		tk, err := tokenizers.FromBytes(tokenizerBytes)
+		if err != nil {
+			respondWithError(w, "Bad tokenizer json", http.StatusBadRequest)
+			return
+		}
+		prompt := v.TextInput
+		e, enc := tk.Encode(*prompt, false)
+		if e != nil {
+			respondWithError(w, "Bad Tokenizing", http.StatusBadRequest)
+			return
+		}
+		tok := len(enc)
+		outPixels = int64(tok * 1000)
+		// release native resources
+		defer tk.Close()
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
