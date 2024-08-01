@@ -66,6 +66,7 @@ require (
 	github.com/containerd/containerd v1.7.0-beta.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/crate-crypto/go-kzg-4844 v0.7.0 // indirect
+	github.com/daulet/tokenizers v0.8.0
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
@@ -241,6 +242,6 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/livepeer/lpms => /home/ricks/development/livepeer/ai/lpms
+replace github.com/livepeer/lpms => /home/administrator/AI_SPE/lpms
 
-replace github.com/livepeer/ai-worker => /home/ricks/development/livepeer/ai/ai-worker
+replace github.com/livepeer/ai-worker => /home/administrator/AI_SPE/ai-worker
