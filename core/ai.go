@@ -49,24 +49,8 @@ type AIModelConfig struct {
 	Warm              bool                     `json:"warm,omitempty"`
 	PricePerUnit      JSONRat                  `json:"price_per_unit,omitempty"`
 	PixelsPerUnit     JSONRat                  `json:"pixels_per_unit,omitempty"`
+	Currency          string                   `json:"currency,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
-}
-
-func (config *AIModelConfig) UnmarshalJSON(data []byte) error {
-	// Custom type to avoid recursive calls to UnmarshalJSON
-	type AIModelConfigAlias AIModelConfig
-	// Set default values for fields
-	defaultConfig := &AIModelConfigAlias{
-		PixelsPerUnit: JSONRat{new(big.Rat).SetInt64(1)},
-	}
-
-	if err := json.Unmarshal(data, defaultConfig); err != nil {
-		return err
-	}
-
-	*config = AIModelConfig(*defaultConfig)
-
-	return nil
 }
 
 func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {

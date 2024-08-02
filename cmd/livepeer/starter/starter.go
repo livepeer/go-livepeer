@@ -1095,6 +1095,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
+		// Get base pixels per unit.
+		pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+		if !ok || !pixelsPerUnitBase.IsInt() {
+			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+		}
+		if !ok || pixelsPerUnitBase.Sign() <= 0 {
+			// Can't divide by 0
+			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+
 		if *cfg.AIModels != "" {
 			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
 			if err != nil {
@@ -1105,30 +1115,28 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			for _, config := range configs {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
 
-				// Set price per unit base info.
-				pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
-				if !ok || !pixelsPerUnit.IsInt() {
-					panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
-				}
-				if pixelsPerUnit.Sign() <= 0 {
-					// Can't divide by 0
-					panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
-				}
-				pricePerUnit, currency, err := parsePricePerUnit(config.PricePerUnit.String())
-				if err != nil {
-					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
-				} else if pricePerUnit.Sign() < 0 {
-					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
-				}
-				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 				var autoPrice *core.AutoConvertedPrice
-				if *cfg.Network == "offchain" {
-					autoPrice = core.NewFixedPrice(pricePerPixel)
-				} else {
-					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
-				}
-				if err != nil {
-					panic(fmt.Errorf("error converting price: %v", err))
+				if *cfg.Network != "offchain" {
+					pixelsPerUnit := config.PixelsPerUnit.Rat
+					if config.PixelsPerUnit.Rat == nil {
+						pixelsPerUnit = pixelsPerUnitBase
+					} else {
+						if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+							panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
+						}
+					}
+					pricePerUnit := config.PricePerUnit.Rat
+					if err != nil {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					} else if pricePerUnit.Sign() < 0 {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					}
+					pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+
+					autoPrice, err = core.NewAutoConvertedPrice(config.Currency, pricePerPixel, nil)
+					if err != nil {
+						panic(fmt.Errorf("error converting price: %v", err))
+					}
 				}
 
 				// If the config contains a URL we call Warm() anyway because AIWorker will just register
@@ -1158,7 +1166,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					capabilityConstraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
 
-					n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, autoPrice)
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, autoPrice)
+					}
 				case "image-to-image":
 					_, ok := capabilityConstraints[core.Capability_ImageToImage]
 					if !ok {
@@ -1170,7 +1180,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					capabilityConstraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
 
-					n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, autoPrice)
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, autoPrice)
+					}
 				case "image-to-video":
 					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
 					if !ok {
@@ -1182,7 +1194,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					capabilityConstraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
 
-					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, autoPrice)
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, autoPrice)
+					}
 				case "upscale":
 					_, ok := capabilityConstraints[core.Capability_Upscale]
 					if !ok {
@@ -1194,7 +1208,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					capabilityConstraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
 
-					n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, autoPrice)
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, autoPrice)
+					}
 				case "audio-to-text":
 					_, ok := capabilityConstraints[core.Capability_AudioToText]
 					if !ok {
@@ -1206,14 +1222,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					capabilityConstraints[core.Capability_AudioToText].Models[config.ModelID] = modelConstraint
 
-					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+					}
 				}
 
 				if len(aiCaps) > 0 {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
-					pricePerUnit := price.Num().Int64() / price.Denom().Int64()
-					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d wei per compute unit", config.Pipeline, capability, config.ModelID, pricePerUnit)
+					if *cfg.Network != "offchain" {
+						pricePerUnit := price.Num().Int64() / price.Denom().Int64()
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d wei per compute unit", config.Pipeline, capability, config.ModelID, pricePerUnit)
+					} else {
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
+					}
 				}
 			}
 		} else {
