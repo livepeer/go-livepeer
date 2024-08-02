@@ -350,7 +350,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		for cap := range caps.Capacities {
 			// If the capability does not have constraints (and thus any model constraints) skip it
 			// because we only price a capability together with a model ID right now
-			constraints, ok := caps.CapabilityConstraints[cap]
+			constraints, ok := caps.Constraints.PerCapability[cap]
 			if !ok {
 				continue
 			}
