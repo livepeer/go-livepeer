@@ -172,12 +172,14 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	}
 
 	suspender := newSuspender()
-
+	//create caps for selector to get maxPrice
+	warmCaps := createAISelectorCapabilities(cap, modelID, true)
+	coldCaps := createAISelectorCapabilities(cap, modelID, false)
 	// The latency score in this context is just the latency of the last completed request for a session
 	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
 	minLS := 0.0
-	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore), suspender)
-	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore), suspender)
+	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender)
+	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender)
 	sel := &AISessionSelector{
 		warmPool:  warmPool,
 		coldPool:  coldPool,
@@ -194,6 +196,17 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	}
 
 	return sel, nil
+}
+
+func createAISelectorCapabilities(cap core.Capability, modelID string, warm bool) *core.Capabilities {
+	var aiCaps []core.Capability
+	capabilityConstraints := make(map[core.Capability]*core.PerCapabilityConstraints)
+	aiCaps = append(aiCaps, cap)
+	capabilityConstraints[cap] = &core.PerCapabilityConstraints{
+		Models: make(map[string]*core.ModelConstraint),
+	}
+	capabilityConstraints[cap].Models[modelID] = &core.ModelConstraint{Warm: warm}
+	return core.NewCapabilitiesWithConstraints(aiCaps, aiCaps, core.Constraints{}, capabilityConstraints)
 }
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {

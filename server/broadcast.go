@@ -56,8 +56,8 @@ var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *
 var maxTranscodeAttempts = errors.New("hit max transcode attempts")
 
 type BroadcastConfig struct {
-	maxPrice *core.AutoConvertedPrice
-	mu       sync.RWMutex
+	maxPricePerCapability map[core.Capability]map[string]*core.AutoConvertedPrice
+	mu                    sync.RWMutex
 }
 
 type SegFlightMetadata struct {
@@ -65,22 +65,86 @@ type SegFlightMetadata struct {
 	segDur    time.Duration
 }
 
+func (cfg *BroadcastConfig) Initialize() {
+	//initialize with base capability of H264 transcoding
+	cfg.maxPricePerCapability = make(map[core.Capability]map[string]*core.AutoConvertedPrice)
+	models := make(map[string]*core.AutoConvertedPrice)
+	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
+	cfg.maxPricePerCapability[core.Capability_H264] = models
+}
+
 func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	if cfg.maxPrice == nil {
+	//base price is H264 encoding
+	if cfg.maxPricePerCapability[core.Capability_H264]["default"] == nil {
 		return nil
 	}
-	return cfg.maxPrice.Value()
+	return cfg.maxPricePerCapability[core.Capability_H264]["default"].Value()
 }
 
 func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	prevPrice := cfg.maxPrice
-	cfg.maxPrice = price
+	prevPrice := cfg.maxPricePerCapability[core.Capability_H264]["default"]
+	cfg.maxPricePerCapability[core.Capability_H264]["default"] = price
 	if prevPrice != nil {
 		prevPrice.Stop()
+	}
+}
+
+// gets prices for a set of capabilities
+func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityComparator) *big.Rat {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	netCaps := caps.ToNetCapabilities()
+	price := big.NewRat(0, 1)
+	for capabilityInt, constraints := range netCaps.CapabilityConstraints {
+		for modelID, _ := range constraints.Models {
+			capPrice := cfg.GetCapabilityMaxPrice(core.Capability(capabilityInt), modelID)
+			if capPrice != nil {
+				price = price.Add(price, capPrice)
+			}
+		}
+	}
+
+	//if no prices set per model, return maxPrice
+	if price.Cmp(big.NewRat(0, 1)) == 0 {
+		price = cfg.MaxPrice()
+	}
+
+	return price
+}
+
+func (cfg *BroadcastConfig) GetCapabilityMaxPrice(cap core.Capability, modelID string) *big.Rat {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	models, ok := cfg.maxPricePerCapability[cap]
+	if ok {
+		_, modelOk := models[modelID]
+		if modelOk {
+			return cfg.maxPricePerCapability[cap][modelID].Value()
+		} else {
+			_, hasDefault := models["default"]
+			if hasDefault {
+				return cfg.maxPricePerCapability[cap]["default"].Value()
+			}
+		}
+	}
+
+	//no price set for capability
+	return nil
+}
+
+func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	_, ok := cfg.maxPricePerCapability[cap]
+	if ok {
+		cfg.maxPricePerCapability[cap][modelID] = newPrice
+	} else {
+		cfg.maxPricePerCapability[cap] = make(map[string]*core.AutoConvertedPrice)
+		cfg.maxPricePerCapability[cap][modelID] = newPrice
 	}
 }
 
@@ -476,8 +540,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore, params.Capabilities)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)

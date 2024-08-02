@@ -105,6 +105,7 @@ type LivepeerConfig struct {
 	OrchPerfStatsURL        *string
 	Region                  *string
 	MaxPricePerUnit         *string
+	MaxPricePerCapability   *string
 	MinPerfScore            *float64
 	MaxSessions             *string
 	CurrentManifest         *bool
@@ -216,6 +217,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
+	defaultMaxPricePerCapability := ""
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -311,6 +313,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		MaxPricePerCapability:   &defaultMaxPricePerCapability,
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
@@ -936,6 +939,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err != nil {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
+
+			server.BroadcastCfg.Initialize()
 			if maxPricePerUnit.Sign() > 0 {
 				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
 				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
@@ -951,6 +956,24 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
+			if *cfg.MaxPricePerCapability != "" {
+				capabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
+				for _, p := range capabilityPrices {
+					capPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+					cap := core.PipelineToCapability(p.Pipeline)
+					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, capPrice, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], p.ModelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
+					})
+					if err != nil {
+						panic(fmt.Errorf("Error converting price: %v", err))
+					}
+
+					server.BroadcastCfg.SetCapabilityMaxPrice(core.PipelineToCapability(p.Pipeline), p.ModelID, autoCapPrice)
+				}
 			}
 		}
 
@@ -1762,6 +1785,61 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 			Currency:      p.Currency,
 			PricePerUnit:  p.PricePerUnit.Rat,
 			PixelsPerUnit: p.PixelsPerUnit.Rat,
+		}
+	}
+
+	return prices
+}
+
+type ModelPrice struct {
+	Gateway       string
+	Pipeline      string
+	ModelID       string
+	PricePerUnit  *big.Rat
+	PixelsPerUnit *big.Rat
+	Currency      string
+}
+
+func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
+	if capabilitiesPrices == "" {
+		return nil
+	}
+
+	// Format of modelPrices json
+	// model_id can be set to "default" to price all models in the pipeline
+	// same format is used for gateway and orchestrator.  Setting maxPricePerCapability will not use the gateway field.
+	// {"capabilities_prices": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
+	var pricesSet struct {
+		CapabilitiesPrices []struct {
+			Gateway       string       `json:"gateway"`
+			Pipeline      string       `json:"pipeline"`
+			ModelID       string       `json:"model_id"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
+		} `json:"capabilities_prices"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(capabilitiesPrices)
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("model prices could not be parsed: %s", err)
+		return nil
+	}
+
+	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
+	for i, p := range pricesSet.CapabilitiesPrices {
+		if p.Gateway == "" {
+			p.Gateway = "default"
+		}
+
+		prices[i] = ModelPrice{
+			Gateway:       p.Gateway,
+			Pipeline:      p.Pipeline,
+			ModelID:       p.ModelID,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+			Currency:      p.Currency,
 		}
 	}
 
