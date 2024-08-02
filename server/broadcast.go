@@ -121,9 +121,9 @@ func (cfg *BroadcastConfig) GetCapabilityMaxPrice(cap uint32, modelID string) *b
 func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *big.Rat) {
 	models, ok := cfg.maxPricePerCapability[uint32(cap)]
 	if ok {
-		_, modelOk := models[model_id]
+		_, modelOk := models[modelID]
 		if modelOk {
-			cfg.maxPricePerCapability[uint32(cap)][model_id] = newPrice
+			cfg.maxPricePerCapability[uint32(cap)][modelID] = newPrice
 		}
 	}
 }

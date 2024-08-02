@@ -181,6 +181,49 @@ func setBroadcastConfigHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			pricePerUnit := r.FormValue("pricePerUnit")
+			pixelsPerUnit := r.FormValue("pixelsPerUnit")
+			pipeline := r.FormValue("pipeline")
+			modelID := r.FormValue("modelID")
+
+			if pipeline == "" || modelID == "" {
+				respond400(w, "pipeline and modelID must be set")
+			}
+
+			if pricePerUnit != "" && pixelsPerUnit != "" {
+				pr, err := strconv.ParseInt(pricePerUnit, 10, 64)
+				if err != nil {
+					respond400(w, errors.Wrapf(err, "Error converting string to int64").Error())
+					return
+				}
+				px, err := strconv.ParseInt(pixelsPerUnit, 10, 64)
+				if err != nil {
+					respond400(w, errors.Wrapf(err, "Error converting string to int64").Error())
+					return
+				}
+				if px <= 0 {
+					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", px))
+					return
+				}
+
+				var price *big.Rat
+				if pr > 0 {
+					price = big.NewRat(pr, px)
+				}
+
+				BroadcastCfg.SetCapabilityMaxPrice(core.PipelineToCapability(pipeline), modelID, price)
+				glog.Infof("Maximum price for capability %v/%v set to %d per %q pixels\n", pipeline, modelID, pr, px)
+			}
+
+		} else {
+			respond400(w, "Node must be gateway node to set max price per capability")
+		}
+	})
+}
+
 func getBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var pNames []string
@@ -461,7 +504,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 	}))
 }
 
-func (s *LivepeerServer) setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, model_id string) error {
+func (s *LivepeerServer) setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, modelID string) error {
 	ok, err := regexp.MatchString("^[0-9]+$", pricePerUnitStr)
 	if err != nil {
 		return err
@@ -509,8 +552,8 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitSt
 	} else {
 		cap := core.PipelineToCapability(pipeline)
 		if cap > core.Capability_Unused {
-			s.LivepeerNode.SetBasePriceForCap(gatewayEthAddr, cap, model_id, price)
-			glog.Infof("Price per unit set to %d for gateway=%s pipeline=%s model_id=%s", price.RatString(), gatewayEthAddr, pipeline, model_id)
+			s.LivepeerNode.SetBasePriceForCap(gatewayEthAddr, cap, modelID, price)
+			glog.Infof("Price per unit set to %d for gateway=%s pipeline=%s model_id=%s", price.RatString(), gatewayEthAddr, pipeline, modelID)
 		} else {
 			return fmt.Errorf("Price per unit not set, capability does not exist for pipeline %v", pipeline)
 		}
@@ -596,13 +639,13 @@ func (s *LivepeerServer) setPriceForCapability() http.Handler {
 			pixelsPerUnitStr := r.FormValue("pixelsPerUnit")
 			gatewayEthAddr := r.FormValue("gatewayEthAddr")
 			pipeline := r.FormValue("pipeline")
-			model_id := r.FormValue("model_id")
+			modelID := r.FormValue("modelID")
 
-			if pipeline == "" || model_id == "" {
-				respond400(w, "pipeline and model_id must be set")
+			if pipeline == "" || modelID == "" {
+				respond400(w, "pipeline and modelID must be set")
 			}
 
-			err := s.setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, model_id)
+			err := s.setOrchestratorPriceInfo(gatewayEthAddr, pricePerUnitStr, pixelsPerUnitStr, pipeline, modelID)
 			if err == nil {
 				respondOk(w, []byte(fmt.Sprintf("Price per pixel set to %s wei for %s pixels for gateway %s", pricePerUnitStr, pixelsPerUnitStr, gatewayEthAddr)))
 			} else {

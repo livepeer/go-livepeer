@@ -109,6 +109,28 @@ func TestParseGetGatewayPrices(t *testing.T) {
 	}
 }
 
+func TestPricePerCapability(t *testing.T) {
+	assert := assert.New(t)
+
+	// TODO: Keep checking old field for backwards compatibility, remove in future
+	jsonTemplate := `{"capabilities_prices": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }`
+
+	prices := getCapabilityPrices(jsonTemplate)
+	assert.NotNil(prices)
+	assert.Equal(2, len(prices))
+
+	assert.Equal(prices[0].Gateway, "default")
+	assert.Equal(prices[1].Gateway, "0x0")
+	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[1].ModelID, "default")
+
+	price1 := big.NewRat(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+	price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	assert.NotEqual(price1, price2)
+	assert.Equal(big.NewRat(1000, 1), price1)
+	assert.Equal(big.NewRat(2000, 3), price2)
+}
+
 // Address provided to keystore file
 func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 	assert := assert.New(t)

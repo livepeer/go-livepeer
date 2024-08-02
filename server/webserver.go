@@ -49,7 +49,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setBroadcastConfig", mustHaveFormParams(setBroadcastConfigHandler()))
 	mux.Handle("/getBroadcastConfig", getBroadcastConfigHandler())
 	mux.Handle("/getAvailableTranscodingOptions", getAvailableTranscodingOptionsHandler())
-
+	mux.Handle("/setMaxPriceForCapability", mustHaveFormParams(s.setMaxPriceForCapability(), "pricePerUnit", "pixelsPerUnit", "pipeline", "modelID"))
 	// Rounds
 	mux.Handle("/currentRound", currentRoundHandler(client))
 	mux.Handle("/initializeRound", initializeRoundHandler(client))
@@ -61,7 +61,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/setMaxFaceValue", mustHaveFormParams(s.setMaxFaceValueHandler(), "maxfacevalue"))
 	mux.Handle("/setPriceForBroadcaster", mustHaveFormParams(s.setPriceForBroadcaster(), "pricePerUnit", "pixelsPerUnit", "broadcasterEthAddr"))
 	mux.Handle("/setMaxSessions", mustHaveFormParams(s.setMaxSessions(), "maxSessions"))
-	mux.Handle("/setPriceForCapability", mustHaveFormParams(s.setPriceForCapability(), "pricePerUnit", "pixelsPerUnit", "gatewayEthAddr", "pipeline", "model_id"))
+	mux.Handle("/setPriceForCapability", mustHaveFormParams(s.setPriceForCapability(), "pricePerUnit", "pixelsPerUnit", "gatewayEthAddr", "pipeline", "modelID"))
 
 	// Bond, withdraw, reward
 	mux.Handle("/bond", mustHaveFormParams(bondHandler(client), "amount", "toAddr"))

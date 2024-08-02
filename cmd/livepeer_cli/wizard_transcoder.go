@@ -363,18 +363,18 @@ func (w *wizard) setPriceForCapability() {
 		return
 	}
 	fmt.Println("Enter model id (default=default)")
-	model_id := w.readDefaultString("default")
+	modelID := w.readDefaultString("default")
 
 	data := url.Values{
 		"pricePerUnit":   {fmt.Sprintf("%v", strconv.Itoa(price))},
 		"pixelsPerUnit":  {fmt.Sprintf("%v", strconv.Itoa(pixels))},
 		"gatewayEthAddr": {fmt.Sprintf("%v", ethaddr)},
 		"pipeline":       {pipeline},
-		"model_id":       {model_id},
+		"modelID":        {modelID},
 	}
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForCapability", w.host, w.httpPort), data)
 	if ok {
-		fmt.Printf("Capability price for gateway %v set to %v wei per %v pixels for %s/%s", ethaddr, price, pixels, pipeline, model_id)
+		fmt.Printf("Capability price for gateway %v set to %v wei per %v pixels for %s/%s", ethaddr, price, pixels, pipeline, modelID)
 		return
 	} else {
 		fmt.Printf("Error setting price for capability: %v", result)

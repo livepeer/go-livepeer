@@ -538,41 +538,41 @@ func TestSetPriceForCapabilityHandler(t *testing.T) {
 	b2p := big.NewRat(2, 1)
 	pipeline := "text-to-image"
 	pipeline_cap := core.PipelineToCapability(pipeline)
-	model_id := "default"
+	modelID := "default"
 
 	statusd, _ := postForm(handler, url.Values{
 		"pricePerUnit":   {"10"},
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {pipeline},
-		"model_id":       {model_id},
+		"modelID":        {modelID},
 	})
 
 	assert.Equal(http.StatusOK, statusd)
-	assert.Equal(big.NewRat(10, 1), s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, model_id))
+	assert.Equal(big.NewRat(10, 1), s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, modelID))
 
 	status1, _ := postForm(handler, url.Values{
 		"pricePerUnit":   {"1"},
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {b1.String()},
 		"pipeline":       {pipeline},
-		"model_id":       {model_id},
+		"modelID":        {modelID},
 	})
 	assert.Equal(http.StatusOK, status1)
-	assert.Equal(b1p, s.LivepeerNode.GetBasePriceForCap(b1.String(), pipeline_cap, model_id))
+	assert.Equal(b1p, s.LivepeerNode.GetBasePriceForCap(b1.String(), pipeline_cap, modelID))
 
 	status2, _ := postForm(handler, url.Values{
 		"pricePerUnit":   {"2"},
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {b2.String()},
 		"pipeline":       {pipeline},
-		"model_id":       {model_id},
+		"modelID":        {modelID},
 	})
 
 	assert.Equal(http.StatusOK, status2)
 	assert.Equal(b2p, s.LivepeerNode.GetBasePrice(b2.String()))
-	assert.NotEqual(b1p, s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, model_id))
-	assert.NotEqual(b2p, s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, model_id))
+	assert.NotEqual(b1p, s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, modelID))
+	assert.NotEqual(b2p, s.LivepeerNode.GetBasePriceForCap("default", pipeline_cap, modelID))
 }
 
 func TestSetPriceForCapabilityHandler_NotOrchestrator(t *testing.T) {
@@ -587,7 +587,7 @@ func TestSetPriceForCapabilityHandler_NotOrchestrator(t *testing.T) {
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {"text-to-image"},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
@@ -596,7 +596,7 @@ func TestSetPriceForCapabilityHandler_NotOrchestrator(t *testing.T) {
 func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	assert := assert.New(t)
 	s := stubServer()
-	s.LivepeerNode.NodeType = core.TranscoderNode
+	s.LivepeerNode.NodeType = core.OrchestratorNode
 
 	handler := s.setPriceForCapability()
 
@@ -606,7 +606,7 @@ func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {"text-to-image"},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status1)
 
@@ -616,7 +616,7 @@ func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"pixelsPerUnit":  {"a"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {"text-to-image"},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status2)
 
@@ -626,7 +626,7 @@ func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"--------"},
 		"pipeline":       {"text-to-image"},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status3)
 
@@ -636,17 +636,17 @@ func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {""},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status4)
 
-	//model_id is not set
+	//modelID is not set
 	status5, _ := postForm(handler, url.Values{
 		"pricePerUnit":   {"1"},
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {"text-to-image"},
-		"model_id":       {""},
+		"modelID":        {""},
 	})
 	assert.Equal(http.StatusBadRequest, status5)
 
@@ -656,7 +656,139 @@ func TestSetPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"pixelsPerUnit":  {"1"},
 		"gatewayEthAddr": {"default"},
 		"pipeline":       {"cool-new-pipeline"},
-		"model_id":       {"default"},
+		"modelID":        {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status6)
+}
+
+func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//set default max price
+	BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
+
+	//set price per unit for specific pipeline
+	p1 := big.NewRat(1, 1)
+	p2 := big.NewRat(2, 1)
+	p1_pipeline := "text-to-image"
+	p1_pipeline_cap := core.PipelineToCapability(p1_pipeline)
+	p1_modelID := "default"
+
+	p2_pipeline := "image-to-image"
+	p2_pipeline_cap := core.PipelineToCapability(p2_pipeline)
+	p2_modelID := "default"
+
+	status1, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {p1_pipeline},
+		"modelID":       {p1_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status1)
+	assert.Equal(p1, BroadcastCfg.GetCapabilityMaxPrice(uint32(p1_pipeline_cap), p1_modelID))
+
+	status2, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"2"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {p2_pipeline},
+		"modelID":       {p2_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status2)
+	assert.Equal(p2, BroadcastCfg.GetCapabilityMaxPrice(uint32(p2_pipeline_cap), p1_modelID))
+
+	p1_modelID = "stabilityai/sd-turbo"
+	status1, _ = postForm(handler, url.Values{
+		"pricePerUnit":  {"100"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {p1_pipeline},
+		"modelID":       {p1_modelID},
+	})
+	assert.Equal(http.StatusOK, status1)
+	assert.NotEqual(p1, BroadcastCfg.GetCapabilityMaxPrice(uint32(p1_pipeline_cap), p1_modelID))
+	assert.Equal(big.NewRat(100, 1), BroadcastCfg.GetCapabilityMaxPrice(uint32(p1_pipeline_cap), p1_modelID))
+}
+
+func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.OrchestratorNode
+
+	handler := s.setMaxPriceForCapability()
+
+	status, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"10"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {"text-to-image"},
+		"modelID":       {"default"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+}
+
+func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//pricePerUnit is not int
+	status1, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"a"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {"text-to-image"},
+		"modelID":       {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status1)
+
+	//pixelsPerUnit is not int
+	status2, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"a"},
+		"pipeline":      {"text-to-image"},
+		"modelID":       {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status2)
+
+	//gateway eth address incorrect format
+	status3, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {"text-to-image"},
+		"modelID":       {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status3)
+
+	//pipeline is not set
+	status4, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {""},
+		"modelID":       {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status4)
+
+	//modelID is not set
+	status5, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {"text-to-image"},
+		"modelID":       {""},
+	})
+	assert.Equal(http.StatusBadRequest, status5)
+
+	//pipeline not supported
+	status6, _ := postForm(handler, url.Values{
+		"pricePerUnit":  {"1"},
+		"pixelsPerUnit": {"1"},
+		"pipeline":      {"cool-new-pipeline"},
+		"modelID":       {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status6)
 }
