@@ -1254,8 +1254,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
 					if *cfg.Network != "offchain" {
-						pricePerUnit := price.Num().Int64() / price.Denom().Int64()
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d wei per compute unit", config.Pipeline, capability, config.ModelID, pricePerUnit)
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %v wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
 					} else {
 						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
 					}
