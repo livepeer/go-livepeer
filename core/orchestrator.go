@@ -130,9 +130,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, req worker.GenAudioTo
 	return orch.node.AudioToText(ctx, req)
 }
 
-// Return type is LlmResponse, but a stream is available as well as chan(string)
-func (orch *orchestrator) LlmGenerate(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
-	return orch.node.llmGenerate(ctx, req)
+// Return type is LLMResponse, but a stream is available as well as chan(string)
+func (orch *orchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return orch.node.AIWorker.LLM(ctx, req)
+
 }
 
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
@@ -1065,10 +1066,6 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.GenImageToVi
 	}
 
 	return &worker.ImageResponse{Images: videos}, nil
-}
-
-func (n *LivepeerNode) llmGenerate(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
-	return n.AIWorker.LlmGenerate(ctx, req)
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {

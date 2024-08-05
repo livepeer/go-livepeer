@@ -202,6 +202,9 @@ func (r *stubOrchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMul
 func (r *stubOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return nil, nil
+}
 func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return nil, nil
 }
@@ -1386,6 +1389,9 @@ func (r *mockOrchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMul
 	return nil, nil
 }
 func (r *mockOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {

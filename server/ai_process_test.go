@@ -8,12 +8,12 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 )
 
-func Test_submitLlmGenerate(t *testing.T) {
+func Test_submitLLM(t *testing.T) {
 	type args struct {
 		ctx    context.Context
 		params aiRequestParams
 		sess   *AISession
-		req    worker.LlmGenerateFormdataRequestBody
+		req    worker.GenLLMFormdataRequestBody
 	}
 	tests := []struct {
 		name    string
@@ -25,13 +25,13 @@ func Test_submitLlmGenerate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := submitLlmGenerate(tt.args.ctx, tt.args.params, tt.args.sess, tt.args.req)
+			got, err := submitLLM(tt.args.ctx, tt.args.params, tt.args.sess, tt.args.req)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("submitLlmGenerate() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("submitLLM() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("submitLlmGenerate() = %v, want %v", got, tt.want)
+				t.Errorf("submitLLM() = %v, want %v", got, tt.want)
 			}
 		})
 	}
