@@ -222,16 +222,13 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 				pr, ok := new(big.Rat).SetString(maxPricePerUnit)
 				if !ok {
 					respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", maxPricePerUnit))
-					return
 				}
 				px, ok := new(big.Rat).SetString(pixelsPerUnit)
 				if !ok {
 					respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
-					return
 				}
 				if px.Sign() <= 0 {
 					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
-					return
 				}
 				pricePerPixel := new(big.Rat).Quo(pr, px)
 
@@ -240,19 +237,22 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 					var err error
 					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
 						if monitor.Enabled {
-							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], modelID, autoPrice.Value())
+							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
 					})
 					if err != nil {
 						respond400(w, errors.Wrap(err, "error converting price").Error())
-						return
 					}
+
+					BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
+					respondOk(w, nil)
+				} else {
+					respond400(w, fmt.Sprintf("pricePerPixel needs to be > 0: %v", pricePerPixel.FloatString(3)))
 				}
-
-				BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
+			} else {
+				respond400(w, "maxPricePerUnit and pixelsPerUnit need to be set")
 			}
-
 		} else {
 			respond400(w, "Node must be gateway node to set max price per capability")
 		}
