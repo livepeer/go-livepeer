@@ -496,7 +496,7 @@ func CapabilityToName(capability Capability) (string, error) {
 	return capName, nil
 }
 
-func InArray(capability Capability, caps []Capability) bool {
+func HasCapability(caps []Capability, capability Capability) bool {
 	for _, c := range caps {
 		if capability == c {
 			return true
