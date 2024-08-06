@@ -424,7 +424,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	// Check if the response is a streaming response
-	if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+	if streamChan, ok := resp.(<-chan worker.LlmStreamChunk); ok {
 		// Set headers for SSE
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")

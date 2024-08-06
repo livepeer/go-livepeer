@@ -449,7 +449,7 @@ func (ls *LivepeerServer) LlmGenerate() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received LlmGenerate request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received LlmGenerate request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, *req.Stream)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,

@@ -863,7 +863,6 @@ func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISess
 		}
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -881,6 +880,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 	streamChan := make(chan worker.LlmStreamChunk, 100)
 	go func() {
 		defer close(streamChan)
+		defer body.Close()
 		scanner := bufio.NewScanner(body)
 		var totalTokens int
 		for scanner.Scan() {
@@ -921,6 +921,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 
 func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.LlmGenerateFormdataRequestBody, start time.Time) (*worker.LlmResponse, error) {
 	data, err := io.ReadAll(body)
+	defer body.Close()
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
