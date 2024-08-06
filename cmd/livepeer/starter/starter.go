@@ -625,6 +625,19 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					constraints[core.Capability_AudioToText].Models[config.ModelID] = modelConstraint
 
 					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
+
+				case "text-to-speech":
+					_, ok := constraints[core.Capability_AudioToText]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToSpeech)
+						constraints[core.Capability_TextToSpeech] = &core.Constraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					constraints[core.Capability_TextToSpeech].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_TextToSpeech, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
 				}
 
 				if len(aiCaps) > 0 {

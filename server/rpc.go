@@ -68,6 +68,7 @@ type Orchestrator interface {
 	ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error)
 	Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
+	TextToSpeech(ctx context.Context, req worker.TextToSpeechJSONRequestBody) (*worker.AudioResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance
