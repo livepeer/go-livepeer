@@ -77,7 +77,7 @@ jobs:
         id: cache-ffmpeg
         uses: actions/cache@v3
         with:
-          path: /home/runner/compiled
+          path: /github/home/compiled
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Set build environment
@@ -290,19 +290,21 @@ jobs:
 
       - name: Upload release archives to Google Cloud
         id: upload-archives
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
           destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
           parent: false
+          process_gcloudignore: false
 
       - name: Upload branch manifest file
         id: upload-manifest
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
           parent: false
+          process_gcloudignore: false
 
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
