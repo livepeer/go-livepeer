@@ -15,7 +15,7 @@ concurrency:
 jobs:
   linux-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
-    runs-on: ${{ matrix.target.runner }}
+    runs-on: ubuntu-20.04
     container:
       image: ${{ matrix.target.container }}
       env:
@@ -26,31 +26,26 @@ jobs:
         target:
           - GOOS: linux
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: ubuntu:20.04
             type: cpu
 
           - GOOS: linux
             GOARCH: arm64
-            runner: ubuntu-20.04
             container: ubuntu:20.04
             type: cpu
 
           - GOOS: linux
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
             type: gpu
 
           - GOOS: linux
             GOARCH: arm64
-            runner: ubuntu-20.04
             container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
             type: gpu
 
           - GOOS: windows
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: ubuntu:22.04
             type: cpu
 
@@ -91,6 +86,7 @@ jobs:
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
+          mkdir -p "lp-builds/livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" releases/
 
       - name: Set GPU build environment
         if: matrix.target.type == 'gpu'
@@ -130,23 +126,25 @@ jobs:
           git config --global --add safe.directory '*'
           ./ci_env.sh make
 
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
+      - name: Archive binaries for windows
+        if: matrix.target.GOOS == 'windows'
+        run: |
+          cd "$GO_BUILD_DIR/"
+          find . -type f -exec mv '{}' 'livepeer-${GOOS}-${GOARCH}/{}' \;
+          zip -9rq "../releases/livepeer-${GOOS}-${GOARCH}.zip" ./
+
+      - name: Archive binaries
+        if: matrix.platform.name != 'windows'
+        run: |
+          cd "$GO_BUILD_DIR/"
+          find . -type f -exec mv '{}' 'livepeer-${GOOS}-${GOARCH}/{}' \;
+          tar -czvf "../releases/livepeer-${GOOS}-${GOARCH}.tar.gz" ./
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   macos-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
@@ -161,7 +159,7 @@ jobs:
 
           - GOOS: darwin
             GOARCH: arm64
-            runner: macos-latest
+            runner: macos-14-xlarge
 
     steps:
       - name: Check out code
@@ -230,6 +228,12 @@ jobs:
           app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
           binary-path: "lp-builds/"
 
+      - name: Archive binaries
+        if: matrix.platform.name != 'windows'
+        run: |
+          cd "$GO_BUILD_DIR/"
+          tar -czvf "../releases/livepeer-${GOOS}-${GOARCH}.tar.gz" .
+
       - name: Upload build
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         env:
@@ -240,13 +244,10 @@ jobs:
         run: ./upload_build.sh
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   upload:
     name: Upload artifacts to google bucket
@@ -259,10 +260,11 @@ jobs:
       - linux-build
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: release-artifacts
+          pattern: release-artifacts-*
           path: releases/
+          merge-multiple: true
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts
         uses: livepeer/action-gh-checksum-and-gpg-sign@latest
@@ -302,3 +304,6 @@ jobs:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
           parent: false
+
+      - name: Notify new build upload
+        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
