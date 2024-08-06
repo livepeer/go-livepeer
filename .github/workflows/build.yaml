@@ -86,7 +86,8 @@ jobs:
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
-          mkdir -p "lp-builds/livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" releases/
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          mkdir -p lp-builds/ releases/
 
       - name: Set GPU build environment
         if: matrix.target.type == 'gpu'
@@ -95,6 +96,7 @@ jobs:
           echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
           echo "RELEASE_TAG=gpu" >> $GITHUB_ENV
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-gpu-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -129,21 +131,23 @@ jobs:
       - name: Archive binaries for windows
         if: matrix.target.GOOS == 'windows'
         run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
           cd "$GO_BUILD_DIR/"
-          find . -type f -exec mv '{}' 'livepeer-${GOOS}-${GOARCH}/{}' \;
-          zip -9rq "../releases/livepeer-${GOOS}-${GOARCH}.zip" ./
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR/" \;
+          zip -9rq "../releases/$LP_BUILD_DIR.zip" ./
 
       - name: Archive binaries
         if: matrix.platform.name != 'windows'
         run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
           cd "$GO_BUILD_DIR/"
-          find . -type f -exec mv '{}' 'livepeer-${GOOS}-${GOARCH}/{}' \;
-          tar -czvf "../releases/livepeer-${GOOS}-${GOARCH}.tar.gz" ./
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
+          tar -czvf "../releases/$LP_BUILD_DIR.tar.gz" ./
 
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
+          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
 
   macos-build:
@@ -183,6 +187,8 @@ jobs:
           echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          mkdir -p lp-builds/ releases/
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
@@ -231,17 +237,10 @@ jobs:
       - name: Archive binaries
         if: matrix.platform.name != 'windows'
         run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
           cd "$GO_BUILD_DIR/"
-          tar -czvf "../releases/livepeer-${GOOS}-${GOARCH}.tar.gz" .
-
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
+          tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
       - name: Upload artifacts for cutting release
         uses: actions/upload-artifact@v4
