@@ -258,6 +258,14 @@ jobs:
       - macos-build
       - linux-build
     steps:
+      - name: Check out code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -305,6 +313,17 @@ jobs:
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
           parent: false
           process_gcloudignore: false
+
+      - name: Trigger discord webhook
+        shell: bash
+        env:
+          GITHUB_CONTEXT_JSON: ${{ toJson(github.event.pull_request) }}
+        run: |
+          python .github/discord-embed-webhook.py \
+          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
+          --discord-url="${{ secrets.DISCORD_URL }}"
+          --git-commit="$(git log -1 --pretty=format:'%s')"
+          --git-committer="$(git log -1 --pretty=format:'%an')"
 
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
