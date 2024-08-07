@@ -95,6 +95,33 @@ func (w *wizard) setBroadcastConfig() {
 	}
 }
 
+func (w *wizard) setBroadcastMaxPricePerCapability() {
+	fmt.Printf("Enter the pipeline to set price for: ")
+	pipeline := w.readString()
+	fmt.Printf("Enter the model id to set price for: ")
+	modelID := w.readString()
+	fmt.Printf("Enter the maximum price to pay: ")
+	maxPricePerUnit := w.readDefaultString("0")
+	fmt.Printf("Enter the price currency: ")
+	currency := w.readString()
+	pixelsPerUnit := "1"
+
+	val := url.Values{
+		"pixelsPerUnit":   {fmt.Sprintf("%v", pixelsPerUnit)},
+		"maxPricePerUnit": {fmt.Sprintf("%v", maxPricePerUnit)},
+		"currency":        {fmt.Sprintf("%v", currency)},
+		"pipeline":        {fmt.Sprintf("%v", pipeline)},
+		"modelID":         {fmt.Sprintf("%v", modelID)},
+	}
+
+	resp, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxPriceForCapability", w.host, w.httpPort), val)
+	if !ok {
+		fmt.Printf("Error setting max price for capability: %v\n", resp)
+	} else {
+		fmt.Printf("max price per capability set successfully\n")
+	}
+}
+
 func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (string, error) {
 	ids := strings.Split(idList, ",")
 

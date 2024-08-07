@@ -160,7 +160,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -236,7 +236,7 @@ func TestMinLSSelector(t *testing.T) {
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
@@ -337,7 +337,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 			if tt.perfScores != nil {
 				perfScore = &common.PerfScore{Scores: tt.perfScores}
 			}
-			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore)
+			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore, nil)
 			sel.Add(tt.unknownSessions)
 
 			sess := sel.selectUnknownSession(context.TODO())
@@ -368,7 +368,7 @@ func session(recipientAddr string) *BroadcastSession {
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {

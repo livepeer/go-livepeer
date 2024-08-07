@@ -99,12 +99,13 @@ type MinLSSelector struct {
 	stakeRdr           stakeReader
 	selectionAlgorithm common.SelectionAlgorithm
 	perfScore          *common.PerfScore
+	capabilities       common.CapabilityComparator
 
 	minLS float64
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
-func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore) *MinLSSelector {
+func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *MinLSSelector {
 	knownSessions := &sessHeap{}
 	heap.Init(knownSessions)
 
@@ -113,6 +114,7 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 		stakeRdr:           stakeRdr,
 		selectionAlgorithm: selectionAlgorithm,
 		perfScore:          perfScore,
+		capabilities:       capabilities,
 		minLS:              minLS,
 	}
 }
@@ -185,7 +187,8 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 			prices[addr] = big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit)
 		}
 	}
-	maxPrice := BroadcastCfg.MaxPrice()
+
+	maxPrice := BroadcastCfg.GetCapabilitiesMaxPrice(s.capabilities)
 
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	if err != nil {

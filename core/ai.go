@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/livepeer/ai-worker/worker"
 )
@@ -39,6 +40,28 @@ func (s *JSONRat) UnmarshalJSON(data []byte) error {
 
 func (s JSONRat) String() string {
 	return s.FloatString(2)
+}
+
+func PipelineToCapability(pipeline string) Capability {
+	if len(pipeline) == 0 {
+		return Capability_Unused
+	}
+	runes := []rune(pipeline)
+	runes[0] = unicode.ToUpper(runes[0])
+	for i, r := range runes {
+		if r == '-' {
+			runes[i] = ' '
+		}
+	}
+	pipelineName := string(runes)
+	for cap, desc := range CapabilityNameLookup {
+		if pipelineName == desc {
+			return cap
+		}
+	}
+
+	//no capability description matches name
+	return Capability_Unused
 }
 
 type AIModelConfig struct {

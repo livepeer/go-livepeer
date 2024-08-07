@@ -109,6 +109,31 @@ func TestParseGetGatewayPrices(t *testing.T) {
 	}
 }
 
+func TestMaxPricePerCapability(t *testing.T) {
+	assert := assert.New(t)
+
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }`
+
+	prices := getCapabilityPrices(jsonTemplate)
+	assert.NotNil(prices)
+	assert.Equal(2, len(prices))
+
+	//confirm gateway field is initialized to empty string
+	assert.Equal(prices[0].Gateway, "")
+	//confirm Pipeline and ModelID is parsed correctly
+	assert.Equal(prices[0].Pipeline, "text-to-image")
+	assert.Equal(prices[1].Pipeline, "image-to-video")
+	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[1].ModelID, "default")
+
+	//confirm prices are parsed correctly
+	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	assert.NotEqual(price1, price2)
+	assert.Equal(big.NewRat(1000, 1), price1)
+	assert.Equal(big.NewRat(2000, 3), price2)
+}
+
 // Address provided to keystore file
 func TestParse_ParseEthKeystorePathValidFile(t *testing.T) {
 	assert := assert.New(t)
