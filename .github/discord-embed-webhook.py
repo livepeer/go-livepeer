@@ -81,5 +81,4 @@ if __name__ == "__main__":
     parser.add_argument("--git-commit", help="git commit message")
     parser.add_argument("--git-committer", help="git commit author name")
     args = parser.parse_args()
-    print(args)
     main(args)

@@ -73,13 +73,6 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Cache ffmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v3
-        with:
-          path: /github/home/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-
       - name: Set build environment
         run: |
           echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
@@ -118,7 +111,6 @@ jobs:
         run: go mod download
 
       - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
@@ -320,9 +312,9 @@ jobs:
           GITHUB_CONTEXT_JSON: ${{ toJson(github.event.pull_request) }}
         run: |
           python .github/discord-embed-webhook.py \
-          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
-          --discord-url="${{ secrets.DISCORD_URL }}"
-          --git-commit="$(git log -1 --pretty=format:'%s')"
+          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}" \
+          --discord-url="${{ secrets.DISCORD_URL }}" \
+          --git-commit="$(git log -1 --pretty=format:'%s')" \
           --git-committer="$(git log -1 --pretty=format:'%an')"
 
       - name: Notify new build upload
