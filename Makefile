@@ -2,9 +2,8 @@ SHELL=/bin/bash
 GO_BUILD_DIR?="./"
 
 MOCKGEN=go run github.com/golang/mock/mockgen
-ABIGEN=go run github.com/ethereum/go-ethereum/cmd/abigen
 
-all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
+all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go livepeer livepeer_cli livepeer_router livepeer_bench
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
@@ -18,15 +17,6 @@ net/redeemer_mock.pb.go net/redeemer_grpc_mock.pb.go: net/redeemer.pb.go net/red
 
 core/test_segment.go:
 	core/test_segment.sh core/test_segment.go
-
-eth/contracts/chainlink/AggregatorV3Interface.go:
-	solc --version | grep 0.7.6+commit.7338295f
-	@set -ex; \
-	for sol_file in eth/contracts/chainlink/*.sol; do \
-		contract_name=$$(basename "$$sol_file" .sol); \
-		solc --abi --optimize --overwrite -o $$(dirname "$$sol_file") $$sol_file; \
-		$(ABIGEN) --abi=$${sol_file%.sol}.abi --pkg=chainlink --type=$$contract_name --out=$${sol_file%.sol}.go; \
-	done
 
 version=$(shell cat VERSION)
 

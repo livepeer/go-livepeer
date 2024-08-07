@@ -3,8 +3,6 @@ package server
 import (
 	"container/heap"
 	"context"
-	"math/big"
-
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -169,7 +167,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 	}
 
 	var addrs []ethcommon.Address
-	prices := map[ethcommon.Address]*big.Rat{}
+	prices := map[ethcommon.Address]float64{}
 	addrCount := make(map[ethcommon.Address]int)
 	for _, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
@@ -182,10 +180,9 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		addrCount[addr]++
 		pi := sess.OrchestratorInfo.PriceInfo
 		if pi != nil && pi.PixelsPerUnit != 0 {
-			prices[addr] = big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit)
+			prices[addr] = float64(pi.PricePerUnit) / float64(pi.PixelsPerUnit)
 		}
 	}
-	maxPrice := BroadcastCfg.MaxPrice()
 
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	if err != nil {
@@ -202,7 +199,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 		s.perfScore.Mu.Unlock()
 	}
 
-	selected := s.selectionAlgorithm.Select(ctx, addrs, stakes, maxPrice, prices, perfScores)
+	selected := s.selectionAlgorithm.Select(addrs, stakes, prices, perfScores)
 
 	for i, sess := range s.unknownSessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {

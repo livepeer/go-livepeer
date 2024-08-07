@@ -350,7 +350,7 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		for cap := range caps.Capacities {
 			// If the capability does not have constraints (and thus any model constraints) skip it
 			// because we only price a capability together with a model ID right now
-			constraints, ok := caps.CapabilityConstraints[cap]
+			constraints, ok := caps.Constraints[cap]
 			if !ok {
 				continue
 			}
@@ -1263,9 +1263,7 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 	findCompatibleTranscoder := func(rtm *RemoteTranscoderManager) int {
 		for i := len(rtm.remoteTranscoders) - 1; i >= 0; i-- {
 			// no capabilities = default capabilities, all transcoders must support them
-			if caps == nil ||
-				(caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) &&
-					caps.LivepeerVersionCompatibleWith(rtm.remoteTranscoders[i].capabilities.ToNetCapabilities())) {
+			if caps == nil || caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) {
 				return i
 			}
 		}
@@ -1317,7 +1315,7 @@ func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {
 	panic("shouldn't be called on RemoteTranscoderManager")
 }
 
-// completeStreamSession end a stream session for a remote transcoder and decrements its load
+// completeStreamSessions end a stream session for a remote transcoder and decrements its load
 // caller should hold the mutex lock
 func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 	t, ok := rtm.streamSessions[sessionId]

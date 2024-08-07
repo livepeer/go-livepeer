@@ -608,11 +608,11 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.True(t, pool.pred(oInfo))
 
 	// Set server.BroadcastCfg.maxPrice higher than PriceInfo , should return true
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
 	assert.True(t, pool.pred(oInfo))
 
 	// Set MaxBroadcastPrice lower than PriceInfo, should return false
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
 	assert.False(t, pool.pred(oInfo))
 
 	// PixelsPerUnit is 0 , return false
@@ -620,7 +620,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	assert.False(t, pool.pred(oInfo))
 }
 
-func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *testing.T) {
+func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsEmptyList(t *testing.T) {
 	// Test setup
 	expPriceInfo := &net.PriceInfo{
 		PricePerUnit:  999,
@@ -629,7 +629,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 	expTranscoder := "transcoderFromTest"
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
 
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 1)))
+	server.BroadcastCfg.SetMaxPrice(big.NewRat(1, 1))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
@@ -698,15 +698,14 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 	}
 
 	// check size
-	assert.Equal(50, pool.Size())
+	assert.Equal(0, pool.Size())
 
 	urls := pool.GetInfos()
-	assert.Len(urls, 50)
-
+	assert.Len(urls, 0)
 	infos, err := pool.GetOrchestrators(context.TODO(), len(addresses), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(infos, 50)
+	assert.Len(infos, 0)
 }
 
 func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
@@ -824,7 +823,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		},
 	}
 
-	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
+	server.BroadcastCfg.SetMaxPrice(big.NewRat(10, 1))
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
@@ -900,27 +899,22 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		assert.Contains(testOrchs[25:], toOrchTest(o.EthereumAddr, o.ServiceURI, o.PricePerPixel))
 	}
 
-	// check pool returns all Os, not filtering by max price
-	assert.Equal(50, pool.Size())
+	// check size
+	assert.Equal(25, pool.Size())
 
 	infos := pool.GetInfos()
-	assert.Len(infos, 50)
+	assert.Len(infos, 25)
 	for _, info := range infos {
-		assert.Contains(addresses, info.URL.String())
+		assert.Contains(addresses[25:], info.URL.String())
 	}
 
 	oinfos, err := pool.GetOrchestrators(context.TODO(), len(orchestrators), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
-	assert.Len(oinfos, 50)
-
-	seenAddrs := make(map[string]bool)
+	assert.Len(oinfos, 25)
 	for _, info := range oinfos {
-		addr := info.LocalInfo.URL.String()
-		assert.Contains(addresses, addr)
-		seenAddrs[addr] = true
+		assert.Equal(info.RemoteInfo.Transcoder, "goodPriceTranscoder")
 	}
-	assert.Len(seenAddrs, 50)
 }
 
 func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {

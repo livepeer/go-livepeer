@@ -57,14 +57,10 @@ func (w *wizard) setBroadcastConfig() {
 	fmt.Printf("eg. 1 wei / 10 pixels = 0,1 wei per pixel \n")
 	fmt.Printf("\n")
 	fmt.Printf("Enter amount of pixels that make up a single unit (default: 1 pixel) - ")
-	// Read numbers as strings not to lose precision and support big numbers
-	pixelsPerUnit := w.readDefaultString("1")
+	pixelsPerUnit := w.readDefaultInt(1)
 	fmt.Printf("\n")
-	fmt.Printf("Enter the currency for the price per unit (default: Wei) - ")
-	currency := w.readDefaultString("Wei")
-	fmt.Printf("\n")
-	fmt.Printf("Enter the maximum price to pay for %s pixels in %s (default: 0) - ", pixelsPerUnit, currency)
-	maxPricePerUnit := w.readDefaultString("0")
+	fmt.Printf("Enter the maximum price to pay for %d pixels in Wei (required) - ", pixelsPerUnit)
+	maxPricePerUnit := w.readDefaultInt(0)
 
 	opts := w.allTranscodingOptions()
 	if opts == nil {
@@ -81,18 +77,12 @@ func (w *wizard) setBroadcastConfig() {
 	}
 
 	val := url.Values{
-		"pixelsPerUnit":      {fmt.Sprintf("%v", pixelsPerUnit)},
-		"currency":           {fmt.Sprintf("%v", currency)},
-		"maxPricePerUnit":    {fmt.Sprintf("%v", maxPricePerUnit)},
+		"pixelsPerUnit":      {fmt.Sprintf("%v", strconv.Itoa(pixelsPerUnit))},
+		"maxPricePerUnit":    {fmt.Sprintf("%v", strconv.Itoa(maxPricePerUnit))},
 		"transcodingOptions": {fmt.Sprintf("%v", transOpts)},
 	}
 
-	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
-	if !ok {
-		fmt.Printf("Error applying configuration: %s\n", result)
-	} else {
-		fmt.Printf("Configuration applied successfully\n")
-	}
+	httpPostWithParams(fmt.Sprintf("http://%v:%v/setBroadcastConfig", w.host, w.httpPort), val)
 }
 
 func (w *wizard) idListToVideoProfileList(idList string, opts map[int]string) (string, error) {

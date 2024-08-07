@@ -43,7 +43,13 @@ func myHostPort() string {
 	return "https://" + ip + ":" + defaultRPCPort
 }
 
-func (w *wizard) promptOrchestratorConfig() (blockRewardCut, feeCut float64, pricePerUnit, currency, pixelsPerUnit, serviceURI string) {
+func (w *wizard) promptOrchestratorConfig() (float64, float64, int, int, string) {
+	var (
+		blockRewardCut float64
+		feeCut         float64
+		addr           string
+	)
+
 	orch, _, err := w.getOrchestratorInfo()
 	if err != nil || orch == nil {
 		fmt.Println("unable to get current reward cut and fee cut")
@@ -62,23 +68,17 @@ func (w *wizard) promptOrchestratorConfig() (blockRewardCut, feeCut float64, pri
 	fmt.Println("eg. 1 wei / 10 pixels = 0,1 wei per pixel")
 	fmt.Println()
 	fmt.Printf("Enter amount of pixels that make up a single unit (default: 1 pixel) ")
-	// Read numbers as strings not to lose precision and support big numbers
-	pixelsPerUnit = w.readDefaultString("1")
-	fmt.Println()
-	fmt.Printf("Enter the currency for the price per unit (default: Wei) ")
-	currency = w.readDefaultString("Wei")
-	fmt.Println()
-	fmt.Printf("Enter the price for %s pixels in %s (default: 0) ", pixelsPerUnit, currency)
-	pricePerUnit = w.readDefaultString("0")
+	pixelsPerUnit := w.readDefaultInt(1)
+	fmt.Printf("Enter the price for %d pixels in Wei (required) ", pixelsPerUnit)
+	pricePerUnit := w.readDefaultInt(0)
 
-	var addr string
 	if orch.ServiceURI == "" {
 		addr = myHostPort()
 	} else {
 		addr = orch.ServiceURI
 	}
 	fmt.Printf("Enter the public host:port of node (default: %v)", addr)
-	serviceURI = w.readStringAndValidate(func(in string) (string, error) {
+	serviceURI := w.readStringAndValidate(func(in string) (string, error) {
 		if "" == in {
 			in = addr
 		}
@@ -92,7 +92,7 @@ func (w *wizard) promptOrchestratorConfig() (blockRewardCut, feeCut float64, pri
 		return in, nil
 	})
 
-	return blockRewardCut, 100 - feeCut, pricePerUnit, currency, pixelsPerUnit, serviceURI
+	return blockRewardCut, 100 - feeCut, pricePerUnit, pixelsPerUnit, serviceURI
 }
 
 func (w *wizard) activateOrchestrator() {
@@ -196,14 +196,13 @@ func (w *wizard) setOrchestratorConfig() {
 }
 
 func (w *wizard) getOrchestratorConfigFormValues() url.Values {
-	blockRewardCut, feeShare, pricePerUnit, currency, pixelsPerUnit, serviceURI := w.promptOrchestratorConfig()
+	blockRewardCut, feeShare, pricePerUnit, pixelsPerUnit, serviceURI := w.promptOrchestratorConfig()
 
 	return url.Values{
 		"blockRewardCut": {fmt.Sprintf("%v", blockRewardCut)},
 		"feeShare":       {fmt.Sprintf("%v", feeShare)},
-		"pricePerUnit":   {fmt.Sprintf("%v", pricePerUnit)},
-		"currency":       {fmt.Sprintf("%v", currency)},
-		"pixelsPerUnit":  {fmt.Sprintf("%v", pixelsPerUnit)},
+		"pricePerUnit":   {fmt.Sprintf("%v", strconv.Itoa(pricePerUnit))},
+		"pixelsPerUnit":  {fmt.Sprintf("%v", strconv.Itoa(pixelsPerUnit))},
 		"serviceURI":     {fmt.Sprintf("%v", serviceURI)},
 	}
 }
@@ -320,22 +319,18 @@ func (w *wizard) setPriceForBroadcaster() {
 		return in, nil
 	})
 
-	fmt.Println("Enter pixels per unit (default: 1 pixel)")
-	// Read numbers as strings not to lose precision and support big numbers
-	pixels := w.readDefaultString("1")
-	fmt.Println("Enter currency for the price per unit (default: Wei)")
-	currency := w.readDefaultString("Wei")
-	fmt.Println("Enter price per unit (default: 0)")
-	price := w.readDefaultString("0")
+	fmt.Println("Enter price per unit:")
+	price := w.readDefaultInt(0)
+	fmt.Println("Enter pixels per unit:")
+	pixels := w.readDefaultInt(1)
 	data := url.Values{
-		"pricePerUnit":       {fmt.Sprintf("%v", price)},
-		"currency":           {fmt.Sprintf("%v", currency)},
-		"pixelsPerUnit":      {fmt.Sprintf("%v", pixels)},
+		"pricePerUnit":       {fmt.Sprintf("%v", strconv.Itoa(price))},
+		"pixelsPerUnit":      {fmt.Sprintf("%v", strconv.Itoa(pixels))},
 		"broadcasterEthAddr": {fmt.Sprintf("%v", ethaddr)},
 	}
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setPriceForBroadcaster", w.host, w.httpPort), data)
 	if ok {
-		fmt.Printf("Price for broadcaster %v set to %v %v per %v pixels", ethaddr, price, currency, pixels)
+		fmt.Printf("Price for broadcaster %v set to %v gwei per %v pixels", ethaddr, price, pixels)
 		return
 	} else {
 		fmt.Printf("Error setting price for broadcaster: %v", result)
