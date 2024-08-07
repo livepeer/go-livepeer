@@ -129,7 +129,7 @@ jobs:
           zip -9rq "../releases/$LP_BUILD_DIR.zip" ./
 
       - name: Archive binaries
-        if: matrix.platform.name != 'windows'
+        if: matrix.target.GOOS != 'windows'
         run: |
           mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
           cd "$GO_BUILD_DIR/"
@@ -311,6 +311,7 @@ jobs:
         env:
           GITHUB_CONTEXT_JSON: ${{ toJson(github.event.pull_request) }}
         run: |
+          pip install -U discord-webhook --no-cache-dir
           python .github/discord-embed-webhook.py \
           --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}" \
           --discord-url="${{ secrets.DISCORD_URL }}" \

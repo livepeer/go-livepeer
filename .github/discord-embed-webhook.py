@@ -2,8 +2,8 @@ import argparse
 import os
 import json
 import pathlib
-from typing import Any
-import urllib
+
+from discord_webhook import DiscordEmbed, DiscordWebhook
 
 
 GITHUB_CONTEXT_JSON = os.environ.get("GITHUB_CONTEXT_JSON", "{}")
@@ -12,8 +12,7 @@ DOWNLOAD_BASE_URL_TEMPLATE = (
 )
 
 
-def get_embeds(ref_name: str, checksums: list[str]) -> list[dict[Any, Any]]:
-    embeds = []
+def get_embeds(embed: DiscordEmbed, ref_name: str, checksums: list[str]):
     for line in checksums:
         shasum, filename = line.split()
         download_url = DOWNLOAD_BASE_URL_TEMPLATE.format(
@@ -21,57 +20,37 @@ def get_embeds(ref_name: str, checksums: list[str]) -> list[dict[Any, Any]]:
             filename=filename,
         )
         title = filename[9:].split(".")[0]
-        parts = title.split("-")
-        platform, architecture = parts[0], parts[1]
-        if len(parts) == 3:
-            architecture = parts[2]
-        embeds.append(
-            {
-                "title": title,
-                "url": download_url,
-                "color": 2928914,
-                "fields": [
-                    {"name": "platform", "value": platform, "inline": True},
-                    {"name": "architecture", "value": architecture, "inline": True},
-                    {"name": "filename", "value": filename, "inline": True},
-                    {
-                        "name": "Download URL",
-                        "value": download_url,
-                    },
-                    {
-                        "name": "SHA256 checksum",
-                        "value": f"`{shasum}`",
-                    },
-                ],
-            },
-        )
-    return embeds
+        embed.add_embed_field(name=title, value=download_url, inline=False)
+        embed.add_embed_field(name="SHA256 checksum", value=shasum, inline=False)
 
 
 def main(args):
     checksums = []
     github_context = json.loads(GITHUB_CONTEXT_JSON)
     head = github_context.get("head", {})
-    user = head.get("user", {})
     repo = head.get("repo", {})
-    releases_dir = pathlib.Path("releases/")
-    for f in releases_dir.iterdir():
-        print(f)
-        if f.suffix != ".txt":
-            continue
-        checksums = f.read_text().splitlines()
-    print(checksums)
-    content = {
-        "content": ":white_check_mark: Build succeeded for go-livepeer :white_check_mark: \n\n"
-        f"Branch: `{head.get('ref')}`\n"
-        f'Latest commit: "{args.git_commit}" by **{args.git_committer}**\n\n'
-        f"Commit SHA: (`{head.get('sha')}`)[{repo.get('commits_url')}]",
-        "embed": get_embeds(args.ref_name, checksums),
-        "username": user.get("name"),
-        "avatar_url": user.get("avatar_url"),
-        "flags": 4,
-    }
-    print(json.dumps(content))
+    checksums_file = pathlib.Path("releases") / f"{args.ref_name}_checksums.txt"
+    commit_url = f'{repo.get("html_url")}/commit/{head.get("sha")}'
+    checksums = checksums_file.read_text().splitlines()
+    webhook = DiscordWebhook(
+        url=args.discord_url,
+        content=":white_check_mark: Build succeeded for go-livepeer :white_check_mark:",
+        username="[BOT] Livepeer builder",
+    )
+    webhook.add_file(filename=checksums_file.name, file=checksums_file.read_bytes())
+    embed = DiscordEmbed(
+        title=head.get("ref"),
+        description=args.git_commit,
+        color=2928914,
+        url=commit_url,
+    )
+    embed.add_embed_field(name="Commit SHA", value=head.get("sha"))
+    embed.set_author(name=args.git_committer)
+    get_embeds(embed, args.ref_name, checksums)
+    embed.set_timestamp()
+    webhook.add_embed(embed)
+    response = webhook.execute()
+    print(response)
 
 
 if __name__ == "__main__":
