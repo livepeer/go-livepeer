@@ -172,7 +172,7 @@ type transcodeTestParams struct {
 }
 
 func (params transcodeTestParams) IsRequired() bool {
-	return InArray(params.Cap, DefaultCapabilities())
+	return HasCapability(DefaultCapabilities(), params.Cap)
 }
 
 func (params transcodeTestParams) Kind() string {
