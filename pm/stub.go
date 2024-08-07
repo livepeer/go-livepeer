@@ -466,7 +466,7 @@ func (m *MockRecipient) RedeemWinningTicket(ticket *Ticket, sig []byte, seed *bi
 }
 
 // TicketParams returns the recipient's currently accepted ticket parameters
-// for a provided sender ETH adddress
+// for a provided sender ETH address
 func (m *MockRecipient) TicketParams(sender ethcommon.Address, price *big.Rat) (*TicketParams, error) {
 	args := m.Called(sender, price)
 
