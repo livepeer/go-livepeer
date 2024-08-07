@@ -438,9 +438,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	oldMaxSessions := core.MaxSessions
 	core.MaxSessions = 1
 	// happy case
-	id, err := createSid(u)
-	require.NoError(t, err)
-	sid := id.(*core.StreamParameters)
+	sid := createSid(u).(*core.StreamParameters)
 	mid := sid.ManifestID
 	if mid != "id1" {
 		t.Error("Stream should be allowd", sid)
@@ -450,8 +448,7 @@ func TestCreateRTMPStreamHandlerCap(t *testing.T) {
 	}
 	s.rtmpConnections[core.ManifestID("id1")] = nil
 	// capped case
-	params, err := createSid(u)
-	require.Error(t, err)
+	params := createSid(u)
 	if params != nil {
 		t.Error("Stream should be denied because of capacity cap")
 	}
@@ -463,7 +460,7 @@ type authWebhookReq struct {
 }
 
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
-	assert := require.New(t)
+	assert := assert.New(t)
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
 	defer cancel()
@@ -472,8 +469,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 
 	AuthWebhookURL = mustParseUrl(t, "http://localhost:8938/notexisting")
 	u := mustParseUrl(t, "http://hot/something/id1")
-	sid, err := createSid(u)
-	assert.Error(err)
+	sid := createSid(u)
 	assert.Nil(sid, "Webhook auth failed")
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -490,8 +486,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	}))
 	defer ts.Close()
 	AuthWebhookURL = mustParseUrl(t, ts.URL)
-	sid, err = createSid(u)
-	assert.NoError(err)
+	sid = createSid(u)
 	assert.NotNil(sid, "On empty response with 200 code should pass")
 
 	// local helper to reduce boilerplate
@@ -508,23 +503,19 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// empty manifestID
 	ts2 := makeServer(`{"manifestID":""}`)
 	defer ts2.Close()
-	sid, err = createSid(u)
-	assert.Error(err)
+	sid = createSid(u)
 	assert.Nil(sid, "Should not pass if returned manifest id is empty")
 
 	// invalid json
 	ts3 := makeServer(`{manifestID:"XX"}`)
 	defer ts3.Close()
-	sid, err = createSid(u)
-	assert.Error(err)
+	sid = createSid(u)
 	assert.Nil(sid, "Should not pass if returned json is invalid")
 
 	// set manifestID
 	ts4 := makeServer(`{"manifestID":"xy"}`)
 	defer ts4.Close()
-	p, err := createSid(u)
-	assert.NoError(err)
-	params := p.(*core.StreamParameters)
+	params := createSid(u).(*core.StreamParameters)
 	mid := params.ManifestID
 	assert.Equal(core.ManifestID("xy"), mid, "Should set manifest id to one provided by webhook")
 
@@ -535,9 +526,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set manifestID + streamKey
 	ts5 := makeServer(`{"manifestID":"xyz", "streamKey":"zyx"}`)
 	defer ts5.Close()
-	id, err := createSid(u)
-	require.NoError(t, err)
-	params = id.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	mid = params.ManifestID
 	assert.Equal(core.ManifestID("xyz"), mid, "Should set manifest to one provided by webhook")
 	assert.Equal("xyz/zyx", params.StreamID(), "Should set streamkey to one provided by webhook")
@@ -546,9 +535,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// set presets (with some invalid)
 	ts6 := makeServer(`{"manifestID":"a", "presets":["P240p30fps16x9", "unknown", "P720p30fps16x9"]}`)
 	defer ts6.Close()
-	strmID, err := createSid(u)
-	require.NoError(t, err)
-	params = strmID.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	assert.Len(params.Profiles, 2)
 	assert.Equal(params.Profiles, []ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9,
 		ffmpeg.P720p30fps16x9}, "Did not have matching presets")
@@ -560,9 +547,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "passthru_fps", "bitrate": 890, "width": 789, "height": 654, "profile": "H264ConstrainedHigh", "gop":"123"},
 		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 	defer ts7.Close()
-	data, err := createSid(u)
-	require.NoError(t, err)
-	params = data.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	assert.Len(params.Profiles, 4)
 
 	expectedProfiles := []ffmpeg.VideoProfile{
@@ -612,9 +597,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "prof1", "bitrate": 432, "fps": 560, "width": 123, "height": 456},
 		{"name": "prof2", "bitrate": 765, "fps": 876, "width": 456, "height": "hello"}]}`)
 	defer ts8.Close()
-	appData, err := createSid(u)
-	require.Error(t, err)
-	params, ok := appData.(*core.StreamParameters)
+	params, ok := createSid(u).(*core.StreamParameters)
 	assert.False(ok)
 	assert.Nil(params)
 
@@ -626,9 +609,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 		{"name": "gop0", "bitrate": 800, "width": 400, "height": 220, "profile": "H264ConstrainedHigh", "gop":"0.0"}]}`)
 
 	defer ts9.Close()
-	i, err := createSid(u)
-	require.NoError(t, err)
-	params = i.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	jointProfiles := append([]ffmpeg.VideoProfile{ffmpeg.P240p30fps16x9, ffmpeg.P720p30fps16x9}, expectedProfiles...)
 
 	assert.Len(params.Profiles, 6)
@@ -637,9 +618,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// all invalid presets in webhook should lead to empty set
 	ts10 := makeServer(`{"manifestID":"a", "presets":["very", "unknown"]}`)
 	defer ts10.Close()
-	id2, err := createSid(u)
-	require.NoError(t, err)
-	params = id2.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	assert.Len(params.Profiles, 0, "Unexpected value in presets")
 
 	// invalid gops
@@ -657,31 +636,25 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	// intra only gop
 	ts14 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "intra" }]}`)
 	defer ts14.Close()
-	id3, err := createSid(u)
-	require.NoError(t, err)
-	params = id3.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	assert.Len(params.Profiles, 1)
 	assert.Equal(ffmpeg.GOPIntraOnly, params.Profiles[0].GOP)
 
 	// do not create stream if ObjectStore URL is invalid
 	ts15 := makeServer(`{"manifestID":"a2", "objectStore": "invalid://object.store", "recordObjectStore": ""}`)
 	defer ts15.Close()
-	sid, err = createSid(u)
-	require.Error(t, err)
+	sid = createSid(u)
 	assert.Nil(sid)
 
 	// do not create stream if RecordObjectStore URL is invalid
 	ts16 := makeServer(`{"manifestID":"a2", "objectStore": "", "recordObjectStore": "invalid://object.store"}`)
 	defer ts16.Close()
-	sid, err = createSid(u)
-	require.Error(t, err)
+	sid = createSid(u)
 	assert.Nil(sid)
 
 	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
 	defer ts17.Close()
-	id4, err := createSid(u)
-	require.NoError(t, err)
-	params = id4.(*core.StreamParameters)
+	params = createSid(u).(*core.StreamParameters)
 	assert.Equal(core.ManifestID("a3"), params.ManifestID)
 	assert.NotNil(params.OS)
 	assert.True(params.OS.IsExternal())
@@ -716,41 +689,30 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
 	rand.Seed(123)
-	sid, err := createSid(u)
-	require.NoError(t, err)
+	sid := createSid(u)
 	sap := sid.(*core.StreamParameters)
 	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
 
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid.StreamID() != expectedSid.String() {
+	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u = mustParseUrl(t, "rtmp://localhost/stream/"+expectedSid.String()) // with stream
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid.StreamID() != expectedSid.String() {
+	if sid := createSid(u); sid.StreamID() != expectedSid.String() {
 		t.Error("Unexpected streamid")
 	}
 	expectedMid := "mnopq"
 	key := common.RandomIDGenerator(StreamKeyBytes)
 	u = mustParseUrl(t, "rtmp://localhost/"+string(expectedMid)) // without key
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid.StreamID() != string(expectedMid)+"/"+key {
+	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	u = mustParseUrl(t, "rtmp://localhost/stream/"+string(expectedMid)) // with stream, without key
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid.StreamID() != string(expectedMid)+"/"+key {
+	if sid := createSid(u); sid.StreamID() != string(expectedMid)+"/"+key {
 		t.Error("Unexpected streamid", sid.StreamID())
 	}
 	// Test normal case
 	u = mustParseUrl(t, "rtmp://localhost")
-	id, err := createSid(u)
-	require.NoError(t, err)
-	st := stream.NewBasicRTMPVideoStream(id)
+	st := stream.NewBasicRTMPVideoStream(createSid(u))
 	if st.GetStreamID() == "" {
 		t.Error("Empty streamid")
 	}
@@ -759,18 +721,14 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		t.Error("Handler failed ", err)
 	}
 	// Test collisions via stream reuse
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid == nil {
+	if sid := createSid(u); sid == nil {
 		t.Error("Did not expect a failure due to naming collision")
 	}
 	// Ensure the stream ID is reusable after the stream ends
 	if err := endHandler(u, st); err != nil {
 		t.Error("Could not clean up stream")
 	}
-	sid, err = createSid(u)
-	require.NoError(t, err)
-	if sid.StreamID() != st.GetStreamID() {
+	if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
 		t.Error("Mismatched streamid during stream reuse", sid.StreamID(), st.GetStreamID())
 	}
 
@@ -781,9 +739,7 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 		// This isn't a great test because if the query param ever changes,
 		// this test will still pass
 		u := mustParseUrl(t, "rtmp://localhost/"+inp)
-		sid, err = createSid(u)
-		require.NoError(t, err)
-		if sid.StreamID() != st.GetStreamID() {
+		if sid := createSid(u); sid.StreamID() != st.GetStreamID() {
 			t.Errorf("Unexpected StreamID for '%v' ; expected '%v' for input '%v'", sid, st.GetStreamID(), inp)
 		}
 	}
@@ -848,8 +804,7 @@ func TestCreateRTMPStreamHandlerWithAuthHeader(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	sid, err := createSid(u)
-	require.NoError(t, err)
+	sid := createSid(u)
 	require.NotNil(t, sid)
 	require.Equal(t, expectedSid.String(), sid.StreamID())
 
@@ -919,8 +874,7 @@ func TestCreateRTMPStreamHandlerWithAuthHeader_DifferentProfilesToCallbackURL(t 
 	expectedSid := core.MakeStreamIDFromString("override-manifest-id", "abcdef")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	sid, err := createSid(u)
-	require.Error(t, err)
+	sid := createSid(u)
 	require.Nil(t, sid)
 }
 
@@ -933,8 +887,7 @@ func TestEndRTMPStreamHandler(t *testing.T) {
 	handler := gotRTMPStreamHandler(s)
 	endHandler := endRTMPStreamHandler(s)
 	u := mustParseUrl(t, "rtmp://localhost")
-	sid, err := createSid(u)
-	require.NoError(t, err)
+	sid := createSid(u)
 	st := stream.NewBasicRTMPVideoStream(sid)
 
 	// Nonexistent stream
@@ -1045,9 +998,7 @@ func TestMultiStream(t *testing.T) {
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
-		id, err := createSid(u)
-		require.NoError(t, err)
-		st := stream.NewBasicRTMPVideoStream(id)
+		st := stream.NewBasicRTMPVideoStream(createSid(u))
 		if err := handler(u, st); err != nil {
 			t.Error("Could not handle stream ", i, err)
 		}
@@ -1278,8 +1229,7 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 
 	// create BasicRTMPVideoStream and extract ManifestID
 	u := mustParseUrl(t, "rtmp://localhost")
-	sid, err := createSid(u)
-	assert.NoError(err)
+	sid := createSid(u)
 	st := stream.NewBasicRTMPVideoStream(sid)
 	mid := streamParams(st.AppData()).ManifestID
 
@@ -1288,8 +1238,8 @@ func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
 	assert.Equal(exists, false)
 
 	// assert stream starts successfully
-	err = handler(u, st)
-	assert.NoError(err)
+	err := handler(u, st)
+	assert.Nil(err)
 
 	// assert sessManager is running and has right number of sessions
 	cxn, exists := s.rtmpConnections[mid]

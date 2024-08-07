@@ -16,6 +16,7 @@ import (
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/server"
 
 	"github.com/golang/glog"
 )
@@ -70,6 +71,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 func (dbo *DBOrchestratorPoolCache) getURLs() ([]*url.URL, error) {
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
 			CurrentRound:   dbo.rm.LastInitializedRound(),
 			UpdatedLastDay: true,
 		},
@@ -118,7 +120,8 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 			return false
 		}
 
-		// check if O has a valid price
+		// check if O's price is below B's max price
+		maxPrice := server.BroadcastCfg.MaxPrice()
 		price, err := common.RatPriceInfo(info.PriceInfo)
 		if err != nil {
 			clog.V(common.DEBUG).Infof(ctx, "invalid price info orch=%v err=%q", info.GetTranscoder(), err)
@@ -128,8 +131,12 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 			clog.V(common.DEBUG).Infof(ctx, "no price info received for orch=%v", info.GetTranscoder())
 			return false
 		}
-		if price.Sign() < 0 {
-			clog.V(common.DEBUG).Infof(ctx, "invalid price received for orch=%v price=%v", info.GetTranscoder(), price.RatString())
+		if maxPrice != nil && price.Cmp(maxPrice) > 0 {
+			clog.V(common.DEBUG).Infof(ctx, "orchestrator's price is too high orch=%v price=%v wei/pixel maxPrice=%v wei/pixel",
+				info.GetTranscoder(),
+				price.FloatString(3),
+				maxPrice.FloatString(3),
+			)
 			return false
 		}
 		return true
@@ -147,6 +154,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 func (dbo *DBOrchestratorPoolCache) Size() int {
 	count, _ := dbo.store.OrchCount(
 		&common.DBOrchFilter{
+			MaxPrice:       server.BroadcastCfg.MaxPrice(),
 			CurrentRound:   dbo.rm.LastInitializedRound(),
 			UpdatedLastDay: true,
 		},
