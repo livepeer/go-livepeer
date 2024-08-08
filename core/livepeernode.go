@@ -105,7 +105,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		Eth:             e,
 		WorkDir:         wd,
 		Database:        dbh,
-		AutoAdjustPrice: true,
+		AutoAdjustPrice: false,
 		SegmentChans:    make(map[ManifestID]SegmentChan),
 		segmentMutex:    &sync.RWMutex{},
 		Capabilities:    &Capabilities{capacities: map[Capability]int{}, version: LivepeerVersion},
