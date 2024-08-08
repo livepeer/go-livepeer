@@ -188,6 +188,20 @@ func MandatoryOCapabilities() []Capability {
 	}
 }
 
+func RemoveCapability(haystack []Capability, needle Capability) []Capability {
+	for i, c := range haystack {
+		if c == needle {
+			// TODO use slices.Delete once go-livepeer updates to latest golang
+			return append(haystack[:i], haystack[i+1:]...)
+		}
+	}
+	return haystack
+}
+
+func AddCapability(caps []Capability, newCap Capability) []Capability {
+	return append(caps, newCap)
+}
+
 func NewCapabilityString(caps []Capability) CapabilityString {
 	capStr := CapabilityString{}
 	for _, v := range caps {

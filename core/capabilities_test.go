@@ -489,6 +489,50 @@ func TestCapabilities_LegacyCheck(t *testing.T) {
 	assert.Len(legacyCapabilities, legacyLen) // sanity check no modifications
 }
 
+func TestCapability_RemoveCapability(t *testing.T) {
+	tests := []struct {
+		name     string
+		caps     []Capability
+		toRemove Capability
+		expect   []Capability
+	}{{
+		name:     "empty capability list",
+		caps:     nil,
+		toRemove: Capability_H264,
+		expect:   nil,
+	}, {
+		name:     "capability not in list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_MP4,
+		expect:   []Capability{Capability_H264, Capability_MPEGTS},
+	}, {
+		name:     "capability at beginning of list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_H264,
+		expect:   []Capability{Capability_MPEGTS},
+	}, {
+		name:     "capability in middle of list",
+		caps:     []Capability{Capability_H264, Capability_MP4, Capability_MPEGTS},
+		toRemove: Capability_MP4,
+		expect:   []Capability{Capability_H264, Capability_MPEGTS},
+	}, {
+		name:     "capability at end of list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_MPEGTS,
+		expect:   []Capability{Capability_H264},
+	}, {
+		name:     "last capability",
+		caps:     []Capability{Capability_H264},
+		toRemove: Capability_H264,
+		expect:   []Capability{},
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expect, RemoveCapability(tt.caps, tt.toRemove))
+		})
+	}
+}
+
 func TestLiveeerVersionCompatibleWith(t *testing.T) {
 	tests := []struct {
 		name                  string
