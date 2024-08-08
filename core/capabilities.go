@@ -528,7 +528,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 }
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion}
+	c := &Capabilities{capacities: make(map[Capability]int), constraints: Constraints{perCapability: make(PerCapabilityConstraints)}, version: LivepeerVersion}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
