@@ -13,13 +13,13 @@ ENV	GOARCH="$TARGETARCH" \
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release yasm \
-	&& curl -fsSL https://dl.google.com/go/go1.20.4.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
+	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
 	&& apt update \
-	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64
+	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \

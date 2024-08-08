@@ -12,18 +12,30 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+type ModelConstraints map[string]*ModelConstraint
+
+type ModelConstraint struct {
+	Warm bool
+}
+
 type Capability int
 type CapabilityString []uint64
 type Constraints struct {
 	minVersion string
 }
+type PerCapabilityConstraints struct {
+	// Models contains a *ModelConstraint for each supported model ID
+	Models ModelConstraints
+}
+type CapabilityConstraints map[Capability]*PerCapabilityConstraints
 type Capabilities struct {
-	bitstring   CapabilityString
-	mandatories CapabilityString
-	version     string
-	constraints Constraints
-	capacities  map[Capability]int
-	mutex       sync.Mutex
+	bitstring             CapabilityString
+	mandatories           CapabilityString
+	version               string
+	constraints           Constraints
+	capabilityConstraints CapabilityConstraints
+	capacities            map[Capability]int
+	mutex                 sync.Mutex
 }
 type CapabilityTest struct {
 	inVideoData []byte
@@ -61,6 +73,11 @@ const (
 	Capability_H264_Decode_422_10bit
 	Capability_H264_Decode_420_10bit
 	Capability_SegmentSlicing
+	Capability_TextToImage
+	Capability_ImageToImage
+	Capability_ImageToVideo
+	Capability_Upscale
+	Capability_AudioToText
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -92,6 +109,11 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_H264_Decode_422_10bit:      "H264 Decode YUV422 10-bit",
 	Capability_H264_Decode_420_10bit:      "H264 Decode YUV420 10-bit",
 	Capability_SegmentSlicing:             "Segment slicing",
+	Capability_TextToImage:                "Text to image",
+	Capability_ImageToImage:               "Image to image",
+	Capability_ImageToVideo:               "Image to video",
+	Capability_Upscale:                    "Upscale",
+	Capability_AudioToText:                "Audio to text",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -177,6 +199,11 @@ func OptionalCapabilities() []Capability {
 		Capability_H264_Decode_444_10bit,
 		Capability_H264_Decode_422_10bit,
 		Capability_H264_Decode_420_10bit,
+		Capability_TextToImage,
+		Capability_ImageToImage,
+		Capability_ImageToVideo,
+		Capability_Upscale,
+		Capability_AudioToText,
 	}
 }
 
@@ -223,6 +250,43 @@ func (c1 CapabilityString) CompatibleWith(c2 CapabilityString) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func (c1 CapabilityConstraints) CompatibleWith(c2 CapabilityConstraints) bool {
+	for c1Cap, c1Constraints := range c1 {
+		c2Constraints, ok := c2[c1Cap]
+		if !ok {
+			// No constraints on this capability so assume compatibility
+			continue
+		}
+
+		if !c1Constraints.CompatibleWith(c2Constraints) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (c1 *PerCapabilityConstraints) CompatibleWith(c2 *PerCapabilityConstraints) bool {
+	return c1.Models.CompatibleWith(c2.Models)
+}
+
+func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
+	for c1ModelID, c1ModelConstraint := range c1 {
+		c2ModelConstraint, ok := c2[c1ModelID]
+		if !ok {
+			// c2 does not support this model ID so it is incompatible
+			return false
+		}
+
+		if c1ModelConstraint.Warm && !c2ModelConstraint.Warm {
+			// c1 requires the model ID to be warm, but c2's model ID is not warm so it is incompatible
+			return false
+		}
+	}
+
 	return true
 }
 
@@ -355,11 +419,28 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 		return false
 	}
 
-	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
-	minVerNoSuffix, _ := minVer.SetPrerelease("")
-	verNoSuffix, _ := ver.SetPrerelease("")
+	// // Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	// minVerNoSuffix, _ := minVer.SetPrerelease("")
+	// verNoSuffix, _ := ver.SetPrerelease("")
 
-	return !verNoSuffix.LessThan(&minVerNoSuffix)
+	// return !verNoSuffix.LessThan(&minVerNoSuffix)
+
+	// TODO: Remove AI-specific cases below when merging into master.
+	// NOTE: This logic was added to allow the version suffix (i.e. v0.7.6-ai.1) to be
+	// used correctly during the version constraint filtering.
+	minVerHasSuffix := minVer.Prerelease() != ""
+	verHasSuffix := ver.Prerelease() != ""
+	if !minVerHasSuffix || !verHasSuffix {
+		minVerNoSuffix, _ := minVer.SetPrerelease("")
+		verNoSuffix, _ := ver.SetPrerelease("")
+		minVer = &minVerNoSuffix
+		ver = &verNoSuffix
+	}
+	if minVer.Equal(ver) && minVerHasSuffix && !verHasSuffix {
+		return false
+	}
+
+	return !ver.LessThan(minVer)
 }
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
@@ -386,6 +467,11 @@ func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 		return false
 	}
 
+	orchCapabilityConstraints := CapabilitiesFromNetCapabilities(orch).capabilityConstraints
+	if !bcast.capabilityConstraints.CompatibleWith(orchCapabilityConstraints) {
+		return false
+	}
+
 	return bcast.bitstring.CompatibleWith(orch.Bitstring)
 }
 
@@ -395,9 +481,21 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion}}
+	netCaps := &net.Capabilities{Bitstring: c.bitstring, Mandatories: c.mandatories, Version: c.version, Capacities: make(map[uint32]uint32), Constraints: &net.Capabilities_Constraints{MinVersion: c.constraints.minVersion}, CapabilityConstraints: make(map[uint32]*net.Capabilities_CapabilityConstraints)}
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
+	}
+	for capability, constraints := range c.capabilityConstraints {
+		models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
+		for modelID, modelConstraint := range constraints.Models {
+			models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
+				Warm: modelConstraint.Warm,
+			}
+		}
+
+		netCaps.CapabilityConstraints[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
+			Models: models,
+		}
 	}
 	return netCaps
 }
@@ -407,11 +505,12 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		return nil
 	}
 	coreCaps := &Capabilities{
-		bitstring:   caps.Bitstring,
-		mandatories: caps.Mandatories,
-		capacities:  make(map[Capability]int),
-		version:     caps.Version,
-		constraints: Constraints{minVersion: caps.Constraints.GetMinVersion()},
+		bitstring:             caps.Bitstring,
+		mandatories:           caps.Mandatories,
+		capacities:            make(map[Capability]int),
+		version:               caps.Version,
+		constraints:           Constraints{minVersion: caps.Constraints.GetMinVersion()},
+		capabilityConstraints: make(CapabilityConstraints),
 	}
 	if caps.Capacities == nil || len(caps.Capacities) == 0 {
 		// build capacities map if not present (struct received from previous versions)
@@ -428,11 +527,23 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 			coreCaps.capacities[Capability(capabilityInt)] = int(capacity)
 		}
 	}
+
+	for capabilityInt, constraints := range caps.CapabilityConstraints {
+		models := make(map[string]*ModelConstraint)
+		for modelID, modelConstraint := range constraints.Models {
+			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
+		}
+
+		coreCaps.capabilityConstraints[Capability(capabilityInt)] = &PerCapabilityConstraints{
+			Models: models,
+		}
+	}
+
 	return coreCaps
 }
 
 func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
-	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion}
+	c := &Capabilities{capacities: make(map[Capability]int), version: LivepeerVersion, capabilityConstraints: make(CapabilityConstraints)}
 	if len(caps) > 0 {
 		c.bitstring = NewCapabilityString(caps)
 		// initialize capacities to 1 by default, mandatory capabilities doesn't have capacities
@@ -443,6 +554,13 @@ func NewCapabilities(caps []Capability, m []Capability) *Capabilities {
 	if len(m) > 0 {
 		c.mandatories = NewCapabilityString(m)
 	}
+	return c
+}
+
+func NewCapabilitiesWithConstraints(caps []Capability, m []Capability, constraints Constraints, capabilityConstraints CapabilityConstraints) *Capabilities {
+	c := NewCapabilities(caps, m)
+	c.constraints = constraints
+	c.capabilityConstraints = capabilityConstraints
 	return c
 }
 

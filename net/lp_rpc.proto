@@ -43,6 +43,9 @@ message OrchestratorRequest {
 
   // Broadcaster's signature over its address
   bytes sig   = 2;
+
+  // Features and constraints required by the broadcaster
+  Capabilities capabilities = 3;
 }
 
 /*
@@ -109,10 +112,21 @@ message Capabilities {
 
     Constraints constraints = 5;
 
-    // Non-binary capability constraints, such as supported ranges.
+    // Non-binary general constraints.
     message Constraints {
-            string minVersion = 1;
+      string minVersion = 1;
     }
+
+    // Non-binary capability constraints, such as supported ranges.
+    message CapabilityConstraints {
+      message ModelConstraint {
+        bool warm = 1;
+      }
+
+      map<string, ModelConstraint> models = 1; 
+    }
+
+    map<uint32, CapabilityConstraints> capabilityConstraints = 6;
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
