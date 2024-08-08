@@ -3,6 +3,7 @@ import os
 import json
 import pathlib
 
+from requests import Response
 from discord_webhook import DiscordEmbed, DiscordWebhook
 
 
@@ -14,11 +15,13 @@ DOWNLOAD_BASE_URL_TEMPLATE = (
 
 def get_embeds(embed: DiscordEmbed, ref_name: str, checksums: list[str]):
     for line in checksums:
-        shasum, filename = line.split()
+        _, filename = line.split()
         download_url = DOWNLOAD_BASE_URL_TEMPLATE.format(
             version=ref_name,
             filename=filename,
         )
+        # strip the initial `livepeer-` prefix and then identify build
+        # platform/architecture/release-tag values from file name
         title = filename[9:].split(".")[0]
         embed.add_embed_field(name=title, value=download_url, inline=False)
 
@@ -48,8 +51,9 @@ def main(args):
     get_embeds(embed, args.ref_name, checksums)
     embed.set_timestamp()
     webhook.add_embed(embed)
-    response = webhook.execute()
-    print(response)
+    response: Response = webhook.execute()
+    # Fail the script if discord returns anything except OK status
+    assert response.ok, "Discord webhook failed"
 
 
 if __name__ == "__main__":
