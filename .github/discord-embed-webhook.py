@@ -21,7 +21,6 @@ def get_embeds(embed: DiscordEmbed, ref_name: str, checksums: list[str]):
         )
         title = filename[9:].split(".")[0]
         embed.add_embed_field(name=title, value=download_url, inline=False)
-        embed.add_embed_field(name="SHA256 checksum", value=shasum, inline=False)
 
 
 def main(args):
