@@ -112,9 +112,10 @@ message Capabilities {
 
     Constraints constraints = 5;
 
-    // Non-binary general constraints.
+    // Non-binary constraints.
     message Constraints {
       string minVersion = 1;
+      map<uint32, CapabilityConstraints> PerCapability = 2;
     }
 
     // Non-binary capability constraints, such as supported ranges.
@@ -126,7 +127,7 @@ message Capabilities {
       map<string, ModelConstraint> models = 1; 
     }
 
-    map<uint32, CapabilityConstraints> capabilityConstraints = 6;
+    
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
