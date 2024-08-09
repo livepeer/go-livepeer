@@ -20,9 +20,7 @@ def get_embeds(embed: DiscordEmbed, ref_name: str, checksums: list[str]):
             version=ref_name,
             filename=filename,
         )
-        # strip the initial `livepeer-` prefix and then identify build
-        # platform/architecture/release-tag values from file name
-        title = filename[9:].split(".")[0]
+        title = filename.lstrip("livepeer-").split(".")[0]
         embed.add_embed_field(name=title, value=download_url, inline=False)
 
 
@@ -53,7 +51,9 @@ def main(args):
     webhook.add_embed(embed)
     response: Response = webhook.execute()
     # Fail the script if discord returns anything except OK status
-    assert response.ok, "Discord webhook failed"
+    assert (
+        response.ok
+    ), f"Discord webhook failed {response.status_code} {response.content}"
 
 
 if __name__ == "__main__":
