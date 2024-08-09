@@ -1061,7 +1061,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	var aiCaps []core.Capability
-	capabilityConstraints := make(map[core.Capability]*core.PerCapabilityConstraints)
+	capabilityConstraints := make(core.PerCapabilityConstraints)
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1159,7 +1159,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_TextToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						capabilityConstraints[core.Capability_TextToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_TextToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1173,7 +1173,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						capabilityConstraints[core.Capability_ImageToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1187,7 +1187,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						capabilityConstraints[core.Capability_ImageToVideo] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToVideo] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1201,7 +1201,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_Upscale]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_Upscale)
-						capabilityConstraints[core.Capability_Upscale] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_Upscale] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1215,7 +1215,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_AudioToText]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_AudioToText)
-						capabilityConstraints[core.Capability_AudioToText] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_AudioToText] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1405,7 +1405,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), core.Constraints{}, capabilityConstraints)
+	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
