@@ -229,7 +229,8 @@ func TestFilter(t *testing.T) {
 				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
 			}
 			sa := &ProbabilitySelectionAlgorithm{
-				MinPerfScore: tt.orchMinPerfScore,
+				MinPerfScore:    tt.orchMinPerfScore,
+				EnforceMaxPrice: tt.enforceMaxPrice,
 			}
 
 			res := sa.filter(context.Background(), addrs, maxPrice, prices, perfScores)
