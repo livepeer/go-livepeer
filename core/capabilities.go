@@ -78,6 +78,7 @@ const (
 	Capability_ImageToVideo
 	Capability_Upscale
 	Capability_AudioToText
+	Capability_FrameInterpolation
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -114,6 +115,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ImageToVideo:               "Image to video",
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
+	Capability_FrameInterpolation:         "Frame Interpolation",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -202,6 +204,7 @@ func OptionalCapabilities() []Capability {
 		Capability_TextToImage,
 		Capability_ImageToImage,
 		Capability_ImageToVideo,
+		Capability_FrameInterpolation,
 		Capability_Upscale,
 		Capability_AudioToText,
 	}

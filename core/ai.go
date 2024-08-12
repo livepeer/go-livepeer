@@ -19,6 +19,7 @@ type AI interface {
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
 	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
 	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
+	FrameInterpolation(context.Context, worker.FrameInterpolationMultipartRequestBody) (*worker.VideoResponse, error)
 	AudioToText(context.Context, worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error

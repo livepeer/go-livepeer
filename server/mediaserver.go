@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"mime/multipart"
@@ -161,7 +160,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 
 		if transcodingOptions != "" {
 			var profiles []ffmpeg.VideoProfile
-			content, err := ioutil.ReadFile(transcodingOptions)
+			content, err := os.ReadFile(transcodingOptions)
 			if err == nil && len(content) > 0 {
 				stubResp := &authWebhookResponse{}
 				err = json.Unmarshal(content, &stubResp.Profiles)
