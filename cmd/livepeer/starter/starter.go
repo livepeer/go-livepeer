@@ -1229,7 +1229,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_AudioToText]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_TextToSpeech)
-						capabilityConstraints[core.Capability_TextToSpeech] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_TextToSpeech] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
