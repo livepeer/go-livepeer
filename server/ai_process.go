@@ -124,15 +124,16 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		*req.Width = 512
 	}
 
-	outPixels := int64(*req.Height) * int64(*req.Width)
-
 	// TODO: Default values for the number of images is currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
-		outPixels = int64(float64(outPixels) * numImages)
+	defaultNumImages := 1
+	if req.NumImagesPerPrompt == nil {
+		req.NumImagesPerPrompt = &defaultNumImages
+	} else {
+		*req.NumImagesPerPrompt = int(math.Max(1, float64(*req.NumImagesPerPrompt)))
 	}
+
+	outPixels := int64(*req.Height) * int64(*req.Width) * int64(*req.NumImagesPerPrompt)
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
@@ -171,7 +172,6 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		var pricePerAIUnit float64
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
-			pricePerAIUnit *= numImages
 		}
 
 		monitor.AIRequestFinished(ctx, "text-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
@@ -232,6 +232,15 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 }
 
 func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	// TODO: Default values for the number of images is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	defaultNumImages := 1
+	if req.NumImagesPerPrompt == nil {
+		req.NumImagesPerPrompt = &defaultNumImages
+	} else {
+		*req.NumImagesPerPrompt = int(math.Max(1, float64(*req.NumImagesPerPrompt)))
+	}
+
 	var buf bytes.Buffer
 	mw, err := worker.NewImageToImageMultipartWriter(&buf, req)
 	if err != nil {
@@ -264,15 +273,7 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		return nil, err
 	}
 
-	outPixels := int64(config.Height) * int64(config.Width)
-
-	// TODO: Default values for the number of images is currently hardcoded.
-	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
-		outPixels = int64(float64(outPixels) * numImages)
-	}
+	outPixels := int64(config.Height) * int64(config.Width) * int64(*req.NumImagesPerPrompt)
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
@@ -311,7 +312,6 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		var pricePerAIUnit float64
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
-			pricePerAIUnit *= numImages
 		}
 
 		monitor.AIRequestFinished(ctx, "image-to-image", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
