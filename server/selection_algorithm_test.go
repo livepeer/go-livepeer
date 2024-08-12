@@ -20,6 +20,7 @@ func TestFilter(t *testing.T) {
 		orchPerfScores   map[string]float64
 		orchestrators    []string
 		want             []string
+		enforceMaxPrice  bool
 	}{
 		{
 			name:             "Some Orchestrators pass the filter",
@@ -137,6 +138,28 @@ func TestFilter(t *testing.T) {
 				"0x0000000000000000000000000000000000000002",
 				"0x0000000000000000000000000000000000000003",
 			},
+		},
+		{
+			name:             "All prices above max price and enforceMaxPrice enabled",
+			orchMinPerfScore: 0.7,
+			maxPrice:         100,
+			enforceMaxPrice:  true,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1500,
+				"0x0000000000000000000000000000000000000003": 1000,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{},
 		},
 		{
 			name:             "Mix of prices relative to max price",
