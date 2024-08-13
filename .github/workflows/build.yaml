@@ -269,7 +269,7 @@ jobs:
         uses: livepeer/action-gh-checksum-and-gpg-sign@latest
         with:
           artifacts-dir: releases
-          release-name: ${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}
+          release-name: ${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}
           gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
@@ -293,7 +293,7 @@ jobs:
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}"
           parent: false
           process_gcloudignore: false
 
@@ -313,7 +313,7 @@ jobs:
         run: |
           pip install -U discord-webhook --no-cache-dir
           python .github/discord-embed-webhook.py \
-          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}" \
+          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}" \
           --discord-url="${{ secrets.DISCORD_URL }}" \
           --git-commit="$(git log -1 --pretty=format:'%s')" \
           --git-committer="$(git log -1 --pretty=format:'%an')"
