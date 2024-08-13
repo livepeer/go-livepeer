@@ -239,4 +239,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/livepeer/ai-worker => github.com/eliteprox/ai-worker v0.0.0-20240726191428-92a75624ba28
+replace github.com/livepeer/ai-worker => github.com/eliteprox/ai-worker v0.0.0-20240813171810-570b7e72901f
