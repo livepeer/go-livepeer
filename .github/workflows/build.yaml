@@ -58,7 +58,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -159,7 +159,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -251,7 +251,7 @@ jobs:
       - linux-build
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -309,7 +309,7 @@ jobs:
       - name: Trigger discord webhook
         shell: bash
         env:
-          GITHUB_CONTEXT_JSON: ${{ toJson(github.event.pull_request) }}
+          GITHUB_CONTEXT_JSON: ${{ toJson(github) }}
         run: |
           pip install -U discord-webhook --no-cache-dir
           python .github/discord-embed-webhook.py \
