@@ -98,11 +98,6 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
 }
 
-// Verifies if the model folder exists in the orchestrator's model directory
-func (orch *orchestrator) CheckModelExists(modelID string) bool {
-	return orch.node.AIWorker.ModelExists(modelID)
-}
-
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
