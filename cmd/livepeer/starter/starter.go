@@ -1135,6 +1135,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	var aiCaps []core.Capability
 	capabilityConstraints := make(core.PerCapabilityConstraints)
 
+	// Mapping for per pipeline custom container images
+	var pipelineToImage = map[string]string{
+		"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
+	}
+
 	if *cfg.AIWorker {
 		gpus := []string{}
 		if *cfg.Nvidia != "" {
@@ -1227,10 +1232,27 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 				}
 
-				// If the config contains a URL we call Warm() anyway because AIWorker will just register
-				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
+					// Register the external endpoint if URL is provided
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+
+					// If config.Warm is true, setup the AI worker with the selected Docker image
+					if config.Warm && config.URL == "" {
+						// Determine which image to use based on the pipeline
+						imageToUse := *cfg.AIRunnerImage // Default to the image from config
+						if specificImage, ok := pipelineToImage[config.Pipeline]; ok {
+							imageToUse = specificImage
+						}
+
+						// Setup the AI worker with the selected Docker image
+						n.AIWorker, err = worker.NewWorker(imageToUse, gpus, modelsDir)
+						if err != nil {
+							glog.Errorf("Error starting AI worker: %v", err)
+							return
+						}
+					}
+
+					// Warm the AI worker container or register the endpoint
 					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
@@ -1312,6 +1334,19 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+					}
+				case "segment-anything-2":
+					_, ok := capabilityConstraints[core.Capability_AudioToText]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_SegmentAnything2)
+						capabilityConstraints[core.Capability_SegmentAnything2] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_SegmentAnything2].Models[config.ModelID] = modelConstraint
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
 				}
 

@@ -130,6 +130,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTex
 	return orch.node.AudioToText(ctx, req)
 }
 
+func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return orch.node.SegmentAnything2(ctx, req)
+}
+
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
@@ -961,6 +965,10 @@ func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartR
 
 func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
+}
+
+func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {

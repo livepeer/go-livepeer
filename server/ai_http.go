@@ -281,6 +281,15 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
+	case worker.SegmentAnything2MultipartRequestBody:
+		pipeline = "segment-anything-2"
+		cap = core.Capability_SegmentAnything2
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.SegmentAnything2(ctx, v)
+		}
+
+		outPixels = 1000000 // Temp hardcoded 1MM - Convert to ...?
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
