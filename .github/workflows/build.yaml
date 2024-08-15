@@ -32,7 +32,7 @@ jobs:
 
           # - GOOS: linux
           #   GOARCH: arm64
-          #   runner: ubuntu-20.04
+          #   container: ubuntu-20.04
           #   type: cpu
 
           - GOOS: linux
