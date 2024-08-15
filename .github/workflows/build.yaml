@@ -66,6 +66,9 @@ jobs:
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Reset workspace permissions
+        run: sudo chown -R $USER:$USER $GITHUB_WORKSPACE
+
       - name: Set up go
         id: go
         uses: actions/setup-go@v5
@@ -143,6 +146,10 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
 
+      - name: Clean up
+        run: |
+          rm -rf lp-builds releases
+
   macos-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
     runs-on: ${{ matrix.target.runner }}
@@ -168,7 +175,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Reset workspace permissions
-        run: chown -R $USER:$USER $GITHUB_WORKSPACE
+        run: sudo chown -R $USER:$USER $GITHUB_WORKSPACE
 
       - name: Set up go
         id: go
@@ -244,7 +251,6 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
 
-      # Clean up the created files to ensure proper permissions and no residue
       - name: Clean up
         run: |
           rm -rf lp-builds releases
