@@ -241,6 +241,11 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
 
+      # Clean up the created files to ensure proper permissions and no residue
+      - name: Clean up
+        run: |
+          sudo rm -rf lp-builds releases
+
   upload:
     name: Upload artifacts to google bucket
     permissions:
