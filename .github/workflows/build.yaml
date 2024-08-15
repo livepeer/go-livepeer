@@ -45,10 +45,10 @@ jobs:
           #   container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
           #   type: gpu
 
-          - GOOS: windows
-            GOARCH: amd64
-            container: ubuntu:22.04
-            type: cpu
+          # - GOOS: windows
+          #   GOARCH: amd64
+          #   container: ubuntu:22.04
+          #   type: cpu
 
     steps:
       - name: Setup ubuntu container
