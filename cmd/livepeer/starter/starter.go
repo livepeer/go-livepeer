@@ -110,6 +110,7 @@ type LivepeerConfig struct {
 	CurrentManifest         *bool
 	Nvidia                  *string
 	Netint                  *string
+	HevcDecoding            *bool
 	TestTranscoder          *bool
 	EthAcctAddr             *string
 	EthPassword             *string
@@ -189,6 +190,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
 
 	// AI:
@@ -284,6 +286,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
@@ -511,9 +514,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+		}
+
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
+				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
+			}
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
 	}
 

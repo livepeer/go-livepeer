@@ -16,7 +16,7 @@ concurrency:
 jobs:
   linux-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
-    runs-on: ${{ matrix.target.runner }}
+    runs-on: ubuntu-20.04
     container:
       image: ${{ matrix.target.container }}
       env:
@@ -27,31 +27,26 @@ jobs:
         target:
           - GOOS: linux
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: ubuntu:20.04
             type: cpu
 
           # - GOOS: linux
           #   GOARCH: arm64
           #   runner: ubuntu-20.04
-          #   container: ubuntu:20.04
           #   type: cpu
 
           - GOOS: linux
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
             type: gpu
 
           # - GOOS: linux
           #   GOARCH: arm64
-          #   runner: ubuntu-20.04
           #   container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
           #   type: gpu
 
           - GOOS: windows
             GOARCH: amd64
-            runner: ubuntu-20.04
             container: ubuntu:22.04
             type: cpu
 
@@ -64,7 +59,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -79,19 +74,14 @@ jobs:
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Cache ffmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v3
-        with:
-          path: /home/runner/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-${{ matrix.target.type }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
-
       - name: Set build environment
         run: |
           echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/github/home/compiled/lib/pkgconfig" >> $GITHUB_ENV
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          mkdir -p lp-builds/ releases/
 
       - name: Set GPU build environment
         if: matrix.target.type == 'gpu'
@@ -100,6 +90,7 @@ jobs:
           echo "LIBRARY_PATH=/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
           echo "CGO_LDFLAGS=-L/usr/local/cuda_${{ matrix.target.GOARCH }}/lib64" >> $GITHUB_ENV
           echo "RELEASE_TAG=gpu" >> $GITHUB_ENV
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-gpu-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
@@ -121,7 +112,6 @@ jobs:
         run: go mod download
 
       - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
@@ -131,23 +121,27 @@ jobs:
           git config --global --add safe.directory '*'
           ./ci_env.sh make
 
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
+      - name: Archive binaries for windows
+        if: matrix.target.GOOS == 'windows'
+        run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
+          cd "$GO_BUILD_DIR/"
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR/" \;
+          zip -9rq "../releases/$LP_BUILD_DIR.zip" ./
+
+      - name: Archive binaries
+        if: matrix.target.GOOS != 'windows'
+        run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
+          cd "$GO_BUILD_DIR/"
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
+          tar -czvf "../releases/$LP_BUILD_DIR.tar.gz" ./
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   macos-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
@@ -162,11 +156,11 @@ jobs:
 
           - GOOS: darwin
             GOARCH: arm64
-            runner: macos-latest
+            runner: macos-14-xlarge
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -186,10 +180,12 @@ jobs:
           echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
           echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
           echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+          mkdir -p lp-builds/ releases/
 
       - name: Cache ffmpeg
         id: cache-ffmpeg
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/compiled
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
@@ -231,23 +227,19 @@ jobs:
           app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
           binary-path: "lp-builds/"
 
-      - name: Upload build
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
-          GCLOUD_SECRET: ${{ secrets.GCLOUD_SECRET }}
-          DISCORD_URL: ${{ secrets.DISCORD_URL }}
-        run: ./upload_build.sh
+      - name: Archive binaries
+        if: matrix.platform.name != 'windows'
+        run: |
+          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
+          cd "$GO_BUILD_DIR/"
+          find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
+          tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
-
-      - name: Notify new build upload
-        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
 
   upload:
     name: Upload artifacts to google bucket
@@ -259,17 +251,26 @@ jobs:
       - macos-build
       - linux-build
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+      - name: Check out code
+        uses: actions/checkout@v4.1.7
         with:
-          name: release-artifacts
+          fetch-depth: 0
+          # Check https://github.com/livepeer/go-livepeer/pull/1891
+          # for ref value discussion
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-artifacts-*
           path: releases/
+          merge-multiple: true
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts
         uses: livepeer/action-gh-checksum-and-gpg-sign@latest
         with:
           artifacts-dir: releases
-          release-name: ${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}
+          release-name: ${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}
           gpg-key: ${{ secrets.CI_GPG_SIGNING_KEY }}
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
@@ -290,16 +291,33 @@ jobs:
 
       - name: Upload release archives to Google Cloud
         id: upload-archives
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || github.sha }}"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}"
           parent: false
+          process_gcloudignore: false
 
       - name: Upload branch manifest file
         id: upload-manifest
-        uses: google-github-actions/upload-cloud-storage@v1
+        uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
           parent: false
+          process_gcloudignore: false
+
+      - name: Trigger discord webhook
+        shell: bash
+        env:
+          GITHUB_CONTEXT_JSON: ${{ toJson(github) }}
+        run: |
+          pip install -U discord-webhook --no-cache-dir
+          python .github/discord-embed-webhook.py \
+          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}" \
+          --discord-url="${{ secrets.DISCORD_URL }}" \
+          --git-commit="$(git log -1 --pretty=format:'%s')" \
+          --git-committer="$(git log -1 --pretty=format:'%an')"
+
+      - name: Notify new build upload
+        run: curl -X POST https://holy-bread-207a.livepeer.workers.dev
