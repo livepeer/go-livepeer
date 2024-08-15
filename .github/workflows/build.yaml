@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: ${{ matrix.target.container }}
-      options: --user root
       env:
         DEBIAN_FRONTEND: noninteractive
     strategy:
@@ -171,9 +170,6 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
-
-      # - name: Reset workspace permissions
-      #   run: chown -R $(whoami):staff $GITHUB_WORKSPACE
 
       - name: Set up go
         id: go
