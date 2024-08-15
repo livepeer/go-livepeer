@@ -587,7 +587,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
-func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodySegmentAnything2SegmentAnything2Post) (*worker.ImageResponse, error) {
+func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodySegmentAnything2SegmentAnything2Post) (*worker.MasksResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewSegmentAnything2Writer(&buf, req)
 	if err != nil {
@@ -615,7 +615,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	config, _, err := image.DecodeConfig(imageRdr)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2",, *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -630,9 +630,9 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	start := time.Now()
+	// start := time.Now()
 	resp, err := client.SegmentAnything2WithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
-	took := time.Since(start)
+	// took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
@@ -650,8 +650,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 		balUpdate.Status = ReceivedChange
 	}
 
-	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = CalculateUpscaleLatencyScore(took, req, outPixels)
+	// TODO: Add latency Calculation
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
