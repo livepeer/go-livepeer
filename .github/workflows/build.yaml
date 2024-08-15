@@ -167,6 +167,9 @@ jobs:
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Reset workspace permissions
+        run: chown -R $USER:$USER $GITHUB_WORKSPACE
+
       - name: Set up go
         id: go
         uses: actions/setup-go@v5
@@ -244,7 +247,7 @@ jobs:
       # Clean up the created files to ensure proper permissions and no residue
       - name: Clean up
         run: |
-          sudo rm -rf lp-builds releases
+          rm -rf lp-builds releases
 
   upload:
     name: Upload artifacts to google bucket
