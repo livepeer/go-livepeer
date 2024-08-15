@@ -231,14 +231,14 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		caps := core.NewCapabilitiesWithConstraints(core.DefaultCapabilities(), nil, nil)
+		caps := core.NewCapabilities(core.DefaultCapabilities(), nil)
+		caps.SetPerCapabilityConstraints(nil)
+		caps.SetMinVersionConstraint(s.LivepeerNode.Capabilities.MinVersionConstraint())
 
 		ods, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(context.Background(), 100, newSuspender(), caps, common.ScoreAtLeast(0))
 		if err != nil {
 			respond500(w, "failed to get orchestrator info: "+err.Error())
 		}
-
-		//orch_info_resp := make(map[string]interface{})
 
 		capModels := make(map[string][]interface{})
 		remoteInfos := ods.GetRemoteInfos()
@@ -247,7 +247,7 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 			glog.V(common.DEBUG).Infof("getting capabilities for orchestrator %d", idx)
 			//parse the capabilities and capacities
 			if orch_info.GetCapabilities() != nil {
-				for cap, constraints := range orch_info.Capabilities.Constraints {
+				for cap, constraints := range orch_info.Capabilities.Constraints.PerCapability {
 					capName, err := core.CapabilityToName(core.Capability(int(cap)))
 					if err != nil {
 						continue
@@ -266,7 +266,6 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 		}
 
 		respondJson(w, capModels)
-
 	})
 }
 
