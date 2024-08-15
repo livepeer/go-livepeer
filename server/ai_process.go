@@ -589,7 +589,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 
 func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodySegmentAnything2SegmentAnything2Post) (*worker.MasksResponse, error) {
 	var buf bytes.Buffer
-	mw, err := worker.NewSegmentAnything2Writer(&buf, req)
+	mw, err := worker.NewSegmentAnything2MultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
