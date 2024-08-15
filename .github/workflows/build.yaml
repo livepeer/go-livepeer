@@ -67,7 +67,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Reset workspace permissions
-        run: sudo chown -R $USER:$USER $GITHUB_WORKSPACE
+        run: chown -R $USER:$USER $GITHUB_WORKSPACE
 
       - name: Set up go
         id: go
@@ -175,7 +175,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Reset workspace permissions
-        run: sudo chown -R $(whoami):staff $GITHUB_WORKSPACE
+        run: chown -R $(whoami):staff $GITHUB_WORKSPACE
 
       - name: Set up go
         id: go
