@@ -515,7 +515,6 @@ func submitFrameInterpolation(ctx context.Context, params aiRequestParams, sess 
 	if req.InterFrames != nil {
 		numInterFrames = int64(*req.InterFrames)
 	}
-	total_frames := int64(numInterFrames) * (int64(25) - int64(1))
 
 	video_n, err := req.Video.Reader()
 	if err != nil {
@@ -537,6 +536,8 @@ func submitFrameInterpolation(ctx context.Context, params aiRequestParams, sess 
 	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
 	width := streamData["width"].(float64)
 	height := streamData["height"].(float64)
+
+	total_frames := int64(numInterFrames) * (int64(25) - int64(1)) // hardcoded value of number of frames from image-to-video output of generated frames
 
 	outPixels := int64(width) * int64(height) * total_frames
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)

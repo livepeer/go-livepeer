@@ -991,8 +991,11 @@ func (n *LivepeerNode) FrameInterpolation(ctx context.Context, req worker.FrameI
 	outProfile := ffmpeg.VideoProfile{
 		Name:       "frame-interpolation",
 		Resolution: fmt.Sprintf("%vx%v", width, height),
-		Bitrate:    "6000k",
-		Format:     ffmpeg.FormatMP4,
+		// hardcoded to 24fps but later can be modified
+		// such that we can provide the option to choose.
+		Framerate: 24,
+		Bitrate:   "6000k",
+		Format:    ffmpeg.FormatMP4,
 	}
 
 	// Transcode frames into segments.
