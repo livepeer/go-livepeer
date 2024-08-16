@@ -251,8 +251,9 @@ jobs:
     permissions:
       contents: "read"
       id-token: "write"
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest # TODO: re-enable when https://github.com/actions/checkout/issues/956 is solved.
     container:
+      image: ubuntu:latest
       options: --user root
     needs:
       - macos-build
