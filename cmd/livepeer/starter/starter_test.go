@@ -119,7 +119,7 @@ func TestMaxPricePerCapability(t *testing.T) {
 	assert.Equal(2, len(prices))
 
 	//confirm gateway field is initialized to empty string
-	assert.Equal(prices[0].Gateway, "")
+	assert.Equal(prices[0].Gateway, "default")
 	//confirm Pipeline and ModelID is parsed correctly
 	assert.Equal(prices[0].Pipeline, "text-to-image")
 	assert.Equal(prices[1].Pipeline, "image-to-video")

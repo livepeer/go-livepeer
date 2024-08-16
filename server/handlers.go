@@ -210,11 +210,13 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 
 			if pipeline == "" || modelID == "" {
 				respond400(w, "pipeline and modelID must be set")
+				return
 			}
 
 			cap := core.PipelineToCapability(pipeline)
 			if cap == core.Capability_Unused {
 				respond400(w, "pipeline not supported")
+				return
 			}
 
 			// set max price
@@ -222,13 +224,16 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 				pr, ok := new(big.Rat).SetString(maxPricePerUnit)
 				if !ok {
 					respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", maxPricePerUnit))
+					return
 				}
 				px, ok := new(big.Rat).SetString(pixelsPerUnit)
 				if !ok {
 					respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
+					return
 				}
 				if px.Sign() <= 0 {
 					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
+					return
 				}
 				pricePerPixel := new(big.Rat).Quo(pr, px)
 
@@ -243,6 +248,7 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 					})
 					if err != nil {
 						respond400(w, errors.Wrap(err, "error converting price").Error())
+						return
 					}
 
 					BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
@@ -252,6 +258,7 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 				}
 			} else {
 				respond400(w, "maxPricePerUnit and pixelsPerUnit need to be set")
+				return
 			}
 		} else {
 			respond400(w, "Node must be gateway node to set max price per capability")
