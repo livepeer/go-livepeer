@@ -251,8 +251,8 @@ jobs:
     permissions:
       contents: "read"
       id-token: "write"
-    # runs-on: ubuntu-latest # TODO: re-enable when https://github.com/actions/checkout/issues/956 is solved.
-    container:
+    runs-on: ubuntu-latest
+    container: # TODO: can be removed if https://github.com/livepeer/go-livepeer/actions/runs/10417839338 is solved.
       image: ubuntu:latest
       options: --user root
     needs:
