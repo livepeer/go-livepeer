@@ -1118,7 +1118,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		// Get base pixels per unit.
+		// Get base pixels and price per unit.
 		pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
 		if !ok || !pixelsPerUnitBase.IsInt() {
 			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
@@ -1126,6 +1126,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if !ok || pixelsPerUnitBase.Sign() <= 0 {
 			// Can't divide by 0
 			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+		pricePerUnitBase := new(big.Rat)
+		currencyBase := ""
+		if cfg.PricePerUnit != nil {
+			pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+			if err != nil || pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
+			}
+			pricePerUnitBase = pricePerUnit
+			currencyBase = currency
 		}
 
 		if *cfg.AIModels != "" {
@@ -1143,20 +1153,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pixelsPerUnit := config.PixelsPerUnit.Rat
 					if config.PixelsPerUnit.Rat == nil {
 						pixelsPerUnit = pixelsPerUnitBase
-					} else {
-						if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
-							panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
-						}
+					} else if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
 					}
+
 					pricePerUnit := config.PricePerUnit.Rat
-					if err != nil {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
-					} else if pricePerUnit.Sign() < 0 {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					currency := config.Currency
+					if pricePerUnit == nil {
+						if pricePerUnitBase.Sign() == 0 {
+							panic(fmt.Errorf("'pricePerUnit' must be set for model '%v' in pipeline '%v'", config.ModelID, config.Pipeline))
+						}
+						pricePerUnit = pricePerUnitBase
+						currency = currencyBase
+						glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
+					} else if !pricePerUnit.IsInt() || pricePerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 					}
+
 					pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 
-					autoPrice, err = core.NewAutoConvertedPrice(config.Currency, pricePerPixel, nil)
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
 					if err != nil {
 						panic(fmt.Errorf("error converting price: %v", err))
 					}
@@ -1254,8 +1270,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
 					if *cfg.Network != "offchain" {
-						pricePerUnit := price.Num().Int64() / price.Denom().Int64()
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d wei per compute unit", config.Pipeline, capability, config.ModelID, pricePerUnit)
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
 					} else {
 						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
 					}
