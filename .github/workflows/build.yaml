@@ -167,9 +167,6 @@ jobs:
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Reset workspace permissions
-        run: chown -R $USER:$USER $GITHUB_WORKSPACE
-
       - name: Set up go
         id: go
         uses: actions/setup-go@v5
@@ -255,6 +252,8 @@ jobs:
       contents: "read"
       id-token: "write"
     runs-on: ubuntu-latest
+    container:
+      options: --user root
     needs:
       - macos-build
       - linux-build
