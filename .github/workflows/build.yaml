@@ -241,20 +241,12 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
 
-      # Clean up the created files to ensure proper permissions and no residue
-      - name: Clean up
-        run: |
-          rm -rf lp-builds releases
-
   upload:
     name: Upload artifacts to google bucket
     permissions:
       contents: "read"
       id-token: "write"
-    # runs-on: ubuntu-latest # TODO: re-enable when https://github.com/actions/checkout/issues/956 is solved.
-    container:
-      image: ubuntu:latest
-      options: --user root
+    runs-on: ubuntu-latest
     needs:
       - macos-build
       - linux-build
