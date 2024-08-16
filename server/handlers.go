@@ -262,6 +262,7 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 			}
 		} else {
 			respond400(w, "Node must be gateway node to set max price per capability")
+			return
 		}
 	})
 }
