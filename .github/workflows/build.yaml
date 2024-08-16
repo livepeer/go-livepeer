@@ -101,7 +101,8 @@ jobs:
             && apt update \
             && apt -yqq install \
               nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
+              golang-goprotobuf-dev protobuf-compiler-grpc
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
