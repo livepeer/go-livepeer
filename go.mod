@@ -13,10 +13,10 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/jaypipes/ghw v0.10.0
 	github.com/jaypipes/pcidb v1.0.0
-	github.com/livepeer/ai-worker v0.1.1
+	github.com/livepeer/ai-worker v0.1.2
 	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
-	github.com/livepeer/lpms v0.0.0-20240731140137-28406cf8bc78
+	github.com/livepeer/lpms v0.0.0-20240809194342-c3330413a4a0
 	github.com/livepeer/m3u8 v0.11.1
 	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/oapi-codegen/nethttp-middleware v1.0.1

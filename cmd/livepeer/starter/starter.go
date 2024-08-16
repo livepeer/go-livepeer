@@ -110,6 +110,7 @@ type LivepeerConfig struct {
 	CurrentManifest         *bool
 	Nvidia                  *string
 	Netint                  *string
+	HevcDecoding            *bool
 	TestTranscoder          *bool
 	EthAcctAddr             *string
 	EthPassword             *string
@@ -189,6 +190,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
 
 	// AI:
@@ -284,6 +286,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
@@ -511,9 +514,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+		}
+
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
+				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
+			}
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
 	}
 
@@ -1061,7 +1084,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	var aiCaps []core.Capability
-	capabilityConstraints := make(map[core.Capability]*core.PerCapabilityConstraints)
+	capabilityConstraints := make(core.PerCapabilityConstraints)
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1159,7 +1182,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_TextToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						capabilityConstraints[core.Capability_TextToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_TextToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1173,7 +1196,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						capabilityConstraints[core.Capability_ImageToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1187,7 +1210,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						capabilityConstraints[core.Capability_ImageToVideo] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToVideo] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1201,7 +1224,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_Upscale]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_Upscale)
-						capabilityConstraints[core.Capability_Upscale] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_Upscale] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1215,7 +1238,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_AudioToText]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_AudioToText)
-						capabilityConstraints[core.Capability_AudioToText] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_AudioToText] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1418,7 +1441,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), core.Constraints{}, capabilityConstraints)
+	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}

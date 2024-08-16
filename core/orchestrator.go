@@ -352,21 +352,23 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	} else {
 		// The base price is the sum of the prices of individual capability + model ID pairs
-		for cap := range caps.Capacities {
-			// If the capability does not have constraints (and thus any model constraints) skip it
-			// because we only price a capability together with a model ID right now
-			constraints, ok := caps.CapabilityConstraints[cap]
-			if !ok {
-				continue
-			}
-			for modelID := range constraints.Models {
-				price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
-				if price == nil {
-					price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+		if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+			for cap := range caps.Capacities {
+				// If the capability does not have constraints (and thus any model constraints) skip it
+				// because we only price a capability together with a model ID right now
+				constraints, ok := caps.Constraints.PerCapability[cap]
+				if !ok {
+					continue
 				}
+				for modelID := range constraints.Models {
+					price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
+					if price == nil {
+						price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+					}
 
-				if price != nil {
-					basePrice.Add(basePrice, price)
+					if price != nil {
+						basePrice.Add(basePrice, price)
+					}
 				}
 			}
 		}

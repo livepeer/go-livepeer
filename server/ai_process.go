@@ -62,12 +62,8 @@ func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImage
 		return 0
 	}
 
-	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// TODO: Default values for the number of inference steps is currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
-	}
 	numInferenceSteps := float64(50)
 	if req.NumInferenceSteps != nil {
 		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
@@ -77,7 +73,7 @@ func CalculateTextToImageLatencyScore(took time.Duration, req worker.TextToImage
 		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
 	}
 
-	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processTextToImage(ctx context.Context, params aiRequestParams, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -130,7 +126,17 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 		*req.Width = 512
 	}
 
-	outPixels := int64(*req.Height) * int64(*req.Width)
+	// TODO: Default values for the number of images is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	defaultNumImages := 1
+	if req.NumImagesPerPrompt == nil {
+		req.NumImagesPerPrompt = &defaultNumImages
+	} else {
+		*req.NumImagesPerPrompt = int(math.Max(1, float64(*req.NumImagesPerPrompt)))
+	}
+
+	outPixels := int64(*req.Height) * int64(*req.Width) * int64(*req.NumImagesPerPrompt)
+
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
@@ -143,6 +149,10 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	start := time.Now()
 	resp, err := client.TextToImageWithResponse(ctx, req, setHeaders)
 	took := time.Since(start)
+
+	// TODO: Refine this rough estimate in future iterations.
+	sess.LatencyScore = CalculateTextToImageLatencyScore(took, req, outPixels)
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-image", *req.ModelId, sess.OrchestratorInfo)
@@ -159,9 +169,6 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
 	}
-
-	// TODO: Refine this rough estimate in future iterations.
-	sess.LatencyScore = CalculateTextToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
@@ -181,12 +188,8 @@ func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToIma
 		return 0
 	}
 
-	// TODO: Default values for the number of images and inference steps are currently hardcoded.
+	// TODO: Default values for the number of inference steps is currently hardcoded.
 	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
-	numImages := float64(1)
-	if req.NumImagesPerPrompt != nil {
-		numImages = math.Max(1, float64(*req.NumImagesPerPrompt))
-	}
 	numInferenceSteps := float64(100)
 	if req.NumInferenceSteps != nil {
 		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
@@ -196,7 +199,7 @@ func CalculateImageToImageLatencyScore(took time.Duration, req worker.ImageToIma
 		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
 	}
 
-	return took.Seconds() / float64(outPixels) / (numImages * numInferenceSteps)
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
 }
 
 func processImageToImage(ctx context.Context, params aiRequestParams, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -231,6 +234,15 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 }
 
 func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISession, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	// TODO: Default values for the number of images is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	defaultNumImages := 1
+	if req.NumImagesPerPrompt == nil {
+		req.NumImagesPerPrompt = &defaultNumImages
+	} else {
+		*req.NumImagesPerPrompt = int(math.Max(1, float64(*req.NumImagesPerPrompt)))
+	}
+
 	var buf bytes.Buffer
 	mw, err := worker.NewImageToImageMultipartWriter(&buf, req)
 	if err != nil {
@@ -262,7 +274,8 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 		}
 		return nil, err
 	}
-	outPixels := int64(config.Height) * int64(config.Width)
+
+	outPixels := int64(config.Height) * int64(config.Width) * int64(*req.NumImagesPerPrompt)
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
@@ -276,6 +289,10 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	start := time.Now()
 	resp, err := client.ImageToImageWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
 	took := time.Since(start)
+
+	// TODO: Refine this rough estimate in future iterations.
+	sess.LatencyScore = CalculateImageToImageLatencyScore(took, req, outPixels)
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "image-to-image", *req.ModelId, sess.OrchestratorInfo)
@@ -292,9 +309,6 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
 	}
-
-	// TODO: Refine this rough estimate in future iterations.
-	sess.LatencyScore = CalculateImageToImageLatencyScore(took, req, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64

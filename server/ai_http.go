@@ -220,8 +220,13 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		if v.Width != nil {
 			width = int64(*v.Width)
 		}
+		// NOTE: Should be enforced by the gateway, added for backwards compatibility.
+		numImages := int64(1)
+		if v.NumImagesPerPrompt != nil {
+			numImages = int64(*v.NumImagesPerPrompt)
+		}
 
-		outPixels = height * width
+		outPixels = height * width * numImages
 	case worker.ImageToImageMultipartRequestBody:
 		pipeline = "image-to-image"
 		cap = core.Capability_ImageToImage
@@ -240,7 +245,13 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		outPixels = int64(config.Height) * int64(config.Width)
+		// NOTE: Should be enforced by the gateway, added for backwards compatibility.
+		numImages := int64(1)
+		if v.NumImagesPerPrompt != nil {
+			numImages = int64(*v.NumImagesPerPrompt)
+		}
+
+		outPixels = int64(config.Height) * int64(config.Width) * numImages
 	case worker.UpscaleMultipartRequestBody:
 		pipeline = "upscale"
 		cap = core.Capability_Upscale

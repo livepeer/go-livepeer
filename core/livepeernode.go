@@ -236,7 +236,11 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 		return nil
 	}
 
-	return prices.PriceForModelID(cap, modelID).Value()
+	if price := prices.PriceForModelID(cap, modelID); price != nil {
+		return price.Value()
+	}
+
+	return nil
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received

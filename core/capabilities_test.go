@@ -148,22 +148,22 @@ func TestCapability_TranscoderCapabilities(t *testing.T) {
 	if devicesAvailable {
 		nvidiaCaps, err := TestTranscoderCapabilities(devices, NewNvidiaTranscoder)
 		assert.Nil(t, err)
-		assert.False(t, InArray(Capability_H264_Decode_444_8bit, nvidiaCaps), "Nvidia device should not support decode of 444_8bit")
-		assert.False(t, InArray(Capability_H264_Decode_422_8bit, nvidiaCaps), "Nvidia device should not support decode of 422_8bit")
-		assert.False(t, InArray(Capability_H264_Decode_444_10bit, nvidiaCaps), "Nvidia device should not support decode of 444_10bit")
-		assert.False(t, InArray(Capability_H264_Decode_422_10bit, nvidiaCaps), "Nvidia device should not support decode of 422_10bit")
-		assert.False(t, InArray(Capability_H264_Decode_420_10bit, nvidiaCaps), "Nvidia device should not support decode of 420_10bit")
+		assert.False(t, HasCapability(nvidiaCaps, Capability_H264_Decode_444_8bit), "Nvidia device should not support decode of 444_8bit")
+		assert.False(t, HasCapability(nvidiaCaps, Capability_H264_Decode_422_8bit), "Nvidia device should not support decode of 422_8bit")
+		assert.False(t, HasCapability(nvidiaCaps, Capability_H264_Decode_444_10bit), "Nvidia device should not support decode of 444_10bit")
+		assert.False(t, HasCapability(nvidiaCaps, Capability_H264_Decode_422_10bit), "Nvidia device should not support decode of 422_10bit")
+		assert.False(t, HasCapability(nvidiaCaps, Capability_H264_Decode_420_10bit), "Nvidia device should not support decode of 420_10bit")
 	}
 
 	// Same test with software transcoder:
 	softwareCaps, err := TestSoftwareTranscoderCapabilities(tmpdir)
 	assert.Nil(t, err)
 	// Software transcoder supports: [h264_444_8bit h264_422_8bit h264_444_10bit h264_422_10bit h264_420_10bit]
-	assert.True(t, InArray(Capability_H264_Decode_444_8bit, softwareCaps), "software decoder should support 444_8bit input")
-	assert.True(t, InArray(Capability_H264_Decode_422_8bit, softwareCaps), "software decoder should support 422_8bit input")
-	assert.True(t, InArray(Capability_H264_Decode_444_10bit, softwareCaps), "software decoder should support 444_10bit input")
-	assert.True(t, InArray(Capability_H264_Decode_422_10bit, softwareCaps), "software decoder should support 422_10bit input")
-	assert.True(t, InArray(Capability_H264_Decode_420_10bit, softwareCaps), "software decoder should support 420_10bit input")
+	assert.True(t, HasCapability(softwareCaps, Capability_H264_Decode_444_8bit), "software decoder should support 444_8bit input")
+	assert.True(t, HasCapability(softwareCaps, Capability_H264_Decode_422_8bit), "software decoder should support 422_8bit input")
+	assert.True(t, HasCapability(softwareCaps, Capability_H264_Decode_444_10bit), "software decoder should support 444_10bit input")
+	assert.True(t, HasCapability(softwareCaps, Capability_H264_Decode_422_10bit), "software decoder should support 422_10bit input")
+	assert.True(t, HasCapability(softwareCaps, Capability_H264_Decode_420_10bit), "software decoder should support 420_10bit input")
 }
 
 func TestCapability_JobCapabilities(t *testing.T) {
@@ -541,6 +541,50 @@ func TestCapabilities_LegacyCheck(t *testing.T) {
 	assert.True(capStr.CompatibleWith(legacyCapabilityString))
 
 	assert.Len(legacyCapabilities, legacyLen) // sanity check no modifications
+}
+
+func TestCapability_RemoveCapability(t *testing.T) {
+	tests := []struct {
+		name     string
+		caps     []Capability
+		toRemove Capability
+		expect   []Capability
+	}{{
+		name:     "empty capability list",
+		caps:     nil,
+		toRemove: Capability_H264,
+		expect:   nil,
+	}, {
+		name:     "capability not in list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_MP4,
+		expect:   []Capability{Capability_H264, Capability_MPEGTS},
+	}, {
+		name:     "capability at beginning of list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_H264,
+		expect:   []Capability{Capability_MPEGTS},
+	}, {
+		name:     "capability in middle of list",
+		caps:     []Capability{Capability_H264, Capability_MP4, Capability_MPEGTS},
+		toRemove: Capability_MP4,
+		expect:   []Capability{Capability_H264, Capability_MPEGTS},
+	}, {
+		name:     "capability at end of list",
+		caps:     []Capability{Capability_H264, Capability_MPEGTS},
+		toRemove: Capability_MPEGTS,
+		expect:   []Capability{Capability_H264},
+	}, {
+		name:     "last capability",
+		caps:     []Capability{Capability_H264},
+		toRemove: Capability_H264,
+		expect:   []Capability{},
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expect, RemoveCapability(tt.caps, tt.toRemove))
+		})
+	}
 }
 
 func TestLiveeerVersionCompatibleWith(t *testing.T) {
