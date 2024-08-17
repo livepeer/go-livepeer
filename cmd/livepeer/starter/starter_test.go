@@ -112,14 +112,12 @@ func TestParseGetGatewayPrices(t *testing.T) {
 func TestMaxPricePerCapability(t *testing.T) {
 	assert := assert.New(t)
 
-	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }`
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3}, {"pipeline": "image-to-image", "priceperunit": 3000, "pixelsperunit": 1} ] }`
 
 	prices := getCapabilityPrices(jsonTemplate)
 	assert.NotNil(prices)
-	assert.Equal(2, len(prices))
+	assert.Equal(3, len(prices))
 
-	//confirm gateway field is initialized to empty string
-	assert.Equal(prices[0].Gateway, "default")
 	//confirm Pipeline and ModelID is parsed correctly
 	assert.Equal(prices[0].Pipeline, "text-to-image")
 	assert.Equal(prices[1].Pipeline, "image-to-video")
@@ -132,6 +130,11 @@ func TestMaxPricePerCapability(t *testing.T) {
 	assert.NotEqual(price1, price2)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
+
+	//confirm modelID is "default" if not set and price set correctly
+	assert.Equal(prices[2].ModelID, "default")
+	price3 := new(big.Rat).Quo(prices[2].PricePerUnit, prices[2].PixelsPerUnit)
+	assert.Equal(big.NewRat(3000, 1), price3)
 }
 
 // Address provided to keystore file

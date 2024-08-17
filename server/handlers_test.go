@@ -271,11 +271,11 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	p1, _ := core.NewAutoConvertedPrice("ETH", big.NewRat(1, 1), nil)
 	p2, _ := core.NewAutoConvertedPrice("ETH", big.NewRat(2, 1), nil)
 	p1_pipeline := "text-to-image"
-	p1_pipeline_cap := core.PipelineToCapability(p1_pipeline)
+	p1_pipeline_cap, _ := core.PipelineToCapability(p1_pipeline)
 	p1_modelID := "default"
 
 	p2_pipeline := "image-to-image"
-	p2_pipeline_cap := core.PipelineToCapability(p2_pipeline)
+	p2_pipeline_cap, _ := core.PipelineToCapability(p2_pipeline)
 	p2_modelID := "default"
 
 	status1, _ := postForm(handler, url.Values{

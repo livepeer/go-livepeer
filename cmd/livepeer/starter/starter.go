@@ -961,7 +961,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				capabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
 				for _, p := range capabilityPrices {
 					capPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
-					cap := core.PipelineToCapability(p.Pipeline)
+					cap, err := core.PipelineToCapability(p.Pipeline)
+					if err != nil {
+						panic(fmt.Errorf("Pipeline is not valid capability: %v\n", p.Pipeline))
+					}
 					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, capPrice, func(price *big.Rat) {
 						if monitor.Enabled {
 							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], p.ModelID, price)
@@ -972,7 +975,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						panic(fmt.Errorf("Error converting price: %v", err))
 					}
 
-					server.BroadcastCfg.SetCapabilityMaxPrice(core.PipelineToCapability(p.Pipeline), p.ModelID, autoCapPrice)
+					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
 				}
 			}
 		}
@@ -1805,12 +1808,10 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 	}
 
 	// Format of modelPrices json
-	// model_id can be set to "default" to price all models in the pipeline
-	// same format is used for gateway and orchestrator.  Setting maxPricePerCapability will not use the gateway field.
-	// {"capabilities_prices": [ {"gateway": "default", "pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"gateway": "0x0", "pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
+	// model_id will be set to "default" to price all models in the pipeline if not specified
+	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3} ] }
 	var pricesSet struct {
 		CapabilitiesPrices []struct {
-			Gateway       string       `json:"gateway"`
 			Pipeline      string       `json:"pipeline"`
 			ModelID       string       `json:"model_id"`
 			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
@@ -1828,12 +1829,11 @@ func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
 
 	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
 	for i, p := range pricesSet.CapabilitiesPrices {
-		if p.Gateway == "" {
-			p.Gateway = "default"
+		if p.ModelID == "" {
+			p.ModelID = "default"
 		}
 
 		prices[i] = ModelPrice{
-			Gateway:       p.Gateway,
 			Pipeline:      p.Pipeline,
 			ModelID:       p.ModelID,
 			PricePerUnit:  p.PricePerUnit.Rat,

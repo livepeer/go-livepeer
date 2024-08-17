@@ -213,8 +213,8 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 				return
 			}
 
-			cap := core.PipelineToCapability(pipeline)
-			if cap == core.Capability_Unused {
+			cap, err := core.PipelineToCapability(pipeline)
+			if err != nil {
 				respond400(w, "pipeline not supported")
 				return
 			}

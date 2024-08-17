@@ -15,6 +15,8 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 )
 
+var errPipelineNotAvailable = errors.New("pipeline not available")
+
 type AI interface {
 	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
@@ -42,10 +44,12 @@ func (s JSONRat) String() string {
 	return s.FloatString(2)
 }
 
-func PipelineToCapability(pipeline string) Capability {
+func PipelineToCapability(pipeline string) (Capability, error) {
+
 	if len(pipeline) == 0 {
-		return Capability_Unused
+		return Capability_Unused, errPipelineNotAvailable
 	}
+
 	runes := []rune(pipeline)
 	runes[0] = unicode.ToUpper(runes[0])
 	for i, r := range runes {
@@ -56,12 +60,12 @@ func PipelineToCapability(pipeline string) Capability {
 	pipelineName := string(runes)
 	for cap, desc := range CapabilityNameLookup {
 		if pipelineName == desc {
-			return cap
+			return cap, nil
 		}
 	}
 
 	//no capability description matches name
-	return Capability_Unused
+	return Capability_Unused, errPipelineNotAvailable
 }
 
 type AIModelConfig struct {
