@@ -111,6 +111,7 @@ type LivepeerConfig struct {
 	CurrentManifest         *bool
 	Nvidia                  *string
 	Netint                  *string
+	HevcDecoding            *bool
 	TestTranscoder          *bool
 	EthAcctAddr             *string
 	EthPassword             *string
@@ -190,6 +191,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
 
 	// AI:
@@ -286,6 +288,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
@@ -514,9 +517,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+		}
+
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
+				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
+			}
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
 	}
 
@@ -1087,7 +1110,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	var aiCaps []core.Capability
-	capabilityConstraints := make(map[core.Capability]*core.PerCapabilityConstraints)
+	capabilityConstraints := make(core.PerCapabilityConstraints)
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1121,7 +1144,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		// Get base pixels per unit.
+		// Get base pixels and price per unit.
 		pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
 		if !ok || !pixelsPerUnitBase.IsInt() {
 			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
@@ -1129,6 +1152,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if !ok || pixelsPerUnitBase.Sign() <= 0 {
 			// Can't divide by 0
 			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+		pricePerUnitBase := new(big.Rat)
+		currencyBase := ""
+		if cfg.PricePerUnit != nil {
+			pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+			if err != nil || pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
+			}
+			pricePerUnitBase = pricePerUnit
+			currencyBase = currency
 		}
 
 		if *cfg.AIModels != "" {
@@ -1146,20 +1179,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pixelsPerUnit := config.PixelsPerUnit.Rat
 					if config.PixelsPerUnit.Rat == nil {
 						pixelsPerUnit = pixelsPerUnitBase
-					} else {
-						if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
-							panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
-						}
+					} else if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
 					}
+
 					pricePerUnit := config.PricePerUnit.Rat
-					if err != nil {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
-					} else if pricePerUnit.Sign() < 0 {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					currency := config.Currency
+					if pricePerUnit == nil {
+						if pricePerUnitBase.Sign() == 0 {
+							panic(fmt.Errorf("'pricePerUnit' must be set for model '%v' in pipeline '%v'", config.ModelID, config.Pipeline))
+						}
+						pricePerUnit = pricePerUnitBase
+						currency = currencyBase
+						glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
+					} else if !pricePerUnit.IsInt() || pricePerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 					}
+
 					pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 
-					autoPrice, err = core.NewAutoConvertedPrice(config.Currency, pricePerPixel, nil)
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
 					if err != nil {
 						panic(fmt.Errorf("error converting price: %v", err))
 					}
@@ -1185,7 +1224,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_TextToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						capabilityConstraints[core.Capability_TextToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_TextToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1199,7 +1238,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToImage]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						capabilityConstraints[core.Capability_ImageToImage] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToImage] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1213,7 +1252,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						capabilityConstraints[core.Capability_ImageToVideo] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_ImageToVideo] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1227,7 +1266,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_Upscale]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_Upscale)
-						capabilityConstraints[core.Capability_Upscale] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_Upscale] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1241,7 +1280,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_AudioToText]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_AudioToText)
-						capabilityConstraints[core.Capability_AudioToText] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_AudioToText] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
@@ -1257,7 +1296,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
 					if *cfg.Network != "offchain" {
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %v wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
 					} else {
 						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
 					}
@@ -1430,7 +1469,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), core.Constraints{}, capabilityConstraints)
+	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}

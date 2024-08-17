@@ -23,7 +23,7 @@ jobs:
     runs-on: oxford
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -90,8 +90,8 @@ jobs:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
           context: .
-          platforms: linux/amd64, linux/arm64
-          # platforms: linux/amd64
+          # platforms: linux/amd64, linux/arm64 # NOTE: Arm64 not yet supported.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           file: "docker/Dockerfile"
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -179,8 +179,8 @@ jobs:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
           context: .
-          platforms: linux/amd64, linux/arm64
-          # platforms: linux/amd64
+          # platforms: linux/amd64, linux/arm64 # NOTE: Arm64 not yet supported.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta-builder.outputs.tags }}
           file: "docker/Dockerfile"
