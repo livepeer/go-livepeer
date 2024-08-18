@@ -129,3 +129,88 @@ func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
 
 	return numInferenceSteps
 }
+
+func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints PerCapabilityConstraints) error {
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	for capability, constraint := range aiConstraints {
+		_, ok := n.Capabilities.constraints.perCapability[capability]
+		if ok {
+			for model_id, modelConstraint := range constraint.Models {
+				n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity -= modelConstraint.Capacity
+				if n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity <= 0 {
+					delete(n.Capabilities.constraints.perCapability, capability)
+				}
+			}
+		}
+	}
+	n.Capabilities.mutex.Unlock()
+	return nil
+}
+
+func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints PerCapabilityConstraints) error {
+	//update node capabilities after adjustments
+	n.Capabilities.mutex.Lock()
+	for aiCapability, aiConstraint := range aiConstraints {
+		_, ok := n.Capabilities.constraints.perCapability[aiCapability]
+		if !ok {
+			n.Capabilities.constraints.perCapability[aiCapability] = &CapabilityConstraints{
+				Models: make(ModelConstraints),
+			}
+		}
+
+		for model_id, modelConstraint := range aiConstraint.Models {
+			_, model_exists := n.Capabilities.constraints.perCapability[aiCapability].Models[model_id]
+			if model_exists {
+				n.Capabilities.constraints.perCapability[aiCapability].Models[model_id].Capacity += modelConstraint.Capacity
+			} else {
+				n.Capabilities.constraints.perCapability[aiCapability].Models[model_id] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: modelConstraint.Capacity}
+			}
+		}
+	}
+	n.Capabilities.mutex.Unlock()
+	return nil
+}
+
+func (n *LivepeerNode) ReserveAICapability(pipeline string, modelID string) error {
+	cap, err := PipelineToCapability(pipeline)
+	if err != nil {
+		return err
+	}
+
+	_, hasCap := n.Capabilities.constraints.perCapability[cap]
+	if hasCap {
+		_, hasModel := n.Capabilities.constraints.perCapability[cap].Models[modelID]
+		if hasModel {
+			n.Capabilities.mutex.Lock()
+			n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
+			n.Capabilities.mutex.Unlock()
+			return nil
+		} else {
+			return fmt.Errorf("failed to release AI capability capacity, model does not exist pipeline=%v modelID=%v", pipeline, modelID)
+		}
+	} else {
+		return fmt.Errorf("failed to release AI capability capacity, pipeline does not exist pipeline=%v modelID=%v", pipeline, modelID)
+	}
+}
+
+func (n *LivepeerNode) ReleaseAICapability(pipeline string, modelID string) error {
+	cap, err := PipelineToCapability(pipeline)
+	if err != nil {
+		return err
+	}
+	_, hasCap := n.Capabilities.constraints.perCapability[cap]
+	if hasCap {
+		_, hasModel := n.Capabilities.constraints.perCapability[cap].Models[modelID]
+		if hasModel {
+			n.Capabilities.mutex.Lock()
+			n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity += 1
+			n.Capabilities.mutex.Unlock()
+			return nil
+		} else {
+			return fmt.Errorf("failed to release AI capability capacity, model does not exist pipeline=%v modelID=%v", pipeline, modelID)
+		}
+	} else {
+		return fmt.Errorf("failed to release AI capability capacity, pipeline does not exist pipeline=%v modelID=%v", pipeline, modelID)
+	}
+}

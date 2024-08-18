@@ -1195,12 +1195,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		for _, config := range configs {
-			modelConstraint := &core.ModelConstraint{Warm: config.Warm}
 			pipelineCap, err := core.PipelineToCapability(config.Pipeline)
 			if err != nil {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
 			}
 			if *cfg.AIWorker {
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
+				//external containers are expected to manage multiple runners and auto scale to extent of supply.
+				//increase capacity to upper limit per external container
+				if config.URL != "" {
+					modelConstraint.Capacity = 100
+				}
 				// If the config contains a URL we call Warm() anyway because AIWorker will just register
 				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
@@ -1220,15 +1225,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 
 				//add capabilities and constraints if aiworker
-				_, ok := capabilityConstraints[pipelineCap]
-				if !ok {
+				if _, hasCap := capabilityConstraints[pipelineCap]; !hasCap {
 					aiCaps = append(aiCaps, pipelineCap)
 					capabilityConstraints[pipelineCap] = &core.CapabilityConstraints{
 						Models: make(map[string]*core.ModelConstraint),
 					}
 				}
 
-				capabilityConstraints[pipelineCap].Models[config.ModelID] = modelConstraint
+				if _, hasModel := capabilityConstraints[pipelineCap].Models[config.ModelID]; !hasModel {
+					capabilityConstraints[pipelineCap].Models[config.ModelID] = modelConstraint
+				} else {
+					if capabilityConstraints[pipelineCap].Models[config.ModelID].Warm == config.Warm {
+						capabilityConstraints[pipelineCap].Models[config.ModelID].Capacity += modelConstraint.Capacity
+					} else {
+						panic(fmt.Errorf("cannot have same model_id (%v) as cold and warm in same ai worker, please fix aiModels json config", config.ModelID))
+					}
+				}
 
 				glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, pipelineCap, config.ModelID)
 			}
