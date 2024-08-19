@@ -320,7 +320,7 @@ jobs:
       # Create temporary latest url for the 'ai-video' branch.
       # TODO: Once 'ai-video' is merged into the main branch, this section should be removed.
       - name: Upload release archives to latest url
-        if: startsWith(github.ref, 'refs/tags/') && github.ref_name == 'ai-video' && env.current_tag == env.highest_tag
+        if: startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-ai.')
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
