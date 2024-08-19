@@ -99,7 +99,7 @@ func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityCompar
 	defer cfg.mu.RUnlock()
 	netCaps := caps.ToNetCapabilities()
 	price := big.NewRat(0, 1)
-	for capabilityInt, constraints := range netCaps.CapabilityConstraints {
+	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
 		for modelID, _ := range constraints.Models {
 			capPrice := cfg.GetCapabilityMaxPrice(core.Capability(capabilityInt), modelID)
 			if capPrice != nil {
