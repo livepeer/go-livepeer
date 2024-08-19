@@ -173,8 +173,8 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 
 	suspender := newSuspender()
 	//create caps for selector to get maxPrice
-	warmCaps := createAISelectorCapabilities(cap, modelID, true)
-	coldCaps := createAISelectorCapabilities(cap, modelID, false)
+	warmCaps := createAISelectorCapabilities(cap, modelID, true, node.Capabilities.MinVersionConstraint())
+	coldCaps := createAISelectorCapabilities(cap, modelID, false, node.Capabilities.MinVersionConstraint())
 	// The latency score in this context is just the latency of the last completed request for a session
 	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
 	minLS := 0.0
@@ -198,15 +198,19 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	return sel, nil
 }
 
-func createAISelectorCapabilities(cap core.Capability, modelID string, warm bool) *core.Capabilities {
+func createAISelectorCapabilities(cap core.Capability, modelID string, warm bool, minVersion string) *core.Capabilities {
 	var aiCaps []core.Capability
-	capabilityConstraints := make(map[core.Capability]*core.PerCapabilityConstraints)
+	capabilityConstraints := make(core.PerCapabilityConstraints)
 	aiCaps = append(aiCaps, cap)
-	capabilityConstraints[cap] = &core.PerCapabilityConstraints{
+	capabilityConstraints[cap] = &core.CapabilityConstraints{
 		Models: make(map[string]*core.ModelConstraint),
 	}
 	capabilityConstraints[cap].Models[modelID] = &core.ModelConstraint{Warm: warm}
-	return core.NewCapabilitiesWithConstraints(aiCaps, aiCaps, core.Constraints{}, capabilityConstraints)
+	caps := core.NewCapabilities(aiCaps, nil)
+	caps.SetPerCapabilityConstraints(capabilityConstraints)
+	caps.SetMinVersionConstraint(minVersion)
+
+	return caps
 }
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
