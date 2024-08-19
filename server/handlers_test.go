@@ -260,16 +260,17 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	assert := assert.New(t)
 	s := stubServer()
 	s.LivepeerNode.NodeType = core.BroadcasterNode
+	BroadcastCfg.Initialize()
 
 	handler := s.setMaxPriceForCapability()
 
 	//set default max price
-	basePrice, _ := core.NewAutoConvertedPrice("ETH", big.NewRat(10, 1), nil)
+	basePrice, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(10, 1), nil)
 	BroadcastCfg.SetMaxPrice(basePrice)
 
 	//set price per unit for specific pipeline
-	p1, _ := core.NewAutoConvertedPrice("ETH", big.NewRat(1, 1), nil)
-	p2, _ := core.NewAutoConvertedPrice("ETH", big.NewRat(2, 1), nil)
+	p1, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(1, 1), nil)
+	p2, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(2, 1), nil)
 	p1_pipeline := "text-to-image"
 	p1_pipeline_cap, _ := core.PipelineToCapability(p1_pipeline)
 	p1_modelID := "default"
@@ -281,35 +282,35 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	status1, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {p1_pipeline},
 		"modelID":         {p1_modelID},
 	})
 
 	assert.Equal(http.StatusOK, status1)
-	assert.Equal(p1, BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.Equal(p1.Value(), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
 
 	status2, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"2"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {p2_pipeline},
 		"modelID":         {p2_modelID},
 	})
 
 	assert.Equal(http.StatusOK, status2)
-	assert.Equal(p2, BroadcastCfg.GetCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
+	assert.Equal(p2.Value(), BroadcastCfg.GetCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
 
 	p1_modelID = "stabilityai/sd-turbo"
 	status1, _ = postForm(handler, url.Values{
 		"maxPricePerUnit": {"100"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {p1_pipeline},
 		"modelID":         {p1_modelID},
 	})
 	assert.Equal(http.StatusOK, status1)
-	assert.NotEqual(p1, BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.NotEqual(p1.Value(), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
 	assert.Equal(big.NewRat(100, 1), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
 }
 
@@ -323,7 +324,7 @@ func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
 	status, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"10"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"text-to-image"},
 		"modelID":         {"default"},
 	})
@@ -342,7 +343,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status1, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"a"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"text-to-image"},
 		"modelID":         {"default"},
 	})
@@ -352,7 +353,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status2, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"a"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"text-to-image"},
 		"modelID":         {"default"},
 	})
@@ -362,7 +363,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status3, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"text-to-image"},
 		"modelID":         {"default"},
 	})
@@ -372,7 +373,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status4, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {""},
 		"modelID":         {"default"},
 	})
@@ -382,7 +383,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status5, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"text-to-image"},
 		"modelID":         {""},
 	})
@@ -392,7 +393,7 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	status6, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"1"},
 		"pixelsPerUnit":   {"1"},
-		"currency":        {"ETH"},
+		"currency":        {"WEI"},
 		"pipeline":        {"cool-new-pipeline"},
 		"modelID":         {"default"},
 	})
