@@ -310,8 +310,7 @@ func TestPixels(t *testing.T) {
 
 	p, err := pixels("foo")
 	// Early codec check didn't find video in missing input file so
-	//  we get `TranscoderInvalidVideo` err instead of `No such file or directory`
-	assert.EqualError(err, "TranscoderInvalidVideo")
+	assert.EqualError(err, "No such file or directory")
 	assert.Equal(int64(0), p)
 
 	// Assume that ffmpeg.Transcode3() returns the correct pixel count so we just
