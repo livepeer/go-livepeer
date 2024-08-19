@@ -99,7 +99,7 @@ type LivepeerConfig struct {
 	OrchPerfStatsURL        *string
 	Region                  *string
 	MaxPricePerUnit         *string
-	EnforceMaxPrice         *bool
+	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
 	MaxSessions             *string
 	CurrentManifest         *bool
@@ -296,7 +296,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
-		EnforceMaxPrice:         &defaultEnforceMaxPrice,
+		IgnoreMaxPriceIfNeeded:  &defaultEnforceMaxPrice,
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
@@ -1591,12 +1591,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:    *cfg.MinPerfScore,
-		StakeWeight:     *cfg.SelectStakeWeight,
-		PriceWeight:     *cfg.SelectPriceWeight,
-		RandWeight:      *cfg.SelectRandWeight,
-		PriceExpFactor:  *cfg.SelectPriceExpFactor,
-		EnforceMaxPrice: *cfg.EnforceMaxPrice,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 

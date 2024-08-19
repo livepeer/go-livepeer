@@ -20,8 +20,8 @@ type ProbabilitySelectionAlgorithm struct {
 	PriceWeight float64
 	RandWeight  float64
 
-	PriceExpFactor  float64
-	EnforceMaxPrice bool
+	PriceExpFactor         float64
+	IgnoreMaxPriceIfNeeded bool
 }
 
 func (sa ProbabilitySelectionAlgorithm) Select(ctx context.Context, addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
@@ -71,7 +71,7 @@ func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(ctx context.Context, ad
 		}
 	}
 
-	if len(res) == 0 && !sa.EnforceMaxPrice {
+	if len(res) == 0 && sa.IgnoreMaxPriceIfNeeded {
 		// If no orchestrators pass the filter, return all Orchestrators
 		// It means that no orchestrators are below the max price
 		clog.Warningf(ctx, "No Orchestrators passed max price filter, not using the filter, numAddrs=%d, maxPrice=%v, prices=%v, addrs=%v", len(addrs), maxPrice, prices, addrs)
