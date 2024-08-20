@@ -321,6 +321,13 @@ jobs:
           parent: false
           process_gcloudignore: false
 
+      # Print condition
+      - name: Print latest condition
+        run: |
+          echo "Ref: ${{ github.ref }}"
+          echo "Latest tag: ${{ needs.linux-build.outputs.latest_tag }}"
+          echo "Is latest tag: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.outputs.latest_tag) }}"
+
       # Update the latest release
       - name: Upload release archives to Google Cloud latest folder
         id: upload-archives-latest
