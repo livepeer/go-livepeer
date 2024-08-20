@@ -317,7 +317,7 @@ jobs:
           parent: false
           process_gcloudignore: false
 
-      # Get the latest tag
+      # Get the latest release tag
       - name: Get latest tag
         id: get-latest-tag
         run: |
