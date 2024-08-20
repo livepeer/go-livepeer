@@ -328,23 +328,31 @@ jobs:
           echo "Latest tag: ${{ needs.linux-build.outputs.latest_tag }}"
           echo "Is latest tag: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.outputs.latest_tag) }}"
 
+      # Get the latest tag
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          git fetch --tags
+          latest_tag=$(git tag -l "v*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-ai.[0-9]+$' | sort -V | tail -n 1)
+          echo "::set-output name=latest_tag::$latest_tag"
+
       # Update the latest release
       - name: Upload release archives to Google Cloud latest folder
         id: upload-archives-latest
-        if: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.latest_tag) }}
+        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/latest"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
       
       # Update the latest branch manifest
       - name: Upload branch manifest file to Google Cloud latest folder
         id: upload-manifest-latest
-        if: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.latest_tag) }}
+        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/latest"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
           parent: false
           process_gcloudignore: false
 
