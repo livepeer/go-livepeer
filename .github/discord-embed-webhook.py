@@ -40,7 +40,7 @@ def populate_embeds(embed: DiscordEmbed, ref_name: str, checksums: list[str]):
             version=ref_name,
             filename=filename,
         )
-        title = filename.lstrip("livepeer-").split(".")[0]
+        title = filename.removeprefix("livepeer-").split(".")[0]
         print(f"Adding embed field name={title} value={download_url}")
         embed.add_embed_field(name=title, value=download_url, inline=False)
 
