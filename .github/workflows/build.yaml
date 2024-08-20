@@ -17,6 +17,8 @@ jobs:
   linux-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
     runs-on: ubuntu-20.04
+    outputs:
+      latest_tag: ${{ steps.build-binaries.outputs.latest_tag }}
     container:
       image: ${{ matrix.target.container }}
       env:
@@ -116,6 +118,7 @@ jobs:
         run: ./install_ffmpeg.sh
 
       - name: Build binaries
+        id: build-binaries
         env:
           GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
         run: |
@@ -317,14 +320,23 @@ jobs:
           parent: false
           process_gcloudignore: false
 
-      # Create temporary latest url for the 'ai-video' branch.
-      # TODO: Once 'ai-video' is merged into the main branch, this section should be removed.
-      - name: Upload release archives to latest url
-        if: startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-ai.')
+      # Update the latest release
+      - name: Upload release archives to Google Cloud latest folder
+        id: upload-archives-latest
+        if: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.latest_tag) }}
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
-          destination: "build.livepeer.live/go-livepeer/ai-video/latest"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/latest"
+      
+      # Update the latest branch manifest
+      - name: Upload branch manifest file to Google Cloud latest folder
+        id: upload-manifest-latest
+        if: ${{ github.ref == format('refs/tags/{0}', needs.linux-build.latest_tag) }}
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: ${{ steps.branch-manifest.outputs.manifest-file }}
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/latest"
           parent: false
           process_gcloudignore: false
 
