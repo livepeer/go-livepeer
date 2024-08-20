@@ -5,7 +5,8 @@ on:
   push:
     branches:
       # - master
-      - ai-video
+      # - ai-video
+      - improve_latest_binary_release_ci_logic
     tags:
       - "v*"
 
@@ -27,10 +28,10 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - GOOS: linux
-            GOARCH: amd64
-            container: ubuntu:20.04
-            type: cpu
+          # - GOOS: linux
+          #   GOARCH: amd64
+          #   container: ubuntu:20.04
+          #   type: cpu
 
           # - GOOS: linux
           #   GOARCH: arm64
@@ -147,103 +148,103 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
           path: releases/
 
-  macos-build:
-    name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
-    runs-on: ${{ matrix.target.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - GOOS: darwin
-            GOARCH: amd64
-            runner: macos-14-large
+  # macos-build:
+  #   name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
+  #   runs-on: ${{ matrix.target.runner }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       target:
+  #         - GOOS: darwin
+  #           GOARCH: amd64
+  #           runner: macos-14-large
 
-          - GOOS: darwin
-            GOARCH: arm64
-            runner: macos-14-xlarge
+  #         - GOOS: darwin
+  #           GOARCH: arm64
+  #           runner: macos-14-xlarge
 
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4.1.7
-        with:
-          fetch-depth: 0
-          # Check https://github.com/livepeer/go-livepeer/pull/1891
-          # for ref value discussion
-          ref: ${{ github.event.pull_request.head.sha }}
+  #   steps:
+  #     - name: Check out code
+  #       uses: actions/checkout@v4.1.7
+  #       with:
+  #         fetch-depth: 0
+  #         # Check https://github.com/livepeer/go-livepeer/pull/1891
+  #         # for ref value discussion
+  #         ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Set up go
-        id: go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.21.5
-          cache: true
-          cache-dependency-path: go.sum
+  #     - name: Set up go
+  #       id: go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: 1.21.5
+  #         cache: true
+  #         cache-dependency-path: go.sum
 
-      - name: Set build environment
-        run: |
-          echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
-          echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
-          echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
-          echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
-          mkdir -p lp-builds/ releases/
+  #     - name: Set build environment
+  #       run: |
+  #         echo "GOARCH=${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+  #         echo "GOOS=${{ matrix.target.GOOS }}" >> $GITHUB_ENV
+  #         echo "GO_BUILD_DIR=lp-builds/" >> $GITHUB_ENV
+  #         echo "LP_BUILD_DIR=livepeer-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}" >> $GITHUB_ENV
+  #         mkdir -p lp-builds/ releases/
 
-      - name: Cache ffmpeg
-        id: cache-ffmpeg
-        uses: actions/cache@v4
-        with:
-          path: ~/compiled
-          key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
+  #     - name: Cache ffmpeg
+  #       id: cache-ffmpeg
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: ~/compiled
+  #         key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
-      - name: Install dependencies
-        run: brew install coreutils pkg-config
+  #     - name: Install dependencies
+  #       run: brew install coreutils pkg-config
 
-      - name: Install go modules
-        # if: steps.go.outputs.cache-hit != 'true'
-        run: go mod download
+  #     - name: Install go modules
+  #       # if: steps.go.outputs.cache-hit != 'true'
+  #       run: go mod download
 
-      - name: Install ffmpeg
-        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
-        run: ./install_ffmpeg.sh
+  #     - name: Install ffmpeg
+  #       if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+  #       run: ./install_ffmpeg.sh
 
-      - name: Build binaries
-        env:
-          GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-        run: |
-          git config --global --add safe.directory '*'
-          export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
-          ./ci_env.sh make
+  #     - name: Build binaries
+  #       env:
+  #         GHA_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
+  #       run: |
+  #         git config --global --add safe.directory '*'
+  #         export PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+  #         ./ci_env.sh make
 
-      - uses: actions-ecosystem/action-regex-match@v2
-        id: match-tag
-        with:
-          text: ${{ github.ref_name }}
-          regex: '^(master|main|ai-video|v[0-9]+\.\d+\.\d+)$'
+  #     - uses: actions-ecosystem/action-regex-match@v2
+  #       id: match-tag
+  #       with:
+  #         text: ${{ github.ref_name }}
+  #         regex: '^(master|main|ai-video|v[0-9]+\.\d+\.\d+)$'
 
-      - name: Codesign and notarize binaries
-        if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
-        uses: livepeer/action-gh-codesign-apple@latest
-        with:
-          developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
-          developer-certificate-base64: ${{ secrets.CI_MACOS_CERTIFICATE_BASE64 }}
-          developer-certificate-password: ${{ secrets.CI_MACOS_CERTIFICATE_PASSWORD }}
-          app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
-          app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
-          app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
-          binary-path: "lp-builds/"
+  #     - name: Codesign and notarize binaries
+  #       if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
+  #       uses: livepeer/action-gh-codesign-apple@latest
+  #       with:
+  #         developer-certificate-id: ${{ secrets.CI_MACOS_CERTIFICATE_ID }}
+  #         developer-certificate-base64: ${{ secrets.CI_MACOS_CERTIFICATE_BASE64 }}
+  #         developer-certificate-password: ${{ secrets.CI_MACOS_CERTIFICATE_PASSWORD }}
+  #         app-notarization-email: ${{ secrets.CI_MACOS_NOTARIZATION_USER }}
+  #         app-notarization-password: ${{ secrets.CI_MACOS_NOTARIZATION_PASSWORD }}
+  #         app-notarization-team-id: ${{ secrets.CI_MACOS_NOTARIZATION_TEAM_ID }}
+  #         binary-path: "lp-builds/"
 
-      - name: Archive binaries
-        if: matrix.platform.name != 'windows'
-        run: |
-          mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
-          cd "$GO_BUILD_DIR/"
-          find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
-          tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
+  #     - name: Archive binaries
+  #       if: matrix.platform.name != 'windows'
+  #       run: |
+  #         mkdir -p "${GO_BUILD_DIR}/${LP_BUILD_DIR}/"
+  #         cd "$GO_BUILD_DIR/"
+  #         find . -type f -exec mv '{}' "$LP_BUILD_DIR" \;
+  #         tar -czvf "../releases/${LP_BUILD_DIR}.tar.gz" .
 
-      - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
-          path: releases/
+  #     - name: Upload artifacts for cutting release
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
+  #         path: releases/
 
   upload:
     name: Upload artifacts to google bucket
@@ -252,7 +253,7 @@ jobs:
       id-token: "write"
     runs-on: ubuntu-20.04
     needs:
-      - macos-build
+      # - macos-build
       - linux-build
     steps:
       - name: Check out code
