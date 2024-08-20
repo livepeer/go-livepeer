@@ -338,16 +338,18 @@ jobs:
           echo "GitHub Ref: ${{ github.ref }}"
 
       # Update the latest release
-      - name: Upload release archives to Google Cloud latest folder
+      - name: Upload release archives to Google Cloud stable folder
         id: upload-archives-latest
         if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
         uses: google-github-actions/upload-cloud-storage@v2
         with:
           path: "releases"
           destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
+          parent: false
+          process_gcloudignore: false
       
       # Update the latest branch manifest
-      - name: Upload branch manifest file to Google Cloud latest folder
+      - name: Upload branch manifest file to Google Cloud stable folder
         id: upload-manifest-latest
         if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
         uses: google-github-actions/upload-cloud-storage@v2
