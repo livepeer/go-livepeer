@@ -30,6 +30,7 @@ jobs:
       - name: Flatten all downloaded artifacts to a single directory
         shell: bash
         run: |
+          cd releases/
           find . -type f -exec mv '{}' ./ \;
           find . -type d -empty -delete
 
