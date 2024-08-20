@@ -333,7 +333,9 @@ jobs:
         run: |
           git fetch --tags
           latest_tag=$(git tag -l "v*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-ai.[0-9]+$' | sort -V | tail -n 1)
-          echo "::set-output name=latest_tag::$latest_tag"
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Latest tag: $latest_tag"
+          echo "GitHub Ref: ${{ github.ref }}"
 
       # Update the latest release
       - name: Upload release archives to Google Cloud latest folder
