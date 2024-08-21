@@ -1294,8 +1294,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 
+				pipeline := config.Pipeline
+				modelID := config.ModelID
 				autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
-					glog.V(6).Infof("Capability %s (ID: %v) with model constraint %s price set to %s wei per compute unit", config.Pipeline, pipelineCap, config.ModelID, price.FloatString(3))
+					glog.V(6).Infof("Capability %s (ID: %v) with model constraint %s price set to %s wei per compute unit", pipeline, pipelineCap, modelID, price.FloatString(3))
 				})
 				if err != nil {
 					panic(fmt.Errorf("error converting price: %v", err))
