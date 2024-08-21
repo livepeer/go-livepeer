@@ -33,7 +33,10 @@ type orchestratorPool struct {
 	orchBlacklist []string
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout int) *orchestratorPool {
+	if discoveryTimeout > 0 {
+		getOrchestratorsCutoffTimeout = time.Duration(discoveryTimeout) * time.Millisecond
+	}
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -48,7 +51,7 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string) *orchestratorPool {
 
-	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist)
+	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist, 0) //last parameter is timeout that is set at launch, 0 keeps same setting from launch
 	pool.pred = pred
 	return pool
 }

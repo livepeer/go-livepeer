@@ -38,9 +38,13 @@ type DBOrchestratorPoolCache struct {
 	orchBlacklist         []string
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout int) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
+	}
+
+	if discoveryTimeout > 0 {
+		getOrchestratorsCutoffTimeout = time.Duration(discoveryTimeout) * time.Millisecond
 	}
 
 	dbo := &DBOrchestratorPoolCache{
