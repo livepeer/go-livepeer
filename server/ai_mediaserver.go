@@ -18,6 +18,8 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+var MaxAIRequestSize = 100000000
+
 type ImageToVideoResponseAsync struct {
 	RequestID string `json:"request_id"`
 }

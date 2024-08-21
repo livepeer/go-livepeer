@@ -511,7 +511,7 @@ func (h *lphttp) AIResults() http.Handler {
 					workerResult.Err = err
 					break
 				}
-				body, err := common.ReadAtMost(p, common.MaxSegSize) //reuse transcoding limit on response size
+				body, err := common.ReadAtMost(p, MaxAIRequestSize)
 				if err != nil {
 					glog.Error("Error reading body ", err)
 					workerResult.Err = err
