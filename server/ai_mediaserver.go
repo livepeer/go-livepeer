@@ -117,10 +117,12 @@ func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *htt
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
+		orchAddr := r.Header.Get("OrchAddr")
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			orchAddr:    orchAddr,
 		}
 
 		var req I
@@ -178,10 +180,12 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v async=%v", req.Image.FileSize(), *req.ModelId, async)
 
+		orchAddr := r.Header.Get("OrchAddr")
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			orchAddr:    orchAddr,
 		}
 
 		if !async {
@@ -286,10 +290,12 @@ func (ls *LivepeerServer) LLM() http.Handler {
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request model_id=%v stream=%v", *req.Model, *req.Stream)
 
+		orchAddr := r.Header.Get("OrchAddr")
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			orchAddr:    orchAddr,
 		}
 
 		start := time.Now()

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"maps"
 	"math"
 	"math/rand"
 	"strconv"
@@ -439,14 +440,30 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 	}
 }
 
-func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, modelID string) (*AISession, error) {
+func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, modelID string, orchAddr string) (*AISession, error) {
 	clog.V(common.DEBUG).Infof(ctx, "selecting orchestrator for modelID=%s", modelID)
 	sel, err := c.getSelector(ctx, cap, modelID)
 	if err != nil {
 		return nil, err
 	}
+	var sess *AISession
+	if orchAddr != "" {
+		clog.Infof(ctx, "searching for session with orch_addr=%s", orchAddr)
+		//create a combined pool of sessions
+		combinedMap := sel.warmPool.sessMap
+		maps.Copy(combinedMap, sel.coldPool.sessMap)
+		clog.Infof(ctx, "combined warm and cold session pools to %d sessions, warm=%d, cold=%s", len(combinedMap), len(sel.warmPool.sessMap), len(sel.coldPool.sessMap))
 
-	sess := sel.Select(ctx)
+		for uri, bs := range combinedMap {
+			if uri == orchAddr || bs.Address() == orchAddr || bs.RecipientAddress() == orchAddr {
+				_, isWarm := sel.warmPool.sessMap[bs.Transcoder()]
+				sess = &AISession{BroadcastSession: bs, Cap: sel.cap, ModelID: sel.modelID, Warm: isWarm}
+			}
+		}
+	} else {
+		sess = sel.Select(ctx)
+	}
+
 	if sess == nil {
 		return nil, nil
 	}
