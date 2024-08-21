@@ -414,6 +414,6 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 	clog.V(common.VERBOSE).InfofErr(ctx, "AI job processing done results sent for taskId=%d pipeline=%s modelID=%s uploadDur=%v", notify.TaskId, notify.Pipeline, notify.ModelID, uploadDur, err)
 
 	if monitor.Enabled {
-		monitor.SegmentUploaded(ctx, 0, uint64(notify.TaskId), uploadDur, "")
+		monitor.AIResultUploaded(ctx, uploadDur, notify.Pipeline, notify.ModelID, orchAddr)
 	}
 }

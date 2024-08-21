@@ -17,6 +17,7 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -278,9 +279,10 @@ func removeFromRemoteWorkers(rw *RemoteAIWorker, remoteWorkers []*RemoteAIWorker
 }
 
 type RemoteAIWorkerResult struct {
-	Results interface{}
-	Files   map[string][]byte
-	Err     error
+	Results      interface{}
+	Files        map[string][]byte
+	Err          error
+	DownloadTime time.Duration
 }
 
 type AIWorkerChan chan *RemoteAIWorkerResult
@@ -362,6 +364,11 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	case chanData := <-taskChan:
 		clog.InfofErr(logCtx, "Successfully received results from remote worker=%s taskId=%d pipeline=%s model_id=%s dur=%v",
 			rw.addr, taskID, pipeline, modelID, time.Since(start), chanData.Err)
+
+		if monitor.Enabled {
+			monitor.AIResultDownloaded(logCtx, pipeline, modelID, chanData.DownloadTime)
+		}
+
 		return chanData, chanData.Err
 	}
 }
@@ -476,6 +483,10 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
 		} else {
+			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "text-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
 			return nil, err
 		}
 	}
@@ -488,6 +499,10 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "text-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
 		return nil, err
 	}
 
@@ -501,6 +516,10 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
 		} else {
+			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "image-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
 			return nil, err
 		}
 	}
@@ -522,6 +541,10 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "image-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
 		return nil, err
 	}
 
@@ -551,6 +574,10 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "image-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
 		return nil, err
 	}
 
@@ -564,6 +591,10 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
 		} else {
+			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "upscale", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
 			return nil, err
 		}
 	}
@@ -584,6 +615,10 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "upscale", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
 		return nil, err
 	}
 
@@ -613,6 +648,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "audio-to-text", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
 		return nil, err
 	}
 

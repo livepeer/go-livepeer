@@ -540,10 +540,7 @@ func (h *lphttp) AIResults() http.Handler {
 
 			dlDur := time.Since(start)
 			glog.V(common.VERBOSE).Infof("Downloaded results from remote worker=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
-
-			if monitor.Enabled {
-				monitor.SegmentDownloaded(r.Context(), 0, uint64(tid), dlDur)
-			}
+			workerResult.DownloadTime = dlDur
 
 			orch.AIResults(tid, &workerResult)
 		}

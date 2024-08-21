@@ -198,6 +198,11 @@ type (
 		mAIRequestLatencyScore *stats.Float64Measure
 		mAIRequestPrice        *stats.Float64Measure
 		mAIRequestError        *stats.Int64Measure
+		mAIResultDownloaded    *stats.Int64Measure
+		mAIResultDownloadTime  *stats.Float64Measure
+		mAIResultUploaded      *stats.Int64Measure
+		mAIResultUploadTime    *stats.Float64Measure
+		mAIResultSaveFailed    *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -361,6 +366,11 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIRequestLatencyScore = stats.Float64("ai_request_latency_score", "AI request latency score, based on smallest pipeline unit", "")
 	census.mAIRequestPrice = stats.Float64("ai_request_price", "AI request price per unit, based on smallest pipeline unit", "")
 	census.mAIRequestError = stats.Int64("ai_request_errors", "Errors during AI request processing", "tot")
+	census.mAIResultDownloaded = stats.Int64("ai_result_downloaded_total", "AIResultDownloaded", "tot")
+	census.mAIResultDownloadTime = stats.Float64("ai_result_download_time_seconds", "Download (from Orchestrator) time", "sec")
+	census.mAIResultUploaded = stats.Int64("ai_result_uploaded_total", "AIResultUploaded", "tot")
+	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
+	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -921,11 +931,46 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
+			Name:        "ai_result_downloaded_total",
+			Measure:     census.mAIResultDownloaded,
+			Description: "AIResultDownloaded",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "ai_result_download_time_seconds",
+			Measure:     census.mAIResultDownloadTime,
+			Description: "AIResultDownloadtime",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
+		{
 			Name:        "ai_request_errors",
 			Measure:     census.mAIRequestError,
 			Description: "Errors when processing AI requests",
 			TagKeys:     append([]tag.Key{census.kErrorCode, census.kPipeline, census.kModelName}, baseTagsWithNodeInfo...),
 			Aggregation: view.Sum(),
+		},
+		{
+			Name:        "ai_result_uploaded_total",
+			Measure:     census.mAIResultUploaded,
+			Description: "AIResultUploaded",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "ai_result_save_failed_total",
+			Measure:     census.mAIResultSaveFailed,
+			Description: "AIResultSaveFailed",
+			TagKeys:     append([]tag.Key{census.kErrorCode, census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Count(),
+		},
+		{
+			Name:        "ai_result_upload_time_seconds",
+			Measure:     census.mAIResultUploadTime,
+			Description: "AIResultUploadTime, seconds",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
 	}
 
@@ -1880,6 +1925,35 @@ func AIProcessingError(code string, Pipeline string, Model string, sender string
 		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, model, uri string) {
+	if err := stats.RecordWithTags(ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)}, census.mAIResultUploaded.M(1)); err != nil {
+		glog.Errorf("Failed to record metrics with tags: %v", err)
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		census.mAIResultUploadTime.M(uploadDur.Seconds())); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+
+func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},
+		census.mAIResultSaveFailed.M(1)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func AIResultDownloaded(ctx context.Context, pipeline string, model string, downloadDur time.Duration) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},
+		census.mAIResultDownloaded.M(1),
+		census.mAIResultDownloadTime.M(downloadDur.Seconds())); err != nil {
+		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
 }
 
