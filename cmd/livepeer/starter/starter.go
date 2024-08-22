@@ -987,12 +987,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				for _, p := range capabilityPrices {
 					capPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
 					cap, err := core.PipelineToCapability(p.Pipeline)
+					capName := core.CapabilityNameLookup[cap]
 					if err != nil {
 						panic(fmt.Errorf("Pipeline is not valid capability: %v\n", p.Pipeline))
 					}
 					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, capPrice, func(price *big.Rat) {
 						if monitor.Enabled {
-							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], p.ModelID, price)
+							monitor.MaxPriceForCapability(capName, p.ModelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
 					})
