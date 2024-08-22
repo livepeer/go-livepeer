@@ -61,13 +61,12 @@ type BroadcastConfig struct {
 }
 
 func newBroadcastConfig() *BroadcastConfig {
+	maxPrices := make(map[core.Capability]map[string]*core.AutoConvertedPrice)
 	models := make(map[string]*core.AutoConvertedPrice)
 	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
-
+	maxPrices[core.Capability_Unused] = models
 	return &BroadcastConfig{
-		maxPricePerCapability: map[core.Capability]map[string]*core.AutoConvertedPrice{
-			core.Capability_H264: models,
-		},
+		maxPricePerCapability: maxPrices,
 	}
 }
 
