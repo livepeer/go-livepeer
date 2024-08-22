@@ -41,7 +41,7 @@ var maxRefreshSessionsThreshold = 8.0
 var recordSegmentsMaxTimeout = 1 * time.Minute
 
 var Policy *verification.Policy
-var BroadcastCfg = &BroadcastConfig{}
+var BroadcastCfg = newBroadcastConfig()
 var MaxAttempts = 3
 
 var MetadataQueue event.SimpleProducer
@@ -60,17 +60,20 @@ type BroadcastConfig struct {
 	mu                    sync.RWMutex
 }
 
+func newBroadcastConfig() *BroadcastConfig {
+	models := make(map[string]*core.AutoConvertedPrice)
+	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
+
+	return &BroadcastConfig{
+		maxPricePerCapability: map[core.Capability]map[string]*core.AutoConvertedPrice{
+			core.Capability_H264: models,
+		},
+	}
+}
+
 type SegFlightMetadata struct {
 	startTime time.Time
 	segDur    time.Duration
-}
-
-func (cfg *BroadcastConfig) Initialize() {
-	//initialize with base capability of H264 transcoding
-	cfg.maxPricePerCapability = make(map[core.Capability]map[string]*core.AutoConvertedPrice)
-	models := make(map[string]*core.AutoConvertedPrice)
-	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
-	cfg.maxPricePerCapability[core.Capability_H264] = models
 }
 
 func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
