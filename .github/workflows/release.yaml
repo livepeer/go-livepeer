@@ -27,6 +27,13 @@ jobs:
           name_is_regexp: true
           path: releases/
 
+      - name: Flatten all downloaded artifacts to a single directory
+        shell: bash
+        run: |
+          cd releases/
+          find . -type f -exec mv '{}' ./ \;
+          find . -type d -empty -delete
+
       - uses: actions-ecosystem/action-regex-match@v2
         id: match-tag
         with:

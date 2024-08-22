@@ -106,6 +106,7 @@ type LivepeerConfig struct {
 	Region                  *string
 	MaxPricePerUnit         *string
 	MaxPricePerCapability   *string
+	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
 	MaxSessions             *string
 	CurrentManifest         *bool
@@ -220,6 +221,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
 	defaultMaxPricePerCapability := ""
+	defaultIgnoreMaxPriceIfNeeded := false
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -317,6 +319,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		DepositMultiplier:       &defaultDepositMultiplier,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
 		MaxPricePerCapability:   &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
@@ -1892,11 +1895,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 
