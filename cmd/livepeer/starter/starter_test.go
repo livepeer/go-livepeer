@@ -112,7 +112,7 @@ func TestParseGetGatewayPrices(t *testing.T) {
 func TestMaxPricePerCapability(t *testing.T) {
 	assert := assert.New(t)
 
-	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "priceperunit": 1000, "pixelsperunit": 1}, {"pipeline": "image-to-video", "model_id": "default", "priceperunit": 2000, "pixelsperunit": 3}, {"pipeline": "image-to-image", "priceperunit": 3000, "pixelsperunit": 1} ] }`
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "image-to-image", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
 
 	prices := getCapabilityPrices(jsonTemplate)
 	assert.NotNil(prices)

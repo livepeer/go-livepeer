@@ -164,17 +164,17 @@ type (
 		mDeposit            *stats.Float64Measure
 		mReserve            *stats.Float64Measure
 		// Metrics for receiving payments
-		mTicketValueRecv               *stats.Float64Measure
-		mTicketsRecv                   *stats.Int64Measure
-		mPaymentRecvErr                *stats.Int64Measure
-		mWinningTicketsRecv            *stats.Int64Measure
-		mValueRedeemed                 *stats.Float64Measure
-		mTicketRedemptionError         *stats.Int64Measure
-		mSuggestedGasPrice             *stats.Float64Measure
-		mMinGasPrice                   *stats.Float64Measure
-		mMaxGasPrice                   *stats.Float64Measure
-		mTranscodingPrice              *stats.Float64Measure
-		mTranscodingPricePerCapability *stats.Float64Measure
+		mTicketValueRecv       *stats.Float64Measure
+		mTicketsRecv           *stats.Int64Measure
+		mPaymentRecvErr        *stats.Int64Measure
+		mWinningTicketsRecv    *stats.Int64Measure
+		mValueRedeemed         *stats.Float64Measure
+		mTicketRedemptionError *stats.Int64Measure
+		mSuggestedGasPrice     *stats.Float64Measure
+		mMinGasPrice           *stats.Float64Measure
+		mMaxGasPrice           *stats.Float64Measure
+		mTranscodingPrice      *stats.Float64Measure
+		mPricePerCapability    *stats.Float64Measure
 		// Metrics for calling rewards
 		mRewardCallError *stats.Int64Measure
 
@@ -335,7 +335,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mMinGasPrice = stats.Float64("min_gas_price", "MinGasPrice", "gwei")
 	census.mMaxGasPrice = stats.Float64("max_gas_price", "MaxGasPrice", "gwei")
 	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
-	census.mTranscodingPricePerCapability = stats.Float64("transcoding_price_per_capability", "TranscodingPricePerCapability", "wei")
+	census.mPricePerCapability = stats.Float64("price_per_capability", "PricePerCapability", "wei")
 
 	// Metrics for calling rewards
 	census.mRewardCallError = stats.Int64("reward_call_errors", "RewardCallError", "tot")
@@ -835,9 +835,9 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "transcoding_price_per_capability",
-			Measure:     census.mTranscodingPricePerCapability,
-			Description: "Transcoding price per unit per capability",
+			Name:        "_price_per_capability",
+			Measure:     census.mPricePerCapability,
+			Description: "price per unit per capability",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
@@ -1650,7 +1650,7 @@ func MaxPriceForCapability(cap string, modelName string, maxPrice *big.Rat) {
 	floatWei, _ := maxPrice.Float64()
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kPipeline, cap), tag.Insert(census.kModelName, modelName)},
-		census.mTranscodingPricePerCapability.M(floatWei)); err != nil {
+		census.mPricePerCapability.M(floatWei)); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
 	}

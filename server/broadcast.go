@@ -79,18 +79,18 @@ type SegFlightMetadata struct {
 func (cfg *BroadcastConfig) MaxPrice() *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	//base price is H264 encoding
-	if cfg.maxPricePerCapability[core.Capability_H264]["default"] == nil {
+	//base price is capability that won't be set with specific price
+	if cfg.maxPricePerCapability[core.Capability_Unused]["default"] == nil {
 		return nil
 	}
-	return cfg.maxPricePerCapability[core.Capability_H264]["default"].Value()
+	return cfg.maxPricePerCapability[core.Capability_Unused]["default"].Value()
 }
 
 func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
-	prevPrice := cfg.maxPricePerCapability[core.Capability_H264]["default"]
-	cfg.maxPricePerCapability[core.Capability_H264]["default"] = price
+	prevPrice := cfg.maxPricePerCapability[core.Capability_Unused]["default"]
+	cfg.maxPricePerCapability[core.Capability_Unused]["default"] = price
 	if prevPrice != nil {
 		prevPrice.Stop()
 	}
@@ -104,7 +104,7 @@ func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityCompar
 	price := big.NewRat(0, 1)
 	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
 		for modelID, _ := range constraints.Models {
-			capPrice := cfg.GetCapabilityMaxPrice(core.Capability(capabilityInt), modelID)
+			capPrice := cfg.getCapabilityMaxPrice(core.Capability(capabilityInt), modelID)
 			if capPrice != nil {
 				price = price.Add(price, capPrice)
 			}
@@ -119,7 +119,7 @@ func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityCompar
 	return price
 }
 
-func (cfg *BroadcastConfig) GetCapabilityMaxPrice(cap core.Capability, modelID string) *big.Rat {
+func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID string) *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	models, ok := cfg.maxPricePerCapability[cap]

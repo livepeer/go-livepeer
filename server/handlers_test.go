@@ -287,7 +287,7 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusOK, status1)
-	assert.Equal(p1.Value(), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.Equal(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
 
 	status2, _ := postForm(handler, url.Values{
 		"maxPricePerUnit": {"2"},
@@ -298,7 +298,7 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusOK, status2)
-	assert.Equal(p2.Value(), BroadcastCfg.GetCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
+	assert.Equal(p2.Value(), BroadcastCfg.getCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
 
 	p1_modelID = "stabilityai/sd-turbo"
 	status1, _ = postForm(handler, url.Values{
@@ -309,8 +309,8 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 		"modelID":         {p1_modelID},
 	})
 	assert.Equal(http.StatusOK, status1)
-	assert.NotEqual(p1.Value(), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
-	assert.Equal(big.NewRat(100, 1), BroadcastCfg.GetCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.NotEqual(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.Equal(big.NewRat(100, 1), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
 }
 
 func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
@@ -357,16 +357,6 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 		"modelID":         {"default"},
 	})
 	assert.Equal(http.StatusBadRequest, status2)
-
-	//gateway eth address incorrect format
-	status3, _ := postForm(handler, url.Values{
-		"maxPricePerUnit": {"1"},
-		"pixelsPerUnit":   {"1"},
-		"currency":        {"WEI"},
-		"pipeline":        {"text-to-image"},
-		"modelID":         {"default"},
-	})
-	assert.Equal(http.StatusBadRequest, status3)
 
 	//pipeline is not set
 	status4, _ := postForm(handler, url.Values{
