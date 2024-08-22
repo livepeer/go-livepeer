@@ -260,7 +260,6 @@ func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
 	assert := assert.New(t)
 	s := stubServer()
 	s.LivepeerNode.NodeType = core.BroadcasterNode
-	BroadcastCfg.Initialize()
 
 	handler := s.setMaxPriceForCapability()
 
