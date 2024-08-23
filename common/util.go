@@ -366,7 +366,6 @@ func PriceToInt64(price *big.Rat) (*big.Rat, error) {
 		return nil, errors.New("price cannot be converted to int64")
 	}
 
-	// Return a new big.Rat with an int64 numerator and a denominator of 1.
 	return big.NewRat(fixed.Int64(), 1), nil
 }
 
