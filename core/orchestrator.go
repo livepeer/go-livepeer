@@ -317,6 +317,14 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		return nil, err
 	}
 
+	if !price.Num().IsInt64() || !price.Denom().IsInt64() {
+		fixedPrice, err := common.PriceToInt64(price)
+		if err != nil {
+			return nil, errors.New("price cannot be converted to int64")
+		}
+		price = fixedPrice
+	}
+
 	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
