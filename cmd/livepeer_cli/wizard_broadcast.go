@@ -96,19 +96,24 @@ func (w *wizard) setBroadcastConfig() {
 }
 
 func (w *wizard) setBroadcastMaxPricePerCapability() {
-	fmt.Printf("Enter the pipeline to set price for: ")
+	fmt.Printf("Enter the pipeline to set price for - ")
 	pipeline := w.readString()
-	fmt.Printf("Enter the model id to set price for: ")
-	modelID := w.readString()
-	fmt.Printf("Enter the maximum price to pay: ")
+	fmt.Printf("Enter the model id to set price for (default: default) - ")
+	modelID := w.readDefaultString("default")
+	fmt.Printf("Enter the maximum price to pay (default: 0) - ")
 	maxPricePerUnit := w.readDefaultString("0")
-	fmt.Printf("Enter the price currency: ")
-	currency := w.readString()
+	fmt.Printf("Enter the price currency (default: Wei) - ")
+	currency := w.readDefaultString("Wei")
 	pixelsPerUnit := "1"
 
+	// Make default case insensitive.
+	if strings.EqualFold(modelID, "default") {
+		modelID = "default"
+	}
+
 	val := url.Values{
-		"pixelsPerUnit":   {fmt.Sprintf("%v", pixelsPerUnit)},
 		"maxPricePerUnit": {fmt.Sprintf("%v", maxPricePerUnit)},
+		"pixelsPerUnit":   {fmt.Sprintf("%v", pixelsPerUnit)},
 		"currency":        {fmt.Sprintf("%v", currency)},
 		"pipeline":        {fmt.Sprintf("%v", pipeline)},
 		"modelID":         {fmt.Sprintf("%v", modelID)},
@@ -118,7 +123,7 @@ func (w *wizard) setBroadcastMaxPricePerCapability() {
 	if !ok {
 		fmt.Printf("Error setting max price for capability: %v\n", resp)
 	} else {
-		fmt.Printf("max price per capability set successfully\n")
+		fmt.Printf("Max price per capability set successfully\n")
 	}
 }
 
