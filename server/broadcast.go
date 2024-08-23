@@ -99,6 +99,9 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityComparator) *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
+	if caps == nil {
+		return cfg.MaxPrice()
+	}
 	netCaps := caps.ToNetCapabilities()
 	price := big.NewRat(0, 1)
 	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
