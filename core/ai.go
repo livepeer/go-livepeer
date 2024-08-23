@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/livepeer/ai-worker/worker"
 )
@@ -44,27 +43,21 @@ func (s JSONRat) String() string {
 	return s.FloatString(2)
 }
 
+// parsePipelineFromModelID converts a pipeline name to a capability.
 func PipelineToCapability(pipeline string) (Capability, error) {
-
-	if len(pipeline) == 0 {
+	if pipeline == "" {
 		return Capability_Unused, errPipelineNotAvailable
 	}
 
-	runes := []rune(pipeline)
-	runes[0] = unicode.ToUpper(runes[0])
-	for i, r := range runes {
-		if r == '-' {
-			runes[i] = ' '
-		}
-	}
-	pipelineName := string(runes)
+	pipelineName := strings.ToUpper(pipeline[:1]) + strings.ReplaceAll(pipeline[1:], "-", " ")
+
 	for cap, desc := range CapabilityNameLookup {
 		if pipelineName == desc {
 			return cap, nil
 		}
 	}
 
-	//no capability description matches name
+	// No capability description matches name.
 	return Capability_Unused, errPipelineNotAvailable
 }
 
