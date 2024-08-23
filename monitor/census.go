@@ -835,7 +835,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "_price_per_capability",
+			Name:        "price_per_capability",
 			Measure:     census.mPricePerCapability,
 			Description: "price per unit per capability",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
