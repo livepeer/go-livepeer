@@ -95,24 +95,23 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 	}
 }
 
-// gets prices for a set of capabilities
+// GetCapabilitiesMaxPrice returns the max price for the given capabilities.
 func (cfg *BroadcastConfig) GetCapabilitiesMaxPrice(caps common.CapabilityComparator) *big.Rat {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	netCaps := caps.ToNetCapabilities()
 	price := big.NewRat(0, 1)
 	for capabilityInt, constraints := range netCaps.Constraints.PerCapability {
-		for modelID, _ := range constraints.Models {
-			capPrice := cfg.getCapabilityMaxPrice(core.Capability(capabilityInt), modelID)
-			if capPrice != nil {
+		for modelID := range constraints.Models {
+			if capPrice := cfg.getCapabilityMaxPrice(core.Capability(capabilityInt), modelID); capPrice != nil {
 				price = price.Add(price, capPrice)
 			}
 		}
 	}
 
-	//if no prices set per model, return maxPrice
-	if price.Cmp(big.NewRat(0, 1)) == 0 {
-		price = cfg.MaxPrice()
+	// If no prices set per model, return maxPrice
+	if price.Sign() == 0 {
+		return cfg.MaxPrice()
 	}
 
 	return price
@@ -122,26 +121,24 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	models, ok := cfg.maxPricePerCapability[cap]
-	if ok {
-		_, modelOk := models[modelID]
-		if modelOk {
-			return cfg.maxPricePerCapability[cap][modelID].Value()
-		} else {
-			_, hasDefault := models["default"]
-			if hasDefault {
-				return cfg.maxPricePerCapability[cap]["default"].Value()
-			}
-		}
+	if !ok {
+		// No price set for capability
+		return nil
+	}
+	if price, modelOk := models[modelID]; modelOk {
+		return price.Value()
+	}
+	if defaultPrice, hasDefault := models["default"]; hasDefault {
+		return defaultPrice.Value()
 	}
 
-	//no price set for capability
+	// No price set for the specific model or default
 	return nil
 }
 
 func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-
 	if _, ok := cfg.maxPricePerCapability[cap]; !ok {
 		cfg.maxPricePerCapability[cap] = make(map[string]*core.AutoConvertedPrice)
 	}
