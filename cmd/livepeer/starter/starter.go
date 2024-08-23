@@ -1007,7 +1007,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					cap, err := core.PipelineToCapability(p.Pipeline)
 					if err != nil {
-						panic(fmt.Errorf("Pipeline is not valid capability: %v\n", p.Pipeline))
+						panic(fmt.Errorf("Pipeline in 'maxPricePerCapability' config is not valid capability: %v\n", p.Pipeline))
 					}
 					capName := core.CapabilityNameLookup[cap]
 					modelID := p.ModelID

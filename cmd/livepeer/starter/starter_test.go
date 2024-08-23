@@ -118,20 +118,20 @@ func TestMaxPricePerCapability(t *testing.T) {
 	assert.NotNil(prices)
 	assert.Equal(3, len(prices))
 
-	//confirm Pipeline and ModelID is parsed correctly
+	// Confirm Pipeline and ModelID is parsed correctly
 	assert.Equal(prices[0].Pipeline, "text-to-image")
 	assert.Equal(prices[1].Pipeline, "image-to-video")
 	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
 	assert.Equal(prices[1].ModelID, "default")
 
-	//confirm prices are parsed correctly
+	// Confirm prices are parsed correctly
 	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
 	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
 	assert.NotEqual(price1, price2)
 	assert.Equal(big.NewRat(1000, 1), price1)
 	assert.Equal(big.NewRat(2000, 3), price2)
 
-	//confirm modelID is "default" if not set and price set correctly
+	// Confirm modelID is "default" if not set and price set correctly
 	assert.Equal(prices[2].ModelID, "default")
 	price3 := new(big.Rat).Quo(prices[2].PricePerUnit, prices[2].PixelsPerUnit)
 	assert.Equal(big.NewRat(3000, 1), price3)

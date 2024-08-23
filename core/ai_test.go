@@ -8,7 +8,7 @@ import (
 
 func TestPipelineToCapability(t *testing.T) {
 	good := "audio-to-text"
-	bad := "text-to-text"
+	bad := "i-love-tests"
 
 	cap, err := PipelineToCapability(good)
 	assert.Nil(t, err)
