@@ -359,13 +359,15 @@ func FixedToPrice(price int64) *big.Rat {
 	return big.NewRat(price, priceScalingFactor)
 }
 
+// PriceToInt64 converts a *big.Rat to an *int64 if possible, otherwise returns an error.
 func PriceToInt64(price *big.Rat) (*big.Rat, error) {
 	fixed := new(big.Int).Div(price.Num(), price.Denom())
-	if fixed.IsInt64() {
-		return big.NewRat(fixed.Int64(), int64(1)), nil
-	} else {
-		return nil, errors.New("price cannot convert to int64")
+	if !fixed.IsInt64() {
+		return nil, errors.New("price cannot be converted to int64")
 	}
+
+	// Return a new big.Rat with an int64 numerator and a denominator of 1.
+	return big.NewRat(fixed.Int64(), 1), nil
 }
 
 // BaseTokenAmountToFixed converts the base amount of a token (i.e. ETH/LPT) represented as a big.Int into a fixed point number represented
