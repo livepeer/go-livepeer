@@ -141,13 +141,17 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 func (cfg *BroadcastConfig) SetCapabilityMaxPrice(cap core.Capability, modelID string, newPrice *core.AutoConvertedPrice) {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
-	_, ok := cfg.maxPricePerCapability[cap]
-	if ok {
-		cfg.maxPricePerCapability[cap][modelID] = newPrice
-	} else {
+
+	if _, ok := cfg.maxPricePerCapability[cap]; !ok {
 		cfg.maxPricePerCapability[cap] = make(map[string]*core.AutoConvertedPrice)
-		cfg.maxPricePerCapability[cap][modelID] = newPrice
 	}
+
+	// Stop previous price subscription if it exists.
+	if prevPrice, exists := cfg.maxPricePerCapability[cap][modelID]; exists && prevPrice != nil {
+		prevPrice.Stop()
+	}
+
+	cfg.maxPricePerCapability[cap][modelID] = newPrice
 }
 
 type sessionsCreator func() ([]*BroadcastSession, error)
