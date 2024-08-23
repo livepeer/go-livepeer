@@ -29,6 +29,7 @@ var ErrNoWorkersAvailable = errors.New("no workers available")
 
 // TODO: consider making this dynamic for each pipeline
 var aiWorkerResultsTimeout = 10 * time.Minute
+var aiWorkerRequestTimeout = 15 * time.Minute
 
 type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
@@ -141,6 +142,7 @@ func NewRemoteAIWorkerFatalError(err error) error {
 
 // Process does actual AI job using remote worker from the pool
 func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req interface{}) (*RemoteAIWorkerResult, error) {
+
 	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
 	if err != nil {
 		return nil, err
@@ -152,7 +154,7 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 	_, fatal := err.(RemoteAIWorkerFatalError)
 	if fatal {
 		// Don't retry if we've timed out; gateway likely to have moved on
-		if err.(RemoteAIWorkerFatalError).error == ErrRemoteTranscoderTimeout {
+		if err.(RemoteAIWorkerFatalError).error == ErrRemoteWorkerTimeout {
 			return res, err
 		}
 		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
@@ -354,7 +356,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s", rw.addr, taskID, pipeline, modelID)
 	// set a minimum timeout to accommodate transport / processing overhead
 	//TODO: this should be set for each pipeline, using something long for now
-	dur := 15 * time.Minute
+	dur := aiWorkerRequestTimeout
 
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
 	defer cancel()
