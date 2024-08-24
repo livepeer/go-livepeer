@@ -101,7 +101,7 @@ type LivepeerConfig struct {
 	MaxPricePerUnit         *string
 	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
-	DiscoveryTimeout        *int
+	DiscoveryTimeout        *time.Duration
 	MaxSessions             *string
 	CurrentManifest         *bool
 	Nvidia                  *string
@@ -181,7 +181,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
-	defaultDiscoveryTimeout := 500
+	defaultDiscoveryTimeout := 500 * time.Millisecond
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""

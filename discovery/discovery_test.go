@@ -73,7 +73,7 @@ func TestDeadLock(t *testing.T) {
 	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
 	wg.Add(len(uris))
-	pool := NewOrchestratorPool(nil, uris, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, uris, common.Score_Trusted, []string{}, 50*time.Millisecond)
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
@@ -120,7 +120,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	}
 
 	wg.Add(len(uris))
-	pool := NewOrchestratorPoolWithPred(nil, uris, pred, common.Score_Trusted, []string{})
+	pool := NewOrchestratorPoolWithPred(nil, uris, pred, common.Score_Trusted, []string{}, 50*time.Millisecond)
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
@@ -132,12 +132,12 @@ func TestPoolSize(t *testing.T) {
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
 
 	assert := assert.New(t)
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
 	assert.Equal(3, pool.Size())
 
 	// will results in len(uris) <= 0 -> log Error
 	errorLogsBefore := glog.Stats.Error.Lines()
-	pool = NewOrchestratorPool(nil, nil, common.Score_Trusted, []string{}, 0)
+	pool = NewOrchestratorPool(nil, nil, common.Score_Trusted, []string{}, 50*time.Millisecond)
 	errorLogsAfter := glog.Stats.Error.Lines()
 	assert.Equal(0, pool.Size())
 	assert.NotZero(t, errorLogsAfter-errorLogsBefore)
@@ -569,7 +569,7 @@ func TestNewOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *
 	assert := assert.New(t)
 
 	// creating NewOrchestratorPool with orch addresses
-	offchainOrch := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	offchainOrch := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
 
 	for i, info := range offchainOrch.infos {
 		assert.Equal(info.URL.String(), addresses[i].String())
@@ -595,7 +595,7 @@ func TestNewOrchestratorPoolWithPred_TestPredicate(t *testing.T) {
 	}
 	uris := stringsToURIs(addresses)
 
-	pool := NewOrchestratorPoolWithPred(nil, uris, pred, common.Score_Trusted, []string{})
+	pool := NewOrchestratorPoolWithPred(nil, uris, pred, common.Score_Trusted, []string{}, 50*time.Millisecond)
 
 	oInfo := &net.OrchestratorInfo{
 		PriceInfo: &net.PriceInfo{
@@ -1270,6 +1270,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	assert := assert.New(t)
 
 	addresses := stringsToURIs([]string{"https://127.0.0.1:8936", "https://127.0.0.1:8937", "https://127.0.0.1:8938"})
+	orchTimeout := 500 * time.Millisecond
 
 	wg := sync.WaitGroup{}
 	orchCb := func() error { return nil }
@@ -1283,7 +1284,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 		}, err
 	}
 
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, orchTimeout)
 
 	// Check that we receive everything
 	wg.Add(len(addresses))
@@ -1326,7 +1327,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	assert.Len(res, len(addresses)-1)
 	// Ensure that the timeout did not fire
 	assert.Less(end.Sub(start).Milliseconds(),
-		getOrchestratorsTimeoutLoop.Milliseconds())
+		pool.discoveryTimeout.Milliseconds())
 
 }
 
@@ -1348,7 +1349,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 		}, err
 	}
 
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
 
 	// suspend https://127.0.0.1:8938
 	sus := newStubSuspender()
@@ -1417,7 +1418,7 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
 
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 50*time.Millisecond)
 
 	// Check that randomization happens: check for elements in a different order
 	// Could fail sometimes due to scheduling; the order of execution is undefined
@@ -1480,14 +1481,12 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 		return &net.OrchestratorInfo{}, nil
 	}
 
-	oldTimeout := getOrchestratorsTimeoutLoop
-	getOrchestratorsTimeoutLoop = 1 * time.Millisecond
-	defer func() { getOrchestratorsTimeoutLoop = oldTimeout }()
+	timeout := 1 * time.Millisecond
 
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{}, timeout)
 
 	timedOut := func(start, end time.Time) bool {
-		return end.Sub(start).Milliseconds() >= getOrchestratorsTimeoutLoop.Milliseconds()
+		return end.Sub(start).Milliseconds() >= pool.discoveryTimeout.Milliseconds()
 	}
 
 	// We may only return a subset of responses for a given test
@@ -1529,7 +1528,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	assert.True(responsesDrained(), "Did not drain responses in time")
 
 	// Sanity check we get addresses with a reasonable timeout and no forced delay
-	getOrchestratorsTimeoutLoop = 25 * time.Millisecond
+	pool.discoveryTimeout = 25 * time.Millisecond
 	go drainOrchResponses(len(addresses))
 	start = time.Now()
 	res, err = getOrchestrators(len(addresses))
@@ -1579,7 +1578,7 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 
 	responses := []*net.OrchestratorInfo{i1, i2, i3, i4, i5}
 	addresses := stringsToURIs([]string{"a://b", "a://b", "a://b", "a://b", "a://b"})
-	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{hex.EncodeToString(address)}, 0)
+	pool := NewOrchestratorPool(nil, addresses, common.Score_Trusted, []string{hex.EncodeToString(address)}, 50*time.Millisecond)
 
 	// some sanity checks
 	assert.Len(addresses, len(responses))
