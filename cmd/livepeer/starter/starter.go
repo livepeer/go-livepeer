@@ -105,6 +105,8 @@ type LivepeerConfig struct {
 	OrchPerfStatsURL        *string
 	Region                  *string
 	MaxPricePerUnit         *string
+	MaxPricePerCapability   *string
+	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
 	MaxSessions             *string
 	CurrentManifest         *bool
@@ -218,6 +220,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
+	defaultMaxPricePerCapability := ""
+	defaultIgnoreMaxPriceIfNeeded := false
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -314,6 +318,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		MaxPricePerCapability:   &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
@@ -959,6 +965,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if err != nil {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
+
 			if maxPricePerUnit.Sign() > 0 {
 				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
 				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
@@ -974,6 +981,48 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
+
+			if *cfg.MaxPricePerCapability != "" {
+				maxCapabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
+				for _, p := range maxCapabilityPrices {
+					if p.PixelsPerUnit == nil {
+						p.PixelsPerUnit = pixelsPerUnit
+					} else if p.PixelsPerUnit.Sign() <= 0 {
+						glog.Infof("Pixels per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, using default pixelsPerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.PixelsPerUnit)
+						p.PixelsPerUnit = pixelsPerUnit
+					}
+
+					if p.PricePerUnit == nil || p.PricePerUnit.Sign() <= 0 {
+						if maxPricePerUnit.Sign() > 0 {
+							glog.Infof("Maximum price per unit not set for capability=%v model_id=%v in 'maxPricePerCapability' config, using maxPricePerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.MaxPricePerUnit)
+							p.PricePerUnit = maxPricePerUnit
+						} else {
+							glog.Warningf("Maximum price per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, and 'maxPricePerUnit' not set, gateway is currently set to accept ANY price.\n", p.Pipeline, p.ModelID)
+							continue
+						}
+					}
+
+					maxCapabilityPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+
+					cap, err := core.PipelineToCapability(p.Pipeline)
+					if err != nil {
+						panic(fmt.Errorf("Pipeline in 'maxPricePerCapability' config is not valid capability: %v\n", p.Pipeline))
+					}
+					capName := core.CapabilityNameLookup[cap]
+					modelID := p.ModelID
+					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(capName, modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
+					})
+					if err != nil {
+						panic(fmt.Errorf("Error converting price: %v", err))
+					}
+
+					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
+				}
 			}
 		}
 
@@ -1118,7 +1167,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		// Get base pixels per unit.
+		// Get base pixels and price per unit.
 		pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
 		if !ok || !pixelsPerUnitBase.IsInt() {
 			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
@@ -1126,6 +1175,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if !ok || pixelsPerUnitBase.Sign() <= 0 {
 			// Can't divide by 0
 			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+		pricePerUnitBase := new(big.Rat)
+		currencyBase := ""
+		if cfg.PricePerUnit != nil {
+			pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+			if err != nil || pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
+			}
+			pricePerUnitBase = pricePerUnit
+			currencyBase = currency
 		}
 
 		if *cfg.AIModels != "" {
@@ -1143,20 +1202,26 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pixelsPerUnit := config.PixelsPerUnit.Rat
 					if config.PixelsPerUnit.Rat == nil {
 						pixelsPerUnit = pixelsPerUnitBase
-					} else {
-						if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
-							panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
-						}
+					} else if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
 					}
+
 					pricePerUnit := config.PricePerUnit.Rat
-					if err != nil {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid integer with an optional currency, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
-					} else if pricePerUnit.Sign() < 0 {
-						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be >= 0, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					currency := config.Currency
+					if pricePerUnit == nil {
+						if pricePerUnitBase.Sign() == 0 {
+							panic(fmt.Errorf("'pricePerUnit' must be set for model '%v' in pipeline '%v'", config.ModelID, config.Pipeline))
+						}
+						pricePerUnit = pricePerUnitBase
+						currency = currencyBase
+						glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
+					} else if !pricePerUnit.IsInt() || pricePerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 					}
+
 					pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
 
-					autoPrice, err = core.NewAutoConvertedPrice(config.Currency, pricePerPixel, nil)
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
 					if err != nil {
 						panic(fmt.Errorf("error converting price: %v", err))
 					}
@@ -1267,8 +1332,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capability := aiCaps[len(aiCaps)-1]
 					price := n.GetBasePriceForCap("default", capability, config.ModelID)
 					if *cfg.Network != "offchain" {
-						pricePerUnit := price.Num().Int64() / price.Denom().Int64()
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d wei per compute unit", config.Pipeline, capability, config.ModelID, pricePerUnit)
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
 					} else {
 						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
 					}
@@ -1776,8 +1840,8 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 			Currency      string       `json:"currency"`
 		} `json:"broadcasters"`
 	}
-	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
 
+	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
 	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
 	if err != nil {
 		glog.Errorf("gateway prices could not be parsed: %s", err)
@@ -1805,6 +1869,57 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 	return prices
 }
 
+type ModelPrice struct {
+	Pipeline      string
+	ModelID       string
+	PricePerUnit  *big.Rat
+	PixelsPerUnit *big.Rat
+	Currency      string
+}
+
+func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
+	if capabilitiesPrices == "" {
+		return nil
+	}
+
+	// Format of modelPrices json
+	// Model_id will be set to "default" to price all models in the pipeline if not specified.
+	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
+	var pricesSet struct {
+		CapabilitiesPrices []struct {
+			Pipeline      string       `json:"pipeline"`
+			ModelID       string       `json:"model_id"`
+			PixelsPerUnit core.JSONRat `json:"pixels_per_unit"`
+			PricePerUnit  core.JSONRat `json:"price_per_unit"`
+			Currency      string       `json:"currency"`
+		} `json:"capabilities_prices"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(capabilitiesPrices)
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("model prices could not be parsed: %s", err)
+		return nil
+	}
+
+	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
+	for i, p := range pricesSet.CapabilitiesPrices {
+		if p.ModelID == "" {
+			p.ModelID = "default"
+		}
+
+		prices[i] = ModelPrice{
+			Pipeline:      p.Pipeline,
+			ModelID:       p.ModelID,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+			Currency:      p.Currency,
+		}
+	}
+
+	return prices
+}
+
 func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, error) {
 	sumWeight := *cfg.SelectStakeWeight + *cfg.SelectPriceWeight + *cfg.SelectRandWeight
 	if math.Abs(sumWeight-1.0) > 0.0001 {
@@ -1813,11 +1928,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 

@@ -101,7 +101,8 @@ jobs:
             && apt update \
             && apt -yqq install \
               nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
+              golang-goprotobuf-dev protobuf-compiler-grpc
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
@@ -241,20 +242,12 @@ jobs:
           name: release-artifacts-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}
           path: releases/
 
-      # Clean up the created files to ensure proper permissions and no residue
-      - name: Clean up
-        run: |
-          rm -rf lp-builds releases
-
   upload:
     name: Upload artifacts to google bucket
     permissions:
       contents: "read"
       id-token: "write"
-    # runs-on: ubuntu-latest # TODO: re-enable when https://github.com/actions/checkout/issues/956 is solved.
-    container:
-      image: ubuntu:latest
-      options: --user root
+    runs-on: ubuntu-20.04
     needs:
       - macos-build
       - linux-build
@@ -266,6 +259,15 @@ jobs:
           # Check https://github.com/livepeer/go-livepeer/pull/1891
           # for ref value discussion
           ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up python
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+          cache-dependency-path: .github/requirements.txt
+          update-environment: true
 
       - name: Download artifacts
         uses: actions/download-artifact@v4
@@ -315,17 +317,49 @@ jobs:
           parent: false
           process_gcloudignore: false
 
+      # Get the latest release tag
+      - name: Get latest tag
+        id: get-latest-tag
+        run: |
+          git fetch --tags
+          latest_tag=$(git tag -l "v*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-ai.[0-9]+$' | sort -V | tail -n 1)
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Latest tag: $latest_tag"
+          echo "GitHub Ref: ${{ github.ref }}"
+
+      # Update the latest release
+      - name: Upload release archives to Google Cloud stable folder
+        id: upload-archives-latest
+        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: "releases"
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
+          parent: false
+          process_gcloudignore: false
+      
+      # Update the latest branch manifest
+      - name: Upload branch manifest file to Google Cloud stable folder
+        id: upload-manifest-latest
+        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: ${{ steps.branch-manifest.outputs.manifest-file }}
+          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
+          parent: false
+          process_gcloudignore: false
+
       - name: Trigger discord webhook
         shell: bash
         env:
           GITHUB_CONTEXT_JSON: ${{ toJson(github) }}
         run: |
-          pip install -U discord-webhook --no-cache-dir
+          pip install -r .github/requirements.txt
           python .github/discord-embed-webhook.py \
-          --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}" \
-          --discord-url="${{ secrets.DISCORD_URL }}" \
-          --git-commit="$(git log -1 --pretty=format:'%s')" \
-          --git-committer="$(git log -1 --pretty=format:'%an')"
+            --ref-name="${{ (github.ref_type == 'tag' && github.ref_name) || (github.event.pull_request.head.sha || github.sha) }}" \
+            --discord-url="${{ secrets.DISCORD_URL }}" \
+            --git-commit="$(git log -1 --pretty=format:'%s')" \
+            --git-committer="$(git log -1 --pretty=format:'%an')"
 
       - name: Notify new build upload
         run: curl -X POST https://holy-bread-207a.livepeer.workers.dev

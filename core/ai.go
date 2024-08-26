@@ -14,6 +14,8 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 )
 
+var errPipelineNotAvailable = errors.New("pipeline not available")
+
 type AI interface {
 	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
 	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
@@ -40,6 +42,24 @@ func (s *JSONRat) UnmarshalJSON(data []byte) error {
 
 func (s JSONRat) String() string {
 	return s.FloatString(2)
+}
+
+// parsePipelineFromModelID converts a pipeline name to a capability enum.
+func PipelineToCapability(pipeline string) (Capability, error) {
+	if pipeline == "" {
+		return Capability_Unused, errPipelineNotAvailable
+	}
+
+	pipelineName := strings.ToUpper(pipeline[:1]) + strings.ReplaceAll(pipeline[1:], "-", " ")
+
+	for cap, desc := range CapabilityNameLookup {
+		if pipelineName == desc {
+			return cap, nil
+		}
+	}
+
+	// No capability description matches name.
+	return Capability_Unused, errPipelineNotAvailable
 }
 
 type AIModelConfig struct {

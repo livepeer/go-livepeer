@@ -174,7 +174,7 @@ type (
 		mMinGasPrice           *stats.Float64Measure
 		mMaxGasPrice           *stats.Float64Measure
 		mTranscodingPrice      *stats.Float64Measure
-
+		mPricePerCapability    *stats.Float64Measure
 		// Metrics for calling rewards
 		mRewardCallError *stats.Int64Measure
 
@@ -335,6 +335,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mMinGasPrice = stats.Float64("min_gas_price", "MinGasPrice", "gwei")
 	census.mMaxGasPrice = stats.Float64("max_gas_price", "MaxGasPrice", "gwei")
 	census.mTranscodingPrice = stats.Float64("transcoding_price", "TranscodingPrice", "wei")
+	census.mPricePerCapability = stats.Float64("price_per_capability", "PricePerCapability", "wei")
 
 	// Metrics for calling rewards
 	census.mRewardCallError = stats.Int64("reward_call_errors", "RewardCallError", "tot")
@@ -831,6 +832,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mTranscodingPrice,
 			Description: "Transcoding price per pixel",
 			TagKeys:     baseTagsWithEthAddr,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "price_per_capability",
+			Measure:     census.mPricePerCapability,
+			Description: "price per unit per capability",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 
@@ -1633,6 +1641,16 @@ func MaxTranscodingPrice(maxPrice *big.Rat) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, "max")},
 		census.mTranscodingPrice.M(floatWei)); err != nil {
+
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func MaxPriceForCapability(cap string, modelName string, maxPrice *big.Rat) {
+	floatWei, _ := maxPrice.Float64()
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, cap), tag.Insert(census.kModelName, modelName)},
+		census.mPricePerCapability.M(floatWei)); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
 	}

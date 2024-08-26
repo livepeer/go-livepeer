@@ -13,13 +13,14 @@ const testPriceExpFactor = 100
 
 func TestFilter(t *testing.T) {
 	tests := []struct {
-		name             string
-		orchMinPerfScore float64
-		maxPrice         float64
-		prices           map[string]float64
-		orchPerfScores   map[string]float64
-		orchestrators    []string
-		want             []string
+		name                   string
+		orchMinPerfScore       float64
+		maxPrice               float64
+		prices                 map[string]float64
+		orchPerfScores         map[string]float64
+		orchestrators          []string
+		want                   []string
+		ignoreMaxPriceIfNeeded bool
 	}{
 		{
 			name:             "Some Orchestrators pass the filter",
@@ -91,7 +92,7 @@ func TestFilter(t *testing.T) {
 			},
 		},
 		{
-			name:             "All prices below max price",
+
 			orchMinPerfScore: 0.7,
 			maxPrice:         2000,
 			prices: map[string]float64{
@@ -115,9 +116,10 @@ func TestFilter(t *testing.T) {
 			},
 		},
 		{
-			name:             "All prices above max price",
-			orchMinPerfScore: 0.7,
-			maxPrice:         100,
+			name:                   "All prices above max price and ignoreMaxPriceIfNeeded enabled",
+			orchMinPerfScore:       0.7,
+			maxPrice:               100,
+			ignoreMaxPriceIfNeeded: true,
 			prices: map[string]float64{
 				"0x0000000000000000000000000000000000000001": 500,
 				"0x0000000000000000000000000000000000000002": 1500,
@@ -137,6 +139,27 @@ func TestFilter(t *testing.T) {
 				"0x0000000000000000000000000000000000000002",
 				"0x0000000000000000000000000000000000000003",
 			},
+		},
+		{
+			name:             "All prices below max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         100,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1500,
+				"0x0000000000000000000000000000000000000003": 1000,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.6,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.9,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{},
 		},
 		{
 			name:             "Mix of prices relative to max price",
@@ -206,7 +229,8 @@ func TestFilter(t *testing.T) {
 				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
 			}
 			sa := &ProbabilitySelectionAlgorithm{
-				MinPerfScore: tt.orchMinPerfScore,
+				MinPerfScore:           tt.orchMinPerfScore,
+				IgnoreMaxPriceIfNeeded: tt.ignoreMaxPriceIfNeeded,
 			}
 
 			res := sa.filter(context.Background(), addrs, maxPrice, prices, perfScores)

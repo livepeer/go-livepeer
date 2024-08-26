@@ -199,6 +199,74 @@ func setBroadcastConfigHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			maxPricePerUnit := r.FormValue("maxPricePerUnit")
+			pixelsPerUnit := r.FormValue("pixelsPerUnit")
+			currency := r.FormValue("currency")
+			pipeline := r.FormValue("pipeline")
+			modelID := r.FormValue("modelID")
+
+			if pipeline == "" || modelID == "" {
+				respond400(w, "pipeline and modelID must be set")
+				return
+			}
+
+			cap, err := core.PipelineToCapability(pipeline)
+			if err != nil {
+				respond400(w, "pipeline not supported")
+				return
+			}
+
+			// set max price
+			if maxPricePerUnit != "" && pixelsPerUnit != "" {
+				pr, ok := new(big.Rat).SetString(maxPricePerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", maxPricePerUnit))
+					return
+				}
+				px, ok := new(big.Rat).SetString(pixelsPerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
+					return
+				}
+				if px.Sign() <= 0 {
+					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
+					return
+				}
+				pricePerPixel := new(big.Rat).Quo(pr, px)
+
+				var autoPrice *core.AutoConvertedPrice
+				if pricePerPixel.Sign() > 0 {
+					var err error
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
+					})
+					if err != nil {
+						respond400(w, errors.Wrap(err, "error converting price").Error())
+						return
+					}
+
+					BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
+					respondOk(w, nil)
+				} else {
+					respond400(w, fmt.Sprintf("pricePerPixel needs to be > 0: %v", pricePerPixel.FloatString(3)))
+				}
+			} else {
+				respond400(w, "maxPricePerUnit and pixelsPerUnit need to be set")
+				return
+			}
+		} else {
+			respond400(w, "Node must be gateway node to set max price per capability")
+			return
+		}
+	})
+}
+
 func getBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var pNames []string
