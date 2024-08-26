@@ -897,6 +897,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
 		}
+
+		if strings.Contains(string(err.Error()), "Error loading LoRas") {
+			return nil, &BadRequestError{err}
+		}
 	}
 
 	if resp == nil {

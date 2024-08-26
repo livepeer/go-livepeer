@@ -98,9 +98,14 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
+			var badReqErr *BadRequestError
 			var e *ServiceUnavailableError
 			if errors.As(err, &e) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badReqErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -146,9 +151,14 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
+			var badReqErr *BadRequestError
 			var e *ServiceUnavailableError
 			if errors.As(err, &e) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badReqErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
