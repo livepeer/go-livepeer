@@ -41,6 +41,23 @@ func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
 	require.Contains(t, body, "Unauthorized")
 }
 
+func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
+	var l lphttp
+	l.orchestrator = newStubOrchestrator()
+	l.orchestrator.TranscoderSecret()
+	var w = httptest.NewRecorder()
+
+	r, err := http.NewRequest(http.MethodGet, "/AIResults", nil)
+	require.NoError(t, err)
+
+	r.Header.Set("Authorization", protoVerAIWorker)
+	r.Header.Set("Credentials", "BAD CREDENTIALS")
+
+	code, body := aiResultsTest(l, w, r)
+	require.Equal(t, http.StatusUnauthorized, code)
+	require.Contains(t, body, "Unauthorized")
+}
+
 func TestAIWorkerResults_ErrorsWhenContentTypeMissing(t *testing.T) {
 	var l lphttp
 	l.orchestrator = newStubOrchestrator()
@@ -78,6 +95,59 @@ func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 	require.Contains(t, body, "Invalid Task ID")
 }
 
+func TestAIWorkerResults_BadRequestType(t *testing.T) {
+	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	//test request
+	var req worker.ImageToImageMultipartRequestBody
+	modelID := "livepeer/model1"
+	req.Prompt = "test prompt"
+	req.ModelId = &modelID
+
+	assert := assert.New(t)
+	assert.Nil(nil)
+	resultData := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		assert.NoError(err)
+		w.Write([]byte("result binary data"))
+	}))
+	defer resultData.Close()
+	notify := &net.NotifyAIJob{
+		TaskId:      742,
+		Pipeline:    "text-to-image",
+		ModelID:     "livepeer/model1",
+		Url:         "",
+		RequestData: nil,
+	}
+	wkr := &stubAIWorker{}
+	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
+	node.OrchSecret = "verbigsecret"
+	node.AIWorker = wkr
+	node.Capabilities = createStubAIWorkerCapabilities()
+
+	var headers http.Header
+	var body []byte
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		out, err := io.ReadAll(r.Body)
+		assert.NoError(err)
+		headers = r.Header
+		body = out
+		w.Write(nil)
+	}))
+	defer ts.Close()
+	parsedURL, _ := url.Parse(ts.URL)
+	//send empty request data
+	runAIJob(node, parsedURL.Host, httpc, notify)
+	time.Sleep(3 * time.Millisecond)
+
+	assert.Equal(0, wkr.called)
+	assert.NotNil(body)
+	assert.Equal("742", headers.Get("TaskId"))
+	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
+	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
+	assert.Equal("AI request not correct", string(body)[0:22])
+}
+
 func TestRemoteAIWorker_Error(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	//test request
@@ -100,13 +170,14 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 		TaskId:      742,
 		Pipeline:    "text-to-image",
 		ModelID:     "livepeer/model1",
-		Url:         "http://input.com/download",
+		Url:         "",
 		RequestData: nil,
 	}
-	wkr := stubAIWorker{}
+	wkr := &stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
 	node.AIWorker = wkr
+	node.Capabilities = createStubAIWorkerCapabilities()
 
 	var headers http.Header
 	var body []byte
@@ -121,6 +192,8 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	parsedURL, _ := url.Parse(ts.URL)
 	//send empty request data
 	runAIJob(node, parsedURL.Host, httpc, notify)
+	time.Sleep(3 * time.Millisecond)
+
 	assert.Equal(0, wkr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
@@ -129,14 +202,15 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
 	assert.NotNil(string(body))
 
-	//error in worker
+	//error in worker, good request
 	errText := "Some error"
 	wkr.err = fmt.Errorf(errText)
 
 	reqJson, _ := json.Marshal(req)
 	notify.RequestData = reqJson
 	runAIJob(node, parsedURL.Host, httpc, notify)
-	assert.Equal(1, wkr.called)
+	time.Sleep(3 * time.Millisecond)
+
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
@@ -145,22 +219,25 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.Equal(errText, string(body))
 
 	//pipeline not compatible
+	wkr.err = nil
 	reqJson, _ = json.Marshal(req)
 	notify.Pipeline = "test-no-pipeline"
 	notify.TaskId = 743
 	notify.RequestData = reqJson
 
 	runAIJob(node, parsedURL.Host, httpc, notify)
-	assert.Equal(2, wkr.called)
+	time.Sleep(3 * time.Millisecond)
+
 	assert.NotNil(body)
 	assert.Equal("743", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("AI request pipeline type not supported", string(body))
+	assert.Equal("no workers can process job requested", string(body))
 
 	// unrecoverable error
 	// send the response and panic
+	notify.Pipeline = "text-to-image"
 	wkr.err = core.NewUnrecoverableError(errors.New("some error"))
 	panicked := false
 	defer func() {
@@ -169,7 +246,8 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 		}
 	}()
 	runAIJob(node, parsedURL.Host, httpc, notify)
-	assert.Equal(3, wkr.called)
+	time.Sleep(3 * time.Millisecond)
+
 	assert.NotNil(body)
 	assert.Equal("some error", string(body))
 	assert.True(panicked)
@@ -248,50 +326,99 @@ type stubAIWorker struct {
 
 func (a stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	a.called++
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.ImageResponse{
+			Images: []worker.Media{
+				{
+					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+					Nsfw: false,
+					Seed: 111,
+				},
+			},
+		}, nil
+	}
+
 }
 
 func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	a.called++
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.ImageResponse{
+			Images: []worker.Media{
+				{
+					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+					Nsfw: false,
+					Seed: 111,
+				},
+			},
+		}, nil
+	}
 }
 
 func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	a.called++
-	return &worker.VideoResponse{
-		Frames: [][]worker.Media{
-			{
-				{Url: "http://example.com/frame1.png", Nsfw: false},
-				{Url: "http://example.com/frame2.png", Nsfw: false},
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.VideoResponse{
+			Frames: [][]worker.Media{
+				{
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 111,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 111,
+					},
+				},
+				{
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 111,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 111,
+					},
+				},
 			},
-			{
-				{Url: "http://example.com/frame3.png", Nsfw: false},
-				{Url: "http://example.com/frame4.png", Nsfw: false},
-			},
-		},
-	}, nil
+		}, nil
+	}
 }
 
 func (a stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	a.called++
-	return &worker.ImageResponse{
-		Images: []worker.Media{
-			{Url: "http://example.com/image.png"},
-		},
-	}, nil
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.ImageResponse{
+			Images: []worker.Media{
+				{
+					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+					Nsfw: false,
+					Seed: 111,
+				},
+			},
+		}, nil
+	}
 }
 
 func (a stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	a.called++
-	return &worker.TextResponse{Text: "Transcribed text"}, nil
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.TextResponse{Text: "Transcribed text"}, nil
+	}
 }
 
 func (a stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {

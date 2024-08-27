@@ -532,6 +532,54 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 }
+func TestReserveAICapability(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.Capabilities.SetPerCapabilityConstraints(make(PerCapabilityConstraints))
+	n.Capabilities.SetMinVersionConstraint("1.0")
+
+	pipeline := "audio-to-text"
+	modelID := "livepeer/model1"
+
+	// Add AI capability and model
+	n.AddAICapabilities([]Capability{Capability_AudioToText}, PerCapabilityConstraints{
+		Capability_AudioToText: {
+			Models: ModelConstraints{
+				modelID: {Warm: true, Capacity: 2},
+			},
+		},
+	})
+
+	// Reserve AI capability
+	err := n.ReserveAICapability(pipeline, modelID)
+	assert.Nil(t, err)
+
+	// Check capacity is reduced
+	cap := n.Capabilities.constraints.perCapability[Capability_AudioToText]
+	assert.Equal(t, 1, cap.Models[modelID].Capacity)
+
+	// Reserve AI capability again
+	err = n.ReserveAICapability(pipeline, modelID)
+	assert.Nil(t, err)
+
+	// Check capacity is further reduced
+	cap = n.Capabilities.constraints.perCapability[Capability_AudioToText]
+	assert.Equal(t, 0, cap.Models[modelID].Capacity)
+
+	// Reserve AI capability when capacity is already zero
+	err = n.ReserveAICapability(pipeline, modelID)
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "failed to release AI capability capacity, model does not exist pipeline=audio-to-text modelID=livepeer/model1")
+
+	// Reserve AI capability for non-existent pipeline
+	err = n.ReserveAICapability("invalid-pipeline", modelID)
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "failed to release AI capability capacity, pipeline does not exist pipeline=invalid-pipeline modelID=livepeer/model1")
+
+	// Reserve AI capability for non-existent model
+	err = n.ReserveAICapability(pipeline, "invalid-model")
+	assert.NotNil(t, err)
+	assert.EqualError(t, err, "failed to release AI capability capacity, model does not exist pipeline=audio-to-text modelID=invalid-model")
+}
 
 func createAIWorkerCapabilities() *Capabilities {
 	//create capabilities and constraints the ai worker sends to orch

@@ -223,6 +223,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
+			break
 		}
 		resultType = "image/png"
 		resp, err = n.TextToImage(ctx, req)
@@ -231,6 +232,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
+			break
 		}
 		resultType = "image/png"
 		req.Image.InitFromBytes(input, "image")
@@ -240,6 +242,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
+			break
 		}
 		resultType = "image/png"
 		req.Image.InitFromBytes(input, "image")
@@ -249,6 +252,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
+			break
 		}
 		resultType = "video/mp4"
 		req.Image.InitFromBytes(input, "image")
@@ -258,6 +262,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
+			break
 		}
 		resultType = "application/json"
 		req.Audio.InitFromBytes(input, "audio")
@@ -271,6 +276,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	if !reqOk {
 		resp = nil
+		err = fmt.Errorf("AI request not correct for %v pipeline", notify.Pipeline)
 		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 		return
 	}
