@@ -465,7 +465,7 @@ func TestCheckAICapacity(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	o := NewOrchestrator(n, nil)
 	n.Capabilities = createAIWorkerCapabilities()
-	n.AIWorker = &AIStub{}
+	n.AIWorker = &stubAIWorker{}
 	// Test when local AI worker has capacity
 	hasCapacity := o.CheckAICapacity("text-to-image", "livepeer/model1")
 	assert.True(t, hasCapacity)
@@ -533,7 +533,7 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 
 }
 
-func CreateAIWorkerCapabilities() *Capabilities {
+func createAIWorkerCapabilities() *Capabilities {
 	//create capabilities and constraints the ai worker sends to orch
 	constraints := make(PerCapabilityConstraints)
 	constraints[Capability_TextToImage] = &CapabilityConstraints{Models: make(ModelConstraints)}
@@ -544,9 +544,13 @@ func CreateAIWorkerCapabilities() *Capabilities {
 	return caps
 }
 
-type AIStub struct{}
+func NewStubAIWorker() *stubAIWorker {
+	return &stubAIWorker{}
+}
 
-func (a *AIStub) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+type stubAIWorker struct{}
+
+func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -554,7 +558,7 @@ func (a *AIStub) TextToImage(ctx context.Context, req worker.TextToImageJSONRequ
 	}, nil
 }
 
-func (a *AIStub) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -562,7 +566,7 @@ func (a *AIStub) ImageToImage(ctx context.Context, req worker.ImageToImageMultip
 	}, nil
 }
 
-func (a *AIStub) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	return &worker.VideoResponse{
 		Frames: [][]worker.Media{
 			{
@@ -577,7 +581,7 @@ func (a *AIStub) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultip
 	}, nil
 }
 
-func (a *AIStub) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a *stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -585,19 +589,19 @@ func (a *AIStub) Upscale(ctx context.Context, req worker.UpscaleMultipartRequest
 	}, nil
 }
 
-func (a *AIStub) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return &worker.TextResponse{Text: "Transcribed text"}, nil
 }
 
-func (a *AIStub) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
+func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }
 
-func (a *AIStub) Stop(ctx context.Context) error {
+func (a *stubAIWorker) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (a *AIStub) HasCapacity(pipeline, modelID string) bool {
+func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	return true
 }
 
