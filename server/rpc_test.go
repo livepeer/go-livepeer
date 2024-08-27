@@ -187,19 +187,19 @@ func (r *stubOrchestrator) TranscoderSecret() string {
 func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *stubOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (r *stubOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *stubOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *stubOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *stubOrchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (r *stubOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
@@ -207,6 +207,16 @@ func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.Segm
 }
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
+}
+func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
+}
+func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
+	return nil
+}
+func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	return drivers.NewMockOSSession(), true
+}
+func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
 }
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -1373,19 +1383,19 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *mockOrchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *mockOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *mockOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (r *mockOrchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (r *mockOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
@@ -1393,6 +1403,17 @@ func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.Segm
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
+}
+func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
+
+}
+func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
+	return nil
+}
+func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	return drivers.NewMockOSSession(), true
+}
+func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
 }
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
