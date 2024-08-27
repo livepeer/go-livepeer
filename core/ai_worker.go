@@ -104,9 +104,9 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 }
 
 // Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
-func (rtm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
-	aiworker := NewRemoteAIWorker(rtm, stream, capabilities.Constraints.PerCapability, CapabilitiesFromNetCapabilities(capabilities))
+	aiworker := NewRemoteAIWorker(rwm, stream, capabilities.Constraints.PerCapability, CapabilitiesFromNetCapabilities(capabilities))
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -115,18 +115,18 @@ func (rtm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 		aiworker.done()
 	}()
 
-	rtm.RWmutex.Lock()
-	rtm.liveAIWorkers[aiworker.stream] = aiworker
-	rtm.remoteAIWorkers = append(rtm.remoteAIWorkers, aiworker)
-	// sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
-	rtm.RWmutex.Unlock()
+	rwm.RWmutex.Lock()
+	rwm.liveAIWorkers[aiworker.stream] = aiworker
+	rwm.remoteAIWorkers = append(rwm.remoteAIWorkers, aiworker)
+	// sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
+	rwm.RWmutex.Unlock()
 
 	<-aiworker.eof
 	glog.Infof("Got aiworker=%s eof, removing from live aiworkers map", from)
 
-	rtm.RWmutex.Lock()
-	delete(rtm.liveAIWorkers, aiworker.stream)
-	rtm.RWmutex.Unlock()
+	rwm.RWmutex.Lock()
+	delete(rwm.liveAIWorkers, aiworker.stream)
+	rwm.RWmutex.Unlock()
 }
 
 // RemoteAIworkerFatalError wraps error to indicate that error is fatal
@@ -168,19 +168,19 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 	rwm.RWmutex.Lock()
 	defer rwm.RWmutex.Unlock()
 
-	checkWorkers := func(rtm *RemoteAIWorkerManager) bool {
-		return len(rtm.remoteAIWorkers) > 0
+	checkWorkers := func(rwm *RemoteAIWorkerManager) bool {
+		return len(rwm.remoteAIWorkers) > 0
 	}
 
-	findCompatibleWorker := func(rtm *RemoteAIWorkerManager) int {
+	findCompatibleWorker := func(rwm *RemoteAIWorkerManager) int {
 		cap, _ := PipelineToCapability(pipeline)
 		for idx, worker := range rwm.remoteAIWorkers {
-			rw, hasCap := worker.capacity[uint32(cap)]
+			rwCap, hasCap := worker.capabilities.constraints.perCapability[cap]
 			if hasCap {
-				_, hasModel := rw.Models[modelID]
+				_, hasModel := rwCap.Models[modelID]
 				if hasModel {
-					if worker.capacity[uint32(cap)].Models[modelID].Capacity > 0 {
-						worker.capacity[uint32(cap)].Models[modelID].Capacity -= 1
+					if rwCap.Models[modelID].Capacity > 0 {
+						rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
 						return idx
 					}
 				}
@@ -213,7 +213,7 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 			// Assinging worker to session for future use
 			rwm.requestSessions[requestID] = worker
 			//TODO add sorting by inference time for each pipeline/model
-			//sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
+			//sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
 		}
 		return worker, nil
 	}
@@ -227,11 +227,11 @@ func (rwm *RemoteAIWorkerManager) workerHasCapacity(pipeline, modelID string) bo
 		return false
 	}
 	for _, worker := range rwm.remoteAIWorkers {
-		rw, hasCap := worker.capacity[uint32(cap)]
+		rw, hasCap := worker.capabilities.constraints.perCapability[cap]
 		if hasCap {
 			_, hasModel := rw.Models[modelID]
 			if hasModel {
-				if worker.capacity[uint32(cap)].Models[modelID].Capacity > 0 {
+				if rw.Models[modelID].Capacity > 0 {
 					return true
 				}
 			}
@@ -256,12 +256,17 @@ func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID
 		if worker.addr == remoteWorker.addr {
 			cap, err := PipelineToCapability(pipeline)
 			if err == nil {
-				rwm.remoteAIWorkers[idx].capacity[uint32(cap)].Models[modelID].Capacity += 1
+				if _, hasCap := rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap]; hasCap {
+					if _, hasModel := rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID]; hasModel {
+						rwm.remoteAIWorkers[idx].capabilities.constraints.perCapability[cap].Models[modelID].Capacity += 1
+					}
+				}
+
 			}
 		}
 	}
 	//TODO add sorting by inference time for each pipeline/model
-	//sort.Sort(byLoadFactor(rtm.remoteAIWorkers))
+	//sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
 	delete(rwm.requestSessions, requestID)
 }
 
