@@ -81,8 +81,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 	initAIWorker := func() (*RemoteAIWorker, *StubAIWorkerServer) {
 		strm := &StubAIWorkerServer{manager: m}
 		caps := createAIWorkerCapabilities()
-		netCaps := caps.ToNetCapabilities()
-		wkr := NewRemoteAIWorker(m, strm, netCaps.Constraints.PerCapability, caps)
+		wkr := NewRemoteAIWorker(m, strm, caps)
 		return wkr, strm
 	}
 	//create worker and connect to manager
@@ -315,8 +314,7 @@ func TestRemoteAIWorkerTimeout(t *testing.T) {
 		strm := &StubAIWorkerServer{manager: m}
 		//create capabilities and constraints the ai worker sends to orch
 		caps := createAIWorkerCapabilities()
-		netCaps := caps.ToNetCapabilities()
-		wkr := NewRemoteAIWorker(m, strm, netCaps.Constraints.PerCapability, caps)
+		wkr := NewRemoteAIWorker(m, strm, caps)
 		return wkr, strm
 	}
 	//create a new worker
@@ -438,7 +436,7 @@ func TestAITaskChan(t *testing.T) {
 	testNonexistentChans := func(ids []int64) {
 		for _, id := range ids {
 			_, err := n.getTaskChan(int64(id))
-			if err == nil || err.Error() != "No transcoder channel" {
+			if err == nil || err.Error() != "No AI Worker channel" {
 				t.Error("Did not get expected error for ", id, err)
 			}
 		}
@@ -477,8 +475,7 @@ func TestCheckAICapacity(t *testing.T) {
 	initAIWorker := func() (*RemoteAIWorker, *StubAIWorkerServer) {
 		strm := &StubAIWorkerServer{manager: o.node.AIWorkerManager}
 		caps := createAIWorkerCapabilities()
-		netCaps := caps.ToNetCapabilities()
-		wkr := NewRemoteAIWorker(o.node.AIWorkerManager, strm, netCaps.Constraints.PerCapability, caps)
+		wkr := NewRemoteAIWorker(o.node.AIWorkerManager, strm, caps)
 		return wkr, strm
 	}
 	//create worker and connect to manager
@@ -508,8 +505,7 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 	initAIWorker := func() (*RemoteAIWorker, *StubAIWorkerServer) {
 		strm := &StubAIWorkerServer{manager: o.node.AIWorkerManager}
 		caps := createAIWorkerCapabilities()
-		netCaps := caps.ToNetCapabilities()
-		wkr := NewRemoteAIWorker(o.node.AIWorkerManager, strm, netCaps.Constraints.PerCapability, caps)
+		wkr := NewRemoteAIWorker(o.node.AIWorkerManager, strm, caps)
 		return wkr, strm
 	}
 	//create worker and connect to manager
@@ -537,7 +533,7 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 
 }
 
-func createAIWorkerCapabilities() *Capabilities {
+func CreateAIWorkerCapabilities() *Capabilities {
 	//create capabilities and constraints the ai worker sends to orch
 	constraints := make(PerCapabilityConstraints)
 	constraints[Capability_TextToImage] = &CapabilityConstraints{Models: make(ModelConstraints)}

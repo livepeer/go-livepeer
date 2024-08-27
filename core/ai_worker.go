@@ -37,7 +37,6 @@ type RemoteAIWorker struct {
 	capabilities *Capabilities
 	eof          chan struct{}
 	addr         string
-	capacity     map[uint32]*net.Capabilities_CapabilityConstraints
 }
 
 func (rw *RemoteAIWorker) done() {
@@ -62,11 +61,10 @@ type RemoteAIWorkerManager struct {
 	requestSessions map[string]*RemoteAIWorker
 }
 
-func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, capacity map[uint32]*net.Capabilities_CapabilityConstraints, caps *Capabilities) *RemoteAIWorker {
+func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities) *RemoteAIWorker {
 	return &RemoteAIWorker{
 		manager:      m,
 		stream:       stream,
-		capacity:     capacity,
 		eof:          make(chan struct{}, 1),
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
@@ -111,7 +109,7 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 // Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
 func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
-	aiworker := NewRemoteAIWorker(rwm, stream, capabilities.Constraints.PerCapability, CapabilitiesFromNetCapabilities(capabilities))
+	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities))
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
