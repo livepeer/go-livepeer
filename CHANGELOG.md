@@ -1,5 +1,136 @@
 # Changelog
 
+## v0.7.8
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3127](https://github.com/livepeer/go-livepeer/pull/3127) Add flag `-ignoreMaxPriceIfNeeded` (@leszko)
+
+## v0.7.7
+
+This release includes a new `-hevcDecoding` flag for transcoders to configure HEVC decoding. If the flag is omitted, the default behavior on GPUs is unchanged, which is to auto-detect HEVC decoding support at transcoder start-up. Transcoders can disable HEVC decoding on GPUs if there is an issue with HEVC jobs via `-hevcDecoding=false`. CPU transcoders now have HEVC decoding disabled by default since processing HEVC jobs is CPU-heavy, but this can be enabled by setting the `-hevcDecoding` flag.
+
+The transcoder now support mid-stream input rotations, rather than crashing or outputting cropped video as it did before.
+
+### Breaking Changes 🚨🚨
+
+- [#3119](https://github.com/livepeer/go-livepeer/pull/3119) CPU transcoders no longer decode HEVC or VP9 by default
+
+#### Transcoder
+
+- [#3119](https://github.com/livepeer/go-livepeer/pull/3119) Add `-hevcDecoding` flag to toggle HEVC decoding
+
+### Bug Fixes 🐞
+
+#### Transcoder
+
+- [#418](https://github.com/livepeer/lpms/pull/418) lpms: Fix CUVID crash on resolution change
+- [#417](https://github.com/livepeer/lpms/pull/417) lpms: Clamp resolutions in filter expression
+- [#416](https://github.com/livepeer/lpms/pull/416) lpms: Rescale DTS better during FPS passthrough
+
+## v0.7.6
+
+-   [#3055](https://github.com/livepeer/go-livepeer/pull/3055) census: Rename broadcaster metrics to gateway metrics
+-   [#3053](https://github.com/livepeer/go-livepeer/pull/3053) cli: add `-gateway` flag and deprecate `-broadcaster` flag.
+-   [#3056](https://github.com/livepeer/go-livepeer/pull/3056) cli: add `-pricePerGateway` flag and deprecate `-pricePerBroadcaster` flag.
+-   [#3060](https://github.com/livepeer/go-livepeer/pull/3060) refactor: rename internal references from Broadcaster to Gateway
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+
+## v0.7.5
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#3050](https://github.com/livepeer/go-livepeer/pull/3050) Create option to filter Os by min livepeer version used (@leszko)
+- [#3029](https://github.com/livepeer/go-livepeer/pull/3029) Initialize round by any B/O who has the initializeRound flag set to true (@leszko)
+- [#3040](https://github.com/livepeer/go-livepeer/pull/3040) Fix function names (@kevincatty)
+
+#### Broadcaster
+
+- [#2995](https://github.com/livepeer/go-livepeer/pull/2995) server: Allow Os price to increase up to 2x mid-session (@victorges)
+- [#2999](https://github.com/livepeer/go-livepeer/pull/2999) server,discovery: Allow B to use any O in case none match maxPrice (@victorges)
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#2994](https://github.com/livepeer/go-livepeer/pull/2994) server: Skip redundant maxPrice check in ongoing session (@victorges)
+
+#### Orchestrator
+
+- [#3001](https://github.com/livepeer/go-livepeer/pull/3001) Fix transcoding price metrics (@leszko)
+
+#### Transcoder
+
+- [#3003](https://github.com/livepeer/go-livepeer/pull/3003) Fix issue in the transcoding layer for WebRTC input (@j0sh)
+
+## v0.7.4
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2989](https://github.com/livepeer/go-livepeer/pull/2989) Revert "Update ffmpeg version" (@thomshutt)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+## v0.7.3
+
+### Breaking Changes 🚨🚨
+
+### Features ⚒
+
+#### General
+
+- [#2978](https://github.com/livepeer/go-livepeer/pull/2978) Update CUDA version from 11.x to 12.x (@leszko)
+- [#2973](https://github.com/livepeer/go-livepeer/pull/2973) Update ffmpeg version (@thomshutt)
+- [#2981](https://github.com/livepeer/go-livepeer/pull/2981) Add support for prices in custom currencies like USD (@victorges)
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
+### Bug Fixes 🐞
+
+#### CLI
+
+#### General
+
+#### Broadcaster
+
+#### Orchestrator
+
+#### Transcoder
+
 ## v0.7.2
 
 ### Breaking Changes 🚨🚨
@@ -562,7 +693,7 @@ Additional highlights of this release:
 - Support for EIP-1559 (otherwise known as type 2) Ethereum transactions which results in more predictable transaction confirmation times, reduces the chance of stuck pending transactions and avoids overpaying in gas fees. If you are interested in additional details on the implications of EIP-1559 transactions refer to this [resource](https://hackmd.io/@timbeiko/1559-resources).
 - An improvement in ticket parameter generation for orchestrators to prevent short lived gas price spikes on the Ethereum network from disrupting streams.
 - The node will automatically detect if the GPU enters an unrecoverable state and crash. The reason for crashing upon detecting an unrecoverable GPU state is that no transcoding will
-be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
+  be possible in this scenario until the node is restarted. We recommend node operators to setup a process for monitoring if their node is still up and starting the node if it has crashed. For reference, a bash script similar to [this one](https://gist.github.com/jailuthra/03c3d65d0bbff457cae8f9a14b4c04b7) can be used to automate restarts of the node in the event of a crash.
 
 Thanks to everyone that submitted bug reports and assisted in testing!
 

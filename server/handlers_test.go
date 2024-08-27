@@ -116,7 +116,7 @@ func TestOrchestratorInfoHandler_Success(t *testing.T) {
 	s := &LivepeerServer{LivepeerNode: n}
 
 	price := big.NewRat(1, 2)
-	s.LivepeerNode.SetBasePrice("default", price)
+	s.LivepeerNode.SetBasePrice("default", core.NewFixedPrice(price))
 
 	trans := &types.Transcoder{
 		ServiceURI: "127.0.0.1:8935",
@@ -196,7 +196,7 @@ func TestSetBroadcastConfigHandler_ConvertPricePerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pricePerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
@@ -209,7 +209,7 @@ func TestSetBroadcastConfigHandler_ConvertPixelsPerUnitError(t *testing.T) {
 	})
 
 	assert.Equal(http.StatusBadRequest, status)
-	assert.Contains(body, "Error converting string to int64")
+	assert.Contains(body, "Error parsing pixelsPerUnit value")
 }
 
 func TestSetBroadcastConfigHandler_NegativePixelPerUnitError(t *testing.T) {
@@ -256,10 +256,143 @@ func TestSetBroadcastConfigHandler_Success(t *testing.T) {
 	assert.Equal(profiles, BroadcastJobVideoProfiles)
 }
 
+func TestSetMaxPriceForCapabilityHandler(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//set default max price
+	basePrice, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(10, 1), nil)
+	BroadcastCfg.SetMaxPrice(basePrice)
+
+	//set price per unit for specific pipeline
+	p1, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(1, 1), nil)
+	p2, _ := core.NewAutoConvertedPrice("WEI", big.NewRat(2, 1), nil)
+	p1_pipeline := "text-to-image"
+	p1_pipeline_cap, _ := core.PipelineToCapability(p1_pipeline)
+	p1_modelID := "default"
+
+	p2_pipeline := "image-to-image"
+	p2_pipeline_cap, _ := core.PipelineToCapability(p2_pipeline)
+	p2_modelID := "default"
+
+	status1, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p1_pipeline},
+		"modelID":         {p1_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status1)
+	assert.Equal(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+
+	status2, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"2"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p2_pipeline},
+		"modelID":         {p2_modelID},
+	})
+
+	assert.Equal(http.StatusOK, status2)
+	assert.Equal(p2.Value(), BroadcastCfg.getCapabilityMaxPrice(p2_pipeline_cap, p1_modelID))
+
+	p1_modelID = "stabilityai/sd-turbo"
+	status1, _ = postForm(handler, url.Values{
+		"maxPricePerUnit": {"100"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {p1_pipeline},
+		"modelID":         {p1_modelID},
+	})
+	assert.Equal(http.StatusOK, status1)
+	assert.NotEqual(p1.Value(), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+	assert.Equal(big.NewRat(100, 1), BroadcastCfg.getCapabilityMaxPrice(p1_pipeline_cap, p1_modelID))
+}
+
+func TestSetMaxPriceForCapabilityHandler_NotGateway(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.OrchestratorNode
+
+	handler := s.setMaxPriceForCapability()
+
+	status, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"10"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+
+	assert.Equal(http.StatusBadRequest, status)
+}
+
+func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
+	assert := assert.New(t)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+
+	handler := s.setMaxPriceForCapability()
+
+	//pricePerUnit is not int
+	status1, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"a"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status1)
+
+	//pixelsPerUnit is not int
+	status2, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"a"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status2)
+
+	//pipeline is not set
+	status4, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {""},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status4)
+
+	//modelID is not set
+	status5, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"text-to-image"},
+		"modelID":         {""},
+	})
+	assert.Equal(http.StatusBadRequest, status5)
+
+	//pipeline not supported
+	status6, _ := postForm(handler, url.Values{
+		"maxPricePerUnit": {"1"},
+		"pixelsPerUnit":   {"1"},
+		"currency":        {"WEI"},
+		"pipeline":        {"cool-new-pipeline"},
+		"modelID":         {"default"},
+	})
+	assert.Equal(http.StatusBadRequest, status6)
+}
+
 func TestGetBroadcastConfigHandler(t *testing.T) {
 	assert := assert.New(t)
 
-	BroadcastCfg.maxPrice = big.NewRat(1, 2)
+	BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(1, 2)))
 	BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{
 		ffmpeg.VideoProfileLookup["P240p25fps16x9"],
 	}
@@ -501,27 +634,32 @@ func TestSetOrchestratorPriceInfo(t *testing.T) {
 	s := stubServer()
 
 	// pricePerUnit is not an integer
-	err := s.setOrchestratorPriceInfo("default", "nil", "1")
+	err := s.setOrchestratorPriceInfo("default", "nil", "1", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pricePerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pricePerUnit value")
 
 	// pixelsPerUnit is not an integer
-	err = s.setOrchestratorPriceInfo("default", "1", "nil")
+	err = s.setOrchestratorPriceInfo("default", "1", "nil", "")
 	assert.Error(t, err)
-	assert.True(t, strings.Contains(err.Error(), "pixelsPerUnit is not a valid integer"))
+	assert.Contains(t, err.Error(), "error parsing pixelsPerUnit value")
 
-	err = s.setOrchestratorPriceInfo("default", "1", "1")
+	// price feed watcher is not initialized and one attempts a custom currency
+	err = s.setOrchestratorPriceInfo("default", "1e12", "0.7", "USD")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "PriceFeedWatcher is not initialized")
+
+	err = s.setOrchestratorPriceInfo("default", "1", "1", "")
 	assert.Nil(t, err)
 	assert.Zero(t, s.LivepeerNode.GetBasePrice("default").Cmp(big.NewRat(1, 1)))
 
-	err = s.setOrchestratorPriceInfo("default", "-5", "1")
-	assert.EqualErrorf(t, err, err.Error(), "price unit must be greater than or equal to 0, provided %d\n", -5)
+	err = s.setOrchestratorPriceInfo("default", "-5", "1", "")
+	assert.EqualError(t, err, fmt.Sprintf("price unit must be greater than or equal to 0, provided %d", -5))
 
 	// pixels per unit <= 0
-	err = s.setOrchestratorPriceInfo("default", "1", "0")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", 0)
-	err = s.setOrchestratorPriceInfo("default", "1", "-5")
-	assert.EqualErrorf(t, err, err.Error(), "pixels per unit must be greater than 0, provided %d\n", -5)
+	err = s.setOrchestratorPriceInfo("default", "1", "0", "")
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", 0))
+	err = s.setOrchestratorPriceInfo("default", "1", "-5", "")
+	assert.EqualError(t, err, fmt.Sprintf("pixels per unit must be greater than 0, provided %d", -5))
 
 }
 func TestSetPriceForBroadcasterHandler(t *testing.T) {

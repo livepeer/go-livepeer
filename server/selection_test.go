@@ -4,10 +4,12 @@ import (
 	"container/heap"
 	"context"
 	"errors"
+	"math/big"
+	"testing"
+
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/require"
-	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/common"
@@ -89,7 +91,7 @@ func (r *stubStakeReader) SetStakes(stakes map[ethcommon.Address]int64) {
 
 type stubSelectionAlgorithm struct{}
 
-func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, prices map[ethcommon.Address]float64, perfScores map[ethcommon.Address]float64) ethcommon.Address {
+func (sa stubSelectionAlgorithm) Select(ctx context.Context, addrs []ethcommon.Address, stakes map[ethcommon.Address]int64, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat, perfScores map[ethcommon.Address]float64) ethcommon.Address {
 	if len(addrs) == 0 {
 		return ethcommon.Address{}
 	}
@@ -98,7 +100,7 @@ func (sa stubSelectionAlgorithm) Select(addrs []ethcommon.Address, stakes map[et
 		// select lowest price
 		lowest := prices[addr]
 		for _, a := range addrs {
-			if prices[a] < lowest {
+			if prices[a].Cmp(lowest) < 0 {
 				addr = a
 				lowest = prices[a]
 			}
@@ -158,7 +160,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -234,7 +236,7 @@ func TestMinLSSelector(t *testing.T) {
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
@@ -335,7 +337,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 			if tt.perfScores != nil {
 				perfScore = &common.PerfScore{Scores: tt.perfScores}
 			}
-			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore)
+			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore, nil)
 			sel.Add(tt.unknownSessions)
 
 			sess := sel.selectUnknownSession(context.TODO())
@@ -366,7 +368,7 @@ func session(recipientAddr string) *BroadcastSession {
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {

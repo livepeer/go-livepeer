@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math/big"
 	"os"
 	"regexp"
 	"strconv"
@@ -11,6 +13,8 @@ import (
 
 	"github.com/livepeer/ai-worker/worker"
 )
+
+var errPipelineNotAvailable = errors.New("pipeline not available")
 
 type AI interface {
 	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
@@ -23,32 +27,50 @@ type AI interface {
 	HasCapacity(pipeline, modelID string) bool
 }
 
+// Custom type to parse a big.Rat from a JSON number.
+type JSONRat struct{ *big.Rat }
+
+func (s *JSONRat) UnmarshalJSON(data []byte) error {
+	rat, ok := new(big.Rat).SetString(string(data))
+	if !ok {
+		return fmt.Errorf("value is not a number: %s", data)
+	}
+	*s = JSONRat{rat}
+	return nil
+}
+
+func (s JSONRat) String() string {
+	return s.FloatString(2)
+}
+
+// parsePipelineFromModelID converts a pipeline name to a capability enum.
+func PipelineToCapability(pipeline string) (Capability, error) {
+	if pipeline == "" {
+		return Capability_Unused, errPipelineNotAvailable
+	}
+
+	pipelineName := strings.ToUpper(pipeline[:1]) + strings.ReplaceAll(pipeline[1:], "-", " ")
+
+	for cap, desc := range CapabilityNameLookup {
+		if pipelineName == desc {
+			return cap, nil
+		}
+	}
+
+	// No capability description matches name.
+	return Capability_Unused, errPipelineNotAvailable
+}
+
 type AIModelConfig struct {
 	Pipeline          string                   `json:"pipeline"`
 	ModelID           string                   `json:"model_id"`
 	URL               string                   `json:"url,omitempty"`
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
-	PricePerUnit      int64                    `json:"price_per_unit,omitempty"`
-	PixelsPerUnit     int64                    `json:"pixels_per_unit,omitempty"`
+	PricePerUnit      JSONRat                  `json:"price_per_unit,omitempty"`
+	PixelsPerUnit     JSONRat                  `json:"pixels_per_unit,omitempty"`
+	Currency          string                   `json:"currency,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
-}
-
-func (config *AIModelConfig) UnmarshalJSON(data []byte) error {
-	// Custom type to avoid recursive calls to UnmarshalJSON
-	type AIModelConfigAlias AIModelConfig
-	// Set default values for fields
-	defaultConfig := &AIModelConfigAlias{
-		PixelsPerUnit: 1,
-	}
-
-	if err := json.Unmarshal(data, defaultConfig); err != nil {
-		return err
-	}
-
-	*config = AIModelConfig(*defaultConfig)
-
-	return nil
 }
 
 func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {

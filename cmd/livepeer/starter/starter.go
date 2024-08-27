@@ -16,6 +16,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
+	"github.com/livepeer/go-livepeer/monitor"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -76,81 +78,87 @@ const (
 )
 
 type LivepeerConfig struct {
-	Network                *string
-	RtmpAddr               *string
-	CliAddr                *string
-	HttpAddr               *string
-	ServiceAddr            *string
-	OrchAddr               *string
-	VerifierURL            *string
-	EthController          *string
-	VerifierPath           *string
-	LocalVerify            *bool
-	HttpIngest             *bool
-	Orchestrator           *bool
-	Transcoder             *bool
-	AIWorker               *bool
-	Gateway                *bool
-	Broadcaster            *bool
-	OrchSecret             *string
-	TranscodingOptions     *string
-	AIModels               *string
-	MaxAttempts            *int
-	SelectRandWeight       *float64
-	SelectStakeWeight      *float64
-	SelectPriceWeight      *float64
-	SelectPriceExpFactor   *float64
-	OrchPerfStatsURL       *string
-	Region                 *string
-	MaxPricePerUnit        *int
-	MinPerfScore           *float64
-	MaxSessions            *string
-	CurrentManifest        *bool
-	Nvidia                 *string
-	Netint                 *string
-	TestTranscoder         *bool
-	EthAcctAddr            *string
-	EthPassword            *string
-	EthKeystorePath        *string
-	EthOrchAddr            *string
-	EthUrl                 *string
-	TxTimeout              *time.Duration
-	MaxTxReplacements      *int
-	GasLimit               *int
-	MinGasPrice            *int64
-	MaxGasPrice            *int
-	InitializeRound        *bool
-	TicketEV               *string
-	MaxFaceValue           *string
-	MaxTicketEV            *string
-	MaxTotalEV             *string
-	DepositMultiplier      *int
-	PricePerUnit           *int
-	PixelsPerUnit          *int
-	AutoAdjustPrice        *bool
-	PricePerGateway        *string
-	PricePerBroadcaster    *string
-	BlockPollingInterval   *int
-	Redeemer               *bool
-	RedeemerAddr           *string
-	Reward                 *bool
-	Monitor                *bool
-	MetricsPerStream       *bool
-	MetricsExposeClientIP  *bool
-	MetadataQueueUri       *string
-	MetadataAmqpExchange   *string
-	MetadataPublishTimeout *time.Duration
-	Datadir                *string
-	AIModelsDir            *string
-	Objectstore            *string
-	Recordstore            *string
-	FVfailGsBucket         *string
-	FVfailGsKey            *string
-	AuthWebhookURL         *string
-	OrchWebhookURL         *string
-	OrchBlacklist          *string
-	TestOrchAvail          *bool
-	AIRunnerImage          *string
+	Network                 *string
+	RtmpAddr                *string
+	CliAddr                 *string
+	HttpAddr                *string
+	ServiceAddr             *string
+	OrchAddr                *string
+	VerifierURL             *string
+	EthController           *string
+	VerifierPath            *string
+	LocalVerify             *bool
+	HttpIngest              *bool
+	Orchestrator            *bool
+	Transcoder              *bool
+	AIWorker                *bool
+	Gateway                 *bool
+	Broadcaster             *bool
+	OrchSecret              *string
+	TranscodingOptions      *string
+	AIModels                *string
+	MaxAttempts             *int
+	SelectRandWeight        *float64
+	SelectStakeWeight       *float64
+	SelectPriceWeight       *float64
+	SelectPriceExpFactor    *float64
+	OrchPerfStatsURL        *string
+	Region                  *string
+	MaxPricePerUnit         *string
+	MaxPricePerCapability   *string
+	IgnoreMaxPriceIfNeeded  *bool
+	MinPerfScore            *float64
+	MaxSessions             *string
+	CurrentManifest         *bool
+	Nvidia                  *string
+	Netint                  *string
+	HevcDecoding            *bool
+	TestTranscoder          *bool
+	EthAcctAddr             *string
+	EthPassword             *string
+	EthKeystorePath         *string
+	EthOrchAddr             *string
+	EthUrl                  *string
+	TxTimeout               *time.Duration
+	MaxTxReplacements       *int
+	GasLimit                *int
+	MinGasPrice             *int64
+	MaxGasPrice             *int
+	InitializeRound         *bool
+	InitializeRoundMaxDelay *time.Duration
+	TicketEV                *string
+	MaxFaceValue            *string
+	MaxTicketEV             *string
+	MaxTotalEV              *string
+	DepositMultiplier       *int
+	PricePerUnit            *string
+	PixelsPerUnit           *string
+	PriceFeedAddr           *string
+	AutoAdjustPrice         *bool
+	PricePerGateway         *string
+	PricePerBroadcaster     *string
+	BlockPollingInterval    *int
+	Redeemer                *bool
+	RedeemerAddr            *string
+	Reward                  *bool
+	Monitor                 *bool
+	MetricsPerStream        *bool
+	MetricsExposeClientIP   *bool
+	MetadataQueueUri        *string
+	MetadataAmqpExchange    *string
+	MetadataPublishTimeout  *time.Duration
+	Datadir                 *string
+	AIModelsDir             *string
+	Objectstore             *string
+	Recordstore             *string
+	FVfailGsBucket          *string
+	FVfailGsKey             *string
+	AuthWebhookURL          *string
+	OrchWebhookURL          *string
+	OrchBlacklist           *string
+	OrchMinLivepeerVersion  *string
+	TestOrchAvail           *bool
+	AIRunnerImage           *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -184,6 +192,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
 
 	// AI:
@@ -204,13 +213,17 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxGasPrice := 0
 	defaultEthController := ""
 	defaultInitializeRound := false
+	defaultInitializeRoundMaxDelay := 30 * time.Second
 	defaultTicketEV := "8000000000"
 	defaultMaxFaceValue := "0"
 	defaultMaxTicketEV := "3000000000000"
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
-	defaultMaxPricePerUnit := 0
-	defaultPixelsPerUnit := 1
+	defaultMaxPricePerUnit := "0"
+	defaultMaxPricePerCapability := ""
+	defaultIgnoreMaxPriceIfNeeded := false
+	defaultPixelsPerUnit := "1"
+	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
 	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
@@ -242,6 +255,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// API
 	defaultAuthWebhookURL := ""
 	defaultOrchWebhookURL := ""
+	defaultMinLivepeerVersion := ""
 
 	// Flags
 	defaultTestOrchAvail := true
@@ -276,6 +290,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
@@ -285,36 +300,40 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerImage: &defaultAIRunnerImage,
 
 		// Onchain:
-		EthAcctAddr:            &defaultEthAcctAddr,
-		EthPassword:            &defaultEthPassword,
-		EthKeystorePath:        &defaultEthKeystorePath,
-		EthOrchAddr:            &defaultEthOrchAddr,
-		EthUrl:                 &defaultEthUrl,
-		TxTimeout:              &defaultTxTimeout,
-		MaxTxReplacements:      &defaultMaxTxReplacements,
-		GasLimit:               &defaultGasLimit,
-		MaxGasPrice:            &defaultMaxGasPrice,
-		EthController:          &defaultEthController,
-		InitializeRound:        &defaultInitializeRound,
-		TicketEV:               &defaultTicketEV,
-		MaxFaceValue:           &defaultMaxFaceValue,
-		MaxTicketEV:            &defaultMaxTicketEV,
-		MaxTotalEV:             &defaultMaxTotalEV,
-		DepositMultiplier:      &defaultDepositMultiplier,
-		MaxPricePerUnit:        &defaultMaxPricePerUnit,
-		PixelsPerUnit:          &defaultPixelsPerUnit,
-		AutoAdjustPrice:        &defaultAutoAdjustPrice,
-		PricePerGateway:        &defaultPricePerGateway,
-		PricePerBroadcaster:    &defaultPricePerBroadcaster,
-		BlockPollingInterval:   &defaultBlockPollingInterval,
-		Redeemer:               &defaultRedeemer,
-		RedeemerAddr:           &defaultRedeemerAddr,
-		Monitor:                &defaultMonitor,
-		MetricsPerStream:       &defaultMetricsPerStream,
-		MetricsExposeClientIP:  &defaultMetricsExposeClientIP,
-		MetadataQueueUri:       &defaultMetadataQueueUri,
-		MetadataAmqpExchange:   &defaultMetadataAmqpExchange,
-		MetadataPublishTimeout: &defaultMetadataPublishTimeout,
+		EthAcctAddr:             &defaultEthAcctAddr,
+		EthPassword:             &defaultEthPassword,
+		EthKeystorePath:         &defaultEthKeystorePath,
+		EthOrchAddr:             &defaultEthOrchAddr,
+		EthUrl:                  &defaultEthUrl,
+		TxTimeout:               &defaultTxTimeout,
+		MaxTxReplacements:       &defaultMaxTxReplacements,
+		GasLimit:                &defaultGasLimit,
+		MaxGasPrice:             &defaultMaxGasPrice,
+		EthController:           &defaultEthController,
+		InitializeRound:         &defaultInitializeRound,
+		InitializeRoundMaxDelay: &defaultInitializeRoundMaxDelay,
+		TicketEV:                &defaultTicketEV,
+		MaxFaceValue:            &defaultMaxFaceValue,
+		MaxTicketEV:             &defaultMaxTicketEV,
+		MaxTotalEV:              &defaultMaxTotalEV,
+		DepositMultiplier:       &defaultDepositMultiplier,
+		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		MaxPricePerCapability:   &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
+		PixelsPerUnit:           &defaultPixelsPerUnit,
+		PriceFeedAddr:           &defaultPriceFeedAddr,
+		AutoAdjustPrice:         &defaultAutoAdjustPrice,
+		PricePerGateway:         &defaultPricePerGateway,
+		PricePerBroadcaster:     &defaultPricePerBroadcaster,
+		BlockPollingInterval:    &defaultBlockPollingInterval,
+		Redeemer:                &defaultRedeemer,
+		RedeemerAddr:            &defaultRedeemerAddr,
+		Monitor:                 &defaultMonitor,
+		MetricsPerStream:        &defaultMetricsPerStream,
+		MetricsExposeClientIP:   &defaultMetricsExposeClientIP,
+		MetadataQueueUri:        &defaultMetadataQueueUri,
+		MetadataAmqpExchange:    &defaultMetadataAmqpExchange,
+		MetadataPublishTimeout:  &defaultMetadataPublishTimeout,
 
 		// Ingest:
 		HttpIngest: &defaultHttpIngest,
@@ -334,6 +353,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// API
 		AuthWebhookURL: &defaultAuthWebhookURL,
 		OrchWebhookURL: &defaultOrchWebhookURL,
+
+		// Versioning constraints
+		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
@@ -498,156 +520,30 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
 		}
-	}
 
-	var aiCaps []core.Capability
-	constraints := make(map[core.Capability]*core.Constraints)
-
-	if *cfg.AIWorker {
-		gpus := []string{}
-		if *cfg.Nvidia != "" {
-			var err error
-			gpus, err = common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
-			if err != nil {
-				glog.Errorf("Error parsing -nvidia for devices: %v", err)
-				return
-			}
-		}
-
-		modelsDir := *cfg.AIModelsDir
-		if modelsDir == "" {
-			var err error
-			modelsDir, err = filepath.Abs(path.Join(*cfg.Datadir, "models"))
-			if err != nil {
-				glog.Error("Error creating absolute path for models dir: %v", modelsDir)
-				return
-			}
-		}
-
-		if err := os.MkdirAll(modelsDir, 0755); err != nil {
-			glog.Error("Error creating models dir %v", modelsDir)
-			return
-		}
-
-		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
-		if err != nil {
-			glog.Errorf("Error starting AI worker: %v", err)
-			return
-		}
-
-		if *cfg.AIModels != "" {
-			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
-			if err != nil {
-				glog.Errorf("Error parsing -aiModels: %v", err)
-				return
-			}
-
-			for _, config := range configs {
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
-
-				// If the config contains a URL we call Warm() anyway because AIWorker will just register
-				// the endpoint for an external container
-				if config.Warm || config.URL != "" {
-					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
-						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-						return
-					}
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
 				}
-
-				// Show warning if people set OptimizationFlags but not Warm.
-				if len(config.OptimizationFlags) > 0 && !config.Warm {
-					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
-				}
-
-				switch config.Pipeline {
-				case "text-to-image":
-					_, ok := constraints[core.Capability_TextToImage]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						constraints[core.Capability_TextToImage] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "image-to-image":
-					_, ok := constraints[core.Capability_ImageToImage]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						constraints[core.Capability_ImageToImage] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "image-to-video":
-					_, ok := constraints[core.Capability_ImageToVideo]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						constraints[core.Capability_ImageToVideo] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "upscale":
-					_, ok := constraints[core.Capability_Upscale]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_Upscale)
-						constraints[core.Capability_Upscale] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				case "audio-to-text":
-					_, ok := constraints[core.Capability_AudioToText]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_AudioToText)
-						constraints[core.Capability_AudioToText] = &core.Constraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-
-					constraints[core.Capability_AudioToText].Models[config.ModelID] = modelConstraint
-
-					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, big.NewRat(config.PricePerUnit, config.PixelsPerUnit))
-				}
-
-				if len(aiCaps) > 0 {
-					capability := aiCaps[len(aiCaps)-1]
-					price := n.GetBasePriceForCap("default", capability, config.ModelID)
-					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %d per %d unit", config.Pipeline, capability, config.ModelID, price.Num(), price.Denom())
-				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
 			}
-		} else {
-			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
-			return
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
-
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
-			defer cancel()
-			if err := n.AIWorker.Stop(ctx); err != nil {
-				glog.Errorf("Error stopping AI worker containers: %v", err)
-				return
-			}
-
-			glog.Infof("Stopped AI worker containers")
-		}()
 	}
 
 	if *cfg.Redeemer {
@@ -666,7 +562,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -gateway, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -707,7 +603,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Error(err)
 			return
 		}
-
 	} else {
 		n.SelectionAlgorithm, err = createSelectionAlgorithm(cfg)
 		if err != nil {
@@ -887,6 +782,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		go serviceRegistryWatcher.Watch()
 		defer serviceRegistryWatcher.Stop()
 
+		core.PriceFeedWatcher, err = watchers.NewPriceFeedWatcher(backend, *cfg.PriceFeedAddr)
+		// The price feed watch loop is started on demand on first subscribe.
+		if err != nil {
+			glog.Errorf("Failed to set up price feed watcher: %v", err)
+			return
+		}
+
 		n.Balances = core.NewAddressBalances(cleanupInterval)
 		defer n.Balances.StopCleanup()
 
@@ -908,16 +810,36 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if *cfg.Orchestrator {
 			// Set price per pixel base info
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+			}
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
 			if cfg.PricePerUnit == nil && !*cfg.AIWorker {
 				// Prevent orchestrators from unknowingly providing free transcoding
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			} else if cfg.PricePerUnit != nil {
-				if *cfg.PricePerUnit < 0 {
-					panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %d", *cfg.PricePerUnit))
+				pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+				if err != nil {
+					panic(fmt.Errorf("-pricePerUnit must be a valid integer with an optional currency, provided %v", *cfg.PricePerUnit))
+				} else if pricePerUnit.Sign() < 0 {
+					panic(fmt.Errorf("-pricePerUnit must be >= 0, provided %s", pricePerUnit))
 				}
-
-				n.SetBasePrice("default", big.NewRat(int64(*cfg.PricePerUnit), int64(*cfg.PixelsPerUnit)))
-				glog.Infof("Price: %d wei for %d pixels\n ", *cfg.PricePerUnit, *cfg.PixelsPerUnit)
+				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					unit := "pixel"
+					if *cfg.AIWorker {
+						unit = "compute unit"
+					}
+					glog.Infof("Price: %v wei per %s\n", price.FloatString(3), unit)
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price: %v", err))
+				}
+				n.SetBasePrice("default", autoPrice)
 			}
 
 			if *cfg.PricePerBroadcaster != "" {
@@ -926,9 +848,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			gatewayPrices := getGatewayPrices(*cfg.PricePerGateway)
 			for _, p := range gatewayPrices {
-				price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
-				n.SetBasePrice(p.EthAddress, price)
-				glog.Infof("Price: %v set for broadcaster %v", price.RatString(), p.EthAddress)
+				p := p
+				pricePerPixel := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(p.Currency, pricePerPixel, func(price *big.Rat) {
+					glog.Infof("Price: %v wei per pixel for gateway %v", price.FloatString(3), p.EthAddress)
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price for gateway %s: %v", p.EthAddress, err))
+				}
+				n.SetBasePrice(p.EthAddress, autoPrice)
 			}
 
 			n.AutoSessionLimit = *cfg.MaxSessions == "auto"
@@ -1025,15 +953,76 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
-			if *cfg.PixelsPerUnit <= 0 {
-				// Can't divide by 0
-				panic(fmt.Errorf("The amount of pixels per unit must be greater than 0, provided %d instead\n", *cfg.PixelsPerUnit))
+			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+			if !ok || !pixelsPerUnit.IsInt() {
+				panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
 			}
-			if *cfg.MaxPricePerUnit > 0 {
-				server.BroadcastCfg.SetMaxPrice(big.NewRat(int64(*cfg.MaxPricePerUnit), int64(*cfg.PixelsPerUnit)))
+			if pixelsPerUnit.Sign() <= 0 {
+				// Can't divide by 0
+				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+			}
+			maxPricePerUnit, currency, err := parsePricePerUnit(*cfg.MaxPricePerUnit)
+			if err != nil {
+				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
+			}
+
+			if maxPricePerUnit.Sign() > 0 {
+				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
+				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+					if monitor.Enabled {
+						monitor.MaxTranscodingPrice(price)
+					}
+					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(3))
+				})
+				if err != nil {
+					panic(fmt.Errorf("Error converting price: %v", err))
+				}
+				server.BroadcastCfg.SetMaxPrice(autoPrice)
 			} else {
 				glog.Infof("Maximum transcoding price per pixel is not greater than 0: %v, broadcaster is currently set to accept ANY price.\n", *cfg.MaxPricePerUnit)
 				glog.Infoln("To update the broadcaster's maximum acceptable transcoding price per pixel, use the CLI or restart the broadcaster with the appropriate 'maxPricePerUnit' and 'pixelsPerUnit' values")
+			}
+
+			if *cfg.MaxPricePerCapability != "" {
+				maxCapabilityPrices := getCapabilityPrices(*cfg.MaxPricePerCapability)
+				for _, p := range maxCapabilityPrices {
+					if p.PixelsPerUnit == nil {
+						p.PixelsPerUnit = pixelsPerUnit
+					} else if p.PixelsPerUnit.Sign() <= 0 {
+						glog.Infof("Pixels per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, using default pixelsPerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.PixelsPerUnit)
+						p.PixelsPerUnit = pixelsPerUnit
+					}
+
+					if p.PricePerUnit == nil || p.PricePerUnit.Sign() <= 0 {
+						if maxPricePerUnit.Sign() > 0 {
+							glog.Infof("Maximum price per unit not set for capability=%v model_id=%v in 'maxPricePerCapability' config, using maxPricePerUnit=%v.\n", p.Pipeline, p.ModelID, *cfg.MaxPricePerUnit)
+							p.PricePerUnit = maxPricePerUnit
+						} else {
+							glog.Warningf("Maximum price per unit for capability=%v model_id=%v in 'maxPricePerCapability' config is not greater than 0, and 'maxPricePerUnit' not set, gateway is currently set to accept ANY price.\n", p.Pipeline, p.ModelID)
+							continue
+						}
+					}
+
+					maxCapabilityPrice := new(big.Rat).Quo(p.PricePerUnit, p.PixelsPerUnit)
+
+					cap, err := core.PipelineToCapability(p.Pipeline)
+					if err != nil {
+						panic(fmt.Errorf("Pipeline in 'maxPricePerCapability' config is not valid capability: %v\n", p.Pipeline))
+					}
+					capName := core.CapabilityNameLookup[cap]
+					modelID := p.ModelID
+					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(capName, modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
+					})
+					if err != nil {
+						panic(fmt.Errorf("Error converting price: %v", err))
+					}
+
+					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
+				}
 			}
 		}
 
@@ -1103,7 +1092,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.InitializeRound {
 			// Start round initializer
 			// The node will only initialize rounds if it in the upcoming active set for the round
-			initializer := eth.NewRoundInitializer(n.Eth, timeWatcher)
+			initializer := eth.NewRoundInitializer(n.Eth, timeWatcher, *cfg.InitializeRoundMaxDelay)
 			go func() {
 				if err := initializer.Start(); err != nil {
 					serviceErr <- err
@@ -1140,6 +1129,216 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			watcherErr <- err
+		}()
+	}
+
+	var aiCaps []core.Capability
+	capabilityConstraints := make(core.PerCapabilityConstraints)
+
+	if *cfg.AIWorker {
+		gpus := []string{}
+		if *cfg.Nvidia != "" {
+			var err error
+			gpus, err = common.ParseAccelDevices(*cfg.Nvidia, ffmpeg.Nvidia)
+			if err != nil {
+				glog.Errorf("Error parsing -nvidia for devices: %v", err)
+				return
+			}
+		}
+
+		modelsDir := *cfg.AIModelsDir
+		if modelsDir == "" {
+			var err error
+			modelsDir, err = filepath.Abs(path.Join(*cfg.Datadir, "models"))
+			if err != nil {
+				glog.Error("Error creating absolute path for models dir: %v", modelsDir)
+				return
+			}
+		}
+
+		if err := os.MkdirAll(modelsDir, 0755); err != nil {
+			glog.Error("Error creating models dir %v", modelsDir)
+			return
+		}
+
+		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
+		if err != nil {
+			glog.Errorf("Error starting AI worker: %v", err)
+			return
+		}
+
+		// Get base pixels and price per unit.
+		pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
+		if !ok || !pixelsPerUnitBase.IsInt() {
+			panic(fmt.Errorf("-pixelsPerUnit must be a valid integer, provided %v", *cfg.PixelsPerUnit))
+		}
+		if !ok || pixelsPerUnitBase.Sign() <= 0 {
+			// Can't divide by 0
+			panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
+		}
+		pricePerUnitBase := new(big.Rat)
+		currencyBase := ""
+		if cfg.PricePerUnit != nil {
+			pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+			if err != nil || pricePerUnit.Sign() < 0 {
+				panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
+			}
+			pricePerUnitBase = pricePerUnit
+			currencyBase = currency
+		}
+
+		if *cfg.AIModels != "" {
+			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
+			if err != nil {
+				glog.Errorf("Error parsing -aiModels: %v", err)
+				return
+			}
+
+			for _, config := range configs {
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+
+				var autoPrice *core.AutoConvertedPrice
+				if *cfg.Network != "offchain" {
+					pixelsPerUnit := config.PixelsPerUnit.Rat
+					if config.PixelsPerUnit.Rat == nil {
+						pixelsPerUnit = pixelsPerUnitBase
+					} else if !pixelsPerUnit.IsInt() || pixelsPerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pixelsPerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PixelsPerUnit))
+					}
+
+					pricePerUnit := config.PricePerUnit.Rat
+					currency := config.Currency
+					if pricePerUnit == nil {
+						if pricePerUnitBase.Sign() == 0 {
+							panic(fmt.Errorf("'pricePerUnit' must be set for model '%v' in pipeline '%v'", config.ModelID, config.Pipeline))
+						}
+						pricePerUnit = pricePerUnitBase
+						currency = currencyBase
+						glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
+					} else if !pricePerUnit.IsInt() || pricePerUnit.Sign() <= 0 {
+						panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+					}
+
+					pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, nil)
+					if err != nil {
+						panic(fmt.Errorf("error converting price: %v", err))
+					}
+				}
+
+				// If the config contains a URL we call Warm() anyway because AIWorker will just register
+				// the endpoint for an external container
+				if config.Warm || config.URL != "" {
+					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+						return
+					}
+				}
+
+				// Show warning if people set OptimizationFlags but not Warm.
+				if len(config.OptimizationFlags) > 0 && !config.Warm {
+					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
+				}
+
+				switch config.Pipeline {
+				case "text-to-image":
+					_, ok := capabilityConstraints[core.Capability_TextToImage]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToImage)
+						capabilityConstraints[core.Capability_TextToImage] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, autoPrice)
+					}
+				case "image-to-image":
+					_, ok := capabilityConstraints[core.Capability_ImageToImage]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToImage)
+						capabilityConstraints[core.Capability_ImageToImage] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, autoPrice)
+					}
+				case "image-to-video":
+					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
+						capabilityConstraints[core.Capability_ImageToVideo] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, autoPrice)
+					}
+				case "upscale":
+					_, ok := capabilityConstraints[core.Capability_Upscale]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_Upscale)
+						capabilityConstraints[core.Capability_Upscale] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, autoPrice)
+					}
+				case "audio-to-text":
+					_, ok := capabilityConstraints[core.Capability_AudioToText]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_AudioToText)
+						capabilityConstraints[core.Capability_AudioToText] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_AudioToText].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+					}
+				}
+
+				if len(aiCaps) > 0 {
+					capability := aiCaps[len(aiCaps)-1]
+					price := n.GetBasePriceForCap("default", capability, config.ModelID)
+					if *cfg.Network != "offchain" {
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
+					} else {
+						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
+					}
+				}
+			}
+		} else {
+			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+			return
+		}
+
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), aiWorkerContainerStopTimeout)
+			defer cancel()
+			if err := n.AIWorker.Stop(ctx); err != nil {
+				glog.Errorf("Error stopping AI worker containers: %v", err)
+				return
+			}
+
+			glog.Infof("Stopped AI worker containers")
 		}()
 	}
 
@@ -1293,7 +1492,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	}
 
-	n.Capabilities = core.NewCapabilitiesWithConstraints(append(transcoderCaps, aiCaps...), core.MandatoryOCapabilities(), constraints)
+	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
+	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
+	if cfg.OrchMinLivepeerVersion != nil {
+		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
+	}
 
 	if drivers.NodeStorage == nil {
 		// base URI will be empty for broadcasters; that's OK
@@ -1596,9 +1799,10 @@ func checkOrStoreChainID(dbh *common.DB, chainID *big.Int) error {
 }
 
 type GatewayPrice struct {
-	EthAddress    string `json:"ethaddress"`
-	PricePerUnit  int64  `json:"priceperunit"`
-	PixelsPerUnit int64  `json:"pixelsperunit"`
+	EthAddress    string
+	PricePerUnit  *big.Rat
+	Currency      string
+	PixelsPerUnit *big.Rat
 }
 
 func getGatewayPrices(gatewayPrices string) []GatewayPrice {
@@ -1607,22 +1811,24 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 	}
 
 	// Format of gatewayPrices json
-	// {"gateways":[{"ethaddress":"address1","priceperunit":1000,"pixelsperunit":1}, {"ethaddress":"address2","priceperunit":2000,"pixelsperunit":3}]}
+	// {"gateways":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1}, {"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":3}]}
 	var pricesSet struct {
 		Gateways []struct {
-			EthAddress    string          `json:"ethaddress"`
-			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
-			PricePerUnit  json.RawMessage `json:"priceperunit"`
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
 		} `json:"gateways"`
 		// TODO: Keep the old name for backwards compatibility, remove in the future
 		Broadcasters []struct {
-			EthAddress    string          `json:"ethaddress"`
-			PixelsPerUnit json.RawMessage `json:"pixelsperunit"`
-			PricePerUnit  json.RawMessage `json:"priceperunit"`
+			EthAddress    string       `json:"ethaddress"`
+			PixelsPerUnit core.JSONRat `json:"pixelsperunit"`
+			PricePerUnit  core.JSONRat `json:"priceperunit"`
+			Currency      string       `json:"currency"`
 		} `json:"broadcasters"`
 	}
-	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
 
+	pricesFileContent, _ := common.ReadFromFile(gatewayPrices)
 	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
 	if err != nil {
 		glog.Errorf("gateway prices could not be parsed: %s", err)
@@ -1639,20 +1845,62 @@ func getGatewayPrices(gatewayPrices string) []GatewayPrice {
 
 	prices := make([]GatewayPrice, len(allGateways))
 	for i, p := range allGateways {
-		pixelsPerUnit, err := strconv.ParseInt(string(p.PixelsPerUnit), 10, 64)
-		if err != nil {
-			glog.Errorf("Pixels per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PixelsPerUnit)
-			continue
-		}
-		pricePerUnit, err := strconv.ParseInt(string(p.PricePerUnit), 10, 64)
-		if err != nil {
-			glog.Errorf("Price per unit could not be parsed for gateway %v. must be a valid number, provided %s", p.EthAddress, p.PricePerUnit)
-			continue
-		}
 		prices[i] = GatewayPrice{
 			EthAddress:    p.EthAddress,
-			PricePerUnit:  pricePerUnit,
-			PixelsPerUnit: pixelsPerUnit,
+			Currency:      p.Currency,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+		}
+	}
+
+	return prices
+}
+
+type ModelPrice struct {
+	Pipeline      string
+	ModelID       string
+	PricePerUnit  *big.Rat
+	PixelsPerUnit *big.Rat
+	Currency      string
+}
+
+func getCapabilityPrices(capabilitiesPrices string) []ModelPrice {
+	if capabilitiesPrices == "" {
+		return nil
+	}
+
+	// Format of modelPrices json
+	// Model_id will be set to "default" to price all models in the pipeline if not specified.
+	// {"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3} ] }
+	var pricesSet struct {
+		CapabilitiesPrices []struct {
+			Pipeline      string       `json:"pipeline"`
+			ModelID       string       `json:"model_id"`
+			PixelsPerUnit core.JSONRat `json:"pixels_per_unit"`
+			PricePerUnit  core.JSONRat `json:"price_per_unit"`
+			Currency      string       `json:"currency"`
+		} `json:"capabilities_prices"`
+	}
+
+	pricesFileContent, _ := common.ReadFromFile(capabilitiesPrices)
+	err := json.Unmarshal([]byte(pricesFileContent), &pricesSet)
+	if err != nil {
+		glog.Errorf("model prices could not be parsed: %s", err)
+		return nil
+	}
+
+	prices := make([]ModelPrice, len(pricesSet.CapabilitiesPrices))
+	for i, p := range pricesSet.CapabilitiesPrices {
+		if p.ModelID == "" {
+			p.ModelID = "default"
+		}
+
+		prices[i] = ModelPrice{
+			Pipeline:      p.Pipeline,
+			ModelID:       p.ModelID,
+			PricePerUnit:  p.PricePerUnit.Rat,
+			PixelsPerUnit: p.PixelsPerUnit.Rat,
+			Currency:      p.Currency,
 		}
 	}
 
@@ -1667,11 +1915,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 
@@ -1706,6 +1955,22 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
+}
+
+func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
+	pricePerUnitRex := regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
+	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
+	if match == nil {
+		return nil, "", fmt.Errorf("price must be in the format of <price><currency>, provided %v", pricePerUnitStr)
+	}
+	price, currency := match[1], match[3]
+
+	pricePerUnit, ok := new(big.Rat).SetString(price)
+	if !ok {
+		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
+	}
+
+	return pricePerUnit, currency, nil
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {

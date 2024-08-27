@@ -317,6 +317,14 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		return nil, err
 	}
 
+	if !price.Num().IsInt64() || !price.Denom().IsInt64() {
+		fixedPrice, err := common.PriceToInt64(price)
+		if err != nil {
+			return nil, errors.New("price cannot be converted to int64")
+		}
+		price = fixedPrice
+	}
+
 	return &net.PriceInfo{
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
@@ -347,21 +355,23 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	} else {
 		// The base price is the sum of the prices of individual capability + model ID pairs
-		for cap := range caps.Capacities {
-			// If the capability does not have constraints (and thus any model constraints) skip it
-			// because we only price a capability together with a model ID right now
-			constraints, ok := caps.Constraints[cap]
-			if !ok {
-				continue
-			}
-			for modelID := range constraints.Models {
-				price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
-				if price == nil {
-					price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+		if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+			for cap := range caps.Capacities {
+				// If the capability does not have constraints (and thus any model constraints) skip it
+				// because we only price a capability together with a model ID right now
+				constraints, ok := caps.Constraints.PerCapability[cap]
+				if !ok {
+					continue
 				}
+				for modelID := range constraints.Models {
+					price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
+					if price == nil {
+						price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+					}
 
-				if price != nil {
-					basePrice.Add(basePrice, price)
+					if price != nil {
+						basePrice.Add(basePrice, price)
+					}
 				}
 			}
 		}
@@ -1263,7 +1273,9 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 	findCompatibleTranscoder := func(rtm *RemoteTranscoderManager) int {
 		for i := len(rtm.remoteTranscoders) - 1; i >= 0; i-- {
 			// no capabilities = default capabilities, all transcoders must support them
-			if caps == nil || caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) {
+			if caps == nil ||
+				(caps.bitstring.CompatibleWith(rtm.remoteTranscoders[i].capabilities.bitstring) &&
+					caps.LivepeerVersionCompatibleWith(rtm.remoteTranscoders[i].capabilities.ToNetCapabilities())) {
 				return i
 			}
 		}
@@ -1315,7 +1327,7 @@ func (node *RemoteTranscoderManager) EndTranscodingSession(sessionId string) {
 	panic("shouldn't be called on RemoteTranscoderManager")
 }
 
-// completeStreamSessions end a stream session for a remote transcoder and decrements its load
+// completeStreamSession end a stream session for a remote transcoder and decrements its load
 // caller should hold the mutex lock
 func (rtm *RemoteTranscoderManager) completeStreamSession(sessionId string) {
 	t, ok := rtm.streamSessions[sessionId]

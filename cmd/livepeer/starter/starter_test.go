@@ -102,11 +102,39 @@ func TestParseGetGatewayPrices(t *testing.T) {
 		assert.NotNil(prices)
 		assert.Equal(2, len(prices))
 
-		price1 := big.NewRat(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
-		price2 := big.NewRat(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+		price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+		price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
 		assert.Equal(big.NewRat(1000, 1), price1)
 		assert.Equal(big.NewRat(2000, 3), price2)
 	}
+}
+
+func TestMaxPricePerCapability(t *testing.T) {
+	assert := assert.New(t)
+
+	jsonTemplate := `{"capabilities_prices": [ {"pipeline": "text-to-image", "model_id": "stabilityai/sd-turbo", "price_per_unit": 1000, "pixels_per_unit": 1}, {"pipeline": "image-to-video", "model_id": "default", "price_per_unit": 2000, "pixels_per_unit": 3}, {"pipeline": "image-to-image", "price_per_unit": 3000, "pixels_per_unit": 1} ] }`
+
+	prices := getCapabilityPrices(jsonTemplate)
+	assert.NotNil(prices)
+	assert.Equal(3, len(prices))
+
+	// Confirm Pipeline and ModelID is parsed correctly
+	assert.Equal(prices[0].Pipeline, "text-to-image")
+	assert.Equal(prices[1].Pipeline, "image-to-video")
+	assert.Equal(prices[0].ModelID, "stabilityai/sd-turbo")
+	assert.Equal(prices[1].ModelID, "default")
+
+	// Confirm prices are parsed correctly
+	price1 := new(big.Rat).Quo(prices[0].PricePerUnit, prices[0].PixelsPerUnit)
+	price2 := new(big.Rat).Quo(prices[1].PricePerUnit, prices[1].PixelsPerUnit)
+	assert.NotEqual(price1, price2)
+	assert.Equal(big.NewRat(1000, 1), price1)
+	assert.Equal(big.NewRat(2000, 3), price2)
+
+	// Confirm modelID is "default" if not set and price set correctly
+	assert.Equal(prices[2].ModelID, "default")
+	price3 := new(big.Rat).Quo(prices[2].PricePerUnit, prices[2].PixelsPerUnit)
+	assert.Equal(big.NewRat(3000, 1), price3)
 }
 
 // Address provided to keystore file
@@ -301,4 +329,92 @@ func TestUpdatePerfScore(t *testing.T) {
 		ethcommon.HexToAddress("0x00803b76dc924ceabf4380a6f9edc2ddd3c90f38"): 0.3133182335267256,
 	}
 	require.Equal(t, expScores, scores.Scores)
+}
+
+func TestParsePricePerUnit(t *testing.T) {
+	tests := []struct {
+		name             string
+		pricePerUnitStr  string
+		expectedPrice    *big.Rat
+		expectedCurrency string
+		expectError      bool
+	}{
+		{
+			name:             "Valid input with integer price",
+			pricePerUnitStr:  "100USD",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with fractional price",
+			pricePerUnitStr:  "0.13USD",
+			expectedPrice:    big.NewRat(13, 100),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with decimal price",
+			pricePerUnitStr:  "99.99EUR",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "EUR",
+			expectError:      false,
+		},
+		{
+			name:             "Lower case currency",
+			pricePerUnitStr:  "99.99eur",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "eur",
+			expectError:      false,
+		},
+		{
+			name:             "Currency with numbers",
+			pricePerUnitStr:  "420DOG3",
+			expectedPrice:    big.NewRat(420, 1),
+			expectedCurrency: "DOG3",
+			expectError:      false,
+		},
+		{
+			name:             "No specified currency, empty currency",
+			pricePerUnitStr:  "100",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "",
+			expectError:      false,
+		},
+		{
+			name:             "Explicit wei currency",
+			pricePerUnitStr:  "100wei",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "wei",
+			expectError:      false,
+		},
+		{
+			name:             "Invalid number",
+			pricePerUnitStr:  "abcUSD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+		{
+			name:             "Negative price",
+			pricePerUnitStr:  "-100USD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			price, currency, err := parsePricePerUnit(tt.pricePerUnitStr)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, tt.expectedPrice.Cmp(price) == 0)
+				assert.Equal(t, tt.expectedCurrency, currency)
+			}
+		})
+	}
 }

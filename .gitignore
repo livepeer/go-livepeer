@@ -3,7 +3,10 @@
 *.dll
 *.so
 *.dylib
+
+# IDE files
 *.vscode
+*.code-workspace
 
 # Test binary, build with `go test -c`
 *.test

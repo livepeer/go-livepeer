@@ -180,12 +180,16 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 
 	suspender := newSuspender()
 
+	// Create caps for selector to get maxPrice
+	warmCaps := newAICapabilities(cap, modelID, true, node.Capabilities.MinVersionConstraint())
+	coldCaps := newAICapabilities(cap, modelID, false, node.Capabilities.MinVersionConstraint())
+
 	// The latency score in this context is just the latency of the last completed request for a session
 	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
 	minLS := 0.0
-	penalty := 3
-	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore), suspender, penalty)
-	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore), suspender, penalty)
+	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender, penalty)
+	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender, penalty)
+
 	sel := &AISessionSelector{
 		warmPool:  warmPool,
 		coldPool:  coldPool,
@@ -203,6 +207,24 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	}
 
 	return sel, nil
+}
+
+// newAICapabilities creates a new capabilities object with
+func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersion string) *core.Capabilities {
+	aiCaps := []core.Capability{cap}
+	capabilityConstraints := core.PerCapabilityConstraints{
+		cap: &core.CapabilityConstraints{
+			Models: map[string]*core.ModelConstraint{
+				modelID: {Warm: warm},
+			},
+		},
+	}
+
+	caps := core.NewCapabilities(aiCaps, nil)
+	caps.SetPerCapabilityConstraints(capabilityConstraints)
+	caps.SetMinVersionConstraint(minVersion)
+
+	return caps
 }
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
@@ -283,7 +305,7 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 
 	for _, sess := range sessions {
 		// If the constraints are missing for this capability skip this session
-		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints[uint32(sel.cap)]
+		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
 		if !ok {
 			continue
 		}
@@ -313,7 +335,7 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSession, error) {
 	// No warm constraints applied here because we don't want to filter out orchs based on warm criteria at discovery time
 	// Instead, we want all orchs that support the model and then will filter for orchs that have a warm model separately
-	constraints := map[core.Capability]*core.Constraints{
+	capabilityConstraints := core.PerCapabilityConstraints{
 		sel.cap: {
 			Models: map[string]*core.ModelConstraint{
 				sel.modelID: {
@@ -322,7 +344,9 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 			},
 		},
 	}
-	caps := core.NewCapabilitiesWithConstraints(append(core.DefaultCapabilities(), sel.cap), nil, constraints)
+	caps := core.NewCapabilities(append(core.DefaultCapabilities(), sel.cap), nil)
+	caps.SetPerCapabilityConstraints(capabilityConstraints)
+	caps.SetMinVersionConstraint(sel.node.Capabilities.MinVersionConstraint())
 
 	// Set numOrchs to the pool size so that discovery tries to find maximum # of compatible orchs within a timeout
 	numOrchs := sel.node.OrchestratorPool.Size()

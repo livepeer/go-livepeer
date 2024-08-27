@@ -102,6 +102,7 @@ func (w *wizard) initializeOptions() []wizardOpt {
 		{desc: "Invoke \"cancel unlock of broadcasting funds\"", invoke: w.cancelUnlock, notOrchestrator: true},
 		{desc: "Invoke \"withdraw broadcasting funds\"", invoke: w.withdraw, notOrchestrator: true},
 		{desc: "Set broadcast config", invoke: w.setBroadcastConfig, notOrchestrator: true},
+		{desc: "Set max price per capability", invoke: w.setBroadcastMaxPricePerCapability, notOrchestrator: true},
 		{desc: "Set maximum Ethereum gas price", invoke: w.setMaxGasPrice},
 		{desc: "Set minimum Ethereum gas price", invoke: w.setMinGasPrice},
 		{desc: "Get test LPT", invoke: w.requestTokens, testnet: true},
