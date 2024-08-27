@@ -157,7 +157,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	var contentType, fname string
 	var body bytes.Buffer
-	var tData *core.TranscodeData
+	var addlResultData interface{}
 
 	//TODO: consider adding additional information to context for tracing back to Orchestrator and debugging
 
@@ -167,14 +167,14 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	err := n.ReserveAICapability(notify.Pipeline, notify.ModelID)
 	if err != nil {
 		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, core.ErrNoCompatibleWorkersAvailable)
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, core.ErrNoCompatibleWorkersAvailable)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, core.ErrNoCompatibleWorkersAvailable)
 		return
 	}
 	defer n.ReleaseAICapability(notify.Pipeline, notify.ModelID)
 
 	if err != nil {
 		glog.Errorf("Unable to parse requestData taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, err)
-		sendAIResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, nil, err)
+		sendAIResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 		return
 		// TODO short-circuit error handling
 		// See https://github.com/livepeer/go-livepeer/issues/1518
@@ -185,7 +185,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		err = os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
 			clog.Errorf(ctx, "AI Worker cannot create workdir err=%q", err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 			return
 		}
 	}
@@ -196,7 +196,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		input, err = downloadInputFile(ctx, notify.Url)
 		if err != nil {
 			clog.Errorf(ctx, "AI Worker cannot get input file from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 			return
 		}
 
@@ -205,7 +205,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
 		if err = os.WriteFile(fname, input, 0600); err != nil {
 			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 			return
 		}
 		defer os.Remove(fname)
@@ -265,13 +265,13 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	default:
 		resp = nil
 		err = errors.New("AI request pipeline type not supported")
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 		return
 	}
 
 	if !reqOk {
 		resp = nil
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 		return
 	}
 
@@ -280,7 +280,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
 		}
-		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+		sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 		return
 	}
 
@@ -304,7 +304,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					err := worker.ReadImageB64DataUrl(image.Url, &imgBuf)
 					if err != nil {
 						clog.Errorf(ctx, "AI Worker failed to save image from data url err=%q", err)
-						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, err)
+						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 						return
 					}
 					length = imgBuf.Len()
@@ -320,7 +320,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
+						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
 						return
 					}
 					io.Copy(fw, &imgBuf)
@@ -331,7 +331,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					f, err := os.ReadFile(image.Url)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
+						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
 						return
 					}
 					w.SetBoundary(boundary)
@@ -343,7 +343,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, nil, err)
+						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
 						return
 					}
 					io.Copy(fw, bytes.NewBuffer(f))
@@ -356,6 +356,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		//add the json to the response
 		//   audio-to-text has no file attachment because the response is json
 		jsonResp, err := json.Marshal(resp)
+		if err != nil {
+			clog.Errorf(ctx, "Could not marshal json response err=%q", err)
+			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
+			return
+		}
+
 		w.SetBoundary(boundary)
 		hdrs := textproto.MIMEHeader{
 			"Content-Type":   {"application/json"},
@@ -370,7 +376,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	w.Close()
 	contentType = "multipart/mixed; boundary=" + boundary
-	sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, nil, nil)
+	sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, nil)
 }
 
 func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob,
@@ -393,7 +399,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
 
-	//TODO consider adding additional information in response header (e.g. transcoding includes Pixels)
+	//TODO consider adding additional information in response header from the addlData field (e.g. transcoding includes Pixels)
 
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)
