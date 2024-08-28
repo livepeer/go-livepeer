@@ -1199,6 +1199,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
+
+		if *cfg.Network == "arbitrum-one-mainnet" && strings.Contains(suri.Host, "0.0.0.0") {
+			glog.Exit("Service address must be a public IP address or hostname when operating on mainnet")
+		}
+
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
