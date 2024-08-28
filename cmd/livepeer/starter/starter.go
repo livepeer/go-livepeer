@@ -1200,8 +1200,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Error getting service URI: ", err)
 		}
 
-		if *cfg.Network == "arbitrum-one-mainnet" && strings.Contains(suri.Host, "0.0.0.0") {
-			glog.Exit("Service address must be a public IP address or hostname when operating on mainnet")
+		if *cfg.Network != "offchain" && common.ValidateServiceURI(suri) {
+			glog.Warning("Service address is a private IP address; this is not recommended for onchain networks")
 		}
 
 		n.SetServiceURI(suri)

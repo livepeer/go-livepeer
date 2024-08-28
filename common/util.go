@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -529,4 +530,12 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 		}
 	}
 	return "", errors.New("Error parsing address from keyfile")
+}
+
+func ValidateServiceURI(serviceURI *url.URL) bool {
+	if strings.Contains(serviceURI.Host, "0.0.0.0") {
+		return false
+	} else {
+		return true
+	}
 }

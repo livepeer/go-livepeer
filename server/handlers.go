@@ -526,7 +526,7 @@ func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI 
 		return err
 	}
 
-	if strings.Contains(parsedURI.Host, "0.0.0.0") {
+	if !common.ValidateServiceURI(parsedURI) {
 		err = errors.New("service address must be a public IP address or hostname")
 		glog.Error(err)
 		return err
