@@ -13,7 +13,6 @@ import (
 	"net/textproto"
 	"os"
 	"os/signal"
-	"path"
 	"strconv"
 	"sync"
 	"syscall"
@@ -155,7 +154,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
 	glog.Infof("Processing AI job taskID=%d pipeline=%s modelID=%s input_url=%s", notify.TaskId, notify.Pipeline, notify.ModelID, notify.Url)
 
-	var contentType, fname string
+	var contentType string
 	var body bytes.Buffer
 	var addlResultData interface{}
 
@@ -172,24 +171,6 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	}
 	defer n.ReleaseAICapability(notify.Pipeline, notify.ModelID)
 
-	if err != nil {
-		glog.Errorf("Unable to parse requestData taskId=%d url=%s pipeline=%s modelID=%s err=%q", notify.TaskId, notify.Url, notify.Pipeline, notify.ModelID, err)
-		sendAIResult(context.Background(), n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
-		return
-		// TODO short-circuit error handling
-		// See https://github.com/livepeer/go-livepeer/issues/1518
-	}
-
-	//check working directory exists, create if not
-	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
-		err = os.Mkdir(n.WorkDir, 0700)
-		if err != nil {
-			clog.Errorf(ctx, "AI Worker cannot create workdir err=%q", err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
-			return
-		}
-	}
-
 	//download the input file if applicable
 	var input []byte
 	if notify.Url != "" {
@@ -199,17 +180,6 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
 			return
 		}
-
-		// Write it to disk
-		// Create input file from segment. Removed after transcoding done
-		fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
-		if err = os.WriteFile(fname, input, 0600); err != nil {
-			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
-			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)
-			return
-		}
-		defer os.Remove(fname)
-		clog.V(common.DEBUG).Infof(ctx, "AI job input file from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
 	}
 
 	start := time.Now()

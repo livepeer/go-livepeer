@@ -55,7 +55,7 @@ func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
 
 	code, body := aiResultsTest(l, w, r)
 	require.Equal(t, http.StatusUnauthorized, code)
-	require.Contains(t, body, "Unauthorized")
+	require.Contains(t, body, "invalid secret")
 }
 
 func TestAIWorkerResults_ErrorsWhenContentTypeMissing(t *testing.T) {

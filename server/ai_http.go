@@ -453,14 +453,14 @@ func (h *lphttp) AIResults() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
 
-		creds := r.Header.Get("Credentials")
-
 		authType := r.Header.Get("Authorization")
 		if protoVerAIWorker != authType {
 			glog.Error("Invalid auth type ", authType)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		creds := r.Header.Get("Credentials")
 
 		if creds != orch.TranscoderSecret() {
 			glog.Error("Invalid shared secret")
