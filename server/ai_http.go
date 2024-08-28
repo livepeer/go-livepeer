@@ -373,6 +373,14 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
+		}
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	//backwards compatibility to old gateway api
 	if pipeline == "text-to-image" || pipeline == "image-to-image" || pipeline == "upscale" {
 		if r.Header.Get("Authorization") != protoVerAIWorker {
@@ -394,14 +402,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			//return the modified response
 			resp = imgResp
 		}
-	}
-
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
-		}
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	took := time.Since(start)
