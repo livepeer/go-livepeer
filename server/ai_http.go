@@ -313,7 +313,17 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.SegmentAnything2(ctx, v)
 		}
 
-		outPixels = 1000000 // Temp hardcoded 1MM - Convert to ...?
+		imageRdr, err := v.Image.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		config, _, err := image.DecodeConfig(imageRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		outPixels = int64(config.Height) * int64(config.Width)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -385,6 +395,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			if err == nil {
 				latencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
 			}
+		case worker.SegmentAnything2MultipartRequestBody:
+			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64
