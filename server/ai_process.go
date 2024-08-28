@@ -587,13 +587,21 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
-func processSegmentAnything2(ctx context.Context, params aiRequestParams, req worker.SegmentAnything2MultipartRequestBody) (*worker.SegmentAnything2Response, error) {
+func CalculateSegmentAnything2LatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
+}
+
+func processSegmentAnything2(ctx context.Context, params aiRequestParams, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	txtResp := resp.(*worker.SegmentAnything2Response)
+	txtResp := resp.(*worker.MasksResponse)
 
 	return txtResp, nil
 }
