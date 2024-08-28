@@ -388,13 +388,13 @@ func (ls *LivepeerServer) SegmentAnything2() http.Handler {
 			return
 		}
 
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.SegmentAnything2MultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received AudioToText request audioSize=%v model_id=%v", req.Audio.FileSize(), *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received SegmentAnything2 request image/video size=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -403,7 +403,7 @@ func (ls *LivepeerServer) SegmentAnything2() http.Handler {
 		}
 
 		start := time.Now()
-		resp, err := processAudioToText(ctx, params, req)
+		resp, err := processSegmentAnything2(ctx, params, req)
 		if err != nil {
 			var serviceUnavailableErr *ServiceUnavailableError
 			var badRequestErr *BadRequestError
@@ -420,7 +420,7 @@ func (ls *LivepeerServer) SegmentAnything2() http.Handler {
 		}
 
 		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed AudioToText request model_id=%v took=%v", *req.ModelId, took)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed SegmentAnything2 request model_id=%v took=%v", *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

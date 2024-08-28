@@ -1336,7 +1336,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
 					}
 				case "segment-anything-2":
-					_, ok := capabilityConstraints[core.Capability_AudioToText]
+					_, ok := capabilityConstraints[core.Capability_SegmentAnything2]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_SegmentAnything2)
 						capabilityConstraints[core.Capability_SegmentAnything2] = &core.CapabilityConstraints{

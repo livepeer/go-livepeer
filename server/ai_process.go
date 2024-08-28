@@ -587,6 +587,17 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
+func processSegmentAnything2(ctx context.Context, params aiRequestParams, req worker.SegmentAnything2MultipartRequestBody) (*worker.SegmentAnything2Response, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.SegmentAnything2Response)
+
+	return txtResp, nil
+}
+
 func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodySegmentAnything2SegmentAnything2Post) (*worker.MasksResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewSegmentAnything2MultipartWriter(&buf, req)
