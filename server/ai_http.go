@@ -294,6 +294,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	// Check if there is capacity for the request.
 	if !orch.CheckAICapacity(pipeline, modelID) {
+		if monitor.Enabled {
+			monitor.AIProcessingError("Insufficient capacity", pipeline, modelID, sender.Hex())
+		}
 		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 		return
 	}
