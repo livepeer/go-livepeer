@@ -28,6 +28,11 @@ type AI interface {
 	HasCapacity(pipeline, modelID string) bool
 }
 
+// Mapping for per pipeline custom container images
+var PipelineToImage = map[string]string{
+	"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
+}
+
 // Custom type to parse a big.Rat from a JSON number.
 type JSONRat struct{ *big.Rat }
 

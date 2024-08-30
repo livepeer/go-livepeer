@@ -1135,11 +1135,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	var aiCaps []core.Capability
 	capabilityConstraints := make(core.PerCapabilityConstraints)
 
-	// Mapping for per pipeline custom container images
-	var pipelineToImage = map[string]string{
-		"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
-	}
-
 	if *cfg.AIWorker {
 		gpus := []string{}
 		if *cfg.Nvidia != "" {
@@ -1240,7 +1235,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if config.Warm && config.URL == "" {
 						// Determine which image to use based on the pipeline
 						imageToUse := *cfg.AIRunnerImage // Default to the image from config
-						if specificImage, ok := pipelineToImage[config.Pipeline]; ok {
+						if specificImage, ok := core.PipelineToImage[config.Pipeline]; ok {
 							imageToUse = specificImage
 						}
 
