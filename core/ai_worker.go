@@ -94,9 +94,9 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 	glog.Infof("checking worker is compatible with orchestrator: worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
 	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
 		n.Capabilities.AddCapacity(wkrCaps)
-		n.AddAICapabilities(nil, wkrCaps.constraints.perCapability)
+		n.AddAICapabilities(wkrCaps)
 		defer n.Capabilities.RemoveCapacity(wkrCaps)
-		defer n.RemoveAICapabilities(nil, wkrCaps.constraints.perCapability)
+		defer n.RemoveAICapabilities(wkrCaps)
 
 		// Manage blocks while AI worker is connected
 		n.AIWorkerManager.Manage(stream, capabilities)

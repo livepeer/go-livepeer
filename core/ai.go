@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 )
 
@@ -130,30 +131,45 @@ func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
 	return numInferenceSteps
 }
 
-func (n *LivepeerNode) RemoveAICapabilities(aiCaps []Capability, aiConstraints PerCapabilityConstraints) error {
+func (n *LivepeerNode) RemoveAICapabilities(caps *Capabilities) {
 	//update node capabilities after adjustments
+	aiConstraints := caps.PerCapability()
+	if aiConstraints == nil {
+		return
+	}
+
 	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
 	for capability, constraint := range aiConstraints {
 		_, ok := n.Capabilities.constraints.perCapability[capability]
 		if ok {
 			for model_id, modelConstraint := range constraint.Models {
-				n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity -= modelConstraint.Capacity
-				if n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity <= 0 {
-					delete(n.Capabilities.constraints.perCapability, capability)
+				_, model_exists := n.Capabilities.constraints.perCapability[capability].Models[model_id]
+				if model_exists {
+					n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity -= modelConstraint.Capacity
+					if n.Capabilities.constraints.perCapability[capability].Models[model_id].Capacity <= 0 {
+						delete(n.Capabilities.constraints.perCapability[capability].Models, model_id)
+					}
+				} else {
+					glog.Errorf("failed to remove AI capability capacity, model does not exist pipeline=%v modelID=%v", capability, model_id)
 				}
 			}
 		}
 	}
-	n.Capabilities.mutex.Unlock()
-	return nil
 }
 
-func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints PerCapabilityConstraints) error {
+func (n *LivepeerNode) AddAICapabilities(caps *Capabilities) {
 	//update node capabilities after adjustments
+	aiConstraints := caps.PerCapability()
+	if aiConstraints == nil {
+		return
+	}
+
 	n.Capabilities.mutex.Lock()
+	defer n.Capabilities.mutex.Unlock()
 	for aiCapability, aiConstraint := range aiConstraints {
-		_, ok := n.Capabilities.constraints.perCapability[aiCapability]
-		if !ok {
+		_, capExists := n.Capabilities.constraints.perCapability[aiCapability]
+		if !capExists {
 			n.Capabilities.constraints.perCapability[aiCapability] = &CapabilityConstraints{
 				Models: make(ModelConstraints),
 			}
@@ -168,8 +184,6 @@ func (n *LivepeerNode) AddAICapabilities(aiCaps []Capability, aiConstraints PerC
 			}
 		}
 	}
-	n.Capabilities.mutex.Unlock()
-	return nil
 }
 
 func (n *LivepeerNode) ReserveAICapability(pipeline string, modelID string) error {
@@ -183,12 +197,13 @@ func (n *LivepeerNode) ReserveAICapability(pipeline string, modelID string) erro
 		_, hasModel := n.Capabilities.constraints.perCapability[cap].Models[modelID]
 		if hasModel {
 			n.Capabilities.mutex.Lock()
+			defer n.Capabilities.mutex.Unlock()
 			if n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity > 0 {
 				n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
 			} else {
 				return fmt.Errorf("failed to reserve AI capability capacity, model capacity is 0 pipeline=%v modelID=%v", pipeline, modelID)
 			}
-			n.Capabilities.mutex.Unlock()
+
 			//capability capacity reserved
 			return nil
 		} else {
@@ -209,8 +224,9 @@ func (n *LivepeerNode) ReleaseAICapability(pipeline string, modelID string) erro
 		_, hasModel := n.Capabilities.constraints.perCapability[cap].Models[modelID]
 		if hasModel {
 			n.Capabilities.mutex.Lock()
+			defer n.Capabilities.mutex.Unlock()
 			n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity += 1
-			n.Capabilities.mutex.Unlock()
+
 			return nil
 		} else {
 			return fmt.Errorf("failed to release AI capability capacity, model does not exist pipeline=%v modelID=%v", pipeline, modelID)

@@ -540,13 +540,15 @@ func TestReserveAICapability(t *testing.T) {
 	modelID := "livepeer/model1"
 
 	// Add AI capability and model
-	n.AddAICapabilities([]Capability{Capability_AudioToText}, PerCapabilityConstraints{
+	caps := NewCapabilities(DefaultCapabilities(), nil)
+	caps.SetPerCapabilityConstraints(PerCapabilityConstraints{
 		Capability_AudioToText: {
 			Models: ModelConstraints{
 				modelID: {Warm: true, Capacity: 2},
 			},
 		},
 	})
+	n.AddAICapabilities(caps)
 
 	// Reserve AI capability
 	err := n.ReserveAICapability(pipeline, modelID)
