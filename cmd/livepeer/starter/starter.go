@@ -1228,18 +1228,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 
 				if config.Warm || config.URL != "" {
-					// Register the external endpoint if URL is provided
+					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// If config.Warm is true, setup the AI worker with the selected Docker image
+					// If warm, setup the AI worker with the selected Docker image.
 					if config.Warm && config.URL == "" {
-						// Determine which image to use based on the pipeline
+						// Determine which image to use based on the pipeline.
 						imageToUse := *cfg.AIRunnerImage // Default to the image from config
 						if specificImage, ok := core.PipelineToImage[config.Pipeline]; ok {
 							imageToUse = specificImage
 						}
 
-						// Setup the AI worker with the selected Docker image
+						// Setup the AI worker with the selected Docker image.
 						n.AIWorker, err = worker.NewWorker(imageToUse, gpus, modelsDir)
 						if err != nil {
 							glog.Errorf("Error starting AI worker: %v", err)
@@ -1247,7 +1247,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						}
 					}
 
-					// Warm the AI worker container or register the endpoint
+					// Warm the AI worker container or register the endpoint.
 					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
@@ -1340,6 +1340,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 
 					capabilityConstraints[core.Capability_SegmentAnything2].Models[config.ModelID] = modelConstraint
+
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
