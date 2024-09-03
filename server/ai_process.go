@@ -587,6 +587,7 @@ func submitUpscale(ctx context.Context, params aiRequestParams, sess *AISession,
 	return resp.JSON200, nil
 }
 
+// CalculateSegmentAnything2LatencyScore computes the time taken per pixel for a segment-anything-2 request.
 func CalculateSegmentAnything2LatencyScore(took time.Duration, outPixels int64) float64 {
 	if outPixels <= 0 {
 		return 0
@@ -649,9 +650,9 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	// start := time.Now()
+	start := time.Now()
 	resp, err := client.SegmentAnything2WithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
-	// took := time.Since(start)
+	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
@@ -669,7 +670,8 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 		balUpdate.Status = ReceivedChange
 	}
 
-	// TODO: Add latency Calculation
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
