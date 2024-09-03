@@ -187,6 +187,7 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	// The latency score in this context is just the latency of the last completed request for a session
 	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
 	minLS := 0.0
+	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
 	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender, penalty)
 	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender, penalty)
@@ -234,8 +235,8 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
 		if (sel.warmPool.Size() + sel.coldPool.Size()) == 0 {
-			//release all orchestrators from suspension and try refresh
-			//if penalty in
+			// release all orchestrators from suspension and try refresh
+			// if there are no orchestrators in the pools
 			clog.Infof(ctx, "refreshing sessions, no orchestrators in pools")
 			for i := 0; i < sel.penalty; i++ {
 				sel.suspender.signalRefresh()
