@@ -23,14 +23,9 @@ type AI interface {
 	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(context.Context, worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	SegmentAnything2(context.Context, worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
-	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags, string) error
+	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
-}
-
-// Mapping for per pipeline custom container images.
-var PipelineToImage = map[string]string{
-	"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
 }
 
 // Custom type to parse a big.Rat from a JSON number.

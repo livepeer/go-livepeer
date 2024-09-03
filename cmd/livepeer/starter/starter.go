@@ -1231,14 +1231,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// Get the docker image name ("registry/image:tag") to launch if specified warm
-					imageName := *cfg.AIRunnerImage
-					if pipelineSpecificImage, ok := core.PipelineToImage[config.Pipeline]; ok {
-						imageName = pipelineSpecificImage
-					}
-
 					// Warm the AI worker container or register the endpoint.
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags, imageName); err != nil {
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
