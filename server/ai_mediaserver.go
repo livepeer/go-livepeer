@@ -394,7 +394,7 @@ func (ls *LivepeerServer) SegmentAnything2() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received SegmentAnything2 request image/video size=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received SegmentAnything2 request; image_size=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,

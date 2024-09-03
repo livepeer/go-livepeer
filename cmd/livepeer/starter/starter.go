@@ -1161,7 +1161,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
