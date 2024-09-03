@@ -1161,7 +1161,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1231,24 +1231,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// If warm, setup the AI worker with the selected Docker image.
-					if config.Warm && config.URL == "" {
-						// Determine which image to use based on the pipeline.
-						imageToUse := *cfg.AIRunnerImage // Default to the image from config
-						if specificImage, ok := core.PipelineToImage[config.Pipeline]; ok {
-							imageToUse = specificImage
-						}
-
-						// Setup the AI worker with the selected Docker image.
-						n.AIWorker, err = worker.NewWorker(imageToUse, gpus, modelsDir)
-						if err != nil {
-							glog.Errorf("Error starting AI worker: %v", err)
-							return
-						}
+					// Get the docker image name ("registry/image:tag") to launch if specified warm
+					imageName := *cfg.AIRunnerImage
+					if pipelineSpecificImage, ok := core.PipelineToImage[config.Pipeline]; ok {
+						imageName = pipelineSpecificImage
 					}
 
 					// Warm the AI worker container or register the endpoint.
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags, imageName); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
