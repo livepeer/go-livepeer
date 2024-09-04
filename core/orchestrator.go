@@ -134,6 +134,10 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.Segme
 	return orch.node.SegmentAnything2(ctx, req)
 }
 
+func (orch *orchestrator) TextToVideo(ctx context.Context, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	return orch.node.textToVideo(ctx, req)
+}
+
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil
@@ -969,6 +973,84 @@ func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMu
 
 func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
+}
+
+func (n *LivepeerNode) textToVideo(ctx context.Context, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
+	numVideos := 1
+
+	// Generate frames
+	start := time.Now()
+	resp, err := n.AIWorker.TextToVideo(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Frames) != numVideos {
+		return nil, fmt.Errorf("unexpected number of text-to-video outputs expected=%v actual=%v", numVideos, len(resp.Frames))
+	}
+
+	took := time.Since(start)
+	clog.V(common.DEBUG).Infof(ctx, "Generating frames took=%v", took)
+
+	sessionID := string(RandomManifestID())
+	framerate := 7
+	if req.Fps != nil {
+		framerate = *req.Fps
+	}
+	inProfile := ffmpeg.VideoProfile{
+		Framerate:    uint(framerate),
+		FramerateDen: 1,
+	}
+	height := 480
+	if req.Height != nil {
+		height = *req.Height
+	}
+	width := 720
+	if req.Width != nil {
+		width = *req.Width
+	}
+	outProfile := ffmpeg.VideoProfile{
+		Name:       "text-to-video",
+		Resolution: fmt.Sprintf("%vx%v", width, height),
+		Bitrate:    "6000k",
+		Format:     ffmpeg.FormatMP4,
+	}
+	// HACK: Re-use worker.ImageResponse to return results
+	// Transcode frames into segments.
+	videos := make([]worker.Media, len(resp.Frames))
+	for i, batch := range resp.Frames {
+		// Create slice of frame urls for a batch
+		urls := make([]string, len(batch))
+		for j, frame := range batch {
+			urls[j] = frame.Url
+		}
+
+		// Transcode slice of frame urls into a segment
+		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+
+		// Assume only single rendition right now
+		seg := res.TranscodeData.Segments[0]
+		name := fmt.Sprintf("%v.mp4", RandomManifestID())
+		segData := bytes.NewReader(seg.Data)
+		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		videos[i] = worker.Media{
+			Url: uri,
+		}
+
+		if len(batch) > 0 {
+			videos[i].Seed = batch[0].Seed
+		}
+	}
+
+	return &worker.ImageResponse{Images: videos}, nil
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {

@@ -79,6 +79,7 @@ const (
 	Capability_Upscale
 	Capability_AudioToText
 	Capability_SegmentAnything2
+	Capability_TextToVideo
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -116,6 +117,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment Anything 2",
+	Capability_TextToVideo:                "Text to video",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -207,6 +209,7 @@ func OptionalCapabilities() []Capability {
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
+		Capability_TextToVideo,
 	}
 }
 

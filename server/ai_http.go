@@ -45,6 +45,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/text-to-video", oapiReqValidator(lp.TextToVideo()))
 
 	return nil
 }
@@ -174,6 +175,23 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 		var req worker.SegmentAnything2MultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) TextToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		var req worker.TextToVideoJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -324,6 +342,26 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.TextToVideoJSONRequestBody:
+		cap = core.Capability_TextToVideo
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (*worker.ImageResponse, error) {
+			return orch.TextToVideo(ctx, v)
+		}
+
+		// TODO: The orchestrator should require the broadcaster to always specify a height and width
+		height := int64(480)
+		if v.Height != nil {
+			height = int64(*v.Height)
+		}
+		width := int64(720)
+		if v.Width != nil {
+			width = int64(*v.Width)
+		}
+		// The # of frames outputted by THUDM/CogVideoX models
+		frames := int64(49)
+
+		outPixels = height * width * int64(frames)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
