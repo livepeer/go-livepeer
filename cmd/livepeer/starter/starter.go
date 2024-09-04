@@ -1227,10 +1227,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 				}
 
-				// If the config contains a URL we call Warm() anyway because AIWorker will just register
-				// the endpoint for an external container
 				if config.Warm || config.URL != "" {
+					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+
+					// Warm the AI worker container or register the endpoint.
 					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
@@ -1312,6 +1313,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+					}
+				case "segment-anything-2":
+					_, ok := capabilityConstraints[core.Capability_SegmentAnything2]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_SegmentAnything2)
+						capabilityConstraints[core.Capability_SegmentAnything2] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_SegmentAnything2].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
 				}
 

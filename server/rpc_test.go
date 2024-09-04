@@ -202,6 +202,9 @@ func (r *stubOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultip
 func (r *stubOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return nil, nil
+}
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
 }
@@ -1383,6 +1386,9 @@ func (r *mockOrchestrator) Upscale(ctx context.Context, req worker.UpscaleMultip
 	return nil, nil
 }
 func (r *mockOrchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
