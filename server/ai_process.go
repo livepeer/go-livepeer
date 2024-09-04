@@ -32,6 +32,7 @@ const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-x
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultTextToVideoModelID = "THUDM/CogVideoX-2b"
 
 type ServiceUnavailableError struct {
 	err error
@@ -323,6 +324,22 @@ func submitImageToImage(ctx context.Context, params aiRequestParams, sess *AISes
 
 // CalculateImageToVideoLatencyScore computes the time taken per pixel for an image-to-video request.
 func CalculateImageToVideoLatencyScore(took time.Duration, req worker.ImageToVideoMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(25)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
+}
+
+// CalculateTextToVideoLatencyScore computes the time taken per pixel for an text-to-video request.
+func CalculateTextToVideoLatencyScore(took time.Duration, req worker.TextToVideoJSONRequestBody, outPixels int64) float64 {
 	if outPixels <= 0 {
 		return 0
 	}
@@ -792,6 +809,115 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+func processTextToVideo(ctx context.Context, params aiRequestParams, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// HACK: Re-use worker.ImageResponse to return results
+	// TODO: Refactor to return worker.VideoResponse
+	imgResp := resp.(*worker.ImageResponse)
+
+	// HACK: Re-use worker.ImageResponse to return results
+	videos := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
+		data, err := downloadSeg(ctx, media.Url)
+		if err != nil {
+			return nil, err
+		}
+
+		name := filepath.Base(media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		videos[i] = worker.Media{
+			Url:  newUrl,
+			Seed: media.Seed,
+		}
+	}
+
+	imgResp.Images = videos
+
+	return imgResp, nil
+}
+
+func submitTextToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.TextToVideoJSONRequestBody) (*worker.ImageResponse, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-video", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if req.Height == nil {
+		req.Height = new(int)
+		*req.Height = 480
+	}
+	if req.Width == nil {
+		req.Width = new(int)
+		*req.Width = 720
+	}
+	// The # of frames outputted by THUDM/CogVideoX models
+	frames := int64(49)
+
+	outPixels := int64(*req.Height) * int64(*req.Width) * frames
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-video", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.TextToVideoWithResponse(ctx, req, setHeaders)
+	took := time.Since(start)
+
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-video", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.ImageResponse
+	if err := json.Unmarshal(resp.Body, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-video", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateTextToVideoLatencyScore(took, req, outPixels)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "text-to-video", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -851,6 +977,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.TextToVideoJSONRequestBody:
+		cap = core.Capability_TextToVideo
+		modelID = defaultTextToVideoModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitTextToVideo(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

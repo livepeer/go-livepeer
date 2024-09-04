@@ -24,6 +24,7 @@ type AI interface {
 	AudioToText(context.Context, worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	SegmentAnything2(context.Context, worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
+	TextToVideo(context.Context, worker.TextToVideoJSONRequestBody) (*worker.VideoResponse, error)
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
 }
