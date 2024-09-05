@@ -534,8 +534,7 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 }
 func TestReserveAICapability(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
-	n.Capabilities.SetPerCapabilityConstraints(make(PerCapabilityConstraints))
-	n.Capabilities.SetMinVersionConstraint("1.0")
+	n.Capabilities = createAIWorkerCapabilities()
 
 	pipeline := "audio-to-text"
 	modelID := "livepeer/model1"
@@ -568,17 +567,17 @@ func TestReserveAICapability(t *testing.T) {
 	// Reserve AI capability when capacity is already zero
 	err = n.ReserveAICapability(pipeline, modelID)
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "failed to release AI capability capacity, model does not exist pipeline=audio-to-text modelID=livepeer/model1")
+	assert.EqualError(t, err, fmt.Sprintf("failed to reserve AI capability capacity, model capacity is 0 pipeline=%v modelID=%v", pipeline, modelID))
 
 	// Reserve AI capability for non-existent pipeline
 	err = n.ReserveAICapability("invalid-pipeline", modelID)
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "failed to release AI capability capacity, pipeline does not exist pipeline=invalid-pipeline modelID=livepeer/model1")
+	assert.EqualError(t, err, "pipeline not available")
 
 	// Reserve AI capability for non-existent model
 	err = n.ReserveAICapability(pipeline, "invalid-model")
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "failed to release AI capability capacity, model does not exist pipeline=audio-to-text modelID=invalid-model")
+	assert.EqualError(t, err, fmt.Sprintf("failed to reserve AI capability capacity, model does not exist pipeline=%v modelID=invalid-model", pipeline))
 }
 
 func createAIWorkerCapabilities() *Capabilities {

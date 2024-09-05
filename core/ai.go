@@ -183,14 +183,19 @@ func (n *LivepeerNode) ReserveAICapability(pipeline string, modelID string) erro
 		_, hasModel := n.Capabilities.constraints.perCapability[cap].Models[modelID]
 		if hasModel {
 			n.Capabilities.mutex.Lock()
-			n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
+			if n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity > 0 {
+				n.Capabilities.constraints.perCapability[cap].Models[modelID].Capacity -= 1
+			} else {
+				return fmt.Errorf("failed to reserve AI capability capacity, model capacity is 0 pipeline=%v modelID=%v", pipeline, modelID)
+			}
 			n.Capabilities.mutex.Unlock()
+			//capability capacity reserved
 			return nil
 		} else {
-			return fmt.Errorf("failed to release AI capability capacity, model does not exist pipeline=%v modelID=%v", pipeline, modelID)
+			return fmt.Errorf("failed to reserve AI capability capacity, model does not exist pipeline=%v modelID=%v", pipeline, modelID)
 		}
 	} else {
-		return fmt.Errorf("failed to release AI capability capacity, pipeline does not exist pipeline=%v modelID=%v", pipeline, modelID)
+		return fmt.Errorf("failed to reserve AI capability capacity, pipeline does not exist pipeline=%v modelID=%v", pipeline, modelID)
 	}
 }
 
