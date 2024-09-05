@@ -112,6 +112,7 @@ type (
 		kClientIP                     tag.Key
 		kOrchestratorURI              tag.Key
 		kOrchestratorAddress          tag.Key
+		kOrchestratorVersion          tag.Key
 		kFVErrorType                  tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
@@ -252,6 +253,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kClientIP = tag.MustNewKey("client_ip")
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
 	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
+	census.kOrchestratorVersion = tag.MustNewKey("orchestrator_version")
 	census.kFVErrorType = tag.MustNewKey("fverror_type")
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
@@ -369,8 +371,8 @@ func InitCensus(nodeType NodeType, version string) {
 		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
 	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
-	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
-	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
+	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress, census.kOrchestratorVersion}, baseTags...)
+	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress, census.kOrchestratorVersion}, baseTagsWithManifestID...)
 
 	views := []*view.View{
 		{
@@ -914,6 +916,10 @@ func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Cont
 		tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
 		tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
 	)
+	capabilities := orchInfo.GetCapabilities()
+	if capabilities != nil {
+		others = append(others, tag.Insert(census.kOrchestratorVersion, capabilities.Version))
+	}
 
 	return others
 }
