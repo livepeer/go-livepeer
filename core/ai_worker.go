@@ -349,6 +349,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 		return signalEOF(err)
 	}
 
+	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID)
 	// set a minimum timeout to accommodate transport / processing overhead
 	//TODO: this should be set for each pipeline, using something long for now
 	dur := 15 * time.Minute
@@ -779,6 +780,10 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 	}
 
 	return &worker.ImageResponse{Images: videos}, nil
+}
+
+func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
