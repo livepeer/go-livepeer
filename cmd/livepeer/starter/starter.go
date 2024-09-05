@@ -848,6 +848,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
+			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)

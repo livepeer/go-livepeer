@@ -66,6 +66,7 @@ type SegTranscodingMetadata struct {
 	AuthToken          *net.AuthToken
 	CalcPerceptualHash bool
 	SegmentParameters  *SegmentParameters
+	Metadata           map[string]string
 }
 
 func (md *SegTranscodingMetadata) Flatten() []byte {
@@ -191,4 +192,12 @@ func (id StreamID) String() string {
 
 func RandomManifestID() ManifestID {
 	return ManifestID(common.RandomIDGenerator(DefaultManifestIDLength))
+}
+
+func MakeMetadata(id string) map[string]string {
+	s := fmt.Sprintf("Livepeer Transcoder %s (%s)", LivepeerVersion, id)
+	return map[string]string{
+		"service_provider": s,                   // for mpegts
+		"comment":          "Processed by " + s, // for mp4
+	}
 }
