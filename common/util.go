@@ -533,9 +533,5 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 }
 
 func ValidateServiceURI(serviceURI *url.URL) bool {
-	if strings.Contains(serviceURI.Host, "0.0.0.0") {
-		return false
-	} else {
-		return true
-	}
+	return !strings.Contains(serviceURI.Host, "0.0.0.0")
 }
