@@ -639,6 +639,20 @@ func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID stri
 	return url, nil
 }
 
+func (o *orchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	session, exists := o.node.getStorageForRequest(requestID)
+	if exists {
+		return session, true
+	} else {
+		return nil, false
+	}
+}
+
+func (n *LivepeerNode) getStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	session, exists := n.StorageConfigs[requestID]
+	return session.OS, exists
+}
+
 func (o *orchestrator) CreateStorageForRequest(requestID string) error {
 	return o.node.createStorageForRequest(requestID)
 }

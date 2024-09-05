@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -372,6 +373,29 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
+	//backwards compatibility to old gateway api
+	if pipeline == "text-to-image" || pipeline == "image-to-image" || pipeline == "upscale" {
+		if r.Header.Get("Authorization") != protoVerAIWorker {
+			imgResp := resp.(*worker.ImageResponse)
+			prefix := "data:image/png;base64," //https://github.com/livepeer/ai-worker/blob/78b58131f12867ce5a4d0f6e2b9038e70de5c8e3/runner/app/routes/util.py#L56
+			storage, exists := orch.GetStorageForRequest(requestID)
+			if exists {
+				for i, image := range imgResp.Images {
+					fileData, err := storage.ReadData(ctx, image.Url)
+					if err == nil {
+						clog.V(common.VERBOSE).Infof(ctx, "replacing response with base64 for gateway on older api gateway_api=%v", r.Header.Get("Authorization"))
+						data, _ := io.ReadAll(fileData.Body)
+						imgResp.Images[i].Url = prefix + base64.StdEncoding.EncodeToString(data)
+					} else {
+						glog.Error(err)
+					}
+				}
+			}
+			//return the modified response
+			resp = imgResp
+		}
+	}
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())

@@ -66,6 +66,7 @@ type Orchestrator interface {
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	CreateStorageForRequest(requestID string) error
+	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error)

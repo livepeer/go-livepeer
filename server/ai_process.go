@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -91,9 +92,26 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		name := filepath.Base(media.Url)
-		data, err := downloadResult(ctx, media.Url)
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			//orchestrator sent base64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			//orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = downloadResult(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 
 		if err != nil {
 			return nil, err
@@ -215,9 +233,26 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		name := filepath.Base(media.Url)
-		data, err := downloadResult(ctx, media.Url)
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			//orchestrator sent bae64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			//orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = downloadResult(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -492,9 +527,26 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		name := filepath.Base(media.Url)
-		data, err := downloadResult(ctx, media.Url)
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			//orchestrator sent bae64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			//orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = downloadResult(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -957,6 +1009,7 @@ func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (wo
 	setHeaders := func(_ context.Context, req *http.Request) error {
 		req.Header.Set(segmentHeader, segCreds)
 		req.Header.Set(paymentHeader, payment)
+		req.Header.Set("Authorization", protoVerAIWorker)
 		return nil
 	}
 
