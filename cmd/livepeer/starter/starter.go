@@ -922,7 +922,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Broadcaster Deposit: ", eth.FormatUnits(info.Deposit, "ETH"))
 			glog.Info("Broadcaster Reserve: ", eth.FormatUnits(info.Reserve.FundsRemaining, "ETH"))
 
-			n.Sender = pm.NewSender(n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
+			n.Sender = pm.NewSender(ctx, n.Eth, timeWatcher, senderWatcher, maxEV, maxTotalEV, *cfg.DepositMultiplier)
 
 			pixelsPerUnit, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
 			if !ok || !pixelsPerUnit.IsInt() {

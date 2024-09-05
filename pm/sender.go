@@ -1,13 +1,20 @@
 package pm
 
 import (
+	"context"
 	"fmt"
 	"math/big"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
+)
+
+const (
+	sessionCleanupInterval = 10 * time.Minute
+	sessionInactiveTimeout = 1 * time.Hour
 )
 
 // ErrSenderValidation is returned when the sender cannot send tickets
@@ -46,12 +53,13 @@ type sender struct {
 	maxTotalEV        *big.Rat
 	depositMultiplier int
 
-	sessions sync.Map
+	sessions          sync.Map
+	sessionsLastUsage sync.Map
 }
 
 // NewSender creates a new Sender instance.
-func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, maxTotalEV *big.Rat, depositMultiplier int) Sender {
-	return &sender{
+func NewSender(ctx context.Context, signer Signer, timeManager TimeManager, senderManager SenderManager, maxEV *big.Rat, maxTotalEV *big.Rat, depositMultiplier int) Sender {
+	s := &sender{
 		signer:            signer,
 		timeManager:       timeManager,
 		senderManager:     senderManager,
@@ -59,6 +67,8 @@ func NewSender(signer Signer, timeManager TimeManager, senderManager SenderManag
 		maxTotalEV:        maxTotalEV,
 		depositMultiplier: depositMultiplier,
 	}
+	s.startSessionsCleanupLoop(ctx)
+	return s
 }
 
 func (s *sender) StartSession(ticketParams TicketParams) string {
@@ -68,6 +78,7 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 		ticketParams: ticketParams,
 		senderNonce:  0,
 	})
+	s.sessionsLastUsage.Store(sessionID, time.Now())
 
 	return sessionID
 }
@@ -212,6 +223,34 @@ func (s *sender) loadSession(sessionID string) (*session, error) {
 	if !ok {
 		return nil, errors.Errorf("error loading session: %x", sessionID)
 	}
+	s.sessionsLastUsage.Store(sessionID, time.Now())
 
 	return tempSession.(*session), nil
+}
+
+func (s *sender) startSessionsCleanupLoop(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(sessionCleanupInterval)
+		for {
+			select {
+			case <-t.C:
+				s.cleanupSessions()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (s *sender) cleanupSessions() {
+	now := time.Now()
+	s.sessionsLastUsage.Range(func(key, value interface{}) bool {
+		sessionID := key.(string)
+		lastUsage := value.(time.Time)
+		if now.Sub(lastUsage) > sessionInactiveTimeout {
+			s.sessions.Delete(sessionID)
+			s.sessionsLastUsage.Delete(sessionID)
+		}
+		return true
+	})
 }
