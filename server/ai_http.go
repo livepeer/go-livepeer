@@ -318,7 +318,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_SegmentAnything2
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.SegmentAnything2(ctx, v)
+			return orch.SegmentAnything2(ctx, requestID, v)
 		}
 
 		imageRdr, err := v.Image.Reader()

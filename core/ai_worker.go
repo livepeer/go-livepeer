@@ -668,6 +668,49 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
+func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
+	//return orch.node.SegmentAnything2(ctx, req)
+
+	//local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.SegmentAnything2(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
+		} else {
+			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "segment-anything-2", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	//remote ai worker proceses job
+	imgBytes, err := req.Image.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, input_url)
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, input_url, req)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "segment-anything-2", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node

@@ -237,6 +237,16 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		resultType = "application/json"
 		req.Audio.InitFromBytes(input, "audio")
 		resp, err = n.AudioToText(ctx, req)
+	case "segment-anything-2":
+		var req worker.SegmentAnything2MultipartRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+		if err != nil {
+			reqOk = false
+			break
+		}
+		resultType = "application/json"
+		req.Image.InitFromBytes(input, "image")
+		resp, err = n.SegmentAnything2(ctx, req)
 	default:
 		resp = nil
 		err = errors.New("AI request pipeline type not supported")

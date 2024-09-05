@@ -642,6 +642,10 @@ func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMu
 	return &worker.TextResponse{Text: "Transcribed text"}, nil
 }
 
+func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return &worker.MasksResponse{Logits: "logits", Masks: "masks", Scores: "scores"}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }

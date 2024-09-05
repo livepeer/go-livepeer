@@ -421,6 +421,19 @@ func (a stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMul
 	}
 }
 
+func (a stubAIWorker) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	a.called++
+	if a.err != nil {
+		return nil, a.err
+	} else {
+		return &worker.MasksResponse{
+			Masks:  "[[[2.84, 2.83, ...], [2.92, 2.91, ...], [3.22, 3.56, ...], ...]]",
+			Scores: "[0.50, 0.37, ...]",
+			Logits: "[[[2.84, 2.66, ...], [3.59, 5.20, ...], [5.07, 5.68, ...], ...]]",
+		}, nil
+	}
+}
+
 func (a stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	a.called++
 	return nil
