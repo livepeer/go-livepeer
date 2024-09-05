@@ -349,7 +349,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 		return signalEOF(err)
 	}
 
-	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s err=%q", rw.addr, taskID, pipeline, modelID)
+	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s", rw.addr, taskID, pipeline, modelID)
 	// set a minimum timeout to accommodate transport / processing overhead
 	//TODO: this should be set for each pipeline, using something long for now
 	dur := 15 * time.Minute
@@ -639,12 +639,11 @@ func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID stri
 	return url, nil
 }
 
-func (o *orchestrator) CreateStorageForRequest() string {
-	return o.node.createStorageForRequest()
+func (o *orchestrator) CreateStorageForRequest(requestID string) error {
+	return o.node.createStorageForRequest(requestID)
 }
 
-func (n *LivepeerNode) createStorageForRequest() string {
-	requestID := string(RandomManifestID())
+func (n *LivepeerNode) createStorageForRequest(requestID string) error {
 	n.storageMutex.Lock()
 	defer n.storageMutex.Unlock()
 	_, exists := n.StorageConfigs[requestID]
@@ -661,7 +660,7 @@ func (n *LivepeerNode) createStorageForRequest() string {
 		}()
 	}
 
-	return requestID
+	return nil
 }
 
 //

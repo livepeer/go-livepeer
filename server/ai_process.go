@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -32,6 +31,10 @@ const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-x
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+
+var errWrongFormat = fmt.Errorf("result not in correct format")
+
+var downloadResult = core.GetSegmentData
 
 type ServiceUnavailableError struct {
 	err error
@@ -81,19 +84,17 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
+		name := filepath.Base(media.Url)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -207,19 +208,16 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
-
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		name := filepath.Base(media.Url)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -345,7 +343,10 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	// HACK: Re-use worker.ImageResponse to return results
 	// TODO: Refactor to return worker.VideoResponse
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	videos := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
@@ -484,19 +485,16 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.Upsc
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		var data bytes.Buffer
-		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
-		}
-		writer.Flush()
-
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		name := filepath.Base(media.Url)
+		data, err := downloadResult(ctx, media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -700,7 +698,10 @@ func processAudioToText(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	txtResp := resp.(*worker.TextResponse)
+	txtResp, ok := resp.(*worker.TextResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	return txtResp, nil
 }
