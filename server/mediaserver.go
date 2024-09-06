@@ -989,7 +989,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	cxn.mu.Lock()
 	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
 		cxn.mediaFormat = mediaFormat
-	} else if cxn.mediaFormat != mediaFormat {
+	} else if !videoCompatible(cxn.mediaFormat, mediaFormat) {
 		cxn.mediaFormat = mediaFormat
 		segPar.ForceSessionReinit = true
 	}
@@ -1648,4 +1648,15 @@ func getRemoteAddr(r *http.Request) string {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
 	return strings.Split(addr, ":")[0]
+}
+
+func videoCompatible(a, b ffmpeg.MediaFormatInfo) bool {
+	return a.Vcodec == b.Vcodec &&
+		a.PixFormat == b.PixFormat &&
+		a.Width == b.Width &&
+		a.Height == b.Height
+
+	// NB: there is also a Format field but that does
+	// not need to match since transcoder will reopen
+	// a new demuxer each time
 }
