@@ -778,7 +778,6 @@ type RemoteTranscoder struct {
 	addr         string
 	capacity     int
 	load         int
-	orchId       string
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
