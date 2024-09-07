@@ -928,7 +928,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	// Disable retrying discovery with extended timeout
-	maxGetOrchestratorCutoffTimeout = getOrchestratorsCutoffTimeout
+	maxGetOrchestratorCutoffTimeout = 500 * time.Millisecond
 
 	server.BroadcastCfg.SetMaxPrice(nil)
 
@@ -1642,18 +1642,10 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 		Sender:   sender,
 	}
 
-	oldTimeout := getOrchestratorsCutoffTimeout
-
-	//confirm we have default 500ms
-	assert.Equal(getOrchestratorsCutoffTimeout, time.Duration(500)*time.Millisecond)
-
-	//change it to 1000ms
-	_, err = NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000)
+	//set timeout to 1000ms
+	poolCache, err := NewDBOrchestratorPoolCache(context.TODO(), node, &stubRoundsManager{}, []string{}, 1000)
 	assert.Nil(err)
 	//confirm the timeout is now 1000ms
-	assert.Equal(getOrchestratorsCutoffTimeout, time.Duration(1000)*time.Millisecond)
-
-	//reset timeout
-	getOrchestratorsCutoffTimeout = oldTimeout
+	assert.Equal(poolCache.discoveryTimeout, time.Duration(1000)*time.Millisecond)
 
 }
