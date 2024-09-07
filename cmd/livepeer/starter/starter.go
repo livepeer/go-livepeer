@@ -1140,7 +1140,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
