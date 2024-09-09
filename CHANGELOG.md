@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.7.9
+
+- [#3165](https://github.com/livepeer/go-livepeer/pull/3165) Add node version and orch addr to transcoded metadata
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3158](https://github.com/livepeer/go-livepeer/pull/3158) Add a metric tag for Orchestrator version
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#3164](https://github.com/livepeer/go-livepeer/pull/3164) Fix media compatibility check
+
 ## v0.7.8
 
 ### Features ⚒
