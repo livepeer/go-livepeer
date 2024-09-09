@@ -85,6 +85,7 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 }
 
 type sessionsCreator func() ([]*BroadcastSession, error)
+type sessionsDeleter func(sessionId string)
 type SessionPool struct {
 	mid core.ManifestID
 
@@ -101,10 +102,11 @@ type SessionPool struct {
 	finished   bool // set at stream end
 
 	createSessions sessionsCreator
+	deleteSessions sessionsDeleter
 	sus            *suspender
 }
 
-func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator,
+func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator, deleteSession sessionsDeleter,
 	sel BroadcastSessionsSelector) *SessionPool {
 
 	return &SessionPool{
@@ -114,6 +116,7 @@ func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender,
 		sessMap:        make(map[string]*BroadcastSession),
 		sel:            sel,
 		createSessions: createSession,
+		deleteSessions: deleteSession,
 		sus:            sus,
 	}
 }
@@ -378,6 +381,7 @@ func (sp *SessionPool) removeSession(session *BroadcastSession) {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
 
+	sp.deleteSessions(session.PMSessionID)
 	delete(sp.sessMap, session.Transcoder())
 }
 
@@ -469,6 +473,9 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	createSessionsUntrusted := func() ([]*BroadcastSession, error) {
 		return selectOrchestrator(ctx, node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted))
 	}
+	deleteSessions := func(sessionID string) {
+		node.Sender.StopSession(sessionID)
+	}
 	var stakeRdr stakeReader
 	if node.Eth != nil {
 		stakeRdr = &storeStakeReader{store: node.Database}
@@ -476,8 +483,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, deleteSessions, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, deleteSessions, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)

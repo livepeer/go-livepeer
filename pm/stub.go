@@ -511,6 +511,11 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	return args.String(0)
 }
 
+// StopSession deletes session from the internal ma
+func (m *MockSender) StopSession(sessionID string) {
+	m.Called(sessionID)
+}
+
 // EV returns the ticket EV for a session
 func (m *MockSender) EV(sessionID string) (*big.Rat, error) {
 	args := m.Called(sessionID)

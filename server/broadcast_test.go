@@ -64,13 +64,6 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 	}
 }
 
-func StubBroadcastSessionsManager() *BroadcastSessionsManager {
-	sess1 := StubBroadcastSession("transcoder1")
-	sess2 := StubBroadcastSession("transcoder2")
-
-	return bsmWithSessList([]*BroadcastSession{sess1, sess2})
-}
-
 func selFactoryEmpty() BroadcastSessionsSelector {
 	return &LIFOSelector{}
 }
@@ -101,6 +94,8 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 		return cloneSessions(sessList), nil
 	}
 
+	var deleteSessions = func(sessionID string) {}
+
 	untrustedSessMap := make(map[string]*BroadcastSession)
 	for _, sess := range untrustedSessList {
 		untrustedSessMap[sess.OrchestratorInfo.Transcoder] = sess
@@ -118,11 +113,10 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 	if noRefresh {
 		createSessions = createSessionsEmpty
 		createSessionsUntrusted = createSessionsEmpty
-
 	}
-	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
+	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, deleteSessions, sel)
 	trustedPool.sessMap = sessMap
-	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
+	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, deleteSessions, unsel)
 	untrustedPool.sessMap = untrustedSessMap
 
 	return &BroadcastSessionsManager{
@@ -393,6 +387,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	sess := StubBroadcastSession(ts.URL)
 	sender := &pm.MockSender{}
 	sender.On("StartSession", mock.Anything).Return("foo").Times(3)
+	sender.On("StopSession", mock.Anything).Times(3)
 	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
