@@ -873,9 +873,8 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 		}
 
 		videos[i] = worker.Media{
-			Url: resultFile,
+			Url: fname,
 		}
-		glog.Infof(videos[i].Url)
 
 		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
 		if len(batch) > 0 {

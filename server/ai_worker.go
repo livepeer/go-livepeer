@@ -315,6 +315,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					//transcoded result is saved as local file  TODO: enhance this to return the []bytes from transcoding in n.ImageToVideo
 					//create the part
 					f, err := os.ReadFile(image.Url)
+					imgResp.Images[i].Url = fmt.Sprintf("%v.mp4", core.RandomManifestID())
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
 						sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
