@@ -61,6 +61,7 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 		},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
+		CleanupSession:    func(sessionId string) {},
 	}
 }
 
@@ -1120,7 +1121,9 @@ func TestUpdateSession(t *testing.T) {
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}}
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}, CleanupSession: func(sessionID string) {
+
+	}}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}

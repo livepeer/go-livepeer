@@ -511,8 +511,8 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	return args.String(0)
 }
 
-// StopSession deletes session from the internal ma
-func (m *MockSender) StopSession(sessionID string) {
+// CleanupSession deletes session from the internal ma
+func (m *MockSender) CleanupSession(sessionID string) {
 	m.Called(sessionID)
 }
 
