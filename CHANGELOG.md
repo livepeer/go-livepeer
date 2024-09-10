@@ -15,6 +15,8 @@
 #### Broadcaster
 
 - [#3164](https://github.com/livepeer/go-livepeer/pull/3164) Fix media compatibility check
+- [#3166](https://github.com/livepeer/go-livepeer/pull/3166) Clean up inactive sessions
+- [#3086](https://github.com/livepeer/go-livepeer/pull/3086) Clear known sessions with inadequate latency scores
 
 ## v0.7.8
 
