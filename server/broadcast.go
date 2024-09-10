@@ -85,6 +85,7 @@ func (cfg *BroadcastConfig) SetMaxPrice(price *core.AutoConvertedPrice) {
 }
 
 type sessionsCreator func() ([]*BroadcastSession, error)
+type sessionsCleanup func(sessionId string)
 type SessionPool struct {
 	mid core.ManifestID
 
@@ -101,10 +102,11 @@ type SessionPool struct {
 	finished   bool // set at stream end
 
 	createSessions sessionsCreator
+	cleanupSession sessionsCleanup
 	sus            *suspender
 }
 
-func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator,
+func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender, createSession sessionsCreator, cleanupSession sessionsCleanup,
 	sel BroadcastSessionsSelector) *SessionPool {
 
 	return &SessionPool{
@@ -114,6 +116,7 @@ func NewSessionPool(mid core.ManifestID, poolSize, numOrchs int, sus *suspender,
 		sessMap:        make(map[string]*BroadcastSession),
 		sel:            sel,
 		createSessions: createSession,
+		cleanupSession: cleanupSession,
 		sus:            sus,
 	}
 }
@@ -378,6 +381,7 @@ func (sp *SessionPool) removeSession(session *BroadcastSession) {
 	sp.lock.Lock()
 	defer sp.lock.Unlock()
 
+	sp.cleanupSession(session.PMSessionID)
 	delete(sp.sessMap, session.Transcoder())
 }
 
@@ -463,11 +467,14 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	untrustedNumOrchs := int(untrustedPoolSize)
 	susTrusted := newSuspender()
 	susUntrusted := newSuspender()
+	cleanupSession := func(sessionID string) {
+		node.Sender.CleanupSession(sessionID)
+	}
 	createSessionsTrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(ctx, node, params, trustedNumOrchs, susTrusted, common.ScoreAtLeast(common.Score_Trusted))
+		return selectOrchestrator(ctx, node, params, trustedNumOrchs, susTrusted, common.ScoreAtLeast(common.Score_Trusted), cleanupSession)
 	}
 	createSessionsUntrusted := func() ([]*BroadcastSession, error) {
-		return selectOrchestrator(ctx, node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted))
+		return selectOrchestrator(ctx, node, params, untrustedNumOrchs, susUntrusted, common.ScoreEqualTo(common.Score_Untrusted), cleanupSession)
 	}
 	var stakeRdr stakeReader
 	if node.Eth != nil {
@@ -476,8 +483,8 @@ func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *cor
 	bsm := &BroadcastSessionsManager{
 		mid:              params.ManifestID,
 		VerificationFreq: params.VerificationFreq,
-		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
-		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		trustedPool:      NewSessionPool(params.ManifestID, int(trustedPoolSize), trustedNumOrchs, susTrusted, createSessionsTrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
+		untrustedPool:    NewSessionPool(params.ManifestID, int(untrustedPoolSize), untrustedNumOrchs, susUntrusted, createSessionsUntrusted, cleanupSession, NewMinLSSelector(stakeRdr, 1.0, node.SelectionAlgorithm, node.OrchPerfScore)),
 	}
 	bsm.trustedPool.refreshSessions(ctx)
 	bsm.untrustedPool.refreshSessions(ctx)
@@ -768,7 +775,7 @@ func (bsm *BroadcastSessionsManager) usingVerified() bool {
 }
 
 func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.StreamParameters, count int, sus *suspender,
-	scorePred common.ScorePred) ([]*BroadcastSession, error) {
+	scorePred common.ScorePred, cleanupSession sessionsCleanup) ([]*BroadcastSession, error) {
 
 	if n.OrchestratorPool == nil {
 		clog.Infof(ctx, "No orchestrators specified; not transcoding")
@@ -836,6 +843,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			OrchestratorOS:    orchOS,
 			BroadcasterOS:     bcastOS,
 			Sender:            n.Sender,
+			CleanupSession:    cleanupSession,
 			PMSessionID:       sessionID,
 			Balances:          n.Balances,
 			Balance:           balance,
@@ -1470,7 +1478,9 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 		// and the next time this BroadcastSession is used, the ticket params will be validated
 		// during ticket creation in genPayment(). If ticket params validation during ticket
 		// creation fails, then this BroadcastSession will be removed
+		oldSession := sess.PMSessionID
 		sess.PMSessionID = sess.Sender.StartSession(*pmTicketParams(oInfo.TicketParams))
+		sess.CleanupSession(oldSession)
 
 		// Session ID changed so we need to make sure the balance tracks the new session ID
 		if oldInfo.AuthToken.SessionId != oInfo.AuthToken.SessionId {
