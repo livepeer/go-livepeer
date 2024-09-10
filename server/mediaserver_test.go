@@ -1471,6 +1471,101 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	assert.Equal("unable to parse the H264 encoder profile: unknown VideoProfile profile name", err.Error())
 }
 
+func TestMediaCompatible(t *testing.T) {
+	empty := ffmpeg.MediaFormatInfo{}
+	normal := ffmpeg.MediaFormatInfo{
+		Acodec:       "aac",
+		Vcodec:       "h264",
+		PixFormat:    ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNV12},
+		Format:       "mpegts",
+		Width:        100,
+		Height:       200,
+		AudioBitrate: 300,
+		DurSecs:      5,
+	}
+	tests := []struct {
+		name  string
+		a     ffmpeg.MediaFormatInfo
+		b     ffmpeg.MediaFormatInfo
+		match bool
+	}{{
+		name:  "empty",
+		a:     empty,
+		match: true,
+	}, {
+		name:  "normal",
+		match: true,
+		a:     normal,
+		b: ffmpeg.MediaFormatInfo{
+			Format:       "mp4",
+			DurSecs:      10,
+			AudioBitrate: 400,
+			Acodec:       normal.Acodec,
+			Vcodec:       normal.Vcodec,
+			PixFormat:    normal.PixFormat,
+			Width:        normal.Width,
+			Height:       normal.Height,
+		},
+	}, {
+		name: "w",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "h",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Height:    normal.Height + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+		},
+	}, {
+		name: "pixfmt",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatYUV420P},
+			Height:    normal.Height,
+		},
+	}, {
+		name: "video codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Vcodec:    "flv",
+			Acodec:    normal.Acodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "audio codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Acodec:    "opus",
+			Vcodec:    normal.Vcodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.match, mediaCompatible(tt.a, tt.b))
+		})
+	}
+}
+
 func mustParseUrl(t *testing.T, str string) *url.URL {
 	url, err := url.Parse(str)
 	if err != nil {
