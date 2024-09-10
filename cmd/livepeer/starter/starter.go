@@ -99,11 +99,13 @@ type LivepeerConfig struct {
 	OrchPerfStatsURL        *string
 	Region                  *string
 	MaxPricePerUnit         *string
+	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
 	MaxSessions             *string
 	CurrentManifest         *bool
 	Nvidia                  *string
 	Netint                  *string
+	HevcDecoding            *bool
 	TestTranscoder          *bool
 	EthAcctAddr             *string
 	EthPassword             *string
@@ -181,6 +183,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
+	defaultHevcDecoding := false
 	defaultTestTranscoder := true
 
 	// Onchain:
@@ -202,6 +205,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxTotalEV := "20000000000000"
 	defaultDepositMultiplier := 1
 	defaultMaxPricePerUnit := "0"
+	defaultIgnoreMaxPriceIfNeeded := false
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -270,6 +274,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
+		HevcDecoding:         &defaultHevcDecoding,
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// Onchain:
@@ -291,6 +296,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		MaxTotalEV:              &defaultMaxTotalEV,
 		DepositMultiplier:       &defaultDepositMultiplier,
 		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
 		PixelsPerUnit:           &defaultPixelsPerUnit,
 		PriceFeedAddr:           &defaultPriceFeedAddr,
 		AutoAdjustPrice:         &defaultAutoAdjustPrice,
@@ -489,9 +495,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Initialize LB transcoder
 			n.Transcoder = core.NewLoadBalancingTranscoder(devices, tf)
 		} else {
-			// for local software mode, enable all capabilities
-			transcoderCaps = append(core.DefaultCapabilities(), core.OptionalCapabilities()...)
+			// for local software mode, enable most capabilities but remove expensive decoders and non-H264 encoders
+			capsToRemove := []core.Capability{core.Capability_HEVC_Decode, core.Capability_HEVC_Encode, core.Capability_VP8_Encode, core.Capability_VP9_Decode, core.Capability_VP9_Encode}
+			caps := core.OptionalCapabilities()
+			for _, c := range capsToRemove {
+				caps = core.RemoveCapability(caps, c)
+			}
+			transcoderCaps = append(core.DefaultCapabilities(), caps...)
 			n.Transcoder = core.NewLocalTranscoder(*cfg.Datadir)
+		}
+
+		if cfg.HevcDecoding == nil {
+			// do nothing; keep defaults
+		} else if *cfg.HevcDecoding {
+			if !core.HasCapability(transcoderCaps, core.Capability_HEVC_Decode) {
+				if accel != ffmpeg.Software {
+					glog.Info("Enabling HEVC decoding when the hardware does not support it")
+				} else {
+					glog.Info("Enabling HEVC decoding on CPU, may be slow")
+				}
+				transcoderCaps = core.AddCapability(transcoderCaps, core.Capability_HEVC_Decode)
+			}
+		} else if !*cfg.HevcDecoding {
+			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
 	}
 
@@ -511,7 +537,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Gateway {
 		n.NodeType = core.BroadcasterNode
 	} else if (cfg.Reward == nil || !*cfg.Reward) && !*cfg.InitializeRound {
-		exit("No services enabled; must be at least one of -broadcaster, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
+		exit("No services enabled; must be at least one of -gateway, -transcoder, -orchestrator, -redeemer, -reward or -initializeRound")
 	}
 
 	lpmon.NodeID = *cfg.EthAcctAddr
@@ -822,6 +848,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
+			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -1173,6 +1200,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
+
+		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
+			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
+		}
+
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
@@ -1565,11 +1597,12 @@ func createSelectionAlgorithm(cfg LivepeerConfig) (common.SelectionAlgorithm, er
 			*cfg.SelectStakeWeight, *cfg.SelectPriceWeight, *cfg.SelectRandWeight)
 	}
 	return server.ProbabilitySelectionAlgorithm{
-		MinPerfScore:   *cfg.MinPerfScore,
-		StakeWeight:    *cfg.SelectStakeWeight,
-		PriceWeight:    *cfg.SelectPriceWeight,
-		RandWeight:     *cfg.SelectRandWeight,
-		PriceExpFactor: *cfg.SelectPriceExpFactor,
+		MinPerfScore:           *cfg.MinPerfScore,
+		StakeWeight:            *cfg.SelectStakeWeight,
+		PriceWeight:            *cfg.SelectPriceWeight,
+		RandWeight:             *cfg.SelectRandWeight,
+		PriceExpFactor:         *cfg.SelectPriceExpFactor,
+		IgnoreMaxPriceIfNeeded: *cfg.IgnoreMaxPriceIfNeeded,
 	}, nil
 }
 

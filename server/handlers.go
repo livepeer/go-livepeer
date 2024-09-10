@@ -29,6 +29,12 @@ import (
 const MainnetChainId = 1
 const RinkebyChainId = 4
 
+func (s *LivepeerServer) healthzHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		respondOk(w, nil)
+	})
+}
+
 // Status
 func (s *LivepeerServer) statusHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -516,6 +522,12 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI string) error {
 	parsedURI, err := url.Parse(serviceURI)
 	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	if !common.ValidateServiceURI(parsedURI) {
+		err = errors.New("service address must be a public IP address or hostname")
 		glog.Error(err)
 		return err
 	}

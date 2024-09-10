@@ -13,17 +13,26 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.1.7
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Download artifacts from build stage
-        uses: dawidd6/action-download-artifact@v3
+        uses: dawidd6/action-download-artifact@v6
         with:
           workflow: build.yaml
-          name: release-artifacts
+          run_id: ${{ github.event.workflow_run.id }}
+          name: release-artifacts-.*
+          name_is_regexp: true
           path: releases/
+
+      - name: Flatten all downloaded artifacts to a single directory
+        shell: bash
+        run: |
+          cd releases/
+          find . -type f -exec mv '{}' ./ \;
+          find . -type d -empty -delete
 
       - uses: actions-ecosystem/action-regex-match@v2
         id: match-tag
@@ -41,7 +50,7 @@ jobs:
           gpg-key-passphrase: ${{ secrets.CI_GPG_SIGNING_PASSPHRASE }}
 
       - name: Release to github
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: ${{ steps.match-tag.outputs.match != '' }}
         with:
           generate_release_notes: true

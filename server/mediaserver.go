@@ -199,6 +199,9 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	// Store ctx to later use as cancel signal for watchdog goroutine
 	s.context = ctx
 
+	// health endpoint
+	s.HTTPMux.Handle("/healthz", s.healthzHandler())
+
 	//LPMS handlers for handling RTMP video
 	s.LPMS.HandleRTMPPublish(createRTMPStreamIDHandler(ctx, s, nil), gotRTMPStreamHandler(s), endRTMPStreamHandler(s))
 	s.LPMS.HandleRTMPPlay(getRTMPStreamHandler(s))
@@ -986,7 +989,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	cxn.mu.Lock()
 	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
 		cxn.mediaFormat = mediaFormat
-	} else if cxn.mediaFormat != mediaFormat {
+	} else if !mediaCompatible(cxn.mediaFormat, mediaFormat) {
 		cxn.mediaFormat = mediaFormat
 		segPar.ForceSessionReinit = true
 	}
@@ -1645,4 +1648,16 @@ func getRemoteAddr(r *http.Request) string {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
 	return strings.Split(addr, ":")[0]
+}
+
+func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {
+	return a.Acodec == b.Acodec &&
+		a.Vcodec == b.Vcodec &&
+		a.PixFormat == b.PixFormat &&
+		a.Width == b.Width &&
+		a.Height == b.Height
+
+	// NB: there is also a Format field but that does
+	// not need to match since transcoder will reopen
+	// a new demuxer each time
 }
