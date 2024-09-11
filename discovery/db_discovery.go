@@ -189,7 +189,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	timeout := dbo.discoveryTimeout * 4
+	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -266,7 +266,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	timeout := dbo.discoveryTimeout * 4
+	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 

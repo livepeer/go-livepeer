@@ -20,6 +20,7 @@ import (
 	"github.com/golang/glog"
 )
 
+var getOrchestratorTimeoutLoop = 3 * time.Second
 var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
