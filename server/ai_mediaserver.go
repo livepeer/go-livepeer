@@ -18,7 +18,7 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-var MaxAIRequestSize = 100000000
+var MaxAIRequestSize = 3000000000 // 3GB
 
 type ImageToVideoResponseAsync struct {
 	RequestID string `json:"request_id"`
