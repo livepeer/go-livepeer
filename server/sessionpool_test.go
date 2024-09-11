@@ -51,8 +51,7 @@ func poolWithSessList(sessList []*BroadcastSession) *sessionPoolLIFO {
 		// return sessList, nil
 		return nil, nil
 	}
-	var deleteSessions = func(sessionID string) {}
-	pool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, deleteSessions, sel)
+	pool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
 	pool.sessMap = sessMap
 	return newSessionPoolLIFO(pool)
 }

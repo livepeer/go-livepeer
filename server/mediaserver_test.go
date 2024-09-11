@@ -115,6 +115,31 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 	return S, cancel
 }
 
+func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	var S *LivepeerServer
+	if S == nil {
+		httpPushResetTimer = func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			pushResetWg.Add(1)
+			wrapCancel := func() {
+				cancel()
+				pushResetWg.Done()
+			}
+			return ctx, wrapCancel
+		}
+		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
+		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
+		go S.StartMediaServer(ctx, "127.0.0.1:9080")
+		go func() {
+			srv := &http.Server{Addr: "127.0.0.1:9938"}
+			S.StartCliWebserver(srv)
+		}()
+	}
+	return S, cancel
+}
+
 // since we have test that checks that there is no goroutine
 // left running after using RTMP connection - we have to properly
 // close connections in all the tests that are using them
@@ -145,8 +170,6 @@ type stubDiscovery struct {
 func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 	return nil
 }
-
-var cleanupSessions = func(sessionID string) {}
 
 func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
@@ -214,14 +237,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
-	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); err != errDiscovery {
+	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -232,7 +255,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
-	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
+	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -267,7 +290,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
-	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
+	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	assert.Nil(err)
 
 	// B should initialize new OS session using auth token sessionID
@@ -355,7 +378,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
 	require.Nil(err)
 
 	assert.Len(sess, 2)
@@ -384,7 +407,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	// Skip orchestrator if missing auth token
 	sd.infos[0].AuthToken = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -394,7 +417,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	sd.infos[0].AuthToken = &net.AuthToken{}
 	sd.infos[0].TicketParams = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
 	require.Nil(err)
 
 	assert.Len(sess, 1)
