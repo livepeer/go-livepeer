@@ -1204,7 +1204,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				//external containers are expected to manage multiple runners and auto scale to extent of supply.
 				//increase capacity to upper limit per external container
 				if config.URL != "" {
-					modelConstraint.Capacity = 100
+					if config.Capacity == 0 {
+						modelConstraint.Capacity = 1
+					} else {
+						modelConstraint.Capacity = config.Capacity
+					}
 				}
 				// If the config contains a URL we call Warm() anyway because AIWorker will just register
 				// the endpoint for an external container
