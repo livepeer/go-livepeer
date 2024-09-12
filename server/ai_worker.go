@@ -386,6 +386,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 	req.Header.Set("Credentials", n.OrchSecret)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	req.Header.Set("Pipeline", notify.Pipeline)
 
 	//TODO consider adding additional information in response header from the addlData field (e.g. transcoding includes Pixels)
 

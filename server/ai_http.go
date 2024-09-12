@@ -384,7 +384,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	//backwards compatibility to old gateway api
 	if pipeline == "text-to-image" || pipeline == "image-to-image" || pipeline == "upscale" {
 		if r.Header.Get("Authorization") != protoVerAIWorker {
-			imgResp := resp.(*worker.ImageResponse)
+			imgResp := resp.(worker.ImageResponse)
 			prefix := "data:image/png;base64," //https://github.com/livepeer/ai-worker/blob/78b58131f12867ce5a4d0f6e2b9038e70de5c8e3/runner/app/routes/util.py#L56
 			storage, exists := orch.GetStorageForRequest(requestID)
 			if exists {
@@ -481,6 +481,8 @@ func (h *lphttp) AIResults() http.Handler {
 			return
 		}
 
+		pipeline := r.Header.Get("Pipeline")
+
 		var workerResult core.RemoteAIWorkerResult
 		workerResult.Files = make(map[string][]byte)
 
@@ -522,15 +524,28 @@ func (h *lphttp) AIResults() http.Handler {
 				//instead the multipart response includes the json and the files separately with the json "url" field matching to part names
 				cDisp := p.Header.Get("Content-Disposition")
 				if p.Header.Get("Content-Type") == "application/json" {
-					var results worker.ImageResponse
-					err := json.Unmarshal(body, &results)
-					if err != nil {
-						glog.Error("Error getting results json:", err)
-						workerResult.Err = err
-						break
+					var results interface{}
+					switch pipeline {
+					case "text-to-image", "image-to-image", "upscale", "image-to-video":
+						var parsedResp worker.ImageResponse
+
+						err := json.Unmarshal(body, &parsedResp)
+						if err != nil {
+							glog.Error("Error getting results json:", err)
+							workerResult.Err = err
+							break
+						}
+						results = parsedResp
+					case "audio-to-text", "segment-anything-2":
+						err := json.Unmarshal(body, &results)
+						if err != nil {
+							glog.Error("Error getting results json:", err)
+							workerResult.Err = err
+							break
+						}
 					}
 
-					workerResult.Results = &results
+					workerResult.Results = results
 				} else if cDisp != "" {
 					//these are the result files binary data
 					resultName := p.FileName()

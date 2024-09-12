@@ -429,7 +429,7 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 	ext, _ := common.ExtensionByType(contentType)
 	fileName := string(RandomManifestID()) + ext
 
-	imgRes, ok := results.(*worker.ImageResponse)
+	imgRes, ok := results.(worker.ImageResponse)
 	if !ok {
 		//worker.TextResponse is JSON, no file save needed
 		return results, nil
@@ -461,7 +461,7 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 
 	//worker.TextResponse is json so no need to save file for download
 	//worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
-	imgResp, isImg := results.Results.(*worker.ImageResponse)
+	imgResp, isImg := results.Results.(worker.ImageResponse)
 	if isImg {
 		for idx, _ := range imgResp.Images {
 			fileName := imgResp.Images[idx].Url
@@ -491,7 +491,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToImage(ctx, req)
 		if err == nil {
-			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
 			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
 			if monitor.Enabled {
@@ -524,7 +524,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToImage(ctx, req)
 		if err == nil {
-			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
 			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
 			if monitor.Enabled {
@@ -599,7 +599,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.Upscale(ctx, req)
 		if err == nil {
-			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
 			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
 			if monitor.Enabled {
@@ -669,20 +669,9 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 }
 
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
-	//return orch.node.SegmentAnything2(ctx, req)
-
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		workerResp, err := orch.node.SegmentAnything2(ctx, req)
-		if err == nil {
-			return orch.node.saveLocalAIWorkerResults(ctx, workerResp, requestID, "image/png")
-		} else {
-			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "segment-anything-2", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
-		}
+		return orch.node.SegmentAnything2(ctx, req)
 	}
 
 	//remote ai worker proceses job
