@@ -607,7 +607,7 @@ func processSegmentAnything2(ctx context.Context, params aiRequestParams, req wo
 	return txtResp, nil
 }
 
-func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodyGenSegmentAnything2) (*worker.MasksResponse, error) {
+func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewSegmentAnything2MultipartWriter(&buf, req)
 	if err != nil {
