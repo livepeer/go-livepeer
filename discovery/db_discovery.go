@@ -262,7 +262,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
 	}
 
-	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
+	resc, errc, skipped := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs)), make(chan int, len(orchs))
 	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
 	defer cancel()
 
@@ -272,7 +272,11 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
-
+		//do not connect if URI host is not set
+		if uri.Host == "" {
+			skipped <- 1
+			return
+		}
 		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, nil)
 		if err != nil {
 			errc <- err
@@ -307,6 +311,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	numOrchs := 0
+	skippedOrchs := 0
 	for _, orch := range orchs {
 		if orch == nil {
 			continue
@@ -321,10 +326,12 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			if err := dbo.store.UpdateOrch(res); err != nil {
 				glog.Error("Error updating Orchestrator in DB: ", err)
 			}
+		case <-skipped:
+			skippedOrchs += 1
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
-			glog.Info("Done fetching orch info for orchestrators, context timeout")
+			glog.Infof("Done fetching orch info for orchestrators, context timeout (skipped: %v)", skippedOrchs)
 			return nil
 		}
 	}
