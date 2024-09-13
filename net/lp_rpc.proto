@@ -334,6 +334,9 @@ message RegisterRequest {
 
     // Transcoder capabilities
     Capabilities capabilities = 3;
+
+    // Hive ID
+    string HiveID = 4;
 }
 
 // Sent by the orchestrator to the transcoder

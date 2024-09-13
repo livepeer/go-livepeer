@@ -116,6 +116,7 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
+	HiveID    string
 	AIWorker  AI
 	AIManager *RemoteAIWorkerManager
 

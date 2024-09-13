@@ -108,7 +108,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps *co
 
 	var aiR net.Transcoder_RegisterAIWorkerClient
 	if core.ContainsAICapabilities(caps) {
-		aiR, err = c.RegisterAIWorker(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
+		aiR, err = c.RegisterAIWorker(ctx, &net.RegisterRequest{HiveID: n.HiveID, Secret: n.OrchSecret, Capacity: int64(capacity),
 			Capabilities: caps.ToNetCapabilities()})
 		// TODO: add checking AI errors to checkTranscoderError
 		if err := checkTranscoderError(err); err != nil {
@@ -482,7 +482,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 
 func (h *lphttp) RegisterAIWorker(req *net.RegisterRequest, stream net.Transcoder_RegisterAIWorkerServer) error {
 	from := common.GetConnectionAddr(stream.Context())
-	glog.Infof("Got a RegisterAIWorker request from transcoder=%s capacity=%d", from, req.Capacity)
+	glog.Infof("Got a RegisterAIWorker request from HiveID=%s transcoder=%s capacity=%d", req.HiveID, from, req.Capacity)
 
 	if req.Secret != h.orchestrator.TranscoderSecret() {
 		glog.Errorf("err=%q", errSecret.Error())

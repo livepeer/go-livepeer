@@ -151,6 +151,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.TestTranscoder = flag.Bool("testTranscoder", *cfg.TestTranscoder, "Test Nvidia GPU transcoding at startup")
 
 	// AI:
+	cfg.HiveID = flag.String("hiveID", *cfg.HiveID, "Hive Worker ID")
 	cfg.AIWorker = flag.Bool("aiWorker", *cfg.AIWorker, "Set to true to run an AI worker")
 	cfg.AIModels = flag.String("aiModels", *cfg.AIModels, "Set models (pipeline:model_id) for AI worker to load upon initialization")
 	cfg.AIModelsDir = flag.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")

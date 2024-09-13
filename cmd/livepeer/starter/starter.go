@@ -89,6 +89,7 @@ type LivepeerConfig struct {
 	HttpIngest             *bool
 	Orchestrator           *bool
 	Transcoder             *bool
+	HiveID                 *string
 	AIWorker               *bool
 	Gateway                *bool
 	Broadcaster            *bool
@@ -187,6 +188,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestTranscoder := true
 
 	// AI:
+	defaultHiveID := ""
 	defaultAIWorker := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
@@ -279,6 +281,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
+		HiveID:        &defaultHiveID,
 		AIWorker:      &defaultAIWorker,
 		AIModels:      &defaultAIModels,
 		AIModelsDir:   &defaultAIModelsDir,
@@ -451,6 +454,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	defer dbh.Close()
 
 	n, err := core.NewLivepeerNode(nil, *cfg.Datadir, dbh)
+	n.HiveID = *cfg.HiveID
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
