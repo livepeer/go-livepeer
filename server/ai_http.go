@@ -56,7 +56,7 @@ func (h *lphttp) TextToImage() http.Handler {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		var req worker.TextToImageJSONRequestBody
+		var req worker.GenTextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
@@ -79,7 +79,7 @@ func (h *lphttp) ImageToImage() http.Handler {
 			return
 		}
 
-		var req worker.ImageToImageMultipartRequestBody
+		var req worker.GenImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -102,7 +102,7 @@ func (h *lphttp) ImageToVideo() http.Handler {
 			return
 		}
 
-		var req worker.ImageToVideoMultipartRequestBody
+		var req worker.GenImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -125,7 +125,7 @@ func (h *lphttp) Upscale() http.Handler {
 			return
 		}
 
-		var req worker.UpscaleMultipartRequestBody
+		var req worker.GenUpscaleMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -148,7 +148,7 @@ func (h *lphttp) AudioToText() http.Handler {
 			return
 		}
 
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.GenAudioToTextMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -171,7 +171,7 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 			return
 		}
 
-		var req worker.SegmentAnything2MultipartRequestBody
+		var req worker.GenSegmentAnything2MultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -202,7 +202,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	var outPixels int64
 
 	switch v := req.(type) {
-	case worker.TextToImageJSONRequestBody:
+	case worker.GenTextToImageJSONRequestBody:
 		pipeline = "text-to-image"
 		cap = core.Capability_TextToImage
 		modelID = *v.ModelId
@@ -226,7 +226,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		}
 
 		outPixels = height * width * numImages
-	case worker.ImageToImageMultipartRequestBody:
+	case worker.GenImageToImageMultipartRequestBody:
 		pipeline = "image-to-image"
 		cap = core.Capability_ImageToImage
 		modelID = *v.ModelId
@@ -251,7 +251,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		}
 
 		outPixels = int64(config.Height) * int64(config.Width) * numImages
-	case worker.UpscaleMultipartRequestBody:
+	case worker.GenUpscaleMultipartRequestBody:
 		pipeline = "upscale"
 		cap = core.Capability_Upscale
 		modelID = *v.ModelId
@@ -270,7 +270,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
-	case worker.ImageToVideoMultipartRequestBody:
+	case worker.GenImageToVideoMultipartRequestBody:
 		pipeline = "image-to-video"
 		cap = core.Capability_ImageToVideo
 		modelID = *v.ModelId
@@ -291,7 +291,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		frames := int64(25)
 
 		outPixels = height * width * int64(frames)
-	case worker.AudioToTextMultipartRequestBody:
+	case worker.GenAudioToTextMultipartRequestBody:
 		pipeline = "audio-to-text"
 		cap = core.Capability_AudioToText
 		modelID = *v.ModelId
@@ -305,7 +305,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
-	case worker.SegmentAnything2MultipartRequestBody:
+	case worker.GenSegmentAnything2MultipartRequestBody:
 		pipeline = "segment-anything-2"
 		cap = core.Capability_SegmentAnything2
 		modelID = *v.ModelId
@@ -382,20 +382,20 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	if monitor.Enabled {
 		var latencyScore float64
 		switch v := req.(type) {
-		case worker.TextToImageJSONRequestBody:
+		case worker.GenTextToImageJSONRequestBody:
 			latencyScore = CalculateTextToImageLatencyScore(took, v, outPixels)
-		case worker.ImageToImageMultipartRequestBody:
+		case worker.GenImageToImageMultipartRequestBody:
 			latencyScore = CalculateImageToImageLatencyScore(took, v, outPixels)
-		case worker.ImageToVideoMultipartRequestBody:
+		case worker.GenImageToVideoMultipartRequestBody:
 			latencyScore = CalculateImageToVideoLatencyScore(took, v, outPixels)
-		case worker.UpscaleMultipartRequestBody:
+		case worker.GenUpscaleMultipartRequestBody:
 			latencyScore = CalculateUpscaleLatencyScore(took, v, outPixels)
-		case worker.AudioToTextMultipartRequestBody:
+		case worker.GenAudioToTextMultipartRequestBody:
 			durationSeconds, err := common.CalculateAudioDuration(v.Audio)
 			if err == nil {
 				latencyScore = CalculateAudioToTextLatencyScore(took, durationSeconds)
 			}
-		case worker.SegmentAnything2MultipartRequestBody:
+		case worker.GenSegmentAnything2MultipartRequestBody:
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
 		}
 

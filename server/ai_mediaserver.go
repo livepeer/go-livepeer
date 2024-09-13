@@ -81,7 +81,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.TextToImageJSONRequestBody
+		var req worker.GenTextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -129,7 +129,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 			return
 		}
 
-		var req worker.ImageToImageMultipartRequestBody
+		var req worker.GenImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -177,7 +177,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			return
 		}
 
-		var req worker.ImageToVideoMultipartRequestBody
+		var req worker.GenImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -287,7 +287,7 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 			return
 		}
 
-		var req worker.UpscaleMultipartRequestBody
+		var req worker.GenUpscaleMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -335,7 +335,7 @@ func (ls *LivepeerServer) AudioToText() http.Handler {
 			return
 		}
 
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.GenAudioToTextMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -388,7 +388,7 @@ func (ls *LivepeerServer) SegmentAnything2() http.Handler {
 			return
 		}
 
-		var req worker.SegmentAnything2MultipartRequestBody
+		var req worker.GenSegmentAnything2MultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
