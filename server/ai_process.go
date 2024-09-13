@@ -412,7 +412,7 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	start := time.Now()
-	resp, err := client.ImageToVideoWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.GenImageToVideoWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
@@ -607,7 +607,7 @@ func processSegmentAnything2(ctx context.Context, params aiRequestParams, req wo
 	return txtResp, nil
 }
 
-func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodySegmentAnything2SegmentAnything2Post) (*worker.MasksResponse, error) {
+func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *AISession, req worker.BodyGenSegmentAnything2) (*worker.MasksResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewSegmentAnything2MultipartWriter(&buf, req)
 	if err != nil {
@@ -742,7 +742,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	start := time.Now()
-	resp, err := client.AudioToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.GenAudioToTextWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
