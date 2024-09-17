@@ -45,6 +45,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/lipsync", oapiReqValidator(lp.Lipsync()))
 
 	return nil
 }
@@ -172,6 +173,29 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 		}
 
 		var req worker.GenSegmentAnything2MultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) Lipsync() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenLipsyncMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -324,6 +348,16 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenLipsyncMultipartRequestBody:
+		pipeline = "lipsync"
+		cap = core.Capability_Lipsync
+		modelID = v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.Lipsync(ctx, v)
+		}
+
+		// TODO(pschroedl): Infer length of video based on tokenizing text input or length of audio input file
+		outPixels = int64(1000)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return

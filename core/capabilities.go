@@ -79,6 +79,7 @@ const (
 	Capability_Upscale
 	Capability_AudioToText
 	Capability_SegmentAnything2
+	Capability_Lipsync
 )
 
 var CapabilityNameLookup = map[Capability]string{

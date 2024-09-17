@@ -205,6 +205,9 @@ func (r *stubOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioT
 func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
+	return nil, nil
+}
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
 }
@@ -1389,6 +1392,9 @@ func (r *mockOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioT
 	return nil, nil
 }
 func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
