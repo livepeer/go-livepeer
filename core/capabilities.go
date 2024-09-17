@@ -209,6 +209,7 @@ func OptionalCapabilities() []Capability {
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
+		Capability_Lipsync,
 	}
 }
 
