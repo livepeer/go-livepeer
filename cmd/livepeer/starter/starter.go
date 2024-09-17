@@ -1196,6 +1196,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 			for _, config := range configs {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+				var configCapability core.Capability
 
 				var autoPrice *core.AutoConvertedPrice
 				if *cfg.Network != "offchain" {
@@ -1245,100 +1246,109 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 				switch config.Pipeline {
 				case "text-to-image":
-					_, ok := capabilityConstraints[core.Capability_TextToImage]
+					configCapability = core.Capability_TextToImage
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_TextToImage)
-						capabilityConstraints[core.Capability_TextToImage] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_TextToImage].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
-						n.SetBasePriceForCap("default", core.Capability_TextToImage, config.ModelID, autoPrice)
+						n.SetBasePriceForCap("default", configCapability, config.ModelID, autoPrice)
 					}
 				case "image-to-image":
-					_, ok := capabilityConstraints[core.Capability_ImageToImage]
+					configCapability = core.Capability_ImageToImage
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToImage)
-						capabilityConstraints[core.Capability_ImageToImage] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_ImageToImage].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
-						n.SetBasePriceForCap("default", core.Capability_ImageToImage, config.ModelID, autoPrice)
+						n.SetBasePriceForCap("default", configCapability, config.ModelID, autoPrice)
 					}
 				case "image-to-video":
-					_, ok := capabilityConstraints[core.Capability_ImageToVideo]
+					configCapability = core.Capability_ImageToVideo
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_ImageToVideo)
-						capabilityConstraints[core.Capability_ImageToVideo] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_ImageToVideo].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
-						n.SetBasePriceForCap("default", core.Capability_ImageToVideo, config.ModelID, autoPrice)
+						n.SetBasePriceForCap("default", configCapability, config.ModelID, autoPrice)
 					}
 				case "upscale":
-					_, ok := capabilityConstraints[core.Capability_Upscale]
+					configCapability = core.Capability_Upscale
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_Upscale)
-						capabilityConstraints[core.Capability_Upscale] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_Upscale].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_Upscale, config.ModelID, autoPrice)
 					}
 				case "audio-to-text":
-					_, ok := capabilityConstraints[core.Capability_AudioToText]
+					configCapability = core.Capability_AudioToText
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_AudioToText)
-						capabilityConstraints[core.Capability_AudioToText] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_AudioToText].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
-						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+						n.SetBasePriceForCap("default", configCapability, config.ModelID, autoPrice)
 					}
 				case "segment-anything-2":
-					_, ok := capabilityConstraints[core.Capability_SegmentAnything2]
+					configCapability = core.Capability_SegmentAnything2
+					_, ok := capabilityConstraints[configCapability]
 					if !ok {
-						aiCaps = append(aiCaps, core.Capability_SegmentAnything2)
-						capabilityConstraints[core.Capability_SegmentAnything2] = &core.CapabilityConstraints{
+						aiCaps = append(aiCaps, configCapability)
+						capabilityConstraints[configCapability] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}
 
-					capabilityConstraints[core.Capability_SegmentAnything2].Models[config.ModelID] = modelConstraint
+					capabilityConstraints[configCapability].Models[config.ModelID] = modelConstraint
 
 					if *cfg.Network != "offchain" {
-						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
+						n.SetBasePriceForCap("default", configCapability, config.ModelID, autoPrice)
 					}
 				}
 
-				if len(aiCaps) > 0 {
-					capability := aiCaps[len(aiCaps)-1]
-					price := n.GetBasePriceForCap("default", capability, config.ModelID)
-					if *cfg.Network != "offchain" {
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, capability, config.ModelID, price.FloatString(3))
-					} else {
-						glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, capability, config.ModelID)
-					}
+				//check price set for capability
+				price := n.GetBasePriceForCap("default", configCapability, config.ModelID)
+				if price == nil {
+					panic(fmt.Errorf("Price not set for capability %v model %v", configCapability, config.ModelID))
 				}
+
+				if *cfg.Network != "offchain" {
+					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s at price %s wei per compute unit", config.Pipeline, configCapability, config.ModelID, price.FloatString(3))
+				} else {
+					glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, configCapability, config.ModelID)
+				}
+
 			}
 		} else {
 			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
