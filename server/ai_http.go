@@ -189,18 +189,38 @@ func (h *lphttp) Lipsync() http.Handler {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
+		// Log the remote IP for debugging
+		clog.Infof(ctx, "Received lipsync request from %s", remoteAddr)
+
+		// Check for any errors in reading the multipart form
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
+			clog.Errorf(ctx, "Failed to read multipart form: %v", err)
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		// Bind the multipart request to the struct
 		var req worker.GenLipsyncMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			clog.Errorf(ctx, "Failed to bind multipart request: %v", err)
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
+		// Log and check the model_id
+		if req.ModelId == nil || *req.ModelId == "" {
+			defaultModelID := "parler-tts/parler-tts-large-v1"
+			req.ModelID = &defaultModelID
+		} else {
+			clog.Infof(ctx, "model_id received: %s", *req.ModelId)
+		}
+
+		// Additional debug for other form fields (if needed)
+		clog.Infof(ctx, "Text input: %v", req.TextInput)
+		clog.Infof(ctx, "Received image file: %v", req.Image)
+
+		// Call the handleAIRequest function
 		handleAIRequest(ctx, w, r, orch, req)
 	})
 }
