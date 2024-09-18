@@ -210,8 +210,8 @@ func (h *lphttp) Lipsync() http.Handler {
 
 		// Log and check the model_id
 		if req.ModelId == nil || *req.ModelId == "" {
-			defaultModelID := "parler-tts/parler-tts-large-v1"
-			req.ModelID = &defaultModelID
+			defaultModelId := "parler-tts/parler-tts-large-v1"
+			req.ModelId = &defaultModelId
 		} else {
 			clog.Infof(ctx, "model_id received: %s", *req.ModelId)
 		}
