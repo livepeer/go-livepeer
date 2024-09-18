@@ -809,7 +809,7 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 	mw, err := worker.NewLipsyncMultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId , sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -817,7 +817,7 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -827,14 +827,14 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 	imageRdr, err := req.Image.Reader()
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
 	config, _, err := image.DecodeConfig(imageRdr)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -846,7 +846,7 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outFrames)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -858,7 +858,7 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 	// took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -884,7 +884,7 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
 
-		monitor.AIRequestFinished(ctx, "lipsync", req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		monitor.AIRequestFinished(ctx, "lipsync", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
@@ -953,8 +953,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	case worker.GenLipsyncMultipartRequestBody:
 		cap = core.Capability_Lipsync
 		modelID = defaultLipsyncModelID
-		if v.ModelId != "" {
-			modelID = v.ModelId
+		if v.ModelId != nil {
+			modelID = *v.ModelId
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLipsync(ctx, params, sess, v)

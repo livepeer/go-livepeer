@@ -351,7 +351,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	case worker.GenLipsyncMultipartRequestBody:
 		pipeline = "lipsync"
 		cap = core.Capability_Lipsync
-		modelID = v.ModelId
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.Lipsync(ctx, v)
 		}
