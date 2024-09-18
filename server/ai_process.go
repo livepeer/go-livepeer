@@ -793,18 +793,18 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-func processLipsync(ctx context.Context, params aiRequestParams, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
+func processLipsync(ctx context.Context, params aiRequestParams, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	txtResp := resp.(*worker.VideoResponse)
+	txtResp := resp.(*worker.VideoBinaryResponse)
 
 	return txtResp, nil
 }
 
-func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
+func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewLipsyncMultipartWriter(&buf, req)
 	if err != nil {

@@ -134,7 +134,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSe
 	return orch.node.SegmentAnything2(ctx, req)
 }
 
-func (orch *orchestrator) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
+func (orch *orchestrator) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
 	return orch.node.Lipsync(ctx, req)
 }
 
@@ -974,7 +974,7 @@ func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTex
 func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
 }
-func (n *LivepeerNode) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoResponse, error) {
+func (n *LivepeerNode) Lipsync(ctx context.Context, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
 	return n.AIWorker.Lipsync(ctx, req)
 }
 
