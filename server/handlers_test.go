@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
@@ -1570,7 +1571,29 @@ func TestMustHaveDb_Success(t *testing.T) {
 	assert.Equal(http.StatusOK, status)
 	assert.Equal("success", body)
 }
+func TestSetServiceURI(t *testing.T) {
+	s := stubServer()
+	client := &eth.MockClient{}
+	serviceURI := "https://8.8.8.8:8935"
 
+	t.Run("Valid Service URI", func(t *testing.T) {
+		client.On("SetServiceURI", serviceURI).Return(&ethtypes.Transaction{}, nil)
+		client.On("CheckTx", mock.Anything).Return(nil)
+
+		err := s.setServiceURI(client, serviceURI)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("Invalid Service URI", func(t *testing.T) {
+		invalidServiceURI := "https://0.0.0.0:8935"
+
+		err := s.setServiceURI(client, invalidServiceURI)
+
+		assert.Error(t, err)
+	})
+
+}
 func dummyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

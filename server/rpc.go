@@ -117,6 +117,7 @@ type BroadcastSession struct {
 	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
 	PMSessionID      string
+	CleanupSession   sessionsCleanup
 	Balance          Balance
 	InitialPrice     *net.PriceInfo
 }

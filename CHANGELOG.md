@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.7.9
+
+- [#3165](https://github.com/livepeer/go-livepeer/pull/3165) Add node version and orch addr to transcoded metadata
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3158](https://github.com/livepeer/go-livepeer/pull/3158) Add a metric tag for Orchestrator version
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
+- [#3164](https://github.com/livepeer/go-livepeer/pull/3164) Fix media compatibility check
+- [#3166](https://github.com/livepeer/go-livepeer/pull/3166) Clean up inactive sessions
+- [#3086](https://github.com/livepeer/go-livepeer/pull/3086) Clear known sessions with inadequate latency scores
+
+## v0.7.8
+
+### Features ⚒
+
+#### Broadcaster
+
+- [#3127](https://github.com/livepeer/go-livepeer/pull/3127) Add flag `-ignoreMaxPriceIfNeeded` (@leszko)
+
 ## v0.7.7
 
 This release includes a new `-hevcDecoding` flag for transcoders to configure HEVC decoding. If the flag is omitted, the default behavior on GPUs is unchanged, which is to auto-detect HEVC decoding support at transcoder start-up. Transcoders can disable HEVC decoding on GPUs if there is an issue with HEVC jobs via `-hevcDecoding=false`. CPU transcoders now have HEVC decoding disabled by default since processing HEVC jobs is CPU-heavy, but this can be enabled by setting the `-hevcDecoding` flag.
@@ -10,27 +36,11 @@ The transcoder now support mid-stream input rotations, rather than crashing or o
 
 - [#3119](https://github.com/livepeer/go-livepeer/pull/3119) CPU transcoders no longer decode HEVC or VP9 by default
 
-### Features ⚒
-
-#### General
-
-#### Broadcaster
-
-#### Orchestrator
-
 #### Transcoder
 
 - [#3119](https://github.com/livepeer/go-livepeer/pull/3119) Add `-hevcDecoding` flag to toggle HEVC decoding
 
 ### Bug Fixes 🐞
-
-#### CLI
-
-#### General
-
-#### Broadcaster
-
-#### Orchestrator
 
 #### Transcoder
 
@@ -49,25 +59,6 @@ The transcoder now support mid-stream input rotations, rather than crashing or o
 
 ### Features ⚒
 
-#### General
-
-#### Broadcaster
-
-#### Orchestrator
-
-#### Transcoder
-
-### Bug Fixes 🐞
-
-#### CLI
-
-#### General
-
-#### Broadcaster
-
-#### Orchestrator
-
-#### Transcoder
 
 ## v0.7.5
 
@@ -86,15 +77,7 @@ The transcoder now support mid-stream input rotations, rather than crashing or o
 - [#2995](https://github.com/livepeer/go-livepeer/pull/2995) server: Allow Os price to increase up to 2x mid-session (@victorges)
 - [#2999](https://github.com/livepeer/go-livepeer/pull/2999) server,discovery: Allow B to use any O in case none match maxPrice (@victorges)
 
-#### Orchestrator
-
-#### Transcoder
-
 ### Bug Fixes 🐞
-
-#### CLI
-
-#### General
 
 #### Broadcaster
 
