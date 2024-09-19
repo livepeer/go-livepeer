@@ -436,7 +436,7 @@ func (ls *LivepeerServer) LlmGenerate() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.LlmGenerateFormdataRequestBody
+		var req worker.LlmGenerateLlmGeneratePostFormdataRequestBody
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {

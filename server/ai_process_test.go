@@ -13,7 +13,7 @@ func Test_submitLlmGenerate(t *testing.T) {
 		ctx    context.Context
 		params aiRequestParams
 		sess   *AISession
-		req    worker.LlmGenerateFormdataRequestBody
+		req    worker.LlmGenerateLlmGeneratePostFormdataRequestBody
 	}
 	tests := []struct {
 		name    string

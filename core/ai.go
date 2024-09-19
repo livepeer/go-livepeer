@@ -23,7 +23,7 @@ type AI interface {
 	Upscale(context.Context, worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(context.Context, worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
-	LlmGenerate(context.Context, worker.LlmGenerateFormdataRequestBody) (interface{}, error)
+	LlmGenerate(context.Context, worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool

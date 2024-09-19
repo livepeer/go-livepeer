@@ -1334,7 +1334,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					_, ok := capabilityConstraints[core.Capability_LlmGenerate]
 					if !ok {
 						aiCaps = append(aiCaps, core.Capability_LlmGenerate)
-						capabilityConstraints[core.Capability_LlmGenerate] = &core.PerCapabilityConstraints{
+						capabilityConstraints[core.Capability_LlmGenerate] = &core.CapabilityConstraints{
 							Models: make(map[string]*core.ModelConstraint),
 						}
 					}

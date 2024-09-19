@@ -149,7 +149,30 @@ func (h *lphttp) AudioToText() http.Handler {
 			return
 		}
 
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.GenAudioToTextMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) SegmentAnything2() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenSegmentAnything2MultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -172,7 +195,7 @@ func (h *lphttp) LlmGenerate() http.Handler {
 			return
 		}
 
-		var req worker.LlmGenerateFormdataRequestBody
+		var req worker.LlmGenerateLlmGeneratePostFormdataRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -325,7 +348,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
-	case worker.LlmGenerateFormdataRequestBody:
+	case worker.LlmGenerateLlmGeneratePostFormdataRequestBody:
 		pipeline = "llm-generate"
 		cap = core.Capability_LlmGenerate
 		modelID = *v.ModelId
