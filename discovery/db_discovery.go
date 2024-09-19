@@ -36,9 +36,10 @@ type DBOrchestratorPoolCache struct {
 	rm                    common.RoundsManager
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
+	discoveryTimeout      time.Duration
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -50,6 +51,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		rm:                    rm,
 		bcast:                 core.NewBroadcaster(node),
 		orchBlacklist:         orchBlacklist,
+		discoveryTimeout:      discoveryTimeout,
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -135,7 +137,7 @@ func (dbo *DBOrchestratorPoolCache) GetOrchestrators(ctx context.Context, numOrc
 		return true
 	}
 
-	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist)
+	orchPool := NewOrchestratorPoolWithPred(dbo.bcast, uris, pred, common.Score_Untrusted, dbo.orchBlacklist, dbo.discoveryTimeout)
 	orchInfos, err := orchPool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 	if err != nil || len(orchInfos) <= 0 {
 		return nil, err
@@ -187,7 +189,8 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	currentRound := dbo.rm.LastInitializedRound()
@@ -263,7 +266,8 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	ctx, cancel := context.WithTimeout(context.Background(), getOrchestratorsTimeoutLoop)
+	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	getOrchInfo := func(dbOrch *common.DBOrch) {

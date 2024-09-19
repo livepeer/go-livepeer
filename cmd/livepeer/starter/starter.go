@@ -101,6 +101,7 @@ type LivepeerConfig struct {
 	MaxPricePerUnit         *string
 	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
+	DiscoveryTimeout        *time.Duration
 	MaxSessions             *string
 	CurrentManifest         *bool
 	Nvidia                  *string
@@ -180,6 +181,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
+	defaultDiscoveryTimeout := 500 * time.Millisecond
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -271,6 +273,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchPerfStatsURL:     &defaultOrchPerfStatsURL,
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
+		DiscoveryTimeout:     &defaultDiscoveryTimeout,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -1123,7 +1126,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.Network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout)
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -1138,9 +1141,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		if n.OrchestratorPool == nil {
