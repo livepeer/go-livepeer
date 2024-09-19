@@ -493,7 +493,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
-			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
 			if monitor.Enabled {
 				monitor.AIResultSaveError(ctx, "text-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
 			}
@@ -526,7 +526,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
-			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
 			if monitor.Enabled {
 				monitor.AIResultSaveError(ctx, "image-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
 			}
@@ -551,7 +551,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 
 	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 	if err != nil {
-		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
 		if monitor.Enabled {
 			monitor.AIResultSaveError(ctx, "image-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
 		}
@@ -601,7 +601,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
-			clog.Errorf(ctx, "Error saving local ai result err=%q", err)
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
 			if monitor.Enabled {
 				monitor.AIResultSaveError(ctx, "upscale", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
 			}
@@ -671,6 +671,7 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
+		//no file response to save, response is text sent back to gateway
 		return orch.node.SegmentAnything2(ctx, req)
 	}
 
