@@ -45,6 +45,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/lipsync", oapiReqValidator(lp.Lipsync()))
 
 	return nil
 }
@@ -177,6 +178,49 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 			return
 		}
 
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) Lipsync() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		// Log the remote IP for debugging
+		clog.Infof(ctx, "Received lipsync request from %s", remoteAddr)
+
+		// Check for any errors in reading the multipart form
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			clog.Errorf(ctx, "Failed to read multipart form: %v", err)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Bind the multipart request to the struct
+		var req worker.GenLipsyncMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			clog.Errorf(ctx, "Failed to bind multipart request: %v", err)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Log and check the model_id
+		if req.ModelId == nil || *req.ModelId == "" {
+			defaultModelId := "parler-tts/parler-tts-large-v1"
+			req.ModelId = &defaultModelId
+		} else {
+			clog.Infof(ctx, "model_id received: %s", *req.ModelId)
+		}
+
+		// Additional debug for other form fields (if needed)
+		clog.Infof(ctx, "Text input: %v", req.TextInput)
+		clog.Infof(ctx, "Received image file: %v", req.Image)
+
+		// Call the handleAIRequest function
 		handleAIRequest(ctx, w, r, orch, req)
 	})
 }
@@ -324,6 +368,18 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenLipsyncMultipartRequestBody:
+		pipeline = "lipsync"
+		cap = core.Capability_Lipsync
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.Lipsync(ctx, v)
+		}
+
+		// TODO(pschroedl): Infer length of video based on tokenizing text input or length of audio input file
+		outPixels = int64(1000)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
