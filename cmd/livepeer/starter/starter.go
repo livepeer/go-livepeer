@@ -1328,7 +1328,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
-					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
 
 				case "llm-generate":
 					_, ok := capabilityConstraints[core.Capability_LlmGenerate]
