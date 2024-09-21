@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/stretchr/testify/require"
 )
 
@@ -228,6 +229,77 @@ func TestFilter(t *testing.T) {
 			if tt.maxPrice > 0 {
 				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
 			}
+			sa := &ProbabilitySelectionAlgorithm{
+				MinPerfScore:           tt.orchMinPerfScore,
+				IgnoreMaxPriceIfNeeded: tt.ignoreMaxPriceIfNeeded,
+			}
+
+			res := sa.filter(context.Background(), addrs, maxPrice, prices, perfScores)
+
+			var exp []ethcommon.Address
+			for _, o := range tt.want {
+				exp = append(exp, ethcommon.HexToAddress(o))
+			}
+			require.Equal(t, exp, res)
+		})
+	}
+}
+
+func TestNoMaxPriceSet(t *testing.T) {
+	tests := []struct {
+		name                   string
+		orchMinPerfScore       float64
+		maxPrice               float64
+		prices                 map[string]float64
+		orchPerfScores         map[string]float64
+		orchestrators          []string
+		want                   []string
+		ignoreMaxPriceIfNeeded bool
+	}{
+		{
+			name:             "Exact match with max price",
+			orchMinPerfScore: 0.7,
+			maxPrice:         0,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 500,
+				"0x0000000000000000000000000000000000000002": 1000,
+				"0x0000000000000000000000000000000000000003": 1500,
+			},
+			orchPerfScores: map[string]float64{
+				"0x0000000000000000000000000000000000000001": 0.8,
+				"0x0000000000000000000000000000000000000002": 0.8,
+				"0x0000000000000000000000000000000000000003": 0.8,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+			want: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var addrs []ethcommon.Address
+			var maxPrice *big.Rat
+			prices := map[ethcommon.Address]*big.Rat{}
+			perfScores := map[ethcommon.Address]float64{}
+			for _, o := range tt.orchestrators {
+				addr := ethcommon.HexToAddress(o)
+				addrs = append(addrs, addr)
+				perfScores[addr] = tt.orchPerfScores[o]
+				if price, ok := tt.prices[o]; ok {
+					prices[addr] = new(big.Rat).SetFloat64(price)
+				}
+			}
+
+			fixedPrice := core.NewFixedPrice(big.NewRat(int64(tt.maxPrice), 1))
+			maxPrice = fixedPrice.Value()
+
 			sa := &ProbabilitySelectionAlgorithm{
 				MinPerfScore:           tt.orchMinPerfScore,
 				IgnoreMaxPriceIfNeeded: tt.ignoreMaxPriceIfNeeded,
