@@ -195,7 +195,7 @@ func (h *lphttp) LlmGenerate() http.Handler {
 			return
 		}
 
-		var req worker.LlmGenerateLlmGeneratePostFormdataRequestBody
+		var req worker.GenLlmFormdataRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -348,7 +348,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
-	case worker.LlmGenerateLlmGeneratePostFormdataRequestBody:
+	case worker.GenLlmFormdataRequestBody:
 		pipeline = "llm-generate"
 		cap = core.Capability_LlmGenerate
 		modelID = *v.ModelId

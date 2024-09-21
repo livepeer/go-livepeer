@@ -436,7 +436,7 @@ func (ls *LivepeerServer) LlmGenerate() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.LlmGenerateLlmGeneratePostFormdataRequestBody
+		var req worker.GenLlmFormdataRequestBody
 
 		multiRdr, err := r.MultipartReader()
 		if err != nil {
@@ -450,9 +450,10 @@ func (ls *LivepeerServer) LlmGenerate() http.Handler {
 		}
 
 		streamResponse := false
-		if *req.Stream {
+		if req.Stream != nil {
 			streamResponse = *req.Stream
 		}
+
 		clog.V(common.VERBOSE).Infof(ctx, "Received LlmGenerate request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, streamResponse)
 
 		params := aiRequestParams{

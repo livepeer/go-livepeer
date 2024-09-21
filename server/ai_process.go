@@ -801,7 +801,7 @@ func CalculateLlmGenerateLatencyScore(took time.Duration, tokensUsed int) float6
 	return took.Seconds() / float64(tokensUsed)
 }
 
-func processLlmGenerate(ctx context.Context, params aiRequestParams, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error) {
+func processLlmGenerate(ctx context.Context, params aiRequestParams, req worker.GenLlmFormdataRequestBody) (interface{}, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
@@ -823,7 +823,7 @@ func processLlmGenerate(ctx context.Context, params aiRequestParams, req worker.
 	return llmResp, nil
 }
 
-func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISession, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error) {
+func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLlmFormdataRequestBody) (interface{}, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewLlmGenerateMultipartWriter(&buf, req)
 	if err != nil {
@@ -856,7 +856,7 @@ func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISess
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	start := time.Now()
-	resp, err := client.LlmGenerateLlmGeneratePostWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.GenLlmWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "llm-generate", *req.ModelId, sess.OrchestratorInfo)
@@ -876,7 +876,7 @@ func submitLlmGenerate(ctx context.Context, params aiRequestParams, sess *AISess
 	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
 }
 
-func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLlmFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
 	streamChan := make(chan worker.LlmStreamChunk, 100)
 	go func() {
 		defer close(streamChan)
@@ -919,7 +919,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 	return streamChan, nil
 }
 
-func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody, start time.Time) (*worker.LlmResponse, error) {
+func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLlmFormdataRequestBody, start time.Time) (*worker.LlmResponse, error) {
 	data, err := io.ReadAll(body)
 	defer body.Close()
 	if err != nil {
@@ -1011,7 +1011,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
 		}
-	case worker.LlmGenerateLlmGeneratePostFormdataRequestBody:
+	case worker.GenLlmFormdataRequestBody:
 		cap = core.Capability_LlmGenerate
 		modelID = defaultLlmGenerateModelID
 		if v.ModelId != nil {

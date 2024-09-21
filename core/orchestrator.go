@@ -135,7 +135,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSe
 }
 
 // Return type is LlmResponse, but a stream is available as well as chan(string)
-func (orch *orchestrator) LlmGenerate(ctx context.Context, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error) {
+func (orch *orchestrator) LlmGenerate(ctx context.Context, req worker.GenLlmFormdataRequestBody) (interface{}, error) {
 	return orch.node.llmGenerate(ctx, req)
 }
 
@@ -1056,7 +1056,7 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.GenImageToVi
 	return &worker.ImageResponse{Images: videos}, nil
 }
 
-func (n *LivepeerNode) llmGenerate(ctx context.Context, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error) {
+func (n *LivepeerNode) llmGenerate(ctx context.Context, req worker.GenLlmFormdataRequestBody) (interface{}, error) {
 	return n.AIWorker.LlmGenerate(ctx, req)
 }
 

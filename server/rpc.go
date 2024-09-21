@@ -69,7 +69,7 @@ type Orchestrator interface {
 	Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
-	LlmGenerate(ctx context.Context, req worker.LlmGenerateLlmGeneratePostFormdataRequestBody) (interface{}, error)
+	LlmGenerate(ctx context.Context, req worker.GenLlmFormdataRequestBody) (interface{}, error)
 }
 
 // Balance describes methods for a session's balance maintenance
