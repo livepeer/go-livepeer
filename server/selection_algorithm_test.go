@@ -26,6 +26,7 @@ func TestFilter(t *testing.T) {
 		{
 			name:             "Some Orchestrators pass the filter",
 			orchMinPerfScore: 0.7,
+			maxPrice:         0,
 			orchPerfScores: map[string]float64{
 				"0x0000000000000000000000000000000000000001": 0.6,
 				"0x0000000000000000000000000000000000000002": 0.8,
@@ -45,6 +46,7 @@ func TestFilter(t *testing.T) {
 		{
 			name:             "No orchestrator Scores defined",
 			orchMinPerfScore: 0.7,
+			maxPrice:         0,
 			orchPerfScores:   nil,
 			orchestrators: []string{
 				"0x0000000000000000000000000000000000000001",
@@ -58,6 +60,7 @@ func TestFilter(t *testing.T) {
 		{
 			name:             "No min score defined",
 			orchMinPerfScore: 0,
+			maxPrice:         0,
 			orchPerfScores: map[string]float64{
 				"0x0000000000000000000000000000000000000001": 0.6,
 				"0x0000000000000000000000000000000000000002": 0.8,
@@ -74,6 +77,7 @@ func TestFilter(t *testing.T) {
 		{
 			name:             "No Orchestrators pass the filter",
 			orchMinPerfScore: 0.99,
+			maxPrice:         0,
 			orchPerfScores: map[string]float64{
 				"0x0000000000000000000000000000000000000001": 0.6,
 				"0x0000000000000000000000000000000000000002": 0.8,
@@ -226,9 +230,9 @@ func TestFilter(t *testing.T) {
 					prices[addr] = new(big.Rat).SetFloat64(price)
 				}
 			}
-			if tt.maxPrice > 0 {
-				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
-			}
+
+			maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
+
 			sa := &ProbabilitySelectionAlgorithm{
 				MinPerfScore:           tt.orchMinPerfScore,
 				IgnoreMaxPriceIfNeeded: tt.ignoreMaxPriceIfNeeded,
