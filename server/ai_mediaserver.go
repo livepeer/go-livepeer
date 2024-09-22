@@ -98,13 +98,13 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
-			var badReqErr *BadRequestError
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 				return
 			}
-			if errors.As(err, &badReqErr) {
+			if errors.As(err, &badRequestErr) {
 				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
@@ -151,13 +151,13 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
-			var badReqErr *BadRequestError
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 				return
 			}
-			if errors.As(err, &badReqErr) {
+			if errors.As(err, &badRequestErr) {
 				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
@@ -212,12 +212,16 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 			resp, err := processImageToVideo(ctx, params, req)
 			if err != nil {
-				var e *ServiceUnavailableError
-				if errors.As(err, &e) {
+				var serviceUnavailableErr *ServiceUnavailableError
+				var badRequestErr *BadRequestError
+				if errors.As(err, &serviceUnavailableErr) {
 					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 					return
 				}
-
+				if errors.As(err, &badRequestErr) {
+					respondJsonError(ctx, w, err, http.StatusBadRequest)
+					return
+				}
 				respondJsonError(ctx, w, err, http.StatusInternalServerError)
 				return
 			}
@@ -314,9 +318,14 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 		start := time.Now()
 		resp, err := processUpscale(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
