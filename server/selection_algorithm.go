@@ -58,7 +58,7 @@ func (sa ProbabilitySelectionAlgorithm) filterByPerfScore(ctx context.Context, a
 }
 
 func (sa ProbabilitySelectionAlgorithm) filterByMaxPrice(ctx context.Context, addrs []ethcommon.Address, maxPrice *big.Rat, prices map[ethcommon.Address]*big.Rat) []ethcommon.Address {
-	if maxPrice.Num().Int64() == 0 || len(prices) == 0 {
+	if maxPrice == nil || maxPrice.Sign() == 0 || len(prices) == 0 {
 		// Max price filter not defined, return all Orchestrators
 		return addrs
 	}
