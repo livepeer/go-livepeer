@@ -49,6 +49,26 @@ func (e *BadRequestError) Error() string {
 	return e.err.Error()
 }
 
+// parseBadRequestError checks if the error is a bad request error and returns a BadRequestError.
+func parseBadRequestError(err error) *BadRequestError {
+	if err == nil {
+		return nil
+	}
+
+	const errorCode = "returned 400"
+	if !strings.Contains(err.Error(), errorCode) {
+		return nil
+	}
+
+	parts := strings.SplitN(err.Error(), errorCode, 2)
+	detail := strings.TrimSpace(parts[1])
+	if detail == "" {
+		detail = "bad request"
+	}
+
+	return &BadRequestError{err: errors.New(detail)}
+}
+
 type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
@@ -896,6 +916,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
+		}
+
+		if badRequestErr := parseBadRequestError(err); badRequestErr != nil {
+			return nil, badRequestErr
 		}
 	}
 
