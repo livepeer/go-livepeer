@@ -453,7 +453,7 @@ func (bsm *BroadcastSessionsManager) shouldSkipVerification(sessions []*Broadcas
 	return common.RandomUintUnder(bsm.VerificationFreq) != 0
 }
 
-func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters, sel BroadcastSessionsSelectorFactory) *BroadcastSessionsManager {
+func NewSessionManager(ctx context.Context, node *core.LivepeerNode, params *core.StreamParameters) *BroadcastSessionsManager {
 	if node.Capabilities != nil {
 		params.Capabilities.SetMinVersionConstraint(node.Capabilities.MinVersionConstraint())
 	}
