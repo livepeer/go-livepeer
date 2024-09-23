@@ -238,5 +238,3 @@ require (
 	lukechampine.com/blake3 v1.2.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
-
-replace github.com/livepeer/ai-worker => github.com/livepeer/ai-worker v0.5.1-0.20240922221144-eb03c8387b7f
