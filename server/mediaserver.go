@@ -531,17 +531,8 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// do not obtain this lock again while initializing channel is open, it will cause deadlock if other goroutine already obtained the lock and called getActiveRtmpConnectionUnsafe()
 	s.connectionLock.Unlock()
 
-	// initialize session manager
-	var stakeRdr stakeReader
-	if s.LivepeerNode.Eth != nil {
-		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
-	}
-	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelector(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, s.LivepeerNode.SelectionAlgorithm, s.LivepeerNode.OrchPerfScore, params.Capabilities)
-	}
-
 	// safe, because other goroutines should be waiting on initializing channel
-	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params, selFactory)
+	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params)
 
 	// populate fields and signal initializing channel
 	s.serverLock.Lock()
