@@ -782,6 +782,17 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	}
 	md.Fname = url
 
+	orchId := "offchain"
+	if n.RecipientAddr != "" {
+		orchId = n.RecipientAddr
+	}
+	if isRemote {
+		// huge hack to thread the orch id down to the transcoder
+		md.Metadata = map[string]string{"orchId": orchId}
+	} else {
+		md.Metadata = MakeMetadata(orchId)
+	}
+
 	//Do the transcoding
 	start := time.Now()
 	tData, err := transcoder.Transcode(ctx, md)
@@ -1116,6 +1127,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	msg := &net.NotifySegment{
 		Url:     fname,
 		TaskId:  taskID,
+		OrchId:  md.Metadata["orchId"],
 		SegData: segData,
 		// Triggers failure on Os that don't know how to use SegData
 		Profiles: []byte("invalid"),

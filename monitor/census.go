@@ -112,6 +112,7 @@ type (
 		kClientIP                     tag.Key
 		kOrchestratorURI              tag.Key
 		kOrchestratorAddress          tag.Key
+		kOrchestratorVersion          tag.Key
 		kFVErrorType                  tag.Key
 		kPipeline                     tag.Key
 		kModelName                    tag.Key
@@ -265,6 +266,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kClientIP = tag.MustNewKey("client_ip")
 	census.kOrchestratorURI = tag.MustNewKey("orchestrator_uri")
 	census.kOrchestratorAddress = tag.MustNewKey("orchestrator_address")
+	census.kOrchestratorVersion = tag.MustNewKey("orchestrator_version")
 	census.kFVErrorType = tag.MustNewKey("fverror_type")
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.kModelName = tag.MustNewKey("model_name")
@@ -392,9 +394,9 @@ func InitCensus(nodeType NodeType, version string) {
 		baseTagsWithManifestIDAndIP = append([]tag.Key{census.kClientIP}, baseTagsWithManifestID...)
 	}
 	baseTagsWithManifestIDAndOrchInfo := baseTagsWithManifestID
-	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTags...)
+	baseTagsWithOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress, census.kOrchestratorVersion}, baseTags...)
 	baseTagsWithGatewayInfo = append([]tag.Key{census.kSender}, baseTags...)
-	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress}, baseTagsWithManifestID...)
+	baseTagsWithManifestIDAndOrchInfo = append([]tag.Key{census.kOrchestratorURI, census.kOrchestratorAddress, census.kOrchestratorVersion}, baseTagsWithManifestID...)
 
 	// Add node type specific tags.
 	baseTagsWithNodeInfo := baseTags
@@ -985,6 +987,10 @@ func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Cont
 		tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
 		tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
 	)
+	capabilities := orchInfo.GetCapabilities()
+	if capabilities != nil {
+		others = append(others, tag.Insert(census.kOrchestratorVersion, capabilities.Version))
+	}
 
 	return others
 }
