@@ -100,11 +100,14 @@ jobs:
             && apt update \
             && apt -yqq install \
               nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
+              protobuf-compiler
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
             && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
             && update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
+
+          go install github.com/golang/protobuf/protoc-gen-go@v1.3.5 && which protoc-gen-go
 
       - name: Install go modules
         if: steps.go.outputs.cache-hit != 'true'
