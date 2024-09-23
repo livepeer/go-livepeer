@@ -67,12 +67,12 @@ type Orchestrator interface {
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
-	TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error)
-	ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error)
-	ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error)
-	Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error)
-	AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error)
-	SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error)
+	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
+	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
+	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
+	Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error)
+	AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error)
+	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
 }
 
 // Balance describes methods for a session's balance maintenance

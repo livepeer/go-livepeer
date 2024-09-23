@@ -187,22 +187,22 @@ func (r *stubOrchestrator) TranscoderSecret() string {
 func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *stubOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
@@ -1383,22 +1383,22 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
 }
-func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

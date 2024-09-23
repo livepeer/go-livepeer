@@ -18,12 +18,12 @@ import (
 var errPipelineNotAvailable = errors.New("pipeline not available")
 
 type AI interface {
-	TextToImage(context.Context, worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error)
-	ImageToImage(context.Context, worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
-	ImageToVideo(context.Context, worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
-	Upscale(context.Context, worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error)
-	AudioToText(context.Context, worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error)
-	SegmentAnything2(context.Context, worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
+	TextToImage(context.Context, worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error)
+	ImageToImage(context.Context, worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error)
+	ImageToVideo(context.Context, worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
+	Upscale(context.Context, worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
+	AudioToText(context.Context, worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
+	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool

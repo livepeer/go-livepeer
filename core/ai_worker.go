@@ -481,7 +481,7 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 	return results, nil
 }
 
-func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req worker.TextToImageJSONRequestBody) (interface{}, error) {
+func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToImage(ctx, req)
@@ -514,7 +514,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
-func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, req worker.ImageToImageMultipartRequestBody) (interface{}, error) {
+func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToImage(ctx, req)
@@ -556,7 +556,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	return res.Results, nil
 }
 
-func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.ImageToVideoMultipartRequestBody) (interface{}, error) {
+func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		//do not need to save response, result is saved for download by gateway with transcoding of segment
@@ -589,7 +589,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 	return res.Results, nil
 }
 
-func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req worker.UpscaleMultipartRequestBody) (interface{}, error) {
+func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.Upscale(ctx, req)
@@ -630,7 +630,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	return res.Results, nil
 }
 
-func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req worker.AudioToTextMultipartRequestBody) (interface{}, error) {
+func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		//no file response to save, response is text sent back to gateway
@@ -663,7 +663,7 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
-func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.SegmentAnything2MultipartRequestBody) (interface{}, error) {
+func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		//no file response to save, response is text sent back to gateway
@@ -776,22 +776,22 @@ func (n *LivepeerNode) SaveBase64Result(ctx context.Context, data string, reques
 	return fname, nil
 }
 
-func (n *LivepeerNode) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.TextToImage(ctx, req)
 }
 
-func (n *LivepeerNode) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.ImageToImage(ctx, req)
 }
 
-func (n *LivepeerNode) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.Upscale(ctx, req)
 }
 
-func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
-func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
 
@@ -871,7 +871,7 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 	return &worker.ImageResponse{Images: videos}, nil
 }
 
-func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 

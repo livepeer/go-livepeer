@@ -98,7 +98,7 @@ func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	//test request
-	var req worker.ImageToImageMultipartRequestBody
+	var req worker.GenImageToImageMultipartRequestBody
 	modelID := "livepeer/model1"
 	req.Prompt = "test prompt"
 	req.ModelId = &modelID
@@ -151,7 +151,7 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 func TestRemoteAIWorker_Error(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	//test request
-	var req worker.TextToImageJSONRequestBody
+	var req worker.GenTextToImageJSONRequestBody
 	modelID := "livepeer/model1"
 	req.Prompt = "test prompt"
 	req.ModelId = &modelID
@@ -324,7 +324,7 @@ type stubAIWorker struct {
 	err    error
 }
 
-func (a stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (a stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err
@@ -342,7 +342,7 @@ func (a stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJSO
 
 }
 
-func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err
@@ -359,7 +359,7 @@ func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImageM
 	}
 }
 
-func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err
@@ -395,7 +395,7 @@ func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoM
 	}
 }
 
-func (a stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err
@@ -412,7 +412,7 @@ func (a stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRe
 	}
 }
 
-func (a stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (a stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err
@@ -421,7 +421,7 @@ func (a stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMul
 	}
 }
 
-func (a stubAIWorker) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+func (a stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	a.called++
 	if a.err != nil {
 		return nil, a.err

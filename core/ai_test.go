@@ -96,7 +96,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 	assert.Equal(t, 1, len(m.remoteAIWorkers))
 	assert.NotNil(t, m.liveAIWorkers[strm])
 	//create request
-	req := worker.TextToImageJSONRequestBody{}
+	req := worker.GenTextToImageJSONRequestBody{}
 	req.Prompt = "a titan carrying steel ball with livepeer logo"
 
 	// happy path
@@ -320,7 +320,7 @@ func TestRemoteAIWorkerTimeout(t *testing.T) {
 	//create a new worker
 	wkr, strm := initAIWorker()
 	//create request
-	req := worker.TextToImageJSONRequestBody{}
+	req := worker.GenTextToImageJSONRequestBody{}
 	req.Prompt = "a titan carrying steel ball with livepeer logo"
 
 	// check default timeout
@@ -519,7 +519,7 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 
 	//test text-to-image
 	modelID := "livepeer/model1"
-	req := worker.TextToImageJSONRequestBody{}
+	req := worker.GenTextToImageJSONRequestBody{}
 	req.Prompt = "a titan carrying steel ball with livepeer logo"
 	req.ModelId = &modelID
 	o.CreateStorageForRequest("request_id1")
@@ -600,7 +600,7 @@ func NewStubAIWorker() *stubAIWorker {
 
 type stubAIWorker struct{}
 
-func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -608,7 +608,7 @@ func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.TextToImageJS
 	}, nil
 }
 
-func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -616,7 +616,7 @@ func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.ImageToImage
 	}, nil
 }
 
-func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	return &worker.VideoResponse{
 		Frames: [][]worker.Media{
 			{
@@ -631,7 +631,7 @@ func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideo
 	}, nil
 }
 
-func (a *stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (a *stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
 			{Url: "http://example.com/image.png"},
@@ -639,11 +639,11 @@ func (a *stubAIWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartR
 	}, nil
 }
 
-func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return &worker.TextResponse{Text: "Transcribed text"}, nil
 }
 
-func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return &worker.MasksResponse{Logits: "logits", Masks: "masks", Scores: "scores"}, nil
 }
 

@@ -189,7 +189,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	switch notify.Pipeline {
 	case "text-to-image":
-		var req worker.TextToImageJSONRequestBody
+		var req worker.GenTextToImageJSONRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
@@ -198,7 +198,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		resultType = "image/png"
 		resp, err = n.TextToImage(ctx, req)
 	case "image-to-image":
-		var req worker.ImageToImageMultipartRequestBody
+		var req worker.GenImageToImageMultipartRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
@@ -208,7 +208,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToImage(ctx, req)
 	case "upscale":
-		var req worker.UpscaleMultipartRequestBody
+		var req worker.GenUpscaleMultipartRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
@@ -218,7 +218,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.Upscale(ctx, req)
 	case "image-to-video":
-		var req worker.ImageToVideoMultipartRequestBody
+		var req worker.GenImageToVideoMultipartRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
@@ -228,7 +228,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.ImageToVideo(ctx, req)
 	case "audio-to-text":
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.GenAudioToTextMultipartRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
@@ -238,7 +238,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		req.Audio.InitFromBytes(input, "audio")
 		resp, err = n.AudioToText(ctx, req)
 	case "segment-anything-2":
-		var req worker.SegmentAnything2MultipartRequestBody
+		var req worker.GenSegmentAnything2MultipartRequestBody
 		err = json.Unmarshal(notify.RequestData, &req)
 		if err != nil {
 			reqOk = false
