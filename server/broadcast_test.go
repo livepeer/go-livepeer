@@ -65,10 +65,6 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 	}
 }
 
-func selFactoryEmpty() BroadcastSessionsSelector {
-	return &LIFOSelector{}
-}
-
 func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
 	return bsmWithSessListExt(sessList, nil, false)
 }
@@ -299,7 +295,7 @@ func TestNewSessionManager(t *testing.T) {
 
 	// Check empty pool produces expected numOrchs
 
-	sess := NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+	sess := NewSessionManager(context.TODO(), n, params)
 	assert.Equal(0, sess.trustedPool.numOrchs)
 	assert.Equal(0, sess.untrustedPool.numOrchs)
 
@@ -308,7 +304,7 @@ func TestNewSessionManager(t *testing.T) {
 	n.OrchestratorPool = sd
 	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+		sess = NewSessionManager(context.TODO(), n, params)
 		if i < max {
 			assert.Equal(i, sess.trustedPool.numOrchs)
 		} else {
