@@ -144,7 +144,7 @@ func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 
 	return heap.Pop(s.knownSessions).(*BroadcastSession)
 
-	// TODO: Fix selection logic, remove above code and uncomment below code.
+	// TODO: Fix AI selection logic, remove above code and uncomment transcoding logic below.
 	// lowestLatencyScoreKnownSession := heap.Pop(s.knownSessions).(*BroadcastSession)
 	// if lowestLatencyScoreKnownSession.LatencyScore <= s.minLS {
 	// 	// known session has good enough latency score, use it
