@@ -21,19 +21,21 @@ type webhookResponse struct {
 }
 
 type webhookPool struct {
-	pool         *orchestratorPool
-	callback     *url.URL
-	responseHash ethcommon.Hash
-	lastRequest  time.Time
-	mu           *sync.RWMutex
-	bcast        common.Broadcaster
+	pool             *orchestratorPool
+	callback         *url.URL
+	responseHash     ethcommon.Hash
+	lastRequest      time.Time
+	mu               *sync.RWMutex
+	bcast            common.Broadcaster
+	discoveryTimeout time.Duration
 }
 
-func NewWebhookPool(bcast common.Broadcaster, callback *url.URL) *webhookPool {
+func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration) *webhookPool {
 	p := &webhookPool{
-		callback: callback,
-		mu:       &sync.RWMutex{},
-		bcast:    bcast,
+		callback:         callback,
+		mu:               &sync.RWMutex{},
+		bcast:            bcast,
+		discoveryTimeout: discoveryTimeout,
 	}
 	go p.getInfos()
 	return p
@@ -71,7 +73,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	}
 
 	// pool = NewOrchestratorPool(w.bcast, addrs)
-	pool = &orchestratorPool{infos: infos, bcast: w.bcast}
+	pool = &orchestratorPool{infos: infos, bcast: w.bcast, discoveryTimeout: w.discoveryTimeout}
 
 	w.mu.Lock()
 	w.responseHash = hash

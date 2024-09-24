@@ -190,6 +190,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	}
 	defer os.Remove(fname)
 	md.Fname = fname
+	md.Metadata = core.MakeMetadata(notify.OrchId)
 	clog.V(common.DEBUG).Infof(ctx, "Segment from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
 
 	start := time.Now()

@@ -17,7 +17,7 @@ func NewFileWorker(files map[string]string) *FileWorker {
 	return &FileWorker{files: files}
 }
 
-func (w *FileWorker) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (w *FileWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	fname, ok := w.files["text-to-image"]
 	if !ok {
 		return nil, errors.New("text-to-image response file not found")
@@ -36,7 +36,7 @@ func (w *FileWorker) TextToImage(ctx context.Context, req worker.TextToImageJSON
 	return &resp, nil
 }
 
-func (w *FileWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (w *FileWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	fname, ok := w.files["image-to-image"]
 	if !ok {
 		return nil, errors.New("image-to-image response file not found")
@@ -55,7 +55,7 @@ func (w *FileWorker) ImageToImage(ctx context.Context, req worker.ImageToImageMu
 	return &resp, nil
 }
 
-func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
 	fname, ok := w.files["image-to-video"]
 	if !ok {
 		return nil, errors.New("image-to-video response file not found")
@@ -74,7 +74,7 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMu
 	return &resp, nil
 }
 
-func (w *FileWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (w *FileWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	fname, ok := w.files["upscale"]
 	if !ok {
 		return nil, errors.New("upscale response file not found")

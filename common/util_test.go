@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -482,4 +483,39 @@ func TestParseAccelDevices_CustomSelection(t *testing.T) {
 	assert.Equal(ids[0], "0")
 	assert.Equal(ids[1], "3")
 	assert.Equal(ids[2], "1")
+}
+func TestValidateServiceURI(t *testing.T) {
+	// Valid service URIs
+	validURIs := []string{
+		"https://8.8.8.8:8935",
+		"https://127.0.0.1:8935",
+	}
+
+	for _, uri := range validURIs {
+		serviceURI, err := url.Parse(uri)
+		if err != nil {
+			t.Errorf("Failed to parse valid service URI: %v", err)
+		}
+
+		if !ValidateServiceURI(serviceURI) {
+			t.Errorf("Expected service URI to be valid, but got invalid: %v", uri)
+		}
+	}
+
+	// Invalid service URIs
+	invalidURIs := []string{
+		"http://0.0.0.0",
+		"https://0.0.0.0",
+	}
+
+	for _, uri := range invalidURIs {
+		serviceURI, err := url.Parse(uri)
+		if err != nil {
+			t.Errorf("Failed to parse invalid service URI: %v", err)
+		}
+
+		if ValidateServiceURI(serviceURI) {
+			t.Errorf("Expected service URI to be invalid, but got valid: %v", uri)
+		}
+	}
 }

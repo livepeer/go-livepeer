@@ -69,6 +69,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
 	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(ls.AudioToText()))
+	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(ls.SegmentAnything2()))
 
 	return nil
 }
@@ -80,7 +81,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.TextToImageJSONRequestBody
+		var req worker.GenTextToImageJSONRequestBody
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -97,9 +98,14 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 		start := time.Now()
 		resp, err := processTextToImage(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -128,7 +134,7 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 			return
 		}
 
-		var req worker.ImageToImageMultipartRequestBody
+		var req worker.GenImageToImageMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -145,9 +151,14 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 		start := time.Now()
 		resp, err := processImageToImage(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -176,7 +187,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			return
 		}
 
-		var req worker.ImageToVideoMultipartRequestBody
+		var req worker.GenImageToVideoMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -201,12 +212,16 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 
 			resp, err := processImageToVideo(ctx, params, req)
 			if err != nil {
-				var e *ServiceUnavailableError
-				if errors.As(err, &e) {
+				var serviceUnavailableErr *ServiceUnavailableError
+				var badRequestErr *BadRequestError
+				if errors.As(err, &serviceUnavailableErr) {
 					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 					return
 				}
-
+				if errors.As(err, &badRequestErr) {
+					respondJsonError(ctx, w, err, http.StatusBadRequest)
+					return
+				}
 				respondJsonError(ctx, w, err, http.StatusInternalServerError)
 				return
 			}
@@ -286,7 +301,7 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 			return
 		}
 
-		var req worker.UpscaleMultipartRequestBody
+		var req worker.GenUpscaleMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -303,9 +318,14 @@ func (ls *LivepeerServer) Upscale() http.Handler {
 		start := time.Now()
 		resp, err := processUpscale(ctx, params, req)
 		if err != nil {
-			var e *ServiceUnavailableError
-			if errors.As(err, &e) {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
 				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
 				return
 			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
@@ -334,7 +354,7 @@ func (ls *LivepeerServer) AudioToText() http.Handler {
 			return
 		}
 
-		var req worker.AudioToTextMultipartRequestBody
+		var req worker.GenAudioToTextMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
@@ -367,6 +387,59 @@ func (ls *LivepeerServer) AudioToText() http.Handler {
 
 		took := time.Since(start)
 		clog.V(common.VERBOSE).Infof(ctx, "Processed AudioToText request model_id=%v took=%v", *req.ModelId, took)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) SegmentAnything2() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenSegmentAnything2MultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		clog.V(common.VERBOSE).Infof(ctx, "Received SegmentAnything2 request; image_size=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
+
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+		}
+
+		start := time.Now()
+		resp, err := processSegmentAnything2(ctx, params, req)
+		if err != nil {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		took := time.Since(start)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed SegmentAnything2 request model_id=%v took=%v", *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

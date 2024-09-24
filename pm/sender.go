@@ -22,6 +22,9 @@ type Sender interface {
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
 
+	// CleanupSession deletes session from the internal map
+	CleanupSession(sessionID string)
+
 	// CreateTicketBatch returns a ticket batch of the specified size
 	CreateTicketBatch(sessionID string, size int) (*TicketBatch, error)
 
@@ -80,6 +83,10 @@ func (s *sender) EV(sessionID string) (*big.Rat, error) {
 	}
 
 	return ticketEV(session.ticketParams.FaceValue, session.ticketParams.WinProb), nil
+}
+
+func (s *sender) CleanupSession(sessionID string) {
+	s.sessions.Delete(sessionID)
 }
 
 func (s *sender) validateSender(info *SenderInfo) error {
