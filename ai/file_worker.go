@@ -74,6 +74,25 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.ImageToVideoMu
 	return &resp, nil
 }
 
+func (w *FileWorker) LivePortrait(ctx context.Context, req worker.LivePortraitMultipartRequestBody) (*worker.VideoResponse, error) {
+	fname, ok := w.files["live-portrait"]
+	if !ok {
+		return nil, errors.New("live-portrait response file not found")
+	}
+
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp worker.VideoResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 func (w *FileWorker) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	fname, ok := w.files["upscale"]
 	if !ok {

@@ -7,6 +7,7 @@ import (
 	"image"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -17,6 +18,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 func startAIServer(lp lphttp) error {
@@ -45,6 +47,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/live-portrait", oapiReqValidator(lp.LivePortrait()))
 
 	return nil
 }
@@ -172,6 +175,29 @@ func (h *lphttp) SegmentAnything2() http.Handler {
 		}
 
 		var req worker.SegmentAnything2MultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) LivePortrait() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.LivePortraitMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -324,6 +350,56 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+
+	case worker.LivePortraitMultipartRequestBody:
+		pipeline = "live-portrait"
+		cap = core.Capability_LivePortrait
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.LivePortrait(ctx, v)
+		}
+		video, err := v.DrivingVideo.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+		defer video.Close() // Don't forget to close the video after you're done with it
+
+		probeData, err := ffmpeg_go.ProbeReader(video)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+
+		var probeDataMap map[string]interface{}
+		err = json.Unmarshal([]byte(probeData), &probeDataMap)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+		width := streamData["width"].(float64)
+		height := streamData["height"].(float64)
+		duration := streamData["duration"].(string)        // Duration in seconds
+		framerate := streamData["avg_frame_rate"].(string) // Framerate as a string (e.g., "25/1")
+
+		// Calculate total frames based on duration and framerate
+		framerateParts := strings.Split(framerate, "/")
+		var frameRate float64
+		if len(framerateParts) == 2 {
+			numerator, _ := strconv.ParseFloat(framerateParts[0], 64)
+			denominator, _ := strconv.ParseFloat(framerateParts[1], 64)
+			frameRate = numerator / denominator
+		} else {
+			frameRate, _ = strconv.ParseFloat(framerate, 64) // Fallback if not in "num/den" format
+		}
+		durationFloat, err := strconv.ParseFloat(duration, 64) // Convert duration to float64
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		total_frames := int64(durationFloat * frameRate) // Calculate total frames based on duration and framerate
+		outPixels = int64(width) * int64(height) * total_frames
+
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -397,6 +473,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			}
 		case worker.SegmentAnything2MultipartRequestBody:
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
+
+		case worker.LivePortraitMultipartRequestBody:
+			latencyScore = CalculateLivePortraitLatencyScore(took, v, outPixels)
 		}
 
 		var pricePerAIUnit float64

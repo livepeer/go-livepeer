@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"image"
 	"math/big"
 	"net/url"
 	"os"
@@ -132,6 +132,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTex
 
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return orch.node.SegmentAnything2(ctx, req)
+}
+
+func (orch *orchestrator) LivePortrait(ctx context.Context, req worker.LivePortraitMultipartRequestBody) (*worker.VideoResponse, error) {
+	return orch.node.LivePortrait(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -630,26 +634,31 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// We only support base64 png data urls right now
 	// We will want to support HTTP and file urls later on as well
-	dirPath := path.Join(n.WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
+	dirPath := path.Join("/home/user/go-livepeer/.cache", "input", sessionID+"_"+string(RandomManifestID()))
 	fnamep = &dirPath
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot create frames dir err=%q", err)
 		return terr(err)
 	}
+	var wg sync.WaitGroup // Add a WaitGroup to wait for all goroutines to finish
 	for i, url := range urls {
-		fname := path.Join(dirPath, strconv.Itoa(i)+".png")
-		if err := worker.SaveImageB64DataUrl(url, fname); err != nil {
-			clog.Errorf(ctx, "Transcoder failed to save image from url err=%q", err)
-			return terr(err)
-		}
+		wg.Add(1) // Increment the WaitGroup counter
+		go func(i int, url string) {
+			defer wg.Done() // Decrement the counter when the goroutine completes
+			fname := path.Join(dirPath, strconv.Itoa(i)+".png")
+			if err := worker.SaveImageB64DataUrl(url, fname); err != nil {
+				clog.Errorf(ctx, "Transcoder failed to save image from url err=%q", err)
+			}
+		}(i, url) // Pass the loop variables to the goroutine
 	}
+	wg.Wait()
 
 	// Use local software transcoder instead of node's configured transcoder
 	// because if the node is using a nvidia transcoder there may be sporadic
 	// CUDA operation not permitted errors that are difficult to debug.
 	// The majority of the execution time for image-to-video is the frame generation
 	// so slower software transcoding should not be a big deal for now.
-	transcoder := NewLocalTranscoder(n.WorkDir)
+	transcoder := NewLocalTranscoder("/home/user/go-livepeer/.cache")
 
 	md := &SegTranscodingMetadata{
 		Fname:     path.Join(dirPath, "%d.png"),
@@ -750,7 +759,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
 	fnamep = &fname
-	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
+	if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		return terr(err)
 	}
@@ -1049,6 +1058,82 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 	}
 
 	return &worker.ImageResponse{Images: videos}, nil
+}
+
+func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortraitMultipartRequestBody) (*worker.VideoResponse, error) {
+	// handle frames from api
+	start := time.Now()
+	resp, err := n.AIWorker.LivePortrait(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	took := time.Since(start)
+	clog.V(common.DEBUG).Infof(ctx, "Animating the video took=%v", took)
+
+	sessionID := string(RandomManifestID())
+	framerate := 30
+
+	// Find the resolution of the source image
+	sourceImage, _ := req.SourceImage.Bytes()                 // Assuming req has SourceImage field
+	img, _, err := image.Decode(bytes.NewReader(sourceImage)) // Decode the image
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode source image: %v", err)
+	}
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy() // Get width and height
+
+	inProfile := ffmpeg.VideoProfile{
+		Framerate:    uint(framerate),
+		FramerateDen: 1,
+	}
+	outProfile := ffmpeg.VideoProfile{
+		Name:       "live-portrait",
+		Framerate:  uint(framerate),
+		Bitrate:    "6000k",
+		Resolution: fmt.Sprintf("%vx%v", width, height), // Set resolution for outProfile
+		Format:     ffmpeg.FormatMP4,
+	}
+
+	// Transcode frames into segments.
+	videos := make([][]worker.Media, len(resp.Frames))
+	for i, batch := range resp.Frames {
+		videos[i] = make([]worker.Media, len(batch)) // Adjusted to match the batch size
+		// Create slice of frame urls for a batch
+		for j, frame := range batch {
+			videos[i][j] = worker.Media{ // Directly populate the videos array
+				Url:  frame.Url,
+				Seed: frame.Seed,
+				Nsfw: frame.Nsfw,
+			}
+		}
+		// Transcode slice of frame urls into a segment
+		urls := make([]string, len(batch))
+		for j, frame := range batch {
+			urls[j] = frame.Url
+		}
+		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		// Assume only single rendition right now
+		seg := res.TranscodeData.Segments[0]
+		name := fmt.Sprintf("%v.mp4", RandomManifestID())
+		segData := bytes.NewReader(seg.Data)
+		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		videos[i][0] = worker.Media{
+			Url: uri,
+		}
+		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
+		if len(batch) > 0 {
+			videos[i][0].Nsfw = batch[0].Nsfw
+			videos[i][0].Seed = batch[0].Seed
+		}
+	}
+	return &worker.VideoResponse{Frames: videos}, nil
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {

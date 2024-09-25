@@ -45,7 +45,6 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
-	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:   md.Fname,
 		Accel:   ffmpeg.Software,
