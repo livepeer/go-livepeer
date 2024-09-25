@@ -87,7 +87,7 @@ func (ls *LivepeerServer) TextToImage() http.Handler {
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(r.Context(), "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
+		clog.V(common.VERBOSE).Infof(ctx, "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,

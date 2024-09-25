@@ -623,6 +623,14 @@ func CapabilityToName(capability Capability) (string, error) {
 	return capName, nil
 }
 
+func (c Capability) String() string {
+	name, err := CapabilityToName(c)
+	if err != nil {
+		return fmt.Sprintf("%d", int(c))
+	}
+	return name
+}
+
 func HasCapability(caps []Capability, capability Capability) bool {
 	for _, c := range caps {
 		if capability == c {
