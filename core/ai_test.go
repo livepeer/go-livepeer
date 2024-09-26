@@ -522,11 +522,12 @@ func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 	req := worker.TextToImageJSONRequestBody{}
 	req.Prompt = "a titan carrying steel ball with livepeer logo"
 	req.ModelId = &modelID
+	o.CreateStorageForRequest("request_id1")
 	res, err := o.TextToImage(context.TODO(), "request_id1", req)
 	results, ok := res.(worker.ImageResponse)
 	assert.True(t, ok)
 	assert.Nil(t, err)
-	assert.Equal(t, "image_url", results.Images[0].Url)
+	assert.Equal(t, "/stream/request_id1/image_url", results.Images[0].Url)
 	// remove worker
 	wkr.eof <- struct{}{}
 	time.Sleep(1 * time.Second)
