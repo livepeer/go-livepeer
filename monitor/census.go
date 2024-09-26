@@ -1815,9 +1815,13 @@ func (cen *censusMetricsCounter) recordAIRequestLatencyScore(Pipeline string, Mo
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
-	if err := stats.RecordWithTags(cen.ctx,
-		[]tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(cen.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())},
-		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
+	tags := []tag.Mutator{tag.Insert(cen.kPipeline, Pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(cen.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())}
+	capabilities := orchInfo.GetCapabilities()
+	if capabilities != nil {
+		tags = append(tags, tag.Insert(cen.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
+	}
+
+	if err := stats.RecordWithTags(cen.ctx, tags, cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
@@ -1841,9 +1845,13 @@ func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.
 		orchAddr = common.BytesToAddress(addr).String()
 	}
 
-	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)},
-		census.mAIRequestError.M(1)); err != nil {
+	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
+	capabilities := orchInfo.GetCapabilities()
+	if capabilities != nil {
+		tags = append(tags, tag.Insert(census.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
+	}
+
+	if err := stats.RecordWithTags(census.ctx, tags, census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
