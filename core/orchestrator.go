@@ -634,7 +634,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// We only support base64 png data urls right now
 	// We will want to support HTTP and file urls later on as well
-	dirPath := path.Join("/home/user/go-livepeer/.cache", "input", sessionID+"_"+string(RandomManifestID()))
+	dirPath := path.Join(WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
 	fnamep = &dirPath
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot create frames dir err=%q", err)
@@ -658,7 +658,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 	// CUDA operation not permitted errors that are difficult to debug.
 	// The majority of the execution time for image-to-video is the frame generation
 	// so slower software transcoding should not be a big deal for now.
-	transcoder := NewLocalTranscoder("/home/user/go-livepeer/.cache")
+	transcoder := NewLocalTranscoder(n.WorkDir)
 
 	md := &SegTranscodingMetadata{
 		Fname:     path.Join(dirPath, "%d.png"),
