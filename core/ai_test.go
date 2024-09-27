@@ -37,7 +37,7 @@ func TestServeAIWorker(t *testing.T) {
 	n.AIWorkerManager = NewRemoteAIWorkerManager()
 	strm := &StubAIWorkerServer{}
 
-	// test that a ai worker was created
+	// test that an ai worker was created
 	caps := createAIWorkerCapabilities()
 	netCaps := caps.ToNetCapabilities()
 	go n.serveAIWorker(strm, netCaps)
@@ -66,7 +66,7 @@ func TestServeAIWorker_IncompatibleVersion(t *testing.T) {
 	n.AIWorkerManager = NewRemoteAIWorkerManager()
 	strm := &StubAIWorkerServer{}
 
-	// test that a ai worker was created
+	// test that an ai worker was created
 	caps := createAIWorkerCapabilities()
 	netCaps := caps.ToNetCapabilities()
 	go n.serveAIWorker(strm, netCaps)

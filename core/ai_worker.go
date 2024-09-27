@@ -91,7 +91,7 @@ func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServ
 func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 	from := common.GetConnectionAddr(stream.Context())
 	wkrCaps := CapabilitiesFromNetCapabilities(capabilities)
-	glog.Infof("checking worker is compatible with orchestrator: worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
+	glog.Infof("Checking Worker version compatibility: worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
 	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
 		n.Capabilities.AddCapacity(wkrCaps)
 		n.AddAICapabilities(wkrCaps)
@@ -121,7 +121,6 @@ func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 	rwm.RWmutex.Lock()
 	rwm.liveAIWorkers[aiworker.stream] = aiworker
 	rwm.remoteAIWorkers = append(rwm.remoteAIWorkers, aiworker)
-	// sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
 	rwm.RWmutex.Unlock()
 
 	<-aiworker.eof
@@ -213,10 +212,8 @@ func (rwm *RemoteAIWorkerManager) selectWorker(requestID string, pipeline string
 		}
 
 		if !sessionExists {
-			// Assinging worker to session for future use
+			// Assigning worker to session for future use
 			rwm.requestSessions[requestID] = worker
-			//TODO add sorting by inference time for each pipeline/model
-			//sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
 		}
 		return worker, nil
 	}
@@ -268,8 +265,6 @@ func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID
 			}
 		}
 	}
-	//TODO add sorting by inference time for each pipeline/model
-	//sort.Sort(byLoadFactor(rwm.remoteAIWorkers))
 	delete(rwm.requestSessions, requestID)
 }
 
@@ -540,11 +535,11 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
 
-	req.Image.InitFromBytes(nil, input_url)
+	req.Image.InitFromBytes(nil, inputUrl)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, input_url, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, inputUrl, req)
 	if err != nil {
 		return nil, err
 	}
@@ -574,10 +569,10 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		return nil, err
 	}
 
-	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, input_url)
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, inputUrl)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, input_url, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, inputUrl, req)
 	if err != nil {
 		return nil, err
 	}
@@ -615,10 +610,10 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		return nil, err
 	}
 
-	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, input_url)
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, inputUrl)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, input_url, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, inputUrl, req)
 	if err != nil {
 		return nil, err
 	}
@@ -648,10 +643,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 		return nil, err
 	}
 
-	input_url, err := orch.SaveAIRequestInput(ctx, requestID, audioBytes)
-	req.Audio.InitFromBytes(nil, input_url)
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, audioBytes)
+	req.Audio.InitFromBytes(nil, inputUrl)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "audio-to-text", *req.ModelId, input_url, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "audio-to-text", *req.ModelId, inputUrl, req)
 	if err != nil {
 		return nil, err
 	}
@@ -681,10 +676,10 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 		return nil, err
 	}
 
-	input_url, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, input_url)
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	req.Image.InitFromBytes(nil, inputUrl)
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, input_url, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, inputUrl, req)
 	if err != nil {
 		return nil, err
 	}

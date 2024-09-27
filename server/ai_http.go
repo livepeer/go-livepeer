@@ -24,6 +24,8 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+var MaxAIRequestSize = 3000000000 // 3GB
+
 func startAIServer(lp lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -50,7 +52,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-	// /aiResults endpoint registered in server/rpc.go
+	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
 }
@@ -520,8 +522,8 @@ func (h *lphttp) AIResults() http.Handler {
 					break
 				}
 
-				//this is where we would include metadata on each result if want to separate
-				//instead the multipart response includes the json and the files separately with the json "url" field matching to part names
+				// this is where we would include metadata on each result if want to separate
+				// instead the multipart response includes the json and the files separately with the json "url" field matching to part names
 				cDisp := p.Header.Get("Content-Disposition")
 				if p.Header.Get("Content-Type") == "application/json" {
 					var results interface{}
