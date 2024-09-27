@@ -110,31 +110,31 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
-func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.textToImage(ctx, req)
 }
 
-func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToImage(ctx, req)
 }
 
-func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToVideo(ctx, req)
 }
 
-func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.upscale(ctx, req)
 }
 
-func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (orch *orchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return orch.node.AudioToText(ctx, req)
 }
 
-func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return orch.node.SegmentAnything2(ctx, req)
 }
 
-func (orch *orchestrator) LivePortrait(ctx context.Context, req worker.LivePortraitMultipartRequestBody) (*worker.VideoResponse, error) {
+func (orch *orchestrator) LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
 	return orch.node.LivePortrait(ctx, req)
 }
 
@@ -960,27 +960,27 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	}
 }
 
-func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) textToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.TextToImage(ctx, req)
 }
 
-func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.ImageToImage(ctx, req)
 }
 
-func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.Upscale(ctx, req)
 }
 
-func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
 
-func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 
-func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
 
@@ -1060,7 +1060,7 @@ func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideo
 	return &worker.ImageResponse{Images: videos}, nil
 }
 
-func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortraitMultipartRequestBody) (*worker.VideoResponse, error) {
+func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
 	// handle frames from api
 	start := time.Now()
 	resp, err := n.AIWorker.LivePortrait(ctx, req)
@@ -1096,26 +1096,20 @@ func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortrait
 	}
 
 	// Transcode frames into segments.
-	videos := make([][]worker.Media, len(resp.Frames))
+	videos := make([]worker.Media, len(resp.Frames))
 	for i, batch := range resp.Frames {
-		videos[i] = make([]worker.Media, len(batch)) // Adjusted to match the batch size
 		// Create slice of frame urls for a batch
-		for j, frame := range batch {
-			videos[i][j] = worker.Media{ // Directly populate the videos array
-				Url:  frame.Url,
-				Seed: frame.Seed,
-				Nsfw: frame.Nsfw,
-			}
-		}
-		// Transcode slice of frame urls into a segment
 		urls := make([]string, len(batch))
 		for j, frame := range batch {
 			urls[j] = frame.Url
 		}
+
+		// Transcode slice of frame urls into a segment
 		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
 		if res.Err != nil {
 			return nil, res.Err
 		}
+
 		// Assume only single rendition right now
 		seg := res.TranscodeData.Segments[0]
 		name := fmt.Sprintf("%v.mp4", RandomManifestID())
@@ -1124,16 +1118,18 @@ func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortrait
 		if err != nil {
 			return nil, err
 		}
-		videos[i][0] = worker.Media{
+
+		videos[i] = worker.Media{
 			Url: uri,
 		}
+
 		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
 		if len(batch) > 0 {
-			videos[i][0].Nsfw = batch[0].Nsfw
-			videos[i][0].Seed = batch[0].Seed
+			videos[i].Nsfw = batch[0].Nsfw
+			videos[i].Seed = batch[0].Seed
 		}
 	}
-	return &worker.VideoResponse{Frames: videos}, nil
+	return &worker.VideoResponse{Frames: [][]worker.Media{videos}}, nil
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
