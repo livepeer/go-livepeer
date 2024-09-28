@@ -39,6 +39,9 @@ type SenderMonitor interface {
 	// Stop signals the monitor to exit gracefully
 	Stop()
 
+	// CheckForRedeemableTickets checks for tickets that need to be redeemed
+	CheckForRedeemableTickets() ([]SignedTicket, error)
+
 	// QueueTicket adds a ticket to the queue for a remote sender
 	QueueTicket(ticket *SignedTicket) error
 
@@ -152,6 +155,18 @@ func (sm *LocalSenderMonitor) Start() {
 func (sm *LocalSenderMonitor) Stop() {
 	sm.conn.Close()
 	close(sm.quit)
+}
+
+func (sm *LocalSenderMonitor) CheckForRedeemableTickets() ([]SignedTicket, error) {
+	minRound := new(big.Int).Sub(sm.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64()
+	glog.Infof("checking for tickets created after %d that need to be redeemed", minRound)
+	ticketsCnt, err := sm.ticketStore.WinningTicketsToRedeem(minRound)
+	if err == nil && ticketsCnt > 0 {
+		return sm.ticketStore.SelectEligibleWinningTickets(new(big.Int).Sub(sm.tm.LastInitializedRound(), big.NewInt(ticketValidityPeriod)).Int64())
+	} else {
+		glog.Infof("No tickets found to redeem", minRound)
+		return []SignedTicket{}, nil
+	}
 }
 
 // addFloat adds to a remote sender's max float

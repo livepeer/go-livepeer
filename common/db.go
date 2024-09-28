@@ -35,7 +35,9 @@ type DB struct {
 	withdrawableUnbondingLocks       *sql.Stmt
 	insertWinningTicket              *sql.Stmt
 	selectEarliestWinningTicket      *sql.Stmt
+	selectEligibleWinningTickets     *sql.Stmt
 	winningTicketCount               *sql.Stmt
+	winningTicketsToRedeem           *sql.Stmt
 	markWinningTicketRedeemed        *sql.Stmt
 	removeWinningTicket              *sql.Stmt
 	insertMiniHeader                 *sql.Stmt
@@ -308,6 +310,15 @@ func InitDB(dbPath string) (*DB, error) {
 	}
 	d.selectEarliestWinningTicket = stmt
 
+	// Select winning tickets eligible to redeem
+	stmt, err = db.Prepare("SELECT sender, recipient, faceValue, winProb, senderNonce, recipientRand, recipientRandHash, sig, creationRound, creationRoundBlockHash, paramsExpirationBlock FROM ticketQueue WHERE creationRound >= ? AND redeemedAt IS NULL AND txHash IS NULL ORDER BY createdAt ASC")
+	if err != nil {
+		glog.Error("Unable to prepare selectEligibleWinningTickets ", err)
+		d.Close()
+		return nil, err
+	}
+	d.selectEligibleWinningTickets = stmt
+
 	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE sender=? AND creationRound >= ? AND redeemedAt IS NULL AND txHash IS NULL")
 	if err != nil {
 		glog.Error("Unable to prepare winningTicketCount ", err)
@@ -315,6 +326,14 @@ func InitDB(dbPath string) (*DB, error) {
 		return nil, err
 	}
 	d.winningTicketCount = stmt
+
+	stmt, err = db.Prepare("SELECT count(sig) FROM ticketQueue WHERE creationRound >= ? AND redeemedAt IS NULL AND txHash IS NULL")
+	if err != nil {
+		glog.Error("Unable to prepare winningTicketsToRedeem ", err)
+		d.Close()
+		return nil, err
+	}
+	d.winningTicketsToRedeem = stmt
 
 	// Remove latest ticket
 	stmt, err = db.Prepare("DELETE FROM ticketQueue WHERE sig=?")
@@ -409,8 +428,14 @@ func (db *DB) Close() {
 	if db.selectEarliestWinningTicket != nil {
 		db.selectEarliestWinningTicket.Close()
 	}
+	if db.selectEligibleWinningTickets != nil {
+		db.selectEligibleWinningTickets.Close()
+	}
 	if db.winningTicketCount != nil {
 		db.winningTicketCount.Close()
+	}
+	if db.winningTicketsToRedeem != nil {
+		db.winningTicketsToRedeem.Close()
 	}
 	if db.markWinningTicketRedeemed != nil {
 		db.markWinningTicketRedeemed.Close()
@@ -475,7 +500,7 @@ func (db *DB) SetChainID(id *big.Int) error {
 }
 
 func (db *DB) GetTranscoderSecret(secret string) (bool, error) {
-	active, err := db.selectKVStore("secret:"+secret)
+	active, err := db.selectKVStore("secret:" + secret)
 	if err != nil {
 		return false, err
 	}
@@ -488,15 +513,15 @@ func (db *DB) GetTranscoderSecret(secret string) (bool, error) {
 	}
 }
 
-func(db *DB) GetTranscoderSecrets() (map[string]bool, error) {
+func (db *DB) GetTranscoderSecrets() (map[string]bool, error) {
 	var (
-		ks string
-		secrets map[string]bool
+		ks        string
+		secrets   map[string]bool
 		is_active bool
 	)
 	kvs, err := db.selectKVStoreLike("secret%%")
 	if err == nil {
-		secrets = make(map[string]bool)	
+		secrets = make(map[string]bool)
 		for k, v := range kvs {
 			ks = strings.Replace(k, "secret:", "", 1)
 			is_active, _ = strconv.ParseBool(v)
@@ -539,8 +564,8 @@ func (db *DB) selectKVStoreLike(key string) (map[string]string, error) {
 	kvs := make(map[string]string)
 	for rows.Next() {
 		var (
-			 key string
-			 value string
+			key   string
+			value string
 		)
 		if err := rows.Scan(&key, &value); err != nil {
 			if err.Error() != "sql: no rows in result set" {
@@ -871,6 +896,74 @@ func (db *DB) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationR
 		Sig:           sig,
 		RecipientRand: new(big.Int).SetBytes(recipientRand),
 	}, nil
+}
+
+func (db *DB) SelectEligibleWinningTickets(minCreationRound int64) ([]pm.SignedTicket, error) {
+	var tickets []pm.SignedTicket
+	rows, err := db.selectEligibleWinningTickets.Query(minCreationRound)
+	if err != nil {
+		glog.Errorf("could not retrieve tickets err=%q", err)
+		return tickets, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			sender                 string
+			recipient              string
+			faceValue              []byte
+			winProb                []byte
+			senderNonce            int
+			recipientRand          []byte
+			recipientRandHash      string
+			sig                    []byte
+			creationRound          int64
+			creationRoundBlockHash string
+			paramsExpirationBlock  int64
+		)
+		if err := rows.Scan(&sender, &recipient, &faceValue, &winProb, &senderNonce, &recipientRand, &recipientRandHash, &sig, &creationRound, &creationRoundBlockHash, &paramsExpirationBlock); err != nil {
+			if err.Error() != "sql: no rows in result set" {
+				return tickets, fmt.Errorf("could not retrieve any tickets err=%q", err)
+			}
+			// If there is no result return no error, just nil value
+			return tickets, nil
+		}
+		ticket := pm.SignedTicket{
+			Ticket: &pm.Ticket{
+				Sender:                 ethcommon.HexToAddress(sender),
+				Recipient:              ethcommon.HexToAddress(recipient),
+				FaceValue:              new(big.Int).SetBytes(faceValue),
+				WinProb:                new(big.Int).SetBytes(winProb),
+				SenderNonce:            uint32(senderNonce),
+				RecipientRandHash:      ethcommon.HexToHash(recipientRandHash),
+				CreationRound:          creationRound,
+				CreationRoundBlockHash: ethcommon.HexToHash(creationRoundBlockHash),
+				ParamsExpirationBlock:  big.NewInt(paramsExpirationBlock),
+			},
+			Sig:           sig,
+			RecipientRand: new(big.Int).SetBytes(recipientRand),
+		}
+
+		tickets = append(tickets, ticket)
+	}
+
+	//return full list of tickets
+	return tickets, nil
+}
+
+// WinningTicketCount returns the amount of non-redeemed winning tickets for a 'sender'
+func (db *DB) WinningTicketsToRedeem(minCreationRound int64) (int, error) {
+	row := db.winningTicketsToRedeem.QueryRow(minCreationRound)
+	var count64 int64
+	if err := row.Scan(&count64); err != nil {
+		if err.Error() != "sql: no rows in result set" {
+			return 0, fmt.Errorf("could not retrieve latest header: %v", err)
+		}
+		// If there is no result return no error, just nil value
+		return 0, nil
+	}
+
+	return int(count64), nil
 }
 
 // WinningTicketCount returns the amount of non-redeemed winning tickets for a 'sender'

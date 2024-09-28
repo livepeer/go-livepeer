@@ -110,6 +110,7 @@ func (q *ticketQueue) startQueueLoop() {
 			return
 		}
 	}
+
 }
 
 func (q *ticketQueue) handleBlockEvent(latestL1Block *big.Int) {

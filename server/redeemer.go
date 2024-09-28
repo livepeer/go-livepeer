@@ -94,6 +94,22 @@ func (r *Redeemer) Stop() {
 	r.server.Stop()
 }
 
+func (r *Redeemer) CheckForRedeemableTickets() {
+	tickets, err := r.sm.CheckForRedeemableTickets()
+	if err != nil {
+		glog.Errorf("Error checking for redeemable tickets: %v", err)
+		return
+	}
+	glog.Infof("Queuing %d redeemable tickets", len(tickets))
+	for _, ticket := range tickets {
+		if err := r.sm.QueueTicket(&ticket); err != nil {
+			glog.Errorf("Error adding ticket to queue: %v", err)
+		}
+
+		glog.Infof("Ticket queued sender=0x%x", ticket.Sender)
+	}
+}
+
 // QueueTicket adds a ticket to the ticket queue
 func (r *Redeemer) QueueTicket(ctx context.Context, ticket *net.Ticket) (*net.QueueTicketRes, error) {
 	t := pmTicket(ticket)

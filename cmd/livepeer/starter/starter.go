@@ -1123,6 +1123,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}()
 			defer r.Stop()
 			glog.Infof("Redeemer started on %v", *cfg.HttpAddr)
+			glog.Infof("checking for tickets not redeemed")
+			r.CheckForRedeemableTickets()
 		}
 
 		var reward bool
