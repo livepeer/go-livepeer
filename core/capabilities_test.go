@@ -715,6 +715,31 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 	}
 }
 
+func TestCapability_String(t *testing.T) {
+	var unknownCap Capability = -100
+	tests := []struct {
+		name string
+		c    Capability
+		want string
+	}{
+		{
+			name: "Capability_TextToImage",
+			c:    Capability_TextToImage,
+			want: "Text to image",
+		},
+		{
+			name: "Unknown",
+			c:    unknownCap,
+			want: "-100",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.c.String())
+		})
+	}
+}
+
 func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	assert := assert.New(t)
 	//create capabilities

@@ -53,6 +53,26 @@ func (e *BadRequestError) Error() string {
 	return e.err.Error()
 }
 
+// parseBadRequestError checks if the error is a bad request error and returns a BadRequestError.
+func parseBadRequestError(err error) *BadRequestError {
+	if err == nil {
+		return nil
+	}
+
+	const errorCode = "returned 400"
+	if !strings.Contains(err.Error(), errorCode) {
+		return nil
+	}
+
+	parts := strings.SplitN(err.Error(), errorCode, 2)
+	detail := strings.TrimSpace(parts[1])
+	if detail == "" {
+		detail = "bad request"
+	}
+
+	return &BadRequestError{err: errors.New(detail)}
+}
+
 type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
@@ -114,7 +134,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -254,7 +274,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -393,7 +413,7 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 		name := filepath.Base(media.Url)
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
 		}
 
 		videos[i] = worker.Media{
@@ -548,7 +568,7 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.GenU
 
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -908,7 +928,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
-	capName, _ := core.CapabilityToName(cap)
+	capName := cap.String()
+	ctx = clog.AddVal(ctx, "capability", capName)
 
 	var resp interface{}
 
@@ -930,7 +951,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
-			clog.Infof(ctx, "Error selecting session cap=%v modelID=%v err=%v", cap, modelID, err)
+			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
 		}
 
@@ -944,11 +965,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
-		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
+		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess)
 
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
+		}
+
+		if badRequestErr := parseBadRequestError(err); badRequestErr != nil {
+			return nil, badRequestErr
 		}
 	}
 

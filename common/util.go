@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"math/rand"
 	"mime"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -565,6 +566,11 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 	}
 
 	return duration, nil
+}
+
+// ValidateServiceURI checks if the serviceURI is valid.
+func ValidateServiceURI(serviceURI *url.URL) bool {
+	return !strings.Contains(serviceURI.Host, "0.0.0.0")
 }
 
 func ExtensionByType(contentType string) (string, error) {

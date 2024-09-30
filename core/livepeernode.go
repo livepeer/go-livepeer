@@ -126,6 +126,7 @@ type LivepeerNode struct {
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
 	Recipient          pm.Recipient
+	RecipientAddr      string
 	SelectionAlgorithm common.SelectionAlgorithm
 	OrchestratorPool   common.OrchestratorPool
 	OrchPerfScore      *common.PerfScore

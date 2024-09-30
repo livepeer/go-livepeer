@@ -363,6 +363,9 @@ message NotifySegment {
     // ID for this particular transcoding task.
     int64 taskId   = 16;
 
+    // Orchestrator identifier for segment metadata
+    string orchId  = 18;
+
     // All fields below are deprecated. May still be populated if necessary
 
     // Deprecated by segData. Job the segment belongs to.
