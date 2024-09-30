@@ -47,16 +47,13 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
-	if req.Capacity <= 0 {
-		glog.Errorf("err=%q", errZeroCapacity.Error())
-		return errZeroCapacity
-	}
+
 	// handle case of legacy Transcoder which do not advertise capabilities
 	if req.Capabilities == nil {
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
 	// blocks until stream is finished
-	h.orchestrator.ServeAIWorker(stream, int(req.Capacity), req.Capabilities)
+	h.orchestrator.ServeAIWorker(stream, req.Capabilities)
 	return nil
 }
 
@@ -113,8 +110,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: caps})
+	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps})
 	if err := checkAIWorkerError(err); err != nil {
 		glog.Error("Could not register aiworker to orchestrator ", err)
 		return err

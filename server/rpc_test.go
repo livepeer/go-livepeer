@@ -216,7 +216,7 @@ func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
 func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
 	return drivers.NewMockOSSession(), true
 }
-func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
+func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 }
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -1413,7 +1413,7 @@ func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
 func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
 	return drivers.NewMockOSSession(), true
 }
-func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capacity int, capabilities *net.Capabilities) {
+func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
 }
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{

@@ -385,9 +385,6 @@ message RegisterAIWorkerRequest {
     // Shared secret for auth
     string secret = 1;
 
-    // AIWorker capacity
-    int64 capacity = 2;
-
     // AIWorker capabilities
     Capabilities capabilities = 3;
 }

@@ -30,7 +30,6 @@ import (
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
 )
 
@@ -101,30 +100,6 @@ func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscod
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
-}
-
-func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	return orch.node.textToImage(ctx, req)
-}
-
-func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	return orch.node.imageToImage(ctx, req)
-}
-
-func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
-	return orch.node.imageToVideo(ctx, req)
-}
-
-func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	return orch.node.upscale(ctx, req)
-}
-
-func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	return orch.node.AudioToText(ctx, req)
-}
-
-func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
-	return orch.node.SegmentAnything2(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -843,106 +818,6 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
 	}
-}
-
-func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.TextToImage(ctx, req)
-}
-
-func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.ImageToImage(ctx, req)
-}
-
-func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	return n.AIWorker.Upscale(ctx, req)
-}
-
-func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	return n.AIWorker.AudioToText(ctx, req)
-}
-
-func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.SegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
-	return n.AIWorker.SegmentAnything2(ctx, req)
-}
-
-func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
-	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
-	numVideos := 1
-
-	// Generate frames
-	start := time.Now()
-	resp, err := n.AIWorker.ImageToVideo(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(resp.Frames) != numVideos {
-		return nil, fmt.Errorf("unexpected number of image-to-video outputs expected=%v actual=%v", numVideos, len(resp.Frames))
-	}
-
-	took := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Generating frames took=%v", took)
-
-	sessionID := string(RandomManifestID())
-	framerate := 7
-	if req.Fps != nil {
-		framerate = *req.Fps
-	}
-	inProfile := ffmpeg.VideoProfile{
-		Framerate:    uint(framerate),
-		FramerateDen: 1,
-	}
-	height := 576
-	if req.Height != nil {
-		height = *req.Height
-	}
-	width := 1024
-	if req.Width != nil {
-		width = *req.Width
-	}
-	outProfile := ffmpeg.VideoProfile{
-		Name:       "image-to-video",
-		Resolution: fmt.Sprintf("%vx%v", width, height),
-		Bitrate:    "6000k",
-		Format:     ffmpeg.FormatMP4,
-	}
-	// HACK: Re-use worker.ImageResponse to return results
-	// Transcode frames into segments.
-	videos := make([]worker.Media, len(resp.Frames))
-	for i, batch := range resp.Frames {
-		// Create slice of frame urls for a batch
-		urls := make([]string, len(batch))
-		for j, frame := range batch {
-			urls[j] = frame.Url
-		}
-
-		// Transcode slice of frame urls into a segment
-		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
-		if res.Err != nil {
-			return nil, res.Err
-		}
-
-		// Assume only single rendition right now
-		seg := res.TranscodeData.Segments[0]
-		name := fmt.Sprintf("%v.mp4", RandomManifestID())
-		segData := bytes.NewReader(seg.Data)
-		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
-		if err != nil {
-			return nil, err
-		}
-
-		videos[i] = worker.Media{
-			Url: uri,
-		}
-
-		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
-		if len(batch) > 0 {
-			videos[i].Nsfw = batch[0].Nsfw
-			videos[i].Seed = batch[0].Seed
-		}
-	}
-
-	return &worker.ImageResponse{Images: videos}, nil
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {
