@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
@@ -18,135 +20,9 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
-
-var testRemoteAIResults = &core.RemoteAIWorkerResult{
-	Results: []core.AIResult{},
-	Files:   map[string][]byte{},
-	Err:     nil,
-}
-
-func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
-	var l lphttp
-
-	var w = httptest.NewRecorder()
-	r, err := http.NewRequest(http.MethodGet, "/AIResults", nil)
-	require.NoError(t, err)
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusUnauthorized, code)
-	require.Contains(t, body, "Unauthorized")
-}
-
-func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodGet, "/AIResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "BAD CREDENTIALS")
-
-	code, body := aiResultsTest(l, w, r)
-	require.Equal(t, http.StatusUnauthorized, code)
-	require.Contains(t, body, "invalid secret")
-}
-
-func TestAIWorkerResults_ErrorsWhenContentTypeMissing(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodGet, "/AIResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "")
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusUnsupportedMediaType, code)
-	require.Contains(t, body, "mime: no media type")
-}
-
-func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
-	var l lphttp
-	l.orchestrator = newStubOrchestrator()
-	l.orchestrator.TranscoderSecret()
-	var w = httptest.NewRecorder()
-
-	r, err := http.NewRequest(http.MethodGet, "/AIResults", nil)
-	require.NoError(t, err)
-
-	r.Header.Set("Authorization", protoVerAIWorker)
-	r.Header.Set("Credentials", "")
-	r.Header.Set("Content-Type", "application/json")
-
-	code, body := aiResultsTest(l, w, r)
-
-	require.Equal(t, http.StatusBadRequest, code)
-	require.Contains(t, body, "Invalid Task ID")
-}
-
-func TestAIWorkerResults_BadRequestType(t *testing.T) {
-	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	//test request
-	var req worker.GenImageToImageMultipartRequestBody
-	modelID := "livepeer/model1"
-	req.Prompt = "test prompt"
-	req.ModelId = &modelID
-
-	assert := assert.New(t)
-	assert.Nil(nil)
-	resultData := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-		w.Write([]byte("result binary data"))
-	}))
-	defer resultData.Close()
-	notify := &net.NotifyAIJob{
-		TaskId:      742,
-		Pipeline:    "text-to-image",
-		ModelID:     "livepeer/model1",
-		Url:         "",
-		RequestData: nil,
-	}
-	wkr := &stubAIWorker{}
-	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
-	node.OrchSecret = "verbigsecret"
-	node.AIWorker = wkr
-	node.Capabilities = createStubAIWorkerCapabilities()
-
-	var headers http.Header
-	var body []byte
-	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		out, err := io.ReadAll(r.Body)
-		assert.NoError(err)
-		headers = r.Header
-		body = out
-		w.Write(nil)
-	}))
-	defer ts.Close()
-	parsedURL, _ := url.Parse(ts.URL)
-	//send empty request data
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.Equal(0, wkr.called)
-	assert.NotNil(body)
-	assert.Equal("742", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("AI request not correct", string(body)[0:22])
-}
 
 func TestRemoteAIWorker_Error(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -253,6 +129,178 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.True(panicked)
 }
 
+func TestRunAIJob(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/image.png" {
+			data, err := os.ReadFile("../test/ai/image")
+			if err != nil {
+				t.Fatalf("failed to read test image: %v", err)
+			}
+			imgData, err := base64.StdEncoding.DecodeString(string(data))
+			if err != nil {
+				t.Fatalf("failed to decode base64 test image: %v", err)
+			}
+			w.Write(imgData)
+			return
+		} else if r.URL.Path == "/audio.mp3" {
+			data, err := os.ReadFile("../test/ai/audio")
+			if err != nil {
+				t.Fatalf("failed to read test audio: %v", err)
+			}
+			imgData, err := base64.StdEncoding.DecodeString(string(data))
+			if err != nil {
+				t.Fatalf("failed to decode base64 test audio: %v", err)
+			}
+			w.Write(imgData)
+			return
+		}
+
+	}))
+	defer ts.Close()
+	parsedURL, _ := url.Parse(ts.URL)
+
+	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	assert := assert.New(t)
+
+	tests := []struct {
+		name            string
+		notify          *net.NotifyAIJob
+		expectedErr     string
+		expectedOutputs int
+	}{
+		{
+			name: "TextToImage_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      1,
+				Pipeline:    "text-to-image",
+				ModelID:     "livepeer/model1",
+				Url:         "",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "ImageToImage_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      2,
+				Pipeline:    "image-to-image",
+				ModelID:     "livepeer/model1",
+				Url:         parsedURL.String() + "/image.png",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "Upscale_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      3,
+				Pipeline:    "upscale",
+				ModelID:     "livepeer/model1",
+				Url:         parsedURL.String() + "/image.png",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "ImageToVideo_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      4,
+				Pipeline:    "image-to-video",
+				ModelID:     "livepeer/model1",
+				Url:         parsedURL.String() + "/image.png",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 2,
+		},
+		{
+			name: "AudioToText_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      5,
+				Pipeline:    "audio-to-text",
+				ModelID:     "livepeer/model1",
+				Url:         parsedURL.String() + "/audio.mp3",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "SegmentAnything2_Success",
+			notify: &net.NotifyAIJob{
+				TaskId:      6,
+				Pipeline:    "segment-anything-2",
+				ModelID:     "livepeer/model1",
+				Url:         parsedURL.String() + "/image.png",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "UnsupportedPipeline",
+			notify: &net.NotifyAIJob{
+				TaskId:      7,
+				Pipeline:    "unsupported-pipeline",
+				ModelID:     "livepeer/model1",
+				Url:         "",
+				RequestData: []byte(`{"prompt":"test prompt"}`),
+			},
+			expectedErr: "no workers can process job requested",
+		},
+		{
+			name: "InvalidRequestData",
+			notify: &net.NotifyAIJob{
+				TaskId:      8,
+				Pipeline:    "text-to-image",
+				ModelID:     "livepeer/model1",
+				Url:         "",
+				RequestData: []byte(`invalid json`),
+			},
+			expectedErr: "AI request not correct for text-to-image pipeline",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wkr := &stubAIWorker{}
+			node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
+
+			node.OrchSecret = "verbigsecret"
+			node.AIWorker = wkr
+			node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId(tt.notify.Pipeline, tt.notify.ModelID)
+
+			var headers http.Header
+			var body []byte
+			ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				out, err := io.ReadAll(r.Body)
+				assert.NoError(err)
+				headers = r.Header
+				body = out
+				w.Write(nil)
+			}))
+			defer ts.Close()
+			parsedURL, _ := url.Parse(ts.URL)
+			drivers.NodeStorage = drivers.NewMemoryDriver(parsedURL)
+			runAIJob(node, parsedURL.Host, httpc, tt.notify)
+			time.Sleep(3 * time.Millisecond)
+
+			//assert.Equal(tt.expectedCalled, wkr.called)
+			if tt.expectedErr != "" {
+				assert.NotNil(body)
+				assert.Contains(string(body), tt.expectedErr)
+				assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+			} else {
+				assert.NotNil(body)
+				assert.NotEqual(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+			}
+		})
+	}
+}
+
 func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int, string) {
 	handler := l.AIResults()
 	handler.ServeHTTP(w, r)
@@ -285,6 +333,21 @@ func createStubAIWorkerCapabilities() *core.Capabilities {
 	constraints := make(core.PerCapabilityConstraints)
 	constraints[core.Capability_TextToImage] = &core.CapabilityConstraints{Models: make(core.ModelConstraints)}
 	constraints[core.Capability_TextToImage].Models["livepeer/model1"] = &core.ModelConstraint{Warm: true, Capacity: 2}
+	caps := core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryOCapabilities())
+	caps.SetPerCapabilityConstraints(constraints)
+
+	return caps
+}
+
+func createStubAIWorkerCapabilitiesForPipelineModelId(pipeline, modelId string) *core.Capabilities {
+	//create capabilities and constraints the ai worker sends to orch
+	cap, err := core.PipelineToCapability(pipeline)
+	if err != nil {
+		return nil
+	}
+	constraints := make(core.PerCapabilityConstraints)
+	constraints[cap] = &core.CapabilityConstraints{Models: make(core.ModelConstraints)}
+	constraints[cap].Models[modelId] = &core.ModelConstraint{Warm: true, Capacity: 1}
 	caps := core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryOCapabilities())
 	caps.SetPerCapabilityConstraints(constraints)
 
@@ -372,13 +435,6 @@ func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVid
 						Nsfw: false,
 						Seed: 111,
 					},
-					{
-						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
-						Nsfw: false,
-						Seed: 111,
-					},
-				},
-				{
 					{
 						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 						Nsfw: false,

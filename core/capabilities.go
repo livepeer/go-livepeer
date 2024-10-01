@@ -767,38 +767,3 @@ func (bcast *Capabilities) MinVersionConstraint() string {
 	}
 	return ""
 }
-
-func (c *Constraints) AddCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
-	//the capability should be added by AddCapacity
-	for modelID, modelConstraint := range constraint.Models {
-		if _, ok := c.perCapability[cap]; ok {
-			if _, ok := c.perCapability[cap].Models[modelID]; ok {
-				if c.perCapability[cap].Models[modelID].Warm == modelConstraint.Warm {
-					c.perCapability[cap].Models[modelID].Capacity += modelConstraint.Capacity
-				} else {
-					c.perCapability[cap].Models[modelID] = modelConstraint
-				}
-			} else {
-				c.perCapability[cap].Models[modelID] = modelConstraint
-			}
-		} else {
-			c.perCapability[cap] = &CapabilityConstraints{Models: make(ModelConstraints)}
-		}
-	}
-}
-
-func (c *Constraints) RemoveCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
-	//the capability should be removed by RemoveCapacity
-	for modelID, modelConstraint := range constraint.Models {
-		if _, ok := c.perCapability[cap]; ok {
-			if _, ok := c.perCapability[cap].Models[modelID]; ok {
-				if c.perCapability[cap].Models[modelID].Warm == modelConstraint.Warm {
-					c.perCapability[cap].Models[modelID].Capacity -= modelConstraint.Capacity
-					if c.perCapability[cap].Models[modelID].Capacity <= 0 {
-						delete(c.perCapability[cap].Models, modelID)
-					}
-				}
-			}
-		}
-	}
-}
