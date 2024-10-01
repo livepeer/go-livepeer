@@ -36,8 +36,6 @@ import (
 const protoVerAIWorker = "Livepeer-AI-Worker-1.0"
 const aiWorkerErrorMimeType = "livepeer/ai-worker-error"
 
-var downloadInputFile = core.GetSegmentData
-
 // Orchestrator gRPC
 func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.AIWorker_RegisterAIWorkerServer) error {
 	from := common.GetConnectionAddr(stream.Context())
@@ -171,7 +169,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	//download the input file if applicable
 	var input []byte
 	if notify.Url != "" {
-		input, err = downloadInputFile(ctx, notify.Url)
+		input, err = core.DownloadData(ctx, notify.Url)
 		if err != nil {
 			clog.Errorf(ctx, "AI Worker cannot get input file from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, err)

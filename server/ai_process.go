@@ -35,8 +35,6 @@ const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
-var downloadResult = core.GetSegmentData
-
 type ServiceUnavailableError struct {
 	err error
 }
@@ -125,7 +123,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		} else {
 			//orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
-			result, err = downloadResult(ctx, media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {
 				return nil, err
 			}
@@ -266,7 +264,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		} else {
 			//orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
-			result, err = downloadResult(ctx, media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {
 				return nil, err
 			}
@@ -405,7 +403,7 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	videos := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		data, err := downloadSeg(ctx, media.Url)
+		data, err := core.DownloadData(ctx, media.Url)
 		if err != nil {
 			return nil, err
 		}
@@ -560,7 +558,7 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.GenU
 		} else {
 			//orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
-			result, err = downloadResult(ctx, media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {
 				return nil, err
 			}
