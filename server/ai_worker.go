@@ -148,7 +148,6 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 }
 
 func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
-	glog.Infof("Processing AI job taskID=%d pipeline=%s modelID=%s input_url=%s", notify.TaskId, notify.Pipeline, notify.ModelID, notify.Url)
 
 	var contentType string
 	var body bytes.Buffer
@@ -157,6 +156,8 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	//TODO: consider adding additional information to context for tracing back to Orchestrator and debugging
 
 	ctx := clog.AddVal(context.Background(), "taskId", strconv.FormatInt(notify.TaskId, 10))
+
+	clog.Infof(ctx, "Processing AI job pipeline=%s modelID=%s input_url=%s", notify.Pipeline, notify.ModelID, notify.Url)
 
 	//reserve the capabilities to process this request, release after work is done
 	err := n.ReserveAICapability(notify.Pipeline, notify.ModelID)
@@ -366,7 +367,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob,
 	contentType string, body *bytes.Buffer, addlData interface{}, err error,
 ) {
-	glog.Infof("sending results back to Orchestrator")
+	clog.Infof(ctx, "sending results back to Orchestrator")
 	if err != nil {
 		clog.Errorf(ctx, "Unable to process AI job err=%q", err)
 		body.Write([]byte(err.Error()))
