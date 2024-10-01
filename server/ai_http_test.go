@@ -20,7 +20,7 @@ func TestAIWorkerResults_ErrorsWhenAuthHeaderMissing(t *testing.T) {
 	var l lphttp
 
 	var w = httptest.NewRecorder()
-	r, err := http.NewRequest(http.MethodGet, "/aiResults", nil)
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
 	require.NoError(t, err)
 
 	code, body := aiResultsTest(l, w, r)
@@ -35,7 +35,7 @@ func TestAIWorkerResults_ErrorsWhenCredentialsInvalid(t *testing.T) {
 	l.orchestrator.TranscoderSecret()
 	var w = httptest.NewRecorder()
 
-	r, err := http.NewRequest(http.MethodGet, "/aiResults", nil)
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Authorization", protoVerAIWorker)
@@ -52,7 +52,7 @@ func TestAIWorkerResults_ErrorsWhenContentTypeMissing(t *testing.T) {
 	l.orchestrator.TranscoderSecret()
 	var w = httptest.NewRecorder()
 
-	r, err := http.NewRequest(http.MethodGet, "/aiResults", nil)
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Authorization", protoVerAIWorker)
@@ -70,7 +70,7 @@ func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 	l.orchestrator.TranscoderSecret()
 	var w = httptest.NewRecorder()
 
-	r, err := http.NewRequest(http.MethodGet, "/aiResults", nil)
+	r, err := http.NewRequest(http.MethodPost, "/aiResults", nil)
 	require.NoError(t, err)
 
 	r.Header.Set("Authorization", protoVerAIWorker)
