@@ -91,6 +91,7 @@ type LivepeerConfig struct {
 	HttpIngest              *bool
 	Orchestrator            *bool
 	Transcoder              *bool
+	AIServiceRegistry       *bool
 	AIWorker                *bool
 	Gateway                 *bool
 	Broadcaster             *bool
@@ -198,6 +199,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestTranscoder := true
 
 	// AI:
+	defaultAIServiceRegistry := false
 	defaultAIWorker := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
@@ -297,10 +299,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:      &defaultAIWorker,
-		AIModels:      &defaultAIModels,
-		AIModelsDir:   &defaultAIModelsDir,
-		AIRunnerImage: &defaultAIRunnerImage,
+		AIServiceRegistry: &defaultAIServiceRegistry,
+		AIWorker:          &defaultAIWorker,
+		AIModels:          &defaultAIModels,
+		AIModelsDir:       &defaultAIModelsDir,
+		AIRunnerImage:     &defaultAIRunnerImage,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -696,6 +699,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			TransactionManager: tm,
 			Signer:             types.LatestSignerForChainID(chainID),
 			CheckTxTimeout:     time.Duration(int64(*cfg.TxTimeout) * int64(*cfg.MaxTxReplacements+1)),
+		}
+
+		if *cfg.AIServiceRegistry {
+			// For the time-being Livepeer AI Subnet uses its own ServiceRegistry, so we define it here
+			ethCfg.ServiceRegistryAddr = ethcommon.HexToAddress("0x04C0b249740175999E5BF5c9ac1dA92431EF34C5")
 		}
 
 		client, err := eth.NewClient(ethCfg)
