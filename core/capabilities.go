@@ -78,7 +78,8 @@ const (
 	Capability_ImageToVideo
 	Capability_Upscale
 	Capability_AudioToText
-	Capability_FrameInterpolation
+	Capability_SegmentAnything2
+  Capability_FrameInterpolation
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -115,7 +116,8 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ImageToVideo:               "Image to video",
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
-	Capability_FrameInterpolation:         "Frame Interpolation",
+	Capability_SegmentAnything2:           "Segment anything 2",
+  Capability_FrameInterpolation:         "Frame Interpolation",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -207,6 +209,7 @@ func OptionalCapabilities() []Capability {
 		Capability_FrameInterpolation,
 		Capability_Upscale,
 		Capability_AudioToText,
+		Capability_SegmentAnything2,
 	}
 }
 
@@ -621,6 +624,14 @@ func CapabilityToName(capability Capability) (string, error) {
 		return "", capUnknown
 	}
 	return capName, nil
+}
+
+func (c Capability) String() string {
+	name, err := CapabilityToName(c)
+	if err != nil {
+		return fmt.Sprintf("%d", int(c))
+	}
+	return name
 }
 
 func HasCapability(caps []Capability, capability Capability) bool {

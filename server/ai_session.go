@@ -336,7 +336,8 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 		Capabilities: caps,
 		OS:           sel.os,
 	}
-	return selectOrchestrator(ctx, sel.node, streamParams, numOrchs, sel.suspender, common.ScoreAtLeast(0))
+	// TODO: Implement cleanup for AI sessions.
+	return selectOrchestrator(ctx, sel.node, streamParams, numOrchs, sel.suspender, common.ScoreAtLeast(0), func(sessionID string) {})
 }
 
 type AISessionManager struct {

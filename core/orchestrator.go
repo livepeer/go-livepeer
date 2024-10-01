@@ -111,19 +111,19 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
-func (orch *orchestrator) TextToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.textToImage(ctx, req)
 }
 
-func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToImage(ctx, req)
 }
 
-func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.imageToVideo(ctx, req)
 }
 
-func (orch *orchestrator) Upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (orch *orchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return orch.node.upscale(ctx, req)
 }
 
@@ -131,8 +131,12 @@ func (orch *orchestrator) FrameInterpolation(ctx context.Context, req worker.Fra
 	return orch.node.FrameInterpolation(ctx, req)
 }
 
-func (orch *orchestrator) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (orch *orchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return orch.node.AudioToText(ctx, req)
+}
+
+func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return orch.node.SegmentAnything2(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -783,6 +787,17 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	}
 	md.Fname = url
 
+	orchId := "offchain"
+	if n.RecipientAddr != "" {
+		orchId = n.RecipientAddr
+	}
+	if isRemote {
+		// huge hack to thread the orch id down to the transcoder
+		md.Metadata = map[string]string{"orchId": orchId}
+	} else {
+		md.Metadata = MakeMetadata(orchId)
+	}
+
 	//Do the transcoding
 	start := time.Now()
 	tData, err := transcoder.Transcode(ctx, md)
@@ -1042,23 +1057,27 @@ func (n *LivepeerNode) FrameInterpolation(ctx context.Context, req worker.FrameI
 	return &worker.VideoResponse{Frames: videos}, nil
 }
 
-func (n *LivepeerNode) textToImage(ctx context.Context, req worker.TextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) textToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.TextToImage(ctx, req)
 }
 
-func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.ImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) imageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.ImageToImage(ctx, req)
 }
 
-func (n *LivepeerNode) upscale(ctx context.Context, req worker.UpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.Upscale(ctx, req)
 }
 
-func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.AudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
 
-func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.ImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return n.AIWorker.SegmentAnything2(ctx, req)
+}
+
+func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
 
@@ -1203,6 +1222,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	msg := &net.NotifySegment{
 		Url:     fname,
 		TaskId:  taskID,
+		OrchId:  md.Metadata["orchId"],
 		SegData: segData,
 		// Triggers failure on Os that don't know how to use SegData
 		Profiles: []byte("invalid"),
