@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -69,6 +70,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
 	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(ls.AudioToText()))
+	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(ls.SegmentAnything2()))
 
 	return nil
@@ -391,6 +393,73 @@ func (ls *LivepeerServer) AudioToText() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) LLM() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
+		var req worker.GenLLMFormdataRequestBody
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, *req.Stream)
+
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+		}
+
+		start := time.Now()
+		resp, err := processLLM(ctx, params, req)
+		if err != nil {
+			var e *ServiceUnavailableError
+			if errors.As(err, &e) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			respondJsonError(ctx, w, err, http.StatusInternalServerError)
+			return
+		}
+
+		took := time.Since(start)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+
+		if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+			// Handle streaming response (SSE)
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+
+			for chunk := range streamChan {
+				data, _ := json.Marshal(chunk)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				w.(http.Flusher).Flush()
+				if chunk.Done {
+					break
+				}
+			}
+		} else if llmResp, ok := resp.(*worker.LLMResponse); ok {
+			// Handle non-streaming response
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(llmResp)
+		} else {
+			http.Error(w, "Unexpected response type", http.StatusInternalServerError)
+		}
 	})
 }
 
