@@ -12,7 +12,7 @@
 
 The Livepeer project aims to deliver a live video-streaming network protocol
 that is fully decentralized, highly scalable and crypto-token incentivized to
-serve as the live media layer in the decentralized development (Web3) stack.
+serve as the live media layer in the decentralized development (Web3) stac.
 [Read our documentation](https://docs.livepeer.org/protocol/) to learn more about the protocol and its economic incentives.
 
 `go-livepeer` is a Go implementation of the [Livepeer](https://livepeer.org) protocol which powers the Livepeer Network. Specifically, `go-livepeer` contains implementations of Broadcaster, Orchestrator, and Transcoder nodes (roles) in the Livepeer Network ecosystem.
