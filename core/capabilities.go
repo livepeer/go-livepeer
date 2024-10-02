@@ -78,8 +78,8 @@ const (
 	Capability_ImageToVideo
 	Capability_Upscale
 	Capability_AudioToText
-	Capability_LLM
 	Capability_SegmentAnything2
+	Capability_LLM
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -116,8 +116,8 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ImageToVideo:               "Image to video",
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
-	Capability_LLM:                        "Large language model",
 	Capability_SegmentAnything2:           "Segment anything 2",
+	Capability_LLM:                        "Large language model",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
