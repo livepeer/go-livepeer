@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.ResponseRecorder) {
@@ -723,8 +724,7 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 }
 
 func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
-	// TODO: Fix leaked goroutine
-	//defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 
 	oldRI := httpPushTimeout
 	httpPushTimeout = 100 * time.Millisecond
@@ -774,8 +774,7 @@ func TestPush_ShouldRemoveSessionAfterTimeoutIfInternalMIDIsUsed(t *testing.T) {
 }
 
 func TestPush_ShouldRemoveSessionAfterTimeout(t *testing.T) {
-	// TODO: Fix leaked goroutine
-	//defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 
 	oldRI := httpPushTimeout
 	httpPushTimeout = 100 * time.Millisecond
@@ -1315,8 +1314,7 @@ func TestPush_ReuseIntmidWithDiffExtmid(t *testing.T) {
 	defer func() {
 		core.JsonPlaylistQuitTimeout = oldjpqt
 	}()
-	// TODO: Fix leaked goroutine
-	//defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
+	defer goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	core.JsonPlaylistQuitTimeout = 0 * time.Second
 
 	reader := strings.NewReader("InsteadOf.TS")

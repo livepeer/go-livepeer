@@ -1230,8 +1230,6 @@ func TestRegisterConnection(t *testing.T) {
 }
 
 func TestBroadcastSessionManagerWithStreamStartStop(t *testing.T) {
-	// TODO: Fix
-	t.SkipNow()
 	goleakOptions := common.IgnoreRoutines()
 	defer goleak.VerifyNone(t, goleakOptions...)
 	assert := require.New(t)
