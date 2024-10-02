@@ -258,133 +258,135 @@ func TestRPCTranscoderReq(t *testing.T) {
 	}
 }
 
-//func TestRPCSeg(t *testing.T) {
-//	mid := core.RandomManifestID()
-//	b := stubBroadcaster2()
-//	o := newStubOrchestrator()
-//	authToken := o.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())
-//	s := &BroadcastSession{
-//		Broadcaster: b,
-//		Params: &core.StreamParameters{
-//			ManifestID: mid,
-//			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
-//		},
-//		OrchestratorInfo: &net.OrchestratorInfo{
-//			AuthToken: authToken,
-//		},
-//	}
-//
-//	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
-//
-//	segData := &stream.HLSSegment{}
-//
-//	creds, err := genSegCreds(s, segData, nil, false)
-//	if err != nil {
-//		t.Error("Unable to generate seg creds ", err)
-//		return
-//	}
-//	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
-//		t.Error("Unable to verify seg creds", err)
-//		return
-//	}
-//
-//	// error signing
-//	b.signErr = fmt.Errorf("SignErr")
-//	if _, err := genSegCreds(s, segData, nil, false); err != b.signErr {
-//		t.Error("Generating seg creds ", err)
-//	}
-//	b.signErr = nil
-//
-//	// test invalid bcast addr
-//	oldAddr := baddr
-//	key, _ := ethcrypto.GenerateKey()
-//	baddr = ethcrypto.PubkeyToAddress(key.PublicKey)
-//	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != errSegSig {
-//		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
-//	}
-//	baddr = oldAddr
-//
-//	// sanity check
-//	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
-//		t.Error("Sanity check failed", err)
-//	}
-//
-//	// missing auth token
-//	s.OrchestratorInfo.AuthToken = nil
-//	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
-//	require.Nil(t, err)
-//	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
-//	assert.Equal(t, "missing auth token", err.Error())
-//
-//	// invalid auth token
-//	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("notfoo")}
-//	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
-//	require.Nil(t, err)
-//	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
-//	assert.Equal(t, "invalid auth token", err.Error())
-//
-//	// expired auth token
-//	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
-//	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
-//	assert.Nil(t, err)
-//	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
-//	assert.Equal(t, "expired auth token", err.Error())
-//	s.OrchestratorInfo.AuthToken = authToken
-//
-//	// check duration
-//	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
-//	if err != nil {
-//		t.Error("Could not generate creds ", err)
-//	}
-//	// manually unmarshal in order to avoid default values in coreSegMetadata
-//	buf, err := base64.StdEncoding.DecodeString(creds)
-//	if err != nil {
-//		t.Error("Could not base64-decode creds ", err)
-//	}
-//	var netSegData net.SegData
-//	if err := proto.Unmarshal(buf, &netSegData); err != nil {
-//		t.Error("Unable to unmarshal creds ", err)
-//	}
-//	if netSegData.Duration != int32(1500) {
-//		t.Error("Got unexpected duration ", netSegData.Duration)
-//	}
-//
-//	// test corrupt creds
-//	idx := len(creds) / 2
-//	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
-//	if _, _, err := verifySegCreds(context.TODO(), o, kreds, baddr); err != errSegEncoding {
-//		t.Error("Unexpectedly verified bad creds", err)
-//	}
-//
-//	corruptSegData := func(segData *net.SegData, expectedErr error) {
-//		data, _ := proto.Marshal(segData)
-//		creds = base64.StdEncoding.EncodeToString(data)
-//		if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != expectedErr {
-//			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
-//		}
-//	}
-//
-//	// corrupt profiles
-//	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
-//
-//	// corrupt sig
-//	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
-//	corruptSegData(sd, errSegSig) // missing sig
-//	sd.Sig = []byte("abc")
-//	corruptSegData(sd, errSegSig) // invalid sig
-//
-//	// incompatible capabilities
-//	sd = &net.SegData{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}, AuthToken: authToken}
-//	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{}).Flatten())
-//	corruptSegData(sd, errCapCompat)
-//
-//	// at capacity
-//	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
-//	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.Params.ManifestID}).Flatten())
-//	o.sessCapErr = fmt.Errorf("At capacity")
-//	corruptSegData(sd, o.sessCapErr)
-//	o.sessCapErr = nil
-//}
+func TestRPCSeg(t *testing.T) {
+	// TODO: Fix coreMetadata capabilities
+	t.SkipNow()
+	mid := core.RandomManifestID()
+	b := stubBroadcaster2()
+	o := newStubOrchestrator()
+	authToken := o.AuthToken("bar", time.Now().Add(1*time.Hour).Unix())
+	s := &BroadcastSession{
+		Broadcaster: b,
+		Params: &core.StreamParameters{
+			ManifestID: mid,
+			Profiles:   []ffmpeg.VideoProfile{ffmpeg.P720p30fps16x9},
+		},
+		OrchestratorInfo: &net.OrchestratorInfo{
+			AuthToken: authToken,
+		},
+	}
+
+	baddr := ethcrypto.PubkeyToAddress(b.priv.PublicKey)
+
+	segData := &stream.HLSSegment{}
+
+	creds, err := genSegCreds(s, segData, nil, false)
+	if err != nil {
+		t.Error("Unable to generate seg creds ", err)
+		return
+	}
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
+		t.Error("Unable to verify seg creds", err)
+		return
+	}
+
+	// error signing
+	b.signErr = fmt.Errorf("SignErr")
+	if _, err := genSegCreds(s, segData, nil, false); err != b.signErr {
+		t.Error("Generating seg creds ", err)
+	}
+	b.signErr = nil
+
+	// test invalid bcast addr
+	oldAddr := baddr
+	key, _ := ethcrypto.GenerateKey()
+	baddr = ethcrypto.PubkeyToAddress(key.PublicKey)
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != errSegSig {
+		t.Error("Unexpectedly verified seg creds: invalid bcast addr", err)
+	}
+	baddr = oldAddr
+
+	// sanity check
+	if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != nil {
+		t.Error("Sanity check failed", err)
+	}
+
+	// missing auth token
+	s.OrchestratorInfo.AuthToken = nil
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
+	require.Nil(t, err)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
+	assert.Equal(t, "missing auth token", err.Error())
+
+	// invalid auth token
+	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: []byte("notfoo")}
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
+	require.Nil(t, err)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
+	assert.Equal(t, "invalid auth token", err.Error())
+
+	// expired auth token
+	s.OrchestratorInfo.AuthToken = &net.AuthToken{Token: authToken.Token, SessionId: authToken.SessionId, Expiration: time.Now().Add(-1 * time.Hour).Unix()}
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
+	assert.Nil(t, err)
+	_, _, err = verifySegCreds(context.TODO(), o, creds, baddr)
+	assert.Equal(t, "expired auth token", err.Error())
+	s.OrchestratorInfo.AuthToken = authToken
+
+	// check duration
+	creds, err = genSegCreds(s, &stream.HLSSegment{Duration: 1.5}, nil, false)
+	if err != nil {
+		t.Error("Could not generate creds ", err)
+	}
+	// manually unmarshal in order to avoid default values in coreSegMetadata
+	buf, err := base64.StdEncoding.DecodeString(creds)
+	if err != nil {
+		t.Error("Could not base64-decode creds ", err)
+	}
+	var netSegData net.SegData
+	if err := proto.Unmarshal(buf, &netSegData); err != nil {
+		t.Error("Unable to unmarshal creds ", err)
+	}
+	if netSegData.Duration != int32(1500) {
+		t.Error("Got unexpected duration ", netSegData.Duration)
+	}
+
+	// test corrupt creds
+	idx := len(creds) / 2
+	kreds := creds[:idx] + string(^creds[idx]) + creds[idx+1:]
+	if _, _, err := verifySegCreds(context.TODO(), o, kreds, baddr); err != errSegEncoding {
+		t.Error("Unexpectedly verified bad creds", err)
+	}
+
+	corruptSegData := func(segData *net.SegData, expectedErr error) {
+		data, _ := proto.Marshal(segData)
+		creds = base64.StdEncoding.EncodeToString(data)
+		if _, _, err := verifySegCreds(context.TODO(), o, creds, baddr); err != expectedErr {
+			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
+		}
+	}
+
+	// corrupt profiles
+	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
+
+	// corrupt sig
+	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
+	corruptSegData(sd, errSegSig) // missing sig
+	sd.Sig = []byte("abc")
+	corruptSegData(sd, errSegSig) // invalid sig
+
+	// incompatible capabilities
+	sd = &net.SegData{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}, AuthToken: authToken}
+	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{}).Flatten())
+	corruptSegData(sd, errCapCompat)
+
+	// at capacity
+	sd = &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
+	sd.Sig, _ = b.Sign((&core.SegTranscodingMetadata{ManifestID: s.Params.ManifestID}).Flatten())
+	o.sessCapErr = fmt.Errorf("At capacity")
+	corruptSegData(sd, o.sessCapErr)
+	o.sessCapErr = nil
+}
 
 func TestEstimateFee(t *testing.T) {
 	assert := assert.New(t)
