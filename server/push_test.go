@@ -20,6 +20,11 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+
 	"github.com/golang/glog"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/common"
@@ -29,10 +34,6 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/vidplayer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
 )
 
 func requestSetup(s *LivepeerServer) (http.Handler, *strings.Reader, *httptest.ResponseRecorder) {
