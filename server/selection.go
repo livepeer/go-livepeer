@@ -137,15 +137,23 @@ func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 		return s.selectUnknownSession(ctx)
 	}
 
-	lowestLatencyScoreKnownSession := heap.Pop(s.knownSessions).(*BroadcastSession)
-	if lowestLatencyScoreKnownSession.LatencyScore < s.minLS {
-		// known session has good enough latency score, use it
-		return lowestLatencyScoreKnownSession
+	minSess := sess.(*BroadcastSession)
+	if minSess.LatencyScore > s.minLS && len(s.unknownSessions) > 0 {
+		return s.selectUnknownSession(ctx)
 	}
 
-	// known session does not have good enough latency score, clear the heap and use unknown session
-	s.knownSessions = &sessHeap{}
-	return s.selectUnknownSession(ctx)
+	return heap.Pop(s.knownSessions).(*BroadcastSession)
+
+	// TODO: Fix AI selection logic, remove above code and uncomment transcoding logic below.
+	// lowestLatencyScoreKnownSession := heap.Pop(s.knownSessions).(*BroadcastSession)
+	// if lowestLatencyScoreKnownSession.LatencyScore <= s.minLS {
+	// 	// known session has good enough latency score, use it
+	// 	return lowestLatencyScoreKnownSession
+	// }
+
+	// // known session does not have good enough latency score, clear the heap and use unknown session
+	// s.knownSessions = &sessHeap{}
+	// return s.selectUnknownSession(ctx)
 }
 
 // Size returns the number of sessions stored by the selector
