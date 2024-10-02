@@ -92,13 +92,6 @@ jobs:
           go fmt ./...
           git diff --exit-code
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v4
-        with:
-          version: v1.52.2
-          skip-pkg-cache: true
-          args: '--disable-all --enable=gofmt --enable=vet --enable=golint --deadline=4m pm verification'
-
       - name: Run Revive Action by building from repository
         uses: docker://morphy/revive-action:v2
         with:
