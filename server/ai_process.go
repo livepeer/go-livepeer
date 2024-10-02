@@ -34,6 +34,7 @@ const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
+const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -755,6 +756,97 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	return resp.JSON200, nil
 }
 
+// CalculateTextToSpeechLatencyScore computes the time taken per character for a TextToSpeech request.
+func CalculateTextToSpeechLatencyScore(took time.Duration, inCharacters int64) float64 {
+	if inCharacters <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(inCharacters)
+}
+
+func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	audioResp := resp.(*worker.EncodedFileResponse)
+
+	return audioResp, nil
+}
+
+func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	textLength := len(*req.TextInput)
+	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+	inCharacters := int64(textLength)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, inCharacters)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenTextToSpeechWithResponse(ctx, req, setHeaders)
+	took := time.Since(start)
+
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateSegmentAnything2LatencyScore(took, inCharacters)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "text-to-speech", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	var res worker.EncodedFileResponse
+	if err := json.Unmarshal(resp.Body, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 // CalculateAudioToTextLatencyScore computes the time taken per second of audio for an audio-to-text request.
 func CalculateAudioToTextLatencyScore(took time.Duration, durationSeconds int64) float64 {
 	if durationSeconds <= 0 {
@@ -1204,6 +1296,17 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToText(ctx, params, sess, v)
 		}
+	
+	case worker.GenTextToSpeechJSONRequestBody:
+		cap = core.Capability_TextToSpeech
+		modelID = defaultTextToSpeechModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitTextToSpeech(ctx, params, sess, v)
+		}
+	
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}

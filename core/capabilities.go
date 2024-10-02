@@ -81,6 +81,7 @@ const (
 	Capability_SegmentAnything2           Capability = 32
 	Capability_LLM                        Capability = 33
 	Capability_ImageToText                Capability = 34
+	Capability_TextToSpeech               Capability = 35
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -120,6 +121,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_SegmentAnything2:           "Segment anything 2",
 	Capability_LLM:                        "Llm",
 	Capability_ImageToText:                "Image to text",
+	Capability_TextToSpeech:               "Text to speech",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -212,6 +214,7 @@ func OptionalCapabilities() []Capability {
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
 		Capability_ImageToText,
+		Capability_TextToSpeech,
 	}
 }
 
