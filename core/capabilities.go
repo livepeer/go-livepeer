@@ -58,7 +58,7 @@ const (
 	Capability_ProfileH264ConstrainedHigh Capability = 10
 	Capability_GOP                        Capability = 11
 	Capability_AuthToken                  Capability = 12
-	Capability_SceneClassification        Capability = 13
+	Capability_SceneClassification        Capability = 13 // Deprecated, but can't remove because of Capability ordering
 	Capability_MPEG7VideoSignature        Capability = 14
 	Capability_HEVC_Decode                Capability = 15
 	Capability_HEVC_Encode                Capability = 16
