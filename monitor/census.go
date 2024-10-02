@@ -1701,7 +1701,7 @@ func MaxTranscodingPrice(maxPrice *big.Rat) {
 func MaxPriceForCapability(cap string, modelName string, maxPrice *big.Rat) {
 	floatWei, _ := maxPrice.Float64()
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kPipeline, cap), tag.Insert(census.kModelName, modelName)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, normalizePipelineTag(cap)), tag.Insert(census.kModelName, modelName)},
 		census.mPricePerCapability.M(floatWei)); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1851,9 +1851,10 @@ func (cen *censusMetricsCounter) recordModelRequested(pipeline, modelName string
 
 // AIRequestFinished records gateway AI job request metrics.
 func AIRequestFinished(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo, orchInfo *lpnet.OrchestratorInfo) {
-	census.recordModelRequested(pipeline, model)
-	census.recordAIRequestLatencyScore(pipeline, model, jobInfo.LatencyScore, orchInfo)
-	census.recordAIRequestPricePerUnit(pipeline, model, jobInfo.PricePerUnit)
+	pipelineTag := normalizePipelineTag(pipeline)
+	census.recordModelRequested(pipelineTag, model)
+	census.recordAIRequestLatencyScore(pipelineTag, model, jobInfo.LatencyScore, orchInfo)
+	census.recordAIRequestPricePerUnit(pipelineTag, model, jobInfo.PricePerUnit)
 }
 
 // recordAIRequestLatencyScore records the latency score for a AI job request.
@@ -1891,7 +1892,7 @@ func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.
 		orchAddr = common.BytesToAddress(addr).String()
 	}
 
-	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
+	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, normalizePipelineTag(Pipeline)), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
 	capabilities := orchInfo.GetCapabilities()
 	if capabilities != nil {
 		tags = append(tags, tag.Insert(census.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
@@ -1904,9 +1905,11 @@ func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.
 
 // AIJobProcessed records orchestrator AI job processing metrics.
 func AIJobProcessed(ctx context.Context, pipeline string, model string, jobInfo AIJobInfo) {
-	census.recordModelRequested(pipeline, model)
-	census.recordAIJobLatencyScore(pipeline, model, jobInfo.LatencyScore)
-	census.recordAIJobPricePerUnit(pipeline, model, jobInfo.PricePerUnit)
+	pipelineTag := normalizePipelineTag(pipeline)
+
+	census.recordModelRequested(pipelineTag, model)
+	census.recordAIJobLatencyScore(pipelineTag, model, jobInfo.LatencyScore)
+	census.recordAIJobPricePerUnit(pipelineTag, model, jobInfo.PricePerUnit)
 }
 
 // recordAIJobLatencyScore records the latency score for a processed AI job.
@@ -1936,7 +1939,7 @@ func (cen *censusMetricsCounter) recordAIJobPricePerUnit(Pipeline string, Model 
 // AIProcessingError logs errors in orchestrator AI job processing.
 func AIProcessingError(code string, Pipeline string, Model string, sender string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, normalizePipelineTag(Pipeline)), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
@@ -1998,4 +2001,8 @@ func FastVerificationFailed(ctx context.Context, uri string, errtype int) {
 		census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
+}
+
+func normalizePipelineTag(pipeline string) string {
+	return strings.Replace(strings.ToLower(pipeline), " ", "-", -1)
 }
