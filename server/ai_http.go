@@ -46,7 +46,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
 	return nil
 }
 
@@ -198,6 +198,23 @@ func (h *lphttp) LLM() http.Handler {
 		var req worker.GenLLMFormdataRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) TextToSpeech() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		var req worker.GenTextToSpeechJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -363,6 +380,17 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenTextToSpeechJSONRequestBody:
+		pipeline = "text-to-speech"
+		cap = core.Capability_TextToSpeech
+		modelID = *v.ModelId
+
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.TextToSpeech(ctx, v)
+		}
+
+		outPixels *= 1000
+
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return

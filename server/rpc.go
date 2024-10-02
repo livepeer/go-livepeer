@@ -70,6 +70,7 @@ type Orchestrator interface {
 	AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
 	LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error)
 	SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
+	TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance

@@ -33,6 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultTextToSpeechModelID =  "parler-tts/parler-tts-large-v1"
 
 type ServiceUnavailableError struct {
 	err error
@@ -706,6 +707,74 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	return resp.JSON200, nil
 }
 
+func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	audioResp := resp.(*worker.EncodedFileResponse)
+
+	return audioResp, nil
+}
+
+func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
+		return nil, err
+	}
+
+	// textLength := len(req.text_input)
+	// clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+	// TODO (pschroedl): include tokenizer hjere to calculate price
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, 1000)
+	if err != nil {
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	resp, err := client.GenTextToSpeechWithResponse(ctx, req, setHeaders)
+
+	if err != nil {
+		// if monitor.Enabled {
+		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+		// }
+		return nil, err
+	}
+	// if err != nil {
+	// 	if monitor.Enabled {
+	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
+	// 	}
+	// 	return nil, err
+	// }
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	// var res worker.EncodedFileResponse
+	// if err := json.Unmarshal(data, &res); err != nil {
+	// 	if monitor.Enabled {
+	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
+	// 	}
+	// 	return nil, err
+	// }
+
+	return resp.JSON200, nil
+}
+
 // CalculateAudioToTextLatencyScore computes the time taken per second of audio for an audio-to-text request.
 func CalculateAudioToTextLatencyScore(took time.Duration, durationSeconds int64) float64 {
 	if durationSeconds <= 0 {
@@ -971,6 +1040,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	return &res, nil
 }
 
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1039,6 +1109,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.GenTextToSpeechJSONRequestBody:
+		cap = core.Capability_TextToSpeech
+		modelID = defaultTextToSpeechModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitTextToSpeech(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
