@@ -170,7 +170,7 @@ func TestEpic_Verify(t *testing.T) {
 
 	ts, mux := stubVerificationServer()
 	defer ts.Close()
-	mux.HandleFunc("/verify", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/verify", func(w http.ResponseWriter, _ *http.Request) {
 		buf, err := json.Marshal(&epicResults{
 			Results: []epicResultFields{
 				{VideoAvailable: true, Tamper: 1, OCSVMDist: -1.0},
@@ -205,7 +205,7 @@ func TestEpic_Verify(t *testing.T) {
 	// TODO Error out on `resp.Body` read and ensure the error is there?
 
 	// Nil JSON body
-	mux.HandleFunc("/nilJSON", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/nilJSON", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(nil)
 	})
 	ec.Addr = ts.URL + "/nilJSON"
