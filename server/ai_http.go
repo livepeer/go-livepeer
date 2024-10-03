@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -344,7 +346,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_LLM
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.LLM(ctx, v)
+			return orch.LLM(ctx, requestID, v)
 		}
 
 		if v.MaxTokens == nil {
@@ -482,7 +484,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	// Check if the response is a streaming response
-	if streamChan, ok := resp.(<-chan worker.LlmStreamChunk); ok {
+	if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+		glog.Infof("Streaming response for request id=%v", requestID)
 		// Set headers for SSE
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -514,6 +517,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
 	}
+
 }
 
 //
@@ -557,8 +561,11 @@ func (h *lphttp) AIResults() http.Handler {
 		var workerResult core.RemoteAIWorkerResult
 		workerResult.Files = make(map[string][]byte)
 
-		if aiWorkerErrorMimeType == mediaType {
-			w.Write([]byte("OK"))
+		start := time.Now()
+		dlDur := time.Duration(0) // default to 0 in case of early return
+		resultType := ""
+		switch mediaType {
+		case aiWorkerErrorMimeType:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				glog.Errorf("Unable to read ai worker error body taskId=%v err=%q", tid, err)
@@ -568,11 +575,48 @@ func (h *lphttp) AIResults() http.Handler {
 			}
 			glog.Errorf("AI Worker error for taskId=%v err=%q", tid, workerResult.Err)
 			orch.AIResults(tid, &workerResult)
+			w.Write([]byte("OK"))
 			return
-		}
+		case "text/event-stream":
+			resultType = "streaming"
+			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
+			resChan := make(chan worker.LlmStreamChunk, 100)
+			workerResult.Results = resChan
 
-		if mediaType == "multipart/mixed" {
-			start := time.Now()
+			defer r.Body.Close()
+			defer close(resChan)
+
+			//set a reasonable timeout to stop waiting for results
+			ctx, _ := context.WithTimeout(r.Context(), HTTPIdleTimeout)
+
+			//pass results and receive from channel as the results are streamed
+			go orch.AIResults(tid, &workerResult)
+			// Read the streamed results from the request body
+			scanner := bufio.NewScanner(r.Body)
+			for scanner.Scan() {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					line := scanner.Text()
+					if strings.HasPrefix(line, "data: ") {
+						data := strings.TrimPrefix(line, "data: ")
+						var chunk worker.LlmStreamChunk
+						if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+							clog.Errorf(ctx, "Error unmarshaling stream data: %v", err)
+							continue
+						}
+						resChan <- chunk
+					}
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				workerResult.Err = scanner.Err()
+			}
+			dlDur = time.Since(start)
+		case "multipart/mixed":
+			resultType = "uploaded"
+			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
 			mr := multipart.NewReader(r.Body, params["boundary"])
 			for {
 				p, err := mr.NextPart()
@@ -607,7 +651,7 @@ func (h *lphttp) AIResults() http.Handler {
 							break
 						}
 						results = parsedResp
-					case "audio-to-text", "segment-anything-2":
+					case "audio-to-text", "segment-anything-2", "llm":
 						err := json.Unmarshal(body, &results)
 						if err != nil {
 							glog.Error("Error getting results json:", err)
@@ -624,12 +668,13 @@ func (h *lphttp) AIResults() http.Handler {
 				}
 			}
 
+			//return results
 			dlDur := time.Since(start)
-			glog.V(common.VERBOSE).Infof("Downloaded results from remote worker=%s taskId=%d dur=%s", r.RemoteAddr, tid, dlDur)
 			workerResult.DownloadTime = dlDur
-
 			orch.AIResults(tid, &workerResult)
 		}
+
+		glog.V(common.VERBOSE).Infof("Processed %s results from remote worker=%s taskId=%d dur=%s", resultType, r.RemoteAddr, tid, dlDur)
 
 		if workerResult.Err != nil {
 			http.Error(w, workerResult.Err.Error(), http.StatusInternalServerError)

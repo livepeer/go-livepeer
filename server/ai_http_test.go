@@ -106,10 +106,10 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 		Url:         "",
 		RequestData: nil,
 	}
-	wkr := &stubAIWorker{}
+	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
-	node.AIWorker = wkr
+	node.AIWorker = &wkr
 	node.Capabilities = createStubAIWorkerCapabilities()
 
 	var headers http.Header
@@ -127,7 +127,58 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
-	assert.Equal(0, wkr.called)
+	assert.NotNil(body)
+	assert.Equal("742", headers.Get("TaskId"))
+	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
+	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
+	assert.Equal("AI request not correct", string(body)[0:22])
+}
+
+func TestAIWorkerResults_PipelineResponses(t *testing.T) {
+	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	//test request
+	var req worker.GenImageToImageMultipartRequestBody
+	modelID := "livepeer/model1"
+	req.Prompt = "test prompt"
+	req.ModelId = &modelID
+
+	assert := assert.New(t)
+	assert.Nil(nil)
+	l := lphttp{
+		orchestrator: newStubOrchestrator(),
+	}
+	notify := &net.NotifyAIJob{
+		TaskId:      742,
+		Pipeline:    "text-to-image",
+		ModelID:     "livepeer/model1",
+		Url:         "",
+		RequestData: nil,
+	}
+	wkr := &stubAIWorker{}
+	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
+	node.OrchSecret = "verbigsecret"
+	node.AIWorker = wkr
+	node.Capabilities = createStubAIWorkerCapabilities()
+
+	var headers http.Header
+	var body []byte
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		l.orchestrator.TranscoderSecret()
+		//resultsHandler := l.AIResults()
+		headers = r.Header
+		out, err := io.ReadAll(r.Body)
+		assert.NoError(err)
+		body = out
+	}))
+	defer ts.Close()
+	parsedURL, _ := url.Parse(ts.URL)
+	//send empty request data
+	runAIJob(node, parsedURL.Host, httpc, notify)
+	time.Sleep(3 * time.Millisecond)
+
+	assert.Equal(0, wkr.Called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))

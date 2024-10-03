@@ -19,6 +19,7 @@ import (
 func TestPipelineToCapability(t *testing.T) {
 	good := "audio-to-text"
 	bad := "i-love-tests"
+	noSpaces := "llm"
 
 	cap, err := PipelineToCapability(good)
 	assert.Nil(t, err)
@@ -27,6 +28,10 @@ func TestPipelineToCapability(t *testing.T) {
 	cap, err = PipelineToCapability(bad)
 	assert.Error(t, err)
 	assert.Equal(t, cap, Capability_Unused)
+
+	cap, err = PipelineToCapability(noSpaces)
+	assert.Nil(t, err)
+	assert.Equal(t, cap, Capability_LLM)
 }
 
 func TestServeAIWorker(t *testing.T) {
@@ -464,8 +469,9 @@ func TestAITaskChan(t *testing.T) {
 func TestCheckAICapacity(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	o := NewOrchestrator(n, nil)
+	wkr := stubAIWorker{}
 	n.Capabilities = createAIWorkerCapabilities()
-	n.AIWorker = &stubAIWorker{}
+	n.AIWorker = &wkr
 	// Test when local AI worker has capacity
 	hasCapacity := o.CheckAICapacity("text-to-image", "livepeer/model1")
 	assert.True(t, hasCapacity)
@@ -594,10 +600,6 @@ func createAIWorkerCapabilities() *Capabilities {
 	return caps
 }
 
-func NewStubAIWorker() *stubAIWorker {
-	return &stubAIWorker{}
-}
-
 type stubAIWorker struct{}
 
 func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
@@ -645,6 +647,10 @@ func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTex
 
 func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return &worker.MasksResponse{Logits: "logits", Masks: "masks", Scores: "scores"}, nil
+}
+
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return &worker.LLMResponse{Response: "response tokens", TokensUsed: 10}, nil
 }
 
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {

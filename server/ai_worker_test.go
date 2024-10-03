@@ -49,10 +49,10 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 		Url:         "",
 		RequestData: nil,
 	}
-	wkr := &stubAIWorker{}
+	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
-	node.AIWorker = wkr
+	node.AIWorker = &wkr
 	node.Capabilities = createStubAIWorkerCapabilities()
 
 	var headers http.Header
@@ -70,7 +70,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
-	assert.Equal(0, wkr.called)
+	assert.Equal(0, wkr.Called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
@@ -80,13 +80,14 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 
 	//error in worker, good request
 	errText := "Some error"
-	wkr.err = fmt.Errorf(errText)
+	wkr.Err = fmt.Errorf(errText)
 
 	reqJson, _ := json.Marshal(req)
 	notify.RequestData = reqJson
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
+	assert.Equal(1, wkr.Called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
@@ -95,7 +96,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.Equal(errText, string(body))
 
 	//pipeline not compatible
-	wkr.err = nil
+	wkr.Err = nil
 	reqJson, _ = json.Marshal(req)
 	notify.Pipeline = "test-no-pipeline"
 	notify.TaskId = 743
@@ -114,7 +115,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	// unrecoverable error
 	// send the response and panic
 	notify.Pipeline = "text-to-image"
-	wkr.err = core.NewUnrecoverableError(errors.New("some error"))
+	wkr.Err = core.NewUnrecoverableError(errors.New("some error"))
 	panicked := false
 	defer func() {
 		if r := recover(); r != nil {
@@ -154,7 +155,6 @@ func TestRunAIJob(t *testing.T) {
 			w.Write(imgData)
 			return
 		}
-
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
@@ -241,9 +241,21 @@ func TestRunAIJob(t *testing.T) {
 			expectedOutputs: 1,
 		},
 		{
-			name: "UnsupportedPipeline",
+			name: "LLM_Success",
 			notify: &net.NotifyAIJob{
 				TaskId:      7,
+				Pipeline:    "llm",
+				ModelID:     "livepeer/model1",
+				Url:         "",
+				RequestData: []byte(`{"prompt":"tell me a story", "max_tokens": 10, "stream": false}`),
+			},
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
+			name: "UnsupportedPipeline",
+			notify: &net.NotifyAIJob{
+				TaskId:      8,
 				Pipeline:    "unsupported-pipeline",
 				ModelID:     "livepeer/model1",
 				Url:         "",
@@ -266,11 +278,11 @@ func TestRunAIJob(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wkr := &stubAIWorker{}
+			wkr := stubAIWorker{}
 			node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 
 			node.OrchSecret = "verbigsecret"
-			node.AIWorker = wkr
+			node.AIWorker = &wkr
 			node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId(tt.notify.Pipeline, tt.notify.ModelID)
 
 			var headers http.Header
@@ -288,7 +300,8 @@ func TestRunAIJob(t *testing.T) {
 			runAIJob(node, parsedURL.Host, httpc, tt.notify)
 			time.Sleep(3 * time.Millisecond)
 
-			//assert.Equal(tt.expectedCalled, wkr.called)
+			var results interface{}
+			json.Unmarshal(body, &results)
 			if tt.expectedErr != "" {
 				assert.NotNil(body)
 				assert.Contains(string(body), tt.expectedErr)
@@ -296,6 +309,51 @@ func TestRunAIJob(t *testing.T) {
 			} else {
 				assert.NotNil(body)
 				assert.NotEqual(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+
+				switch tt.notify.Pipeline {
+				case "text-to-image":
+					t2iResp, err := results.(worker.ImageResponse)
+					assert.Equal("1", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.TextToImage(context.Background(), worker.GenTextToImageJSONRequestBody{})
+					assert.Equal(expectedResp, t2iResp)
+				case "image-to-image":
+					i2iResp, err := results.(worker.ImageResponse)
+					assert.Equal("2", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.ImageToImage(context.Background(), worker.GenImageToImageMultipartRequestBody{})
+					assert.Equal(expectedResp, i2iResp)
+				case "upscale":
+					upsResp, err := results.(worker.ImageResponse)
+					assert.Equal("3", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.Upscale(context.Background(), worker.GenUpscaleMultipartRequestBody{})
+					assert.Equal(expectedResp, upsResp)
+				case "image-to-video":
+					vidResp, err := results.(worker.ImageResponse)
+					assert.Equal("4", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.ImageToVideo(context.Background(), worker.GenImageToVideoMultipartRequestBody{})
+					assert.Equal(expectedResp, vidResp)
+				case "audio-to-text":
+					atResp, err := results.(worker.TextResponse)
+					assert.Equal("5", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.AudioToText(context.Background(), worker.GenAudioToTextMultipartRequestBody{})
+					assert.Equal(expectedResp, atResp)
+				case "segment-anything-2":
+					sa2Resp, err := results.(worker.MasksResponse)
+					assert.Equal("6", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.SegmentAnything2(context.Background(), worker.GenSegmentAnything2MultipartRequestBody{})
+					assert.Equal(expectedResp, sa2Resp)
+				case "llm":
+					llmResp, err := results.(worker.LLMResponse)
+					assert.Equal("7", headers.Get("TaskId"))
+					assert.Nil(err)
+					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
+					assert.Equal(expectedResp, llmResp)
+				}
 			}
 		})
 	}
@@ -383,14 +441,14 @@ func (s *StubAIWorkerServer) Send(n *net.NotifyAIJob) error {
 }
 
 type stubAIWorker struct {
-	called int
-	err    error
+	Called int
+	Err    error
 }
 
-func (a stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.ImageResponse{
 			Images: []worker.Media{
@@ -405,10 +463,10 @@ func (a stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImage
 
 }
 
-func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.ImageResponse{
 			Images: []worker.Media{
@@ -422,10 +480,10 @@ func (a stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToIma
 	}
 }
 
-func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.VideoResponse{
 			Frames: [][]worker.Media{
@@ -451,10 +509,10 @@ func (a stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVid
 	}
 }
 
-func (a stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.ImageResponse{
 			Images: []worker.Media{
@@ -468,19 +526,19 @@ func (a stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipar
 	}
 }
 
-func (a stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.TextResponse{Text: "Transcribed text"}, nil
 	}
 }
 
-func (a stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
-	a.called++
-	if a.err != nil {
-		return nil, a.err
+func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
 	} else {
 		return &worker.MasksResponse{
 			Masks:  "[[[2.84, 2.83, ...], [2.92, 2.91, ...], [3.22, 3.56, ...], ...]]",
@@ -490,17 +548,26 @@ func (a stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegmen
 	}
 }
 
-func (a stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
-	a.called++
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.LLMResponse{Response: "output tokens", TokensUsed: 10}, nil
+	}
+}
+
+func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
+	a.Called++
 	return nil
 }
 
-func (a stubAIWorker) Stop(ctx context.Context) error {
-	a.called++
+func (a *stubAIWorker) Stop(ctx context.Context) error {
+	a.Called++
 	return nil
 }
 
-func (a stubAIWorker) HasCapacity(pipeline, modelID string) bool {
-	a.called++
+func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
+	a.Called++
 	return true
 }

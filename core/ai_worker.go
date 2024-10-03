@@ -454,8 +454,8 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 		return nil, fmt.Errorf("Missing local storage")
 	}
 
-	//worker.TextResponse is json so no need to save file for download
 	//worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
+	//other pipelines do not require saving data since they are text responses
 	imgResp, isImg := results.Results.(worker.ImageResponse)
 	if isImg {
 		for idx, _ := range imgResp.Images {
@@ -696,6 +696,35 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 	return res.Results, nil
 }
 
+// Return type is LLMResponse, but a stream is available as well as chan(string)
+func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	//local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		//no file response to save, response is text sent back to gateway
+		return orch.node.AIWorker.LLM(ctx, req)
+	}
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.ModelId, "", req)
+	if err != nil {
+		return nil, err
+	}
+
+	//non streaming response
+	if _, ok := res.Results.(worker.LLMResponse); ok {
+		res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+		if err != nil {
+			clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "llm", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+
+		}
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -873,6 +902,10 @@ func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.GenImageToVi
 
 func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
+}
+
+func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return n.AIWorker.LLM(ctx, req)
 }
 
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {

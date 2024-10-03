@@ -242,6 +242,18 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		resultType = "application/json"
 		req.Image.InitFromBytes(input, "image")
 		resp, err = n.SegmentAnything2(ctx, req)
+	case "llm":
+		var req worker.GenLLMFormdataRequestBody
+		err = json.Unmarshal(notify.RequestData, &req)
+		if err != nil {
+			reqOk = false
+			break
+		}
+		resultType = "application/json"
+		if *req.Stream {
+			resultType = "text/event-stream"
+		}
+		resp, err = n.LLM(ctx, req)
 	default:
 		resp = nil
 		err = errors.New("AI request pipeline type not supported")
@@ -269,8 +281,18 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	w := multipart.NewWriter(&body)
 
 	if resp != nil {
-		//create the multipart/mixed response to send to Orchestrator
+		if resultType == "text/event-stream" {
+			streamChan, ok := resp.(<-chan worker.LlmStreamChunk)
+			if ok {
+				sendStreamingAIResult(ctx, n, orchAddr, httpc, notify, resultType, streamChan, addlResultData, err)
+				return
+			} else {
+				sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, &body, addlResultData, fmt.Errorf("Streaming not supported!"))
+				return
+			}
+		}
 
+		//create the multipart/mixed response to send to Orchestrator
 		//Parse data from runner to send back to orchestrator
 		//  ***-to-image gets base64 encoded string of binary image from runner
 		//  image-to-video processes frames from runner and returns ImageResponse with url to local file
@@ -339,6 +361,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		//add the json to the response
 		//   audio-to-text has no file attachment because the response is json
 		jsonResp, err := json.Marshal(resp)
+
 		if err != nil {
 			clog.Errorf(ctx, "Could not marshal json response err=%q", err)
 			sendAIResult(ctx, n, orchAddr, httpc, notify, contentType, nil, addlResultData, err)
@@ -406,4 +429,54 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, ht
 	if monitor.Enabled {
 		monitor.AIResultUploaded(ctx, uploadDur, notify.Pipeline, notify.ModelID, orchAddr)
 	}
+}
+
+func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob,
+	contentType string, streamChan <-chan worker.LlmStreamChunk, addlData interface{}, err error,
+) {
+	clog.Infof(ctx, "sending streaming results back to Orchestrator")
+
+	pReader, pWriter := io.Pipe()
+	req, err := http.NewRequest("POST", "https://"+orchAddr+"/aiResults", pReader)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to forward stream to target URL err=%q", err)
+		pWriter.CloseWithError(err)
+		return
+	}
+
+	req.Header.Set("Authorization", protoVerAIWorker)
+	req.Header.Set("Credentials", n.OrchSecret)
+	req.Header.Set("TaskId", strconv.FormatInt(notify.TaskId, 10))
+	req.Header.Set("Pipeline", notify.Pipeline)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+
+	// start separate go routine to forward the streamed response
+	go func() {
+		fwdResp, err := httpc.Do(req)
+		if err != nil {
+			clog.Errorf(ctx, "Failed to forward stream to target URL err=%q", err)
+			pWriter.CloseWithError(err)
+			return
+		}
+		defer fwdResp.Body.Close()
+		io.Copy(io.Discard, fwdResp.Body)
+	}()
+
+	for chunk := range streamChan {
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			clog.Errorf(ctx, "Error marshaling stream chunk: %v", err)
+			continue
+		}
+		fmt.Fprintf(pWriter, "data: %s\n\n", data)
+
+		if chunk.Done {
+			pWriter.Close()
+			clog.Infof(ctx, "streaming results finished")
+			return
+		}
+	}
+
 }
