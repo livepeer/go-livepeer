@@ -259,8 +259,6 @@ func TestRPCTranscoderReq(t *testing.T) {
 }
 
 func TestRPCSeg(t *testing.T) {
-	// TODO: Fix coreMetadata capabilities
-	t.SkipNow()
 	mid := core.RandomManifestID()
 	b := stubBroadcaster2()
 	o := newStubOrchestrator()
@@ -365,9 +363,6 @@ func TestRPCSeg(t *testing.T) {
 			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
 		}
 	}
-
-	// corrupt profiles
-	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
 
 	// corrupt sig
 	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}

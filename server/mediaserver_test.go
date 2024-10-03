@@ -440,8 +440,6 @@ type authWebhookReq struct {
 }
 
 func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
-	// TODO: Fix
-	t.SkipNow()
 	assert := require.New(t)
 	s, cancel := setupServerWithCancel()
 	defer serverCleanup(s)
@@ -656,7 +654,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(sid)
 
-	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
+	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store/bucket"}`)
 	defer ts17.Close()
 	id4, err := createSid(u)
 	require.NoError(t, err)
