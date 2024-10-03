@@ -29,10 +29,10 @@ jobs:
             container: ubuntu:20.04
             type: cpu
 
-          # - GOOS: linux
-          #   GOARCH: arm64
-          #   container: ubuntu-20.04
-          #   type: cpu
+          - GOOS: linux
+            GOARCH: arm64
+            container: ubuntu-20.04
+            type: cpu
 
           - GOOS: linux
             GOARCH: amd64
