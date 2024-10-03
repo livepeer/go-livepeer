@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -300,7 +302,9 @@ func TestRunAIJob(t *testing.T) {
 			runAIJob(node, parsedURL.Host, httpc, tt.notify)
 			time.Sleep(3 * time.Millisecond)
 
-			var results interface{}
+			_, params, _ := mime.ParseMediaType(headers.Get("Content-Type"))
+			//this part tests the multipart response reading in AIResults()
+			results := parseMultiPartResult(bytes.NewBuffer(body), params["boundary"], tt.notify.Pipeline)
 			json.Unmarshal(body, &results)
 			if tt.expectedErr != "" {
 				assert.NotNil(body)
@@ -312,51 +316,69 @@ func TestRunAIJob(t *testing.T) {
 
 				switch tt.notify.Pipeline {
 				case "text-to-image":
-					t2iResp, err := results.(worker.ImageResponse)
+					t2iResp, ok := results.Results.(worker.ImageResponse)
+					assert.True(ok)
 					assert.Equal("1", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 1)
 					expectedResp, _ := wkr.TextToImage(context.Background(), worker.GenTextToImageJSONRequestBody{})
-					assert.Equal(expectedResp, t2iResp)
+					assert.Equal(expectedResp.Images[0].Seed, t2iResp.Images[0].Seed)
 				case "image-to-image":
-					i2iResp, err := results.(worker.ImageResponse)
+					i2iResp, ok := results.Results.(worker.ImageResponse)
+					assert.True(ok)
 					assert.Equal("2", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 1)
 					expectedResp, _ := wkr.ImageToImage(context.Background(), worker.GenImageToImageMultipartRequestBody{})
-					assert.Equal(expectedResp, i2iResp)
+					assert.Equal(expectedResp.Images[0].Seed, i2iResp.Images[0].Seed)
 				case "upscale":
-					upsResp, err := results.(worker.ImageResponse)
+					upsResp, ok := results.Results.(worker.ImageResponse)
+					assert.True(ok)
 					assert.Equal("3", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 1)
 					expectedResp, _ := wkr.Upscale(context.Background(), worker.GenUpscaleMultipartRequestBody{})
-					assert.Equal(expectedResp, upsResp)
+					assert.Equal(expectedResp.Images[0].Seed, upsResp.Images[0].Seed)
 				case "image-to-video":
-					vidResp, err := results.(worker.ImageResponse)
+					vidResp, ok := results.Results.(worker.ImageResponse)
+					assert.True(ok)
 					assert.Equal("4", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 1)
 					expectedResp, _ := wkr.ImageToVideo(context.Background(), worker.GenImageToVideoMultipartRequestBody{})
-					assert.Equal(expectedResp, vidResp)
+					assert.Equal(expectedResp.Frames[0][0].Seed, vidResp.Images[0].Seed)
 				case "audio-to-text":
-					atResp, err := results.(worker.TextResponse)
+					res, _ := json.Marshal(results.Results)
+					var jsonRes worker.TextResponse
+					json.Unmarshal(res, &jsonRes)
+
 					assert.Equal("5", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 0)
 					expectedResp, _ := wkr.AudioToText(context.Background(), worker.GenAudioToTextMultipartRequestBody{})
-					assert.Equal(expectedResp, atResp)
+					assert.Equal(expectedResp, &jsonRes)
 				case "segment-anything-2":
-					sa2Resp, err := results.(worker.MasksResponse)
+					res, _ := json.Marshal(results.Results)
+					var jsonRes worker.MasksResponse
+					json.Unmarshal(res, &jsonRes)
+
 					assert.Equal("6", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 0)
 					expectedResp, _ := wkr.SegmentAnything2(context.Background(), worker.GenSegmentAnything2MultipartRequestBody{})
-					assert.Equal(expectedResp, sa2Resp)
+					assert.Equal(expectedResp, &jsonRes)
 				case "llm":
-					llmResp, err := results.(worker.LLMResponse)
+					res, _ := json.Marshal(results.Results)
+					var jsonRes worker.LLMResponse
+					json.Unmarshal(res, &jsonRes)
+
 					assert.Equal("7", headers.Get("TaskId"))
-					assert.Nil(err)
+					assert.Equal(len(results.Files), 0)
 					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
-					assert.Equal(expectedResp, llmResp)
+					assert.Equal(expectedResp, &jsonRes)
 				}
 			}
 		})
 	}
+}
+
+type stubResult struct {
+	Attachment []byte
+	Result     string
 }
 
 func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int, string) {
@@ -473,7 +495,7 @@ func (a *stubAIWorker) ImageToImage(ctx context.Context, req worker.GenImageToIm
 				{
 					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 					Nsfw: false,
-					Seed: 111,
+					Seed: 112,
 				},
 			},
 		}, nil
@@ -491,17 +513,17 @@ func (a *stubAIWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVi
 					{
 						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 						Nsfw: false,
-						Seed: 111,
+						Seed: 113,
 					},
 					{
 						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 						Nsfw: false,
-						Seed: 111,
+						Seed: 131,
 					},
 					{
 						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 						Nsfw: false,
-						Seed: 111,
+						Seed: 311,
 					},
 				},
 			},
@@ -519,7 +541,7 @@ func (a *stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipa
 				{
 					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 					Nsfw: false,
-					Seed: 111,
+					Seed: 114,
 				},
 			},
 		}, nil

@@ -617,56 +617,7 @@ func (h *lphttp) AIResults() http.Handler {
 		case "multipart/mixed":
 			resultType = "uploaded"
 			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
-			mr := multipart.NewReader(r.Body, params["boundary"])
-			for {
-				p, err := mr.NextPart()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					glog.Error("Could not process multipart part ", err)
-					workerResult.Err = err
-					break
-				}
-				body, err := common.ReadAtMost(p, MaxAIRequestSize)
-				if err != nil {
-					glog.Error("Error reading body ", err)
-					workerResult.Err = err
-					break
-				}
-
-				// this is where we would include metadata on each result if want to separate
-				// instead the multipart response includes the json and the files separately with the json "url" field matching to part names
-				cDisp := p.Header.Get("Content-Disposition")
-				if p.Header.Get("Content-Type") == "application/json" {
-					var results interface{}
-					switch pipeline {
-					case "text-to-image", "image-to-image", "upscale", "image-to-video":
-						var parsedResp worker.ImageResponse
-
-						err := json.Unmarshal(body, &parsedResp)
-						if err != nil {
-							glog.Error("Error getting results json:", err)
-							workerResult.Err = err
-							break
-						}
-						results = parsedResp
-					case "audio-to-text", "segment-anything-2", "llm":
-						err := json.Unmarshal(body, &results)
-						if err != nil {
-							glog.Error("Error getting results json:", err)
-							workerResult.Err = err
-							break
-						}
-					}
-
-					workerResult.Results = results
-				} else if cDisp != "" {
-					//these are the result files binary data
-					resultName := p.FileName()
-					workerResult.Files[resultName] = body
-				}
-			}
+			workerResult := parseMultiPartResult(r.Body, params["boundary"], pipeline)
 
 			//return results
 			dlDur = time.Since(start)
@@ -683,4 +634,62 @@ func (h *lphttp) AIResults() http.Handler {
 
 		w.Write([]byte("OK"))
 	})
+}
+
+func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core.RemoteAIWorkerResult {
+	wkrResult := core.RemoteAIWorkerResult{}
+	wkrResult.Files = make(map[string][]byte)
+
+	mr := multipart.NewReader(body, boundary)
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			glog.Error("Could not process multipart part ", err)
+			wkrResult.Err = err
+			break
+		}
+		body, err := common.ReadAtMost(p, MaxAIRequestSize)
+		if err != nil {
+			glog.Error("Error reading body ", err)
+			wkrResult.Err = err
+			break
+		}
+
+		// this is where we would include metadata on each result if want to separate
+		// instead the multipart response includes the json and the files separately with the json "url" field matching to part names
+		cDisp := p.Header.Get("Content-Disposition")
+		if p.Header.Get("Content-Type") == "application/json" {
+			var results interface{}
+			switch pipeline {
+			case "text-to-image", "image-to-image", "upscale", "image-to-video":
+				var parsedResp worker.ImageResponse
+
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
+			case "audio-to-text", "segment-anything-2", "llm":
+				err := json.Unmarshal(body, &results)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+			}
+
+			wkrResult.Results = results
+		} else if cDisp != "" {
+			//these are the result files binary data
+			resultName := p.FileName()
+			wkrResult.Files[resultName] = body
+		}
+	}
+
+	return wkrResult
 }
