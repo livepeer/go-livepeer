@@ -49,6 +49,7 @@ type Broadcaster interface {
 type CapabilityComparator interface {
 	CompatibleWith(*net.Capabilities) bool
 	LegacyOnly() bool
+	ToNetCapabilities() *net.Capabilities
 }
 
 const (

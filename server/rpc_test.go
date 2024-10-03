@@ -25,6 +25,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/crypto"
@@ -183,6 +184,33 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
+func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
+}
+func (r *stubOrchestrator) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -192,7 +220,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b)
+	req, err := genOrchestratorReq(b, nil)
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -224,7 +252,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b)
+	_, err = genOrchestratorReq(b, nil)
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -1345,7 +1373,33 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 	}
 	return nil
 }
-
+func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
+}
+func (r *mockOrchestrator) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToImage(ctx context.Context, req worker.GenImageToImageMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
 		Recipient:         pm.RandBytes(123),

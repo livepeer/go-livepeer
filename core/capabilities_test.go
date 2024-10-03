@@ -339,11 +339,56 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	orch.version = "0.4.0"
 	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
 
-	// broadcaster is not compatible with orchestrator - the same version
+	// broadcaster is compatible with orchestrator - the same version
 	orch = NewCapabilities(nil, nil)
 	bcast = NewCapabilities(nil, nil)
 	bcast.constraints.minVersion = "0.4.1"
 	orch.version = "0.4.1"
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// TODO: Remove AI-specific cases below when merging into master.
+	// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
+	// capabilities.go to achieve this behavior.
+	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2"
+	orch.version = "0.7.2-ai.1"
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// AI broadcaster is not compatible with AI orchestrator - no ai suffix
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2-ai.1"
+	orch.version = "0.7.2"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// AI broadcaster is not compatible with AI orchestrator - lower ai suffix
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2-ai.2"
+	orch.version = "0.7.2-ai.1"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// AI broadcaster is not compatible with AI orchestrator - lower major version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2-ai.2"
+	orch.version = "0.7.1-ai.1"
+	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2-ai.1"
+	orch.version = "0.7.2-ai.2"
+	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
+
+	// AI broadcaster is compatible with AI orchestrator- higher major version
+	orch = NewCapabilities(nil, nil)
+	bcast = NewCapabilities(nil, nil)
+	bcast.constraints.minVersion = "0.7.2-ai.2"
+	orch.version = "0.7.3-ai.1"
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
@@ -396,26 +441,35 @@ type stubOS struct {
 	storageType int32
 }
 
+func (os *stubOS) OS() drivers.OSDriver {
+	return nil
+}
+func (os *stubOS) SaveData(context.Context, string, io.Reader, *drivers.FileProperties, time.Duration) (string, error) {
+	return "", nil
+}
+func (os *stubOS) EndSession() {}
 func (os *stubOS) GetInfo() *drivers.OSInfo {
 	if os.storageType == stubOSMagic {
 		return nil
 	}
 	return &drivers.OSInfo{StorageType: drivers.OSInfo_StorageType(os.storageType)}
 }
-func (os *stubOS) EndSession() {}
-func (os *stubOS) SaveData(context.Context, string, io.Reader, map[string]string, time.Duration) (string, error) {
-	return "", nil
-}
 func (os *stubOS) IsExternal() bool      { return false }
 func (os *stubOS) IsOwn(url string) bool { return true }
 func (os *stubOS) ListFiles(ctx context.Context, prefix, delim string) (drivers.PageInfo, error) {
 	return nil, nil
 }
+func (os *stubOS) DeleteFile(ctx context.Context, name string) error {
+	return nil
+}
 func (os *stubOS) ReadData(ctx context.Context, name string) (*drivers.FileInfoReader, error) {
 	return nil, nil
 }
-func (os *stubOS) OS() drivers.OSDriver {
-	return nil
+func (os *stubOS) ReadDataRange(ctx context.Context, name, byteRange string) (*drivers.FileInfoReader, error) {
+	return nil, nil
+}
+func (os *stubOS) Presign(name string, expire time.Duration) (string, error) {
+	return "", nil
 }
 
 func TestCapability_StorageToCapability(t *testing.T) {
@@ -612,12 +666,76 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 			transcoderVersion:     "nonparsablesemversion",
 			expected:              false,
 		},
+		// TODO: Remove AI-specific cases below when merging into master.
+		// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
+		// capabilities.go to achieve this behavior.
+		{
+			name:                  "AI broadcaster required version has no AI suffix",
+			broadcasterMinVersion: "0.7.2",
+			transcoderVersion:     "0.7.2-ai.1",
+			expected:              true,
+		},
+		{
+			name:                  "AI transcoder version has no AI suffix",
+			broadcasterMinVersion: "0.7.2-ai.1",
+			transcoderVersion:     "0.7.2",
+			expected:              false,
+		},
+		{
+			name:                  "AI broadcaster required version AI suffix is higher than AI transcoder AI suffix",
+			broadcasterMinVersion: "0.7.2-ai.2",
+			transcoderVersion:     "0.7.2-ai.1",
+			expected:              false,
+		},
+		{
+			name:                  "AI broadcaster required major version is higher than AI transcoder major version",
+			broadcasterMinVersion: "0.7.2-ai.2",
+			transcoderVersion:     "0.7.2-ai.1",
+			expected:              false,
+		},
+		{
+			name:                  "AI broadcaster required version AI suffix is lower than AI transcoder AI suffix",
+			broadcasterMinVersion: "0.7.2-ai.1",
+			transcoderVersion:     "0.7.2-ai.2",
+			expected:              true,
+		},
+		{
+			name:                  "AI broadcaster required major version is lower than AI transcoder major version",
+			broadcasterMinVersion: "0.7.2-ai.1",
+			transcoderVersion:     "0.7.3-ai.1",
+			expected:              true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bCapabilities := &Capabilities{constraints: Constraints{minVersion: tt.broadcasterMinVersion}}
 			tCapabilities := &Capabilities{version: tt.transcoderVersion}
 			assert.Equal(t, tt.expected, bCapabilities.LivepeerVersionCompatibleWith(tCapabilities.ToNetCapabilities()))
+		})
+	}
+}
+
+func TestCapability_String(t *testing.T) {
+	var unknownCap Capability = -100
+	tests := []struct {
+		name string
+		c    Capability
+		want string
+	}{
+		{
+			name: "Capability_TextToImage",
+			c:    Capability_TextToImage,
+			want: "Text to image",
+		},
+		{
+			name: "Unknown",
+			c:    unknownCap,
+			want: "-100",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.c.String())
 		})
 	}
 }
