@@ -1525,8 +1525,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
-		if !*cfg.Transcoder && n.OrchSecret == "" {
-			glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+		if !*cfg.Transcoder && !*cfg.AIWorker && n.OrchSecret == "" {
+			glog.Info("Running an orchestrator in AI External Container mode")
 		}
 	} else if n.NodeType == core.TranscoderNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
