@@ -669,7 +669,7 @@ func (h *lphttp) AIResults() http.Handler {
 			}
 
 			//return results
-			dlDur := time.Since(start)
+			dlDur = time.Since(start)
 			workerResult.DownloadTime = dlDur
 			orch.AIResults(tid, &workerResult)
 		}
