@@ -485,10 +485,10 @@ func TestCheckAICapacity(t *testing.T) {
 		return wkr, strm
 	}
 	//create worker and connect to manager
-	wkr, strm := initAIWorker()
+	wkr2, strm := initAIWorker()
 
 	go func() {
-		o.node.AIWorkerManager.Manage(strm, wkr.capabilities.ToNetCapabilities())
+		o.node.AIWorkerManager.Manage(strm, wkr2.capabilities.ToNetCapabilities())
 	}()
 	time.Sleep(1 * time.Millisecond) // allow the workers to activate
 
