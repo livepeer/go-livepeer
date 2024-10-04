@@ -1199,7 +1199,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 
 			for _, config := range configs {
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm}
+				modelConstraint := &core.ModelConstraint{Warm: false} //override to always false to be cold for base capacity
 
 				var autoPrice *core.AutoConvertedPrice
 				if *cfg.Network != "offchain" {
