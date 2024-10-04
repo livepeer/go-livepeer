@@ -31,8 +31,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var downloadSeg = core.DownloadData
-
 func defaultTicketBatch() *pm.TicketBatch {
 	return &pm.TicketBatch{
 		TicketParams: &pm.TicketParams{

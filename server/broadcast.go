@@ -48,7 +48,7 @@ var MetadataQueue event.SimpleProducer
 var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
-
+var downloadSeg = core.DownloadData
 var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.SegmentParameters,
 	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
 	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
@@ -1334,7 +1334,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		// - A verification policy is set. The segment data is needed for signature verification and/or pixel count verification
 		// - The segment data needs to be uploaded to the broadcaster's own OS
 		if verifier != nil || bros != nil || bos != nil && !bos.IsOwn(url) {
-			d, err := core.DownloadData(ctx, url)
+			d, err := downloadSeg(ctx, url)
 			if err != nil {
 				errFunc(monitor.SegmentTranscodeErrorDownload, url, err)
 				segLock.Lock()
