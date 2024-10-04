@@ -24,6 +24,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 )
 
 func TestRemoteAIWorker_Error(t *testing.T) {
@@ -373,6 +374,9 @@ func TestRunAIJob(t *testing.T) {
 				}
 			}
 		})
+
+		//check for leaks
+		goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	}
 }
 
