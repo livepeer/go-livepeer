@@ -1767,8 +1767,8 @@ func (x *RegisterAIWorkerRequest) GetCapabilities() *Capabilities {
 	return nil
 }
 
-// Sent by the orchestrator to the aiworker
-type NotifyAIJob struct {
+// Data included by the gateway when submitting a AI job.
+type AIJobData struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -1777,18 +1777,79 @@ type NotifyAIJob struct {
 	Url string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
 	// pipeline to use for the job
 	Pipeline string `protobuf:"bytes,2,opt,name=pipeline,proto3" json:"pipeline,omitempty"`
-	// model to process job with
-	ModelID string `protobuf:"bytes,3,opt,name=modelID,proto3" json:"modelID,omitempty"`
+	// AI job request data
+	RequestData []byte `protobuf:"bytes,3,opt,name=requestData,proto3" json:"requestData,omitempty"`
+}
+
+func (x *AIJobData) Reset() {
+	*x = AIJobData{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_net_lp_rpc_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *AIJobData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AIJobData) ProtoMessage() {}
+
+func (x *AIJobData) ProtoReflect() protoreflect.Message {
+	mi := &file_net_lp_rpc_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AIJobData.ProtoReflect.Descriptor instead.
+func (*AIJobData) Descriptor() ([]byte, []int) {
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *AIJobData) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *AIJobData) GetPipeline() string {
+	if x != nil {
+		return x.Pipeline
+	}
+	return ""
+}
+
+func (x *AIJobData) GetRequestData() []byte {
+	if x != nil {
+		return x.RequestData
+	}
+	return nil
+}
+
+// Sent by the orchestrator to the aiworker
+type NotifyAIJob struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
 	// Configuration for the AI job
-	RequestData []byte `protobuf:"bytes,4,opt,name=requestData,proto3" json:"requestData,omitempty"`
+	AIJobData *AIJobData `protobuf:"bytes,1,opt,name=AIJobData,proto3" json:"AIJobData,omitempty"`
 	// ID for this particular AI task.
-	TaskId int64 `protobuf:"varint,5,opt,name=taskId,proto3" json:"taskId,omitempty"`
+	TaskId int64 `protobuf:"varint,2,opt,name=taskId,proto3" json:"taskId,omitempty"`
 }
 
 func (x *NotifyAIJob) Reset() {
 	*x = NotifyAIJob{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[19]
+		mi := &file_net_lp_rpc_proto_msgTypes[20]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1801,7 +1862,7 @@ func (x *NotifyAIJob) String() string {
 func (*NotifyAIJob) ProtoMessage() {}
 
 func (x *NotifyAIJob) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[19]
+	mi := &file_net_lp_rpc_proto_msgTypes[20]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1814,33 +1875,12 @@ func (x *NotifyAIJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyAIJob.ProtoReflect.Descriptor instead.
 func (*NotifyAIJob) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{19}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *NotifyAIJob) GetUrl() string {
+func (x *NotifyAIJob) GetAIJobData() *AIJobData {
 	if x != nil {
-		return x.Url
-	}
-	return ""
-}
-
-func (x *NotifyAIJob) GetPipeline() string {
-	if x != nil {
-		return x.Pipeline
-	}
-	return ""
-}
-
-func (x *NotifyAIJob) GetModelID() string {
-	if x != nil {
-		return x.ModelID
-	}
-	return ""
-}
-
-func (x *NotifyAIJob) GetRequestData() []byte {
-	if x != nil {
-		return x.RequestData
+		return x.AIJobData
 	}
 	return nil
 }
@@ -1879,7 +1919,7 @@ type TicketParams struct {
 func (x *TicketParams) Reset() {
 	*x = TicketParams{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[20]
+		mi := &file_net_lp_rpc_proto_msgTypes[21]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1892,7 +1932,7 @@ func (x *TicketParams) String() string {
 func (*TicketParams) ProtoMessage() {}
 
 func (x *TicketParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[20]
+	mi := &file_net_lp_rpc_proto_msgTypes[21]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1905,7 +1945,7 @@ func (x *TicketParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketParams.ProtoReflect.Descriptor instead.
 func (*TicketParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{20}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TicketParams) GetRecipient() []byte {
@@ -1973,7 +2013,7 @@ type TicketSenderParams struct {
 func (x *TicketSenderParams) Reset() {
 	*x = TicketSenderParams{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[21]
+		mi := &file_net_lp_rpc_proto_msgTypes[22]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1986,7 +2026,7 @@ func (x *TicketSenderParams) String() string {
 func (*TicketSenderParams) ProtoMessage() {}
 
 func (x *TicketSenderParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[21]
+	mi := &file_net_lp_rpc_proto_msgTypes[22]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1999,7 +2039,7 @@ func (x *TicketSenderParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketSenderParams.ProtoReflect.Descriptor instead.
 func (*TicketSenderParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{21}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TicketSenderParams) GetSenderNonce() uint32 {
@@ -2031,7 +2071,7 @@ type TicketExpirationParams struct {
 func (x *TicketExpirationParams) Reset() {
 	*x = TicketExpirationParams{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[22]
+		mi := &file_net_lp_rpc_proto_msgTypes[23]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2044,7 +2084,7 @@ func (x *TicketExpirationParams) String() string {
 func (*TicketExpirationParams) ProtoMessage() {}
 
 func (x *TicketExpirationParams) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[22]
+	mi := &file_net_lp_rpc_proto_msgTypes[23]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2057,7 +2097,7 @@ func (x *TicketExpirationParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TicketExpirationParams.ProtoReflect.Descriptor instead.
 func (*TicketExpirationParams) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{22}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TicketExpirationParams) GetCreationRound() int64 {
@@ -2097,7 +2137,7 @@ type Payment struct {
 func (x *Payment) Reset() {
 	*x = Payment{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[23]
+		mi := &file_net_lp_rpc_proto_msgTypes[24]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2110,7 +2150,7 @@ func (x *Payment) String() string {
 func (*Payment) ProtoMessage() {}
 
 func (x *Payment) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[23]
+	mi := &file_net_lp_rpc_proto_msgTypes[24]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2123,7 +2163,7 @@ func (x *Payment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Payment.ProtoReflect.Descriptor instead.
 func (*Payment) Descriptor() ([]byte, []int) {
-	return file_net_lp_rpc_proto_rawDescGZIP(), []int{23}
+	return file_net_lp_rpc_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Payment) GetTicketParams() *TicketParams {
@@ -2174,7 +2214,7 @@ type Capabilities_Constraints struct {
 func (x *Capabilities_Constraints) Reset() {
 	*x = Capabilities_Constraints{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[25]
+		mi := &file_net_lp_rpc_proto_msgTypes[26]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2187,7 +2227,7 @@ func (x *Capabilities_Constraints) String() string {
 func (*Capabilities_Constraints) ProtoMessage() {}
 
 func (x *Capabilities_Constraints) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[25]
+	mi := &file_net_lp_rpc_proto_msgTypes[26]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2229,7 +2269,7 @@ type Capabilities_CapabilityConstraints struct {
 func (x *Capabilities_CapabilityConstraints) Reset() {
 	*x = Capabilities_CapabilityConstraints{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[26]
+		mi := &file_net_lp_rpc_proto_msgTypes[27]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2242,7 +2282,7 @@ func (x *Capabilities_CapabilityConstraints) String() string {
 func (*Capabilities_CapabilityConstraints) ProtoMessage() {}
 
 func (x *Capabilities_CapabilityConstraints) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[26]
+	mi := &file_net_lp_rpc_proto_msgTypes[27]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2277,7 +2317,7 @@ type Capabilities_CapabilityConstraints_ModelConstraint struct {
 func (x *Capabilities_CapabilityConstraints_ModelConstraint) Reset() {
 	*x = Capabilities_CapabilityConstraints_ModelConstraint{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_net_lp_rpc_proto_msgTypes[28]
+		mi := &file_net_lp_rpc_proto_msgTypes[29]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2290,7 +2330,7 @@ func (x *Capabilities_CapabilityConstraints_ModelConstraint) String() string {
 func (*Capabilities_CapabilityConstraints_ModelConstraint) ProtoMessage() {}
 
 func (x *Capabilities_CapabilityConstraints_ModelConstraint) ProtoReflect() protoreflect.Message {
-	mi := &file_net_lp_rpc_proto_msgTypes[28]
+	mi := &file_net_lp_rpc_proto_msgTypes[29]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2580,15 +2620,17 @@ var file_net_lp_rpc_proto_rawDesc = []byte{
 	0x70, 0x61, 0x62, 0x69, 0x6c, 0x69, 0x74, 0x69, 0x65, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x11, 0x2e, 0x6e, 0x65, 0x74, 0x2e, 0x43, 0x61, 0x70, 0x61, 0x62, 0x69, 0x6c, 0x69, 0x74,
 	0x69, 0x65, 0x73, 0x52, 0x0c, 0x63, 0x61, 0x70, 0x61, 0x62, 0x69, 0x6c, 0x69, 0x74, 0x69, 0x65,
-	0x73, 0x22, 0x8f, 0x01, 0x0a, 0x0b, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x41, 0x49, 0x4a, 0x6f,
-	0x62, 0x12, 0x10, 0x0a, 0x03, 0x75, 0x72, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03,
-	0x75, 0x72, 0x6c, 0x12, 0x1a, 0x0a, 0x08, 0x70, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x70, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x12,
-	0x18, 0x0a, 0x07, 0x6d, 0x6f, 0x64, 0x65, 0x6c, 0x49, 0x44, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x07, 0x6d, 0x6f, 0x64, 0x65, 0x6c, 0x49, 0x44, 0x12, 0x20, 0x0a, 0x0b, 0x72, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b,
-	0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x12, 0x16, 0x0a, 0x06, 0x74,
-	0x61, 0x73, 0x6b, 0x49, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x74, 0x61, 0x73,
+	0x73, 0x22, 0x5b, 0x0a, 0x09, 0x41, 0x49, 0x4a, 0x6f, 0x62, 0x44, 0x61, 0x74, 0x61, 0x12, 0x10,
+	0x0a, 0x03, 0x75, 0x72, 0x6c, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x75, 0x72, 0x6c,
+	0x12, 0x1a, 0x0a, 0x08, 0x70, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x08, 0x70, 0x69, 0x70, 0x65, 0x6c, 0x69, 0x6e, 0x65, 0x12, 0x20, 0x0a, 0x0b,
+	0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x0c, 0x52, 0x0b, 0x72, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x22, 0x53,
+	0x0a, 0x0b, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x79, 0x41, 0x49, 0x4a, 0x6f, 0x62, 0x12, 0x2c, 0x0a,
+	0x09, 0x41, 0x49, 0x4a, 0x6f, 0x62, 0x44, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x0e, 0x2e, 0x6e, 0x65, 0x74, 0x2e, 0x41, 0x49, 0x4a, 0x6f, 0x62, 0x44, 0x61, 0x74, 0x61,
+	0x52, 0x09, 0x41, 0x49, 0x4a, 0x6f, 0x62, 0x44, 0x61, 0x74, 0x61, 0x12, 0x16, 0x0a, 0x06, 0x74,
+	0x61, 0x73, 0x6b, 0x49, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x74, 0x61, 0x73,
 	0x6b, 0x49, 0x64, 0x22, 0x9f, 0x02, 0x0a, 0x0c, 0x54, 0x69, 0x63, 0x6b, 0x65, 0x74, 0x50, 0x61,
 	0x72, 0x61, 0x6d, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65, 0x6e,
 	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x72, 0x65, 0x63, 0x69, 0x70, 0x69, 0x65,
@@ -2679,7 +2721,7 @@ func file_net_lp_rpc_proto_rawDescGZIP() []byte {
 }
 
 var file_net_lp_rpc_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_net_lp_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_net_lp_rpc_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_net_lp_rpc_proto_goTypes = []interface{}{
 	(OSInfo_StorageType)(0),                    // 0: net.OSInfo.StorageType
 	(VideoProfile_Format)(0),                   // 1: net.VideoProfile.Format
@@ -2705,26 +2747,27 @@ var file_net_lp_rpc_proto_goTypes = []interface{}{
 	(*RegisterRequest)(nil),                    // 21: net.RegisterRequest
 	(*NotifySegment)(nil),                      // 22: net.NotifySegment
 	(*RegisterAIWorkerRequest)(nil),            // 23: net.RegisterAIWorkerRequest
-	(*NotifyAIJob)(nil),                        // 24: net.NotifyAIJob
-	(*TicketParams)(nil),                       // 25: net.TicketParams
-	(*TicketSenderParams)(nil),                 // 26: net.TicketSenderParams
-	(*TicketExpirationParams)(nil),             // 27: net.TicketExpirationParams
-	(*Payment)(nil),                            // 28: net.Payment
-	nil,                                        // 29: net.Capabilities.CapacitiesEntry
-	(*Capabilities_Constraints)(nil),           // 30: net.Capabilities.Constraints
-	(*Capabilities_CapabilityConstraints)(nil), // 31: net.Capabilities.CapabilityConstraints
-	nil, // 32: net.Capabilities.Constraints.PerCapabilityEntry
-	(*Capabilities_CapabilityConstraints_ModelConstraint)(nil), // 33: net.Capabilities.CapabilityConstraints.ModelConstraint
-	nil, // 34: net.Capabilities.CapabilityConstraints.ModelsEntry
+	(*AIJobData)(nil),                          // 24: net.AIJobData
+	(*NotifyAIJob)(nil),                        // 25: net.NotifyAIJob
+	(*TicketParams)(nil),                       // 26: net.TicketParams
+	(*TicketSenderParams)(nil),                 // 27: net.TicketSenderParams
+	(*TicketExpirationParams)(nil),             // 28: net.TicketExpirationParams
+	(*Payment)(nil),                            // 29: net.Payment
+	nil,                                        // 30: net.Capabilities.CapacitiesEntry
+	(*Capabilities_Constraints)(nil),           // 31: net.Capabilities.Constraints
+	(*Capabilities_CapabilityConstraints)(nil), // 32: net.Capabilities.CapabilityConstraints
+	nil, // 33: net.Capabilities.Constraints.PerCapabilityEntry
+	(*Capabilities_CapabilityConstraints_ModelConstraint)(nil), // 34: net.Capabilities.CapabilityConstraints.ModelConstraint
+	nil, // 35: net.Capabilities.CapabilityConstraints.ModelsEntry
 }
 var file_net_lp_rpc_proto_depIdxs = []int32{
 	14, // 0: net.EndTranscodingSessionRequest.auth_token:type_name -> net.AuthToken
 	12, // 1: net.OrchestratorRequest.capabilities:type_name -> net.Capabilities
 	0,  // 2: net.OSInfo.storageType:type_name -> net.OSInfo.StorageType
 	10, // 3: net.OSInfo.s3info:type_name -> net.S3OSInfo
-	29, // 4: net.Capabilities.capacities:type_name -> net.Capabilities.CapacitiesEntry
-	30, // 5: net.Capabilities.constraints:type_name -> net.Capabilities.Constraints
-	25, // 6: net.OrchestratorInfo.ticket_params:type_name -> net.TicketParams
+	30, // 4: net.Capabilities.capacities:type_name -> net.Capabilities.CapacitiesEntry
+	31, // 5: net.Capabilities.constraints:type_name -> net.Capabilities.Constraints
+	26, // 6: net.OrchestratorInfo.ticket_params:type_name -> net.TicketParams
 	11, // 7: net.OrchestratorInfo.price_info:type_name -> net.PriceInfo
 	12, // 8: net.OrchestratorInfo.capabilities:type_name -> net.Capabilities
 	14, // 9: net.OrchestratorInfo.auth_token:type_name -> net.AuthToken
@@ -2746,30 +2789,31 @@ var file_net_lp_rpc_proto_depIdxs = []int32{
 	12, // 25: net.RegisterRequest.capabilities:type_name -> net.Capabilities
 	15, // 26: net.NotifySegment.segData:type_name -> net.SegData
 	12, // 27: net.RegisterAIWorkerRequest.capabilities:type_name -> net.Capabilities
-	27, // 28: net.TicketParams.expiration_params:type_name -> net.TicketExpirationParams
-	25, // 29: net.Payment.ticket_params:type_name -> net.TicketParams
-	27, // 30: net.Payment.expiration_params:type_name -> net.TicketExpirationParams
-	26, // 31: net.Payment.ticket_sender_params:type_name -> net.TicketSenderParams
-	11, // 32: net.Payment.expected_price:type_name -> net.PriceInfo
-	32, // 33: net.Capabilities.Constraints.PerCapability:type_name -> net.Capabilities.Constraints.PerCapabilityEntry
-	34, // 34: net.Capabilities.CapabilityConstraints.models:type_name -> net.Capabilities.CapabilityConstraints.ModelsEntry
-	31, // 35: net.Capabilities.Constraints.PerCapabilityEntry.value:type_name -> net.Capabilities.CapabilityConstraints
-	33, // 36: net.Capabilities.CapabilityConstraints.ModelsEntry.value:type_name -> net.Capabilities.CapabilityConstraints.ModelConstraint
-	8,  // 37: net.Orchestrator.GetOrchestrator:input_type -> net.OrchestratorRequest
-	6,  // 38: net.Orchestrator.EndTranscodingSession:input_type -> net.EndTranscodingSessionRequest
-	5,  // 39: net.Orchestrator.Ping:input_type -> net.PingPong
-	23, // 40: net.AIWorker.RegisterAIWorker:input_type -> net.RegisterAIWorkerRequest
-	21, // 41: net.Transcoder.RegisterTranscoder:input_type -> net.RegisterRequest
-	13, // 42: net.Orchestrator.GetOrchestrator:output_type -> net.OrchestratorInfo
-	7,  // 43: net.Orchestrator.EndTranscodingSession:output_type -> net.EndTranscodingSessionResponse
-	5,  // 44: net.Orchestrator.Ping:output_type -> net.PingPong
-	24, // 45: net.AIWorker.RegisterAIWorker:output_type -> net.NotifyAIJob
-	22, // 46: net.Transcoder.RegisterTranscoder:output_type -> net.NotifySegment
-	42, // [42:47] is the sub-list for method output_type
-	37, // [37:42] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	24, // 28: net.NotifyAIJob.AIJobData:type_name -> net.AIJobData
+	28, // 29: net.TicketParams.expiration_params:type_name -> net.TicketExpirationParams
+	26, // 30: net.Payment.ticket_params:type_name -> net.TicketParams
+	28, // 31: net.Payment.expiration_params:type_name -> net.TicketExpirationParams
+	27, // 32: net.Payment.ticket_sender_params:type_name -> net.TicketSenderParams
+	11, // 33: net.Payment.expected_price:type_name -> net.PriceInfo
+	33, // 34: net.Capabilities.Constraints.PerCapability:type_name -> net.Capabilities.Constraints.PerCapabilityEntry
+	35, // 35: net.Capabilities.CapabilityConstraints.models:type_name -> net.Capabilities.CapabilityConstraints.ModelsEntry
+	32, // 36: net.Capabilities.Constraints.PerCapabilityEntry.value:type_name -> net.Capabilities.CapabilityConstraints
+	34, // 37: net.Capabilities.CapabilityConstraints.ModelsEntry.value:type_name -> net.Capabilities.CapabilityConstraints.ModelConstraint
+	8,  // 38: net.Orchestrator.GetOrchestrator:input_type -> net.OrchestratorRequest
+	6,  // 39: net.Orchestrator.EndTranscodingSession:input_type -> net.EndTranscodingSessionRequest
+	5,  // 40: net.Orchestrator.Ping:input_type -> net.PingPong
+	23, // 41: net.AIWorker.RegisterAIWorker:input_type -> net.RegisterAIWorkerRequest
+	21, // 42: net.Transcoder.RegisterTranscoder:input_type -> net.RegisterRequest
+	13, // 43: net.Orchestrator.GetOrchestrator:output_type -> net.OrchestratorInfo
+	7,  // 44: net.Orchestrator.EndTranscodingSession:output_type -> net.EndTranscodingSessionResponse
+	5,  // 45: net.Orchestrator.Ping:output_type -> net.PingPong
+	25, // 46: net.AIWorker.RegisterAIWorker:output_type -> net.NotifyAIJob
+	22, // 47: net.Transcoder.RegisterTranscoder:output_type -> net.NotifySegment
+	43, // [43:48] is the sub-list for method output_type
+	38, // [38:43] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_net_lp_rpc_proto_init() }
@@ -3007,7 +3051,7 @@ func file_net_lp_rpc_proto_init() {
 			}
 		}
 		file_net_lp_rpc_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NotifyAIJob); i {
+			switch v := v.(*AIJobData); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3019,7 +3063,7 @@ func file_net_lp_rpc_proto_init() {
 			}
 		}
 		file_net_lp_rpc_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TicketParams); i {
+			switch v := v.(*NotifyAIJob); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3031,7 +3075,7 @@ func file_net_lp_rpc_proto_init() {
 			}
 		}
 		file_net_lp_rpc_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TicketSenderParams); i {
+			switch v := v.(*TicketParams); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3043,7 +3087,7 @@ func file_net_lp_rpc_proto_init() {
 			}
 		}
 		file_net_lp_rpc_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TicketExpirationParams); i {
+			switch v := v.(*TicketSenderParams); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3055,6 +3099,18 @@ func file_net_lp_rpc_proto_init() {
 			}
 		}
 		file_net_lp_rpc_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TicketExpirationParams); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_net_lp_rpc_proto_msgTypes[24].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Payment); i {
 			case 0:
 				return &v.state
@@ -3066,7 +3122,7 @@ func file_net_lp_rpc_proto_init() {
 				return nil
 			}
 		}
-		file_net_lp_rpc_proto_msgTypes[25].Exporter = func(v interface{}, i int) interface{} {
+		file_net_lp_rpc_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Capabilities_Constraints); i {
 			case 0:
 				return &v.state
@@ -3078,7 +3134,7 @@ func file_net_lp_rpc_proto_init() {
 				return nil
 			}
 		}
-		file_net_lp_rpc_proto_msgTypes[26].Exporter = func(v interface{}, i int) interface{} {
+		file_net_lp_rpc_proto_msgTypes[27].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Capabilities_CapabilityConstraints); i {
 			case 0:
 				return &v.state
@@ -3090,7 +3146,7 @@ func file_net_lp_rpc_proto_init() {
 				return nil
 			}
 		}
-		file_net_lp_rpc_proto_msgTypes[28].Exporter = func(v interface{}, i int) interface{} {
+		file_net_lp_rpc_proto_msgTypes[29].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Capabilities_CapabilityConstraints_ModelConstraint); i {
 			case 0:
 				return &v.state
@@ -3113,7 +3169,7 @@ func file_net_lp_rpc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_net_lp_rpc_proto_rawDesc,
 			NumEnums:      5,
-			NumMessages:   30,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

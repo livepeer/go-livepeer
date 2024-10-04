@@ -343,12 +343,14 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 
 	start := time.Now()
 
-	msg := &net.NotifyAIJob{
+	jobData := &net.AIJobData{
 		Url:         fname,
-		TaskId:      taskID,
 		Pipeline:    pipeline,
-		ModelID:     modelID,
 		RequestData: reqParams,
+	}
+	msg := &net.NotifyAIJob{
+		TaskId:    taskID,
+		AIJobData: jobData,
 	}
 	err = rw.stream.Send(msg)
 

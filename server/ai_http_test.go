@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -85,11 +83,6 @@ func TestAIWorkerResults_ErrorsWhenTaskIDMissing(t *testing.T) {
 
 func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	//test request
-	var req worker.GenImageToImageMultipartRequestBody
-	modelID := "livepeer/model1"
-	req.Prompt = "test prompt"
-	req.ModelId = &modelID
 
 	assert := assert.New(t)
 	assert.Nil(nil)
@@ -99,18 +92,14 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 		w.Write([]byte("result binary data"))
 	}))
 	defer resultData.Close()
-	notify := &net.NotifyAIJob{
-		TaskId:      742,
-		Pipeline:    "text-to-image",
-		ModelID:     "livepeer/model1",
-		Url:         "",
-		RequestData: nil,
-	}
+	//sending bad request
+	notify := createAIJob(742, nil, "text-to-image", "")
+
 	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
 	node.AIWorker = &wkr
-	node.Capabilities = createStubAIWorkerCapabilities()
+	node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId("text-to-image", "livepeer/model1")
 
 	var headers http.Header
 	var body []byte
@@ -132,5 +121,5 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("AI request not correct", string(body)[0:22])
+	assert.Equal("AI request validation failed for", string(body)[0:32])
 }

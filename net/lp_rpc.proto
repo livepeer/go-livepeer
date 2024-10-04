@@ -389,22 +389,26 @@ message RegisterAIWorkerRequest {
     Capabilities capabilities = 3;
 }
 
-// Sent by the orchestrator to the aiworker
-message NotifyAIJob {
+// Data included by the gateway when submitting a AI job.
+message AIJobData {
     // URL of the input to use.
     string url      = 1;
 
     // pipeline to use for the job
     string pipeline = 2;
 
-    // model to process job with
-    string modelID = 3;
+    // AI job request data
+    bytes requestData = 3;
+}
 
+// Sent by the orchestrator to the aiworker
+message NotifyAIJob {
+    
     // Configuration for the AI job
-    bytes requestData = 4;
+    AIJobData AIJobData = 1;
 
     // ID for this particular AI task.
-    int64 taskId   = 5;
+    int64 taskId   = 2;
 }
 
 // Required parameters for probabilistic micropayment tickets

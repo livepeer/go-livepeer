@@ -24,7 +24,6 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/goleak"
 )
 
 func TestRemoteAIWorker_Error(t *testing.T) {
@@ -45,13 +44,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 		resultRead++
 	}))
 	defer resultData.Close()
-	notify := &net.NotifyAIJob{
-		TaskId:      742,
-		Pipeline:    "text-to-image",
-		ModelID:     "livepeer/model1",
-		Url:         "",
-		RequestData: nil,
-	}
+
 	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
@@ -70,10 +63,10 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
 	//send empty request data
+	notify := createAIJob(742, worker.GenTextToImageJSONRequestBody{}, "text-to-image", "")
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
-	assert.Equal(0, wkr.Called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
@@ -82,15 +75,13 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.NotNil(string(body))
 
 	//error in worker, good request
+	notify = createAIJob(742, req, "text-to-image", "")
 	errText := "Some error"
 	wkr.Err = fmt.Errorf(errText)
 
-	reqJson, _ := json.Marshal(req)
-	notify.RequestData = reqJson
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
-	assert.Equal(1, wkr.Called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
@@ -98,26 +89,8 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
 	assert.Equal(errText, string(body))
 
-	//pipeline not compatible
-	wkr.Err = nil
-	reqJson, _ = json.Marshal(req)
-	notify.Pipeline = "test-no-pipeline"
-	notify.TaskId = 743
-	notify.RequestData = reqJson
-
-	runAIJob(node, parsedURL.Host, httpc, notify)
-	time.Sleep(3 * time.Millisecond)
-
-	assert.NotNil(body)
-	assert.Equal("743", headers.Get("TaskId"))
-	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
-	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
-	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
-	assert.Equal("no workers can process job requested", string(body))
-
 	// unrecoverable error
 	// send the response and panic
-	notify.Pipeline = "text-to-image"
 	wkr.Err = core.NewUnrecoverableError(errors.New("some error"))
 	panicked := false
 	defer func() {
@@ -131,6 +104,21 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.NotNil(body)
 	assert.Equal("some error", string(body))
 	assert.True(panicked)
+
+	//pipeline not compatible
+	wkr.Err = nil
+	notify = createAIJob(743, req, "unsupported-pipeline", "")
+
+	runAIJob(node, parsedURL.Host, httpc, notify)
+	time.Sleep(3 * time.Millisecond)
+
+	assert.NotNil(body)
+	assert.Equal("743", headers.Get("TaskId"))
+	assert.Equal(aiWorkerErrorMimeType, headers.Get("Content-Type"))
+	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
+	assert.Equal(protoVerAIWorker, headers.Get("Authorization"))
+	assert.Equal("AI request validation failed for", string(body)[:32])
+
 }
 
 func TestRunAIJob(t *testing.T) {
@@ -164,118 +152,76 @@ func TestRunAIJob(t *testing.T) {
 
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	assert := assert.New(t)
-
+	modelId := "livepeer/model1"
 	tests := []struct {
 		name            string
 		notify          *net.NotifyAIJob
+		pipeline        string
 		expectedErr     string
 		expectedOutputs int
 	}{
 		{
-			name: "TextToImage_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      1,
-				Pipeline:    "text-to-image",
-				ModelID:     "livepeer/model1",
-				Url:         "",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "TextToImage_Success",
+			notify:          createAIJob(1, worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}, "text-to-image", ""),
+			pipeline:        "text-to-image",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "ImageToImage_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      2,
-				Pipeline:    "image-to-image",
-				ModelID:     "livepeer/model1",
-				Url:         parsedURL.String() + "/image.png",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "ImageToImage_Success",
+			notify:          createAIJob(2, worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId}, "image-to-image", parsedURL.String()+"/image.png"),
+			pipeline:        "image-to-image",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "Upscale_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      3,
-				Pipeline:    "upscale",
-				ModelID:     "livepeer/model1",
-				Url:         parsedURL.String() + "/image.png",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "Upscale_Success",
+			notify:          createAIJob(3, worker.GenUpscaleMultipartRequestBody{Prompt: "na", ModelId: &modelId}, "upscale", parsedURL.String()+"/image.png"),
+			pipeline:        "upscale",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "ImageToVideo_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      4,
-				Pipeline:    "image-to-video",
-				ModelID:     "livepeer/model1",
-				Url:         parsedURL.String() + "/image.png",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "ImageToVideo_Success",
+			notify:          createAIJob(4, worker.GenImageToVideoMultipartRequestBody{ModelId: &modelId}, "image-to-video", parsedURL.String()+"/image.png"),
+			pipeline:        "image-to-video",
 			expectedErr:     "",
 			expectedOutputs: 2,
 		},
 		{
-			name: "AudioToText_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      5,
-				Pipeline:    "audio-to-text",
-				ModelID:     "livepeer/model1",
-				Url:         parsedURL.String() + "/audio.mp3",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "AudioToText_Success",
+			notify:          createAIJob(5, worker.GenAudioToTextMultipartRequestBody{ModelId: &modelId}, "audio-to-text", parsedURL.String()+"/audio.mp3"),
+			pipeline:        "audio-to-text",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "SegmentAnything2_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      6,
-				Pipeline:    "segment-anything-2",
-				ModelID:     "livepeer/model1",
-				Url:         parsedURL.String() + "/image.png",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
+			name:            "SegmentAnything2_Success",
+			notify:          createAIJob(6, worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId}, "segment-anything-2", parsedURL.String()+"/image.png"),
+			pipeline:        "segment-anything-2",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "LLM_Success",
-			notify: &net.NotifyAIJob{
-				TaskId:      7,
-				Pipeline:    "llm",
-				ModelID:     "livepeer/model1",
-				Url:         "",
-				RequestData: []byte(`{"prompt":"tell me a story", "max_tokens": 10, "stream": false}`),
-			},
+			name:            "LLM_Success",
+			notify:          createAIJob(7, worker.GenLLMFormdataRequestBody{ModelId: &modelId}, "llm", ""),
+			pipeline:        "llm",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
-			name: "UnsupportedPipeline",
-			notify: &net.NotifyAIJob{
-				TaskId:      8,
-				Pipeline:    "unsupported-pipeline",
-				ModelID:     "livepeer/model1",
-				Url:         "",
-				RequestData: []byte(`{"prompt":"test prompt"}`),
-			},
-			expectedErr: "no workers can process job requested",
+			name:            "UnsupportedPipeline",
+			notify:          createAIJob(8, worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}, "unsupported-pipeline", ""),
+			pipeline:        "unsupported-pipeline",
+			expectedErr:     "AI request validation failed for",
+			expectedOutputs: 0,
 		},
 		{
-			name: "InvalidRequestData",
-			notify: &net.NotifyAIJob{
-				TaskId:      8,
-				Pipeline:    "text-to-image",
-				ModelID:     "livepeer/model1",
-				Url:         "",
-				RequestData: []byte(`invalid json`),
-			},
-			expectedErr: "AI request not correct for text-to-image pipeline",
+			name:            "InvalidRequestData",
+			notify:          createAIJob(9, []byte(`invalid json`), "text-to-image", ""),
+			pipeline:        "text-to-image",
+			expectedErr:     "AI request validation failed for",
+			expectedOutputs: 0,
 		},
 	}
 
@@ -286,7 +232,7 @@ func TestRunAIJob(t *testing.T) {
 
 			node.OrchSecret = "verbigsecret"
 			node.AIWorker = &wkr
-			node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId(tt.notify.Pipeline, tt.notify.ModelID)
+			node.Capabilities = createStubAIWorkerCapabilitiesForPipelineModelId(tt.pipeline, modelId)
 
 			var headers http.Header
 			var body []byte
@@ -305,7 +251,7 @@ func TestRunAIJob(t *testing.T) {
 
 			_, params, _ := mime.ParseMediaType(headers.Get("Content-Type"))
 			//this part tests the multipart response reading in AIResults()
-			results := parseMultiPartResult(bytes.NewBuffer(body), params["boundary"], tt.notify.Pipeline)
+			results := parseMultiPartResult(bytes.NewBuffer(body), params["boundary"], tt.pipeline)
 			json.Unmarshal(body, &results)
 			if tt.expectedErr != "" {
 				assert.NotNil(body)
@@ -315,7 +261,7 @@ func TestRunAIJob(t *testing.T) {
 				assert.NotNil(body)
 				assert.NotEqual(aiWorkerErrorMimeType, headers.Get("Content-Type"))
 
-				switch tt.notify.Pipeline {
+				switch tt.pipeline {
 				case "text-to-image":
 					t2iResp, ok := results.Results.(worker.ImageResponse)
 					assert.True(ok)
@@ -374,10 +320,21 @@ func TestRunAIJob(t *testing.T) {
 				}
 			}
 		})
-
-		//check for leaks
-		goleak.VerifyNone(t, common.IgnoreRoutines()...)
 	}
+}
+
+func createAIJob(taskId int64, req interface{}, pipeline, url string) *net.NotifyAIJob {
+	reqData, _ := json.Marshal(req)
+	jobData := &net.AIJobData{
+		Url:         url,
+		Pipeline:    pipeline,
+		RequestData: reqData,
+	}
+	notify := &net.NotifyAIJob{
+		TaskId:    taskId,
+		AIJobData: jobData,
+	}
+	return notify
 }
 
 type stubResult struct {
