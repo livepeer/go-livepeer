@@ -437,27 +437,23 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 	}
 	var buf bytes.Buffer
 	for i, image := range imgRes.Images {
+		buf.Reset()
 		err := worker.ReadImageB64DataUrl(image.Url, &buf)
-		if err == nil {
-			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
-			if err != nil {
-				return nil, err
-			}
-
-			imgRes.Images[i].Url = osUrl
-		} else {
+		if err != nil {
 			//try to load local file (image to video returns local file)
 			f, err := os.ReadFile(image.Url)
 			if err != nil {
 				return nil, err
 			}
-			defer os.Remove(image.Url)
-			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(f), nil, 0)
-			if err != nil {
-				return nil, err
-			}
-			imgRes.Images[i].Url = osUrl
+			buf = *bytes.NewBuffer(f)
 		}
+
+		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		imgRes.Images[i].Url = osUrl
 	}
 
 	return imgRes, nil
