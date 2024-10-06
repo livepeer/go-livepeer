@@ -33,7 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
-const defaultTextToSpeechModelID =  "parler-tts/parler-tts-large-v1"
+const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 type ServiceUnavailableError struct {
 	err error
@@ -707,6 +707,15 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	return resp.JSON200, nil
 }
 
+// TODO: CalculateTextToSpeechLatencyScore should be updated to reflect length of input tokens/output file size
+func CalculateTextToSpeechLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
+}
+
 func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
@@ -722,20 +731,21 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
-		// if monitor.Enabled {
-		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		// }
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
 		return nil, err
 	}
 
-	// textLength := len(req.text_input)
-	// clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
-	// TODO (pschroedl): include tokenizer hjere to calculate price
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, 1000)
+	textLength := len(*req.TextInput)
+	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+	// TODO (pschroedl): determine sane multiplier targeting () < $0.015 / character ? )
+	outPixels := int64(textLength * 10000)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
-		// if monitor.Enabled {
-		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		// }
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
 		return nil, err
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
@@ -743,17 +753,17 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 	resp, err := client.GenTextToSpeechWithResponse(ctx, req, setHeaders)
 
 	if err != nil {
-		// if monitor.Enabled {
-		// 	monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-		// }
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
 		return nil, err
 	}
-	// if err != nil {
-	// 	if monitor.Enabled {
-	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelID, sess.OrchestratorInfo)
-	// 	}
-	// 	return nil, err
-	// }
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
 
 	if resp.JSON200 == nil {
 		// TODO: Replace trim newline with better error spec from O
@@ -764,15 +774,15 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 		balUpdate.Status = ReceivedChange
 	}
 
-	// var res worker.EncodedFileResponse
-	// if err := json.Unmarshal(data, &res); err != nil {
-	// 	if monitor.Enabled {
-	// 		monitor.AIRequestError(err.Error(), "text-to-speech", *req.model_id, sess.OrchestratorInfo)
-	// 	}
-	// 	return nil, err
-	// }
+	var res worker.EncodedFileResponse
+	if err := json.Unmarshal(resp.Body, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
 
-	return resp.JSON200, nil
+	return &res, nil
 }
 
 // CalculateAudioToTextLatencyScore computes the time taken per second of audio for an audio-to-text request.
@@ -1039,7 +1049,6 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 
 	return &res, nil
 }
-
 
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability

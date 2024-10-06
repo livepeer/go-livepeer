@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
@@ -389,7 +390,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.TextToSpeech(ctx, v)
 		}
 
-		outPixels *= 1000
+		// TTS pricing is typically in characters, including punctuation
+		words := utf8.RuneCountInString(*v.TextInput)
+		outPixels = int64(1000 * words)
 
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
@@ -403,6 +406,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)
 
 	// Check if there is capacity for the request.
+	fmt.Printf("Looking for Pipeline: %s, ModelID: %s\n", pipeline, modelID)
 	if !orch.CheckAICapacity(pipeline, modelID) {
 		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 		return
@@ -464,6 +468,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			}
 		case worker.GenSegmentAnything2MultipartRequestBody:
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
+		case worker.GenTextToSpeechJSONRequestBody:
+			latencyScore = CalculateTextToSpeechLatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64
@@ -505,6 +511,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// Non-streaming response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		err = json.NewEncoder(w).Encode(resp)
 	}
 }
