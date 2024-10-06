@@ -574,10 +574,15 @@ func ValidateServiceURI(serviceURI *url.URL) bool {
 }
 
 func ExtensionByType(contentType string) (string, error) {
-	exts, err := mime.ExtensionsByType(contentType)
-	if exts == nil || err != nil {
-		return "", ErrNoExtensionsForType
+	contentType = strings.ToLower(contentType)
+	switch contentType {
+	case "video/mp2t":
+		return ".ts", nil
+	case "video/mp4":
+		return ".mp4", nil
+	case "image/png":
+		return ".png", nil
 	}
 
-	return exts[0], nil
+	return "", ErrNoExtensionsForType
 }

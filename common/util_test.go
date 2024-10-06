@@ -523,8 +523,8 @@ func TestExtensionByType(t *testing.T) {
 	assert := assert.New(t)
 
 	// Test valid content types
-	contentTypes := []string{"image/png"}
-	expectedExtensions := []string{".png"}
+	contentTypes := []string{"image/png", "video/mp4", "video/mp2t"}
+	expectedExtensions := []string{".png", ".mp4", ".ts"}
 
 	for i, contentType := range contentTypes {
 		ext, err := ExtensionByType(contentType)
