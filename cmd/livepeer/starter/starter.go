@@ -1348,6 +1348,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
+				case "text-to-speech":
+					_, ok := capabilityConstraints[core.Capability_TextToSpeech]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_TextToSpeech)
+						capabilityConstraints[core.Capability_TextToSpeech] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_TextToSpeech].Models[config.ModelID] = modelConstraint
+
+					n.SetBasePriceForCap("default", core.Capability_TextToSpeech, config.ModelID, autoPrice)
 				}
 
 				if len(aiCaps) > 0 {
