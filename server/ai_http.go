@@ -487,7 +487,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	// Check if the response is a streaming response
-	if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+	if streamChan, ok := resp.(<-chan worker.LlmStreamChunk); ok {
 		glog.Infof("Streaming response for request id=%v", requestID)
 		// Set headers for SSE
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -584,11 +584,10 @@ func (h *lphttp) AIResults() http.Handler {
 			resultType = "streaming"
 			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
 			resChan := make(chan worker.LlmStreamChunk, 100)
-			workerResult.Results = resChan
+			workerResult.Results = (<-chan worker.LlmStreamChunk)(resChan)
 
 			defer r.Body.Close()
 			defer close(resChan)
-
 			//set a reasonable timeout to stop waiting for results
 			ctx, _ := context.WithTimeout(r.Context(), HTTPIdleTimeout)
 
@@ -616,6 +615,7 @@ func (h *lphttp) AIResults() http.Handler {
 			if err := scanner.Err(); err != nil {
 				workerResult.Err = scanner.Err()
 			}
+
 			dlDur = time.Since(start)
 		case "multipart/mixed":
 			resultType = "uploaded"
