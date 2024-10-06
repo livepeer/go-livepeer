@@ -437,13 +437,25 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 	}
 	var buf bytes.Buffer
 	for i, image := range imgRes.Images {
-		if err := worker.ReadImageB64DataUrl(image.Url, &buf); err == nil {
-
+		err := worker.ReadImageB64DataUrl(image.Url, &buf)
+		if err == nil {
 			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
 			if err != nil {
 				return nil, err
 			}
 
+			imgRes.Images[i].Url = osUrl
+		} else {
+			//try to load local file (image to video returns local file)
+			f, err := os.ReadFile(image.Url)
+			if err != nil {
+				return nil, err
+			}
+			defer os.Remove(image.Url)
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(f), nil, 0)
+			if err != nil {
+				return nil, err
+			}
 			imgRes.Images[i].Url = osUrl
 		}
 	}
@@ -561,8 +573,16 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
 	//local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		//do not need to save response, result is saved for download by gateway with transcoding of segment
-		return orch.node.ImageToVideo(ctx, req)
+		workerResp, err := orch.node.ImageToVideo(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "image-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
 	}
 
 	//remote ai worker proceses job
