@@ -707,13 +707,13 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	return resp.JSON200, nil
 }
 
-// TODO: CalculateTextToSpeechLatencyScore should be updated to reflect length of input tokens/output file size
-func CalculateTextToSpeechLatencyScore(took time.Duration, outPixels int64) float64 {
-	if outPixels <= 0 {
+// CalculateTextToSpeechLatencyScore computes the time taken per character for a TextToSpeech request.
+func CalculateTextToSpeechLatencyScore(took time.Duration, inCharacters int64) float64 {
+	if inCharacters <= 0 {
 		return 0
 	}
 
-	return took.Seconds() / float64(outPixels)
+	return took.Seconds() / float64(inCharacters)
 }
 
 func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
@@ -739,9 +739,8 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 
 	textLength := len(*req.TextInput)
 	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
-	// TODO (pschroedl): determine sane multiplier targeting () < $0.015 / character ? )
-	outPixels := int64(textLength * 10000)
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	inCharacters := int64(textLength)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, inCharacters)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
@@ -750,7 +749,9 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
+	start := time.Now()
 	resp, err := client.GenTextToSpeechWithResponse(ctx, req, setHeaders)
+	took := time.Since(start)
 
 	if err != nil {
 		if monitor.Enabled {
@@ -772,6 +773,18 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateSegmentAnything2LatencyScore(took, inCharacters)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "text-to-speech", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	var res worker.EncodedFileResponse
