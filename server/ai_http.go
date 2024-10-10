@@ -46,6 +46,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/lipsync", oapiReqValidator(lp.Lipsync()))
 
 	return nil
 }
@@ -199,6 +200,38 @@ func (h *lphttp) LLM() http.Handler {
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) Lipsync() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			clog.Errorf(ctx, "Failed to read multipart form: %v", err)
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenLipsyncMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			clog.Errorf(ctx, "Failed to bind multipart request: %v", err)
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if req.ModelId == nil || *req.ModelId == "" {
+			defaultModelId := "parler-tts/parler-tts-large-v1"
+			req.ModelId = &defaultModelId
+		} else {
+			clog.Infof(ctx, "model_id received: %s", *req.ModelId)
 		}
 
 		handleAIRequest(ctx, w, r, orch, req)
@@ -363,6 +396,30 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenLipsyncMultipartRequestBody:
+		pipeline = "lipsync"
+		cap = core.Capability_Lipsync
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.Lipsync(ctx, v)
+		}
+		if v.Audio != nil {
+			outPixels, err = common.CalculateAudioDuration(*v.Audio)
+			if err != nil {
+				respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
+				return
+			}
+			outPixels *= 1000 // Convert to milliseconds
+		} else {
+			// TODO: extract method - this is the same as the calcuallation in ai_process.go 
+			textLength := len(*v.TextInput)
+			// TODO (pschroedl): if TTS is staying in this branch, confirm sane pricing
+			lipsyncMultiplier := int64(5)  // this value is based on a observation that lipsync takes ~5x more compute ( vram/time ) than TTS alone
+			durationSeconds := float64(textLength) / 13.0 // assuming the average speaking rate is around 13 characters per second
+			outPixels = int64(durationSeconds * 60) * lipsyncMultiplier
+		}
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
