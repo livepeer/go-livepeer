@@ -33,6 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultLipsyncModelID = "parler-tts/parler-tts-large-v1"
 
 type ServiceUnavailableError struct {
 	err error
@@ -971,6 +972,117 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	return &res, nil
 }
 
+func CalculateLLMLatencyScore(took time.Duration, outFrames int) float64 {
+	if outFrames <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outFrames)
+}
+
+func processLipsync(ctx context.Context, params aiRequestParams, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.VideoBinaryResponse)
+
+	return txtResp, nil
+}
+
+func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLipsyncMultipartRequestBody) (*worker.VideoBinaryResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewLipsyncMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	imageRdr, err := req.Image.Reader()
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	config, _, err := image.DecodeConfig(imageRdr)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	clog.V(common.VERBOSE).Infof(ctx, "Submitting lipsync audio with duration: %d seconds", durationSeconds)
+
+	outFrames := durationSeconds * 60 // TODO: validate FPS of lipsync output
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outFrames)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	// Send the request and measure the processing time
+	start := time.Now()
+	resp, err := client.GenLipsyncWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// Check for errors in the response
+	if resp.JSON200 == nil {
+		// Handle the case where the response is not a 200 success
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// Update the balance as receiving change if relevant
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	// Calculate the latency score for this lipsync request 
+	sess.LatencyScore = CalculateLipsyncLatencyScore(took, outFrames)
+
+	// Log the AI request completion with latency score and pricing
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "lipsync", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return resp.JSON200, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1039,6 +1151,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.GenLipsyncMultipartRequestBody:
+		cap = core.Capability_Lipsync
+		modelID = defaultLipsyncModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLipsync(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
