@@ -972,7 +972,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	return &res, nil
 }
 
-func CalculateLLMLatencyScore(took time.Duration, outFrames int) float64 {
+func CalculateLipsyncLatencyScore(took time.Duration, outFrames int64) float64 {
 	if outFrames <= 0 {
 		return 0
 	}
@@ -1009,32 +1009,28 @@ func submitLipsync(ctx context.Context, params aiRequestParams, sess *AISession,
 		return nil, err
 	}
 
-	imageRdr, err := req.Image.Reader()
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
+	outFrames := int64(0)
+	if req.Audio != nil {
+		durationSeconds, err := common.CalculateAudioDuration(*req.Audio)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+			}
+			return nil, err
 		}
-		return nil, err
+	
+		clog.V(common.VERBOSE).Infof(ctx, "Submitting lipsync audio with duration: %d seconds", durationSeconds)
+	
+		outFrames = int64(durationSeconds * 60) // TODO (pschroedl): validate FPS of lipsync output, confirm sane pricing
+	
+	} else {
+		textLength := len(*req.TextInput)
+		clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
+		// TODO (pschroedl): if TTS is staying in this branch, confirm sane pricing
+		lipsyncMultiplier := int64(5)  // this value is based on a observation that lipsync takes ~5x more compute ( vram/time ) than TTS alone
+		durationSeconds := int64(textLength / 13.0) // assuming the average speaking rate is around 13 characters per second
+		outFrames = int64(durationSeconds * 60) * lipsyncMultiplier
 	}
-	config, _, err := image.DecodeConfig(imageRdr)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "lipsync", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-
-	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-
-	clog.V(common.VERBOSE).Infof(ctx, "Submitting lipsync audio with duration: %d seconds", durationSeconds)
-
-	outFrames := durationSeconds * 60 // TODO: validate FPS of lipsync output
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outFrames)
 	if err != nil {

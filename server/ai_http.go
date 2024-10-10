@@ -405,9 +405,21 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.Lipsync(ctx, v)
 		}
-
-		// TODO(pschroedl): Infer length of video based on tokenizing text input or length of audio input file
-		outPixels = int64(1000)
+		if v.Audio != nil {
+			outPixels, err = common.CalculateAudioDuration(*v.Audio)
+			if err != nil {
+				respondWithError(w, "Unable to calculate duration", http.StatusBadRequest)
+				return
+			}
+			outPixels *= 1000 // Convert to milliseconds
+		} else {
+			// TODO: extract method - this is the same as the calcuallation in ai_process.go 
+			textLength := len(*v.TextInput)
+			// TODO (pschroedl): if TTS is staying in this branch, confirm sane pricing
+			lipsyncMultiplier := int64(5)  // this value is based on a observation that lipsync takes ~5x more compute ( vram/time ) than TTS alone
+			durationSeconds := float64(textLength) / 13.0 // assuming the average speaking rate is around 13 characters per second
+			outPixels = int64(durationSeconds * 60) * lipsyncMultiplier
+		}
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
