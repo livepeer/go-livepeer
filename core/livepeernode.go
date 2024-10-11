@@ -120,8 +120,6 @@ type LivepeerNode struct {
 	// AI worker public fields
 	AIWorker        AI
 	AIWorkerManager *RemoteAIWorkerManager
-	// AI private fields
-	aiJobMutex *sync.Mutex
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
