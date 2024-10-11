@@ -208,6 +208,9 @@ func (r *stubOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataReq
 func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	return nil, nil
+}
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
 }
@@ -1395,6 +1398,9 @@ func (r *mockOrchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataReq
 	return nil, nil
 }
 func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

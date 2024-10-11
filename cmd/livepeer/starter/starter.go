@@ -1348,6 +1348,20 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
+				case "image-to-text":
+					_, ok := capabilityConstraints[core.Capability_ImageToText]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_ImageToText)
+						capabilityConstraints[core.Capability_ImageToText] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_ImageToText].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_ImageToText, config.ModelID, autoPrice)
+					}
 				}
 
 				if len(aiCaps) > 0 {

@@ -46,6 +46,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
 
 	return nil
 }
@@ -196,6 +197,29 @@ func (h *lphttp) LLM() http.Handler {
 		}
 
 		var req worker.GenLLMFormdataRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) ImageToText() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenImageToTextMultipartRequestBody
 		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -363,6 +387,25 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenImageToTextMultipartRequestBody:
+		pipeline = "image-to-text"
+		cap = core.Capability_ImageToText
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ImageToText(ctx, v)
+		}
+
+		imageRdr, err := v.Image.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		config, _, err := image.DecodeConfig(imageRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		outPixels = int64(config.Height) * int64(config.Width)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -436,6 +479,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			}
 		case worker.GenSegmentAnything2MultipartRequestBody:
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
+		case worker.GenImageToTextMultipartRequestBody:
+			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64
