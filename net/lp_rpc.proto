@@ -386,7 +386,7 @@ message RegisterAIWorkerRequest {
     string secret = 1;
 
     // AIWorker capabilities
-    Capabilities capabilities = 3;
+    Capabilities capabilities = 2;
 }
 
 // Data included by the gateway when submitting a AI job.
