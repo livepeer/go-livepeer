@@ -416,6 +416,11 @@ func (ls *LivepeerServer) LLM() http.Handler {
 			return
 		}
 
+		if req.ModelId == nil || req.Prompt == "" || req.Stream == nil || req.MaxTokens == nil {
+			respondJsonError(ctx, w, errors.New("missing required fields"), http.StatusBadRequest)
+			return
+		}
+
 		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, *req.Stream)
 
 		params := aiRequestParams{
