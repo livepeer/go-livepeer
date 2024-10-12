@@ -108,6 +108,7 @@ type LivepeerConfig struct {
 	MaxPricePerCapability   *string
 	IgnoreMaxPriceIfNeeded  *bool
 	MinPerfScore            *float64
+	DiscoveryTimeout        *time.Duration
 	MaxSessions             *string
 	CurrentManifest         *bool
 	Nvidia                  *string
@@ -189,6 +190,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
+	defaultDiscoveryTimeout := 500 * time.Millisecond
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -287,6 +289,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		OrchPerfStatsURL:     &defaultOrchPerfStatsURL,
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
+		DiscoveryTimeout:     &defaultDiscoveryTimeout,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -877,6 +880,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
 			}
+			n.RecipientAddr = recipientAddr.Hex()
 
 			sigVerifier := &pm.DefaultSigVerifier{}
 			validator := pm.NewValidator(sigVerifier, timeWatcher)
@@ -1314,6 +1318,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
 					}
+					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+
+				case "llm":
+					_, ok := capabilityConstraints[core.Capability_LLM]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_LLM)
+						capabilityConstraints[core.Capability_LLM] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+
+					capabilityConstraints[core.Capability_LLM].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+						n.SetBasePriceForCap("default", core.Capability_LLM, config.ModelID, autoPrice)
+					}
 				case "segment-anything-2":
 					_, ok := capabilityConstraints[core.Capability_SegmentAnything2]
 					if !ok {
@@ -1433,7 +1453,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.Network != "offchain" {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist)
+			dbOrchPoolCache, err := discovery.NewDBOrchestratorPoolCache(ctx, n, timeWatcher, orchBlacklist, *cfg.DiscoveryTimeout)
 			if err != nil {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
@@ -1448,9 +1468,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist)
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1510,12 +1530,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
+
+		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
+			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
+		}
+
 		n.SetServiceURI(suri)
 		// if http addr is not provided, listen to all ifaces
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
-		if !*cfg.Transcoder && n.OrchSecret == "" {
-			glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+		if !*cfg.Transcoder && !*cfg.AIWorker {
+			if *cfg.AIModels != "" && n.OrchSecret == "" {
+				glog.Info("Running an orchestrator in AI External Container mode")
+			} else {
+				glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+			}
 		}
 	} else if n.NodeType == core.TranscoderNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)

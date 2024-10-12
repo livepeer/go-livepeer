@@ -130,6 +130,12 @@ func (orch *orchestrator) AudioToText(ctx context.Context, req worker.GenAudioTo
 	return orch.node.AudioToText(ctx, req)
 }
 
+// Return type is LLMResponse, but a stream is available as well as chan(string)
+func (orch *orchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return orch.node.AIWorker.LLM(ctx, req)
+
+}
+
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return orch.node.SegmentAnything2(ctx, req)
 }
@@ -791,6 +797,17 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	}
 	md.Fname = url
 
+	orchId := "offchain"
+	if n.RecipientAddr != "" {
+		orchId = n.RecipientAddr
+	}
+	if isRemote {
+		// huge hack to thread the orch id down to the transcoder
+		md.Metadata = map[string]string{"orchId": orchId}
+	} else {
+		md.Metadata = MakeMetadata(orchId)
+	}
+
 	//Do the transcoding
 	start := time.Now()
 	tData, err := transcoder.Transcode(ctx, md)
@@ -1197,6 +1214,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	msg := &net.NotifySegment{
 		Url:     fname,
 		TaskId:  taskID,
+		OrchId:  md.Metadata["orchId"],
 		SegData: segData,
 		// Triggers failure on Os that don't know how to use SegData
 		Profiles: []byte("invalid"),

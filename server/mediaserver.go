@@ -531,17 +531,8 @@ func (s *LivepeerServer) registerConnection(ctx context.Context, rtmpStrm stream
 	// do not obtain this lock again while initializing channel is open, it will cause deadlock if other goroutine already obtained the lock and called getActiveRtmpConnectionUnsafe()
 	s.connectionLock.Unlock()
 
-	// initialize session manager
-	var stakeRdr stakeReader
-	if s.LivepeerNode.Eth != nil {
-		stakeRdr = &storeStakeReader{store: s.LivepeerNode.Database}
-	}
-	selFactory := func() BroadcastSessionsSelector {
-		return NewMinLSSelector(stakeRdr, SELECTOR_LATENCY_SCORE_THRESHOLD, s.LivepeerNode.SelectionAlgorithm, s.LivepeerNode.OrchPerfScore, params.Capabilities)
-	}
-
 	// safe, because other goroutines should be waiting on initializing channel
-	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params, selFactory)
+	cxn.sessManager = NewSessionManager(ctx, s.LivepeerNode, params)
 
 	// populate fields and signal initializing channel
 	s.serverLock.Lock()
@@ -996,7 +987,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	cxn.mu.Lock()
 	if cxn.mediaFormat == (ffmpeg.MediaFormatInfo{}) {
 		cxn.mediaFormat = mediaFormat
-	} else if cxn.mediaFormat != mediaFormat {
+	} else if !mediaCompatible(cxn.mediaFormat, mediaFormat) {
 		cxn.mediaFormat = mediaFormat
 		segPar.ForceSessionReinit = true
 	}
@@ -1655,4 +1646,16 @@ func getRemoteAddr(r *http.Request) string {
 		addr = strings.Split(proxiedAddr, ",")[0]
 	}
 	return strings.Split(addr, ":")[0]
+}
+
+func mediaCompatible(a, b ffmpeg.MediaFormatInfo) bool {
+	return a.Acodec == b.Acodec &&
+		a.Vcodec == b.Vcodec &&
+		a.PixFormat == b.PixFormat &&
+		a.Width == b.Width &&
+		a.Height == b.Height
+
+	// NB: there is also a Format field but that does
+	// not need to match since transcoder will reopen
+	// a new demuxer each time
 }

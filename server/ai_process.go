@@ -33,6 +33,7 @@ const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
+const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultLivePortraitModelID = ""
 
@@ -50,6 +51,26 @@ type BadRequestError struct {
 
 func (e *BadRequestError) Error() string {
 	return e.err.Error()
+}
+
+// parseBadRequestError checks if the error is a bad request error and returns a BadRequestError.
+func parseBadRequestError(err error) *BadRequestError {
+	if err == nil {
+		return nil
+	}
+
+	const errorCode = "returned 400"
+	if !strings.Contains(err.Error(), errorCode) {
+		return nil
+	}
+
+	parts := strings.SplitN(err.Error(), errorCode, 2)
+	detail := strings.TrimSpace(parts[1])
+	if detail == "" {
+		detail = "bad request"
+	}
+
+	return &BadRequestError{err: errors.New(detail)}
 }
 
 type aiRequestParams struct {
@@ -98,7 +119,7 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		name := string(core.RandomManifestID()) + ".png"
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -373,7 +394,7 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		name := string(core.RandomManifestID()) + ".png"
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -509,7 +530,7 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 		name := filepath.Base(media.Url)
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
 		}
 
 		videos[i] = worker.Media{
@@ -650,7 +671,7 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.GenU
 		name := string(core.RandomManifestID()) + ".png"
 		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
 
 		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
@@ -944,6 +965,164 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
+	if tokensUsed <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(tokensUsed)
+}
+
+func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Stream != nil && *req.Stream {
+		streamChan, ok := resp.(chan worker.LlmStreamChunk)
+		if !ok {
+			return nil, errors.New("unexpected response type for streaming request")
+		}
+		return streamChan, nil
+	}
+
+	llmResp, ok := resp.(*worker.LLMResponse)
+	if !ok {
+		return nil, errors.New("unexpected response type")
+	}
+
+	return llmResp, nil
+}
+
+func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewLLMMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, nil)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Improve pricing
+	if req.MaxTokens == nil {
+		req.MaxTokens = new(int)
+		*req.MaxTokens = 256
+	}
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, int64(*req.MaxTokens))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenLLMWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	if req.Stream != nil && *req.Stream {
+		return handleSSEStream(ctx, resp.Body, sess, req, start)
+	}
+
+	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
+}
+
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
+	streamChan := make(chan worker.LlmStreamChunk, 100)
+	go func() {
+		defer close(streamChan)
+		defer body.Close()
+		scanner := bufio.NewScanner(body)
+		var totalTokens int
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					streamChan <- worker.LlmStreamChunk{Done: true, TokensUsed: totalTokens}
+					break
+				}
+				var chunk worker.LlmStreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
+					continue
+				}
+				totalTokens += chunk.TokensUsed
+				streamChan <- chunk
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			clog.Errorf(ctx, "Error reading SSE stream: %v", err)
+		}
+
+		took := time.Since(start)
+		sess.LatencyScore = CalculateLLMLatencyScore(took, totalTokens)
+
+		if monitor.Enabled {
+			var pricePerAIUnit float64
+			if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+				pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+			}
+			monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		}
+	}()
+
+	return streamChan, nil
+}
+
+func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (*worker.LLMResponse, error) {
+	data, err := io.ReadAll(body)
+	defer body.Close()
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	var res worker.LLMResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	took := time.Since(start)
+	sess.LatencyScore = CalculateLLMLatencyScore(took, res.TokensUsed)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+		monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -995,6 +1174,17 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
 		}
+
+	case worker.GenLLMFormdataRequestBody:
+		cap = core.Capability_LLM
+		modelID = defaultLLMModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLLM(ctx, params, sess, v)
+		}
+
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		cap = core.Capability_SegmentAnything2
 		modelID = defaultSegmentAnything2ModelID
@@ -1016,7 +1206,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
-	capName, _ := core.CapabilityToName(cap)
+	capName := cap.String()
+	ctx = clog.AddVal(ctx, "capability", capName)
 
 	var resp interface{}
 
@@ -1038,7 +1229,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
-			clog.Infof(ctx, "Error selecting session cap=%v modelID=%v err=%v", cap, modelID, err)
+			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
 		}
 
@@ -1052,11 +1243,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
-		clog.Infof(ctx, "Error submitting request cap=%v modelID=%v try=%v orch=%v err=%v", cap, modelID, tries, sess.Transcoder(), err)
+		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess)
 
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
+		}
+
+		if badRequestErr := parseBadRequestError(err); badRequestErr != nil {
+			return nil, badRequestErr
 		}
 	}
 

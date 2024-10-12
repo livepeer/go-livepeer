@@ -68,8 +68,9 @@ type Orchestrator interface {
 	ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error)
 	Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
+	LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error)
 	SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
-	LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error)
+  LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -127,6 +128,7 @@ type BroadcastSession struct {
 	OrchestratorInfo *net.OrchestratorInfo
 	OrchestratorOS   drivers.OSSession
 	PMSessionID      string
+	CleanupSession   sessionsCleanup
 	Balance          Balance
 	InitialPrice     *net.PriceInfo
 }

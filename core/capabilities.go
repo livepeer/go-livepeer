@@ -42,44 +42,44 @@ type CapabilityTest struct {
 	outProfile  ffmpeg.VideoProfile
 }
 
-// Do not rearrange these values! Only append.
 const (
-	Capability_Invalid Capability = iota - 2
-	Capability_Unused
-	Capability_H264
-	Capability_MPEGTS
-	Capability_MP4
-	Capability_FractionalFramerates
-	Capability_StorageDirect
-	Capability_StorageS3
-	Capability_StorageGCS
-	Capability_ProfileH264Baseline
-	Capability_ProfileH264Main
-	Capability_ProfileH264High
-	Capability_ProfileH264ConstrainedHigh
-	Capability_GOP
-	Capability_AuthToken
-	Capability_SceneClassification // Deprecated, but can't remove because of Capability ordering
-	Capability_MPEG7VideoSignature
-	Capability_HEVC_Decode
-	Capability_HEVC_Encode
-	Capability_VP8_Decode
-	Capability_VP9_Decode
-	Capability_VP8_Encode
-	Capability_VP9_Encode
-	Capability_H264_Decode_444_8bit
-	Capability_H264_Decode_422_8bit
-	Capability_H264_Decode_444_10bit
-	Capability_H264_Decode_422_10bit
-	Capability_H264_Decode_420_10bit
-	Capability_SegmentSlicing
-	Capability_TextToImage
-	Capability_ImageToImage
-	Capability_ImageToVideo
-	Capability_Upscale
-	Capability_AudioToText
-	Capability_SegmentAnything2
-	Capability_LivePortrait
+	Capability_Invalid                    Capability = -2
+	Capability_Unused                     Capability = -1
+	Capability_H264                       Capability = 0
+	Capability_MPEGTS                     Capability = 1
+	Capability_MP4                        Capability = 2
+	Capability_FractionalFramerates       Capability = 3
+	Capability_StorageDirect              Capability = 4
+	Capability_StorageS3                  Capability = 5
+	Capability_StorageGCS                 Capability = 6
+	Capability_ProfileH264Baseline        Capability = 7
+	Capability_ProfileH264Main            Capability = 8
+	Capability_ProfileH264High            Capability = 9
+	Capability_ProfileH264ConstrainedHigh Capability = 10
+	Capability_GOP                        Capability = 11
+	Capability_AuthToken                  Capability = 12
+	Capability_SceneClassification        Capability = 13 // Deprecated, but can't remove because of Capability ordering
+	Capability_MPEG7VideoSignature        Capability = 14
+	Capability_HEVC_Decode                Capability = 15
+	Capability_HEVC_Encode                Capability = 16
+	Capability_VP8_Decode                 Capability = 17
+	Capability_VP9_Decode                 Capability = 18
+	Capability_VP8_Encode                 Capability = 19
+	Capability_VP9_Encode                 Capability = 20
+	Capability_H264_Decode_444_8bit       Capability = 21
+	Capability_H264_Decode_422_8bit       Capability = 22
+	Capability_H264_Decode_444_10bit      Capability = 23
+	Capability_H264_Decode_422_10bit      Capability = 24
+	Capability_H264_Decode_420_10bit      Capability = 25
+	Capability_SegmentSlicing             Capability = 26
+	Capability_TextToImage                Capability = 27
+	Capability_ImageToImage               Capability = 28
+	Capability_ImageToVideo               Capability = 29
+	Capability_Upscale                    Capability = 30
+	Capability_AudioToText                Capability = 31
+	Capability_SegmentAnything2           Capability = 32
+	Capability_LLM                        Capability = 33
+  Capability_LivePortrait               Capability = 34
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -117,7 +117,8 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LivePortrait:               "Live Portrait",
+	Capability_LLM:                        "Large language model",  
+	Capability_LivePortrait:               "Live Portrait", 
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -624,6 +625,14 @@ func CapabilityToName(capability Capability) (string, error) {
 		return "", capUnknown
 	}
 	return capName, nil
+}
+
+func (c Capability) String() string {
+	name, err := CapabilityToName(c)
+	if err != nil {
+		return fmt.Sprintf("%d", int(c))
+	}
+	return name
 }
 
 func HasCapability(caps []Capability, capability Capability) bool {

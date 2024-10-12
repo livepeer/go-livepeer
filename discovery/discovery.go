@@ -20,20 +20,20 @@ import (
 	"github.com/golang/glog"
 )
 
-var getOrchestratorsTimeoutLoop = 3 * time.Second
-var getOrchestratorsCutoffTimeout = 500 * time.Millisecond
+var getOrchestratorTimeoutLoop = 3 * time.Second
 var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
 type orchestratorPool struct {
-	infos         []common.OrchestratorLocalInfo
-	pred          func(info *net.OrchestratorInfo) bool
-	bcast         common.Broadcaster
-	orchBlacklist []string
+	infos            []common.OrchestratorLocalInfo
+	pred             func(info *net.OrchestratorInfo) bool
+	bcast            common.Broadcaster
+	orchBlacklist    []string
+	discoveryTimeout time.Duration
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string) *orchestratorPool {
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
 	if len(uris) <= 0 {
 		// Should we return here?
 		glog.Error("Orchestrator pool does not have any URIs")
@@ -42,13 +42,13 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 	for _, uri := range uris {
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
 	}
-	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist}
+	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist, discoveryTimeout: discoveryTimeout}
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
-	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string) *orchestratorPool {
+	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
 
-	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist)
+	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist, discoveryTimeout)
 	pool.pred = pred
 	return pool
 }
@@ -136,7 +136,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
-	timeout := getOrchestratorsCutoffTimeout
+	timeout := o.discoveryTimeout
 	timer := time.NewTimer(timeout)
 
 	for nbResp < numAvailableOrchs && len(ods) < numOrchestrators && !timedOut {
