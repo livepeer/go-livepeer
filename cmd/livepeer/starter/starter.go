@@ -1328,11 +1328,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						}
 					}
           
-          capabilityConstraints[core.Capability_FrameInterpolation].Models[config.ModelID] = modelConstraint
+          				capabilityConstraints[core.Capability_FrameInterpolation].Models[config.ModelID] = modelConstraint
 
-          if *cfg.Network != "offchain" {
-              n.SetBasePriceForCap("default", core.Capability_FrameInterpolation, config.ModelID, autoPrice)
-          }
+					if *cfg.Network != "offchain" {
+					        n.SetBasePriceForCap("default", core.Capability_FrameInterpolation, config.ModelID, autoPrice)
+					}
 
 				case "llm":
 					_, ok := capabilityConstraints[core.Capability_LLM]
