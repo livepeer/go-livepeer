@@ -118,7 +118,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
 	Capability_LLM:                        "Large language model",
-  Capability_FrameInterpolation:         "Frame Interpolation",  
+  	Capability_FrameInterpolation:         "Frame Interpolation",  
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
