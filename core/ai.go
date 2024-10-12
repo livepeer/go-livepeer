@@ -22,7 +22,6 @@ type AI interface {
 	ImageToVideo(context.Context, worker.GenImageToVideoMultipartRequestBody) (*worker.VideoResponse, error)
 	Upscale(context.Context, worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error)
 	AudioToText(context.Context, worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error)
-	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
 	LivePortrait(context.Context, worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error)  
 	LLM(context.Context, worker.GenLLMFormdataRequestBody) (interface{}, error)
 	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
