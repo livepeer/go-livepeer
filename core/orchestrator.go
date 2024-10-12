@@ -634,7 +634,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// We only support base64 png data urls right now
 	// We will want to support HTTP and file urls later on as well
-	dirPath := path.Join(WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
+	dirPath := path.Join(n.WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
 	fnamep = &dirPath
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot create frames dir err=%q", err)
