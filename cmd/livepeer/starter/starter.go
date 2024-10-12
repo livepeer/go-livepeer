@@ -1318,7 +1318,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
 					}
-					n.SetBasePriceForCap("default", core.Capability_AudioToText, config.ModelID, autoPrice)
+
+				case "frame-interpolation":
+					_, ok := capabilityConstraints[core.Capability_FrameInterpolation]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_FrameInterpolation)
+						capabilityConstraints[core.Capability_FrameInterpolation] = &core.PerCapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+          
+          				capabilityConstraints[core.Capability_FrameInterpolation].Models[config.ModelID] = modelConstraint
+
+					if *cfg.Network != "offchain" {
+					        n.SetBasePriceForCap("default", core.Capability_FrameInterpolation, config.ModelID, autoPrice)
+					}
 
 				case "llm":
 					_, ok := capabilityConstraints[core.Capability_LLM]
@@ -1334,6 +1348,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_LLM, config.ModelID, autoPrice)
 					}
+
 				case "segment-anything-2":
 					_, ok := capabilityConstraints[core.Capability_SegmentAnything2]
 					if !ok {

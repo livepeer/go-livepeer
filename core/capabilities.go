@@ -79,6 +79,7 @@ const (
 	Capability_AudioToText                Capability = 31
 	Capability_SegmentAnything2           Capability = 32
 	Capability_LLM                        Capability = 33
+  	Capability_FrameInterpolation         Capability = 34
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -117,6 +118,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
 	Capability_LLM:                        "Large language model",
+  	Capability_FrameInterpolation:         "Frame Interpolation",  
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -205,6 +207,7 @@ func OptionalCapabilities() []Capability {
 		Capability_TextToImage,
 		Capability_ImageToImage,
 		Capability_ImageToVideo,
+		Capability_FrameInterpolation,
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
