@@ -140,7 +140,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSe
 	return orch.node.SegmentAnything2(ctx, req)
 }
 
-func (orch *orchestrator) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (orch *orchestrator) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
 	return orch.node.ImageToText(ctx, req)
 }
 
@@ -992,7 +992,7 @@ func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 
-func (n *LivepeerNode) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func (n *LivepeerNode) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
 	return n.AIWorker.ImageToText(ctx, req)
 }
 

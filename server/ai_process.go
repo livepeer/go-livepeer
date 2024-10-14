@@ -980,7 +980,7 @@ func CalculateImageToTextLatencyScore(took time.Duration, outPixels int64) float
 	return took.Seconds() / float64(outPixels)
 }
 
-func submitImageToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func submitImageToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewImageToTextMultipartWriter(&buf, req)
 	if err != nil {
@@ -1060,13 +1060,13 @@ func submitImageToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return resp.JSON200, nil
 }
 
-func processImageToText(ctx context.Context, params aiRequestParams, req worker.GenImageToTextMultipartRequestBody) (*worker.TextResponse, error) {
+func processImageToText(ctx context.Context, params aiRequestParams, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	txtResp := resp.(*worker.TextResponse)
+	txtResp := resp.(*worker.ImageToTextResponse)
 
 	return txtResp, nil
 }
