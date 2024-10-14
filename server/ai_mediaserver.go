@@ -97,9 +97,6 @@ func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) er
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		//clog.V(common.VERBOSE).Infof(ctx, "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
-		clog.V(common.VERBOSE).Infof(ctx, "Received TextToImage request")
-
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -112,7 +109,6 @@ func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) er
 			return
 		}
 
-		start := time.Now()
 		resp, err := processorFunc(ctx, params, req)
 		if err != nil {
 			var serviceUnavailableErr *ServiceUnavailableError
@@ -128,10 +124,6 @@ func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) er
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
-
-		took := time.Since(start)
-		//clog.Infof(ctx, "Processed TextToImage request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
-		clog.Infof(ctx, "Processed TextToImage request took=%v", took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

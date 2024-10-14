@@ -986,6 +986,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToImage(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenImageToImageMultipartRequestBody:
 		cap = core.Capability_ImageToImage
 		modelID = defaultImageToImageModelID
@@ -995,6 +996,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToImage(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenImageToVideoMultipartRequestBody:
 		cap = core.Capability_ImageToVideo
 		modelID = defaultImageToVideoModelID
@@ -1013,6 +1015,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitUpscale(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenAudioToTextMultipartRequestBody:
 		cap = core.Capability_AudioToText
 		modelID = defaultAudioToTextModelID
@@ -1031,6 +1034,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLLM(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		cap = core.Capability_SegmentAnything2
 		modelID = defaultSegmentAnything2ModelID
@@ -1045,6 +1049,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	}
 	capName := cap.String()
 	ctx = clog.AddVal(ctx, "capability", capName)
+
+	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
+	start := time.Now()
+	defer clog.Infof(ctx, "Processed AI request model_id=%v took=%v", modelID, time.Since(start))
 
 	var resp interface{}
 
