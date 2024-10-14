@@ -114,6 +114,7 @@ type (
 		kOrchestratorAddress          tag.Key
 		kOrchestratorVersion          tag.Key
 		kFVErrorType                  tag.Key
+		kCapability                   tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -138,6 +139,7 @@ type (
 		mSuccessRatePerStream         *stats.Float64Measure
 		mTranscodeTime                *stats.Float64Measure
 		mTranscodeOverallLatency      *stats.Float64Measure
+		mOrchestratorCapacities       *stats.Int64Measure
 		mUploadTime                   *stats.Float64Measure
 		mDownloadTime                 *stats.Float64Measure
 		mAuthWebhookTime              *stats.Float64Measure
@@ -293,6 +295,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mTranscodeTime = stats.Float64("transcode_time_seconds", "Transcoding time", "sec")
 	census.mTranscodeOverallLatency = stats.Float64("transcode_overall_latency_seconds",
 		"Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest", "sec")
+	census.mOrchestratorCapacities = stats.Int64("orchestrator_capacities", "Capacity per orchestrator per capability", "tot")
 	census.mUploadTime = stats.Float64("upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mDownloadTime = stats.Float64("download_time_seconds", "Download (from orchestrator) time", "sec")
 	census.mAuthWebhookTime = stats.Float64("auth_webhook_time_milliseconds", "Authentication webhook execution time", "ms")
@@ -556,6 +559,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Transcoding latency, from source segment emerged from segmenter till all transcoded segment apeeared in manifest",
 			TagKeys:     append([]tag.Key{census.kProfiles}, baseTagsWithOrchInfo...),
 			Aggregation: view.Distribution(0, .500, .75, 1.000, 1.500, 2.000, 2.500, 3.000, 3.500, 4.000, 4.500, 5.000, 10.000),
+		},
+		{
+			Name:        "orchestrator_capacities",
+			Measure:     census.mOrchestratorCapacities,
+			Description: "Capacity per orchestrator per capability",
+			TagKeys:     append([]tag.Key{census.kProfiles, census.kCapability}, baseTagsWithOrchInfo...),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "transcode_score",
@@ -1422,7 +1432,7 @@ func (cen *censusMetricsCounter) sendSuccess() {
 	stats.Record(cen.ctx, cen.mSuccessRate.M(cen.successRate()))
 }
 
-func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError, orchInfo *lpnet.OrchestratorInfo) {
+func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles string, errCode SegmentTranscodeError, orchInfo *lpnet.OrchestratorInfo, orchCapacities map[string]int64) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 	rctx, err := tag.New(census.ctx, tag.Insert(census.kProfiles, profiles))
@@ -1441,6 +1451,14 @@ func SegmentFullyTranscoded(ctx context.Context, nonce, seqNo uint64, profiles s
 		}
 		census.countSegmentEmerged(ctx, nonce, seqNo)
 	}
+
+	for capability, capacity := range orchCapacities {
+		if err := stats.RecordWithTags(rctx,
+			manifestIDTagAndOrchInfo(orchInfo, ctx, tag.Insert(census.kCapability, capability)), census.mOrchestratorCapacities.M(capacity)); err != nil {
+			clog.Errorf(ctx, "Error recording capacity metric err=%q", err)
+		}
+	}
+
 	if errCode == "" {
 		if err := stats.RecordWithTags(rctx,
 			manifestIDTagAndOrchInfo(orchInfo, ctx), census.mSegmentTranscodedAllAppeared.M(1)); err != nil {
