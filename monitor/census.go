@@ -258,6 +258,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kOrchestratorVersion = tag.MustNewKey("orchestrator_version")
 	census.kFVErrorType = tag.MustNewKey("fverror_type")
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
+	census.kCapability = tag.MustNewKey("capability")
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Exit("Error creating context", err)
