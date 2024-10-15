@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
@@ -16,17 +17,20 @@ var (
 )
 
 type RewardService struct {
-	client       LivepeerEthClient
-	working      bool
-	cancelWorker context.CancelFunc
-	tw           timeWatcher
-	mu           sync.Mutex
+	client              LivepeerEthClient
+	working             bool
+	cancelWorker        context.CancelFunc
+	tw                  timeWatcher
+	mu                  sync.Mutex
+	rewardRetryInterval time.Duration
+	cancelRetryWorker   context.CancelFunc
 }
 
-func NewRewardService(client LivepeerEthClient, tw timeWatcher) *RewardService {
+func NewRewardService(client LivepeerEthClient, tw timeWatcher, rewardRetryInterval time.Duration) *RewardService {
 	return &RewardService{
-		client: client,
-		tw:     tw,
+		client:              client,
+		tw:                  tw,
+		rewardRetryInterval: rewardRetryInterval,
 	}
 }
 
@@ -54,15 +58,12 @@ func (s *RewardService) Start(ctx context.Context) error {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
-			go func() {
-				err := s.tryReward()
-				if err != nil {
-					glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
-					if monitor.Enabled {
-						monitor.RewardCallError(err.Error())
-					}
-				}
-			}()
+			s.cancelRetryWorker()
+
+			retryCtx, cancelRetry := context.WithCancel(cancelCtx)
+			s.cancelRetryWorker = cancelRetry
+
+			go s.callRewardWithRetries(retryCtx)
 		case <-cancelCtx.Done():
 			glog.V(5).Infof("Reward service done")
 			return nil
@@ -112,4 +113,37 @@ func (s *RewardService) tryReward() error {
 	}
 
 	return nil
+}
+
+func (s *RewardService) callRewardWithRetries(ctx context.Context) {
+	if s.rewardRetryInterval == 0 {
+		err := s.tryReward()
+		if err != nil {
+			glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
+			if monitor.Enabled {
+				monitor.RewardCallError(err.Error())
+			}
+		}
+		return
+	}
+
+	ticker := time.NewTicker(s.rewardRetryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := s.tryReward()
+			if err == nil {
+				return
+			}
+
+			glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
+			if monitor.Enabled {
+				monitor.RewardCallError(err.Error())
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
