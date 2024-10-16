@@ -1197,7 +1197,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if *cfg.AIModels != "" && *cfg.AIModelsWebhookUrl != "" {
 			glog.Error("Both '-aiModels' and '-aiModelsWebhookUrl' flags are set. Please specify only one of them.")
 			return
-		} else {
+		} else if *cfg.AIModelsWebhookUrl != "" || *cfg.AIModels != "" {
 			var configs []core.AIModelConfig
 			var err error
 
@@ -1381,6 +1381,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 				}
 			}
+		} else {
+			glog.Error("The '-aiModels' or '-aiModelsWebhookUrl' flag was set, but no model configuration was provided. Please specify the model configuration using either the '-aiModels' or the '-aiModelsWebhookUrl' flag.")
+			return
 		}
 
 		defer func() {

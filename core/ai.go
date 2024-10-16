@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 )
 
@@ -188,7 +189,7 @@ func (w *ModelsWebhook) startRefreshing() {
 		case <-ticker.C:
 			err := w.refreshConfigs()
 			if err != nil {
-				fmt.Printf("Error refreshing AI model configs: %v\n", err)
+				glog.Errorf("Error refreshing AI model configs: %v", err)
 			}
 		case <-w.stopChan:
 			return
@@ -211,7 +212,7 @@ func (w *ModelsWebhook) refreshConfigs() error {
 		w.configs = configs
 		w.lastHash = hash
 		w.mu.Unlock()
-		fmt.Println("AI Model configurations have been updated.")
+		glog.V(6).Info("AI Model configurations have been updated.")
 	}
 	return nil
 }
