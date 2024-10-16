@@ -42,9 +42,11 @@ if [[ "$BUILDARCH" == "amd64" && "$BUILDOS" == "linux" && "$GOARCH" == "arm64" &
   export STRIP="llvm-strip-14"
   export AR="llvm-ar-14"
   export RANLIB="llvm-ranlib-14"
+  export CFLAGS="--target=aarch64-linux-gnu"
+  export LDFLAGS="--target=aarch64-linux-gnu"
   EXTRA_CFLAGS="--target=aarch64-linux-gnu -I/usr/local/cuda_arm64/include $EXTRA_CFLAGS"
   EXTRA_LDFLAGS="-fuse-ld=lld --target=aarch64-linux-gnu -L/usr/local/cuda_arm64/lib64 $EXTRA_LDFLAGS"
-  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang --strip=llvm-strip-14"
+  EXTRA_FFMPEG_FLAGS="$EXTRA_FFMPEG_FLAGS --arch=aarch64 --enable-cross-compile --cc=clang-14 --strip=llvm-strip-14"
   HOST_OS="--host=aarch64-linux-gnu"
 fi
 
