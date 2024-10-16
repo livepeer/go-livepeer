@@ -160,7 +160,7 @@ if [[ ! -e "$ROOT/zlib-1.2.11" ]]; then
   curl -o zlib-1.2.11.tar.gz https://zlib.net/fossils/zlib-1.2.11.tar.gz
   tar xf zlib-1.2.11.tar.gz
   cd zlib-1.2.11
-  ./configure --prefix="$ROOT/compiled" --static
+  ./configure --prefix="$ROOT/compiled"
   make -j$NPROC
   make -j$NPROC install
 fi
