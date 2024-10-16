@@ -59,6 +59,7 @@ type SegTranscodingMetadata struct {
 	Fname              string
 	Seq                int64
 	Hash               ethcommon.Hash
+	ProfileIn          ffmpeg.VideoProfile
 	Profiles           []ffmpeg.VideoProfile
 	OS                 *net.OSInfo
 	Duration           time.Duration
