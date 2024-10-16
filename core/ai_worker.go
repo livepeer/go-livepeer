@@ -143,7 +143,7 @@ func NewRemoteAIWorkerFatalError(err error) error {
 }
 
 // Process does actual AI job using remote worker from the pool
-func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req interface{}) (*RemoteAIWorkerResult, error) {
+func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
 
 	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
 	if err != nil {
@@ -326,7 +326,7 @@ func (rwm *RemoteAIWorkerManager) removeTaskChan(taskID int64) {
 }
 
 // Process does actual AI processing by sending work to remote ai worker and waiting for the result
-func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, modelID string, fname string, req interface{}) (*RemoteAIWorkerResult, error) {
+func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
 	taskID, taskChan := rw.manager.addTaskChan()
 	defer rw.manager.removeTaskChan(taskID)
 
@@ -344,7 +344,6 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	start := time.Now()
 
 	jobData := &net.AIJobData{
-		Url:         fname,
 		Pipeline:    pipeline,
 		RequestData: reqParams,
 	}
@@ -390,6 +389,11 @@ type AIChanData struct {
 	ctx context.Context
 	req interface{}
 	res chan *AIResult
+}
+
+type AIJobRequestData struct {
+	InputUrl string      `json:"input_url"`
+	Request  interface{} `json:"request"`
 }
 
 type AIJobChan chan *AIChanData
@@ -507,7 +511,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	}
 
 	//remote ai worker proceses job
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
 	}
@@ -546,10 +550,12 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	}
 
 	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "") //remove image data
 
-	req.Image.InitFromBytes(nil, inputUrl)
-
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, inputUrl, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
 		return nil, err
 	}
@@ -588,9 +594,12 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 	}
 
 	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, inputUrl)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "") //remove image data
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, inputUrl, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
 		return nil, err
 	}
@@ -629,9 +638,12 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	}
 
 	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, inputUrl)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "") //remove image data
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, inputUrl, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
 		return nil, err
 	}
@@ -662,9 +674,12 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 	}
 
 	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, audioBytes)
-	req.Audio.InitFromBytes(nil, inputUrl)
+	if err != nil {
+		return nil, err
+	}
+	req.Audio.InitFromBytes(nil, "") //remove audio data
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "audio-to-text", *req.ModelId, inputUrl, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "audio-to-text", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
 		return nil, err
 	}
@@ -695,9 +710,12 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 	}
 
 	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
-	req.Image.InitFromBytes(nil, inputUrl)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "") //remove image data
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, inputUrl, req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
 		return nil, err
 	}
@@ -722,7 +740,7 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 		return orch.node.AIWorker.LLM(ctx, req)
 	}
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.ModelId, "", req)
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
+	oapitypes "github.com/oapi-codegen/runtime/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -63,7 +64,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
 	//send empty request data
-	notify := createAIJob(742, worker.GenTextToImageJSONRequestBody{}, "text-to-image", "")
+	notify := createAIJob(742, "text-to-image-empty", "", "")
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 
@@ -75,7 +76,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	assert.NotNil(string(body))
 
 	//error in worker, good request
-	notify = createAIJob(742, req, "text-to-image", "")
+	notify = createAIJob(742, "text-to-image", "livepeer/model1", "")
 	errText := "Some error"
 	wkr.Err = fmt.Errorf(errText)
 
@@ -107,7 +108,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 
 	//pipeline not compatible
 	wkr.Err = nil
-	notify = createAIJob(743, req, "unsupported-pipeline", "")
+	notify = createAIJob(743, "unsupported-pipeline", "livepeer/model1", "")
 
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
@@ -149,11 +150,11 @@ func TestRunAIJob(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 	assert := assert.New(t)
 	modelId := "livepeer/model1"
 	tests := []struct {
+		inputFile       oapitypes.File
 		name            string
 		notify          *net.NotifyAIJob
 		pipeline        string
@@ -162,63 +163,63 @@ func TestRunAIJob(t *testing.T) {
 	}{
 		{
 			name:            "TextToImage_Success",
-			notify:          createAIJob(1, worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}, "text-to-image", ""),
+			notify:          createAIJob(1, "text-to-image", modelId, ""),
 			pipeline:        "text-to-image",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "ImageToImage_Success",
-			notify:          createAIJob(2, worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId}, "image-to-image", parsedURL.String()+"/image.png"),
+			notify:          createAIJob(2, "image-to-image", modelId, parsedURL.String()+"/image.png"),
 			pipeline:        "image-to-image",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "Upscale_Success",
-			notify:          createAIJob(3, worker.GenUpscaleMultipartRequestBody{Prompt: "na", ModelId: &modelId}, "upscale", parsedURL.String()+"/image.png"),
+			notify:          createAIJob(3, "upscale", modelId, parsedURL.String()+"/image.png"),
 			pipeline:        "upscale",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "ImageToVideo_Success",
-			notify:          createAIJob(4, worker.GenImageToVideoMultipartRequestBody{ModelId: &modelId}, "image-to-video", parsedURL.String()+"/image.png"),
+			notify:          createAIJob(4, "image-to-video", modelId, parsedURL.String()+"/image.png"),
 			pipeline:        "image-to-video",
 			expectedErr:     "",
 			expectedOutputs: 2,
 		},
 		{
 			name:            "AudioToText_Success",
-			notify:          createAIJob(5, worker.GenAudioToTextMultipartRequestBody{ModelId: &modelId}, "audio-to-text", parsedURL.String()+"/audio.mp3"),
+			notify:          createAIJob(5, "audio-to-text", modelId, parsedURL.String()+"/audio.mp3"),
 			pipeline:        "audio-to-text",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "SegmentAnything2_Success",
-			notify:          createAIJob(6, worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId}, "segment-anything-2", parsedURL.String()+"/image.png"),
+			notify:          createAIJob(6, "segment-anything-2", modelId, parsedURL.String()+"/image.png"),
 			pipeline:        "segment-anything-2",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "LLM_Success",
-			notify:          createAIJob(7, worker.GenLLMFormdataRequestBody{ModelId: &modelId}, "llm", ""),
+			notify:          createAIJob(7, "llm", modelId, ""),
 			pipeline:        "llm",
 			expectedErr:     "",
 			expectedOutputs: 1,
 		},
 		{
 			name:            "UnsupportedPipeline",
-			notify:          createAIJob(8, worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}, "unsupported-pipeline", ""),
+			notify:          createAIJob(8, "unsupported-pipeline", modelId, ""),
 			pipeline:        "unsupported-pipeline",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
 		},
 		{
 			name:            "InvalidRequestData",
-			notify:          createAIJob(9, []byte(`invalid json`), "text-to-image", ""),
+			notify:          createAIJob(9, "text-to-image-invalid", modelId, ""),
 			pipeline:        "text-to-image",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
@@ -323,10 +324,42 @@ func TestRunAIJob(t *testing.T) {
 	}
 }
 
-func createAIJob(taskId int64, req interface{}, pipeline, url string) *net.NotifyAIJob {
-	reqData, _ := json.Marshal(req)
+func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAIJob {
+	var req interface{}
+	var inputFile oapitypes.File
+	switch pipeline {
+	case "text-to-image":
+		req = worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}
+	case "image-to-image":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
+	case "upscale":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenUpscaleMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
+	case "image-to-video":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenImageToVideoMultipartRequestBody{ModelId: &modelId, Image: inputFile}
+	case "audio-to-text":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenAudioToTextMultipartRequestBody{ModelId: &modelId, Audio: inputFile}
+	case "segment-anything-2":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
+	case "llm":
+		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+	case "unsupported-pipeline":
+		req = worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}
+	case "text-to-image-invalid":
+		pipeline = "text-to-image"
+		req = []byte(`invalid json`)
+	case "text-to-image-empty":
+		pipeline = "text-to-image"
+		req = worker.GenTextToImageJSONRequestBody{}
+	}
+
+	reqData, _ := json.Marshal(core.AIJobRequestData{Request: req, InputUrl: inputUrl})
+
 	jobData := &net.AIJobData{
-		Url:         url,
 		Pipeline:    pipeline,
 		RequestData: reqData,
 	}

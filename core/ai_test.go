@@ -105,7 +105,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 	req.Prompt = "a titan carrying steel ball with livepeer logo"
 
 	// happy path
-	res, err := m.Process(context.TODO(), "request_id1", "text-to-image", "livepeer/model1", "", req)
+	res, err := m.Process(context.TODO(), "request_id1", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
 	results, ok := res.Results.(worker.ImageResponse)
 	assert.True(t, ok)
 	assert.Nil(t, err)
@@ -113,7 +113,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 
 	// error on remote
 	strm.JobError = fmt.Errorf("JobError")
-	res, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", req)
+	res, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
 	assert.NotNil(t, err)
 	strm.JobError = nil
 
@@ -123,7 +123,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 	// simulate error with sending
 	// m.Process keeps retrying since error is not fatal
 	strm.SendError = ErrNoWorkersAvailable
-	_, err = m.Process(context.TODO(), "request_id3", "text-to-image", "livepeer/model1", "", req)
+	_, err = m.Process(context.TODO(), "request_id3", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
 	_, fatal := err.(RemoteAIWorkerFatalError)
 	if !fatal && err.Error() != strm.SendError.Error() {
 		t.Error("Unexpected error ", err, fatal)
@@ -339,7 +339,7 @@ func TestRemoteAIWorkerTimeout(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		start := time.Now()
-		_, timeoutErr := wkr.Process(context.TODO(), "text-to-image", "livepeer/model", "", req)
+		_, timeoutErr := wkr.Process(context.TODO(), "text-to-image", "livepeer/model", "", AIJobRequestData{Request: req})
 		took := time.Since(start)
 		assert.Greater(t, took, aiWorkerRequestTimeout)
 		assert.NotNil(t, timeoutErr)

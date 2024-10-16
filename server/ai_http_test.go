@@ -93,7 +93,7 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	}))
 	defer resultData.Close()
 	//sending bad request
-	notify := createAIJob(742, nil, "text-to-image", "")
+	notify := createAIJob(742, "text-to-image-invalid", "livepeer/model1", "")
 
 	wkr := stubAIWorker{}
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)

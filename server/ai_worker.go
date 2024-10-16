@@ -145,6 +145,11 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.
 	}
 }
 
+type AIJobRequestData struct {
+	InputUrl string          `json:"input_url"`
+	Request  json.RawMessage `json:"request"`
+}
+
 func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
 
 	var contentType string
@@ -162,26 +167,20 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	var resultType string
 	var reqOk bool
 	var modelID string
+	var input []byte
 
 	start := time.Now()
-
-	//download the input file if applicable
-	var input []byte
-	input_url := "none"
-	if notify.AIJobData.Url != "" {
-		input_url = notify.AIJobData.Url
-		input, err = core.DownloadData(ctx, input_url)
-		if err != nil {
-			clog.Errorf(ctx, "AI Worker cannot get input file from taskId=%d url=%s err=%q", notify.TaskId, input_url, err)
-			sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, "", httpc, contentType, &body, addlResultData, err)
-			return
-		}
+	var reqData AIJobRequestData
+	err = json.Unmarshal(notify.AIJobData.RequestData, &reqData)
+	if err != nil {
+		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, err)
+		return
 	}
 
 	switch notify.AIJobData.Pipeline {
 	case "text-to-image":
 		var req worker.GenTextToImageJSONRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
 			break
 		}
@@ -193,8 +192,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "image-to-image":
 		var req worker.GenImageToImageMultipartRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
 			break
 		}
 		modelID = *req.ModelId
@@ -206,8 +209,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "upscale":
 		var req worker.GenUpscaleMultipartRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
 			break
 		}
 		modelID = *req.ModelId
@@ -219,8 +226,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "image-to-video":
 		var req worker.GenImageToVideoMultipartRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
 			break
 		}
 		modelID = *req.ModelId
@@ -232,8 +243,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "audio-to-text":
 		var req worker.GenAudioToTextMultipartRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
 			break
 		}
 		modelID = *req.ModelId
@@ -245,8 +260,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "segment-anything-2":
 		var req worker.GenSegmentAnything2MultipartRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
 			break
 		}
 		modelID = *req.ModelId
@@ -258,7 +277,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		reqOk = true
 	case "llm":
 		var req worker.GenLLMFormdataRequestBody
-		err = json.Unmarshal(notify.AIJobData.RequestData, &req)
+		err = json.Unmarshal(reqData.Request, &req)
 		if err != nil || req.ModelId == nil {
 			break
 		}
@@ -283,7 +302,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	}
 
 	//process the request
-	clog.Infof(ctx, "Processing AI job pipeline=%s modelID=%s input_url=%s", notify.AIJobData.Pipeline, modelID, input_url)
+	clog.Infof(ctx, "Processing AI job pipeline=%s modelID=%s", notify.AIJobData.Pipeline, modelID)
 
 	//reserve the capabilities to process this request, release after work is done
 	err = n.ReserveAICapability(notify.AIJobData.Pipeline, modelID)

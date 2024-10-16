@@ -390,20 +390,16 @@ message RegisterAIWorkerRequest {
 }
 
 // Data included by the gateway when submitting a AI job.
-message AIJobData {
-    // URL of the input to use.
-    string url      = 1;
-
+message AIJobData {  
     // pipeline to use for the job
-    string pipeline = 2;
+    string pipeline = 1;
 
     // AI job request data
-    bytes requestData = 3;
+    bytes requestData = 2;
 }
 
 // Sent by the orchestrator to the aiworker
-message NotifyAIJob {
-    
+message NotifyAIJob {    
     // Configuration for the AI job
     AIJobData AIJobData = 1;
 
