@@ -97,6 +97,7 @@ type LivepeerConfig struct {
 	OrchSecret              *string
 	TranscodingOptions      *string
 	AIModels                *string
+	AIModelsWebhookUrl      *string
 	MaxAttempts             *int
 	SelectRandWeight        *float64
 	SelectStakeWeight       *float64
@@ -202,6 +203,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIModelsWebhookUrl := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -297,10 +299,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:      &defaultAIWorker,
-		AIModels:      &defaultAIModels,
-		AIModelsDir:   &defaultAIModelsDir,
-		AIRunnerImage: &defaultAIRunnerImage,
+		AIWorker:           &defaultAIWorker,
+		AIModels:           &defaultAIModels,
+		AIModelsDir:        &defaultAIModelsDir,
+		AIRunnerImage:      &defaultAIRunnerImage,
+		AIModelsWebhookUrl: &defaultAIModelsWebhookUrl,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1191,11 +1194,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			currencyBase = currency
 		}
 
-		if *cfg.AIModels != "" {
-			configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
-			if err != nil {
-				glog.Errorf("Error parsing -aiModels: %v", err)
-				return
+		if *cfg.AIModels != "" && *cfg.AIModelsWebhookUrl != "" {
+			glog.Error("Both '-aiModels' and '-aiModelsWebhookUrl' flags are set. Please specify only one of them.")
+			return
+		} else {
+			var configs []core.AIModelConfig
+			var err error
+
+			if *cfg.AIModelsWebhookUrl != "" {
+				webhook, err := core.NewAIModelWebhook(*cfg.AIModelsWebhookUrl, 1*time.Minute)
+				if err != nil {
+					glog.Errorf("Error creating AI model webhook: %v", err)
+					return
+				}
+				configs = webhook.GetConfigs()
+				n.ModelsWebhook = webhook
+			}
+
+			if *cfg.AIModels != "" {
+				configs, err = core.ParseAIModelConfigs(*cfg.AIModels)
+				if err != nil {
+					glog.Errorf("Error parsing -aiModels: %v", err)
+					return
+				}
 			}
 
 			for _, config := range configs {
@@ -1360,9 +1381,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 				}
 			}
-		} else {
-			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
-			return
 		}
 
 		defer func() {
