@@ -45,6 +45,7 @@ const (
 	OrchestratorNode
 	TranscoderNode
 	RedeemerNode
+	AIWorkerNode
 )
 
 var nodeTypeStrs = map[NodeType]string{
@@ -53,6 +54,7 @@ var nodeTypeStrs = map[NodeType]string{
 	OrchestratorNode: "orchestrator",
 	TranscoderNode:   "transcoder",
 	RedeemerNode:     "redeemer",
+	AIWorkerNode:     "aiworker",
 }
 
 func (t NodeType) String() string {
@@ -116,7 +118,8 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker AI
+	AIWorker        AI
+	AIWorkerManager *RemoteAIWorkerManager
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
