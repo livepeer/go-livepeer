@@ -135,6 +135,7 @@ type LivepeerConfig struct {
 	Redeemer                *bool
 	RedeemerAddr            *string
 	Reward                  *bool
+	RewardRetryInterval     *time.Duration
 	Monitor                 *bool
 	MetricsPerStream        *bool
 	MetricsExposeClientIP   *bool
@@ -216,6 +217,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultBlockPollingInterval := 5
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
+	defaultRewardTryInterval := 0 * time.Minute // disabled by default
 	defaultMonitor := false
 	defaultMetricsPerStream := false
 	defaultMetricsExposeClientIP := false
@@ -308,6 +310,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		BlockPollingInterval:    &defaultBlockPollingInterval,
 		Redeemer:                &defaultRedeemer,
 		RedeemerAddr:            &defaultRedeemerAddr,
+		RewardRetryInterval:     &defaultRewardTryInterval,
 		Monitor:                 &defaultMonitor,
 		MetricsPerStream:        &defaultMetricsPerStream,
 		MetricsExposeClientIP:   &defaultMetricsExposeClientIP,
@@ -1011,7 +1014,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if reward {
 			// Start reward service
 			// The node will only call reward if it is active in the current round
-			rs := eth.NewRewardService(n.Eth, timeWatcher)
+			rs := eth.NewRewardService(n.Eth, timeWatcher, *cfg.RewardRetryInterval)
 			go func() {
 				if err := rs.Start(ctx); err != nil {
 					serviceErr <- err
