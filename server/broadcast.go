@@ -1369,7 +1369,17 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 	}
 
 	if monitor.Enabled {
-		monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode, sess.OrchestratorInfo)
+		orchCapacities := make(map[string]int64)
+		if sess.OrchestratorInfo != nil && sess.OrchestratorInfo.Capabilities != nil {
+			for capability, capacity := range sess.OrchestratorInfo.Capabilities.Capacities {
+				capName, err := core.CapabilityToName(core.Capability(capability))
+				if err != nil {
+					continue
+				}
+				orchCapacities[capName] = int64(capacity)
+			}
+		}
+		monitor.SegmentFullyTranscoded(ctx, nonce, seg.SeqNo, common.ProfilesNames(sess.Params.Profiles), errCode, sess.OrchestratorInfo, orchCapacities)
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "Successfully validated segment")
