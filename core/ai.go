@@ -157,30 +157,6 @@ func NewAIModelWebhook(source string, refreshInterval time.Duration) (*ModelsWeb
 	return webhook, nil
 }
 
-func FetchAIModelConfigs(source string) ([]AIModelConfig, error) {
-	var content string
-	if strings.HasPrefix(source, "file://") {
-		filePath := strings.TrimPrefix(source, "file://")
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return nil, err
-		}
-		content = string(data)
-	} else {
-		resp, err := http.Get(source)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		content = string(body)
-	}
-	return ParseAIModelConfigs(content)
-}
-
 func (w *ModelsWebhook) startRefreshing() {
 	ticker := time.NewTicker(w.refreshInt)
 	defer ticker.Stop()
