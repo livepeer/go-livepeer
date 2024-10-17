@@ -2,15 +2,21 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
 )
 
@@ -126,4 +132,99 @@ func ParseStepsFromModelID(modelID *string, defaultSteps float64) float64 {
 	}
 
 	return numInferenceSteps
+}
+
+type ModelsWebhook struct {
+	configs    []AIModelConfig
+	source     string
+	mu         sync.RWMutex
+	lastHash   string
+	refreshInt time.Duration
+	stopChan   chan struct{}
+}
+
+func NewAIModelWebhook(source string, refreshInterval time.Duration) (*ModelsWebhook, error) {
+	webhook := &ModelsWebhook{
+		source:     source,
+		refreshInt: refreshInterval,
+		stopChan:   make(chan struct{}),
+	}
+	err := webhook.refreshConfigs()
+	if err != nil {
+		return nil, err
+	}
+	go webhook.startRefreshing()
+	return webhook, nil
+}
+
+func (w *ModelsWebhook) startRefreshing() {
+	ticker := time.NewTicker(w.refreshInt)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			err := w.refreshConfigs()
+			if err != nil {
+				glog.Errorf("Error refreshing AI model configs: %v", err)
+			}
+		case <-w.stopChan:
+			return
+		}
+	}
+}
+
+func (w *ModelsWebhook) refreshConfigs() error {
+	content, err := w.fetchContent()
+	if err != nil {
+		return err
+	}
+	hash := hashContent(content)
+	if hash != w.lastHash {
+		configs, err := ParseAIModelConfigs(content)
+		if err != nil {
+			return err
+		}
+		w.mu.Lock()
+		w.configs = configs
+		w.lastHash = hash
+		w.mu.Unlock()
+		glog.V(6).Info("AI Model configurations have been updated.")
+	}
+	return nil
+}
+
+func (w *ModelsWebhook) fetchContent() (string, error) {
+	if strings.HasPrefix(w.source, "file://") {
+		filePath := strings.TrimPrefix(w.source, "file://")
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	} else {
+		resp, err := http.Get(w.source)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", err
+		}
+		return string(body), nil
+	}
+}
+
+func hashContent(content string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+}
+
+func (w *ModelsWebhook) GetConfigs() []AIModelConfig {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.configs
+}
+
+func (w *ModelsWebhook) Stop() {
+	close(w.stopChan)
 }

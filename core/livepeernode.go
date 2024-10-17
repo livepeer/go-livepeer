@@ -116,7 +116,8 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker AI
+	AIWorker      AI
+	ModelsWebhook *ModelsWebhook
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
