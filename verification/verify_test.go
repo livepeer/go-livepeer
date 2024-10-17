@@ -56,7 +56,7 @@ type stubVerifier struct {
 	err     error
 }
 
-func (sv *stubVerifier) Verify(params *Params) (*Results, error) {
+func (sv *stubVerifier) Verify(_ *Params) (*Results, error) {
 	return sv.results, sv.err
 }
 
@@ -180,7 +180,7 @@ func TestVerify(t *testing.T) {
 		results: nil,
 		err:     nil,
 	}, Retries: 2},
-		verifySig: func(addr ethcommon.Address, msg []byte, sig []byte) bool { return addr == recipientAddr },
+		verifySig: func(addr ethcommon.Address, _ []byte, _ []byte) bool { return addr == recipientAddr },
 	}
 
 	data = &net.TranscodeData{Segments: []*net.TranscodedSegmentData{
@@ -198,7 +198,7 @@ func TestVerify(t *testing.T) {
 	orchAddr = ethcommon.BytesToAddress([]byte("bar"))
 	sv = &SegmentVerifier{
 		policy:    &Policy{Verifier: &stubVerifier{}, Retries: 2},
-		verifySig: func(addr ethcommon.Address, msg []byte, sig []byte) bool { return addr == orchAddr },
+		verifySig: func(addr ethcommon.Address, _ []byte, _ []byte) bool { return addr == orchAddr },
 	}
 
 	res, err = sv.Verify(&Params{Results: data, Orchestrator: &net.OrchestratorInfo{TicketParams: params, Address: orchAddr.Bytes()}, Renditions: renditions})
@@ -321,7 +321,7 @@ func TestPixels(t *testing.T) {
 }
 
 // helper function for TestVerifyPixels to test countPixels()
-func verifyPixels(fname string, data []byte, reportedPixels int64) error {
+func verifyPixels(_ string, data []byte, reportedPixels int64) error {
 	c, err := countPixels(data)
 	if err != nil {
 		return err
