@@ -79,7 +79,7 @@ const (
 	Capability_AudioToText                Capability = 31
 	Capability_SegmentAnything2           Capability = 32
 	Capability_LLM                        Capability = 33
-	Capability_RealtimeToRealtime         Capability = 34
+	Capability_LiveVideoToVideo           Capability = 34
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -118,7 +118,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
 	Capability_LLM:                        "Large language model",
-	Capability_RealtimeToRealtime:         "Realtime video inference",
+	Capability_LiveVideoToVideo:           "Live video to video",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
