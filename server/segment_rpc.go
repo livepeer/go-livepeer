@@ -145,7 +145,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		uri = string(data)
 		clog.V(common.DEBUG).Infof(ctx, "Start getting segment from url=%s", uri)
 		start := time.Now()
-		data, err = core.GetSegmentData(ctx, uri)
+		data, err = core.DownloadData(ctx, uri)
 		took := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Getting segment from url=%s took=%s bytes=%d", uri, took, len(data))
 		if err != nil {

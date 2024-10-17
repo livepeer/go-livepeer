@@ -77,6 +77,7 @@ var (
 	ErrProfName     = fmt.Errorf("unknown VideoProfile profile name")
 
 	ErrAudioDurationCalculation = fmt.Errorf("audio duration calculation failed")
+	ErrNoExtensionsForType      = fmt.Errorf("no extensions exist for mime type")
 
 	ext2mime = map[string]string{
 		".ts":  "video/mp2t",
@@ -570,4 +571,13 @@ func CalculateAudioDuration(audio types.File) (int64, error) {
 // ValidateServiceURI checks if the serviceURI is valid.
 func ValidateServiceURI(serviceURI *url.URL) bool {
 	return !strings.Contains(serviceURI.Host, "0.0.0.0")
+}
+
+func ExtensionByType(contentType string) (string, error) {
+	exts, err := mime.ExtensionsByType(contentType)
+	if exts == nil || err != nil {
+		return "", ErrNoExtensionsForType
+	}
+
+	return exts[0], nil
 }
