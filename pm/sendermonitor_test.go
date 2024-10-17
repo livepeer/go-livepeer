@@ -677,7 +677,7 @@ func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 
 	// Trigger SuggestGasPrice() error
 	gasPriceErr := errors.New("SuggestGasPrice() error")
-	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return nil, gasPriceErr }
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return nil, gasPriceErr }
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
 	_, err = sm.redeemWinningTicket(signedT)
 	assert.EqualError(err, gasPriceErr.Error())
@@ -700,7 +700,7 @@ func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 
 	// Trigger insufficient funds to cover redeem tx cost error when availableFunds < txCost
 	cfg.RedeemGas = 1
-	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return big.NewInt(1000000000), nil }
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return big.NewInt(1000000000), nil }
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
 	_, err = sm.redeemWinningTicket(signedT)
 	assert.Contains(err.Error(), "insufficient sender funds")
@@ -709,7 +709,7 @@ func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 	funds, err := sm.availableFunds(addr)
 	require.Nil(t, err)
 	cfg.RedeemGas = 1
-	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return funds, nil }
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return funds, nil }
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
 	_, err = sm.redeemWinningTicket(signedT)
 	assert.Contains(err.Error(), "insufficient sender funds")
@@ -717,7 +717,7 @@ func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 	// Trigger insufficient face value to cover redeem tx cost error when face value < txCost
 	txCost := new(big.Int).Sub(funds, big.NewInt(1))
 	cfg.RedeemGas = 1
-	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return txCost, nil }
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return txCost, nil }
 	badSignedT := defaultSignedTicket(addr, uint32(0))
 	badSignedT.FaceValue = new(big.Int).Sub(txCost, big.NewInt(1))
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
@@ -732,7 +732,7 @@ func TestRedeemWinningTicket_CheckAvailableFundsAndFaceValue(t *testing.T) {
 
 	// Pass available funds and face value check when availableFunds > txCost and face value > txCost
 	cfg.RedeemGas = 0
-	cfg.SuggestGasPrice = func(ctx context.Context) (*big.Int, error) { return big.NewInt(0), nil }
+	cfg.SuggestGasPrice = func(_ context.Context) (*big.Int, error) { return big.NewInt(0), nil }
 	sm = NewSenderMonitor(cfg, b, smgr, tm, ts)
 	tx, err := sm.redeemWinningTicket(signedT)
 	assert.Nil(err)
@@ -966,7 +966,7 @@ func stubLocalSenderMonitorCfg() *LocalSenderMonitorConfig {
 		CleanupInterval: 5 * time.Minute,
 		TTL:             3600,
 		RedeemGas:       0,
-		SuggestGasPrice: func(ctx context.Context) (*big.Int, error) {
+		SuggestGasPrice: func(_ context.Context) (*big.Int, error) {
 			return big.NewInt(0), nil
 		},
 		RPCTimeout: 5 * time.Minute,
