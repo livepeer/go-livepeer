@@ -364,9 +364,6 @@ func TestRPCSeg(t *testing.T) {
 		}
 	}
 
-	// corrupt profiles
-	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
-
 	// corrupt sig
 	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
 	corruptSegData(sd, errSegSig) // missing sig

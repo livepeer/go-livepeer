@@ -608,7 +608,7 @@ func TestValidateTicketParams_AcceptableParams_NoError(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func defaultSender(t *testing.T) *sender {
+func defaultSender(_ *testing.T) *sender {
 	account := accounts.Account{
 		Address: RandAddress(),
 	}
@@ -626,7 +626,7 @@ func defaultSender(t *testing.T) *sender {
 	return s.(*sender)
 }
 
-func defaultTicketParams(t *testing.T, recipient ethcommon.Address) TicketParams {
+func defaultTicketParams(_ *testing.T, recipient ethcommon.Address) TicketParams {
 	recipientRandHash := RandHash()
 	return TicketParams{
 		Recipient:         recipient,

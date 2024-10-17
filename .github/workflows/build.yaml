@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches:
-      # - master
       - ai-video
     tags:
       - "v*"
@@ -30,10 +29,10 @@ jobs:
             container: ubuntu:20.04
             type: cpu
 
-          # - GOOS: linux
-          #   GOARCH: arm64
-          #   container: ubuntu-20.04
-          #   type: cpu
+          - GOOS: linux
+            GOARCH: arm64
+            container: ubuntu:20.04
+            type: cpu
 
           - GOOS: linux
             GOARCH: amd64
@@ -338,7 +337,7 @@ jobs:
           destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
           parent: false
           process_gcloudignore: false
-      
+
       # Update the latest branch manifest
       - name: Upload branch manifest file to Google Cloud stable folder
         id: upload-manifest-latest
