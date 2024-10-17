@@ -33,6 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultLiveVideoToVideoModelID = "stream-diffusion" // TODO what should this be?
 
 type ServiceUnavailableError struct {
 	err error
@@ -813,6 +814,32 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.StartLiveVideoToVideoFormdataRequestBody) (*worker.StartLiveVideoToVideoResponse, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	resp, err := client.StartLiveVideoToVideoWithFormdataBodyWithResponse(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 != nil {
+		fmt.Println("publish", resp.JSON200.PublishUrl, "subscribe", resp.JSON200.SubscribeUrl)
+	}
+	if resp.JSON400 != nil {
+		fmt.Println("json400", resp.JSON400)
+	}
+	if resp.JSON500 != nil {
+		fmt.Println("json500", resp.JSON500)
+	}
+	fmt.Println("body is", string(resp.Body))
+	// TODO check urls and add sess.Transcoder to the host if necessary
+	return resp, nil
+}
+
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
 	if tokensUsed <= 0 {
 		return 0
@@ -1043,6 +1070,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.StartLiveVideoToVideoFormdataRequestBody:
+		cap = core.Capability_LiveVideoToVideo
+		modelID = defaultLiveVideoToVideoModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLiveVideoToVideo(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

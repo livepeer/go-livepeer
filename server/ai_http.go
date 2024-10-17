@@ -46,6 +46,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartVideoToVideo()))
 
 	return nil
 }
@@ -202,6 +203,34 @@ func (h *lphttp) LLM() http.Handler {
 		}
 
 		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
+func (h *lphttp) StartVideoToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// skipping handleAIRequest for now until we have payments
+
+		// whats the point of openapi if we have to do this manually
+		var (
+			mid    = string(core.RandomManifestID())
+			pubUrl = "/ai/live-video/" + mid
+			subUrl = pubUrl + "/out"
+		)
+		jsonData, err := json.Marshal(&worker.StartLiveVideoToVideoResponse{
+			JSON200: &worker.ResponseStartVideoToVideo{
+				PublishUrl:   &pubUrl,
+				SubscribeUrl: &subUrl,
+			},
+		})
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(jsonData)
 	})
 }
 

@@ -1348,6 +1348,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					if *cfg.Network != "offchain" {
 						n.SetBasePriceForCap("default", core.Capability_SegmentAnything2, config.ModelID, autoPrice)
 					}
+				case "live-video-to-video":
+					_, ok := capabilityConstraints[core.Capability_LiveVideoToVideo]
+					if !ok {
+						aiCaps = append(aiCaps, core.Capability_LiveVideoToVideo)
+						capabilityConstraints[core.Capability_LiveVideoToVideo] = &core.CapabilityConstraints{
+							Models: make(map[string]*core.ModelConstraint),
+						}
+					}
+					capabilityConstraints[core.Capability_LiveVideoToVideo].Models[config.ModelID] = modelConstraint
 				}
 
 				if len(aiCaps) > 0 {
