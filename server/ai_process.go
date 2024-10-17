@@ -33,7 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
-const defaultRealtimeToRealtimeModelID = "stream-diffusion" // TODO what should this be?
+const defaultLiveVideoToVideoModelID = "stream-diffusion" // TODO what should this be?
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -865,24 +865,15 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-func processRealtimeToRealtime(ctx context.Context, params aiRequestParams, req worker.StartRealtimeToRealtimeFormdataRequestBody) (*worker.StartRealtimeToRealtimeResponse, error) {
-	resp, err := processAIRequest(ctx, params, req)
-	if err != nil {
-		return nil, err
-	}
-	rtResp := resp.(*worker.StartRealtimeToRealtimeResponse)
-	return rtResp, nil
-}
-
-func submitRealtimeToRealtime(ctx context.Context, params aiRequestParams, sess *AISession, req worker.StartRealtimeToRealtimeFormdataRequestBody) (*worker.StartRealtimeToRealtimeResponse, error) {
+func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.StartLiveVideoToVideoFormdataRequestBody) (*worker.StartLiveVideoToVideoResponse, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "RealtimeToRealtime", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
-	resp, err := client.StartRealtimeToRealtimeWithFormdataBodyWithResponse(ctx, req)
+	resp, err := client.StartLiveVideoToVideoWithFormdataBodyWithResponse(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1131,14 +1122,14 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
 		}
-	case worker.StartRealtimeToRealtimeFormdataRequestBody:
-		cap = core.Capability_RealtimeToRealtime
-		modelID = defaultRealtimeToRealtimeModelID
+	case worker.StartLiveVideoToVideoFormdataRequestBody:
+		cap = core.Capability_LiveVideoToVideo
+		modelID = defaultLiveVideoToVideoModelID
 		if v.ModelId != nil {
 			modelID = *v.ModelId
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
-			return submitRealtimeToRealtime(ctx, params, sess, v)
+			return submitLiveVideoToVideo(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

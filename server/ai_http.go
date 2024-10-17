@@ -55,7 +55,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-	lp.transRPC.Handle("/realtime-to-realtime", oapiReqValidator(lp.StartRealtimeToRealtime()))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -216,7 +216,7 @@ func (h *lphttp) LLM() http.Handler {
 	})
 }
 
-func (h *lphttp) StartRealtimeToRealtime() http.Handler {
+func (h *lphttp) StartVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// skipping handleAIRequest for now until we have payments
@@ -224,11 +224,11 @@ func (h *lphttp) StartRealtimeToRealtime() http.Handler {
 		// whats the point of openapi if we have to do this manually
 		var (
 			mid    = string(core.RandomManifestID())
-			pubUrl = "/realtime/" + mid
+			pubUrl = "/ai/live-video/" + mid
 			subUrl = pubUrl + "/out"
 		)
-		jsonData, err := json.Marshal(&worker.StartRealtimeToRealtimeResponse{
-			JSON200: &worker.ResponseStartRealtimeToRealtime{
+		jsonData, err := json.Marshal(&worker.StartLiveVideoToVideoResponse{
+			JSON200: &worker.ResponseStartVideoToVideo{
 				PublishUrl:   &pubUrl,
 				SubscribeUrl: &subUrl,
 			},

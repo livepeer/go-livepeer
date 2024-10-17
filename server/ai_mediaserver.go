@@ -72,7 +72,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
 	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
-	ls.HTTPMux.Handle("/realtime-start", ls.RealtimeStart())
+	ls.HTTPMux.Handle("/live-video-start", ls.StartLiveVideo())
 
 	return nil
 }
@@ -362,7 +362,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) RealtimeStart() http.Handler {
+func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamName := r.FormValue("stream")
 		if streamName == "" {
@@ -376,8 +376,8 @@ func (ls *LivepeerServer) RealtimeStart() http.Handler {
 			sessManager: ls.AISessionManager,
 		}
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		clog.Infof(ctx, "Received realtime AI request")
-		req := worker.StartRealtimeToRealtimeFormdataRequestBody{
+		clog.Infof(ctx, "Received live video AI request")
+		req := worker.StartLiveVideoToVideoFormdataRequestBody{
 			// TODO set model and initial parameters here if necessary (eg, prompt)
 		}
 		resp, err := processAIRequest(ctx, params, req)
