@@ -703,7 +703,8 @@ type BreakOperation bool
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	errorOut := func(status int, s string, params ...interface{}) {
 		httpErr := fmt.Sprintf(s, params...)
-		glog.Error(httpErr)
+		statusErr := fmt.Sprintf(" statusCode=%d", status)
+		glog.Error(httpErr + statusErr)
 		http.Error(w, httpErr, status)
 	}
 
@@ -1007,7 +1008,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(urls) == 0 {
 		if len(cxn.params.Profiles) > 0 {
-			clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+			clog.Errorf(ctx, "No sessions available name=%s url=%s statusCode=%d", fname, r.URL, http.StatusServiceUnavailable)
 			http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		}
 		return
