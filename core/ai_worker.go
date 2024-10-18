@@ -144,7 +144,6 @@ func NewRemoteAIWorkerFatalError(err error) error {
 
 // Process does actual AI job using remote worker from the pool
 func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
-
 	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
 	if err != nil {
 		return nil, err
@@ -237,7 +236,7 @@ func (rwm *RemoteAIWorkerManager) workerHasCapacity(pipeline, modelID string) bo
 			}
 		}
 	}
-	//no worker has capacity
+	// no worker has capacity
 	return false
 }
 
@@ -359,7 +358,7 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 
 	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s", rw.addr, taskID, pipeline, modelID)
 	// set a minimum timeout to accommodate transport / processing overhead
-	//TODO: this should be set for each pipeline, using something long for now
+	// TODO: this should be set for each pipeline, using something long for now
 	dur := aiWorkerRequestTimeout
 
 	ctx, cancel := context.WithTimeout(context.Background(), dur)
@@ -401,10 +400,10 @@ type AIJobChan chan *AIChanData
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	if orch.node.AIWorker != nil {
-		//confirm local worker has capacity
+		// confirm local worker has capacity
 		return orch.node.AIWorker.HasCapacity(pipeline, modelID)
 	} else {
-		//remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
+		// remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
 		if orch.node.AIWorkerManager != nil {
 			return orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
 		} else {
@@ -432,7 +431,7 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 
 	imgRes, ok := results.(worker.ImageResponse)
 	if !ok {
-		//worker.TextResponse is JSON, no file save needed
+		// worker.TextResponse is JSON, no file save needed
 		return results, nil
 	}
 	storage, exists := n.StorageConfigs[requestID]
@@ -444,7 +443,7 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 		buf.Reset()
 		err := worker.ReadImageB64DataUrl(image.Url, &buf)
 		if err != nil {
-			//try to load local file (image to video returns local file)
+			// try to load local file (image to video returns local file)
 			f, err := os.ReadFile(image.Url)
 			if err != nil {
 				return nil, err
@@ -468,13 +467,13 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 		return nil, fmt.Errorf("Missing local storage")
 	}
 
-	//worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
-	//other pipelines do not require saving data since they are text responses
+	// worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
+	// other pipelines do not require saving data since they are text responses
 	imgResp, isImg := results.Results.(worker.ImageResponse)
 	if isImg {
 		for idx, _ := range imgResp.Images {
 			fileName := imgResp.Images[idx].Url
-			//save the file data to node and provide url for download
+			// save the file data to node and provide url for download
 			storage, exists := n.StorageConfigs[requestID]
 			if !exists {
 				return nil, errors.New("no storage available for request")
@@ -488,7 +487,7 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 			delete(results.Files, fileName)
 		}
 
-		//update results for url updates
+		// update results for url updates
 		results.Results = imgResp
 	}
 
@@ -496,7 +495,7 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 }
 
 func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToImage(ctx, req)
 		if err == nil {
@@ -510,7 +509,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		}
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
@@ -529,7 +528,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 }
 
 func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToImage(ctx, req)
 		if err == nil {
@@ -543,7 +542,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		}
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -553,7 +552,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	if err != nil {
 		return nil, err
 	}
-	req.Image.InitFromBytes(nil, "") //remove image data
+	req.Image.InitFromBytes(nil, "") // remove image data
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
@@ -573,7 +572,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 }
 
 func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToVideo(ctx, req)
 		if err == nil {
@@ -587,7 +586,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		}
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -597,7 +596,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 	if err != nil {
 		return nil, err
 	}
-	req.Image.InitFromBytes(nil, "") //remove image data
+	req.Image.InitFromBytes(nil, "") // remove image data
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-video", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
@@ -617,7 +616,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 }
 
 func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.Upscale(ctx, req)
 		if err == nil {
@@ -631,7 +630,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		}
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -641,7 +640,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	if err != nil {
 		return nil, err
 	}
-	req.Image.InitFromBytes(nil, "") //remove image data
+	req.Image.InitFromBytes(nil, "") // remove image data
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "upscale", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
@@ -661,13 +660,13 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 }
 
 func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		//no file response to save, response is text sent back to gateway
+		// no file response to save, response is text sent back to gateway
 		return orch.node.AudioToText(ctx, req)
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	audioBytes, err := req.Audio.Bytes()
 	if err != nil {
 		return nil, err
@@ -677,7 +676,7 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 	if err != nil {
 		return nil, err
 	}
-	req.Audio.InitFromBytes(nil, "") //remove audio data
+	req.Audio.InitFromBytes(nil, "") // remove audio data
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "audio-to-text", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
@@ -697,13 +696,13 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 }
 
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		//no file response to save, response is text sent back to gateway
+		// no file response to save, response is text sent back to gateway
 		return orch.node.SegmentAnything2(ctx, req)
 	}
 
-	//remote ai worker proceses job
+	// remote ai worker proceses job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -713,7 +712,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 	if err != nil {
 		return nil, err
 	}
-	req.Image.InitFromBytes(nil, "") //remove image data
+	req.Image.InitFromBytes(nil, "") // remove image data
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "segment-anything-2", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
 	if err != nil {
@@ -734,9 +733,9 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 
 // Return type is LLMResponse, but a stream is available as well as chan(string)
 func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
-	//local AIWorker processes job if combined orchestrator/ai worker
+	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		//no file response to save, response is text sent back to gateway
+		// no file response to save, response is text sent back to gateway
 		return orch.node.AIWorker.LLM(ctx, req)
 	}
 
@@ -745,7 +744,7 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 		return nil, err
 	}
 
-	//non streaming response
+	// non streaming response
 	if _, ok := res.Results.(worker.LLMResponse); ok {
 		res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
 		if err != nil {

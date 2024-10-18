@@ -92,7 +92,7 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 		w.Write([]byte("result binary data"))
 	}))
 	defer resultData.Close()
-	//sending bad request
+	// sending bad request
 	notify := createAIJob(742, "text-to-image-invalid", "livepeer/model1", "")
 
 	wkr := stubAIWorker{}
@@ -112,7 +112,7 @@ func TestAIWorkerResults_BadRequestType(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-	//send empty request data
+	// send empty request data
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)
 

@@ -742,11 +742,10 @@ func TestCapability_String(t *testing.T) {
 
 func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	assert := assert.New(t)
-	//create capabilities
 	capabilities := []Capability{Capability_TextToImage}
 	mandatories := []Capability{4}
 
-	//create model constraints
+	// create model constraints
 	model_id1 := "Model1"
 	model_id2 := "Model2"
 	constraints := make(PerCapabilityConstraints)
@@ -756,7 +755,7 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	model1Constraint := ModelConstraint{Warm: true, Capacity: 1}
 	constraints[Capability_TextToImage].Models[model_id1] = &ModelConstraint{Warm: true, Capacity: 1}
 
-	//create capabilities with only Model1
+	// create capabilities with only Model1
 	caps := NewCapabilities(capabilities, mandatories)
 	caps.SetPerCapabilityConstraints(constraints)
 	_, model1ConstraintExists := caps.constraints.perCapability[Capability_TextToImage].Models[model_id1]
@@ -768,7 +767,7 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	model2Constraint := ModelConstraint{Warm: true, Capacity: 1}
 	newModelConstraint.Models[model_id2] = &model2Constraint
 
-	//add another model
+	// add another model
 	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
 
 	checkCapsConstraints := caps.constraints.perCapability
@@ -776,28 +775,28 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	checkConstraint, model2ConstraintExists := checkCapsConstraints[Capability_TextToImage].Models[model_id2]
 
 	assert.True(model2ConstraintExists)
-	//check that ModelConstraint values are the same but for two different modelIDs
+	// check that ModelConstraint values are the same but for two different modelIDs
 	assert.Equal(&model2Constraint, checkConstraint)
 	assert.Equal(model1Constraint, model2Constraint)
 
-	//add another to Model2
+	// add another to Model2
 	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
 	checkCapsConstraints = caps.constraints.perCapability
-	//check capacity increased to 2
+	// check capacity increased to 2
 	checkConstraintCapacity := checkCapsConstraints[Capability_TextToImage].Models["Model2"].Capacity
 	assert.Equal(checkConstraintCapacity, 2)
-	//confirm Model1 capacity is still 1
+	// confirm Model1 capacity is still 1
 	checkConstraintCapacity = checkCapsConstraints[Capability_TextToImage].Models["Model1"].Capacity
 	assert.Equal(checkConstraintCapacity, 1)
 
-	//remove constraint and make sure is 1
+	// remove constraint and make sure is 1
 	removeModel2Constraint := ModelConstraint{Warm: true, Capacity: 1}
 	newModelConstraint.Models[model_id2] = &removeModel2Constraint
 	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
 	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 2)
 	assert.Equal(caps.constraints.perCapability[Capability_TextToImage].Models["Model2"].Capacity, 1)
 
-	//remove constraint and make sure is removed from constraints
+	// remove constraint and make sure is removed from constraints
 	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
 	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 1)
 	_, exists := caps.constraints.perCapability[Capability_TextToImage].Models["Model2"]
@@ -805,7 +804,7 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 }
 
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
-	//the capability should be added by AddCapacity
+	// the capability should be added by AddCapacity
 	for modelID, modelConstraint := range constraint.Models {
 		if _, ok := c.perCapability[cap]; ok {
 			if _, ok := c.perCapability[cap].Models[modelID]; ok {
@@ -824,7 +823,7 @@ func (c *Constraints) addCapabilityConstraints(cap Capability, constraint Capabi
 }
 
 func (c *Constraints) removeCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
-	//the capability should be removed by RemoveCapacity
+	// the capability should be removed by RemoveCapacity
 	for modelID, modelConstraint := range constraint.Models {
 		if _, ok := c.perCapability[cap]; ok {
 			if _, ok := c.perCapability[cap].Models[modelID]; ok {

@@ -45,7 +45,6 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 		glog.Errorf("err=%q", errSecret.Error())
 		return errSecret
 	}
-
 	// handle case of legacy Transcoder which do not advertise capabilities
 	if req.Capabilities == nil {
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
@@ -151,18 +150,17 @@ type AIJobRequestData struct {
 }
 
 func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
-
 	var contentType string
 	var body bytes.Buffer
 	var addlResultData interface{}
 
-	//TODO: consider adding additional information to context for tracing back to Orchestrator and debugging
+	// TODO: consider adding additional information to context for tracing back to Orchestrator and debugging
 
 	ctx := clog.AddVal(context.Background(), "taskId", strconv.FormatInt(notify.TaskId, 10))
 	clog.Infof(ctx, "Received AI job, validating request")
 
 	var processFn func(context.Context) (interface{}, error)
-	var resp interface{} //this is used for video as well because Frames received are transcoded to an MP4
+	var resp interface{} // this is used for video as well because Frames received are transcoded to an MP4
 	var err error
 	var resultType string
 	var reqOk bool
@@ -301,10 +299,10 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		return
 	}
 
-	//process the request
+	// process the request
 	clog.Infof(ctx, "Processing AI job pipeline=%s modelID=%s", notify.AIJobData.Pipeline, modelID)
 
-	//reserve the capabilities to process this request, release after work is done
+	// reserve the capabilities to process this request, release after work is done
 	err = n.ReserveAICapability(notify.AIJobData.Pipeline, modelID)
 	if err != nil {
 		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
@@ -312,7 +310,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		return
 	}
 
-	//do the work and release the GPU for next job
+	// do the work and release the GPU for next job
 	resp, err = processFn(ctx)
 	n.ReleaseAICapability(notify.AIJobData.Pipeline, modelID)
 
@@ -340,15 +338,15 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			}
 		}
 
-		//create the multipart/mixed response to send to Orchestrator
-		//Parse data from runner to send back to orchestrator
-		//  ***-to-image gets base64 encoded string of binary image from runner
-		//  image-to-video processes frames from runner and returns ImageResponse with url to local file
+		// create the multipart/mixed response to send to Orchestrator
+		// Parse data from runner to send back to orchestrator
+		//   ***-to-image gets base64 encoded string of binary image from runner
+		//   image-to-video processes frames from runner and returns ImageResponse with url to local file
 		imgResp, isImg := resp.(*worker.ImageResponse)
 		if isImg {
 			var imgBuf bytes.Buffer
 			for i, image := range imgResp.Images {
-				//read the data to binary and replace the url
+				// read the data to binary and replace the url
 				length := 0
 				switch resultType {
 				case "image/png":
@@ -359,9 +357,9 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 						return
 					}
 					length = imgBuf.Len()
-					imgResp.Images[i].Url = fmt.Sprintf("%v.png", core.RandomManifestID()) //update json response to track filename attached
+					imgResp.Images[i].Url = fmt.Sprintf("%v.png", core.RandomManifestID()) // update json response to track filename attached
 
-					//create the part
+					// create the part
 					w.SetBoundary(boundary)
 					hdrs := textproto.MIMEHeader{
 						"Content-Type":        {resultType},
@@ -377,8 +375,8 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					io.Copy(fw, &imgBuf)
 					imgBuf.Reset()
 				case "video/mp4":
-					//transcoded result is saved as local file  TODO: enhance this to return the []bytes from transcoding in n.ImageToVideo
-					//create the part
+					// transcoded result is saved as local file
+					// TODO: enhance this to return the []bytes from transcoding in n.ImageToVideo create the part
 					f, err := os.ReadFile(image.Url)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
@@ -402,12 +400,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					io.Copy(fw, bytes.NewBuffer(f))
 				}
 			}
-			//update resp for image.Url updates
+			// update resp for image.Url updates
 			resp = imgResp
 		}
 
-		//add the json to the response
-		//   audio-to-text has no file attachment because the response is json
+		// add the json to the response
+		// NOTE: audio-to-text has no file attachment because the response is json
 		jsonResp, err := json.Marshal(resp)
 
 		if err != nil {
@@ -456,7 +454,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pi
 	req.Header.Set("TaskId", taskId)
 	req.Header.Set("Pipeline", pipeline)
 
-	//TODO consider adding additional information in response header from the addlData field (e.g. transcoding includes Pixels)
+	// TODO consider adding additional information in response header from the addlData field (e.g. transcoding includes Pixels)
 
 	uploadStart := time.Now()
 	resp, err := httpc.Do(req)

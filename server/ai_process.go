@@ -117,12 +117,12 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		writer := bufio.NewWriter(&data)
 		err := worker.ReadImageB64DataUrl(media.Url, writer)
 		if err == nil {
-			//orchestrator sent base64 encoded result in .Url
+			// orchestrator sent base64 encoded result in .Url
 			name = string(core.RandomManifestID()) + ".png"
 			writer.Flush()
 			result = data.Bytes()
 		} else {
-			//orchestrator sent download url, get the data
+			// orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
 			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {
@@ -258,12 +258,12 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		writer := bufio.NewWriter(&data)
 		err := worker.ReadImageB64DataUrl(media.Url, writer)
 		if err == nil {
-			//orchestrator sent bae64 encoded result in .Url
+			// orchestrator sent bae64 encoded result in .Url
 			name = string(core.RandomManifestID()) + ".png"
 			writer.Flush()
 			result = data.Bytes()
 		} else {
-			//orchestrator sent download url, get the data
+			// orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
 			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {
@@ -552,12 +552,12 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.GenU
 		writer := bufio.NewWriter(&data)
 		err := worker.ReadImageB64DataUrl(media.Url, writer)
 		if err == nil {
-			//orchestrator sent bae64 encoded result in .Url
+			// orchestrator sent bae64 encoded result in .Url
 			name = string(core.RandomManifestID()) + ".png"
 			writer.Flush()
 			result = data.Bytes()
 		} else {
-			//orchestrator sent download url, get the data
+			// orchestrator sent download url, get the data
 			name = filepath.Base(media.Url)
 			result, err = core.DownloadData(ctx, media.Url)
 			if err != nil {

@@ -67,13 +67,13 @@ func PipelineToCapability(pipeline string) (Capability, error) {
 type AIModelConfig struct {
 	Pipeline string `json:"pipeline"`
 	ModelID  string `json:"model_id"`
-	//used by aiworker
+	// used by worker
 	URL               string                   `json:"url,omitempty"`
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
 	Capacity          int                      `json:"capacity,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
-	//used by orchestrator
+	// used by orchestrator
 	Gateway       string  `json:"gateway"`
 	PricePerUnit  JSONRat `json:"price_per_unit,omitempty"`
 	PixelsPerUnit JSONRat `json:"pixels_per_unit,omitempty"`
