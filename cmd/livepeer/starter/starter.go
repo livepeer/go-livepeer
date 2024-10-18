@@ -884,6 +884,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				return
 			}
 
+			//Validate ticket EV by largest price offered by the orchestrator
+			largestPrice := getLargestPrice(n, constraints, gatewayPrices)
+
+			if new(big.Int).Quo(ev, largestPrice).Cmp(big.NewInt(629145)) < 0 {
+				glog.Errorf("Ticket EV ratio to largest price is too low. Restart the node with a valid value for -ticketEV, consider a ticket EV of %v or higher", new(big.Int).Mul(big.NewInt(629145), ev))
+				return
+			}
+
 			if err := setupOrchestrator(n, recipientAddr); err != nil {
 				glog.Errorf("Error setting up orchestrator: %v", err)
 				return
@@ -1648,6 +1656,37 @@ func parseOrchAddrs(addrs string) []*url.URL {
 		}
 	}
 	return res
+}
+
+// Returns the largest from from AI constraints, gateway prices, and default transcoding price
+func getLargestPrice(n *core.LivepeerNode, constraints map[core.Capability]*core.Constraints, gatewayPrices []GatewayPrice) *big.Int {
+	var largestPrice *big.Rat
+	for capability, constraint := range constraints {
+		for model, _ := range constraint.Models {
+			basePrice := n.GetBasePriceForCap("default", capability, model)
+			if largestPrice == nil || basePrice.Cmp(largestPrice) > 0 {
+				largestPrice = basePrice
+			}
+		}
+	}
+
+	for _, p := range gatewayPrices {
+		price := big.NewRat(p.PricePerUnit, p.PixelsPerUnit)
+		if largestPrice == nil || price.Cmp(largestPrice) > 0 {
+			largestPrice = price
+		}
+	}
+
+	defaultTranscodePrice := n.GetBasePrice("default")
+	if defaultTranscodePrice != nil {
+		if (defaultTranscodePrice).Cmp(largestPrice) > 0 {
+			largestPrice = defaultTranscodePrice
+		}
+	}
+
+	largestPriceInt := new(big.Int)
+	largestPriceInt.SetString(largestPrice.FloatString(0), 10)
+	return largestPriceInt
 }
 
 func parseOrchBlacklist(b *string) []string {
