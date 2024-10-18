@@ -14,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-tools/drivers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
@@ -370,17 +371,26 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 		requestID := string(core.RandomManifestID())
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request")
+		clog.Infof(ctx, "Received live video AI request for %s", streamName)
+
+		// Kick off the RTMP pull and segmentation as soon as possible
+		ssr := media.NewSwitchableSegmentReader()
+		go func() {
+			media.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			// TODO handle stream stops
+		}()
+
+		params := aiRequestParams{
+			node:          ls.LivepeerNode,
+			os:            drivers.NodeStorage.NewSession(requestID),
+			sessManager:   ls.AISessionManager,
+			segmentReader: ssr,
+		}
+
 		req := worker.StartLiveVideoToVideoFormdataRequestBody{
 			// TODO set model and initial parameters here if necessary (eg, prompt)
 		}
-		resp, err := processAIRequest(ctx, params, req)
-		fmt.Println("stream", streamName, "resp", resp, "error", err)
+		processAIRequest(ctx, params, req)
 	})
 }

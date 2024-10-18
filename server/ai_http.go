@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 )
@@ -48,6 +49,8 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
+	trickle.ConfigureServerWithMux(lp.transRPC)
+
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
@@ -55,7 +58,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartVideoToVideo()))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -216,7 +219,7 @@ func (h *lphttp) LLM() http.Handler {
 	})
 }
 
-func (h *lphttp) StartVideoToVideo() http.Handler {
+func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// skipping handleAIRequest for now until we have payments
@@ -224,23 +227,20 @@ func (h *lphttp) StartVideoToVideo() http.Handler {
 		// whats the point of openapi if we have to do this manually
 		var (
 			mid    = string(core.RandomManifestID())
-			pubUrl = "/ai/live-video/" + mid
-			subUrl = pubUrl + "/out"
+			pubUrl = trickle.BaseServerPath + mid
+			subUrl = pubUrl + "-out"
 		)
-		jsonData, err := json.Marshal(&worker.StartLiveVideoToVideoResponse{
-			JSON200: &worker.ResponseStartVideoToVideo{
+		jsonData, err := json.Marshal(
+			&worker.ResponseStartVideoToVideo{
 				PublishUrl:   &pubUrl,
 				SubscribeUrl: &subUrl,
-			},
-		})
+			})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		respondJsonOk(w, jsonData)
 	})
 }
 
