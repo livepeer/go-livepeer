@@ -1205,13 +1205,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
-				// external containers are expected to manage multiple runners and auto-scale to extent of supply.
-				// increase capacity to upper limit per external container
+				// External containers do auto-scale; default to 1 or use provided capacity.
 				if config.URL != "" && config.Capacity != 0 {
 					modelConstraint.Capacity = config.Capacity
 				}
-				// If the config contains a URL we call Warm() anyway because AIWorker will just register
-				// the endpoint for an external container
+
 				if config.Warm || config.URL != "" {
 					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
@@ -1228,33 +1226,32 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
 				}
 
-				//add capabilities and constraints if aiworker
+				// Add capability and model constraints.
 				if _, hasCap := capabilityConstraints[pipelineCap]; !hasCap {
 					aiCaps = append(aiCaps, pipelineCap)
 					capabilityConstraints[pipelineCap] = &core.CapabilityConstraints{
 						Models: make(map[string]*core.ModelConstraint),
 					}
 				}
-
-				if _, hasModel := capabilityConstraints[pipelineCap].Models[config.ModelID]; !hasModel {
+				model, exists := capabilityConstraints[pipelineCap].Models[config.ModelID]
+				if !exists {
 					capabilityConstraints[pipelineCap].Models[config.ModelID] = modelConstraint
+				} else if model.Warm == config.Warm {
+					model.Capacity += modelConstraint.Capacity
 				} else {
-					if capabilityConstraints[pipelineCap].Models[config.ModelID].Warm == config.Warm {
-						capabilityConstraints[pipelineCap].Models[config.ModelID].Capacity += modelConstraint.Capacity
-					} else {
-						panic(fmt.Errorf("cannot have same model_id (%v) as cold and warm in same ai worker, please fix aiModels json config", config.ModelID))
-					}
+					panic(fmt.Errorf("Cannot have same model_id (%v) as cold and warm in same AI worker, please fix aiModels json config", config.ModelID))
 				}
 
 				glog.V(6).Infof("Capability %s (ID: %v) advertised with model constraint %s", config.Pipeline, pipelineCap, config.ModelID)
 			}
 
-			//orchestrator and combined orchestrator/aiworker set pricing
-			//remote ai worker is always offchain and does not set pricing
+			// Orch and combined Orch/AIWorker set the price. Remote AIWorker is always
+			// offchain and does not set the price.
 			if *cfg.Network != "offchain" {
 				if config.Gateway == "" {
 					config.Gateway = "default"
 				}
+
 				// Get base pixels and price per unit.
 				pixelsPerUnitBase, ok := new(big.Rat).SetString(*cfg.PixelsPerUnit)
 				if !ok || !pixelsPerUnitBase.IsInt() {
@@ -1274,7 +1271,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pricePerUnitBase = pricePerUnit
 					currencyBase = currency
 				}
-				//set price for capability
+
+				// Set price for capability.
 				var autoPrice *core.AutoConvertedPrice
 				pixelsPerUnit := config.PixelsPerUnit.Rat
 				if config.PixelsPerUnit.Rat == nil {
@@ -1311,8 +1309,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 	} else {
-		if n.NodeType == core.OrchestratorNode || n.NodeType == core.AIWorkerNode {
-			glog.Error("The '-aiModels' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
+		if n.NodeType == core.AIWorkerNode {
+			glog.Error("The '-aiWorker' flag was set, but no model configuration was provided. Please specify the model configuration using the '-aiModels' flag.")
 			return
 		}
 	}
@@ -1472,7 +1470,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	} else if n.NodeType == core.AIWorkerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
-		//need to have default Capabilities if not running transcoder
+		// Need to have default Capabilities if not running transcoder.
 		if !*cfg.Transcoder {
 			aiCaps = append(aiCaps, core.DefaultCapabilities()...)
 		}
@@ -1484,8 +1482,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
 	if n.AIWorkerManager != nil {
-		// Set min version constraint to the orchestrator version
-		// to verify vesion of ai workers connecting
+		// Set min version constraint to prevent incompatible workers.
 		n.Capabilities.SetMinVersionConstraint(core.LivepeerVersion)
 	}
 
