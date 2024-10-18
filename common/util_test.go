@@ -519,3 +519,21 @@ func TestValidateServiceURI(t *testing.T) {
 		}
 	}
 }
+func TestExtensionByType(t *testing.T) {
+	assert := assert.New(t)
+
+	// Test valid content types
+	contentTypes := []string{"image/png", "video/mp4", "video/mp2t"}
+	expectedExtensions := []string{".png", ".mp4", ".ts"}
+
+	for i, contentType := range contentTypes {
+		ext, err := ExtensionByType(contentType)
+		assert.Nil(err)
+		assert.Equal(expectedExtensions[i], ext)
+	}
+
+	// Test invalid content type
+	invalidContentType := "invalid/type"
+	_, err := ExtensionByType(invalidContentType)
+	assert.Equal(ErrNoExtensionsForType, err)
+}
