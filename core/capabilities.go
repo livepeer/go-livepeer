@@ -15,8 +15,7 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm     bool
-	Capacity int
+	Warm bool
 }
 
 type Capability int
@@ -117,7 +116,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LLM:                        "Llm",
+	Capability_LLM:                        "Large language model",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -494,8 +493,7 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 		models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
 		for modelID, modelConstraint := range constraints.Models {
 			models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
-				Warm:     modelConstraint.Warm,
-				Capacity: uint32(modelConstraint.Capacity),
+				Warm: modelConstraint.Warm,
 			}
 		}
 
@@ -536,7 +534,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 	for capabilityInt, constraints := range caps.Constraints.PerCapability {
 		models := make(map[string]*ModelConstraint)
 		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity)}
+			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
 		}
 
 		coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{

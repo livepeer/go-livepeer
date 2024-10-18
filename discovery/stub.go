@@ -103,6 +103,3 @@ func (s *stubCapabilities) CompatibleWith(caps *net.Capabilities) bool {
 func (s *stubCapabilities) LegacyOnly() bool {
 	return s.isLegacy
 }
-func (s *stubCapabilities) ToNetCapabilities() *net.Capabilities {
-	return &net.Capabilities{Bitstring: capCompatString}
-}
