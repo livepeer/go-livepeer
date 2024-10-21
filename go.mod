@@ -1,6 +1,6 @@
 module github.com/livepeer/go-livepeer
 
-go 1.21.5
+go 1.22.8
 
 replace github.com/livepeer/ai-worker => github.com/j0sh/livepeer-ai-worker v0.0.0-20241017214425-b4f177ea52a7
 

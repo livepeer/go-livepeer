@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
@@ -77,6 +79,9 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+
+	// For live video pipelines
+	segmentReader *media.SwitchableSegmentReader
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -878,7 +883,35 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, err
 	}
 	if resp.JSON200 != nil {
-		fmt.Println("publish", resp.JSON200.PublishUrl, "subscribe", resp.JSON200.SubscribeUrl)
+		// append orch hostname to the given url if necessary
+		appendHostname := func(urlPath *string) (*url.URL, error) {
+			if urlPath == nil {
+				return nil, fmt.Errorf("invalid url from orch")
+			}
+			u := *urlPath
+			pu, err := url.Parse(u)
+			if err != nil {
+				return nil, err
+			}
+			if pu.Hostname() != "" {
+				// url has a hostname already so use it
+				return pu, nil
+			}
+			// no hostname, so append one
+			u = sess.Transcoder() + u
+			return url.Parse(u)
+		}
+		pub, err := appendHostname(resp.JSON200.PublishUrl)
+		if err != nil {
+			return nil, fmt.Errorf("pub url - %w", err)
+		}
+		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
+		if err != nil {
+			return nil, fmt.Errorf("sub url %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
+		startTricklePublish(pub, params)
+		startTrickleSubscribe(sub)
 	}
 	if resp.JSON400 != nil {
 		fmt.Println("json400", resp.JSON400)
@@ -886,8 +919,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	if resp.JSON500 != nil {
 		fmt.Println("json500", resp.JSON500)
 	}
-	fmt.Println("body is", string(resp.Body))
-	// TODO check urls and add sess.Transcoder to the host if necessary
 	return resp, nil
 }
 
