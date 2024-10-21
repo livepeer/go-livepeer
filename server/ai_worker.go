@@ -58,13 +58,13 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 
 // RunAIWorker is main routing of standalone aiworker
 // Exiting it will terminate executable
-func RunAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.Capabilities) {
+func RunAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering AI worker to ", orchAddr)
-		err := runAIWorker(n, orchAddr, capacity, caps)
+		err := runAIWorker(n, orchAddr, caps)
 		glog.Info("Unregistering AI worker: ", err)
 		if _, fatal := err.(core.RemoteAIWorkerFatalError); fatal {
 			glog.Info("Terminating AI Worker because of ", err)
@@ -92,7 +92,7 @@ func checkAIWorkerError(err error) error {
 	return err
 }
 
-func runAIWorker(n *core.LivepeerNode, orchAddr string, capacity int, caps *net.Capabilities) error {
+func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -152,9 +152,6 @@ type AIJobRequestData struct {
 func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify *net.NotifyAIJob) {
 	var contentType string
 	var body bytes.Buffer
-	var addlResultData interface{}
-
-	// TODO: consider adding additional information to context for tracing back to Orchestrator and debugging
 
 	ctx := clog.AddVal(context.Background(), "taskId", strconv.FormatInt(notify.TaskId, 10))
 	clog.Infof(ctx, "Received AI job, validating request")
@@ -171,7 +168,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	var reqData AIJobRequestData
 	err = json.Unmarshal(notify.AIJobData.RequestData, &reqData)
 	if err != nil {
-		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, err)
+		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
 		return
 	}
 
@@ -295,7 +292,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	if !reqOk {
 		resp = nil
 		err = fmt.Errorf("AI request validation failed for %v pipeline err=%v", notify.AIJobData.Pipeline, err)
-		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, err)
+		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
 		return
 	}
 
@@ -306,7 +303,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	err = n.ReserveAICapability(notify.AIJobData.Pipeline, modelID)
 	if err != nil {
 		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
-		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, core.ErrNoCompatibleWorkersAvailable)
+		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, core.ErrNoCompatibleWorkersAvailable)
 		return
 	}
 
@@ -319,7 +316,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if _, ok := err.(core.UnrecoverableError); ok {
 			defer panic(err)
 		}
-		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, err)
+		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
 		return
 	}
 
@@ -330,10 +327,10 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		if resultType == "text/event-stream" {
 			streamChan, ok := resp.(<-chan worker.LlmStreamChunk)
 			if ok {
-				sendStreamingAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, resultType, streamChan, addlResultData, err)
+				sendStreamingAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, httpc, resultType, streamChan)
 				return
 			} else {
-				sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, fmt.Errorf("Streaming not supported!"))
+				sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, fmt.Errorf("streaming not supported"))
 				return
 			}
 		}
@@ -353,7 +350,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					err := worker.ReadImageB64DataUrl(image.Url, &imgBuf)
 					if err != nil {
 						clog.Errorf(ctx, "AI Worker failed to save image from data url err=%q", err)
-						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, err)
+						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
 						return
 					}
 					length = imgBuf.Len()
@@ -369,7 +366,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, addlResultData, err)
+						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
 						return
 					}
 					io.Copy(fw, &imgBuf)
@@ -380,7 +377,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					f, err := os.ReadFile(image.Url)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, addlResultData, err)
+						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
 						return
 					}
 					defer os.Remove(image.Url)
@@ -394,7 +391,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
 						clog.Errorf(ctx, "Could not create multipart part err=%q", err)
-						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, addlResultData, err)
+						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
 						return
 					}
 					io.Copy(fw, bytes.NewBuffer(f))
@@ -410,7 +407,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 		if err != nil {
 			clog.Errorf(ctx, "Could not marshal json response err=%q", err)
-			sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, addlResultData, err)
+			sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
 			return
 		}
 
@@ -428,11 +425,11 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	w.Close()
 	contentType = "multipart/mixed; boundary=" + boundary
-	sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, addlResultData, nil)
+	sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, nil)
 }
 
 func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pipeline string, modelID string, httpc *http.Client,
-	contentType string, body *bytes.Buffer, addlData interface{}, err error,
+	contentType string, body *bytes.Buffer, err error,
 ) {
 	taskId := clog.GetVal(ctx, "taskId")
 	clog.Infof(ctx, "sending results back to Orchestrator")
@@ -479,8 +476,8 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pi
 	}
 }
 
-func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pipeline string, modelID string, httpc *http.Client,
-	contentType string, streamChan <-chan worker.LlmStreamChunk, addlData interface{}, err error,
+func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pipeline string, httpc *http.Client,
+	contentType string, streamChan <-chan worker.LlmStreamChunk,
 ) {
 	clog.Infof(ctx, "sending streaming results back to Orchestrator")
 	taskId := clog.GetVal(ctx, "taskId")
