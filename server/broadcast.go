@@ -127,7 +127,7 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 		// No price set for capability
 		return nil
 	}
-	if price, modelOk := models[modelID]; modelOk {
+	if price, modelOk := models[modelID]; modelOk && price != nil {
 		return price.Value()
 	}
 	if defaultPrice, hasDefault := models["default"]; hasDefault {
