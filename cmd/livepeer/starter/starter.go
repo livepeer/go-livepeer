@@ -1464,10 +1464,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		// take the port to listen to from the service URI
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "", n.GetServiceURI().Port())
 		if !*cfg.Transcoder && !*cfg.AIWorker {
-			if *cfg.AIModels != "" && n.OrchSecret == "" {
-				glog.Info("Running an orchestrator in AI External Container mode")
-			} else {
-				glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+			if n.OrchSecret == "" {
+				if *cfg.AIModels != "" {
+					glog.Info("Running an orchestrator in AI External Container mode")
+				} else if n.OrchSecret == "" {
+					glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
+				}
 			}
 		}
 	} else if n.NodeType == core.TranscoderNode {

@@ -183,39 +183,48 @@ func TestMinLSSelector(t *testing.T) {
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 2)
 
-	// Set sess1.LatencyScore to good enough
-	sess1.LatencyScore = 0.9
+	// Set sess1.LatencyScore to not be good enough
+	sess1.LatencyScore = 1.1
 	sel.Complete(sess1)
 	assert.Equal(sel.Size(), 3)
 	assert.Equal(len(sel.unknownSessions), 2)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
-	// Select sess1 because it's a known session with good enough latency score
-	sess := sel.Select(context.TODO())
-	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 2)
-	assert.Equal(sel.knownSessions.Len(), 0)
-
-	// Set sess.LatencyScore to not be good enough
-	sess.LatencyScore = 1.1
-	sel.Complete(sess)
-	assert.Equal(sel.Size(), 3)
-	assert.Equal(len(sel.unknownSessions), 2)
-	assert.Equal(sel.knownSessions.Len(), 1)
-
-	// Select from unknownSessions, because sess2 does not have a good enough latency score
-	sess = sel.Select(context.TODO())
-	sess.LatencyScore = 1.1
-	sel.Complete(sess)
+	// Select from unknownSessions
+	sess2 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
-	// Select the last unknown session
-	sess = sel.Select(context.TODO())
-	assert.Equal(sel.Size(), 0)
+	// Set sess2.LatencyScore to be good enough
+	sess2.LatencyScore = .9
+	sel.Complete(sess2)
+	assert.Equal(sel.Size(), 3)
+	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(sel.knownSessions.Len(), 2)
+
+	// Select from knownSessions
+	knownSess := sel.Select(context.TODO())
+	assert.Equal(sel.Size(), 2)
+	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(sel.knownSessions.Len(), 1)
+	assert.Equal(knownSess, sess2)
+
+	// Set knownSess.LatencyScore to not be good enough
+	knownSess.LatencyScore = 1.1
+	sel.Complete(knownSess)
+	// Clear unknownSessions
+	sess := sel.Select(context.TODO())
+	sess.LatencyScore = 2.1
+	sel.Complete(sess)
 	assert.Equal(len(sel.unknownSessions), 0)
-	assert.Equal(sel.knownSessions.Len(), 0)
+	assert.Equal(sel.knownSessions.Len(), 3)
+
+	// Select from knownSessions
+	knownSess = sel.Select(context.TODO())
+	assert.Equal(sel.Size(), 2)
+	assert.Equal(len(sel.unknownSessions), 0)
+	assert.Equal(sel.knownSessions.Len(), 2)
 
 	sel.Clear()
 	assert.Zero(sel.Size())
