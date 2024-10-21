@@ -1232,15 +1232,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capabilityConstraints[pipelineCap] = &core.CapabilityConstraints{
 						Models: make(map[string]*core.ModelConstraint),
 					}
-				case "live-video-to-video":
-					_, ok := capabilityConstraints[core.Capability_LiveVideoToVideo]
-					if !ok {
-						aiCaps = append(aiCaps, core.Capability_LiveVideoToVideo)
-						capabilityConstraints[core.Capability_LiveVideoToVideo] = &core.CapabilityConstraints{
-							Models: make(map[string]*core.ModelConstraint),
-						}
-					}
-					capabilityConstraints[core.Capability_LiveVideoToVideo].Models[config.ModelID] = modelConstraint
 				}
 				model, exists := capabilityConstraints[pipelineCap].Models[config.ModelID]
 				if !exists {
