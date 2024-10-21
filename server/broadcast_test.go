@@ -1824,3 +1824,122 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 	require.Greater(t, float32(shouldSkipCount), float32(numTests)*(1-2/float32(verificationFreq)))
 	require.Less(t, float32(shouldSkipCount), float32(numTests)*(1-0.5/float32(verificationFreq)))
 }
+
+func TestMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if max price is not set.
+	assert.Nil(t, cfg.MaxPrice())
+
+	// Should return correct price if max price is set.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.MaxPrice())
+
+	// Should update the max price correctly.
+	newPrice := core.NewFixedPrice(big.NewRat(20, 1))
+	cfg.SetMaxPrice(newPrice)
+	assert.Equal(t, big.NewRat(20, 1), cfg.MaxPrice())
+
+	// Should handle nil value gracefully.
+	cfg.SetMaxPrice(nil)
+	assert.Nil(t, cfg.MaxPrice())
+}
+
+func TestCapabilityMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if no price is set for the capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(core.Capability(1), "model1"))
+
+	// Should set and return the correct price for a capability and model.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	assert.Equal(t, big.NewRat(5, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+	assert.Equal(t, big.NewRat(7, 1), cfg.getCapabilityMaxPrice(capability2, modelID2))
+
+	// Should return default price when no specific model price is set.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	assert.Equal(t, big.NewRat(3, 1), cfg.getCapabilityMaxPrice(capability1, "nonexistentModel"))
+
+	// Should return nil when no model or default price is set for a capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability2, "nonexistentModel"))
+
+	// Should update the price for a capability and model correctly.
+	newPrice1 := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, newPrice1)
+	assert.Equal(t, big.NewRat(10, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+
+	// Should handle nil value gracefully.
+	capability3 := core.Capability(3)
+	modelID23 := "model3"
+	cfg.SetCapabilityMaxPrice(capability3, "model3", nil)
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability3, modelID23))
+}
+
+func TestGetCapabilitiesMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if no max price is set and no capabilities are provided.
+	assert.Nil(t, cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Should return the max price if no capabilities are provided.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Create capabilities object.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	netCaps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID1: {},
+					},
+				},
+				uint32(capability2): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID2: {},
+					},
+				},
+			},
+		},
+	}
+	capabilities := &StubCapabilityComparator{NetCaps: netCaps}
+
+	// Should return the sum of prices for the given capabilities.
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	expectedPrice := big.NewRat(12, 1)
+	assert.Equal(t, expectedPrice, cfg.GetCapabilitiesMaxPrice(capabilities))
+
+	// Should test fallback to "default" model price.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	netCapsWithDefault := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"nonexistentModel": {},
+					},
+				},
+			},
+		},
+	}
+	capabilitiesWithDefault := &StubCapabilityComparator{NetCaps: netCapsWithDefault}
+	assert.Equal(t, big.NewRat(3, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesWithDefault))
+}

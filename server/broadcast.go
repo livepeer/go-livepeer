@@ -63,7 +63,6 @@ type BroadcastConfig struct {
 func newBroadcastConfig() *BroadcastConfig {
 	maxPrices := make(map[core.Capability]map[string]*core.AutoConvertedPrice)
 	models := make(map[string]*core.AutoConvertedPrice)
-	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
 	maxPrices[core.Capability_Unused] = models
 	return &BroadcastConfig{
 		maxPricePerCapability: maxPrices,
@@ -128,7 +127,7 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 		// No price set for capability
 		return nil
 	}
-	if price, modelOk := models[modelID]; modelOk {
+	if price, modelOk := models[modelID]; modelOk && price != nil {
 		return price.Value()
 	}
 	if defaultPrice, hasDefault := models["default"]; hasDefault {
