@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -696,4 +698,86 @@ func (s *StubAIWorkerServer) Send(n *net.NotifyAIJob) error {
 
 	return nil
 
+}
+
+// Utility function to create a temporary file for file-based configurations
+func mockFile(t *testing.T, content string) string {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "config.json")
+	err := os.WriteFile(filePath, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write mock file: %v", err)
+	}
+	return filePath
+}
+
+func TestParseAIModelConfigs(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		fileData    string
+		expected    []AIModelConfig
+		expectedErr string
+	}{{
+		name:  "Valid Inline String Config",
+		input: "pipeline1:model1:true,pipeline2:model2:false",
+		expected: []AIModelConfig{
+			{Pipeline: "pipeline1", ModelID: "model1", Warm: true},
+			{Pipeline: "pipeline2", ModelID: "model2", Warm: false},
+		},
+	},
+		{
+			name:        "Invalid Inline String Config Missing Parts",
+			input:       "pipeline1:model1",
+			expectedErr: "invalid AI model config expected <pipeline>:<model_id>:<warm>",
+		},
+		{
+			name:     "Valid File-Based Config",
+			fileData: `[{"pipeline": "pipeline1", "model_id": "model1", "warm": true}, {"pipeline": "pipeline2", "model_id": "model2", "warm": false}]`,
+			expected: []AIModelConfig{
+				{Pipeline: "pipeline1", ModelID: "model1", Warm: true},
+				{Pipeline: "pipeline2", ModelID: "model2", Warm: false},
+			},
+		},
+		{
+			name:        "Invalid File Config Corrupted JSON",
+			fileData:    `[{"pipeline": "pipeline1", "model_id": "model1", "warm": true`,
+			expectedErr: "unexpected end of JSON input",
+		},
+		{
+			name:        "File Not Found",
+			input:       "nonexistent.json",
+			expectedErr: "invalid AI model config expected <pipeline>:<model_id>:<warm>",
+		},
+		{
+			name:        "Invalid Boolean Value in Inline String Config",
+			input:       "pipeline1:model1:invalid_bool",
+			expectedErr: "strconv.ParseBool: parsing \"invalid_bool\": invalid syntax",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result []AIModelConfig
+			var err error
+
+			// Mock file handling if fileData is provided
+			if tt.fileData != "" {
+				mockFilePath := mockFile(t, tt.fileData)
+				result, err = ParseAIModelConfigs(mockFilePath)
+			} else {
+				result, err = ParseAIModelConfigs(tt.input)
+			}
+
+			// Verify error messages match
+			assert := assert.New(t)
+			if tt.expectedErr != "" {
+				assert.Equal(err.Error(), tt.expectedErr)
+				assert.Empty(result, err)
+			} else {
+				assert.Empty(err)
+				assert.Equal(tt.expected, result)
+			}
+		})
+	}
 }
