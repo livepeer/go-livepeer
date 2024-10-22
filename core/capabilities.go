@@ -15,7 +15,8 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm bool
+	Warm     bool
+	Capacity int
 }
 
 type Capability int
@@ -117,7 +118,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LLM:                        "Large language model",
+	Capability_LLM:                        "Llm",
 	Capability_ImageToText:                "Image to text",
 }
 
@@ -492,16 +493,19 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
 	}
-	for capability, constraints := range c.constraints.perCapability {
-		models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
-		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
-				Warm: modelConstraint.Warm,
+	if c.constraints.perCapability != nil {
+		for capability, constraints := range c.constraints.perCapability {
+			models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
+					Warm:     modelConstraint.Warm,
+					Capacity: uint32(modelConstraint.Capacity),
+				}
 			}
-		}
 
-		netCaps.Constraints.PerCapability[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
-			Models: models,
+			netCaps.Constraints.PerCapability[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
+				Models: models,
+			}
 		}
 	}
 	return netCaps
@@ -534,14 +538,16 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		}
 	}
 
-	for capabilityInt, constraints := range caps.Constraints.PerCapability {
-		models := make(map[string]*ModelConstraint)
-		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
-		}
+	if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+		for capabilityInt, constraints := range caps.Constraints.PerCapability {
+			models := make(map[string]*ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity)}
+			}
 
-		coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
-			Models: models,
+			coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
+				Models: models,
+			}
 		}
 	}
 

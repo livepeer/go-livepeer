@@ -64,86 +64,39 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(ls.TextToImage()))
-	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(ls.ImageToImage()))
-	ls.HTTPMux.Handle("/upscale", oapiReqValidator(ls.Upscale()))
+	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
+	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
+	ls.HTTPMux.Handle("/upscale", oapiReqValidator(handle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
-	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(ls.AudioToText()))
+	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
 	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
-	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(ls.SegmentAnything2()))
+	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(ls.ImageToText()))
 
 	return nil
 }
 
-func (ls *LivepeerServer) TextToImage() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		var req worker.GenTextToImageJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received TextToImage request prompt=%v model_id=%v", req.Prompt, *req.ModelId)
-
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
-
-		start := time.Now()
-		resp, err := processTextToImage(ctx, params, req)
-		if err != nil {
-			var serviceUnavailableErr *ServiceUnavailableError
-			var badRequestErr *BadRequestError
-			if errors.As(err, &serviceUnavailableErr) {
-				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-				return
-			}
-			if errors.As(err, &badRequestErr) {
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		took := time.Since(start)
-		clog.Infof(ctx, "Processed TextToImage request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
+// Decoder for JSON requests
+func jsonDecoder[T any](req *T, r *http.Request) error {
+	return json.NewDecoder(r.Body).Decode(req)
 }
 
-func (ls *LivepeerServer) ImageToImage() http.Handler {
+// Decoder for Multipart requests
+func multipartDecoder[T any](req *T, r *http.Request) error {
+	multiRdr, err := r.MultipartReader()
+	if err != nil {
+		return err
+	}
+	return runtime.BindMultipart(req, *multiRdr)
+}
+
+func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToImageMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToImage request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -151,8 +104,13 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 			sessManager: ls.AISessionManager,
 		}
 
-		start := time.Now()
-		resp, err := processImageToImage(ctx, params, req)
+		var req I
+		if err := decoderFunc(&req, r); err != nil {
+			respondJsonError(ctx, w, err, http.StatusBadRequest)
+			return
+		}
+
+		resp, err := processorFunc(ctx, params, req)
 		if err != nil {
 			var serviceUnavailableErr *ServiceUnavailableError
 			var badRequestErr *BadRequestError
@@ -167,9 +125,6 @@ func (ls *LivepeerServer) ImageToImage() http.Handler {
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
-
-		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed ImageToImage request imageSize=%v prompt=%v model_id=%v took=%v", req.Image.FileSize(), req.Prompt, *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -291,112 +246,6 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) Upscale() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenUpscaleMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received Upscale request imageSize=%v prompt=%v model_id=%v", req.Image.FileSize(), req.Prompt, *req.ModelId)
-
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
-
-		start := time.Now()
-		resp, err := processUpscale(ctx, params, req)
-		if err != nil {
-			var serviceUnavailableErr *ServiceUnavailableError
-			var badRequestErr *BadRequestError
-			if errors.As(err, &serviceUnavailableErr) {
-				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-				return
-			}
-			if errors.As(err, &badRequestErr) {
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed Upscale request imageSize=%v prompt=%v model_id=%v took=%v", req.Image.FileSize(), req.Prompt, *req.ModelId, took)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
-}
-
-func (ls *LivepeerServer) AudioToText() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenAudioToTextMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received AudioToText request audioSize=%v model_id=%v", req.Audio.FileSize(), *req.ModelId)
-
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
-
-		start := time.Now()
-		resp, err := processAudioToText(ctx, params, req)
-		if err != nil {
-			var serviceUnavailableErr *ServiceUnavailableError
-			var badRequestErr *BadRequestError
-			if errors.As(err, &serviceUnavailableErr) {
-				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-				return
-			}
-			if errors.As(err, &badRequestErr) {
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed AudioToText request model_id=%v took=%v", *req.ModelId, took)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
-}
-
 func (ls *LivepeerServer) LLM() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
@@ -461,59 +310,6 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		} else {
 			http.Error(w, "Unexpected response type", http.StatusInternalServerError)
 		}
-	})
-}
-
-func (ls *LivepeerServer) SegmentAnything2() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenSegmentAnything2MultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received SegmentAnything2 request; image_size=%v model_id=%v", req.Image.FileSize(), *req.ModelId)
-
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
-
-		start := time.Now()
-		resp, err := processSegmentAnything2(ctx, params, req)
-		if err != nil {
-			var serviceUnavailableErr *ServiceUnavailableError
-			var badRequestErr *BadRequestError
-			if errors.As(err, &serviceUnavailableErr) {
-				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-				return
-			}
-			if errors.As(err, &badRequestErr) {
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed SegmentAnything2 request model_id=%v took=%v", *req.ModelId, took)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
 	})
 }
 
