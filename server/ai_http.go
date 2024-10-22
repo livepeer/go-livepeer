@@ -404,7 +404,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		cap = core.Capability_ImageToText
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.ImageToText(ctx, v)
+			return orch.ImageToText(ctx, requestID, v)
 		}
 
 		imageRdr, err := v.Image.Reader()

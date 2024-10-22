@@ -102,10 +102,6 @@ func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderRes
 	orch.node.TranscoderManager.transcoderResults(tcID, res)
 }
 
-func (orch *orchestrator) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
-	return orch.node.ImageToText(ctx, req)
-}
-
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil

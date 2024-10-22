@@ -760,6 +760,42 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 	return res.Results, nil
 }
 
+func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		// no file response to save, response is text sent back to gateway
+		return orch.node.ImageToText(ctx, req)
+	}
+
+	// remote ai worker proceses job
+	imageBytes, err := req.Image.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imageBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "")
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-text", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "image-to-text", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -854,6 +890,10 @@ func (n *LivepeerNode) Upscale(ctx context.Context, req worker.GenUpscaleMultipa
 
 func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
+}
+
+func (n *LivepeerNode) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	return n.AIWorker.ImageToText(ctx, req)
 }
 func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
