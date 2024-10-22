@@ -1937,9 +1937,9 @@ func (cen *censusMetricsCounter) recordAIJobPricePerUnit(Pipeline string, Model 
 }
 
 // AIProcessingError logs errors in orchestrator AI job processing.
-func AIProcessingError(code string, Pipeline string, Model string, sender string) {
+func AIProcessingError(code string, pipeline string, Model string, sender string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, normalizePipelineTag(Pipeline)), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, normalizePipelineTag(pipeline)), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
