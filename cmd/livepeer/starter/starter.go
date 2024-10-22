@@ -1033,7 +1033,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					modelID := p.ModelID
 					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
 						if monitor.Enabled {
-							monitor.MaxPriceForCapability(capName, modelID, price)
+							monitor.MaxPriceForCapability(monitor.ToPipeline(capName), modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
 					})

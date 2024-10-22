@@ -681,7 +681,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	mw, err := worker.NewSegmentAnything2MultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -689,7 +689,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -697,14 +697,14 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	imageRdr, err := req.Image.Reader()
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
 	config, _, err := image.DecodeConfig(imageRdr)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -713,7 +713,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -724,7 +724,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 	took := time.Since(start)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "segment anything 2", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "segment-anything-2", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -748,7 +748,7 @@ func submitSegmentAnything2(ctx context.Context, params aiRequestParams, sess *A
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
 
-		monitor.AIRequestFinished(ctx, "segment anything 2", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		monitor.AIRequestFinished(ctx, "segment-anything-2", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return resp.JSON200, nil
@@ -1116,7 +1116,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		case <-cctx.Done():
 			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
 			if monitor.Enabled {
-				monitor.AIRequestError(err.Error(), capName, modelID, nil)
+				monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
 			}
 			return nil, &ServiceUnavailableError{err: err}
 		default:
@@ -1154,7 +1154,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	if resp == nil {
 		errMsg := "no orchestrators available"
 		if monitor.Enabled {
-			monitor.AIRequestError(errMsg, capName, modelID, nil)
+			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
 		}
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}

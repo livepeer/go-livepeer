@@ -1698,10 +1698,10 @@ func MaxTranscodingPrice(maxPrice *big.Rat) {
 	}
 }
 
-func MaxPriceForCapability(cap string, modelName string, maxPrice *big.Rat) {
+func MaxPriceForCapability(pipeline string, modelName string, maxPrice *big.Rat) {
 	floatWei, _ := maxPrice.Float64()
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kPipeline, cap), tag.Insert(census.kModelName, modelName)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelName)},
 		census.mPricePerCapability.M(floatWei)); err != nil {
 
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1885,13 +1885,13 @@ func (cen *censusMetricsCounter) recordAIRequestPricePerUnit(Pipeline string, Mo
 }
 
 // AIRequestError logs an error in a gateway AI job request.
-func AIRequestError(code string, Pipeline string, Model string, orchInfo *lpnet.OrchestratorInfo) {
+func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.OrchestratorInfo) {
 	orchAddr := ""
 	if addr := orchInfo.GetAddress(); addr != nil {
 		orchAddr = common.BytesToAddress(addr).String()
 	}
 
-	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
+	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
 	capabilities := orchInfo.GetCapabilities()
 	if capabilities != nil {
 		tags = append(tags, tag.Insert(census.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
@@ -1934,9 +1934,9 @@ func (cen *censusMetricsCounter) recordAIJobPricePerUnit(Pipeline string, Model 
 }
 
 // AIProcessingError logs errors in orchestrator AI job processing.
-func AIProcessingError(code string, Pipeline string, Model string, sender string) {
+func AIProcessingError(code string, pipeline string, model string, sender string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, Pipeline), tag.Insert(census.kModelName, Model), tag.Insert(census.kSender, sender)},
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model), tag.Insert(census.kSender, sender)},
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
@@ -1998,4 +1998,9 @@ func FastVerificationFailed(ctx context.Context, uri string, errtype int) {
 		census.mFastVerificationFailed.M(1)); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
+}
+
+// ToPipeline converts capability name into pipeline name
+func ToPipeline(cap string) string {
+	return strings.Replace(strings.ToLower(cap), " ", "-", -1)
 }
