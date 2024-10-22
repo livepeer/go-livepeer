@@ -345,51 +345,6 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	bcast.constraints.minVersion = "0.4.1"
 	orch.version = "0.4.1"
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// TODO: Remove AI-specific cases below when merging into master.
-	// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
-	// capabilities.go to achieve this behavior.
-	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2"
-	orch.version = "0.7.2-ai.1"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - no ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.1"
-	orch.version = "0.7.2"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - lower ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.2-ai.1"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - lower major version
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.1-ai.1"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.1"
-	orch.version = "0.7.2-ai.2"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is compatible with AI orchestrator- higher major version
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.3-ai.1"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
 func TestCapability_RoundTrip_Net(t *testing.T) {
@@ -665,45 +620,6 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 			broadcasterMinVersion: "0.4.1",
 			transcoderVersion:     "nonparsablesemversion",
 			expected:              false,
-		},
-		// TODO: Remove AI-specific cases below when merging into master.
-		// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
-		// capabilities.go to achieve this behavior.
-		{
-			name:                  "AI broadcaster required version has no AI suffix",
-			broadcasterMinVersion: "0.7.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              true,
-		},
-		{
-			name:                  "AI transcoder version has no AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.2",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required version AI suffix is higher than AI transcoder AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required major version is higher than AI transcoder major version",
-			broadcasterMinVersion: "0.7.2-ai.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required version AI suffix is lower than AI transcoder AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.2-ai.2",
-			expected:              true,
-		},
-		{
-			name:                  "AI broadcaster required major version is lower than AI transcoder major version",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.3-ai.1",
-			expected:              true,
 		},
 	}
 	for _, tt := range tests {
