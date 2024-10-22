@@ -1947,11 +1947,11 @@ func AIProcessingError(code string, Pipeline string, Model string, sender string
 
 func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, model, uri string) {
 	if err := stats.RecordWithTags(ctx,
-		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)}, census.mAIResultUploaded.M(1)); err != nil {
+		[]tag.Mutator{tag.Insert(census.kPipeline, normalizePipelineTag(pipeline)), tag.Insert(census.kModelName, model)}, census.mAIResultUploaded.M(1)); err != nil {
 		glog.Errorf("Failed to record metrics with tags: %v", err)
 	}
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, normalizePipelineTag(pipeline)), tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
 		census.mAIResultUploadTime.M(uploadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
@@ -1959,7 +1959,7 @@ func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, mo
 
 func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},
+		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, normalizePipelineTag(pipeline)), tag.Insert(census.kModelName, model)},
 		census.mAIResultSaveFailed.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
@@ -1967,7 +1967,7 @@ func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
 
 func AIResultDownloaded(ctx context.Context, pipeline string, model string, downloadDur time.Duration) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, normalizePipelineTag(pipeline)), tag.Insert(census.kModelName, model)},
 		census.mAIResultDownloaded.M(1),
 		census.mAIResultDownloadTime.M(downloadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
