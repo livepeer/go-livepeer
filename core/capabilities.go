@@ -424,28 +424,11 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 		return false
 	}
 
-	// // Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
-	// minVerNoSuffix, _ := minVer.SetPrerelease("")
-	// verNoSuffix, _ := ver.SetPrerelease("")
+	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	minVerNoSuffix, _ := minVer.SetPrerelease("")
+	verNoSuffix, _ := ver.SetPrerelease("")
 
-	// return !verNoSuffix.LessThan(&minVerNoSuffix)
-
-	// TODO: Remove AI-specific cases below when merging into master.
-	// NOTE: This logic was added to allow the version suffix (i.e. v0.7.6-ai.1) to be
-	// used correctly during the version constraint filtering.
-	minVerHasSuffix := minVer.Prerelease() != ""
-	verHasSuffix := ver.Prerelease() != ""
-	if !minVerHasSuffix || !verHasSuffix {
-		minVerNoSuffix, _ := minVer.SetPrerelease("")
-		verNoSuffix, _ := ver.SetPrerelease("")
-		minVer = &minVerNoSuffix
-		ver = &verNoSuffix
-	}
-	if minVer.Equal(ver) && minVerHasSuffix && !verHasSuffix {
-		return false
-	}
-
-	return !ver.LessThan(minVer)
+	return !verNoSuffix.LessThan(&minVerNoSuffix)
 }
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
