@@ -31,7 +31,10 @@ const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
+const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+
+var errWrongFormat = fmt.Errorf("result not in correct format")
 
 type ServiceUnavailableError struct {
 	err error
@@ -101,19 +104,34 @@ func processTextToImage(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
+		var result []byte
 		var data bytes.Buffer
+		var name string
 		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			// orchestrator sent base64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
 		}
-		writer.Flush()
 
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
+
 		if err != nil {
 			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
@@ -227,19 +245,33 @@ func processImageToImage(ctx context.Context, params aiRequestParams, req worker
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
+		var result []byte
 		var data bytes.Buffer
+		var name string
 		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			// orchestrator sent bae64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
 		}
-		writer.Flush()
 
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
 			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
@@ -365,11 +397,14 @@ func processImageToVideo(ctx context.Context, params aiRequestParams, req worker
 
 	// HACK: Re-use worker.ImageResponse to return results
 	// TODO: Refactor to return worker.VideoResponse
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	videos := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
-		data, err := downloadSeg(ctx, media.Url)
+		data, err := core.DownloadData(ctx, media.Url)
 		if err != nil {
 			return nil, err
 		}
@@ -504,19 +539,33 @@ func processUpscale(ctx context.Context, params aiRequestParams, req worker.GenU
 		return nil, err
 	}
 
-	imgResp := resp.(*worker.ImageResponse)
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	newMedia := make([]worker.Media, len(imgResp.Images))
 	for i, media := range imgResp.Images {
+		var result []byte
 		var data bytes.Buffer
+		var name string
 		writer := bufio.NewWriter(&data)
-		if err := worker.ReadImageB64DataUrl(media.Url, writer); err != nil {
-			return nil, err
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			// orchestrator sent bae64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
 		}
-		writer.Flush()
 
-		name := string(core.RandomManifestID()) + ".png"
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data.Bytes()), nil, 0)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
 		if err != nil {
 			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
 		}
@@ -720,7 +769,10 @@ func processAudioToText(ctx context.Context, params aiRequestParams, req worker.
 		return nil, err
 	}
 
-	txtResp := resp.(*worker.TextResponse)
+	txtResp, ok := resp.(*worker.TextResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
 	return txtResp, nil
 }
@@ -812,6 +864,164 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
+	if tokensUsed <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(tokensUsed)
+}
+
+func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Stream != nil && *req.Stream {
+		streamChan, ok := resp.(chan worker.LlmStreamChunk)
+		if !ok {
+			return nil, errors.New("unexpected response type for streaming request")
+		}
+		return streamChan, nil
+	}
+
+	llmResp, ok := resp.(*worker.LLMResponse)
+	if !ok {
+		return nil, errors.New("unexpected response type")
+	}
+
+	return llmResp, nil
+}
+
+func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewLLMMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, nil)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Improve pricing
+	if req.MaxTokens == nil {
+		req.MaxTokens = new(int)
+		*req.MaxTokens = 256
+	}
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, int64(*req.MaxTokens))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenLLMWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	if req.Stream != nil && *req.Stream {
+		return handleSSEStream(ctx, resp.Body, sess, req, start)
+	}
+
+	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
+}
+
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
+	streamChan := make(chan worker.LlmStreamChunk, 100)
+	go func() {
+		defer close(streamChan)
+		defer body.Close()
+		scanner := bufio.NewScanner(body)
+		var totalTokens int
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					streamChan <- worker.LlmStreamChunk{Done: true, TokensUsed: totalTokens}
+					break
+				}
+				var chunk worker.LlmStreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
+					continue
+				}
+				totalTokens += chunk.TokensUsed
+				streamChan <- chunk
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			clog.Errorf(ctx, "Error reading SSE stream: %v", err)
+		}
+
+		took := time.Since(start)
+		sess.LatencyScore = CalculateLLMLatencyScore(took, totalTokens)
+
+		if monitor.Enabled {
+			var pricePerAIUnit float64
+			if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+				pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+			}
+			monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		}
+	}()
+
+	return streamChan, nil
+}
+
+func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (*worker.LLMResponse, error) {
+	data, err := io.ReadAll(body)
+	defer body.Close()
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	var res worker.LLMResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	took := time.Since(start)
+	sess.LatencyScore = CalculateLLMLatencyScore(took, res.TokensUsed)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+		monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -827,6 +1037,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToImage(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenImageToImageMultipartRequestBody:
 		cap = core.Capability_ImageToImage
 		modelID = defaultImageToImageModelID
@@ -836,6 +1047,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitImageToImage(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenImageToVideoMultipartRequestBody:
 		cap = core.Capability_ImageToVideo
 		modelID = defaultImageToVideoModelID
@@ -854,6 +1066,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitUpscale(ctx, params, sess, v)
 		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenAudioToTextMultipartRequestBody:
 		cap = core.Capability_AudioToText
 		modelID = defaultAudioToTextModelID
@@ -863,6 +1076,16 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
 		}
+	case worker.GenLLMFormdataRequestBody:
+		cap = core.Capability_LLM
+		modelID = defaultLLMModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLLM(ctx, params, sess, v)
+		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		cap = core.Capability_SegmentAnything2
 		modelID = defaultSegmentAnything2ModelID
@@ -877,6 +1100,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	}
 	capName := cap.String()
 	ctx = clog.AddVal(ctx, "capability", capName)
+
+	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
+	start := time.Now()
+	defer clog.Infof(ctx, "Processed AI request model_id=%v took=%v", modelID, time.Since(start))
 
 	var resp interface{}
 
@@ -981,6 +1208,7 @@ func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (wo
 	setHeaders := func(_ context.Context, req *http.Request) error {
 		req.Header.Set(segmentHeader, segCreds)
 		req.Header.Set(paymentHeader, payment)
+		req.Header.Set("Authorization", protoVerAIWorker)
 		return nil
 	}
 
