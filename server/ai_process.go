@@ -1116,7 +1116,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		case <-cctx.Done():
 			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
 			if monitor.Enabled {
-				monitor.AIRequestError(err.Error(), capName, modelID, nil)
+				monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
 			}
 			return nil, &ServiceUnavailableError{err: err}
 		default:
@@ -1154,7 +1154,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	if resp == nil {
 		errMsg := "no orchestrators available"
 		if monitor.Enabled {
-			monitor.AIRequestError(errMsg, capName, modelID, nil)
+			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
 		}
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
