@@ -1467,7 +1467,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if n.OrchSecret == "" {
 				if *cfg.AIModels != "" {
 					glog.Info("Running an orchestrator in AI External Container mode")
-				} else if n.OrchSecret == "" {
+				} else {
 					glog.Exit("Running an orchestrator requires an -orchSecret for standalone mode or -transcoder for orchestrator+transcoder mode")
 				}
 			}
