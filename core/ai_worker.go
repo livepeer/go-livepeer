@@ -30,6 +30,7 @@ var ErrNoWorkersAvailable = errors.New("no workers available")
 // TODO: consider making this dynamic for each pipeline
 var aiWorkerResultsTimeout = 10 * time.Minute
 var aiWorkerRequestTimeout = 15 * time.Minute
+var aiWorkerTranscodeLoopTimeout = 70 * time.Second
 
 type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
@@ -426,7 +427,7 @@ func (rwm *RemoteAIWorkerManager) aiResults(tcID int64, res *RemoteAIWorkerResul
 }
 
 func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results interface{}, requestID string, contentType string) (interface{}, error) {
-	ext, _ := common.ExtensionByType(contentType)
+	ext, _ := common.MimeTypeToExtension(contentType)
 	fileName := string(RandomManifestID()) + ext
 
 	imgRes, ok := results.(worker.ImageResponse)
@@ -818,27 +819,9 @@ func (n *LivepeerNode) createStorageForRequest(requestID string) error {
 	return nil
 }
 
-//
-// Methods called at AI Worker to process AI job
-//
-
-// save base64 data to file and returns file path or error
-func (n *LivepeerNode) SaveBase64Result(ctx context.Context, data string, requestID string, contentType string) (string, error) {
-	resultName := string(RandomManifestID())
-	ext, err := common.ExtensionByType(contentType)
-	if err != nil {
-		return "", err
-	}
-
-	resultFile := resultName + ext
-	fname := path.Join(n.WorkDir, resultFile)
-	err = worker.SaveImageB64DataUrl(data, fname)
-	if err != nil {
-		return "", err
-	}
-
-	return fname, nil
-}
+/*
+ * Methods used to process AI job requests on a AI Worker.
+ */
 
 func (n *LivepeerNode) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.TextToImage(ctx, req)
@@ -855,6 +838,7 @@ func (n *LivepeerNode) Upscale(ctx context.Context, req worker.GenUpscaleMultipa
 func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
+
 func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
@@ -943,6 +927,7 @@ func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMFormdataRequest
 	return n.AIWorker.LLM(ctx, req)
 }
 
+// transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
 
@@ -992,7 +977,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerResultsTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerTranscodeLoopTimeout)
 		defer cancel()
 		<-ctx.Done()
 		los.EndSession()

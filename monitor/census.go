@@ -1942,6 +1942,7 @@ func AIProcessingError(code string, pipeline string, model string, sender string
 	}
 }
 
+// AIResultUploaded logs the successful upload of an AI job result.
 func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, model, uri string) {
 	if err := stats.RecordWithTags(ctx,
 		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)}, census.mAIResultUploaded.M(1)); err != nil {
@@ -1954,6 +1955,7 @@ func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, mo
 	}
 }
 
+// AIResultSaveError logs an error in saving an AI job result to storage.
 func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},
@@ -1962,6 +1964,7 @@ func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
 	}
 }
 
+// AIResultDownloaded logs the successful download of an AI job result.
 func AIResultDownloaded(ctx context.Context, pipeline string, model string, downloadDur time.Duration) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)},

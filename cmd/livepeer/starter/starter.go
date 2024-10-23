@@ -837,7 +837,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
 			}
 			if cfg.PricePerUnit == nil && !*cfg.AIWorker {
-				// Prevent orchestrators from unknowingly providing free transcoding
+				// Prevent orchestrators from unknowingly doing free work.
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			} else if cfg.PricePerUnit != nil {
 				pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
