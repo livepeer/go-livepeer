@@ -385,18 +385,10 @@ type AIResult struct {
 	Files  map[string]string
 }
 
-type AIChanData struct {
-	ctx context.Context
-	req interface{}
-	res chan *AIResult
-}
-
 type AIJobRequestData struct {
 	InputUrl string      `json:"input_url"`
 	Request  interface{} `json:"request"`
 }
-
-type AIJobChan chan *AIChanData
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
