@@ -35,7 +35,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
-	"github.com/livepeer/go-livepeer/monitor"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -939,7 +938,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
 				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
-				return
 			} else {
 				n.SetMaxFaceValue(mfv)
 			}
@@ -989,8 +987,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if maxPricePerUnit.Sign() > 0 {
 				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
 				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
-					if monitor.Enabled {
-						monitor.MaxTranscodingPrice(price)
+					if lpmon.Enabled {
+						lpmon.MaxTranscodingPrice(price)
 					}
 					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(3))
 				})
@@ -1032,8 +1030,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capName := core.CapabilityNameLookup[cap]
 					modelID := p.ModelID
 					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
-						if monitor.Enabled {
-							monitor.MaxPriceForCapability(monitor.ToPipeline(capName), modelID, price)
+						if lpmon.Enabled {
+							lpmon.MaxPriceForCapability(lpmon.ToPipeline(capName), modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
 					})
@@ -1595,7 +1593,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		if n.NodeType == core.AIWorkerNode {
-			go server.RunAIWorker(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities.ToNetCapabilities())
+			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
 		}
 	}
 

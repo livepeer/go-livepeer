@@ -471,7 +471,7 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 	// other pipelines do not require saving data since they are text responses
 	imgResp, isImg := results.Results.(worker.ImageResponse)
 	if isImg {
-		for idx, _ := range imgResp.Images {
+		for idx := range imgResp.Images {
 			fileName := imgResp.Images[idx].Url
 			// save the file data to node and provide url for download
 			storage, exists := n.StorageConfigs[requestID]

@@ -346,7 +346,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
-	orchs, err := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	orchs, _ := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	for _, o := range orchs {
 		assert.Equal(o.RemoteInfo.PriceInfo, expPriceInfo)
 		assert.Equal(o.RemoteInfo.Transcoder, expTranscoder)
