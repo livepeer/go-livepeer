@@ -23,7 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -183,8 +182,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
-			if monitor.Enabled {
-				monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
+			if lpmon.Enabled {
+				lpmon.PaymentRecvError(ctx, sender.Hex(), err.Error())
 			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
@@ -217,10 +216,10 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 
 	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(totalFaceValue, "ETH"), totalWinProb.FloatString(10), totalEV.FloatString(2))
 
-	if monitor.Enabled {
-		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
-		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
-		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
+	if lpmon.Enabled {
+		lpmon.TicketValueRecv(ctx, sender.Hex(), totalEV)
+		lpmon.TicketsRecv(ctx, sender.Hex(), totalTickets)
+		lpmon.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
 	}
 
 	if receiveErr != nil {
@@ -269,8 +268,8 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 		return nil, err
 	}
 
-	if monitor.Enabled {
-		monitor.TranscodingPrice(sender.String(), price)
+	if lpmon.Enabled {
+		lpmon.TranscodingPrice(sender.String(), price)
 	}
 
 	return &net.PriceInfo{
@@ -671,8 +670,8 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
-	if monitor.Enabled {
-		monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
+	if lpmon.Enabled {
+		lpmon.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
 
 	// Prepare the result object
@@ -1003,12 +1002,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 	var totalLoad, totalCapacity, liveTranscodersNum int
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 
 	<-transcoder.eof
@@ -1016,12 +1015,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 }
 

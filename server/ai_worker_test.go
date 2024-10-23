@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -29,11 +28,6 @@ import (
 
 func TestRemoteAIWorker_Error(t *testing.T) {
 	httpc := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	//test request
-	var req worker.GenTextToImageJSONRequestBody
-	modelID := "livepeer/model1"
-	req.Prompt = "test prompt"
-	req.ModelId = &modelID
 
 	assert := assert.New(t)
 	assert.Nil(nil)
@@ -78,7 +72,7 @@ func TestRemoteAIWorker_Error(t *testing.T) {
 	//error in worker, good request
 	notify = createAIJob(742, "text-to-image", "livepeer/model1", "")
 	errText := "Some error"
-	wkr.Err = fmt.Errorf(errText)
+	wkr.Err = errors.New(errText)
 
 	runAIJob(node, parsedURL.Host, httpc, notify)
 	time.Sleep(3 * time.Millisecond)

@@ -502,7 +502,7 @@ func TestCapability_ProfileToCapability(t *testing.T) {
 	// iterate through lpms-defined profiles to ensure all are accounted for
 	// need to put into a slice and sort to ensure consistent ordering
 	profs := []int{}
-	for k, _ := range ffmpeg.ProfileParameters {
+	for k := range ffmpeg.ProfileParameters {
 		profs = append(profs, int(k))
 	}
 	sort.Ints(profs)

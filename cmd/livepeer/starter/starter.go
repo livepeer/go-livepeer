@@ -35,7 +35,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
-	"github.com/livepeer/go-livepeer/monitor"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -92,6 +91,7 @@ type LivepeerConfig struct {
 	HttpIngest              *bool
 	Orchestrator            *bool
 	Transcoder              *bool
+	AIServiceRegistry       *bool
 	AIWorker                *bool
 	Gateway                 *bool
 	Broadcaster             *bool
@@ -199,6 +199,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultTestTranscoder := true
 
 	// AI:
+	defaultAIServiceRegistry := false
 	defaultAIWorker := false
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
@@ -298,10 +299,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIWorker:      &defaultAIWorker,
-		AIModels:      &defaultAIModels,
-		AIModelsDir:   &defaultAIModelsDir,
-		AIRunnerImage: &defaultAIRunnerImage,
+		AIServiceRegistry: &defaultAIServiceRegistry,
+		AIWorker:          &defaultAIWorker,
+		AIModels:          &defaultAIModels,
+		AIModelsDir:       &defaultAIModelsDir,
+		AIRunnerImage:     &defaultAIRunnerImage,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -706,6 +708,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			CheckTxTimeout:     time.Duration(int64(*cfg.TxTimeout) * int64(*cfg.MaxTxReplacements+1)),
 		}
 
+		if *cfg.AIServiceRegistry {
+			// For the time-being Livepeer AI Subnet uses its own ServiceRegistry, so we define it here
+			ethCfg.ServiceRegistryAddr = ethcommon.HexToAddress("0x04C0b249740175999E5BF5c9ac1dA92431EF34C5")
+		}
+
 		client, err := eth.NewClient(ethCfg)
 		if err != nil {
 			glog.Errorf("Failed to create Livepeer Ethereum client: %v", err)
@@ -830,7 +837,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
 			}
 			if cfg.PricePerUnit == nil && !*cfg.AIWorker {
-				// Prevent orchestrators from unknowingly providing free transcoding
+				// Prevent orchestrators from unknowingly doing free work.
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			} else if cfg.PricePerUnit != nil {
 				pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
@@ -931,7 +938,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
 			if mfv == nil {
 				panic(fmt.Errorf("-maxFaceValue must be a valid integer, but %v provided. Restart the node with a different valid value for -maxFaceValue", *cfg.MaxFaceValue))
-				return
 			} else {
 				n.SetMaxFaceValue(mfv)
 			}
@@ -981,8 +987,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if maxPricePerUnit.Sign() > 0 {
 				pricePerPixel := new(big.Rat).Quo(maxPricePerUnit, pixelsPerUnit)
 				autoPrice, err := core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
-					if monitor.Enabled {
-						monitor.MaxTranscodingPrice(price)
+					if lpmon.Enabled {
+						lpmon.MaxTranscodingPrice(price)
 					}
 					glog.Infof("Maximum transcoding price: %v wei per pixel\n ", price.FloatString(3))
 				})
@@ -1024,8 +1030,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					capName := core.CapabilityNameLookup[cap]
 					modelID := p.ModelID
 					autoCapPrice, err := core.NewAutoConvertedPrice(p.Currency, maxCapabilityPrice, func(price *big.Rat) {
-						if monitor.Enabled {
-							monitor.MaxPriceForCapability(capName, modelID, price)
+						if lpmon.Enabled {
+							lpmon.MaxPriceForCapability(lpmon.ToPipeline(capName), modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), p.Pipeline, p.ModelID)
 					})
@@ -1587,7 +1593,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		if n.NodeType == core.AIWorkerNode {
-			go server.RunAIWorker(n, orchURLs[0].Host, core.MaxSessions, n.Capabilities.ToNetCapabilities())
+			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
 		}
 	}
 

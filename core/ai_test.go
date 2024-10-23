@@ -115,7 +115,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 
 	// error on remote
 	strm.JobError = fmt.Errorf("JobError")
-	res, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
+	_, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
 	assert.NotNil(t, err)
 	strm.JobError = nil
 
