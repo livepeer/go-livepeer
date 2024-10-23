@@ -655,6 +655,10 @@ func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequest
 	return &worker.LLMResponse{Response: "response tokens", TokensUsed: 10}, nil
 }
 
+func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }

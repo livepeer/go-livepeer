@@ -33,6 +33,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -1022,6 +1023,105 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	return &res, nil
 }
 
+func CalculateImageToTextLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
+}
+
+func submitImageToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewImageToTextMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	imageRdr, err := req.Image.Reader()
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	config, _, err := image.DecodeConfig(imageRdr)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	inPixels := int64(config.Height) * int64(config.Width)
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, inPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenImageToTextWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+
+	// TODO: Refine this rough estimate in future iterations.
+	sess.LatencyScore = CalculateImageToTextLatencyScore(took, inPixels)
+
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "image-to-text", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return resp.JSON200, nil
+}
+
+func processImageToText(ctx context.Context, params aiRequestParams, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	txtResp := resp.(*worker.ImageToTextResponse)
+
+	return txtResp, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1094,6 +1194,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.GenImageToTextMultipartRequestBody:
+		cap = core.Capability_ImageToText
+		modelID = defaultImageToTextModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitImageToText(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
