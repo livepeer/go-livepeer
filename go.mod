@@ -2,6 +2,8 @@ module github.com/livepeer/go-livepeer
 
 go 1.23.2
 
+replace github.com/livepeer/ai-worker => github.com/j0sh/livepeer-ai-worker v0.0.0-20241017214425-b4f177ea52a7
+
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/Masterminds/semver/v3 v3.2.1
