@@ -379,9 +379,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			sessManager: ls.AISessionManager,
 		}
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		req := worker.StartLiveVideoToVideoFormdataRequestBody{
-			// TODO set model and initial parameters here if necessary (eg, prompt)
-		}
+		// TODO set model and initial parameters here if necessary (eg, prompt)
+		req := struct{}{}
 		resp, err := processAIRequest(ctx, params, req)
 		clog.Infof(ctx, "Received live video AI request stream=%s resp=%v err=%v", streamName, resp, err)
 	})

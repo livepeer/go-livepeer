@@ -251,11 +251,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubUrl = "/ai/live-video/" + mid
 			subUrl = pubUrl + "/out"
 		)
-		jsonData, err := json.Marshal(&worker.StartLiveVideoToVideoResponse{
-			JSON200: &worker.ResponseStartVideoToVideo{
-				PublishUrl:   &pubUrl,
-				SubscribeUrl: &subUrl,
-			},
+		jsonData, err := json.Marshal(struct {
+			PublishUrl   string
+			SubscribeUrl string
+		}{
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
