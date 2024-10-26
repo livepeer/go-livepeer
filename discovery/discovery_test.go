@@ -56,7 +56,7 @@ func TestDeadLock(t *testing.T) {
 	first := true
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer wg.Done()
 		if first {
@@ -88,7 +88,7 @@ func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	first := true
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer wg.Done()
 		if first {
@@ -187,7 +187,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 	oldServerGetOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldServerGetOrchInfo }()
 	var mu sync.Mutex
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -244,7 +244,7 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 	oldServerGetOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldServerGetOrchInfo }()
 	var mu sync.Mutex
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -294,7 +294,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	expPricePerPixel, _ := common.PriceToFixed(big.NewRat(999, 1))
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -346,7 +346,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
-	orchs, err := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	orchs, _ := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	for _, o := range orchs {
 		assert.Equal(o.RemoteInfo.PriceInfo, expPriceInfo)
 		assert.Equal(o.RemoteInfo.Transcoder, expTranscoder)
@@ -386,7 +386,7 @@ func TestNewDBOrchestratorPoolCache_TestURLs(t *testing.T) {
 
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -479,7 +479,7 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	wg := sync.WaitGroup{}
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		// slightly unsafe to be adding to the wg counter here
@@ -634,7 +634,7 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -723,7 +723,7 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -829,7 +829,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -932,7 +932,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 
 	server.BroadcastCfg.SetMaxPrice(nil)
 
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		return &net.OrchestratorInfo{
 			Address:      pm.RandBytes(20),
 			Transcoder:   "transcoder",
@@ -1006,7 +1006,7 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 	defer runtime.GOMAXPROCS(gmp)
 	var mu sync.Mutex
 	first := true
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		if first {
 			time.Sleep(100 * time.Millisecond)
@@ -1113,7 +1113,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 	wg := sync.WaitGroup{}
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(c context.Context, b common.Broadcaster, s *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		return &net.OrchestratorInfo{Transcoder: "transcoder"}, nil
 	}
@@ -1276,7 +1276,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	orchCb := func() error { return nil }
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{
@@ -1341,7 +1341,7 @@ func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
 	orchCb := func() error { return nil }
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { wg.Wait(); serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		err := orchCb()
 		return &net.OrchestratorInfo{
@@ -1413,7 +1413,7 @@ func TestOrchestratorPool_ShuffleGetOrchestrators(t *testing.T) {
 
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		ch <- server
 		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
@@ -1476,7 +1476,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	ch := make(chan struct{})
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
 		return &net.OrchestratorInfo{}, nil
 	}
@@ -1591,7 +1591,7 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 	calls := 0
 	oldOrchInfo := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
-	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL) (*net.OrchestratorInfo, error) {
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, cap *net.Capabilities) (*net.OrchestratorInfo, error) {
 		mu.Lock()
 		defer func() {
 			calls = (calls + 1) % len(responses)
