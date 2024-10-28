@@ -2,16 +2,16 @@ package trickle
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/pm"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/livepeer/go-livepeer/server"
 )
 
 // TODO sweep idle streams connections
@@ -47,7 +47,7 @@ const BaseServerPath = "/ai/live-video/"
 var FirstByteTimeout = errors.New("pending read timeout")
 
 // TODO: This will not be a global variable, but a param injected somewhere
-var paymentValidator server.RealtimePaymentValidator
+var paymentValidator pm.RealtimePaymentValidator
 
 func ConfigureServerWithMux(mux *http.ServeMux) {
 	/* TODO we probably want to configure the below
@@ -197,7 +197,7 @@ func (tr *timeoutReader) Read(p []byte) (int, error) {
 // Handle post requests for a given index
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, exists := s.getForWrite(idx)
-	if err := paymentValidator.ValidatePayment(segmentToStreamInfo(segment)); err != nil {
+	if err := paymentValidator.AccountPayment(context.TODO(), segmentToStreamInfo(segment)); err != nil {
 		// TODO: Stop stream processing
 		http.Error(w, "Payment required", http.StatusPaymentRequired)
 		return
@@ -252,9 +252,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment.close()
 }
 
-func segmentToStreamInfo(segment *Segment) server.StreamInfo {
+func segmentToStreamInfo(segment *Segment) pm.StreamInfo {
 	// TODO
-	return server.StreamInfo{}
+	return pm.StreamInfo{}
 }
 
 func (s *Stream) getForWrite(idx int) (*Segment, bool) {

@@ -12,17 +12,18 @@ import (
 	"math"
 	"math/big"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -871,55 +872,26 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 }
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.StartLiveVideoToVideoFormdataRequestBody) (*worker.StartLiveVideoToVideoResponse, error) {
-	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+	startPaymentLoop(ctx, params.node, sess)
+	return nil, nil
+}
+
+var paymentSender pm.RealtimePaymentSender
+
+func startPaymentLoop(ctx context.Context, node *core.LivepeerNode, sess *AISession) {
+	paymentSender = &realtimePaymentSender{sess: sess.BroadcastSession}
+	go func() {
+		for {
+			submitPayment(context.Background(), sess)
+			clog.Infof(ctx, "Payment submitted, current balance = %v", sess.Balances.Balance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId)).FloatString(1))
+			time.Sleep(time.Second * 5)
 		}
-		return nil, err
-	}
-	resp, err := client.StartLiveVideoToVideoWithFormdataBodyWithResponse(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.JSON200 != nil {
-		// append orch hostname to the given url if necessary
-		appendHostname := func(urlPath *string) (*url.URL, error) {
-			if urlPath == nil {
-				return nil, fmt.Errorf("invalid url from orch")
-			}
-			u := *urlPath
-			pu, err := url.Parse(u)
-			if err != nil {
-				return nil, err
-			}
-			if pu.Hostname() != "" {
-				// url has a hostname already so use it
-				return pu, nil
-			}
-			// no hostname, so append one
-			u = sess.Transcoder() + u
-			return url.Parse(u)
-		}
-		pub, err := appendHostname(resp.JSON200.PublishUrl)
-		if err != nil {
-			return nil, fmt.Errorf("pub url - %w", err)
-		}
-		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
-		if err != nil {
-			return nil, fmt.Errorf("sub url %w", err)
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
-		startTricklePublish(pub, params)
-		startTrickleSubscribe(sub)
-	}
-	if resp.JSON400 != nil {
-		fmt.Println("json400", resp.JSON400)
-	}
-	if resp.JSON500 != nil {
-		fmt.Println("json500", resp.JSON500)
-	}
-	return resp, nil
+	}()
+}
+
+func submitPayment(ctx context.Context, sess *AISession) {
+	clog.Infof(ctx, "Submitting payment for session %s", sess.BroadcastSession.PMSessionID)
+	paymentSender.SendPayment(ctx, pm.StreamInfo{})
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1266,7 +1238,7 @@ func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (wo
 	}
 
 	// As soon as the request is sent to the orch consider the balance update's credit as spent
-	balUpdate.Status = CreditSpent
+	//balUpdate.Status = CreditSpent
 	if monitor.Enabled {
 		monitor.TicketValueSent(ctx, balUpdate.NewCredit)
 		monitor.TicketsSent(ctx, balUpdate.NumTickets)

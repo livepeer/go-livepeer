@@ -280,6 +280,8 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	var warmSessions []*BroadcastSession
 	var coldSessions []*BroadcastSession
 	for _, sess := range sessions {
+		warmSessions = append(warmSessions, sess)
+		continue
 		// If the constraints are missing for this capability skip this session
 		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
 		if !ok {

@@ -191,6 +191,7 @@ func DefaultCapabilities() []Capability {
 		Capability_AuthToken,
 		Capability_MPEG7VideoSignature,
 		Capability_SegmentSlicing,
+		Capability_LiveVideoToVideo,
 	}
 }
 
@@ -452,6 +453,7 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
 	// Ensure bcast and orch are compatible with one another.
+	return true
 
 	if bcast == nil {
 		// Weird golang behavior: interface value can evaluate to non-nil

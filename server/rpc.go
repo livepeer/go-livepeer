@@ -210,6 +210,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
+	lp.transRPC.HandleFunc("/payment", lp.Payment)
 	if acceptRemoteTranscoders {
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)

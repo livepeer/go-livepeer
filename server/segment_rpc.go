@@ -254,6 +254,68 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf)
 }
 
+func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
+	orch := h.orchestrator
+
+	remoteAddr := getRemoteAddr(r)
+	ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+	payment, err := getPayment(r.Header.Get(paymentHeader))
+	if err != nil {
+		clog.Errorf(ctx, "Could not parse payment")
+		http.Error(w, err.Error(), http.StatusPaymentRequired)
+		return
+	}
+
+	sender := getPaymentSender(payment)
+	ctx = clog.AddVal(ctx, "sender", sender.Hex())
+
+	// check the segment sig from the broadcaster
+	seg := r.Header.Get(segmentHeader)
+
+	segData, ctx, err := verifySegCreds(ctx, orch, seg, sender)
+	if err != nil {
+		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	ctx = clog.AddSeqNo(ctx, uint64(segData.Seq))
+
+	clog.V(common.VERBOSE).Infof(ctx, "Received segment dur=%v", segData.Duration)
+
+	if monitor.Enabled {
+		monitor.SegmentEmerged(ctx, 0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
+	}
+
+	//segData.AuthToken.SessionId = "some-manifest"
+	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
+
+	tr := &net.TranscodeResult{
+		Info: oInfo,
+	}
+	buf, err := proto.Marshal(tr)
+	if err != nil {
+		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
+		return
+	}
+	w.Write(buf)
+
+	clog.Infof(ctx, "Payment processed, current balance = %v", h.node.Balances.Balance(sender, core.ManifestID(segData.AuthToken.SessionId)).FloatString(1))
+}
+
 func getPayment(header string) (net.Payment, error) {
 	buf, err := base64.StdEncoding.DecodeString(header)
 	if err != nil {

@@ -14,7 +14,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-tools/drivers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
@@ -74,6 +73,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
 	ls.HTTPMux.Handle("/live-video-start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/start-payment-loop", ls.StartLiveVideo())
 
 	return nil
 }
@@ -365,27 +365,13 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		streamName := r.FormValue("stream")
-		if streamName == "" {
-			http.Error(w, "Missing stream name", http.StatusBadRequest)
-			return
-		}
 		requestID := string(core.RandomManifestID())
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s", streamName)
-
-		// Kick off the RTMP pull and segmentation as soon as possible
-		ssr := media.NewSwitchableSegmentReader()
-		go func() {
-			media.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
-			// TODO handle stream stops
-		}()
 
 		params := aiRequestParams{
-			node:          ls.LivepeerNode,
-			os:            drivers.NodeStorage.NewSession(requestID),
-			sessManager:   ls.AISessionManager,
-			segmentReader: ssr,
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
 		}
 
 		req := worker.StartLiveVideoToVideoFormdataRequestBody{

@@ -91,6 +91,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 
 	isCompatible := func(info *net.OrchestratorInfo) bool {
+		return true
 		if o.pred != nil && !o.pred(info) {
 			return false
 		}
