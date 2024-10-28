@@ -3,6 +3,7 @@
 ## v0.X.X
 
 ### Breaking Changes 🚨🚨
+- #3109 Change default for `-autoAdjustPrice` to **false**
 
 ### Features ⚒
 
