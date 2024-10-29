@@ -161,6 +161,10 @@ type LivepeerConfig struct {
 	OrchMinLivepeerVersion  *string
 	TestOrchAvail           *bool
 	AIRunnerImage           *string
+	KafkaBootstrapServers   *string
+	KafkaUsername           *string
+	KafkaPassword           *string
+	KafkaGatewayTopic       *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -264,6 +268,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 
+	// Gateway logs
+	defaultKafkaBootstrapServers := ""
+	defaultKafkaUsername := ""
+	defaultKafkaPassword := ""
+	defaultKafkaGatewayTopic := ""
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -365,6 +375,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
+
+		// Gateway logs
+		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
+		KafkaUsername:         &defaultKafkaUsername,
+		KafkaPassword:         &defaultKafkaPassword,
+		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
 	}
 }
 
@@ -594,6 +610,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		switch n.NodeType {
 		case core.BroadcasterNode:
 			nodeType = lpmon.Broadcaster
+			if *cfg.KafkaBootstrapServers != "" && *cfg.KafkaUsername != "" && *cfg.KafkaPassword != "" && *cfg.KafkaGatewayTopic != "" {
+				lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic)
+			}
 		case core.OrchestratorNode:
 			nodeType = lpmon.Orchestrator
 		case core.TranscoderNode:
