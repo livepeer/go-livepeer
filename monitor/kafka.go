@@ -89,8 +89,6 @@ func (p *KafkaProducer) SendEvents(events []GatewayEvent) {
 	}
 
 	// We retry sending messages to Kafka in case of a failure
-	// We don't use any backoff, because the number of events are filling up very quickly, so in case of a failure
-	// it's better to lose analytics logs than fill up the memory and crash the whole catalyst-api
 	kafkaWriteRetries := 3
 	var err error
 	for i := 0; i < kafkaWriteRetries; i++ {
