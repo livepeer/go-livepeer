@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -93,11 +91,6 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	return nil
 }
 
-// CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
-func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return orch.node.AIWorker.HasCapacity(pipeline, modelID)
-}
-
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
@@ -138,10 +131,6 @@ func (orch *orchestrator) LLM(ctx context.Context, req worker.GenLLMFormdataRequ
 
 func (orch *orchestrator) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return orch.node.SegmentAnything2(ctx, req)
-}
-
-func (orch *orchestrator) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
-	return orch.node.TextToSpeech(ctx, req)
 }
 
 func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Payment, manifestID ManifestID) error {
@@ -225,8 +214,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
-			if monitor.Enabled {
-				monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
+			if lpmon.Enabled {
+				lpmon.PaymentRecvError(ctx, sender.Hex(), err.Error())
 			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
@@ -259,10 +248,10 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 
 	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(totalFaceValue, "ETH"), totalWinProb.FloatString(10), totalEV.FloatString(2))
 
-	if monitor.Enabled {
-		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
-		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
-		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
+	if lpmon.Enabled {
+		lpmon.TicketValueRecv(ctx, sender.Hex(), totalEV)
+		lpmon.TicketsRecv(ctx, sender.Hex(), totalTickets)
+		lpmon.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
 	}
 
 	if receiveErr != nil {
@@ -311,8 +300,8 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 		return nil, err
 	}
 
-	if monitor.Enabled {
-		monitor.TranscodingPrice(sender.String(), price)
+	if lpmon.Enabled {
+		lpmon.TranscodingPrice(sender.String(), price)
 	}
 
 	return &net.PriceInfo{
@@ -625,116 +614,6 @@ func (n *LivepeerNode) sendToTranscodeLoop(ctx context.Context, md *SegTranscodi
 	return res, res.Err
 }
 
-func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
-	ctx = clog.AddOrchSessionID(ctx, sessionID)
-
-	var fnamep *string
-	terr := func(err error) *TranscodeResult {
-		if fnamep != nil {
-			if err := os.RemoveAll(*fnamep); err != nil {
-				clog.Errorf(ctx, "Transcoder failed to cleanup %v", *fnamep)
-			}
-		}
-		return &TranscodeResult{Err: err}
-	}
-
-	// We only support base64 png data urls right now
-	// We will want to support HTTP and file urls later on as well
-	dirPath := path.Join(n.WorkDir, "input", sessionID+"_"+string(RandomManifestID()))
-	fnamep = &dirPath
-	if err := os.MkdirAll(dirPath, 0700); err != nil {
-		clog.Errorf(ctx, "Transcoder cannot create frames dir err=%q", err)
-		return terr(err)
-	}
-	for i, url := range urls {
-		fname := path.Join(dirPath, strconv.Itoa(i)+".png")
-		if err := worker.SaveImageB64DataUrl(url, fname); err != nil {
-			clog.Errorf(ctx, "Transcoder failed to save image from url err=%q", err)
-			return terr(err)
-		}
-	}
-
-	// Use local software transcoder instead of node's configured transcoder
-	// because if the node is using a nvidia transcoder there may be sporadic
-	// CUDA operation not permitted errors that are difficult to debug.
-	// The majority of the execution time for image-to-video is the frame generation
-	// so slower software transcoding should not be a big deal for now.
-	transcoder := NewLocalTranscoder(n.WorkDir)
-
-	md := &SegTranscodingMetadata{
-		Fname:     path.Join(dirPath, "%d.png"),
-		ProfileIn: inProfile,
-		Profiles: []ffmpeg.VideoProfile{
-			outProfile,
-		},
-		AuthToken: &net.AuthToken{SessionId: sessionID},
-	}
-
-	los := drivers.NodeStorage.NewSession(sessionID)
-
-	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
-	go func() {
-		ctx, cancel := transcodeLoopContext()
-		defer cancel()
-		<-ctx.Done()
-		los.EndSession()
-		clog.Infof(ctx, "Ended image-to-video session sessionID=%v", sessionID)
-	}()
-
-	start := time.Now()
-	tData, err := transcoder.Transcode(ctx, md)
-	if err != nil {
-		if _, ok := err.(UnrecoverableError); ok {
-			panic(err)
-		}
-		clog.Errorf(ctx, "Error transcoding frames dirPath=%s err=%q", dirPath, err)
-		return terr(err)
-	}
-
-	took := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Transcoding frames took=%v", took)
-
-	transcoder.EndTranscodingSession(md.AuthToken.SessionId)
-
-	tSegments := tData.Segments
-	if len(tSegments) != len(md.Profiles) {
-		clog.Errorf(ctx, "Did not receive the correct number of transcoded segments; got %v expected %v", len(tSegments),
-			len(md.Profiles))
-		return terr(fmt.Errorf("MismatchedSegments"))
-	}
-
-	// Prepare the result object
-	var tr TranscodeResult
-	segHashes := make([][]byte, len(tSegments))
-
-	for i := range md.Profiles {
-		if tSegments[i].Data == nil || len(tSegments[i].Data) < 25 {
-			clog.Errorf(ctx, "Cannot find transcoded segment for bytes=%d", len(tSegments[i].Data))
-			return terr(fmt.Errorf("ZeroSegments"))
-		}
-		clog.V(common.DEBUG).Infof(ctx, "Transcoded segment profile=%s bytes=%d",
-			md.Profiles[i].Name, len(tSegments[i].Data))
-		hash := crypto.Keccak256(tSegments[i].Data)
-		segHashes[i] = hash
-	}
-	if err := os.RemoveAll(dirPath); err != nil {
-		clog.Errorf(ctx, "Transcoder failed to cleanup %v", dirPath)
-	}
-	tr.OS = los
-	tr.TranscodeData = tData
-
-	if n == nil || n.Eth == nil {
-		return &tr
-	}
-
-	segHash := crypto.Keccak256(segHashes...)
-	tr.Sig, tr.Err = n.Eth.Sign(segHash)
-	if tr.Err != nil {
-		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%q", tr.Err)
-	}
-	return &tr
-}
-
 func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig, seg *stream.HLSSegment, md *SegTranscodingMetadata) *TranscodeResult {
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
@@ -823,8 +702,8 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
-	if monitor.Enabled {
-		monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
+	if lpmon.Enabled {
+		lpmon.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
 
 	// Prepare the result object
@@ -990,10 +869,6 @@ func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTex
 
 func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error) {
 	return n.AIWorker.SegmentAnything2(ctx, req)
-}
-
-func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
-	return n.AIWorker.TextToSpeech(ctx, req)
 }
 
 func (n *LivepeerNode) imageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
@@ -1259,12 +1134,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 	var totalLoad, totalCapacity, liveTranscodersNum int
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 
 	<-transcoder.eof
@@ -1272,12 +1147,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 }
 
