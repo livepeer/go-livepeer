@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"github.com/livepeer/go-livepeer/clog"
 	"math/big"
 	"sync"
 	"time"
@@ -144,6 +146,8 @@ func (b *Balances) Credit(id ManifestID, amount *big.Rat) {
 		b.balances[id] = &balance{amount: big.NewRat(0, 1)}
 	}
 	b.balances[id].amount.Add(b.balances[id].amount, amount)
+	currentBalance := b.balances[id].amount.FloatString(0)
+	clog.Infof(context.TODO(), "Credit: %v", currentBalance)
 	b.balances[id].lastUpdate = time.Now()
 }
 

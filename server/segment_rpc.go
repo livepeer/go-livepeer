@@ -303,10 +303,10 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
 	oInfo.AuthToken = segData.AuthToken
 
-	tr := &net.TranscodeResult{
+	pr := &net.PaymentResult{
 		Info: oInfo,
 	}
-	buf, err := proto.Marshal(tr)
+	buf, err := proto.Marshal(pr)
 	if err != nil {
 		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
 		return
@@ -810,8 +810,12 @@ func completeBalanceUpdate(sess *BroadcastSession, update *BalanceUpdate) {
 	}
 
 	credit := new(big.Rat).Add(update.ExistingCredit, update.NewCredit)
+	newCreditFloat := update.NewCredit.FloatString(0)
+	clog.Infof(context.TODO(), "Credit balance updated - existing=%v new=%v", update.ExistingCredit.FloatString(0), newCreditFloat)
 	// The change could be negative if the debit > credit
 	change := credit.Sub(credit, update.Debit)
+	creditFloat := credit.FloatString(0)
+	clog.Infof(context.TODO(), "Credit balance change - credit=%v debit=%v change=%v", creditFloat, update.Debit.FloatString(0), change.FloatString(0))
 
 	// If the change is negative then this is equivalent to debiting abs(change)
 	sess.Balance.Credit(change)

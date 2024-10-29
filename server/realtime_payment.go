@@ -28,43 +28,37 @@ type RealtimePaymentSender interface {
 	SendPayment(ctx context.Context, segmentInfo *SegmentInfo) error
 }
 
-// RealtimePaymentValidator is used in Orchestrator to validate if the stream is paid
+// RealtimePaymentValidator is used in Orchestrator to account for each processed segment
 type RealtimePaymentValidator interface {
-	// ValidatePayment checks if the stream is paid and if not it returns error, so that stream can be stopped
-	AccountPayment(ctx context.Context, streamInfo *SegmentInfo) error
+	// AccountPayment checks if the stream is paid and if not it returns error, so that stream can be stopped
+	AccountPayment(ctx context.Context, segmentInfo *SegmentInfo) error
 }
 
 type realtimePaymentSender struct {
-	segmentsToPayUpfront int
+	segmentsToPayUpfront int64
 }
 
-func (r *realtimePaymentSender) SendPayment(ctx context.Context, streamInfo *SegmentInfo) error {
-	sess := streamInfo.sess
+func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfo) error {
+	sess := segmentInfo.sess
 
-	shouldRefresh, err := shouldRefreshSession(ctx, sess)
-	if err != nil {
+	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
 		return err
 	}
-	if shouldRefresh {
-		if err := refreshSession(ctx, sess); err != nil {
-			return err
-		}
-	}
 
-	fee, err := estimateRealtimeAIFee(streamInfo)
+	fee, err := estimateRealtimeFee(segmentInfo)
 	if err != nil {
 		return err
 	}
 
-	// Update balance in the internal Gateway's accounting
-	// TODO: Think if it make sense to pay 2 times * fee upfront
-	safeMinCredit := fee.Mul(fee, big.NewRat(2, 1))
+	// We pay a few segments upfront to avoid race condition between payment and segment processing
+	safeMinCredit := new(big.Rat).Mul(fee, big.NewRat(r.segmentsToPayUpfront, 1))
 	balUpdate, err := newBalanceUpdate(sess, safeMinCredit)
 	if err != nil {
 		return err
 	}
 	balUpdate.Debit = fee
 	balUpdate.Status = ReceivedChange
+
 	defer completeBalanceUpdate(sess, balUpdate)
 
 	// Generate payment tickets
@@ -120,24 +114,37 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, streamInfo *Seg
 		return err
 	}
 
-	var tr net.TranscodeResult
-	err = proto.Unmarshal(data, &tr)
+	var pr net.PaymentResult
+	err = proto.Unmarshal(data, &pr)
 	if err != nil {
 		clog.Errorf(ctx, "Could not unmarshal response from orchestrator=%s err=%q", url)
 		return err
 	}
 
-	updateSession(sess, &ReceivedTranscodeResult{Info: tr.Info})
+	updateSession(sess, &ReceivedTranscodeResult{Info: pr.Info})
 	clog.Infof(ctx, "Payment sent to orchestrator=%s", url)
 
 	return nil
 }
 
-func estimateRealtimeAIFee(info *SegmentInfo) (*big.Rat, error) {
-	// TODO: Calculate Payment for Realtime Video AI
-	return big.NewRat(1, 1), nil
+func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
+	shouldRefresh, err := shouldRefreshSession(ctx, sess)
+	if err != nil {
+		return err
+	}
+	if shouldRefresh {
+		if err := refreshSession(ctx, sess); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (r *realtimePaymentSender) AccountPayment(ctx context.Context, streamInfo SegmentInfo) error {
+func estimateRealtimeFee(info *SegmentInfo) (*big.Rat, error) {
+	// TODO: Calculate Payment for Realtime Video AI
+	return big.NewRat(30000000000, 1), nil
+}
+
+func (r *realtimePaymentSender) AccountPayment(ctx context.Context, segmentInfo SegmentInfo) error {
 	return nil
 }
