@@ -11,18 +11,35 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/stream"
 )
 
 const paymentRequestTimeout = 1 * time.Minute
 
-type realtimePaymentSender struct {
-	sess *BroadcastSession
+type SegmentInfo struct {
+	sess     *BroadcastSession
+	inPixels int
+	dur      time.Duration
 }
 
-func (r *realtimePaymentSender) SendPayment(ctx context.Context, streamInfo pm.StreamInfo) error {
-	sess := r.toBroadcastSession(streamInfo)
+// RealtimePaymentSender is used in Gateway to send payment to Orchestrator
+type RealtimePaymentSender interface {
+	// SendPayment process the streamInfo and sends a payment to Orchestrator if needed
+	SendPayment(ctx context.Context, segmentInfo *SegmentInfo) error
+}
+
+// RealtimePaymentValidator is used in Orchestrator to validate if the stream is paid
+type RealtimePaymentValidator interface {
+	// ValidatePayment checks if the stream is paid and if not it returns error, so that stream can be stopped
+	AccountPayment(ctx context.Context, streamInfo *SegmentInfo) error
+}
+
+type realtimePaymentSender struct {
+	segmentsToPayUpfront int
+}
+
+func (r *realtimePaymentSender) SendPayment(ctx context.Context, streamInfo *SegmentInfo) error {
+	sess := streamInfo.sess
 
 	shouldRefresh, err := shouldRefreshSession(ctx, sess)
 	if err != nil {
@@ -116,16 +133,11 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, streamInfo pm.S
 	return nil
 }
 
-func estimateRealtimeAIFee(info pm.StreamInfo) (*big.Rat, error) {
+func estimateRealtimeAIFee(info *SegmentInfo) (*big.Rat, error) {
 	// TODO: Calculate Payment for Realtime Video AI
 	return big.NewRat(1, 1), nil
 }
 
-func (r *realtimePaymentSender) toBroadcastSession(info pm.StreamInfo) *BroadcastSession {
-	// TODO: Resolve BroadcastSession from StreamInfo or pass BroadcastSession directly as a param
-	return r.sess
-}
-
-func (r *realtimePaymentSender) AccountPayment(ctx context.Context, streamInfo pm.StreamInfo) error {
+func (r *realtimePaymentSender) AccountPayment(ctx context.Context, streamInfo SegmentInfo) error {
 	return nil
 }

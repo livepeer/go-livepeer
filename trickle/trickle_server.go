@@ -2,10 +2,8 @@ package trickle
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"github.com/livepeer/go-livepeer/pm"
 	"io"
 	"log/slog"
 	"net/http"
@@ -45,9 +43,6 @@ const maxSegmentsPerStream = 5
 const BaseServerPath = "/ai/live-video/"
 
 var FirstByteTimeout = errors.New("pending read timeout")
-
-// TODO: This will not be a global variable, but a param injected somewhere
-var paymentValidator pm.RealtimePaymentValidator
 
 func ConfigureServerWithMux(mux *http.ServeMux) {
 	/* TODO we probably want to configure the below
@@ -197,12 +192,6 @@ func (tr *timeoutReader) Read(p []byte) (int, error) {
 // Handle post requests for a given index
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, exists := s.getForWrite(idx)
-	if err := paymentValidator.AccountPayment(context.TODO(), segmentToStreamInfo(segment)); err != nil {
-		// TODO: Stop stream processing
-		http.Error(w, "Payment required", http.StatusPaymentRequired)
-		return
-	}
-
 	if exists {
 		slog.Warn("Overwriting existing entry", "idx", idx)
 		/*
@@ -250,11 +239,6 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 
 	// Mark segment as closed
 	segment.close()
-}
-
-func segmentToStreamInfo(segment *Segment) pm.StreamInfo {
-	// TODO
-	return pm.StreamInfo{}
 }
 
 func (s *Stream) getForWrite(idx int) (*Segment, bool) {

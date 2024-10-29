@@ -2,7 +2,6 @@ package media
 
 import (
 	"bufio"
-	"context"
 	"encoding/base32"
 	"fmt"
 	"io"
@@ -14,15 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
 
 var waitTimeout = 20 * time.Second
-
-// TODO: This will not be a global variable, but a param injected somewhere
-var paymentSender pm.RealtimePaymentSender
 
 func RunSegmentation(in string, segmentHandler SegmentHandler) {
 
@@ -217,13 +212,6 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 	// TODO should be explicitly buffered for better management
 	interfaceReader, interfaceWriter := io.Pipe()
 	defer interfaceWriter.Close()
-	paymentSender.SendPayment(context.TODO(), pm.StreamInfo{
-		// TODO: Calculate segment duration
-		Dur: 200 * time.Millisecond,
-		// TODO: Add stream ID
-		StreamID: "abcdef",
-		// TODO: Add other params if needed for payment
-	})
 	segmentHandler(interfaceReader)
 
 	for {

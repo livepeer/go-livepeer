@@ -23,7 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -876,10 +875,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	return nil, nil
 }
 
-var paymentSender pm.RealtimePaymentSender
-
 func startPaymentLoop(ctx context.Context, node *core.LivepeerNode, sess *AISession) {
-	paymentSender = &realtimePaymentSender{sess: sess.BroadcastSession}
+	paymentSender = &realtimePaymentSender{segmentsToPayUpfront: 5}
 	go func() {
 		for {
 			submitPayment(context.Background(), sess)
@@ -891,7 +888,7 @@ func startPaymentLoop(ctx context.Context, node *core.LivepeerNode, sess *AISess
 
 func submitPayment(ctx context.Context, sess *AISession) {
 	clog.Infof(ctx, "Submitting payment for session %s", sess.BroadcastSession.PMSessionID)
-	paymentSender.SendPayment(ctx, pm.StreamInfo{})
+	paymentSender.SendPayment(ctx, &SegmentInfo{sess: sess.BroadcastSession})
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
