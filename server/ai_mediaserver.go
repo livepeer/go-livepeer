@@ -74,6 +74,9 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
 
+	// This is called by the media server when the stream is ready
+	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+
 	return nil
 }
 
@@ -359,5 +362,26 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
+
+func (ls *LivepeerServer) StartLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		streamName := r.FormValue("stream")
+		if streamName == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		requestID := string(core.RandomManifestID())
+		params := aiRequestParams{
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+		}
+		ctx := clog.AddVal(r.Context(), "request_id", requestID)
+		// TODO set model and initial parameters here if necessary (eg, prompt)
+		req := struct{}{}
+		resp, err := processAIRequest(ctx, params, req)
+		clog.Infof(ctx, "Received live video AI request stream=%s resp=%v err=%v", streamName, resp, err)
 	})
 }

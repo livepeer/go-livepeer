@@ -56,6 +56,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -236,6 +237,35 @@ func (h *lphttp) ImageToText() http.Handler {
 		}
 
 		handleAIRequest(ctx, w, r, orch, req)
+
+	})
+}
+
+func (h *lphttp) StartLiveVideoToVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// skipping handleAIRequest for now until we have payments
+
+		var (
+			mid    = string(core.RandomManifestID())
+			pubUrl = "/ai/live-video/" + mid
+			subUrl = pubUrl + "/out"
+		)
+		jsonData, err := json.Marshal(struct {
+			PublishUrl   string
+			SubscribeUrl string
+		}{
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
+		})
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(jsonData)
 	})
 }
 
