@@ -211,7 +211,7 @@ func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID strin
 func (r *stubOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *stubOrchestrator) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 
@@ -1414,7 +1414,7 @@ func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID strin
 func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

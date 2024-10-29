@@ -765,18 +765,46 @@ func CalculateTextToSpeechLatencyScore(took time.Duration, inCharacters int64) f
 	return took.Seconds() / float64(inCharacters)
 }
 
-func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	audioResp := resp.(*worker.EncodedFileResponse)
+	audioResp, ok := resp.(*worker.AudioResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
 
+	var result []byte
+	var data bytes.Buffer
+	var name string
+	writer := bufio.NewWriter(&data)
+	err = worker.ReadAudioB64DataUrl(audioResp.Audio.Url, writer)
+	if err == nil {
+		// orchestrator sent bae64 encoded result in .Url
+		name = string(core.RandomManifestID()) + ".wav"
+		writer.Flush()
+		result = data.Bytes()
+	} else {
+		// orchestrator sent download url, get the data
+		name = filepath.Base(audioResp.Audio.Url)
+		result, err = core.DownloadData(ctx, audioResp.Audio.Url)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error saving image to objectStore: %w", err)
+	}
+
+	audioResp.Audio.Url = newUrl
 	return audioResp, nil
 }
 
-func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenTextToSpeechJSONRequestBody) (*worker.EncodedFileResponse, error) {
+func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
 
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
@@ -786,7 +814,7 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 		return nil, err
 	}
 
-	textLength := len(*req.TextInput)
+	textLength := len(*req.Text)
 	clog.V(common.VERBOSE).Infof(ctx, "Submitting text-to-speech request with text length: %d", textLength)
 	inCharacters := int64(textLength)
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, inCharacters)
@@ -836,7 +864,7 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 		monitor.AIRequestFinished(ctx, "text-to-speech", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
-	var res worker.EncodedFileResponse
+	var res worker.AudioResponse
 	if err := json.Unmarshal(resp.Body, &res); err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
