@@ -373,6 +373,7 @@ type stubOrchestratorStore struct {
 	serviceURI        string
 	ethereumAddr      string
 	stake             int64
+	remoteInfo        string
 	selectErr         error
 	updateErr         error
 }
@@ -395,6 +396,6 @@ func (s *stubOrchestratorStore) SelectOrchs(filter *common.DBOrchFilter) ([]*com
 		return []*common.DBOrch{}, s.selectErr
 	}
 	return []*common.DBOrch{
-		common.NewDBOrch(s.ethereumAddr, s.serviceURI, 0, s.activationRound, s.deactivationRound, s.stake),
+		common.NewDBOrch(s.ethereumAddr, s.serviceURI, 0, s.activationRound, s.deactivationRound, s.stake, s.remoteInfo),
 	}, nil
 }

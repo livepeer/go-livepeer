@@ -56,7 +56,7 @@ type Orchestrator interface {
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte)
 	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
@@ -69,6 +69,7 @@ type Orchestrator interface {
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
+	WorkerHardware() []worker.HardwareInformation
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
@@ -442,6 +443,11 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	authToken := orch.AuthToken(sessionID, expiration)
 
+	workerHardware, err := json.Marshal(orch.WorkerHardware())
+	if err != nil {
+		return nil, err
+	}
+
 	tr := net.OrchestratorInfo{
 		Transcoder:   serviceURI,
 		TicketParams: params,
@@ -449,6 +455,7 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 		Address:      orch.Address().Bytes(),
 		Capabilities: orch.Capabilities(),
 		AuthToken:    authToken,
+		Hardware:     workerHardware,
 	}
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)

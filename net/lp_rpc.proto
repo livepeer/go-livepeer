@@ -8,7 +8,7 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
-  rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
+ rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
   rpc Ping(PingPong) returns (PingPong);
 }
 
@@ -134,8 +134,6 @@ message Capabilities {
 
       map<string, ModelConstraint> models = 1;
     }
-
-
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
@@ -159,6 +157,9 @@ message OrchestratorInfo {
 
   // Data for transcoding authentication
   AuthToken auth_token = 6;
+
+  // Information on Orchestrator hardware
+  bytes hardware = 7;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
@@ -393,6 +394,9 @@ message RegisterAIWorkerRequest {
 
     // AIWorker capabilities
     Capabilities capabilities = 2;
+
+    // AIWorker hardware info
+    bytes hardware = 3;
 }
 
 // Data included by the gateway when submitting a AI job.

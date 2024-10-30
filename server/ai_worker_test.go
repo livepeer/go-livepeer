@@ -19,6 +19,7 @@ import (
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	oapitypes "github.com/oapi-codegen/runtime/types"
@@ -415,6 +416,23 @@ func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int
 	return resp.StatusCode, string(body)
 }
 
+func newMockAIOrchestratorServer() *httptest.Server {
+	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
+	n.NodeType = core.OrchestratorNode
+	n.AIWorkerManager = core.NewRemoteAIWorkerManager()
+	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	mux := s.cliWebServerHandlers("addr")
+	srv := httptest.NewServer(mux)
+	return srv
+}
+
+func connectWorker(n *core.LivepeerNode) {
+	strm := &StubAIWorkerServer{}
+	caps := createStubAIWorkerCapabilities()
+	go func() { n.AIWorkerManager.Manage(strm, caps.ToNetCapabilities(), nil) }()
+	time.Sleep(1 * time.Millisecond)
+}
+
 func createStubAIWorkerCapabilities() *core.Capabilities {
 	//create capabilities and constraints the ai worker sends to orch
 	constraints := make(core.PerCapabilityConstraints)
@@ -636,4 +654,9 @@ func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
 	a.Called++
 	return nil
+}
+
+func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
+	a.Called++
+	return []worker.HardwareInformation{}
 }

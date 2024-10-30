@@ -267,6 +267,38 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthClient, db *common.DB) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+
+			curRound, err := client.CurrentRound()
+			if err != nil {
+				respond500(w, fmt.Sprintf("could not query current round: %v", err))
+			}
+			orchs, err := db.SelectOrchs(
+				&common.DBOrchFilter{
+					CurrentRound:   curRound,
+					UpdatedLastDay: true,
+				},
+			)
+			var remoteInfos []net.OrchestratorInfo
+			for _, o := range orchs {
+				var info net.OrchestratorInfo
+				json.Unmarshal([]byte(o.RemoteInfo), &info)
+				remoteInfos = append(remoteInfos, info)
+			}
+
+			networkCapabilities := make(map[string]interface{})
+			networkCapabilities["CapabilitiesNames"] = core.CapabilityNameLookup
+			networkCapabilities["Orchestrators"] = remoteInfos
+			respondJson(w, networkCapabilities)
+		} else {
+			respond400(w, "Node must be gateway node to get network capabilities")
+			return
+		}
+	})
+}
+
 func getBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var pNames []string

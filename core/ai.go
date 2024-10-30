@@ -32,6 +32,7 @@ type AI interface {
 	Stop(context.Context) error
 	HasCapacity(string, string) bool
 	EnsureImageAvailable(context.Context, string, string) error
+	HardwareInformation() []worker.HardwareInformation
 }
 
 // Custom type to parse a big.Rat from a JSON number.
