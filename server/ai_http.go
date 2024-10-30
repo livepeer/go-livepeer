@@ -242,6 +242,7 @@ func (h *lphttp) ImageToText() http.Handler {
 func (h *lphttp) TextToSpeech() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
+
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
@@ -440,11 +441,11 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		modelID = *v.ModelId
 
 		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.TextToSpeech(ctx, v)
+			return orch.TextToSpeech(ctx, requestID, v)
 		}
 
 		// TTS pricing is typically in characters, including punctuation
-		words := utf8.RuneCountInString(*v.TextInput)
+		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
 
 	default:
@@ -762,6 +763,15 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					wkrResult.Err = err
 					break
 				}
+			case "text-to-speech":
+				var parsedResp worker.AudioResponse
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
 			}
 
 			wkrResult.Results = results
