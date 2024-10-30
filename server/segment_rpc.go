@@ -226,6 +226,8 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	startAccountLoop(h.orchestrator, getPaymentSender(payment), segData.AuthToken.SessionId)
+
 	buf, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
 	if err != nil {
 		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
@@ -234,6 +236,33 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance = %s", h.node.Balances.Balance(getPaymentSender(payment), core.ManifestID(segData.AuthToken.SessionId)).FloatString(0))
 
 	w.Write(buf)
+}
+
+var paymentReceiver = &realtimePaymentReceiver{}
+var started = false
+
+func startAccountLoop(orchestrator Orchestrator, sender ethcommon.Address, sessionID string) {
+	paymentReceiver = &realtimePaymentReceiver{orchestrator: orchestrator}
+	if !started {
+		go func() {
+			for {
+				time.Sleep(5 * time.Second)
+				err := paymentReceiver.AccountPayment(context.TODO(), SegmentInfoReceiver{
+					sessionID: sessionID,
+					inPixels:  4000,
+					sender:    sender,
+					priceInfo: &net.PriceInfo{
+						PricePerUnit:  4,
+						PixelsPerUnit: 1,
+					},
+				})
+				if err != nil {
+					clog.Infof(context.TODO(), "ERROR Processing payments for session %s: %v", sessionID, err)
+				}
+			}
+		}()
+		started = true
+	}
 }
 
 func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, *net.OrchestratorInfo, context.Context, error) {
@@ -612,7 +641,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
 	balUpdate.Status = ReceivedChange
 	if priceInfo != nil {
-		// The update's debit is the transcoding fee which is computed as the total number of pixels processed
+		// The update's debit is the transcoding calculateFee which is computed as the total number of pixels processed
 		// for all results returned multiplied by the orchestrator's price
 		var pixelCount int64
 		for _, res := range tdata.Segments {

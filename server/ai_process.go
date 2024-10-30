@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -888,7 +889,14 @@ func startPaymentLoop(ctx context.Context, node *core.LivepeerNode, sess *AISess
 
 func submitPayment(ctx context.Context, sess *AISession) {
 	clog.Infof(ctx, "Submitting payment for session %s", sess.BroadcastSession.PMSessionID)
-	paymentSender.SendPayment(ctx, &SegmentInfo{sess: sess.BroadcastSession})
+	paymentSender.SendPayment(ctx, &SegmentInfoSender{
+		sess:     sess.BroadcastSession,
+		inPixels: 4000,
+		priceInfo: &net.PriceInfo{
+			PricePerUnit:  4,
+			PixelsPerUnit: 1,
+		},
+	})
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {

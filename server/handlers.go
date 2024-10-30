@@ -503,7 +503,7 @@ func (s *LivepeerServer) setOrchestratorConfigHandler(client eth.LivepeerEthClie
 		if feeShareStr != "" {
 			feeShare, err = strconv.ParseFloat(feeShareStr, 64)
 			if err != nil {
-				err = errors.Wrapf(err, "Cannot convert fee share")
+				err = errors.Wrapf(err, "Cannot convert calculateFee share")
 				respond400(w, err.Error())
 				return
 			}

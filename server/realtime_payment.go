@@ -2,13 +2,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/stream"
@@ -16,42 +20,51 @@ import (
 
 const paymentRequestTimeout = 1 * time.Minute
 
-type SegmentInfo struct {
-	sess     *BroadcastSession
-	inPixels int
-	dur      time.Duration
+type SegmentInfoSender struct {
+	sess      *BroadcastSession
+	inPixels  int64
+	dur       time.Duration
+	priceInfo *net.PriceInfo
+}
+
+type SegmentInfoReceiver struct {
+	sender    ethcommon.Address
+	sessionID string
+	inPixels  int64
+	priceInfo *net.PriceInfo
 }
 
 // RealtimePaymentSender is used in Gateway to send payment to Orchestrator
 type RealtimePaymentSender interface {
 	// SendPayment process the streamInfo and sends a payment to Orchestrator if needed
-	SendPayment(ctx context.Context, segmentInfo *SegmentInfo) error
+	SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error
 }
 
-// RealtimePaymentValidator is used in Orchestrator to account for each processed segment
-type RealtimePaymentValidator interface {
-	// AccountPayment checks if the stream is paid and if not it returns error, so that stream can be stopped
-	AccountPayment(ctx context.Context, segmentInfo *SegmentInfo) error
+// RealtimePaymentReceiver is used in Orchestrator to account for each processed segment
+type RealtimePaymentReceiver interface {
+	// AccountSegment checks if the stream is paid and if not it returns error, so that stream can be stopped
+	AccountSegment(ctx context.Context, segmentInfo *SegmentInfoReceiver) error
 }
 
 type realtimePaymentSender struct {
 	segmentsToPayUpfront int64
 }
 
-func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfo) error {
+type realtimePaymentReceiver struct {
+	orchestrator Orchestrator
+}
+
+func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
 	sess := segmentInfo.sess
 
 	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
 		return err
 	}
 
-	fee, err := estimateRealtimeFee(segmentInfo)
-	if err != nil {
-		return err
-	}
+	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	// We pay a few segments upfront to avoid race condition between payment and segment processing
-	safeMinCredit := new(big.Rat).Mul(fee, big.NewRat(r.segmentsToPayUpfront, 1))
+	safeMinCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
 	balUpdate, err := newBalanceUpdate(sess, safeMinCredit)
 	if err != nil {
 		return err
@@ -140,11 +153,20 @@ func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
 	return nil
 }
 
-func estimateRealtimeFee(info *SegmentInfo) (*big.Rat, error) {
-	// TODO: Calculate Payment for Realtime Video AI
-	return big.NewRat(30000000000, 1), nil
+func (r *realtimePaymentReceiver) AccountPayment(
+	ctx context.Context, segmentInfo SegmentInfoReceiver) error {
+	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
+
+	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
+	if balance.Cmp(fee) < 0 {
+		return errors.New("insufficient balance")
+	}
+	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
+	clog.V(common.DEBUG).Infof(ctx, "Accounted for payment for sessionID=%s, fee=%s", segmentInfo.sessionID, fee.FloatString(0))
+	return nil
 }
 
-func (r *realtimePaymentSender) AccountPayment(ctx context.Context, segmentInfo SegmentInfo) error {
-	return nil
+func calculateFee(inPixels int64, price *net.PriceInfo) *big.Rat {
+	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
+	return priceRat.Mul(priceRat, big.NewRat(inPixels, 1))
 }

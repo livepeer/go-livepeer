@@ -21,7 +21,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 	paymentSender := realtimePaymentSender{segmentsToPayUpfront: 5}
 	params.segmentReader.SwitchReader(func(reader io.Reader) {
 		go func() {
-			paymentSender.SendPayment(context.TODO(), &SegmentInfo{
+			paymentSender.SendPayment(context.TODO(), &SegmentInfoSender{
 				sess: sess.BroadcastSession,
 				// TODO: Get inPixels and dur from the segment
 				inPixels: 4000,
