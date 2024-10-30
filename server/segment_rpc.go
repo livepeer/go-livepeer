@@ -68,61 +68,26 @@ var httpClient = &http.Client{
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
-	orch := h.orchestrator
-
-	remoteAddr := getRemoteAddr(r)
-	ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-	payment, err := getPayment(r.Header.Get(paymentHeader))
+	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
 	if err != nil {
-		clog.Errorf(ctx, "Could not parse payment")
-		http.Error(w, err.Error(), http.StatusPaymentRequired)
 		return
 	}
 
-	sender := getPaymentSender(payment)
-	ctx = clog.AddVal(ctx, "sender", sender.Hex())
-
-	// check the segment sig from the broadcaster
-	seg := r.Header.Get(segmentHeader)
-
-	segData, ctx, err := verifySegCreds(ctx, orch, seg, sender)
-	if err != nil {
-		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
-		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
 	ctx = clog.AddSeqNo(ctx, uint64(segData.Seq))
-
 	clog.V(common.VERBOSE).Infof(ctx, "Received segment dur=%v", segData.Duration)
-
 	if monitor.Enabled {
 		monitor.SegmentEmerged(ctx, 0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
-	}
-
-	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		clog.Errorf(ctx, "error processing payment: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
 	}
 
 	// Balance check is only necessary if the price is non-zero
 	// We do not need to worry about differentiating between the case where the price is 0 as the default when no price is attached vs.
 	// the case where the price is actually set to 0 because ProcessPayment() should guarantee a price attached
-	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(segData.AuthToken.SessionId)) {
+	sender := getPaymentSender(payment)
+	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !h.orchestrator.SufficientBalance(sender, core.ManifestID(segData.AuthToken.SessionId)) {
 		clog.Errorf(ctx, "Insufficient credit balance for stream")
 		http.Error(w, "Insufficient balance", http.StatusBadRequest)
 		return
 	}
-
-	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
-	if err != nil {
-		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
-	oInfo.AuthToken = segData.AuthToken
 
 	// download the segment and check the hash
 	dlStart := time.Now()
@@ -182,7 +147,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		Name:  uri,
 	}
 
-	res, err := orch.TranscodeSeg(ctx, segData, &hlsStream)
+	res, err := h.orchestrator.TranscodeSeg(ctx, segData, &hlsStream)
 
 	// Upload to OS and construct segment result set
 	var segments []*net.TranscodedSegmentData
@@ -222,7 +187,7 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Debit the fee for the total pixel count
-	orch.DebitFees(sender, core.ManifestID(segData.AuthToken.SessionId), payment.GetExpectedPrice(), pixels)
+	h.orchestrator.DebitFees(sender, core.ManifestID(segData.AuthToken.SessionId), payment.GetExpectedPrice(), pixels)
 	if monitor.Enabled {
 		monitor.MilPixelsProcessed(ctx, float64(pixels)/1000000.0)
 	}
@@ -254,7 +219,24 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf)
 }
 
+// Payment receives payment from Gateway and adds it into the orchestrator's balance
 func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
+	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	if err != nil {
+		return
+	}
+
+	buf, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
+	if err != nil {
+		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
+		return
+	}
+	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance = %s", h.node.Balances.Balance(getPaymentSender(payment), core.ManifestID(segData.AuthToken.SessionId)).FloatString(0))
+
+	w.Write(buf)
+}
+
+func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, *net.OrchestratorInfo, context.Context, error) {
 	orch := h.orchestrator
 
 	remoteAddr := getRemoteAddr(r)
@@ -264,7 +246,7 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		clog.Errorf(ctx, "Could not parse payment")
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return
+		return net.Payment{}, nil, nil, ctx, err
 	}
 
 	sender := getPaymentSender(payment)
@@ -277,43 +259,25 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
-		return
-	}
-	ctx = clog.AddSeqNo(ctx, uint64(segData.Seq))
-
-	clog.V(common.VERBOSE).Infof(ctx, "Received segment dur=%v", segData.Duration)
-
-	if monitor.Enabled {
-		monitor.SegmentEmerged(ctx, 0, uint64(segData.Seq), len(segData.Profiles), segData.Duration.Seconds())
+		return net.Payment{}, nil, nil, ctx, err
 	}
 
-	//segData.AuthToken.SessionId = "some-manifest"
 	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
 		clog.Errorf(ctx, "error processing payment: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return net.Payment{}, nil, nil, ctx, err
 	}
 
 	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
 	if err != nil {
 		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+		return net.Payment{}, nil, nil, ctx, err
 	}
 	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
 	oInfo.AuthToken = segData.AuthToken
 
-	pr := &net.PaymentResult{
-		Info: oInfo,
-	}
-	buf, err := proto.Marshal(pr)
-	if err != nil {
-		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
-		return
-	}
-	w.Write(buf)
-
-	clog.Infof(ctx, "Payment processed, current balance = %v", h.node.Balances.Balance(sender, core.ManifestID(segData.AuthToken.SessionId)).FloatString(1))
+	return payment, segData, oInfo, ctx, nil
 }
 
 func getPayment(header string) (net.Payment, error) {
