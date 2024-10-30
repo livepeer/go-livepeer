@@ -16,8 +16,8 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 )
 
-func DownloadData(ctx context.Context, uri string) ([]byte, error) {
-	return downloadDataHTTP(ctx, uri)
+func GetSegmentData(ctx context.Context, uri string) ([]byte, error) {
+	return getSegmentDataHTTP(ctx, uri)
 }
 
 var httpc = &http.Client{
@@ -73,7 +73,7 @@ func ToNetS3Info(storage *drivers.S3OSInfo) *net.S3OSInfo {
 	}
 }
 
-func downloadDataHTTP(ctx context.Context, uri string) ([]byte, error) {
+func getSegmentDataHTTP(ctx context.Context, uri string) ([]byte, error) {
 	clog.V(common.VERBOSE).Infof(ctx, "Downloading uri=%s", uri)
 	started := time.Now()
 	resp, err := httpc.Get(uri)
