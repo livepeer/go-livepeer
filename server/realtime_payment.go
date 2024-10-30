@@ -23,7 +23,6 @@ const paymentRequestTimeout = 1 * time.Minute
 type SegmentInfoSender struct {
 	sess      *BroadcastSession
 	inPixels  int64
-	dur       time.Duration
 	priceInfo *net.PriceInfo
 }
 

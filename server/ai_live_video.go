@@ -2,12 +2,10 @@ package server
 
 import (
 	"context"
+	"github.com/livepeer/go-livepeer/trickle"
 	"io"
 	"log/slog"
 	"net/url"
-	"time"
-
-	"github.com/livepeer/go-livepeer/trickle"
 )
 
 // TODO: This will not be a global variable, but a param injected somewhere
@@ -25,7 +23,6 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 				sess: sess.BroadcastSession,
 				// TODO: Get inPixels and dur from the segment
 				inPixels: 4000,
-				dur:      time.Second,
 			})
 			// TODO this blocks! very bad!
 			publisher.Write(reader)
