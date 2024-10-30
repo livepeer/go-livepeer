@@ -242,7 +242,7 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 					var err error
 					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
 						if monitor.Enabled {
-							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], modelID, price)
+							monitor.MaxPriceForCapability(monitor.ToPipeline(core.CapabilityNameLookup[cap]), modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
 					})

@@ -48,7 +48,7 @@ var MetadataQueue event.SimpleProducer
 var MetadataPublishTimeout = 1 * time.Second
 
 var getOrchestratorInfoRPC = GetOrchestratorInfo
-var downloadSeg = core.GetSegmentData
+var downloadSeg = core.DownloadData
 var submitMultiSession = func(ctx context.Context, sess *BroadcastSession, seg *stream.HLSSegment, segPar *core.SegmentParameters,
 	nonce uint64, calcPerceptualHash bool, resc chan *SubmitResult) {
 	go submitSegment(ctx, sess, seg, segPar, nonce, calcPerceptualHash, resc)
@@ -63,7 +63,6 @@ type BroadcastConfig struct {
 func newBroadcastConfig() *BroadcastConfig {
 	maxPrices := make(map[core.Capability]map[string]*core.AutoConvertedPrice)
 	models := make(map[string]*core.AutoConvertedPrice)
-	models["default"] = core.NewFixedPrice(big.NewRat(0, 1))
 	maxPrices[core.Capability_Unused] = models
 	return &BroadcastConfig{
 		maxPricePerCapability: maxPrices,
@@ -128,7 +127,7 @@ func (cfg *BroadcastConfig) getCapabilityMaxPrice(cap core.Capability, modelID s
 		// No price set for capability
 		return nil
 	}
-	if price, modelOk := models[modelID]; modelOk {
+	if price, modelOk := models[modelID]; modelOk && price != nil {
 		return price.Value()
 	}
 	if defaultPrice, hasDefault := models["default"]; hasDefault {
@@ -690,14 +689,14 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	segmToCheckIndex := rand.Intn(segmcount)
 
 	// download trusted hashes
-	trustedHash, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+	trustedHash, err := core.DownloadData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 	if err != nil {
 		err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
 		return nil, nil, err
 	}
 	// download trusted video segment
-	trustedSegm, err := core.GetSegmentData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+	trustedSegm, err := core.DownloadData(ctx, trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 	if err != nil {
 		err = fmt.Errorf("error downloading segment from url=%s err=%w",
 			trustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -708,7 +707,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 	var sessionsToSuspend []*BroadcastSession
 	for _, untrustedResult := range untrustedResults {
 		ouri := untrustedResult.Session.Transcoder()
-		untrustedHash, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
+		untrustedHash, err := core.DownloadData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl)
 		if err != nil {
 			err = fmt.Errorf("error uri=%s downloading perceptual hash from url=%s err=%w", ouri,
 				untrustedResult.TranscodeResult.Segments[segmToCheckIndex].PerceptualHashUrl, err)
@@ -731,7 +730,7 @@ func (bsm *BroadcastSessionsManager) chooseResults(ctx context.Context, seg *str
 		vequal := false
 		if equal {
 			// download untrusted video segment
-			untrustedSegm, err := core.GetSegmentData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
+			untrustedSegm, err := core.DownloadData(ctx, untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url)
 			if err != nil {
 				err = fmt.Errorf("error uri=%s downloading segment from url=%s err=%w", ouri,
 					untrustedResult.TranscodeResult.Segments[segmToCheckIndex].Url, err)
@@ -1187,7 +1186,7 @@ func transcodeSegment(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSS
 				return nil, info, err
 			}
 			segmToCheckIndex := rand.Intn(segmcount)
-			segHash, err := core.GetSegmentData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
+			segHash, err := core.DownloadData(ctx, res.Segments[segmToCheckIndex].PerceptualHashUrl)
 			if err != nil || len(segHash) <= 0 {
 				err = fmt.Errorf("error downloading perceptual hash from url=%s err=%w",
 					res.Segments[segmToCheckIndex].PerceptualHashUrl, err)

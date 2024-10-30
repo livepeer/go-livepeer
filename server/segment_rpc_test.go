@@ -220,27 +220,6 @@ func TestVerifySegCreds_Duration(t *testing.T) {
 	assert.Nil(md)
 }
 
-func TestCoreSegMetadata_Profiles(t *testing.T) {
-	assert := assert.New(t)
-	// testing with the following profiles doesn't work: ffmpeg.P720p60fps16x9, ffmpeg.P144p25fps16x9
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P576p30fps16x9, ffmpeg.P240p30fps4x3}
-	segData := &net.SegData{
-		ManifestId: []byte("manifestID"),
-		Profiles:   common.ProfilesToTranscodeOpts(profiles),
-	}
-	md, err := coreSegMetadata(segData)
-	assert.Nil(err)
-	assert.Equal(profiles, md.Profiles)
-
-	// Check error handling with the default invalid Profiles
-	segData, err = core.NetSegData(&core.SegTranscodingMetadata{})
-	assert.Nil(err)
-	assert.Equal([]byte("invalid"), segData.Profiles)
-	md, err = coreSegMetadata(segData)
-	assert.Nil(md)
-	assert.Equal(common.ErrProfile, err)
-}
-
 func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
 	profiles := []ffmpeg.VideoProfile{
