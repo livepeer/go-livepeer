@@ -139,19 +139,6 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 	return nil
 }
 
-func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
-	shouldRefresh, err := shouldRefreshSession(ctx, sess)
-	if err != nil {
-		return err
-	}
-	if shouldRefresh {
-		if err := refreshSession(ctx, sess); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (r *realtimePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo SegmentInfoReceiver) error {
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
