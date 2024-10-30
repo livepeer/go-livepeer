@@ -63,14 +63,13 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	// We pay a few segments upfront to avoid race condition between payment and segment processing
-	safeMinCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
-	balUpdate, err := newBalanceUpdate(sess, safeMinCredit)
+	minCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
+	balUpdate, err := newBalanceUpdate(sess, minCredit)
 	if err != nil {
 		return err
 	}
 	balUpdate.Debit = fee
 	balUpdate.Status = ReceivedChange
-
 	defer completeBalanceUpdate(sess, balUpdate)
 
 	// Generate payment tickets
@@ -83,27 +82,21 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 		return err
 	}
 
-	url := sess.OrchestratorInfo.Transcoder
-	req, err := http.NewRequestWithContext(ctx, "POST", url+"/payment", nil)
-	if err != nil {
-		clog.Errorf(ctx, "Could not generate payment request to orch=%s", url)
-		// TODO: Monitor metrics for payments
-		return err
-	}
-
-	// genSegCreds expects a stream.HLSSegment so in order to reuse it here we pass a dummy object
-	clog.Infof(ctx, "Session ID=%v", sess.Params.SessionID)
+	// Generate segment credentials with an empty segment
 	segCreds, err := genSegCreds(sess, &stream.HLSSegment{}, nil, false)
 	if err != nil {
 		return err
 	}
 
-	req.Header.Set(paymentHeader, payment)
-	// TODO: Check if we can get rid of this for AI
-	req.Header.Set(segmentHeader, segCreds)
-
 	// Send payment to Orchestrator
-	// TODO
+	url := sess.OrchestratorInfo.Transcoder
+	req, err := http.NewRequestWithContext(ctx, "POST", url+"/payment", nil)
+	if err != nil {
+		clog.Errorf(ctx, "Could not generate payment request to orch=%s", url)
+		return err
+	}
+	req.Header.Set(paymentHeader, payment)
+	req.Header.Set(segmentHeader, segCreds)
 	resp, err := sendReqWithTimeout(req, paymentRequestTimeout)
 	if err != nil {
 		clog.Errorf(ctx, "Could not send payment to orch=%s err=%q", url, err)
@@ -133,9 +126,10 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 		return err
 	}
 
+	// Update session to preserve the same AuthToken.SessionID between payments
 	updateSession(sess, &ReceivedTranscodeResult{Info: pr.Info})
-	clog.Infof(ctx, "Payment sent to orchestrator=%s", url)
 
+	clog.V(common.DEBUG).Infof(ctx, "Payment sent to orchestrator=%s", url)
 	return nil
 }
 
