@@ -900,6 +900,18 @@ func processAudioToText(ctx context.Context, params aiRequestParams, req worker.
 }
 
 func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// Convert duration to float32 for multipart writer
+	duration := float32(durationSeconds)
+	req.Duration = &duration
+
 	var buf bytes.Buffer
 	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
 	if err != nil {
@@ -910,14 +922,6 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-
-	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
