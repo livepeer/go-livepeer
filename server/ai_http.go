@@ -57,8 +57,8 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
-	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
+	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 	return nil
 }
 
@@ -220,7 +220,6 @@ func (h *lphttp) LLM() http.Handler {
 func (h *lphttp) ImageToText() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
-
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
@@ -598,7 +597,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// Non-streaming response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
+		err = json.NewEncoder(w).Encode(resp)
 	}
 
 }
