@@ -149,6 +149,10 @@ func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 }
 
+func (r *stubOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
+}
+
 func (r *stubOrchestrator) Capabilities() *net.Capabilities {
 	if r.caps != nil {
 		return r.caps.ToNetCapabilities()
@@ -1364,6 +1368,10 @@ func (o *mockOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 
 func (o *mockOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 	o.Called(addr, manifestID, price, pixels)
+}
+
+func (o *mockOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
 }
 
 func (o *mockOrchestrator) Capabilities() *net.Capabilities {

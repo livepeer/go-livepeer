@@ -881,7 +881,7 @@ func startPaymentLoop(ctx context.Context, node *core.LivepeerNode, sess *AISess
 	go func() {
 		for {
 			submitPayment(context.Background(), sess)
-			clog.Infof(ctx, "Payment submitted, current balance = %v", sess.Balances.Balance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId)).FloatString(1))
+			clog.Infof(ctx, "Payment submitted, current balance = %v", sess.Balances.Balance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId)).FloatString(0))
 			time.Sleep(time.Second * 5)
 		}
 	}()
