@@ -1271,21 +1271,12 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		res.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 
-	refresh, err := shouldRefreshSession(ctx, sess)
-	if err != nil {
-		clog.Errorf(ctx, "Error checking whether to refresh session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
+	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
+		clog.Errorf(ctx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
 		cxn.sessManager.suspendAndRemoveOrch(sess)
 		return nil, err
 	}
 
-	if refresh {
-		err := refreshSession(ctx, sess)
-		if err != nil {
-			clog.Errorf(ctx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
-			cxn.sessManager.suspendAndRemoveOrch(sess)
-			return nil, err
-		}
-	}
 	return res, nil
 }
 
@@ -1578,6 +1569,19 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 				core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 		}
 	}
+}
+
+func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
+	shouldRefresh, err := shouldRefreshSession(ctx, sess)
+	if err != nil {
+		return err
+	}
+	if shouldRefresh {
+		if err := refreshSession(ctx, sess); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func refreshSession(ctx context.Context, sess *BroadcastSession) error {
