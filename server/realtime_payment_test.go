@@ -80,3 +80,67 @@ func mockSender() pm.Sender {
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
 	return sender
 }
+
+func TestAccountPayment(t *testing.T) {
+	require := require.New(t)
+
+	tests := []struct {
+		name   string
+		credit *big.Rat
+		expErr bool
+	}{
+		{
+			name:   "No credit",
+			credit: nil,
+			expErr: true,
+		},
+		{
+			name:   "Insufficient balance",
+			credit: new(big.Rat).SetInt64(900000),
+			expErr: true,
+		},
+		{
+			name:   "Sufficient balance",
+			credit: new(big.Rat).SetInt64(1100000),
+			expErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given
+			sessionID := "abcdef"
+			sender := ethcommon.HexToAddress("0x0000000000000000000000000000000000000001")
+			segmentInfo := &SegmentInfoReceiver{
+				sender:    sender,
+				sessionID: sessionID,
+				inPixels:  1000000,
+				priceInfo: &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+				},
+			}
+
+			node, _ := core.NewLivepeerNode(nil, "", nil)
+			balances := core.NewAddressBalances(1 * time.Minute)
+			node.Balances = balances
+			orch := core.NewOrchestrator(node, nil)
+
+			paymentReceiver := realtimePaymentReceiver{orchestrator: orch}
+			if tt.credit != nil {
+				node.Balances.Credit(sender, core.ManifestID(sessionID), tt.credit)
+			}
+
+			// when
+			err := paymentReceiver.AccountPayment(context.TODO(), segmentInfo)
+
+			// then
+			if tt.expErr {
+				require.Error(err, "insufficient balance")
+			} else {
+				require.Nil(err)
+			}
+		})
+	}
+
+}

@@ -134,15 +134,15 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 }
 
 func (r *realtimePaymentReceiver) AccountPayment(
-	ctx context.Context, segmentInfo SegmentInfoReceiver) error {
+	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
-	if balance.Cmp(fee) < 0 {
+	if balance == nil || balance.Cmp(fee) < 0 {
 		return errors.New("insufficient balance")
 	}
 	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
-	clog.V(common.DEBUG).Infof(ctx, "Accounted for payment for sessionID=%s, fee=%s", segmentInfo.sessionID, fee.FloatString(0))
+	clog.V(common.DEBUG).Infof(ctx, "Accounted payment for sessionID=%s, fee=%s", segmentInfo.sessionID, fee.FloatString(0))
 	return nil
 }
 

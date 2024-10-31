@@ -247,7 +247,7 @@ func startAccountLoop(orchestrator Orchestrator, sender ethcommon.Address, sessi
 		go func() {
 			for {
 				time.Sleep(5 * time.Second)
-				err := paymentReceiver.AccountPayment(context.TODO(), SegmentInfoReceiver{
+				err := paymentReceiver.AccountPayment(context.TODO(), &SegmentInfoReceiver{
 					sessionID: sessionID,
 					inPixels:  4000,
 					sender:    sender,
