@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -908,9 +909,11 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	// Convert duration to float32 for multipart writer
-	duration := float32(durationSeconds)
-	req.Duration = &duration
+	//Add the duration to the request via 'job_info' field
+	job_info_str, err := encodeJobParams(map[string]string{
+		"duration": strconv.Itoa(int(durationSeconds)),
+    })
+	req.JobInfo = &job_info_str
 
 	var buf bytes.Buffer
 	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
@@ -1491,4 +1494,13 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 	fee.Mul(fee, priceInfo)
 
 	return fee, nil
+}
+
+func encodeJobParams(info map[string]string) (string, error) {
+	jobParamBytes, err := json.Marshal(info)
+	if err != nil {
+		return "", err
+	}
+	jobInfoStr := string(jobParamBytes)
+	return jobInfoStr, nil
 }
