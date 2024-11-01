@@ -119,8 +119,8 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LivePortrait:               "Live Portrait",
 	Capability_LLM:                        "Llm",
+	Capability_LivePortrait:               "Live portrait",
 	Capability_ImageToText:                "Image to text",
 }
 
