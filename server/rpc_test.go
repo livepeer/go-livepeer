@@ -211,6 +211,9 @@ func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID strin
 func (r *stubOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
 }
@@ -1408,6 +1411,9 @@ func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID strin
 	return nil, nil
 }
 func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

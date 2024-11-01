@@ -789,6 +789,50 @@ func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
+func (orch *orchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.ObjectDetection(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "object-detection", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	videoBytes, err := req.Video.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, videoBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Video.InitFromBytes(nil, "")
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "object-detection", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "object-detection", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -959,7 +1003,72 @@ func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMFormdataRequest
 	return n.AIWorker.LLM(ctx, req)
 }
 
-// transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
+func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+
+	// Generate annotated frames
+	start := time.Now()
+	resp, err := n.AIWorker.ObjectDetection(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	took := time.Since(start)
+	clog.V(common.DEBUG).Infof(ctx, "Generating annotated frames took=%v", took)
+
+	sessionID := string(RandomManifestID())
+	framerate := 7
+	inProfile := ffmpeg.VideoProfile{
+		Framerate:    uint(framerate),
+		FramerateDen: 1,
+	}
+	height := 576
+	width := 1024
+	outProfile := ffmpeg.VideoProfile{
+		Name:       "object-detection",
+		Resolution: fmt.Sprintf("%vx%v", width, height),
+		Bitrate:    "6000k",
+		Format:     ffmpeg.FormatMP4,
+	}
+	// HACK: Re-use worker.ImageResponse to return results
+	// Transcode frames into segments.
+	videos := make([]worker.Media, len(resp.Frames))
+	for i, batch := range resp.Frames {
+		// Create slice of frame urls for a batch
+		urls := make([]string, len(batch))
+		for j, frame := range batch {
+			urls[j] = frame.Url
+		}
+
+		// Transcode slice of frame urls into a segment
+		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+
+		// Assume only single rendition right now
+		seg := res.TranscodeData.Segments[0]
+		resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
+		fname := path.Join(n.WorkDir, resultFile)
+		if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
+			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
+			return nil, err
+		}
+
+		videos[i] = worker.Media{
+			Url: fname,
+		}
+
+		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
+		if len(batch) > 0 {
+			videos[i].Nsfw = batch[0].Nsfw
+			videos[i].Seed = batch[0].Seed
+		}
+	}
+
+	return &worker.ImageResponse{Images: videos}, nil
+}
+
+// transcodeFrames converts a series of image URLs into a video segment for the image-to-video and object-detection pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
 

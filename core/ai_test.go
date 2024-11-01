@@ -659,6 +659,19 @@ func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTex
 	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
 }
 
+func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	return &worker.ObjectDetectionResponse{Frames: [][]worker.Media{
+		{
+			{Url: "http://example.com/frame1.png", Nsfw: false},
+			{Url: "http://example.com/frame2.png", Nsfw: false},
+		},
+		{
+			{Url: "http://example.com/frame3.png", Nsfw: false},
+			{Url: "http://example.com/frame4.png", Nsfw: false},
+		},
+	}, ConfidenceScores: "confidence_scores", Labels: "labels"}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }

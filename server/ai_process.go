@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 const processingRetryTimeout = 2 * time.Second
@@ -35,6 +36,7 @@ const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 const defaultLiveVideoToVideoModelID = "cumulo-autumn/stream-diffusion"
+const defaultObjectDetectionModelID = "PekingU/rtdetr_r50vd"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -1136,6 +1138,165 @@ func processImageToText(ctx context.Context, params aiRequestParams, req worker.
 	return txtResp, nil
 }
 
+func CalculateObjectDetectionLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
+}
+
+func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewObjectDetectionMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	video_rdr, err := req.Video.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer video_rdr.Close() // Don't forget to close the video after you're done with it
+
+	probeData, err := ffmpeg_go.ProbeReader(video_rdr)
+	if err != nil {
+		return nil, err
+	}
+
+	var probeDataMap map[string]interface{}
+	err = json.Unmarshal([]byte(probeData), &probeDataMap)
+	if err != nil {
+		return nil, err
+	}
+
+	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+	width := streamData["width"].(float64)
+	height := streamData["height"].(float64)
+	frameRate := streamData["r_frame_rate"].(string)
+
+	// You can parse the frame rate string to extract the numerator and denominator
+	numerator, denominator := 0, 0
+	_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	// Calculate the number of frames
+	numberOfFrames := numerator / denominator
+
+	// Calculate the output pixels using the video profile
+	outPixels = int64(width) * int64(height) * int64(numberOfFrames)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenObjectDetectionWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.ImageResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateObjectDetectionLatencyScore(took, req, outPixels)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "object-detection", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
+func processObjectDetection(ctx context.Context, params aiRequestParams, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// HACK: Re-use worker.ImageResponse to return results
+	// TODO: Refactor to return worker.VideoResponse
+	frameResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
+
+	videos := make([]worker.Media, len(frameResp.Images))
+	for i, media := range frameResp.Images {
+		data, err := core.DownloadData(ctx, media.Url)
+		if err != nil {
+			return nil, err
+		}
+
+		name := filepath.Base(media.Url)
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+		if err != nil {
+			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
+		}
+
+		videos[i] = worker.Media{
+			Nsfw: media.Nsfw,
+			Seed: media.Seed,
+			Url:  newUrl,
+		}
+
+	}
+
+	frameResp.Images = videos
+
+	return frameResp, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1229,6 +1390,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 					return submitLiveVideoToVideo(ctx, params, sess, v)
 				}
 		*/
+	case worker.GenObjectDetectionMultipartRequestBody:
+		cap = core.Capability_ObjectDetection
+		modelID = defaultObjectDetectionModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitObjectDetection(ctx, params, sess, v)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}

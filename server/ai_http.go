@@ -24,6 +24,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
@@ -57,6 +58,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/object-detection", oapiReqValidator(lp.ObjectDetection()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -269,6 +271,30 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	})
 }
 
+func (h *lphttp) ObjectDetection() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.GenObjectDetectionMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -448,6 +474,49 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenObjectDetectionMultipartRequestBody:
+		pipeline = "object-detection"
+		cap = core.Capability_ObjectDetection
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ObjectDetection(ctx, requestID, v)
+		}
+
+		videoRdr, err := v.Video.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer videoRdr.Close() // Don't forget to close the video after you're done with it
+
+		probeData, err := ffmpeg_go.ProbeReader(videoRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+
+		var probeDataMap map[string]interface{}
+		err = json.Unmarshal([]byte(probeData), &probeDataMap)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+		width := streamData["width"].(float64)
+		height := streamData["height"].(float64)
+		frameRate := streamData["r_frame_rate"].(string)
+
+		// You can parse the frame rate string to extract the numerator and denominator
+		numerator, denominator := 0, 0
+		_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		// Calculate the number of frames
+		numberOfFrames := numerator / denominator
+
+		// Calculate the output pixels using the video profile
+		outPixels = int64(width) * int64(height) * int64(numberOfFrames)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -551,6 +620,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
 		case worker.GenImageToTextMultipartRequestBody:
 			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
+		case worker.GenObjectDetectionMultipartRequestBody:
+			latencyScore = CalculateObjectDetectionLatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64

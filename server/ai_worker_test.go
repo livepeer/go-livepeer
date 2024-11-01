@@ -576,6 +576,37 @@ func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTex
 	}
 }
 
+func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.ObjectDetectionResponse{
+			Frames: [][]worker.Media{
+				{
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 113,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 131,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 311,
+					},
+				},
+			},
+			ConfidenceScores: "[[0.952, 0.948, ...], [0.961, 0.952, ...], [0.965, 0.96, ...], ...]",
+			Labels: "[['person', 'person', ...], ['person', 'person', ...], ['person', 'person', ...], ...]",
+		}, nil
+	}
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	a.Called++
 	return nil
