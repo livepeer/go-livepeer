@@ -816,6 +816,39 @@ func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
+func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.TextToSpeech(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-speech", *req.ModelId, "", AIJobRequestData{Request: req})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 func (orch *orchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {

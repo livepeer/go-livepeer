@@ -83,7 +83,7 @@ const (
 	Capability_ImageToText                Capability = 34
 	Capability_LiveVideoToVideo           Capability = 35
 	Capability_TextToSpeech               Capability = 36
-	Capability_ObjectDetection            Capability = 36
+	Capability_ObjectDetection            Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
