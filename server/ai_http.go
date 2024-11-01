@@ -60,6 +60,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
+
 	return nil
 }
 
@@ -221,6 +222,7 @@ func (h *lphttp) LLM() http.Handler {
 func (h *lphttp) ImageToText() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
+
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
@@ -474,10 +476,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.TextToSpeech(ctx, requestID, v)
 		}
 
-		// TTS pricing is typically in characters, including punctuation
+		// TTS pricing is typically in characters, including punctuation.
 		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
-
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -488,7 +489,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)
 
 	// Check if there is capacity for the request.
-	fmt.Printf("Looking for Pipeline: %s, ModelID: %s\n", pipeline, modelID)
 	if !orch.CheckAICapacity(pipeline, modelID) {
 		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 		return
@@ -627,7 +627,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// Non-streaming response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		err = json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 
 }

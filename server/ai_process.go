@@ -60,6 +60,9 @@ func parseBadRequestError(err error) *BadRequestError {
 	if err == nil {
 		return nil
 	}
+	if err, ok := err.(*BadRequestError); ok {
+		return err
+	}
 
 	const errorCode = "returned 400"
 	if !strings.Contains(err.Error(), errorCode) {
@@ -806,13 +809,16 @@ func processTextToSpeech(ctx context.Context, params aiRequestParams, req worker
 }
 
 func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
-
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
+	}
+
+	if req.Text == nil {
+		return nil, &BadRequestError{errors.New("text field is required")}
 	}
 
 	textLength := len(*req.Text)
@@ -830,13 +836,6 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 	start := time.Now()
 	resp, err := client.GenTextToSpeechWithResponse(ctx, req, setHeaders)
 	took := time.Since(start)
-
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "text-to-speech", *req.ModelId, sess.OrchestratorInfo)
@@ -848,6 +847,7 @@ func submitTextToSpeech(ctx context.Context, params aiRequestParams, sess *AISes
 		// TODO: Replace trim newline with better error spec from O
 		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
 	}
+
 	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
 	if balUpdate != nil {
 		balUpdate.Status = ReceivedChange
@@ -1358,7 +1358,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 					return submitLiveVideoToVideo(ctx, params, sess, v)
 				}
 		*/
-
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
