@@ -1239,6 +1239,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						Models: make(map[string]*core.ModelConstraint),
 					}
 				}
+
 				model, exists := capabilityConstraints[pipelineCap].Models[config.ModelID]
 				if !exists {
 					capabilityConstraints[pipelineCap].Models[config.ModelID] = modelConstraint

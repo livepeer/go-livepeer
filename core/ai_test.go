@@ -659,6 +659,10 @@ func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTex
 	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
 }
 
+func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
+}
+
 func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	return &worker.ObjectDetectionResponse{Frames: [][]worker.Media{
 		{
