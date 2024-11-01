@@ -1,5 +1,7 @@
 package server
 
+// ai_http.go implements the HTTP server for AI-related requests at the Orchestrator.
+
 import (
 	"bufio"
 	"context"
@@ -23,7 +25,6 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
-	"github.com/oapi-codegen/runtime"
 	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
@@ -49,214 +50,30 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
-	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
-	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
-	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
-	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
-	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-	lp.transRPC.Handle("/live-portrait", oapiReqValidator(lp.LivePortrait()))
-	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
+	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
+	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
+	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/live-portrait", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.LivePortraitLivePortraitPostMultipartRequestBody])))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
 }
 
-func (h *lphttp) TextToImage() http.Handler {
+// aiHttpHandle handles AI requests by decoding the request body and processing it.
+func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
-
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		var req worker.GenTextToImageJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req I
+		if err := decoderFunc(&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToImage() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToImageMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToVideo() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToVideoMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) Upscale() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenUpscaleMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) AudioToText() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenAudioToTextMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) SegmentAnything2() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenSegmentAnything2MultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) LLM() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenLLMFormdataRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToText() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToTextMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) LivePortrait() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.LivePortraitLivePortraitPostMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -390,7 +207,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
-
 	case worker.GenLLMFormdataRequestBody:
 		pipeline = "llm"
 		cap = core.Capability_LLM
@@ -406,7 +222,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 		// TODO: Improve pricing
 		outPixels = int64(*v.MaxTokens)
-
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		pipeline = "segment-anything-2"
 		cap = core.Capability_SegmentAnything2
@@ -426,33 +241,15 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
-	case worker.GenImageToTextMultipartRequestBody:
-		pipeline = "image-to-text"
-		cap = core.Capability_ImageToText
-		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.ImageToText(ctx, requestID, v)
-		}
-
-		imageRdr, err := v.Image.Reader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		config, _, err := image.DecodeConfig(imageRdr)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		outPixels = int64(config.Height) * int64(config.Width)
 
 	case worker.LivePortraitLivePortraitPostMultipartRequestBody:
 		pipeline = "live-portrait"
 		cap = core.Capability_LivePortrait
 		modelID = *v.ModelId
 		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.LivePortrait(ctx, v)
+			return orch.LivePortrait(ctx, requestID, v)
 		}
+
 		video := v.DrivingVideo.Filename() // Don't forget to close the video after you're done with it
 		probeData, err := ffmpeg_go.Probe(video)
 		if err != nil {
@@ -490,6 +287,25 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		total_frames := int64(durationFloat * frameRate) // Calculate total frames based on duration and framerate
 		outPixels = int64(width) * int64(height) * total_frames
 
+	case worker.GenImageToTextMultipartRequestBody:
+		pipeline = "image-to-text"
+		cap = core.Capability_ImageToText
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ImageToText(ctx, requestID, v)
+		}
+
+		imageRdr, err := v.Image.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		config, _, err := image.DecodeConfig(imageRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		outPixels = int64(config.Height) * int64(config.Width)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -591,13 +407,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			}
 		case worker.GenSegmentAnything2MultipartRequestBody:
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
+		case worker.GenImageToTextMultipartRequestBody:
+			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 
 		case worker.LivePortraitLivePortraitPostMultipartRequestBody:
 			latencyScore = CalculateLivePortraitLatencyScore(took, v, outPixels)
-		case worker.GenImageToTextMultipartRequestBody:
-			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 		}
-
 		var pricePerAIUnit float64
 		if priceInfo := payment.GetExpectedPrice(); priceInfo != nil && priceInfo.GetPixelsPerUnit() != 0 {
 			pricePerAIUnit = float64(priceInfo.GetPricePerUnit()) / float64(priceInfo.GetPixelsPerUnit())

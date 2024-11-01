@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"image"
 	"math/big"
 	"net/url"
 	"os"
