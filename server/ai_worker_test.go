@@ -342,7 +342,7 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 	case "llm":
 		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
 	case "live-portrait":
-		req = worker.LivePortraitLivePortraitPostMultipartRequestBody{ModelId: &modelId, SourceImage: inputUrl[0], DrivingVideo: inputUrl[1]}
+		req = worker.LivePortraitLivePortraitPostMultipartRequestBody{ModelId: &modelId, SourceImage: inputFile, DrivingVideo: inputFile}
 	case "unsupported-pipeline":
 		req = worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}
 	case "text-to-image-invalid":

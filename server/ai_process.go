@@ -35,7 +35,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
-const defaultLivePortraitModelID = ""
+const defaultLivePortraitModelID = "default"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")

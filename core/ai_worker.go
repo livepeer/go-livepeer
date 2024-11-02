@@ -810,14 +810,30 @@ func (orch *orchestrator) LivePortrait(ctx context.Context, requestID string, re
 	if err != nil {
 		return nil, err
 	}
-
-	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	sourceImageUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
 	if err != nil {
 		return nil, err
 	}
 	req.SourceImage.InitFromBytes(nil, "") // remove image data
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "live-portrait", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	// Add code to handle DrivingVideo
+	videoBytes, err := req.DrivingVideo.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	drivingVideoUrl, err := orch.SaveAIRequestInput(ctx, requestID, videoBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a slice to hold both URLs
+	combinedUrls := []string{sourceImageUrl, drivingVideoUrl}
+	inputUrls, err := (json.Marshal(combinedUrls)) // Combine URLs into JSON
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "live-portrait", *req.ModelId, string(inputUrls), AIJobRequestData{Request: req, InputUrl: string(inputUrls)})
 	if err != nil {
 		return nil, err
 	}

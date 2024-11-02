@@ -285,6 +285,40 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.LLM(ctx, req)
 		}
 		reqOk = true
+	case "live-portrait":
+		var req worker.LivePortraitLivePortraitPostMultipartRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		// New struct to hold both input URLs
+		type InputUrls struct {
+			SourceImage  string `json:"source_image"`
+			DrivingVideo string `json:"driving_video"`
+		}
+		var inputUrls InputUrls
+		err = json.Unmarshal([]byte(reqData.InputUrl), &inputUrls) // Unmarshal the JSON string
+		if err != nil {
+			break
+		}
+
+		// Download both images using the URLs
+		input, err = core.DownloadData(ctx, inputUrls.SourceImage)
+		if err != nil {
+			break
+		}
+		req.SourceImage.InitFromBytes(input, "source_image")
+
+		input, err = core.DownloadData(ctx, inputUrls.DrivingVideo)
+		if err != nil {
+			break
+		}
+		req.DrivingVideo.InitFromBytes(input, "driving_video")
+
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.LivePortrait(ctx, req)
+		}
+		reqOk = true
 	default:
 		err = errors.New("AI request pipeline type not supported")
 	}

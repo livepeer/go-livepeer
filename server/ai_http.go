@@ -57,7 +57,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
-	lp.transRPC.Handle("/live-portrait", oapiReqValidator((lp.LivePortrait())))
+	lp.transRPC.Handle("/live-portrait", oapiReqValidator(lp.LivePortrait()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -804,6 +804,16 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					wkrResult.Err = err
 					break
 				}
+			case "live-portrait":
+				var parsedResp worker.VideoResponse
+
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
 			}
 
 			wkrResult.Results = results

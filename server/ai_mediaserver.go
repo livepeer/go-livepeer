@@ -88,6 +88,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
+	openapi3filter.RegisterBodyDecoder("video/mp4", openapi3filter.FileBodyDecoder)
 
 	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
 	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
@@ -427,12 +428,16 @@ func (ls *LivepeerServer) LivePortrait() http.Handler {
 
 			resp, err := processLivePortrait(ctx, params, req)
 			if err != nil {
-				var e *ServiceUnavailableError
-				if errors.As(err, &e) {
+				var serviceUnavailableErr *ServiceUnavailableError
+				var badRequestErr *BadRequestError
+				if errors.As(err, &serviceUnavailableErr) {
 					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
 					return
 				}
-
+				if errors.As(err, &badRequestErr) {
+					respondJsonError(ctx, w, err, http.StatusBadRequest)
+					return
+				}
 				respondJsonError(ctx, w, err, http.StatusInternalServerError)
 				return
 			}
