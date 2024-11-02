@@ -1310,14 +1310,14 @@ func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AI
 	numerator, denominator := 0, 0
 	_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
 	if err != nil {
-		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		return nil, err
 	}
 
 	// Calculate the number of frames
 	numberOfFrames := numerator / denominator
 
 	// Calculate the output pixels using the video profile
-	outPixels = int64(width) * int64(height) * int64(numberOfFrames)
+	outPixels := int64(width) * int64(height) * int64(numberOfFrames)
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {
@@ -1364,7 +1364,7 @@ func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AI
 	}
 
 	// TODO: Refine this rough estimate in future iterations
-	sess.LatencyScore = CalculateObjectDetectionLatencyScore(took, req, outPixels)
+	sess.LatencyScore = CalculateObjectDetectionLatencyScore(took, outPixels)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64

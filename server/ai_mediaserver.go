@@ -65,8 +65,8 @@ type ObjectDetectionResult struct {
 type ObjectDetectionStatus string
 
 const (
-	Processing ObjectDetectionStatus = "processing"
-	Complete   ObjectDetectionStatus = "complete"
+	DetectionProcessing ObjectDetectionStatus = "processing"
+	DetectionComplete   ObjectDetectionStatus = "complete"
 )
 
 func startAIMediaServer(ls *LivepeerServer) error {
@@ -553,7 +553,7 @@ func (ls *LivepeerServer) ObjectDetectionResult() http.Handler {
 		}
 
 		resp := ObjectDetectionResultResponse{
-			Status: Processing,
+			Status: DetectionProcessing,
 		}
 
 		reader, err := sess.ReadData(ctx, "result.json")
@@ -566,7 +566,7 @@ func (ls *LivepeerServer) ObjectDetectionResult() http.Handler {
 			return
 		}
 
-		resp.Status = Complete
+		resp.Status = DetectionComplete
 
 		if err := json.NewDecoder(reader.Body).Decode(&resp.Result); err != nil {
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
