@@ -63,8 +63,8 @@ github.com/Masterminds/semver/v3 v3.2.1 h1:RN9w6+7QoMeJVGyfmbcgs28Br8cvmnucEXnY0
 github.com/Masterminds/semver/v3 v3.2.1/go.mod h1:qvl/7zhW3nngYb5+80sSMF+FG2BjYrf8m9wsX0PNOMQ=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
-github.com/RUFFY-369/ai-worker v0.8.1-0.20241031035714-63328bc0f294 h1:kkrSl7tIiXWnHxxQD3dFQ1zbCFRXZmc6Em6t+uLkZ0Y=
-github.com/RUFFY-369/ai-worker v0.8.1-0.20241031035714-63328bc0f294/go.mod h1:GjQuPmz69UO53WVtqzB9Ygok5MmKCGNuobbfMXH7zgw=
+github.com/RUFFY-369/ai-worker v0.8.1-0.20241102154421-60e5d350c2df h1:UL+t2GVDDk20eypLFcbbqiO95OmlyzjARCkBUbvVNmc=
+github.com/RUFFY-369/ai-worker v0.8.1-0.20241102154421-60e5d350c2df/go.mod h1:GjQuPmz69UO53WVtqzB9Ygok5MmKCGNuobbfMXH7zgw=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/Shopify/goreferrer v0.0.0-20181106222321-ec9c9a553398/go.mod h1:a1uqRtAwp2Xwc6WNPJEufxJ7fx3npB4UV/JOLmbu5I0=
 github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDOSA=
