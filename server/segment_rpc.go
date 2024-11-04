@@ -231,18 +231,18 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
 		return
 	}
-	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance = %s", currentBalance(h, payment, segData))
+	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance = %s", currentBalanceLog(h, payment, segData))
 
 	w.Write(buf)
 }
 
-func currentBalance(h *lphttp, payment net.Payment, segData *core.SegTranscodingMetadata) string {
+func currentBalanceLog(h *lphttp, payment net.Payment, segData *core.SegTranscodingMetadata) string {
 	if h == nil || h.node == nil || h.node.Balances == nil || segData == nil || segData.AuthToken == nil {
-		return ""
+		return "invalid configuration"
 	}
 	currentBalance := h.node.Balances.Balance(getPaymentSender(payment), core.ManifestID(segData.AuthToken.SessionId))
 	if currentBalance == nil {
-		return ""
+		return "no balance available"
 	}
 	return currentBalance.FloatString(0)
 }
