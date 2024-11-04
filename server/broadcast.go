@@ -1577,9 +1577,7 @@ func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
 		return err
 	}
 	if shouldRefresh {
-		if err := refreshSession(ctx, sess); err != nil {
-			return err
-		}
+		return refreshSession(ctx, sess)
 	}
 	return nil
 }
