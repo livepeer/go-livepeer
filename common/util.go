@@ -80,6 +80,12 @@ var (
 		".ts":  "video/mp2t",
 		".mp4": "video/mp4",
 	}
+	mime2ext = map[string]string{
+		"video/mp2t": ".ts",
+		"video/mp4":  ".mp4",
+		"image/png":  ".png",
+		"audio/wav":  ".wav",
+	}
 )
 
 func init() {
@@ -483,16 +489,11 @@ func ValidateServiceURI(serviceURI *url.URL) bool {
 	return !strings.Contains(serviceURI.Host, "0.0.0.0")
 }
 
-func ExtensionByType(contentType string) (string, error) {
-	contentType = strings.ToLower(contentType)
-	switch contentType {
-	case "video/mp2t":
-		return ".ts", nil
-	case "video/mp4":
-		return ".mp4", nil
-	case "image/png":
-		return ".png", nil
+// MimeTypeToExtension returns the file extension for a given MIME type.
+func MimeTypeToExtension(mimeType string) (string, error) {
+	mimeType = strings.ToLower(mimeType)
+	if ext, ok := mime2ext[mimeType]; ok {
+		return ext, nil
 	}
-
 	return "", ErrNoExtensionsForType
 }

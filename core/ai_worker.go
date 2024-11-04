@@ -30,6 +30,7 @@ var ErrNoWorkersAvailable = errors.New("no workers available")
 // TODO: consider making this dynamic for each pipeline
 var aiWorkerResultsTimeout = 10 * time.Minute
 var aiWorkerRequestTimeout = 15 * time.Minute
+var aiWorkerTranscodeLoopTimeout = 70 * time.Second
 
 type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
@@ -384,18 +385,10 @@ type AIResult struct {
 	Files  map[string]string
 }
 
-type AIChanData struct {
-	ctx context.Context
-	req interface{}
-	res chan *AIResult
-}
-
 type AIJobRequestData struct {
 	InputUrl string      `json:"input_url"`
 	Request  interface{} `json:"request"`
 }
-
-type AIJobChan chan *AIChanData
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
 func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
@@ -426,71 +419,98 @@ func (rwm *RemoteAIWorkerManager) aiResults(tcID int64, res *RemoteAIWorkerResul
 }
 
 func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results interface{}, requestID string, contentType string) (interface{}, error) {
-	ext, _ := common.ExtensionByType(contentType)
+	ext, _ := common.MimeTypeToExtension(contentType)
 	fileName := string(RandomManifestID()) + ext
 
-	imgRes, ok := results.(worker.ImageResponse)
-	if !ok {
-		// worker.TextResponse is JSON, no file save needed
-		return results, nil
-	}
 	storage, exists := n.StorageConfigs[requestID]
 	if !exists {
 		return nil, errors.New("no storage available for request")
 	}
+
 	var buf bytes.Buffer
-	for i, image := range imgRes.Images {
-		buf.Reset()
-		err := worker.ReadImageB64DataUrl(image.Url, &buf)
-		if err != nil {
-			// try to load local file (image to video returns local file)
-			f, err := os.ReadFile(image.Url)
+	switch resp := results.(type) {
+	case worker.ImageResponse:
+		for i, image := range resp.Images {
+			buf.Reset()
+			err := worker.ReadImageB64DataUrl(image.Url, &buf)
+			if err != nil {
+				// try to load local file (image to video returns local file)
+				f, err := os.ReadFile(image.Url)
+				if err != nil {
+					return nil, err
+				}
+				buf = *bytes.NewBuffer(f)
+			}
+
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
 			if err != nil {
 				return nil, err
 			}
-			buf = *bytes.NewBuffer(f)
+
+			resp.Images[i].Url = osUrl
+		}
+
+		results = resp
+	case worker.AudioResponse:
+		err := worker.ReadAudioB64DataUrl(resp.Audio.Url, &buf)
+		if err != nil {
+			return nil, err
 		}
 
 		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
 		if err != nil {
 			return nil, err
 		}
+		resp.Audio.Url = osUrl
 
-		imgRes.Images[i].Url = osUrl
+		results = resp
 	}
 
-	return imgRes, nil
+	//no file response to save, response is text
+	return results, nil
 }
 
 func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *RemoteAIWorkerResult, requestID string) (*RemoteAIWorkerResult, error) {
 	if drivers.NodeStorage == nil {
 		return nil, fmt.Errorf("Missing local storage")
 	}
-
+	// save the file data to node and provide url for download
+	storage, exists := n.StorageConfigs[requestID]
+	if !exists {
+		return nil, errors.New("no storage available for request")
+	}
 	// worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
+	// worker.AudioResponse used to text-to-speech also requires saving binary data for download
 	// other pipelines do not require saving data since they are text responses
-	imgResp, isImg := results.Results.(worker.ImageResponse)
-	if isImg {
-		for idx, _ := range imgResp.Images {
-			fileName := imgResp.Images[idx].Url
-			// save the file data to node and provide url for download
-			storage, exists := n.StorageConfigs[requestID]
-			if !exists {
-				return nil, errors.New("no storage available for request")
-			}
+	switch resp := results.Results.(type) {
+	case worker.ImageResponse:
+		for idx := range resp.Images {
+			fileName := resp.Images[idx].Url
 			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
 			if err != nil {
 				return nil, err
 			}
 
-			imgResp.Images[idx].Url = osUrl
+			resp.Images[idx].Url = osUrl
 			delete(results.Files, fileName)
 		}
 
 		// update results for url updates
-		results.Results = imgResp
+		results.Results = resp
+	case worker.AudioResponse:
+		fileName := resp.Audio.Url
+		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Audio.Url = osUrl
+		delete(results.Files, fileName)
+
+		results.Results = resp
 	}
 
+	// no file response to save, response is text
 	return results, nil
 }
 
@@ -760,6 +780,75 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 	return res.Results, nil
 }
 
+func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		// no file response to save, response is text sent back to gateway
+		return orch.node.ImageToText(ctx, req)
+	}
+
+	// remote ai worker proceses job
+	imageBytes, err := req.Image.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imageBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "")
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-text", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "image-to-text", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
+func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.TextToSpeech(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-speech", *req.ModelId, "", AIJobRequestData{Request: req})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -818,27 +907,9 @@ func (n *LivepeerNode) createStorageForRequest(requestID string) error {
 	return nil
 }
 
-//
-// Methods called at AI Worker to process AI job
-//
-
-// save base64 data to file and returns file path or error
-func (n *LivepeerNode) SaveBase64Result(ctx context.Context, data string, requestID string, contentType string) (string, error) {
-	resultName := string(RandomManifestID())
-	ext, err := common.ExtensionByType(contentType)
-	if err != nil {
-		return "", err
-	}
-
-	resultFile := resultName + ext
-	fname := path.Join(n.WorkDir, resultFile)
-	err = worker.SaveImageB64DataUrl(data, fname)
-	if err != nil {
-		return "", err
-	}
-
-	return fname, nil
-}
+/*
+ * Methods used to process AI job requests on a AI Worker.
+ */
 
 func (n *LivepeerNode) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return n.AIWorker.TextToImage(ctx, req)
@@ -855,6 +926,11 @@ func (n *LivepeerNode) Upscale(ctx context.Context, req worker.GenUpscaleMultipa
 func (n *LivepeerNode) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return n.AIWorker.AudioToText(ctx, req)
 }
+
+func (n *LivepeerNode) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	return n.AIWorker.ImageToText(ctx, req)
+}
+
 func (n *LivepeerNode) ImageToVideo(ctx context.Context, req worker.GenImageToVideoMultipartRequestBody) (*worker.ImageResponse, error) {
 	// We might support generating more than one video in the future (i.e. multiple input images/prompts)
 	numVideos := 1
@@ -943,6 +1019,11 @@ func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMFormdataRequest
 	return n.AIWorker.LLM(ctx, req)
 }
 
+func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	return n.AIWorker.TextToSpeech(ctx, req)
+}
+
+// transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
 
@@ -992,7 +1073,7 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 
 	// TODO: Figure out a better way to end the OS session after a timeout than creating a new goroutine per request?
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerResultsTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), aiWorkerTranscodeLoopTimeout)
 		defer cancel()
 		<-ctx.Done()
 		los.EndSession()

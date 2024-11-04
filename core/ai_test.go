@@ -115,7 +115,7 @@ func TestRemoteAIWorkerManager(t *testing.T) {
 
 	// error on remote
 	strm.JobError = fmt.Errorf("JobError")
-	res, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
+	_, err = m.Process(context.TODO(), "request_id2", "text-to-image", "livepeer/model1", "", AIJobRequestData{Request: req})
 	assert.NotNil(t, err)
 	strm.JobError = nil
 
@@ -653,6 +653,14 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 
 func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
 	return &worker.LLMResponse{Response: "response tokens", TokensUsed: 10}, nil
+}
+
+func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error) {
+	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
+}
+
+func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
 }
 
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
