@@ -909,11 +909,11 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	//Add the duration to the request via 'job_info' field
-	job_metadata_str, err := encodeJobMetadata(map[string]string{
+	//Add the duration to the request via 'metadata' field
+	metadata_str, err := encodeReqMetadata(map[string]string{
 		"duration": strconv.Itoa(int(durationSeconds)),
     })
-	req.JobMetadata = &job_metadata_str
+	req.Metadata = &metadata_str
 
 	var buf bytes.Buffer
 	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
@@ -1496,7 +1496,7 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 	return fee, nil
 }
 
-func encodeJobMetadata(info map[string]string) (string, error) {
+func encodeReqMetadata(info map[string]string) (string, error) {
 	jobParamBytes, err := json.Marshal(info)
 	if err != nil {
 		return "", err
