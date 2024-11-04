@@ -786,7 +786,7 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					break
 				}
 				results = parsedResp
-			case "audio-to-text", "segment-anything-2", "llm":
+			case "audio-to-text", "segment-anything-2", "llm", "image-to-text":
 				err := json.Unmarshal(body, &results)
 				if err != nil {
 					glog.Error("Error getting results json:", err)

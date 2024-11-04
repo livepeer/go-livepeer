@@ -285,6 +285,23 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.LLM(ctx, req)
 		}
 		reqOk = true
+	case "image-to-text":
+		var req worker.GenImageToTextMultipartRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
+			break
+		}
+		modelID = *req.ModelId
+		resultType = "application/json"
+		req.Image.InitFromBytes(input, "image")
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.ImageToText(ctx, req)
+		}
+		reqOk = true
 	case "text-to-speech":
 		var req worker.GenTextToSpeechJSONRequestBody
 		err = json.Unmarshal(reqData.Request, &req)
