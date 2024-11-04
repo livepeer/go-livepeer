@@ -423,68 +423,95 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 	ext, _ := common.MimeTypeToExtension(contentType)
 	fileName := string(RandomManifestID()) + ext
 
-	imgRes, ok := results.(worker.ImageResponse)
-	if !ok {
-		// worker.TextResponse is JSON, no file save needed
-		return results, nil
-	}
 	storage, exists := n.StorageConfigs[requestID]
 	if !exists {
 		return nil, errors.New("no storage available for request")
 	}
+
 	var buf bytes.Buffer
-	for i, image := range imgRes.Images {
-		buf.Reset()
-		err := worker.ReadImageB64DataUrl(image.Url, &buf)
-		if err != nil {
-			// try to load local file (image to video returns local file)
-			f, err := os.ReadFile(image.Url)
+	switch resp := results.(type) {
+	case worker.ImageResponse:
+		for i, image := range resp.Images {
+			buf.Reset()
+			err := worker.ReadImageB64DataUrl(image.Url, &buf)
+			if err != nil {
+				// try to load local file (image to video returns local file)
+				f, err := os.ReadFile(image.Url)
+				if err != nil {
+					return nil, err
+				}
+				buf = *bytes.NewBuffer(f)
+			}
+
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
 			if err != nil {
 				return nil, err
 			}
-			buf = *bytes.NewBuffer(f)
+
+			resp.Images[i].Url = osUrl
+		}
+
+		results = resp
+	case worker.AudioResponse:
+		err := worker.ReadAudioB64DataUrl(resp.Audio.Url, &buf)
+		if err != nil {
+			return nil, err
 		}
 
 		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
 		if err != nil {
 			return nil, err
 		}
+		resp.Audio.Url = osUrl
 
-		imgRes.Images[i].Url = osUrl
+		results = resp
 	}
 
-	return imgRes, nil
+	//no file response to save, response is text
+	return results, nil
 }
 
 func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *RemoteAIWorkerResult, requestID string) (*RemoteAIWorkerResult, error) {
 	if drivers.NodeStorage == nil {
 		return nil, fmt.Errorf("Missing local storage")
 	}
-
+	// save the file data to node and provide url for download
+	storage, exists := n.StorageConfigs[requestID]
+	if !exists {
+		return nil, errors.New("no storage available for request")
+	}
 	// worker.ImageResponse used by ***-to-image and image-to-video require saving binary data for download
+	// worker.AudioResponse used to text-to-speech also requires saving binary data for download
 	// other pipelines do not require saving data since they are text responses
-	imgResp, isImg := results.Results.(worker.ImageResponse)
-	if isImg {
-		for idx := range imgResp.Images {
-			fileName := imgResp.Images[idx].Url
-			// save the file data to node and provide url for download
-			storage, exists := n.StorageConfigs[requestID]
-			if !exists {
-				return nil, errors.New("no storage available for request")
-			}
+	switch resp := results.Results.(type) {
+	case worker.ImageResponse:
+		for idx := range resp.Images {
+			fileName := resp.Images[idx].Url
 			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
 			if err != nil {
 				return nil, err
 			}
 
-			imgResp.Images[idx].Url = osUrl
+			resp.Images[idx].Url = osUrl
 			delete(results.Files, fileName)
 		}
 
 		// update results for url updates
-		results.Results = imgResp
+		results.Results = resp
+	case worker.AudioResponse:
+		fileName := resp.Audio.Url
+		osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		resp.Audio.Url = osUrl
+		delete(results.Files, fileName)
+
+		results.Results = resp
 	}
 
+	// no file response to save, response is text
 	return results, nil
 }
 
@@ -850,6 +877,39 @@ func (orch *orchestrator) LivePortrait(ctx context.Context, requestID string, re
 	return res.Results, nil
 }
 
+func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.TextToSpeech(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-speech", *req.ModelId, "", AIJobRequestData{Request: req})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -1090,6 +1150,10 @@ func (n *LivepeerNode) LivePortrait(ctx context.Context, req worker.LivePortrait
 		}
 	}
 	return &worker.VideoResponse{Frames: [][]worker.Media{videos}}, nil
+}
+
+func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	return n.AIWorker.TextToSpeech(ctx, req)
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.

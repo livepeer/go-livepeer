@@ -214,6 +214,10 @@ func (r *stubOrchestrator) ImageToText(ctx context.Context, requestID string, re
 func (r *stubOrchestrator) LivePortrait(ctx context.Context, requestID string, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
+func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+
 func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	return true
 }
@@ -1414,6 +1418,8 @@ func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, re
 	return nil, nil
 }
 func (r *mockOrchestrator) LivePortrait(ctx context.Context, requestID string, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

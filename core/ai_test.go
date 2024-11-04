@@ -672,6 +672,10 @@ func (a *stubAIWorker) ImageToText(ctx context.Context, req worker.GenImageToTex
 	return &worker.ImageToTextResponse{Text: "Transcribed text"}, nil
 }
 
+func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error) {
+	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }

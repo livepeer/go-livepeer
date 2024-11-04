@@ -84,6 +84,7 @@ var (
 		"video/mp2t": ".ts",
 		"video/mp4":  ".mp4",
 		"image/png":  ".png",
+		"audio/wav":  ".wav",
 	}
 )
 

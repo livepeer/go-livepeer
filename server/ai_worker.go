@@ -285,6 +285,18 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.LLM(ctx, req)
 		}
 		reqOk = true
+	case "text-to-speech":
+		var req worker.GenTextToSpeechJSONRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		modelID = *req.ModelId
+		resultType = "audio/wav"
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.TextToSpeech(ctx, req)
+		}
+		reqOk = true
 	case "live-portrait":
 		var req worker.LivePortraitLivePortraitPostMultipartRequestBody
 		err = json.Unmarshal(reqData.Request, &req)
@@ -373,29 +385,29 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		// Parse data from runner to send back to orchestrator
 		//   ***-to-image gets base64 encoded string of binary image from runner
 		//   image-to-video processes frames from runner and returns ImageResponse with url to local file
-		imgResp, isImg := resp.(*worker.ImageResponse)
-		if isImg {
-			var imgBuf bytes.Buffer
-			for i, image := range imgResp.Images {
+		var resBuf bytes.Buffer
+		length := 0
+		switch wkrResp := resp.(type) {
+		case *worker.ImageResponse:
+			for i, image := range wkrResp.Images {
 				// read the data to binary and replace the url
-				length := 0
 				switch resultType {
 				case "image/png":
-					err := worker.ReadImageB64DataUrl(image.Url, &imgBuf)
+					err := worker.ReadImageB64DataUrl(image.Url, &resBuf)
 					if err != nil {
 						clog.Errorf(ctx, "AI Worker failed to save image from data url err=%q", err)
 						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
 						return
 					}
-					length = imgBuf.Len()
-					imgResp.Images[i].Url = fmt.Sprintf("%v.png", core.RandomManifestID()) // update json response to track filename attached
+					length = resBuf.Len()
+					wkrResp.Images[i].Url = fmt.Sprintf("%v.png", core.RandomManifestID()) // update json response to track filename attached
 
 					// create the part
 					w.SetBoundary(boundary)
 					hdrs := textproto.MIMEHeader{
 						"Content-Type":        {resultType},
 						"Content-Length":      {strconv.Itoa(length)},
-						"Content-Disposition": {"attachment; filename=" + imgResp.Images[i].Url},
+						"Content-Disposition": {"attachment; filename=" + wkrResp.Images[i].Url},
 					}
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
@@ -403,8 +415,8 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 						sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
 						return
 					}
-					io.Copy(fw, &imgBuf)
-					imgBuf.Reset()
+					io.Copy(fw, &resBuf)
+					resBuf.Reset()
 				case "video/mp4":
 					// transcoded result is saved as local file
 					// TODO: enhance this to return the []bytes from transcoding in n.ImageToVideo create the part
@@ -415,12 +427,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 						return
 					}
 					defer os.Remove(image.Url)
-					imgResp.Images[i].Url = fmt.Sprintf("%v.mp4", core.RandomManifestID())
+					wkrResp.Images[i].Url = fmt.Sprintf("%v.mp4", core.RandomManifestID())
 					w.SetBoundary(boundary)
 					hdrs := textproto.MIMEHeader{
 						"Content-Type":        {resultType},
 						"Content-Length":      {strconv.Itoa(len(f))},
-						"Content-Disposition": {"attachment; filename=" + imgResp.Images[i].Url},
+						"Content-Disposition": {"attachment; filename=" + wkrResp.Images[i].Url},
 					}
 					fw, err := w.CreatePart(hdrs)
 					if err != nil {
@@ -432,7 +444,31 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 				}
 			}
 			// update resp for image.Url updates
-			resp = imgResp
+			resp = wkrResp
+		case *worker.AudioResponse:
+			err := worker.ReadAudioB64DataUrl(wkrResp.Audio.Url, &resBuf)
+			if err != nil {
+				clog.Errorf(ctx, "AI Worker failed to save image from data url err=%q", err)
+				sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
+				return
+			}
+			length = resBuf.Len()
+			wkrResp.Audio.Url = fmt.Sprintf("%v.wav", core.RandomManifestID()) // update json response to track filename attached
+			// create the part
+			w.SetBoundary(boundary)
+			hdrs := textproto.MIMEHeader{
+				"Content-Type":        {resultType},
+				"Content-Length":      {strconv.Itoa(length)},
+				"Content-Disposition": {"attachment; filename=" + wkrResp.Audio.Url},
+			}
+			fw, err := w.CreatePart(hdrs)
+			if err != nil {
+				clog.Errorf(ctx, "Could not create multipart part err=%q", err)
+				sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
+				return
+			}
+			io.Copy(fw, &resBuf)
+			resBuf.Reset()
 		}
 
 		// add the json to the response
