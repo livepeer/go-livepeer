@@ -1847,7 +1847,7 @@ func (cen *censusMetricsCounter) recordModelRequested(pipeline, modelName string
 		[]tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, modelName)}, cen.mAIModelsRequested.M(1)); err != nil {
 		glog.Errorf("Failed to record metrics with tags: %v", err)
 	}
-	SendQueueEvent("AIRequestStarted", map[string]string{
+	SendQueueEvent("ai_model_requested", map[string]string{
 		"pipeline": pipeline,
 		"modelId":  modelName,
 	})
@@ -1874,7 +1874,7 @@ func (cen *censusMetricsCounter) recordAIRequestLatencyScore(pipeline string, Mo
 	if err := stats.RecordWithTags(cen.ctx, tags, cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIRequestStarted", map[string]string{
+	SendQueueEvent("ai_request_started", map[string]string{
 		"latencyScore":        fmt.Sprintf("%f", latencyScore),
 		"pipeline":            pipeline,
 		"modelId":             Model,
@@ -1894,7 +1894,7 @@ func (cen *censusMetricsCounter) recordAIRequestPricePerUnit(pipeline string, Mo
 		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIRequestPricePerUnit", map[string]string{
+	SendQueueEvent("ai_request_price_per_unit", map[string]string{
 		"pricePerUnit": fmt.Sprintf("%f", pricePerUnit),
 		"pipeline":     pipeline,
 		"modelId":      Model,
@@ -1917,7 +1917,7 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 	if err := stats.RecordWithTags(census.ctx, tags, census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIRequestError", map[string]string{
+	SendQueueEvent("ai_request_error", map[string]string{
 		"errorCode":           code,
 		"pipeline":            pipeline,
 		"modelId":             model,
@@ -1944,7 +1944,7 @@ func (cen *censusMetricsCounter) recordAIJobLatencyScore(pipeline string, Model 
 		cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIJobLatencyScore", map[string]string{
+	SendQueueEvent("ai_job_latency_score", map[string]string{
 		"latencyScore": fmt.Sprintf("%f", latencyScore),
 		"pipeline":     pipeline,
 		"modelId":      Model,
@@ -1961,7 +1961,7 @@ func (cen *censusMetricsCounter) recordAIJobPricePerUnit(pipeline string, Model 
 		cen.mAIRequestPrice.M(pricePerUnit)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIRequestPricePerUnit", map[string]string{
+	SendQueueEvent("ai_request_price_per_unit", map[string]string{
 		"pricePerUnit": fmt.Sprintf("%f", pricePerUnit),
 		"pipeline":     pipeline,
 		"modelId":      Model,
@@ -1975,7 +1975,7 @@ func AIProcessingError(code string, pipeline string, model string, sender string
 		census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIRequestError", map[string]string{
+	SendQueueEvent("ai_request_error", map[string]string{
 		"errorCode": code,
 		"pipeline":  pipeline,
 		"modelId":   model,
@@ -1993,7 +1993,7 @@ func AIResultUploaded(ctx context.Context, uploadDur time.Duration, pipeline, mo
 		census.mAIResultUploadTime.M(uploadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIResultUploaded", map[string]string{
+	SendQueueEvent("ai_result_uploaded", map[string]string{
 		"uploadTime": fmt.Sprintf("%f", uploadDur.Seconds()),
 		"pipeline":   pipeline,
 		"modelId":    model,
@@ -2007,7 +2007,7 @@ func AIResultSaveError(ctx context.Context, pipeline, model, code string) {
 		census.mAIResultSaveFailed.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIResultSaveFailed", map[string]string{
+	SendQueueEvent("ai_result_save_failed", map[string]string{
 		"errorCode": code,
 		"pipeline":  pipeline,
 		"modelId":   model,
@@ -2022,7 +2022,7 @@ func AIResultDownloaded(ctx context.Context, pipeline string, model string, down
 		census.mAIResultDownloadTime.M(downloadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
 	}
-	SendQueueEvent("AIResultDownloaded", map[string]string{
+	SendQueueEvent("ai_result_downloaded", map[string]string{
 		"downloadTime": fmt.Sprintf("%f", downloadDur.Seconds()),
 		"pipeline":     pipeline,
 		"modelId":      model,
