@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
@@ -57,6 +58,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -269,6 +271,23 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	})
 }
 
+func (h *lphttp) TextToSpeech() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		var req worker.GenTextToSpeechJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -448,6 +467,18 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+	case worker.GenTextToSpeechJSONRequestBody:
+		pipeline = "text-to-speech"
+		cap = core.Capability_TextToSpeech
+		modelID = *v.ModelId
+
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.TextToSpeech(ctx, requestID, v)
+		}
+
+		// TTS pricing is typically in characters, including punctuation.
+		words := utf8.RuneCountInString(*v.Text)
+		outPixels = int64(1000 * words)
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -551,6 +582,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateSegmentAnything2LatencyScore(took, outPixels)
 		case worker.GenImageToTextMultipartRequestBody:
 			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
+		case worker.GenTextToSpeechJSONRequestBody:
+			latencyScore = CalculateTextToSpeechLatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64
@@ -753,13 +786,22 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					break
 				}
 				results = parsedResp
-			case "audio-to-text", "segment-anything-2", "llm":
+			case "audio-to-text", "segment-anything-2", "llm", "image-to-text":
 				err := json.Unmarshal(body, &results)
 				if err != nil {
 					glog.Error("Error getting results json:", err)
 					wkrResult.Err = err
 					break
 				}
+			case "text-to-speech":
+				var parsedResp worker.AudioResponse
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
 			}
 
 			wkrResult.Results = results
