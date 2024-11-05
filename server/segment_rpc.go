@@ -852,7 +852,10 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 			requestID := clog.GetVal(ctx, "request_id")
 			capability := clog.GetVal(ctx, "capability")
 
-			monitor.SendQueueEvent("created_new_payment", map[string]string{
+			monitor.SendQueueEvent("create_new_payment", map[string]string{
+				"clientIP":     clientIP,
+				"requestID":    requestID,
+				"capability":   capability,
 				"manifestID":   string(sess.Params.ManifestID),
 				"sessionID":    sess.OrchestratorInfo.AuthToken.SessionId,
 				"recipient":    batch.Recipient.Hex(),
@@ -862,9 +865,6 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 				"numTickets":   fmt.Sprintf("%v", numTickets),
 				"sender":       sess.Broadcaster.Address().Hex(),
 				"orchestrator": sess.OrchestratorInfo.Transcoder,
-				"clientIP":     clientIP,
-				"requestID":    requestID,
-				"capability":   capability,
 			})
 		}
 	}
