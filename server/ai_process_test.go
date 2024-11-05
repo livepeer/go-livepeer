@@ -55,7 +55,7 @@ func Test_submitAudioToText(t *testing.T) {
 			args: args{
 				ctx:    context.Background(),
 				params: aiRequestParams{},
-				sess:   &AISession{/* populate with valid session */},
+				sess:   &AISession{},
 				req:    worker.GenAudioToTextMultipartRequestBody{},
 			},
 			want:    nil,
@@ -65,9 +65,9 @@ func Test_submitAudioToText(t *testing.T) {
 			name: "nil session",
 			args: args{
 				ctx:    context.Background(),
-				params: aiRequestParams{/* populate with valid params */},
+				params: aiRequestParams{},
 				sess:   nil,
-				req:    worker.GenAudioToTextMultipartRequestBody{/* populate with valid request body */},
+				req:    worker.GenAudioToTextMultipartRequestBody{},
 			},
 			want:    nil,
 			wantErr: true,
