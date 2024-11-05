@@ -407,8 +407,6 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	authToken := orch.AuthToken(sessionID, expiration)
 
-	addr2 := orch.Address()
-	fmt.Println(addr2)
 	tr := net.OrchestratorInfo{
 		Transcoder:   serviceURI,
 		TicketParams: params,
