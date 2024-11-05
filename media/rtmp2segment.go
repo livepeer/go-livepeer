@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,11 +20,14 @@ import (
 
 var waitTimeout = 20 * time.Second
 
-func RunSegmentation(in string, segmentHandler SegmentHandler) {
+type MediaSegmenter struct {
+	Workdir string
+}
 
-	// TODO workdir stuff
-	outFilePattern := randomString() + "-%d.ts"
-	completionSignal := make(chan bool)
+func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandler) {
+
+	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
+	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -96,7 +100,7 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 		}
 
 		// Convert timeLeft to a syscall.Timeval for the select call
-		tv := syscall.NsecToTimeval(timeLeft.Nanoseconds())
+		tv := syscall.NsecToTimeval((100 * time.Millisecond).Nanoseconds())
 
 		// Set up the read file descriptor set for select
 		readFds := &syscall.FdSet{}
@@ -140,6 +144,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 	mu := &sync.Mutex{}
 	isComplete := false
 	var currentSegment *os.File = nil
+	pipeCompletion := make(chan bool, 1)
 
 	// Start a goroutine to wait for the completion signal
 	go func() {
@@ -152,6 +157,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 			currentSegment.Close()
 		}
 		isComplete = true
+		pipeCompletion <- true
 		slog.Info("Got completion signal")
 	}()
 
@@ -167,7 +173,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 
 		// Open the current pipe for reading
 		// Blocks if no writer is available so do some tricks to it
-		file, err := openNonBlockingWithRetry(pipeName, waitTimeout, completionSignal)
+		file, err := openNonBlockingWithRetry(pipeName, waitTimeout, pipeCompletion)
 		if err != nil {
 			slog.Error("Error opening pipe", "pipeName", pipeName, "err", err)
 			cleanUpPipe(pipeName)

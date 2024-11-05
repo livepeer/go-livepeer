@@ -367,7 +367,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
-			media.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
+			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
 			// TODO handle stream stops
 		}()
 

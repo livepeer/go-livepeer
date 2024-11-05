@@ -31,6 +31,8 @@ import (
 
 var MaxAIRequestSize = 3000000000 // 3GB
 
+var TrickleHTTPPath = "/ai/trickle/"
+
 func startAIServer(lp lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -51,7 +53,10 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	trickle.ConfigureServerWithMux(lp.transRPC)
+	lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:      lp.transRPC,
+		BasePath: TrickleHTTPPath,
+	})
 
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
@@ -93,7 +98,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		var (
 			mid    = string(core.RandomManifestID())
-			pubUrl = trickle.BaseServerPath + mid
+			pubUrl = TrickleHTTPPath + mid
 			subUrl = pubUrl + "-out"
 		)
 		jsonData, err := json.Marshal(

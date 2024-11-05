@@ -51,7 +51,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 	pr, pw := io.Pipe()
 	req, err := http.NewRequest("POST", url, pr)
 	if err != nil {
-		slog.Error("Failed to create request for segment", "idx", index, "err", err)
+		slog.Error("Failed to create request for segment", "url", url, "err", err)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", c.contentType)
@@ -67,19 +67,19 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 		}}
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Info("Failed to complete POST for segment", "index", index, "err", err)
+			slog.Info("Failed to complete POST for segment", "url", url, "err", err)
 			return
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			slog.Info("Error reading body", "index", index, "err", err)
+			slog.Info("Error reading body", "url", url, "err", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			slog.Info("Failed POST segment", "index", index, "status_code", resp.StatusCode, "msg", string(body))
+			slog.Info("Failed POST segment", "url", url, "status_code", resp.StatusCode, "msg", string(body))
 		} else {
-			slog.Info("Uploaded segment", "index", index)
+			slog.Info("Uploaded segment", "url", url)
 		}
 	}()
 

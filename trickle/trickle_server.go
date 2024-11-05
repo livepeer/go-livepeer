@@ -2,6 +2,7 @@ package trickle
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,15 +15,29 @@ import (
 
 // TODO sweep idle streams connections
 
-type StreamManager struct {
+const CHANGEFEED = "_changes"
+
+type TrickleServerConfig struct {
+	BasePath   string
+	Mux        *http.ServeMux
+	Changefeed bool
+}
+
+type Server struct {
 	mutex   sync.RWMutex
 	streams map[string]*Stream
+
+	// for internal channels
+	changefeed  bool
+	internalPub *TrickleLocalPublisher
 }
 
 type Stream struct {
 	mutex       sync.RWMutex
 	segments    []*Segment
 	latestWrite int
+	name        string
+	mimeType    string
 }
 
 type Segment struct {
@@ -38,55 +53,85 @@ type SegmentSubscriber struct {
 	readPos int
 }
 
-const maxSegmentsPerStream = 5
+type Changefeed struct {
+	Added   []string `json:"added,omitempty"`
+	Removed []string `json:"removed,omitempty"`
+}
 
-const BaseServerPath = "/ai/live-video/"
+const maxSegmentsPerStream = 5
 
 var FirstByteTimeout = errors.New("pending read timeout")
 
-func ConfigureServerWithMux(mux *http.ServeMux) {
-	/* TODO we probably want to configure the below
-	srv := &http.Server{
-		// say max segment size is 20 secs
-		// we can allow 2 * 20 secs given preconnects
-		ReadTimeout:  40 * time.Second,
-		WriteTimeout: 45 * time.Second,
+func applyDefaults(config *TrickleServerConfig) {
+	if config.BasePath == "" {
+		config.BasePath = "/"
 	}
-	*/
-
-	streamManager := &StreamManager{
-		streams: make(map[string]*Stream),
+	if config.Mux == nil {
+		config.Mux = http.DefaultServeMux
 	}
-	mux.HandleFunc("GET "+BaseServerPath+"{streamName}/{idx}", streamManager.handleGet)
-	mux.HandleFunc("POST "+BaseServerPath+"{streamName}/{idx}", streamManager.handlePost)
-	mux.HandleFunc("DELETE "+BaseServerPath+"{streamName}", streamManager.handleDelete)
 }
 
-func (sm *StreamManager) getStream(streamName string) (*Stream, bool) {
+func ConfigureServer(config TrickleServerConfig) *Server {
+	streamManager := &Server{
+		streams:    make(map[string]*Stream),
+		changefeed: config.Changefeed,
+	}
+
+	// set up changefeed
+	if streamManager.changefeed {
+		streamManager.internalPub = NewLocalPublisher(streamManager, CHANGEFEED, "application/json")
+		streamManager.internalPub.CreateStream()
+	}
+
+	applyDefaults(&config)
+	var (
+		mux      = config.Mux
+		basePath = config.BasePath
+	)
+
+	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
+	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
+	mux.HandleFunc("DELETE "+basePath+"{streamName}", streamManager.handleDelete)
+	return streamManager
+}
+
+func (sm *Server) getStream(streamName string) (*Stream, bool) {
 	sm.mutex.RLock()
 	defer sm.mutex.RUnlock()
 	stream, exists := sm.streams[streamName]
 	return stream, exists
 }
 
-func (sm *StreamManager) getOrCreateStream(streamName string) *Stream {
+func (sm *Server) getOrCreateStream(streamName, mimeType string) *Stream {
 	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
 
 	stream, exists := sm.streams[streamName]
 	if !exists {
 		stream = &Stream{
 			segments: make([]*Segment, 5),
+			name:     streamName,
+			mimeType: mimeType,
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
 	}
+	sm.mutex.Unlock()
+
+	// update changefeed
+	if !exists && sm.changefeed {
+		jb, _ := json.Marshal(&Changefeed{
+			Added: []string{streamName},
+		})
+		sm.internalPub.Write(bytes.NewReader(jb))
+	}
 	return stream
 }
 
-func (sm *StreamManager) clearAllStreams() {
+func (sm *Server) clearAllStreams() {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
+
+	// TODO update changefeed
 
 	for _, stream := range sm.streams {
 		stream.clear()
@@ -103,27 +148,44 @@ func (s *Stream) clear() {
 	s.segments = make([]*Segment, maxSegmentsPerStream)
 }
 
-func (sm *StreamManager) handleDelete(w http.ResponseWriter, r *http.Request) {
-	streamName := r.PathValue("streamName")
+func (sm *Server) closeStream(streamName string) error {
 	stream, exists := sm.getStream(streamName)
 	if !exists {
-		http.Error(w, "Invalid stream name", http.StatusBadRequest)
-		return
+		return errors.New("Invalid stream")
 	}
 
-	// TODO properly clear sessions once we have a good solution
-	//      for session reuse
-	return
+	// TODO there is a bit of an issue around session reuse
 
 	stream.clear()
 	sm.mutex.Lock()
-	defer sm.mutex.Unlock()
 	delete(sm.streams, streamName)
+	sm.mutex.Unlock()
 	slog.Info("Deleted stream", "streamName", streamName)
+
+	// update changefeed if needed
+	if !sm.changefeed {
+		return nil
+	}
+	jb, err := json.Marshal(&Changefeed{
+		Removed: []string{streamName},
+	})
+	if err != nil {
+		return err
+	}
+	sm.internalPub.Write(bytes.NewReader(jb))
+	return nil
 }
 
-func (sm *StreamManager) handlePost(w http.ResponseWriter, r *http.Request) {
-	stream := sm.getOrCreateStream(r.PathValue("streamName"))
+func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	streamName := r.PathValue("streamName")
+	if err := sm.closeStream(streamName); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+}
+
+func (sm *Server) handlePost(w http.ResponseWriter, r *http.Request) {
+	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Content-Type"))
 	idx, err := strconv.Atoi(r.PathValue("idx"))
 	if err != nil {
 		http.Error(w, "Invalid idx", http.StatusBadRequest)
@@ -194,11 +256,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment, exists := s.getForWrite(idx)
 	if exists {
 		slog.Warn("Overwriting existing entry", "idx", idx)
-		/*
-			// Overwrite anything that exists now. TODO figure out a safer behavior?
-				http.Error(w, "Entry already exists for this index", http.StatusBadRequest)
-				return
-		*/
+		// Overwrite anything that exists now. TODO figure out a safer behavior?
+		http.Error(w, "Entry already exists for this index", http.StatusBadRequest)
+		return
 	}
 
 	// Wrap the request body with the custom timeoutReader
@@ -225,13 +285,13 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 		if err != nil {
 			if err == FirstByteTimeout {
 				// Keepalive via provisional headers
-				slog.Info("Sending provisional headers for", "idx", idx)
+				slog.Info("Sending provisional headers for", "stream", s.name, "idx", idx)
 				w.WriteHeader(http.StatusContinue)
 				continue
 			} else if err == io.EOF {
 				break
 			}
-			slog.Info("Error reading POST body", "idx", idx, "bytes written", totalRead, "err", err)
+			slog.Info("Error reading POST body", "stream", s.name, "idx", idx, "bytes written", totalRead, "err", err)
 			http.Error(w, "Server error", http.StatusInternalServerError)
 			return
 		}
@@ -251,7 +311,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	} else {
 		s.latestWrite = idx
 	}
-	slog.Info("POST segment", "idx", idx, "latest", s.latestWrite)
+	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
 		if idx == segment.idx {
@@ -281,13 +341,13 @@ func (s *Stream) getForRead(idx int) (*Segment, bool) {
 		// read request is just a little bit ahead of write head
 		segment = newSegment(idx)
 		s.segments[segmentPos] = segment
-		slog.Info("GET precreating", "idx", idx, "latest", s.latestWrite)
+		slog.Info("GET precreating", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	}
-	slog.Info("GET segment", "idx", idx, "latest", s.latestWrite, "exists?", exists(segment, idx))
+	slog.Info("GET segment", "stream", s.name, "idx", idx, "latest", s.latestWrite, "exists?", exists(segment, idx))
 	return segment, exists(segment, idx)
 }
 
-func (sm *StreamManager) handleGet(w http.ResponseWriter, r *http.Request) {
+func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	stream, exists := sm.getStream(r.PathValue("streamName"))
 	if !exists {
 		http.Error(w, "Stream not found", http.StatusNotFound)
@@ -333,7 +393,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			if len(data) > 0 {
 				if totalWrites <= 0 {
 					w.Header().Set("Lp-Trickle-Idx", strconv.Itoa(segment.idx))
-					w.Header().Set("Content-Type", "video/MP2T") // TODO take from post
+					w.Header().Set("Content-Type", s.mimeType)
 				}
 				n, err := w.Write(data)
 				totalWrites += n
@@ -351,7 +411,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 
 	if n, err := sendData(); err != nil {
 		// Handle write error or client disconnect
-		slog.Error("Error sending data to client", "idx", segment.idx, "sentBytes", n, "err", err)
+		slog.Error("Error sending data to client", "stream", s.name, "idx", segment.idx, "sentBytes", n, "err", err)
 		return
 	}
 }
