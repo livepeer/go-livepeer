@@ -33,27 +33,27 @@ type SegmentInfoReceiver struct {
 	priceInfo *net.PriceInfo
 }
 
-// RealtimePaymentSender is used in Gateway to send payment to Orchestrator
-type RealtimePaymentSender interface {
+// LivePaymentSender is used in Gateway to send payment to Orchestrator
+type LivePaymentSender interface {
 	// SendPayment process the streamInfo and sends a payment to Orchestrator if needed
 	SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error
 }
 
-// RealtimePaymentReceiver is used in Orchestrator to account for each processed segment
-type RealtimePaymentReceiver interface {
+// LivePaymentReceiver is used in Orchestrator to account for each processed segment
+type LivePaymentReceiver interface {
 	// AccountSegment checks if the stream is paid and if not it returns error, so that stream can be stopped
 	AccountSegment(ctx context.Context, segmentInfo *SegmentInfoReceiver) error
 }
 
-type realtimePaymentSender struct {
+type livePaymentSender struct {
 	segmentsToPayUpfront int64
 }
 
-type realtimePaymentReceiver struct {
+type livePaymentReceiver struct {
 	orchestrator Orchestrator
 }
 
-func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
+func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
 	sess := segmentInfo.sess
 
 	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
@@ -133,7 +133,7 @@ func (r *realtimePaymentSender) SendPayment(ctx context.Context, segmentInfo *Se
 	return nil
 }
 
-func (r *realtimePaymentReceiver) AccountPayment(
+func (r *livePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 

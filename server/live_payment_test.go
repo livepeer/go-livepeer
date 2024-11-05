@@ -46,7 +46,7 @@ func TestSendPayment(t *testing.T) {
 	sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 
 	// Create Payment sender and segment info
-	paymentSender := realtimePaymentSender{
+	paymentSender := livePaymentSender{
 		segmentsToPayUpfront: 10,
 	}
 	segmentInfo := &SegmentInfoSender{
@@ -126,7 +126,7 @@ func TestAccountPayment(t *testing.T) {
 			node.Balances = balances
 			orch := core.NewOrchestrator(node, nil)
 
-			paymentReceiver := realtimePaymentReceiver{orchestrator: orch}
+			paymentReceiver := livePaymentReceiver{orchestrator: orch}
 			if tt.credit != nil {
 				node.Balances.Credit(sender, core.ManifestID(sessionID), tt.credit)
 			}
