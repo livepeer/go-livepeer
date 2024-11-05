@@ -852,7 +852,7 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 			requestID := clog.GetVal(ctx, "request_id")
 			capability := clog.GetVal(ctx, "capability")
 
-			monitor.SendAIJobEvent("created_new_payment", map[string]string{
+			monitor.SendQueueEvent("created_new_payment", map[string]string{
 				"manifestID":   string(sess.Params.ManifestID),
 				"sessionID":    sess.OrchestratorInfo.AuthToken.SessionId,
 				"recipient":    batch.Recipient.Hex(),
