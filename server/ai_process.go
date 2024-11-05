@@ -909,11 +909,18 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 		return nil, err
 	}
 
-	//Add the duration to the request via 'metadata' field
-	metadata_str, err := encodeReqMetadata(map[string]string{
+	// Add the duration to the request via 'metadata' field.
+	metadata := map[string]string{
 		"duration": strconv.Itoa(int(durationSeconds)),
-    })
-	req.Metadata = &metadata_str
+	}
+	metadataStr, err := encodeReqMetadata(metadata)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	req.Metadata = &metadataStr
 
 	var buf bytes.Buffer
 	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
@@ -1496,11 +1503,13 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 	return fee, nil
 }
 
-func encodeReqMetadata(info map[string]string) (string, error) {
-	jobParamBytes, err := json.Marshal(info)
+// encodeReqMetadata encodes a map of metadata into a JSON string.
+func encodeReqMetadata(metadata map[string]string) (string, error) {
+	metadataBytes, err := json.Marshal(metadata)
 	if err != nil {
 		return "", err
 	}
-	jobInfoStr := string(jobParamBytes)
-	return jobInfoStr, nil
+
+	metadataStr := string(metadataBytes)
+	return metadataStr, nil
 }
