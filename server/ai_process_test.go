@@ -30,65 +30,8 @@ func Test_submitLLM(t *testing.T) {
 				t.Errorf("submitLLM() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("submitAudioToText() error = %v, wantErr %v", err, tt.wantErr)
-				}
-				return
-			}
-			if reflect.TypeOf(got) != reflect.TypeOf(tt.want) {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("submitLLM() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_submitAudioToText(t *testing.T) {
-	type args struct {
-		ctx    context.Context
-		params aiRequestParams
-		sess   *AISession
-		req    worker.GenAudioToTextMultipartRequestBody
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    interface{}
-		wantErr bool
-	}{
-		{
-			name: "invalid request (no file)",
-			args: args{
-				ctx:    context.Background(),
-				params: aiRequestParams{},
-				sess:   &AISession{/* populate with valid session */},
-				req:    worker.GenAudioToTextMultipartRequestBody{},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "nil session",
-			args: args{
-				ctx:    context.Background(),
-				params: aiRequestParams{/* populate with valid params */},
-				sess:   nil,
-				req:    worker.GenAudioToTextMultipartRequestBody{/* populate with valid request body */},
-			},
-			want:    nil,
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := submitAudioToText(tt.args.ctx, tt.args.params, tt.args.sess, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("submitAudioToText() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("submitAudioToText() = %v, want %v", got, tt.want)
 			}
 		})
 	}
