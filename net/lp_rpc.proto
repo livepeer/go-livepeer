@@ -132,10 +132,10 @@ message Capabilities {
         uint32 capacity = 2;
       }
 
-      map<string, ModelConstraint> models = 1; 
+      map<string, ModelConstraint> models = 1;
     }
 
-    
+
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
@@ -338,6 +338,12 @@ message TranscodeResult {
     OrchestratorInfo info = 16;
 }
 
+// Response that an orchestrator sends after processing a payment.
+message PaymentResult {
+    // Used to notify a broadcaster of updated orchestrator information
+    OrchestratorInfo info = 16;
+}
+
 // Sent by the transcoder to register itself to the orchestrator.
 message RegisterRequest {
 
@@ -390,7 +396,7 @@ message RegisterAIWorkerRequest {
 }
 
 // Data included by the gateway when submitting a AI job.
-message AIJobData {  
+message AIJobData {
     // pipeline to use for the job
     string pipeline = 1;
 
@@ -399,7 +405,7 @@ message AIJobData {
 }
 
 // Sent by the orchestrator to the aiworker
-message NotifyAIJob {    
+message NotifyAIJob {
     // Configuration for the AI job
     AIJobData AIJobData = 1;
 

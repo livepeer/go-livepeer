@@ -367,15 +367,8 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, nil
 	}
 
-	shouldRefresh, err := shouldRefreshSession(ctx, sess.BroadcastSession)
-	if err != nil {
+	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession); err != nil {
 		return nil, err
-	}
-
-	if shouldRefresh {
-		if err := refreshSession(ctx, sess.BroadcastSession); err != nil {
-			return nil, err
-		}
 	}
 
 	return sess, nil
