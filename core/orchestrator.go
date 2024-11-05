@@ -404,6 +404,13 @@ func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestI
 	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
 }
 
+func (orch *orchestrator) Balance(addr ethcommon.Address, manifestID ManifestID) *big.Rat {
+	if orch.node == nil || orch.node.Balances == nil {
+		return nil
+	}
+	return orch.node.Balances.Balance(addr, manifestID)
+}
+
 func (orch *orchestrator) Capabilities() *net.Capabilities {
 	if orch.node == nil {
 		return nil
