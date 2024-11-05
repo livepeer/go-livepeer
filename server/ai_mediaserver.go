@@ -369,7 +369,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
 			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
-			// TODO handle stream stops
+			ssr.Close()
 		}()
 
 		params := aiRequestParams{

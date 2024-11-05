@@ -13,6 +13,12 @@ func NoopReader(reader io.Reader) {
 	}()
 }
 
+type EOSReader struct{}
+
+func (r EOSReader) Read(p []byte) (n int, err error) {
+	return 0, io.EOF
+}
+
 type SwitchableSegmentReader struct {
 	mu     sync.RWMutex
 	reader SegmentHandler
@@ -34,4 +40,10 @@ func (sr *SwitchableSegmentReader) Read(reader io.Reader) {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	sr.reader(reader)
+}
+
+func (sr *SwitchableSegmentReader) Close() {
+	sr.mu.RLock()
+	defer sr.mu.RUnlock()
+	sr.reader(&EOSReader{})
 }

@@ -95,7 +95,10 @@ func (c *TricklePublisher) Close() error {
 	if err != nil {
 		return err
 	}
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := (&http.Client{Transport: &http.Transport{
+		// ignore orch certs for now
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}).Do(req)
 	if err != nil {
 		return err
 	}
