@@ -32,5 +32,5 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 	slog.Info("trickle pub", "url", url)
 }
 
-func startTrickleSubscribe(url *url.URL) {
+func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 }

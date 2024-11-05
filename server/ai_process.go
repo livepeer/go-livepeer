@@ -1039,13 +1039,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
 		startTricklePublish(pub, params)
-		startTrickleSubscribe(sub)
-	}
-	if resp.JSON400 != nil {
-		fmt.Println("json400", resp.JSON400)
-	}
-	if resp.JSON500 != nil {
-		fmt.Println("json500", resp.JSON500)
+		startTrickleSubscribe(sub, params)
 	}
 	return resp, nil
 }
