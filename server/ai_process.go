@@ -913,13 +913,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	metadata := map[string]string{
 		"duration": strconv.Itoa(int(durationSeconds)),
 	}
-	metadataStr, err := encodeReqMetadata(metadata)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
+	metadataStr := encodeReqMetadata(metadata)
 	req.Metadata = &metadataStr
 
 	var buf bytes.Buffer
@@ -1504,12 +1498,7 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 }
 
 // encodeReqMetadata encodes a map of metadata into a JSON string.
-func encodeReqMetadata(metadata map[string]string) (string, error) {
-	metadataBytes, err := json.Marshal(metadata)
-	if err != nil {
-		return "", err
-	}
-
-	metadataStr := string(metadataBytes)
-	return metadataStr, nil
+func encodeReqMetadata(metadata map[string]string) string {
+	metadataBytes, _ := json.Marshal(metadata)
+	return string(metadataBytes)
 }
