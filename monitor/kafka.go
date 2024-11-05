@@ -102,7 +102,7 @@ func (p *KafkaProducer) SendEvents(events []GatewayEvent) {
 	glog.Errorf("error while sending gateway log to Kafka, the gateway logs are lost, err=%d", err)
 }
 
-func SendAIJobEvent(eventType string, data interface{}) {
+func SendQueueEvent(eventType string, data interface{}) {
 	if kafkaProducer == nil {
 		return
 	}
