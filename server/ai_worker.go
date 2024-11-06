@@ -331,7 +331,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	// reserve the capabilities to process this request, release after work is done
 	err = n.ReserveAICapability(notify.AIJobData.Pipeline, modelID)
 	if err != nil {
-		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
+		clog.Errorf(ctx, "No capability available to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
 		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, core.ErrNoCompatibleWorkersAvailable)
 		return
 	}
