@@ -94,6 +94,9 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
 		// skipping handleAIRequest for now until we have payments
 
 		var (
@@ -110,6 +113,29 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Precreate the channels to avoid race conditions
+		// TODO get the expected mime type from the request
+		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh.CreateChannel()
+		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh.CreateChannel()
+
+		// Subscribe to the publishUrl for payments monitoring
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			for {
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					return
+				}
+				// We can do something with the segment data here
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
+
+		// TODO subscribe to the subscribeUrl for output monitoring
 
 		respondJsonOk(w, jsonData)
 	})
