@@ -1593,7 +1593,7 @@ func respond400(w http.ResponseWriter, errMsg string) {
 }
 
 func respondWithError(w http.ResponseWriter, errMsg string, code int) {
-	glog.Errorf("HTTP Response Error %v: %v", code, errMsg)
+	glog.Errorf("HTTP Response Error statusCode=%d err=%v", code, errMsg)
 	http.Error(w, errMsg, code)
 }
 
