@@ -55,7 +55,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
+          apt update && apt install -yqq git zip unzip libpng-dev zlib1g-dev zlib1g yasm
 
       - name: Check out code
         uses: actions/checkout@v4.1.7
