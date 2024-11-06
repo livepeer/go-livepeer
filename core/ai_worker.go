@@ -358,12 +358,6 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 	}
 
 	clog.V(common.DEBUG).Infof(logCtx, "Job sent to AI worker worker=%s taskId=%d pipeline=%s model_id=%s", rw.addr, taskID, pipeline, modelID)
-	monitor.SendQueueEvent("ai_worker_job_sent", map[string]string{
-		"pipeline": pipeline,
-		"modelId":  modelID,
-		"worker":   rw.addr,
-		"taskId":   fmt.Sprintf("%d", taskID),
-	})
 	// set a minimum timeout to accommodate transport / processing overhead
 	// TODO: this should be set for each pipeline, using something long for now
 	dur := aiWorkerRequestTimeout
@@ -380,14 +374,6 @@ func (rw *RemoteAIWorker) Process(logCtx context.Context, pipeline string, model
 		if monitor.Enabled {
 			monitor.AIResultDownloaded(logCtx, pipeline, modelID, chanData.DownloadTime)
 		}
-
-		monitor.SendQueueEvent("ai_worker_job_sent", map[string]string{
-			"downloadTime": fmt.Sprintf("%f", chanData.DownloadTime.Seconds()),
-			"pipeline":     pipeline,
-			"modelId":      modelID,
-			"worker":       rw.addr,
-			"taskId":       fmt.Sprintf("%d", taskID),
-		})
 
 		return chanData, chanData.Err
 	}

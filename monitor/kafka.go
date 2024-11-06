@@ -102,23 +102,25 @@ func (p *KafkaProducer) SendEvents(events []GatewayEvent) {
 	glog.Errorf("error while sending gateway log to Kafka, the gateway logs are lost, err=%d", err)
 }
 
-func SendQueueEvent(eventType string, data interface{}) {
-	if kafkaProducer == nil {
-		return
-	}
+func SendQueueEventAsync(eventType string, data interface{}) {
+	go func() {
+		if kafkaProducer == nil {
+			return
+		}
 
-	randomID := uuid.New().String()
-	timestampMs := time.Now().UnixMilli()
+		randomID := uuid.New().String()
+		timestampMs := time.Now().UnixMilli()
 
-	event := GatewayEvent{
-		ID:        stringPtr(randomID),
-		Gateway:   stringPtr(""),
-		Type:      &eventType,
-		Timestamp: stringPtr(fmt.Sprint(timestampMs)),
-		Data:      data,
-	}
+		event := GatewayEvent{
+			ID:        stringPtr(randomID),
+			Gateway:   stringPtr(""),
+			Type:      &eventType,
+			Timestamp: stringPtr(fmt.Sprint(timestampMs)),
+			Data:      data,
+		}
 
-	kafkaProducer.SendEvent(event)
+		kafkaProducer.SendEvent(event)
+	}()
 }
 
 func stringPtr(s string) *string {
