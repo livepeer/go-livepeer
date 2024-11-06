@@ -4,7 +4,7 @@ Trickle is a segmented publish-subscribe protocol that streams data in realtime,
 
 Breaking this down:
 
-1. Data streams are called *channels*. Channels are content agonstic - the data can be video, audio, JSON, logs, a custom format, etc.
+1. Data streams are called *channels* , Channels are content agnostic - the data can be video, audio, JSON, logs, a custom format, etc.
 
 2. Segmented: Data for each channel is sent as discrete *segments*. For example, a video may use a segment for each GOP, or an API may use a segment for each JSON message, or a logging application may split segments on time intervals. The boundaries of each segment are application defined, but segments are preferably standalone such that a request for a single segment should return usable content on its own.
 
