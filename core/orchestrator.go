@@ -254,6 +254,63 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 	}, nil
 }
 
+func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	ethAddr := sender.String()
+
+	var gatewayPrices CapabilityPrices
+	defaultPrices := orch.node.GetCapsPrices("default")
+
+	if sender != (ethcommon.Address{}) {
+
+		gatewayPrices = orch.node.GetCapsPrices(ethAddr)
+	}
+
+	var capPrices []*net.PriceInfo
+	if defaultPrices != nil {
+		for cap, price := range defaultPrices {
+			for modelID, priceInfo := range price.modelPrices {
+				if priceInfo == nil {
+					continue
+				}
+				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				if err != nil {
+					continue
+				}
+
+				capPrices = append(capPrices, &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID})
+			}
+		}
+	}
+
+	//update to price for gateway if applicable
+	if gatewayPrices != nil {
+		for cap, price := range gatewayPrices {
+			for modelID, priceInfo := range price.modelPrices {
+				if priceInfo == nil {
+					continue
+				}
+				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				if err != nil {
+					//update default price to gateway price if exists, add price if default price is not set
+					capPriceUpdated := false
+					for idx, price := range capPrices {
+						if price.Capability == uint32(cap) && price.Constraint == modelID {
+							capPrices[idx] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
+							capPriceUpdated = true
+							break
+						}
+					}
+					if !capPriceUpdated {
+						capPrices = append(capPrices, &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID})
+					}
+				}
+			}
+		}
+	}
+
+	return capPrices, nil
+}
+
 func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
 		return nil, nil

@@ -269,6 +269,19 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 	return nil
 }
 
+func (n *LivepeerNode) GetCapsPrices(b_eth_addr string) CapabilityPrices {
+	addr := strings.ToLower(b_eth_addr)
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	prices, ok := n.priceInfoForCaps[addr]
+	if !ok {
+		return nil
+	}
+
+	return prices
+}
+
 // SetMaxFaceValue sets the faceValue upper limit for tickets received
 func (n *LivepeerNode) SetMaxFaceValue(maxfacevalue *big.Int) {
 	n.mu.Lock()

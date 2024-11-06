@@ -102,6 +102,12 @@ message PriceInfo {
   // Pixels covered in the price
   // Set price to 1 wei and pixelsPerUnit > 1 to have a smaller price granularity per pixel than 1 wei
   int64 pixelsPerUnit = 2;
+
+  // Capability price is for
+  uint32 capability = 3;
+
+  // constraint price is for
+  string constraint = 4;
 }
 
 message Capabilities {
@@ -163,6 +169,9 @@ message OrchestratorInfo {
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
+
+  // prices for capabilities
+  repeated PriceInfo capabilities_prices = 33;
 }
 
 // Data for transcoding authentication that is included in the OrchestratorInfo message during discovery

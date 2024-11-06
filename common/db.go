@@ -91,7 +91,7 @@ var schema = `
 		activationRound int64,
 		deactivationRound int64,
 		stake int64,
-		remoteInfo STRING
+		remoteInfo STRING DEFAULT '{}'
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -190,7 +190,7 @@ func InitDB(dbPath string) (*DB, error) {
 		if dbVersion == 1 && LivepeerDBVersion == 2 {
 			glog.Info("Upgrading DB from version 1 to 2")
 			// Add remoteInfo column to orchestrators table
-			_, err = db.Exec("ALTER TABLE orchestrators ADD COLUMN remoteInfo STRING")
+			_, err = db.Exec("ALTER TABLE orchestrators ADD COLUMN remoteInfo STRING default '{}'")
 			if err != nil {
 				glog.Error("Error adding remoteInfo column to orchestrators table ", err)
 				d.Close()

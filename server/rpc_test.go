@@ -142,6 +142,10 @@ func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.M
 	return r.priceInfo, nil
 }
 
+func (r *stubOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	return []*net.PriceInfo{}, nil
+}
+
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
 	return true
 }
@@ -1373,6 +1377,15 @@ func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.M
 		return args.Get(0).(*net.PriceInfo), args.Error(1)
 	}
 	return nil, args.Error(1)
+}
+
+func (o *mockOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	args := o.Called(sender)
+	if args.Get(0) != nil {
+		return args.Get(0).([]*net.PriceInfo), nil
+	}
+
+	return []*net.PriceInfo{}, nil
 }
 
 func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {

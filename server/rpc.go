@@ -62,6 +62,7 @@ type Orchestrator interface {
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
 	PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error)
+	GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat
@@ -419,8 +420,13 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 
 func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 	var priceInfo *net.PriceInfo
+	var capsPrices []*net.PriceInfo
+	var err error
 	if caps == nil {
-		var err error
+		//get capability prices
+		capsPrices, err = orch.GetCapabilitiesPrices(addr)
+
+		//get base price
 		priceInfo, err = getPriceInfo(orch, addr, manifestID)
 		if err != nil {
 			return nil, err
@@ -443,19 +449,20 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	authToken := orch.AuthToken(sessionID, expiration)
 
-	workerHardware, err := json.Marshal(orch.WorkerHardware())
-	if err != nil {
-		return nil, err
+	var workerHardware []byte
+	if caps == nil {
+		workerHardware, _ = json.Marshal(orch.WorkerHardware())
 	}
 
 	tr := net.OrchestratorInfo{
-		Transcoder:   serviceURI,
-		TicketParams: params,
-		PriceInfo:    priceInfo,
-		Address:      orch.Address().Bytes(),
-		Capabilities: orch.Capabilities(),
-		AuthToken:    authToken,
-		Hardware:     workerHardware,
+		Transcoder:         serviceURI,
+		TicketParams:       params,
+		PriceInfo:          priceInfo,
+		Address:            orch.Address().Bytes(),
+		Capabilities:       orch.Capabilities(),
+		AuthToken:          authToken,
+		Hardware:           workerHardware,
+		CapabilitiesPrices: capsPrices,
 	}
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)
