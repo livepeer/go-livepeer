@@ -551,7 +551,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	if resp.StatusCode != 200 {
 		data, _ := ioutil.ReadAll(resp.Body)
 		errorString := strings.TrimSpace(string(data))
-		clog.Errorf(ctx, "Error submitting segment code=%d orch=%s err=%q", resp.StatusCode, ti.Transcoder, string(data))
+		clog.Errorf(ctx, "Error submitting segment statusCode=%d orch=%s err=%q", resp.StatusCode, ti.Transcoder, string(data))
 		if monitor.Enabled {
 			if resp.StatusCode == 403 && strings.Contains(errorString, "OrchestratorCapped") {
 				monitor.SegmentUploadFailed(ctx, nonce, seg.SeqNo, monitor.SegmentUploadErrorOrchestratorCapped, errors.New(errorString), false, sess.OrchestratorInfo.Transcoder)

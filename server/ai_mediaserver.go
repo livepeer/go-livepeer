@@ -14,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-tools/drivers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
@@ -64,16 +65,16 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
-	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
-	ls.HTTPMux.Handle("/upscale", oapiReqValidator(handle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
+	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
+	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
+	ls.HTTPMux.Handle("/upscale", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
-	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
+	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
 	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
-	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
-	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
-	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
+	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
+	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
+	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
@@ -81,21 +82,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	return nil
 }
 
-// Decoder for JSON requests
-func jsonDecoder[T any](req *T, r *http.Request) error {
-	return json.NewDecoder(r.Body).Decode(req)
-}
-
-// Decoder for Multipart requests
-func multipartDecoder[T any](req *T, r *http.Request) error {
-	multiRdr, err := r.MultipartReader()
-	if err != nil {
-		return err
-	}
-	return runtime.BindMultipart(req, *multiRdr)
-}
-
-func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
+func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
@@ -374,15 +361,27 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 		requestID := string(core.RandomManifestID())
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-		}
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		// TODO set model and initial parameters here if necessary (eg, prompt)
-		req := struct{}{}
-		resp, err := processAIRequest(ctx, params, req)
-		clog.Infof(ctx, "Received live video AI request stream=%s resp=%v err=%v", streamName, resp, err)
+		clog.Infof(ctx, "Received live video AI request for %s", streamName)
+
+		// Kick off the RTMP pull and segmentation as soon as possible
+		ssr := media.NewSwitchableSegmentReader()
+		go func() {
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
+			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			ssr.Close()
+		}()
+
+		params := aiRequestParams{
+			node:          ls.LivepeerNode,
+			os:            drivers.NodeStorage.NewSession(requestID),
+			sessManager:   ls.AISessionManager,
+			segmentReader: ssr,
+		}
+
+		req := worker.GenLiveVideoToVideoJSONRequestBody{
+			// TODO set model and initial parameters here if necessary (eg, prompt)
+		}
+		processAIRequest(ctx, params, req)
 	})
 }
