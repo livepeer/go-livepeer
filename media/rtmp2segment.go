@@ -224,26 +224,26 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 		n, err := reader.Read(buf)
 		if n > 0 {
 			if !firstByteRead {
-				slog.Info("First byte read", "pipeName", pipeName)
+				slog.Debug("First byte read", "pipeName", pipeName)
 				firstByteRead = true
 
 			}
 			totalBytesRead += int64(n)
 			if _, err := interfaceWriter.Write(buf[:n]); err != nil {
 				if err != io.EOF {
-					slog.Info("Error writing", "pipeName", pipeName, "err", err)
+					slog.Error("Error writing", "pipeName", pipeName, "err", err)
 				}
 			}
 		}
 		if n == len(buf) && n < 1024*1024 {
 			newLen := int(float64(len(buf)) * 1.5)
-			slog.Info("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", humanBytes(int64(newLen)))
+			slog.Info("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", HumanBytes(int64(newLen)))
 			buf = make([]byte, newLen)
 		}
 
 		if err != nil {
 			if err.Error() == "EOF" {
-				slog.Info("Last byte read", "pipeName", pipeName, "totalRead", humanBytes(totalBytesRead))
+				slog.Debug("Last byte read", "pipeName", pipeName, "totalRead", HumanBytes(totalBytesRead))
 			} else {
 				slog.Error("Error reading", "pipeName", pipeName, "err", err)
 			}

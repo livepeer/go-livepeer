@@ -282,8 +282,6 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	defer s.mutex.Unlock()
 	if idx == -1 {
 		idx = s.latestWrite
-		// TODO figure out how to better handle restarts while maintaining ordering
-		/* } else if idx > s.latestWrite { */
 	} else {
 		s.latestWrite = idx
 	}
@@ -380,6 +378,10 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 				flusher.Flush()
 			}
 			if eof {
+				if totalWrites <= 0 {
+					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
+					w.Header().Set("Lp-Trickle-Closed", "terminated")
+				}
 				return totalWrites, nil
 			}
 		}

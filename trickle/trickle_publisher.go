@@ -46,7 +46,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 	index := c.index
 	url := fmt.Sprintf("%s/%d", c.baseURL, index)
 
-	slog.Info("Preconnecting", "url", url)
+	slog.Debug("Preconnecting", "url", url)
 
 	pr, pw := io.Pipe()
 	req, err := http.NewRequest("POST", url, pr)
@@ -59,7 +59,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 	// Start the POST request in a background goroutine
 	// TODO error handling for these
 	go func() {
-		slog.Info("Initiailzing http client", "idx", index)
+		slog.Debug("Initiailzing http client", "idx", index)
 		// Createa new client to prevent connection reuse
 		client := http.Client{Transport: &http.Transport{
 			// ignore orch certs for now
@@ -67,19 +67,19 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 		}}
 		resp, err := client.Do(req)
 		if err != nil {
-			slog.Info("Failed to complete POST for segment", "url", url, "err", err)
+			slog.Error("Failed to complete POST for segment", "url", url, "err", err)
 			return
 		}
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			slog.Info("Error reading body", "url", url, "err", err)
+			slog.Error("Error reading body", "url", url, "err", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			slog.Info("Failed POST segment", "url", url, "status_code", resp.StatusCode, "msg", string(body))
+			slog.Error("Failed POST segment", "url", url, "status_code", resp.StatusCode, "msg", string(body))
 		} else {
-			slog.Info("Uploaded segment", "url", url)
+			slog.Debug("Uploaded segment", "url", url)
 		}
 	}()
 
@@ -146,7 +146,7 @@ func (c *TricklePublisher) Write(data io.Reader) error {
 		return fmt.Errorf("error streaming data to segment %d: %w", index, err)
 	}
 
-	slog.Info("Completed writing", "idx", index, "totalBytes", humanBytes(n))
+	slog.Debug("Completed writing", "idx", index, "totalBytes", humanBytes(n))
 
 	// Close the pipe writer to signal end of data for the current POST request
 	if err := writer.Close(); err != nil {

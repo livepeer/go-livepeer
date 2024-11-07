@@ -55,3 +55,5 @@ Subscribers can retrieve the current `seq` with the `Lp-Trickle-Seq` metadata (H
 Subscribers can initiate a subscribe with a `seq` of -N to get the Nth-from-last segment. (TODO)
 
 The server should send subscribers `Lp-Trickle-Size` metadata to indicate the size of the content up until now. This allows clients to know where the live edge is, eg video implementations can decode-and-discard frames up until the edge to achieve immediate playback without waiting for the next segment. (TODO)
+
+The server currently has a special changefeed channel named `_changes` which will send subscribers updates on streams that are added and removed. The changefeed is disabled by default.
