@@ -16,6 +16,8 @@ import (
 const (
 	KafkaBatchInterval  = 1 * time.Second
 	KafkaRequestTimeout = 60 * time.Second
+	KafkaBatchSize      = 100
+	KafkaChannelSize    = 100
 )
 
 type KafkaProducer struct {
@@ -57,7 +59,6 @@ func newKafkaProducer(bootstrapServers, user, password, topic string) (*KafkaPro
 		},
 	}
 
-	// Create a new Kafka writer
 	writer := kafka.NewWriter(kafka.WriterConfig{
 		Brokers:  []string{bootstrapServers},
 		Topic:    topic,
@@ -68,41 +69,60 @@ func newKafkaProducer(bootstrapServers, user, password, topic string) (*KafkaPro
 	return &KafkaProducer{
 		writer: writer,
 		topic:  topic,
-		events: make(chan GatewayEvent, 100),
+		events: make(chan GatewayEvent, KafkaChannelSize),
 	}, nil
 }
 
 func (p *KafkaProducer) processEvents() {
-	for event := range p.events {
-		value, err := json.Marshal(event)
-		if err != nil {
-			glog.Errorf("error while marshalling gateway log to Kafka, err=%v", err)
-			continue
-		}
+	ticker := time.NewTicker(KafkaBatchInterval)
+	defer ticker.Stop()
 
-		msg := kafka.Message{
-			Key:   []byte(*event.ID),
-			Value: value,
-		}
+	var eventsBatch []kafka.Message
 
-		// We retry sending messages to Kafka in case of a failure
-		kafkaWriteRetries := 3
-		var writeErr error
-		for i := 0; i < kafkaWriteRetries; i++ {
-			writeErr = p.writer.WriteMessages(context.Background(), msg)
-			if writeErr == nil {
-				break
+	for {
+		select {
+		case event := <-p.events:
+			value, err := json.Marshal(event)
+			if err != nil {
+				glog.Errorf("error while marshalling gateway log to Kafka, err=%v", err)
+				continue
 			}
-			glog.Warningf("error while sending gateway log to Kafka, retrying, topic=%s, try=%d, err=%v", p.topic, i, writeErr)
-		}
-		if writeErr != nil {
-			glog.Errorf("error while sending gateway log to Kafka, the gateway log is lost, err=%v", writeErr)
+
+			msg := kafka.Message{
+				Key:   []byte(*event.ID),
+				Value: value,
+			}
+			eventsBatch = append(eventsBatch, msg)
+
+			// Send batch if it reaches the defined size
+			if len(eventsBatch) >= KafkaBatchSize {
+				p.sendBatch(eventsBatch)
+				eventsBatch = nil
+			}
+
+		case <-ticker.C:
+			if len(eventsBatch) > 0 {
+				p.sendBatch(eventsBatch)
+				eventsBatch = nil
+			}
 		}
 	}
 }
 
-func (p *KafkaProducer) sendEvent(event GatewayEvent) {
-	p.events <- event
+func (p *KafkaProducer) sendBatch(eventsBatch []kafka.Message) {
+	// We retry sending messages to Kafka in case of a failure
+	kafkaWriteRetries := 3
+	var writeErr error
+	for i := 0; i < kafkaWriteRetries; i++ {
+		writeErr = p.writer.WriteMessages(context.Background(), eventsBatch...)
+		if writeErr == nil {
+			return
+		}
+		glog.Warningf("error while sending gateway log batch to Kafka, retrying, topic=%s, try=%d, err=%v", p.topic, i, writeErr)
+	}
+	if writeErr != nil {
+		glog.Errorf("error while sending gateway log batch to Kafka, the gateway logs are lost, err=%v", writeErr)
+	}
 }
 
 func SendQueueEventAsync(eventType string, data interface{}) {
@@ -121,7 +141,11 @@ func SendQueueEventAsync(eventType string, data interface{}) {
 		Data:      data,
 	}
 
-	kafkaProducer.sendEvent(event)
+	select {
+	case kafkaProducer.events <- event:
+	default:
+		glog.Warningf("kafka producer event queue is full, dropping event")
+	}
 }
 
 func stringPtr(s string) *string {
