@@ -237,13 +237,13 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 		}
 		if n == len(buf) && n < 1024*1024 {
 			newLen := int(float64(len(buf)) * 1.5)
-			slog.Info("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", HumanBytes(int64(newLen)))
+			slog.Info("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", humanBytes(int64(newLen)))
 			buf = make([]byte, newLen)
 		}
 
 		if err != nil {
 			if err.Error() == "EOF" {
-				slog.Debug("Last byte read", "pipeName", pipeName, "totalRead", HumanBytes(totalBytesRead))
+				slog.Debug("Last byte read", "pipeName", pipeName, "totalRead", humanBytes(totalBytesRead))
 			} else {
 				slog.Error("Error reading", "pipeName", pipeName, "err", err)
 			}
