@@ -366,8 +366,6 @@ type MediaMTXAuthReq struct {
 
 func (ls *LivepeerServer) AuthAndStartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("AuthAndStartLiveVideo")
-
 		//streamName := r.FormValue("stream")
 		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -379,8 +377,9 @@ func (ls *LivepeerServer) AuthAndStartLiveVideo() http.Handler {
 			http.Error(w, "Couldn't unmarshal request body", http.StatusBadRequest)
 			return
 		}
+		log.Println("AuthAndStartLiveVideo", authReq)
 		if authReq.Action != "publish" {
-			// TODO handle other actions e.g. "read"?
+			// I don't think we care about other actions like "read", or maybe we need to block anything other than localhost access
 			w.WriteHeader(http.StatusOK)
 			return
 		}

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -34,7 +34,7 @@ func authenticateStream(authURL *url.URL, incomingRequestURL string) (*authWebho
 		return nil, err
 	}
 
-	rbody, err := ioutil.ReadAll(resp.Body)
+	rbody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))

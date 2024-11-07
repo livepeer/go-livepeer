@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -29,7 +30,15 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandler) {
-
+	backoff.Retry(func() error {
+		slog.Info("trying ffprobe " + in)
+		command := exec.Command("ffprobe", in)
+		err := command.Run()
+		out, _ := command.CombinedOutput()
+		log.Println(string(out))
+		return err
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*1), 10))
+	slog.Info("probe succeeded")
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -38,19 +47,16 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		defer wg.Done()
 		processSegments(segmentHandler, outFilePattern, completionSignal)
 	}()
-	err := backoff.Retry(func() error {
-		slog.Info("trying ffmpeg read rtmp")
-		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-			Fname: in,
-		}, []ffmpeg.TranscodeOptions{{
-			Oname:        outFilePattern,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
-		}})
-		return err
-	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*5), 5))
+
+	ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
+	_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		Fname: in,
+	}, []ffmpeg.TranscodeOptions{{
+		Oname:        outFilePattern,
+		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
+	}})
 	if err != nil {
 		slog.Error("Failed to run segmentation:", err)
 	}
