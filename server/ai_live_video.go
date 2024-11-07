@@ -43,7 +43,7 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
 	}
 
-	// read segments from trickle subscrption
+	// read segments from trickle subscription
 	go func() {
 		defer w.Close()
 		for {
