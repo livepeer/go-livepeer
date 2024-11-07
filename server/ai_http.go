@@ -25,10 +25,13 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
+
+var TrickleHTTPPath = "/ai/trickle/"
 
 func startAIServer(lp lphttp) error {
 	swagger, err := worker.GetSwagger()
@@ -50,6 +53,11 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
+	lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:      lp.transRPC,
+		BasePath: TrickleHTTPPath,
+	})
+
 	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
 	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
@@ -58,8 +66,9 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLLMFormdataRequestBody])))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenTextToSpeechJSONRequestBody])))
+
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -89,24 +98,20 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		var (
 			mid    = string(core.RandomManifestID())
-			pubUrl = "/ai/live-video/" + mid
-			subUrl = pubUrl + "/out"
+			pubUrl = TrickleHTTPPath + mid
+			subUrl = pubUrl + "-out"
 		)
-		jsonData, err := json.Marshal(struct {
-			PublishUrl   string
-			SubscribeUrl string
-		}{
-			PublishUrl:   pubUrl,
-			SubscribeUrl: subUrl,
-		})
+		jsonData, err := json.Marshal(
+			&worker.LiveVideoToVideoResponse{
+				PublishUrl:   pubUrl,
+				SubscribeUrl: subUrl,
+			})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		respondJsonOk(w, jsonData)
 	})
 }
 

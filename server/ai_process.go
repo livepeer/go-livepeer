@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
@@ -83,6 +85,9 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+
+	// For live video pipelines
+	segmentReader *media.SwitchableSegmentReader
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -994,17 +999,49 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req struct{ ModelId *string }) (any, error) {
-	//client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
-	var err error
+func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
-	// TODO check urls and add sess.Transcoder to the host if necessary
-	return nil, nil
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 != nil {
+		// append orch hostname to the given url if necessary
+		appendHostname := func(urlPath string) (*url.URL, error) {
+			if urlPath == "" {
+				return nil, fmt.Errorf("invalid url from orch")
+			}
+			pu, err := url.Parse(urlPath)
+			if err != nil {
+				return nil, err
+			}
+			if pu.Hostname() != "" {
+				// url has a hostname already so use it
+				return pu, nil
+			}
+			// no hostname, so append one
+			u := sess.Transcoder() + urlPath
+			return url.Parse(u)
+		}
+		pub, err := appendHostname(resp.JSON200.PublishUrl)
+		if err != nil {
+			return nil, fmt.Errorf("pub url - %w", err)
+		}
+		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
+		if err != nil {
+			return nil, fmt.Errorf("sub url %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
+		startTricklePublish(pub, params)
+		startTrickleSubscribe(sub, params)
+	}
+	return resp, nil
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1355,17 +1392,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToSpeech(ctx, params, sess, v)
 		}
-		/*
-			case worker.StartLiveVideoToVideoFormdataRequestBody:
-				cap = core.Capability_LiveVideoToVideo
-				modelID = defaultLiveVideoToVideoModelID
-				if v.ModelId != nil {
-					modelID = *v.ModelId
-				}
-				submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
-					return submitLiveVideoToVideo(ctx, params, sess, v)
-				}
-		*/
+	case worker.GenLiveVideoToVideoJSONRequestBody:
+		cap = core.Capability_LiveVideoToVideo
+		modelID = defaultLiveVideoToVideoModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLiveVideoToVideo(ctx, params, sess, v)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
