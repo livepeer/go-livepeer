@@ -6,7 +6,9 @@ import (
 	"bufio"
 	"encoding/base32"
 	"fmt"
+	"github.com/cenkalti/backoff"
 	"io"
+	"log"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -36,15 +38,22 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		defer wg.Done()
 		processSegments(segmentHandler, outFilePattern, completionSignal)
 	}()
-	ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-	ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-		Fname: in,
-	}, []ffmpeg.TranscodeOptions{{
-		Oname:        outFilePattern,
-		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
-	}})
+	err := backoff.Retry(func() error {
+		slog.Info("trying ffmpeg read rtmp")
+		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
+		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			Fname: in,
+		}, []ffmpeg.TranscodeOptions{{
+			Oname:        outFilePattern,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
+		}})
+		return err
+	}, backoff.WithMaxRetries(backoff.NewConstantBackOff(time.Second*5), 5))
+	if err != nil {
+		slog.Error("Failed to run segmentation:", err)
+	}
 	completionSignal <- true
 	slog.Info("sent completion signal, now waiting")
 	wg.Wait()
@@ -209,6 +218,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 }
 
 func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) {
+	log.Println("readSegment")
 	defer file.Close()
 
 	reader := bufio.NewReader(file)

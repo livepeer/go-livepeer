@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -77,7 +79,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/start", ls.AuthAndStartLiveVideo())
 
 	return nil
 }
@@ -353,9 +355,36 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) StartLiveVideo() http.Handler {
+type MediaMTXAuthReq struct {
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Action   string `json:"action"`
+	Path     string `json:"path"`
+	Protocol string `json:"protocol"`
+	Query    string `json:"query"`
+}
+
+func (ls *LivepeerServer) AuthAndStartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		streamName := r.FormValue("stream")
+		log.Println("AuthAndStartLiveVideo")
+
+		//streamName := r.FormValue("stream")
+		reqBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Couldn't read request body", http.StatusInternalServerError)
+			return
+		}
+		authReq := MediaMTXAuthReq{}
+		if err := json.Unmarshal(reqBody, &authReq); err != nil {
+			http.Error(w, "Couldn't unmarshal request body", http.StatusBadRequest)
+			return
+		}
+		if authReq.Action != "publish" {
+			// TODO handle other actions e.g. "read"?
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		streamName := authReq.Path
 		if streamName == "" {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
