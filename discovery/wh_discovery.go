@@ -21,21 +21,23 @@ type webhookResponse struct {
 }
 
 type webhookPool struct {
-	pool             *orchestratorPool
-	callback         *url.URL
-	responseHash     ethcommon.Hash
-	lastRequest      time.Time
-	mu               *sync.RWMutex
-	bcast            common.Broadcaster
-	discoveryTimeout time.Duration
+	pool                   *orchestratorPool
+	callback               *url.URL
+	responseHash           ethcommon.Hash
+	lastRequest            time.Time
+	mu                     *sync.RWMutex
+	bcast                  common.Broadcaster
+	discoveryTimeout       time.Duration
+	webhookRefreshInterval time.Duration
 }
 
-func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration) *webhookPool {
+func NewWebhookPool(bcast common.Broadcaster, callback *url.URL, discoveryTimeout time.Duration, webhookRefreshInterval time.Duration) *webhookPool {
 	p := &webhookPool{
-		callback:         callback,
-		mu:               &sync.RWMutex{},
-		bcast:            bcast,
-		discoveryTimeout: discoveryTimeout,
+		callback:               callback,
+		mu:                     &sync.RWMutex{},
+		bcast:                  bcast,
+		discoveryTimeout:       discoveryTimeout,
+		webhookRefreshInterval: webhookRefreshInterval,
 	}
 	go p.getInfos()
 	return p
@@ -48,7 +50,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	w.mu.RUnlock()
 
 	// retrive addrs from cache if time since lastRequest is less than the refresh interval
-	if time.Since(lastReq) < common.WebhookDiscoveryRefreshInterval {
+	if time.Since(lastReq) < w.webhookRefreshInterval {
 		return pool.GetInfos(), nil
 	}
 

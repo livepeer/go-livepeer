@@ -157,10 +157,13 @@ type LivepeerConfig struct {
 	FVfailGsKey             *string
 	AuthWebhookURL          *string
 	OrchWebhookURL          *string
+	WebhookRefreshInterval  *time.Duration
 	OrchBlacklist           *string
 	OrchMinLivepeerVersion  *string
 	TestOrchAvail           *bool
 	AIRunnerImage           *string
+	AISessionTimeout        *time.Duration
+	AITesterGateway         *bool
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -204,6 +207,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAISessionTimeout := 10 * time.Minute
+	defaultWebhookRefreshInterval := 1 * time.Minute
+	defaultAITesterGateway := false
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -304,6 +310,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIModels:          &defaultAIModels,
 		AIModelsDir:       &defaultAIModelsDir,
 		AIRunnerImage:     &defaultAIRunnerImage,
+		AISessionTimeout:  &defaultAISessionTimeout,
+		AITesterGateway:   &defaultAITesterGateway,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -357,8 +365,9 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		FVfailGsKey:    &defaultFVfailGsKey,
 
 		// API
-		AuthWebhookURL: &defaultAuthWebhookURL,
-		OrchWebhookURL: &defaultOrchWebhookURL,
+		AuthWebhookURL:         &defaultAuthWebhookURL,
+		OrchWebhookURL:         &defaultOrchWebhookURL,
+		WebhookRefreshInterval: &defaultWebhookRefreshInterval,
 
 		// Versioning constraints
 		OrchMinLivepeerVersion: &defaultMinLivepeerVersion,
@@ -1042,6 +1051,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					server.BroadcastCfg.SetCapabilityMaxPrice(cap, p.ModelID, autoCapPrice)
 				}
 			}
+			n.AITesterGateway = *cfg.AITesterGateway
+			n.AISessionTimeout = *cfg.AISessionTimeout
 		}
 
 		if n.NodeType == core.RedeemerNode {
@@ -1399,7 +1410,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Exit("Error setting orch webhook URL ", err)
 			}
 			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+			glog.Info("Using orchestrator webhook refresh interval ", *cfg.WebhookRefreshInterval)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout, *cfg.WebhookRefreshInterval)
 		} else if len(orchURLs) > 0 {
 			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}

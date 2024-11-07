@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -20,9 +21,35 @@ func DownloadData(ctx context.Context, uri string) ([]byte, error) {
 	return downloadDataHTTP(ctx, uri)
 }
 
-var httpc = &http.Client{
-	Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-	Timeout:   common.HTTPTimeout / 2,
+var osHttpClient = getHTTPClient()
+
+// getHTTPClient creates an HTTP client with a timeout based on an environment variable or defaults to common.HTTPTimeout/2
+func getHTTPClient() *http.Client {
+	// Get the timeout value from the environment variable
+	timeoutStr := os.Getenv("LIVEPEER_OS_HTTP_TIMEOUT")
+
+	// Define a default timeout value as common.HTTPTimeout / 2
+	defaultTimeout := common.HTTPTimeout / 2
+
+	var timeout time.Duration
+	var err error
+
+	// If the environment variable is set, attempt to parse it
+	if timeoutStr != "" {
+		timeout, err = time.ParseDuration(timeoutStr)
+		if err != nil {
+			timeout = defaultTimeout
+		}
+	} else {
+		// If the environment variable is not set, use the default timeout
+		timeout = defaultTimeout
+	}
+
+	// Return the HTTP client with the calculated timeout
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+		Timeout:   timeout,
+	}
 }
 
 func FromNetOsInfo(os *net.OSInfo) *drivers.OSInfo {
@@ -76,7 +103,7 @@ func ToNetS3Info(storage *drivers.S3OSInfo) *net.S3OSInfo {
 func downloadDataHTTP(ctx context.Context, uri string) ([]byte, error) {
 	clog.V(common.VERBOSE).Infof(ctx, "Downloading uri=%s", uri)
 	started := time.Now()
-	resp, err := httpc.Get(uri)
+	resp, err := osHttpClient.Get(uri)
 	if err != nil {
 		clog.Errorf(ctx, "Error getting HTTP uri=%s err=%q", uri, err)
 		return nil, err

@@ -114,5 +114,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 		mux.Handle("/metrics", monitor.Exporter)
 	}
 
+	//AI Handlers
+	mux.Handle("/getOrchestratorAICapabilities", s.getOrchestratorAICapabilitiesHandler())
 	return mux
 }

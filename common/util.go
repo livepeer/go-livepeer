@@ -44,9 +44,6 @@ var SegUploadTimeoutMultiplier = 0.5
 // MinSegmentUploadTimeout defines the minimum timeout enforced for uploading a segment to orchestrators
 var MinSegmentUploadTimeout = 2 * time.Second
 
-// WebhookDiscoveryRefreshInterval defines for long the Webhook Discovery values should be cached
-var WebhookDiscoveryRefreshInterval = 1 * time.Minute
-
 // Max Segment Duration
 var MaxDuration = (5 * time.Minute)
 

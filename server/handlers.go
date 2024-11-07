@@ -296,6 +296,31 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 	})
 }
 
+func (s *LivepeerServer) getOrchestratorAICapabilitiesHandler() http.Handler {
+	// Define the data fetch function
+	fetchFunc := func() (*OrchestratorAICapabilitiesManager, error) {
+		networkCapsMgr, err := buildOrchestratorAICapabilitiesManager(s.LivepeerNode)
+		if err != nil {
+			return nil, fmt.Errorf(`failed to fetch orch AI capabilities: %v`, err.Error())
+		}
+		return networkCapsMgr, nil
+	}
+
+	// Initialize the cache with a TTL
+	cacheTTL := 120 * time.Second
+	networkCapsMgrCache := NewCache(cacheTTL, fetchFunc)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Get data from cache (or fetch if stale)
+		networkCapsMgr, err := networkCapsMgrCache.GetCache()
+		if err != nil {
+			respond500(w, err.Error())
+			return
+		}
+		respondJson(w, networkCapsMgr)
+	})
+}
+
 // Rounds
 func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1633,4 +1658,39 @@ func mustHaveDb(db interface{}, h http.Handler) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// Cache struct to hold the Cacheable output and expiration time
+type Cache[T any] struct {
+	Data       T
+	Expiration time.Time
+	TTL        time.Duration
+	fetchFunc  func() (T, error) // Function to fetch data when cache is stale
+}
+
+// NewCache initializes the cache with a TTL and fetch function
+func NewCache[T any](ttl time.Duration, fetchFunc func() (T, error)) *Cache[T] {
+	return &Cache[T]{
+		TTL:       ttl,
+		fetchFunc: fetchFunc,
+	}
+}
+
+// GetCache returns the cached string if it's still valid; otherwise, it fetches new data
+func (c *Cache[T]) GetCache() (T, error) {
+	var zeroValue T
+	// Check if cache is still valid
+	if time.Now().Before(c.Expiration) {
+		return c.Data, nil
+	}
+	// Cache is stale; fetch new data
+	newData, err := c.fetchFunc()
+	if err != nil {
+		return zeroValue, err
+	}
+
+	// Update cache with the new data and set expiration
+	c.Data = newData
+	c.Expiration = time.Now().Add(c.TTL)
+	return c.Data, nil
 }
