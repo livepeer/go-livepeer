@@ -95,3 +95,39 @@ func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
 
 	return string(profilesA) == string(profilesB)
 }
+
+type AIAuthRequest struct {
+	Stream string `json:"stream"`
+	// TODO not sure what params we need yet
+}
+
+func authenticateAIStream(authURL *url.URL, req AIAuthRequest) error {
+	if authURL == nil {
+		return nil
+	}
+	started := time.Now()
+
+	jsonValue, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(authURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return err
+	}
+
+	rbody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
+	}
+
+	took := time.Since(started)
+	glog.Infof("AI Stream authentication for authURL=%s stream=%s dur=%s", authURL, req.Stream, took)
+	if monitor.Enabled {
+		monitor.AuthWebhookFinished(took)
+	}
+
+	return nil
+}

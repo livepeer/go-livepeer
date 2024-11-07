@@ -79,7 +79,8 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/start", ls.AuthAndStartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/auth", ls.Auth())
 
 	return nil
 }
@@ -364,9 +365,8 @@ type MediaMTXAuthReq struct {
 	Query    string `json:"query"`
 }
 
-func (ls *LivepeerServer) AuthAndStartLiveVideo() http.Handler {
+func (ls *LivepeerServer) Auth() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		//streamName := r.FormValue("stream")
 		reqBody, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "Couldn't read request body", http.StatusInternalServerError)
@@ -377,13 +377,28 @@ func (ls *LivepeerServer) AuthAndStartLiveVideo() http.Handler {
 			http.Error(w, "Couldn't unmarshal request body", http.StatusBadRequest)
 			return
 		}
-		log.Println("AuthAndStartLiveVideo", authReq)
 		if authReq.Action != "publish" {
 			// I don't think we care about other actions like "read", or maybe we need to block anything other than localhost access
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		streamName := authReq.Path
+		log.Println("LiveVideo auth", authReq)
+		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+			Stream: authReq.Path,
+		})
+		if err != nil {
+			clog.Errorf(r.Context(), "Live AI auth failed: %s", err.Error())
+			http.Error(w, "Forbidden", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (ls *LivepeerServer) StartLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("StartLiveVideo")
+		streamName := r.FormValue("stream")
 		if streamName == "" {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
