@@ -16,11 +16,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/go-tools/drivers"
 	ffmpeg "github.com/livepeer/lpms/ffmpeg"
 	"github.com/livepeer/lpms/stream"
@@ -50,16 +52,32 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
+	CheckAICapacity(pipeline, modelID string) bool
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities)
+	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
+	PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
+	Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat
 	Capabilities() *net.Capabilities
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
+	CreateStorageForRequest(requestID string) error
+	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
+	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
+	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
+	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
+	Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error)
+	AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error)
+	LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error)
+	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
+	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
+	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -157,9 +175,11 @@ type lphttp struct {
 	orchestrator Orchestrator
 	orchRPC      *grpc.Server
 	transRPC     *http.ServeMux
+	trickleSrv   *trickle.Server
 	node         *core.LivepeerNode
 	net.UnimplementedOrchestratorServer
 	net.UnimplementedTranscoderServer
+	net.UnimplementedAIWorkerServer
 }
 
 func (h *lphttp) EndTranscodingSession(ctx context.Context, request *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -185,7 +205,7 @@ func (h *lphttp) Ping(context context.Context, req *net.PingPong) (*net.PingPong
 }
 
 // XXX do something about the implicit start of the http mux? this smells
-func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, n *core.LivepeerNode) error {
+func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, workDir string, acceptRemoteTranscoders bool, acceptRemoteAIWorkers bool, n *core.LivepeerNode) error {
 	s := grpc.NewServer()
 	lp := lphttp{
 		orchestrator: orch,
@@ -195,9 +215,16 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	}
 	net.RegisterOrchestratorServer(s, &lp)
 	lp.transRPC.HandleFunc("/segment", lp.ServeSegment)
+	lp.transRPC.HandleFunc("/payment", lp.Payment)
 	if acceptRemoteTranscoders {
 		net.RegisterTranscoderServer(s, &lp)
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
+	}
+
+	startAIServer(lp)
+	if acceptRemoteAIWorkers {
+		net.RegisterAIWorkerServer(s, &lp)
+		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
@@ -253,14 +280,14 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 }
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
-func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL) (*net.OrchestratorInfo, error) {
+func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(ctx, orchestratorServer)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	req, err := genOrchestratorReq(bcast)
+	req, err := genOrchestratorReq(bcast, caps)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Could not get orchestrator orch=%v", orchestratorServer)
@@ -304,12 +331,12 @@ func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.Orchestrato
 	return c, conn, nil
 }
 
-func genOrchestratorReq(b common.Broadcaster) (*net.OrchestratorRequest, error) {
+func genOrchestratorReq(b common.Broadcaster, caps *net.Capabilities) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
 	}
-	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: caps}, nil
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
@@ -327,7 +354,11 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	}
 
 	// currently, orchestrator == transcoder
-	return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
+	if req.Capabilities == nil {
+		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
+	}
+
+	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -350,9 +381,23 @@ func getPriceInfo(orch Orchestrator, addr ethcommon.Address, manifestID core.Man
 }
 
 func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID) (*net.OrchestratorInfo, error) {
-	priceInfo, err := getPriceInfo(orch, addr, manifestID)
-	if err != nil {
-		return nil, err
+	return orchestratorInfoWithCaps(orch, addr, serviceURI, manifestID, nil)
+}
+
+func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	var priceInfo *net.PriceInfo
+	if caps == nil {
+		var err error
+		priceInfo, err = getPriceInfo(orch, addr, manifestID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		priceInfo, err = orch.PriceInfoForCaps(addr, manifestID, caps)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	params, err := orch.TicketParams(addr, priceInfo)
@@ -489,8 +534,6 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles2)
 	} else if len(segData.FullProfiles) > 0 {
 		profiles, err = makeFfmpegVideoProfiles(segData.FullProfiles)
-	} else if len(segData.Profiles) > 0 {
-		profiles, err = common.BytesToVideoProfile(segData.Profiles)
 	}
 	if err != nil {
 		glog.Error("Unable to deserialize profiles ", err)

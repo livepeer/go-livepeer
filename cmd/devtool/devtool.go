@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,10 @@ func main() {
 	miningAccountFlag := flag.String("miningaccount", "", "Override geth mining account (usually not needed)")
 	ethControllerFlag := flag.String("controller", "", "Override controller address (usually not needed)")
 	svcHost := flag.String("svchost", "127.0.0.1", "default service host")
+	cliPortStr := flag.String("cliport", "", "CLI port")
+	mediaPortStr := flag.String("mediaport", "", "Media port")
+	rtmpPortStr := flag.String("rtmpport", "", "RTMP port")
+	bondAmount := flag.String("bond", "500", "Orchestrator bonded amount in LPT")
 
 	flag.Parse()
 
@@ -46,6 +51,34 @@ func main() {
 	if *svcHost != "" {
 		serviceHost = *svcHost
 		cfg.ServiceURI = fmt.Sprintf("https://%s:", serviceHost)
+	}
+	if *cliPortStr != "" {
+		cliPortTmp, err := strconv.Atoi(*cliPortStr)
+		if err != nil {
+			glog.Errorf("Invalid cli port %v", *cliPortStr)
+		}
+		cliPort = cliPortTmp
+	}
+	if *mediaPortStr != "" {
+		mediaPortTmp, err := strconv.Atoi(*mediaPortStr)
+		if err != nil {
+			glog.Errorf("Invalid media port %v", *mediaPortStr)
+		}
+		mediaPort = mediaPortTmp
+	}
+	if *rtmpPortStr != "" {
+		rtmpPortTmp, err := strconv.Atoi(*rtmpPortStr)
+		if err != nil {
+			glog.Errorf("Invalid rtmp port %v", *rtmpPortStr)
+		}
+		rtmpPort = rtmpPortTmp
+	}
+	if *bondAmount != "" {
+		cfg.BondAmount = new(big.Int)
+		_, ok := cfg.BondAmount.SetString(*bondAmount, 10)
+		if !ok {
+			glog.Exitf("Invalid bond amount %v", *bondAmount)
+		}
 	}
 	args := flag.Args()
 	goodToGo := false

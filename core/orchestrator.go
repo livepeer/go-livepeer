@@ -23,7 +23,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -183,8 +182,8 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving ticket sessionID=%v recipientRandHash=%x senderNonce=%v: %v", manifestID, ticket.RecipientRandHash, ticket.SenderNonce, err)
 
-			if monitor.Enabled {
-				monitor.PaymentRecvError(ctx, sender.Hex(), err.Error())
+			if lpmon.Enabled {
+				lpmon.PaymentRecvError(ctx, sender.Hex(), err.Error())
 			}
 			if _, ok := err.(*pm.FatalReceiveErr); ok {
 				return err
@@ -217,10 +216,10 @@ func (orch *orchestrator) ProcessPayment(ctx context.Context, payment net.Paymen
 
 	clog.V(common.DEBUG).Infof(ctx, "Payment tickets processed sessionID=%v faceValue=%v winProb=%v ev=%v", manifestID, eth.FormatUnits(totalFaceValue, "ETH"), totalWinProb.FloatString(10), totalEV.FloatString(2))
 
-	if monitor.Enabled {
-		monitor.TicketValueRecv(ctx, sender.Hex(), totalEV)
-		monitor.TicketsRecv(ctx, sender.Hex(), totalTickets)
-		monitor.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
+	if lpmon.Enabled {
+		lpmon.TicketValueRecv(ctx, sender.Hex(), totalEV)
+		lpmon.TicketsRecv(ctx, sender.Hex(), totalTickets)
+		lpmon.WinningTicketsRecv(ctx, sender.Hex(), totalWinningTickets)
 	}
 
 	if receiveErr != nil {
@@ -264,13 +263,37 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 		return nil, nil
 	}
 
-	price, err := orch.priceInfo(sender, manifestID)
+	price, err := orch.priceInfo(sender, manifestID, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if monitor.Enabled {
-		monitor.TranscodingPrice(sender.String(), price)
+	if lpmon.Enabled {
+		lpmon.TranscodingPrice(sender.String(), price)
+	}
+
+	return &net.PriceInfo{
+		PricePerUnit:  price.Num().Int64(),
+		PixelsPerUnit: price.Denom().Int64(),
+	}, nil
+}
+
+func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		return nil, nil
+	}
+
+	price, err := orch.priceInfo(sender, manifestID, caps)
+	if err != nil {
+		return nil, err
+	}
+
+	if !price.Num().IsInt64() || !price.Denom().IsInt64() {
+		fixedPrice, err := common.PriceToInt64(price)
+		if err != nil {
+			return nil, errors.New("price cannot be converted to int64")
+		}
+		price = fixedPrice
 	}
 
 	return &net.PriceInfo{
@@ -280,9 +303,7 @@ func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID Manifes
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
-func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID) (*big.Rat, error) {
-	basePrice := orch.node.GetBasePrice(sender.String())
-
+func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID ManifestID, caps *net.Capabilities) (*big.Rat, error) {
 	// If there is already a fixed price for the given session, use this price
 	if manifestID != "" {
 		if balances, ok := orch.node.Balances.balances[sender]; ok {
@@ -293,8 +314,44 @@ func (orch *orchestrator) priceInfo(sender ethcommon.Address, manifestID Manifes
 		}
 	}
 
-	if basePrice == nil {
-		basePrice = orch.node.GetBasePrice("default")
+	transcodePrice := orch.node.GetBasePrice(sender.String())
+	if transcodePrice == nil {
+		transcodePrice = orch.node.GetBasePrice("default")
+	}
+
+	basePrice := big.NewRat(0, 1)
+	if caps == nil {
+		if transcodePrice != nil {
+			basePrice = transcodePrice
+		}
+	} else {
+		// The base price is the sum of the prices of individual capability + model ID pairs
+		if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+			for cap := range caps.Capacities {
+				// If the capability does not have constraints (and thus any model constraints) skip it
+				// because we only price a capability together with a model ID right now
+				constraints, ok := caps.Constraints.PerCapability[cap]
+				if !ok {
+					continue
+				}
+				for modelID := range constraints.Models {
+					price := orch.node.GetBasePriceForCap(sender.String(), Capability(cap), modelID)
+					if price == nil {
+						price = orch.node.GetBasePriceForCap("default", Capability(cap), modelID)
+					}
+
+					if price != nil {
+						basePrice.Add(basePrice, price)
+					}
+				}
+			}
+		}
+
+		// If no priced capabilities were signaled by the broadcaster assume that they are requesting
+		// transcoding and set the base price to the transcode price
+		if transcodePrice != nil && basePrice.Cmp(big.NewRat(0, 1)) == 0 {
+			basePrice = transcodePrice
+		}
 	}
 
 	if !orch.node.AutoAdjustPrice {
@@ -345,6 +402,13 @@ func (orch *orchestrator) DebitFees(addr ethcommon.Address, manifestID ManifestI
 	}
 	priceRat := big.NewRat(price.GetPricePerUnit(), price.GetPixelsPerUnit())
 	orch.node.Balances.Debit(addr, manifestID, priceRat.Mul(priceRat, big.NewRat(pixels, 1)))
+}
+
+func (orch *orchestrator) Balance(addr ethcommon.Address, manifestID ManifestID) *big.Rat {
+	if orch.node == nil || orch.node.Balances == nil {
+		return nil
+	}
+	return orch.node.Balances.Balance(addr, manifestID)
 }
 
 func (orch *orchestrator) Capabilities() *net.Capabilities {
@@ -613,8 +677,8 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
-	if monitor.Enabled {
-		monitor.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
+	if lpmon.Enabled {
+		lpmon.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
 	}
 
 	// Prepare the result object
@@ -945,12 +1009,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	rtm.remoteTranscoders = append(rtm.remoteTranscoders, transcoder)
 	sort.Sort(byLoadFactor(rtm.remoteTranscoders))
 	var totalLoad, totalCapacity, liveTranscodersNum int
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 
 	<-transcoder.eof
@@ -958,12 +1022,12 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
-	if monitor.Enabled {
+	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 	rtm.RTmutex.Unlock()
-	if monitor.Enabled {
-		monitor.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
+	if lpmon.Enabled {
+		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
 	}
 }
 

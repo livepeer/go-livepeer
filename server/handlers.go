@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -16,6 +18,7 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -192,6 +195,74 @@ func setBroadcastConfigHandler() http.Handler {
 
 			BroadcastJobVideoProfiles = profiles
 			glog.Infof("Transcode Job Type: %v", BroadcastJobVideoProfiles)
+		}
+	})
+}
+
+func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			maxPricePerUnit := r.FormValue("maxPricePerUnit")
+			pixelsPerUnit := r.FormValue("pixelsPerUnit")
+			currency := r.FormValue("currency")
+			pipeline := r.FormValue("pipeline")
+			modelID := r.FormValue("modelID")
+
+			if pipeline == "" || modelID == "" {
+				respond400(w, "pipeline and modelID must be set")
+				return
+			}
+
+			cap, err := core.PipelineToCapability(pipeline)
+			if err != nil {
+				respond400(w, "pipeline not supported")
+				return
+			}
+
+			// set max price
+			if maxPricePerUnit != "" && pixelsPerUnit != "" {
+				pr, ok := new(big.Rat).SetString(maxPricePerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pricePerUnit value: %s", maxPricePerUnit))
+					return
+				}
+				px, ok := new(big.Rat).SetString(pixelsPerUnit)
+				if !ok {
+					respond400(w, fmt.Sprintf("Error parsing pixelsPerUnit value: %s", pixelsPerUnit))
+					return
+				}
+				if px.Sign() <= 0 {
+					respond400(w, fmt.Sprintf("pixels per unit must be greater than 0, provided %v", pixelsPerUnit))
+					return
+				}
+				pricePerPixel := new(big.Rat).Quo(pr, px)
+
+				var autoPrice *core.AutoConvertedPrice
+				if pricePerPixel.Sign() > 0 {
+					var err error
+					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
+						if monitor.Enabled {
+							monitor.MaxPriceForCapability(monitor.ToPipeline(core.CapabilityNameLookup[cap]), modelID, price)
+						}
+						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
+					})
+					if err != nil {
+						respond400(w, errors.Wrap(err, "error converting price").Error())
+						return
+					}
+
+					BroadcastCfg.SetCapabilityMaxPrice(cap, modelID, autoPrice)
+					respondOk(w, nil)
+				} else {
+					respond400(w, fmt.Sprintf("pricePerPixel needs to be > 0: %v", pricePerPixel.FloatString(3)))
+				}
+			} else {
+				respond400(w, "maxPricePerUnit and pixelsPerUnit need to be set")
+				return
+			}
+		} else {
+			respond400(w, "Node must be gateway node to set max price per capability")
+			return
 		}
 	})
 }
@@ -1477,6 +1548,40 @@ func respondJson(w http.ResponseWriter, v interface{}) {
 func respondJsonOk(w http.ResponseWriter, msg []byte) {
 	w.Header().Set("Content-Type", "application/json")
 	respondOk(w, msg)
+}
+
+type APIErrorResponse struct {
+	Error error `json:"error"`
+}
+
+type APIError struct {
+	Message string `json:"message"`
+}
+
+func (err *APIError) Error() string { return err.Message }
+
+func handleAPIError(ctx context.Context, w io.Writer, err error, code int) {
+	clog.Errorf(ctx, "Error with API code=%v err=%v", code, err)
+
+	apiErr := &APIError{Message: err.Error()}
+
+	if code == http.StatusInternalServerError {
+		apiErr.Message = "Internal Server Error"
+	} else if code == http.StatusServiceUnavailable {
+		apiErr.Message = "Service Unavailable Error"
+	}
+
+	resp := &APIErrorResponse{Error: apiErr}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		clog.Errorf(ctx, "Error with API JSON encoding err=%v", err)
+	}
+}
+
+func respondJsonError(ctx context.Context, w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+
+	handleAPIError(ctx, w, err, code)
 }
 
 func respond500(w http.ResponseWriter, errMsg string) {

@@ -47,8 +47,9 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname: md.Fname,
-		Accel: ffmpeg.Software,
+		Fname:   md.Fname,
+		Accel:   ffmpeg.Software,
+		Profile: md.ProfileIn,
 	}
 	profiles := md.Profiles
 	opts := profilesToTranscodeOptions(lt.workDir, ffmpeg.Software, md)
@@ -129,10 +130,17 @@ func (nv *NvidiaTranscoder) Transcode(ctx context.Context, md *SegTranscodingMet
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
+	inAccel := ffmpeg.Nvidia
+	if filepath.Ext(md.Fname) == ".png" {
+		// If the input is a PNG file we need to use the software decoder
+		inAccel = ffmpeg.Software
+	}
+
 	in := &ffmpeg.TranscodeOptionsIn{
-		Fname:  md.Fname,
-		Accel:  ffmpeg.Nvidia,
-		Device: nv.device,
+		Fname:   md.Fname,
+		Accel:   inAccel,
+		Device:  nv.device,
+		Profile: md.ProfileIn,
 	}
 	profiles := md.Profiles
 	out := profilesToTranscodeOptions(WorkDir, ffmpeg.Nvidia, md)

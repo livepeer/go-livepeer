@@ -99,12 +99,13 @@ type MinLSSelector struct {
 	stakeRdr           stakeReader
 	selectionAlgorithm common.SelectionAlgorithm
 	perfScore          *common.PerfScore
+	capabilities       common.CapabilityComparator
 
 	minLS float64
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
-func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore) *MinLSSelector {
+func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *MinLSSelector {
 	knownSessions := &sessHeap{}
 	heap.Init(knownSessions)
 
@@ -113,6 +114,7 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 		stakeRdr:           stakeRdr,
 		selectionAlgorithm: selectionAlgorithm,
 		perfScore:          perfScore,
+		capabilities:       capabilities,
 		minLS:              minLS,
 	}
 }
@@ -135,15 +137,12 @@ func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 		return s.selectUnknownSession(ctx)
 	}
 
-	lowestLatencyScoreKnownSession := heap.Pop(s.knownSessions).(*BroadcastSession)
-	if lowestLatencyScoreKnownSession.LatencyScore <= s.minLS {
-		// known session has good enough latency score, use it
-		return lowestLatencyScoreKnownSession
+	minSess := sess.(*BroadcastSession)
+	if minSess.LatencyScore > s.minLS && len(s.unknownSessions) > 0 {
+		return s.selectUnknownSession(ctx)
 	}
 
-	// known session does not have good enough latency score, clear the heap and use unknown session
-	s.knownSessions = &sessHeap{}
-	return s.selectUnknownSession(ctx)
+	return heap.Pop(s.knownSessions).(*BroadcastSession)
 }
 
 // Size returns the number of sessions stored by the selector
@@ -188,7 +187,8 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 			prices[addr] = big.NewRat(pi.PricePerUnit, pi.PixelsPerUnit)
 		}
 	}
-	maxPrice := BroadcastCfg.MaxPrice()
+
+	maxPrice := BroadcastCfg.GetCapabilitiesMaxPrice(s.capabilities)
 
 	stakes, err := s.stakeRdr.Stakes(addrs)
 	if err != nil {

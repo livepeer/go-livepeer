@@ -160,7 +160,7 @@ func TestSessHeap(t *testing.T) {
 func TestMinLSSelector(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 	assert.Zero(sel.Size())
 
 	sessions := []*BroadcastSession{
@@ -183,39 +183,48 @@ func TestMinLSSelector(t *testing.T) {
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 2)
 
-	// Set sess1.LatencyScore to good enough
-	sess1.LatencyScore = 0.9
+	// Set sess1.LatencyScore to not be good enough
+	sess1.LatencyScore = 1.1
 	sel.Complete(sess1)
 	assert.Equal(sel.Size(), 3)
 	assert.Equal(len(sel.unknownSessions), 2)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
-	// Select sess1 because it's a known session with good enough latency score
-	sess := sel.Select(context.TODO())
-	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 2)
-	assert.Equal(sel.knownSessions.Len(), 0)
-
-	// Set sess.LatencyScore to not be good enough
-	sess.LatencyScore = 1.1
-	sel.Complete(sess)
-	assert.Equal(sel.Size(), 3)
-	assert.Equal(len(sel.unknownSessions), 2)
-	assert.Equal(sel.knownSessions.Len(), 1)
-
-	// Select from unknownSessions, because sess2 does not have a good enough latency score
-	sess = sel.Select(context.TODO())
-	sess.LatencyScore = 1.1
-	sel.Complete(sess)
+	// Select from unknownSessions
+	sess2 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
 	assert.Equal(len(sel.unknownSessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
-	// Select the last unknown session
-	sess = sel.Select(context.TODO())
-	assert.Equal(sel.Size(), 0)
+	// Set sess2.LatencyScore to be good enough
+	sess2.LatencyScore = .9
+	sel.Complete(sess2)
+	assert.Equal(sel.Size(), 3)
+	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(sel.knownSessions.Len(), 2)
+
+	// Select from knownSessions
+	knownSess := sel.Select(context.TODO())
+	assert.Equal(sel.Size(), 2)
+	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(sel.knownSessions.Len(), 1)
+	assert.Equal(knownSess, sess2)
+
+	// Set knownSess.LatencyScore to not be good enough
+	knownSess.LatencyScore = 1.1
+	sel.Complete(knownSess)
+	// Clear unknownSessions
+	sess := sel.Select(context.TODO())
+	sess.LatencyScore = 2.1
+	sel.Complete(sess)
 	assert.Equal(len(sel.unknownSessions), 0)
-	assert.Equal(sel.knownSessions.Len(), 0)
+	assert.Equal(sel.knownSessions.Len(), 3)
+
+	// Select from knownSessions
+	knownSess = sel.Select(context.TODO())
+	assert.Equal(sel.Size(), 2)
+	assert.Equal(len(sel.unknownSessions), 0)
+	assert.Equal(sel.knownSessions.Len(), 2)
 
 	sel.Clear()
 	assert.Zero(sel.Size())
@@ -227,7 +236,7 @@ func TestMinLSSelector(t *testing.T) {
 func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	assert := assert.New(t)
 
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	// Use ManifestID to identify each session
 	sessions := []*BroadcastSession{
@@ -328,7 +337,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 			if tt.perfScores != nil {
 				perfScore = &common.PerfScore{Scores: tt.perfScores}
 			}
-			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore)
+			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore, nil)
 			sel.Add(tt.unknownSessions)
 
 			sess := sel.selectUnknownSession(context.TODO())
@@ -359,7 +368,7 @@ func session(recipientAddr string) *BroadcastSession {
 }
 
 func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
-	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil)
+	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 
 	sessions := make([]*BroadcastSession, 10)
 	for i := 0; i < 10; i++ {

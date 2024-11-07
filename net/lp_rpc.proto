@@ -12,6 +12,13 @@ service Orchestrator {
   rpc Ping(PingPong) returns (PingPong);
 }
 
+service AIWorker {
+
+  // Called by the aiworker to register to an orchestrator. The orchestrator
+  // notifies registered aiworkers of jobs as they come in.
+  rpc RegisterAIWorker(RegisterAIWorkerRequest) returns (stream NotifyAIJob);
+}
+
 service Transcoder {
 
   // Called by the transcoder to register to an orchestrator. The orchestrator
@@ -43,6 +50,9 @@ message OrchestratorRequest {
 
   // Broadcaster's signature over its address
   bytes sig   = 2;
+
+  // Features and constraints required by the broadcaster
+  Capabilities capabilities = 3;
 }
 
 /*
@@ -109,10 +119,23 @@ message Capabilities {
 
     Constraints constraints = 5;
 
-    // Non-binary capability constraints, such as supported ranges.
+    // Non-binary constraints.
     message Constraints {
-            string minVersion = 1;
+      string minVersion = 1;
+      map<uint32, CapabilityConstraints> PerCapability = 2;
     }
+
+    // Non-binary capability constraints, such as supported ranges.
+    message CapabilityConstraints {
+      message ModelConstraint {
+        bool warm = 1;
+        uint32 capacity = 2;
+      }
+
+      map<string, ModelConstraint> models = 1;
+    }
+
+
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
@@ -315,6 +338,12 @@ message TranscodeResult {
     OrchestratorInfo info = 16;
 }
 
+// Response that an orchestrator sends after processing a payment.
+message PaymentResult {
+    // Used to notify a broadcaster of updated orchestrator information
+    OrchestratorInfo info = 16;
+}
+
 // Sent by the transcoder to register itself to the orchestrator.
 message RegisterRequest {
 
@@ -354,6 +383,34 @@ message NotifySegment {
 
     // Deprecated by segData. Transcoding configuration to use.
     reserved 33; // Formerly "repeated VideoProfile fullProfiles"
+}
+
+// Sent by the aiworker to register itself to the orchestrator.
+message RegisterAIWorkerRequest {
+
+    // Shared secret for auth
+    string secret = 1;
+
+    // AIWorker capabilities
+    Capabilities capabilities = 2;
+}
+
+// Data included by the gateway when submitting a AI job.
+message AIJobData {
+    // pipeline to use for the job
+    string pipeline = 1;
+
+    // AI job request data
+    bytes requestData = 2;
+}
+
+// Sent by the orchestrator to the aiworker
+message NotifyAIJob {
+    // Configuration for the AI job
+    AIJobData AIJobData = 1;
+
+    // ID for this particular AI task.
+    int64 taskId   = 2;
 }
 
 // Required parameters for probabilistic micropayment tickets

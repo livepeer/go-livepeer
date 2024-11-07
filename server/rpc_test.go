@@ -25,6 +25,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/crypto"
@@ -148,6 +149,14 @@ func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 }
 
+func (r *stubOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
+}
+
+func (o *mockOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
+}
+
 func (r *stubOrchestrator) Capabilities() *net.Capabilities {
 	if r.caps != nil {
 		return r.caps.ToNetCapabilities()
@@ -183,6 +192,50 @@ func (r *stubOrchestrator) TranscoderResults(job int64, res *core.RemoteTranscod
 func (r *stubOrchestrator) TranscoderSecret() string {
 	return ""
 }
+func (r *stubOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
+}
+func (r *stubOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
+func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
+}
+func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
+	return nil
+}
+func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	return drivers.NewMockOSSession(), true
+}
+func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+}
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -192,7 +245,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b)
+	req, err := genOrchestratorReq(b, nil)
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -224,7 +277,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b)
+	_, err = genOrchestratorReq(b, nil)
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -335,9 +388,6 @@ func TestRPCSeg(t *testing.T) {
 			t.Errorf("Expected to fail with '%v' but got '%v'", expectedErr, err)
 		}
 	}
-
-	// corrupt profiles
-	corruptSegData(&net.SegData{Profiles: []byte("abc"), AuthToken: authToken}, common.ErrProfile)
 
 	// corrupt sig
 	sd := &net.SegData{ManifestId: []byte(s.Params.ManifestID), AuthToken: authToken}
@@ -1345,7 +1395,50 @@ func (o *mockOrchestrator) AuthToken(sessionID string, expiration int64) *net.Au
 	}
 	return nil
 }
+func (r *mockOrchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 4, PixelsPerUnit: 1}, nil
+}
+func (r *mockOrchestrator) TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
+	return true
+}
+func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 
+}
+func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
+	return nil
+}
+func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
+	return drivers.NewMockOSSession(), true
+}
+func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+}
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
 		Recipient:         pm.RandBytes(123),
