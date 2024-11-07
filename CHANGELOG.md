@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.0
+
+- [#2959](https://github.com/livepeer/go-livepeer/pull/2959) Add Livepeer AI Subnet features
+
+### Features ⚒
+
+#### Broadcaster
+
+### Bug Fixes 🐞
+
+#### Broadcaster
+
 ## v0.7.9
 
 - [#3165](https://github.com/livepeer/go-livepeer/pull/3165) Add node version and orch addr to transcoded metadata
