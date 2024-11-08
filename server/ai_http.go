@@ -66,7 +66,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLLMFormdataRequestBody])))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
