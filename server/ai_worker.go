@@ -297,6 +297,23 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.TextToSpeech(ctx, req)
 		}
 		reqOk = true
+	case "object-detection":
+		var req worker.GenObjectDetectionMultipartRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
+			break
+		}
+		modelID = *req.ModelId
+		resultType = "video/mp4"
+		req.Video.InitFromBytes(input, "video")
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.ObjectDetection(ctx, req)
+		}
+		reqOk = true
 	default:
 		err = errors.New("AI request pipeline type not supported")
 	}

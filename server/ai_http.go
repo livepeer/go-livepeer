@@ -847,7 +847,7 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 		if p.Header.Get("Content-Type") == "application/json" {
 			var results interface{}
 			switch pipeline {
-			case "text-to-image", "image-to-image", "upscale", "image-to-video":
+			case "text-to-image", "image-to-image", "upscale", "image-to-video", "object-detection":
 				var parsedResp worker.ImageResponse
 
 				err := json.Unmarshal(body, &parsedResp)
