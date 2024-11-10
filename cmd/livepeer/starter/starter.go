@@ -35,6 +35,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/blockwatch"
 	"github.com/livepeer/go-livepeer/eth/watchers"
+	"github.com/livepeer/go-livepeer/hive"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -165,6 +166,11 @@ type LivepeerConfig struct {
 	KafkaUsername           *string
 	KafkaPassword           *string
 	KafkaGatewayTopic       *string
+
+	// Hive
+	HiveServer   *string
+	HiveSecret   *string
+	HiveWorkerID *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -274,6 +280,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultKafkaPassword := ""
 	defaultKafkaGatewayTopic := ""
 
+	// Hive
+	defaultHiveServer := ""
+	defaultHiveSecret := ""
+	defaultHiveWorkerID := ""
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -381,6 +392,11 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		KafkaUsername:         &defaultKafkaUsername,
 		KafkaPassword:         &defaultKafkaPassword,
 		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
+
+		// Hive
+		HiveServer:   &defaultHiveServer,
+		HiveSecret:   &defaultHiveSecret,
+		HiveWorkerID: &defaultHiveWorkerID,
 	}
 }
 
@@ -494,6 +510,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	defer dbh.Close()
 
+	// Set up Hive client
+	var hiveClient *hive.Hive
+	if cfg.HiveServer != nil {
+		hiveClient = hive.NewHive(*cfg.HiveServer, *cfg.HiveSecret)
+		if err != nil {
+			exit("Error creating Hive client: err=%q", err)
+		}
+	}
+
 	n, err := core.NewLivepeerNode(nil, *cfg.Datadir, dbh)
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
@@ -573,11 +598,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	} else if *cfg.Orchestrator {
 		n.NodeType = core.OrchestratorNode
 		if !*cfg.Transcoder {
-			n.TranscoderManager = core.NewRemoteTranscoderManager()
+			n.TranscoderManager = core.NewRemoteTranscoderManager(hiveClient)
 			n.Transcoder = n.TranscoderManager
 		}
 		if !*cfg.AIWorker {
-			n.AIWorkerManager = core.NewRemoteAIWorkerManager()
+			n.AIWorkerManager = core.NewRemoteAIWorkerManager(hiveClient)
 		}
 	} else if *cfg.Transcoder {
 		n.NodeType = core.TranscoderNode
@@ -1609,7 +1634,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		if n.NodeType == core.TranscoderNode {
-			go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps)
+			go server.RunTranscoder(n, orchURLs[0].Host, core.MaxSessions, transcoderCaps, *cfg.HiveWorkerID)
 		}
 
 		if n.NodeType == core.AIWorkerNode {

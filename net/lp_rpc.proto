@@ -355,6 +355,9 @@ message RegisterRequest {
 
     // Transcoder capabilities
     Capabilities capabilities = 3;
+
+    // Hive worker id
+    string HiveWorkerID = 4;
 }
 
 // Sent by the orchestrator to the transcoder
@@ -393,6 +396,9 @@ message RegisterAIWorkerRequest {
 
     // AIWorker capabilities
     Capabilities capabilities = 2;
+
+    // Hive worker id
+    string HiveWorkerID = 3;
 }
 
 // Data included by the gateway when submitting a AI job.
