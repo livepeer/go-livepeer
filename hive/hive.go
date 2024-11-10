@@ -20,6 +20,10 @@ const (
 
 type JobStatus string
 
+type ActivateWorkerRequest struct {
+	WorkerIP string `json:"worker_ip"`
+}
+
 const (
 	JobStatusProcessing JobStatus = "Processing"
 	JobStatusCompleted  JobStatus = "Completed"
@@ -146,30 +150,31 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 }
 
 // Worker methods
-func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) (*Worker, error) {
-	var worker Worker
-	endpoint := fmt.Sprintf("%s/api/v1/workers/%s/activate", h.baseURI, workerID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &worker)
-	if err != nil {
-		return nil, err
+func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) error {
+	req := &ActivateWorkerRequest{
+		WorkerIP: workerIP,
 	}
-	return &worker, nil
+	endpoint := fmt.Sprintf("/api/v1/workers/%v/activate", workerID)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, nil)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) (*Worker, error) {
-	var worker Worker
-	endpoint := fmt.Sprintf("%s/api/v1/workers/%s/deactivate", h.baseURI, workerID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &worker)
+func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) error {
+	endpoint := fmt.Sprintf("/api/v1/workers/%s/deactivate", workerID)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &worker, nil
+	return nil
 }
 
 // Job methods
 func (h *Hive) CreateJob(ctx context.Context, jobID string, req *CreateJobRequest) (*Job, error) {
 	var job Job
-	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s", h.baseURI, jobID)
+	endpoint := fmt.Sprintf("/api/v1/jobs/%s", jobID)
 	err := h.sendRequest(ctx, http.MethodPost, endpoint, req, &job)
 	if err != nil {
 		return nil, err
@@ -179,7 +184,7 @@ func (h *Hive) CreateJob(ctx context.Context, jobID string, req *CreateJobReques
 
 func (h *Hive) CompleteJob(ctx context.Context, jobID string, req *CompleteJobRequest) (*Job, error) {
 	var job Job
-	endpoint := fmt.Sprintf("%s/api/v1/jobs/%s", h.baseURI, jobID)
+	endpoint := fmt.Sprintf("/api/v1/jobs/%s", jobID)
 	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, &job)
 	if err != nil {
 		return nil, err
@@ -188,8 +193,9 @@ func (h *Hive) CompleteJob(ctx context.Context, jobID string, req *CompleteJobRe
 }
 
 // Helper methods
-func (h *Hive) sendRequest(ctx context.Context, method, url string, body, response interface{}) error {
+func (h *Hive) sendRequest(ctx context.Context, method, endpoint string, body, response interface{}) error {
 	var buf bytes.Buffer
+	url := fmt.Sprintf("%s%s", h.baseURI, endpoint)
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			return fmt.Errorf("failed to encode request body: %w", err)
@@ -205,7 +211,7 @@ func (h *Hive) sendRequest(ctx context.Context, method, url string, body, respon
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	// Create message for HMAC
-	message := fmt.Sprintf("%s|%s", method, timestamp)
+	message := fmt.Sprintf("%s", timestamp)
 
 	// Generate signature
 	signature := h.generateHMACSignature(message)

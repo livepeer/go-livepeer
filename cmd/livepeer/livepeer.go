@@ -228,6 +228,10 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.KafkaPassword = flag.String("kafkaPassword", *cfg.KafkaPassword, "Kafka Password")
 	cfg.KafkaGatewayTopic = flag.String("kafkaGatewayTopic", *cfg.KafkaGatewayTopic, "Kafka Topic used to send gateway logs")
 
+	cfg.HiveSecret = flag.String("hiveSecret", *cfg.HiveSecret, "Shared secret with the hive")
+	cfg.HiveServer = flag.String("hiveServer", *cfg.HiveServer, "URL of the hive server")
+	cfg.HiveWorkerID = flag.String("hiveWorkerID", *cfg.HiveWorkerID, "ID of the worker")
+
 	return cfg
 }
 
