@@ -20,6 +20,10 @@ const (
 
 type JobStatus string
 
+type ActivateWorkerRequest struct {
+	WorkerIP string `json:"worker_ip"`
+}
+
 const (
 	JobStatusProcessing JobStatus = "Processing"
 	JobStatusCompleted  JobStatus = "Completed"
@@ -146,24 +150,26 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 }
 
 // Worker methods
-func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) (*Worker, error) {
-	var worker Worker
-	endpoint := fmt.Sprintf("%s/api/v1/workers/%s/activate", h.baseURI, workerID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &worker)
-	if err != nil {
-		return nil, err
+func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) error {
+	req := &ActivateWorkerRequest{
+		WorkerIP: workerIP,
 	}
-	return &worker, nil
+	endpoint := fmt.Sprintf("%s/api/v1/workers/%s/activate", h.baseURI, workerID)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &req)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) (*Worker, error) {
+func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) error {
 	var worker Worker
 	endpoint := fmt.Sprintf("%s/api/v1/workers/%s/deactivate", h.baseURI, workerID)
 	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &worker)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &worker, nil
+	return nil
 }
 
 // Job methods
