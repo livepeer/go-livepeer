@@ -154,8 +154,8 @@ func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) er
 	req := &ActivateWorkerRequest{
 		WorkerIP: workerIP,
 	}
-	endpoint := fmt.Sprintf("/api/v1/workers/%s/activate", workerID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &req)
+	endpoint := fmt.Sprintf("/api/v1/workers/%v/activate", workerID)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, nil)
 	if err != nil {
 		return err
 	}
@@ -163,9 +163,8 @@ func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) er
 }
 
 func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) error {
-	var worker Worker
 	endpoint := fmt.Sprintf("/api/v1/workers/%s/deactivate", workerID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, &worker)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -212,7 +211,7 @@ func (h *Hive) sendRequest(ctx context.Context, method, endpoint string, body, r
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	// Create message for HMAC
-	message := fmt.Sprintf("%s|%s", endpoint, timestamp)
+	message := fmt.Sprintf("%s", timestamp)
 
 	// Generate signature
 	signature := h.generateHMACSignature(message)

@@ -1023,7 +1023,9 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	// ConnectWorker Hive
 	ctx := context.Background()
-	rtm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from)
+	if err := rtm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from); err != nil {
+		glog.Errorf("Failed to activate worker=%s, err=%q", from, err)
+	}
 
 	rtm.RTmutex.Unlock()
 	if lpmon.Enabled {
@@ -1038,7 +1040,9 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	// DisConnectWorker Hive
 	ctx = context.Background()
-	rtm.hiveClient.DeactivateWorker(ctx, hiveWorkerID)
+	if err := rtm.hiveClient.DeactivateWorker(ctx, hiveWorkerID); err != nil {
+		glog.Errorf("Failed to deactivate worker=%s, err=%q", from, err)
+	}
 
 	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
