@@ -47,13 +47,13 @@ var errCapabilities = errors.New("incompatible segment capabilities")
 
 // RunTranscoder is main routing of standalone transcoder
 // Exiting it will terminate executable
-func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) {
+func RunTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, hiveWorkerID string) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering transcoder to ", orchAddr)
-		err := runTranscoder(n, orchAddr, capacity, caps)
+		err := runTranscoder(n, orchAddr, capacity, caps, hiveWorkerID)
 		glog.Info("Unregistering transcoder: ", err)
 		if _, fatal := err.(core.RemoteTranscoderFatalError); fatal {
 			glog.Info("Terminating transcoder because of ", err)
@@ -81,7 +81,7 @@ func checkTranscoderError(err error) error {
 	return err
 }
 
-func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability) error {
+func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []core.Capability, hiveWorkerID string) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -97,7 +97,7 @@ func runTranscoder(n *core.LivepeerNode, orchAddr string, capacity int, caps []c
 	// Silence linter
 	defer cancel()
 	r, err := c.RegisterTranscoder(ctx, &net.RegisterRequest{Secret: n.OrchSecret, Capacity: int64(capacity),
-		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities()})
+		Capabilities: core.NewCapabilities(caps, []core.Capability{}).ToNetCapabilities(), HiveWorkerID: hiveWorkerID})
 	if err := checkTranscoderError(err); err != nil {
 		glog.Error("Could not register transcoder to orchestrator ", err)
 		return err
@@ -312,7 +312,7 @@ func (h *lphttp) RegisterTranscoder(req *net.RegisterRequest, stream net.Transco
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
 	// blocks until stream is finished
-	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities)
+	h.orchestrator.ServeTranscoder(stream, int(req.Capacity), req.Capabilities, req.HiveWorkerID)
 	return nil
 }
 

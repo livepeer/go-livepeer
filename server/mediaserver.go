@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/hive"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -109,6 +110,7 @@ type LivepeerServer struct {
 	RTMPSegmenter           lpmscore.RTMPSegmenter
 	LPMS                    *lpmscore.LPMS
 	LivepeerNode            *core.LivepeerNode
+	Hive                    *hive.Hive
 	HTTPMux                 *http.ServeMux
 	ExposeCurrentManifest   bool
 	recordingsAuthResponses *cache.Cache

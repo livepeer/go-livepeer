@@ -110,7 +110,6 @@ func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *Auto
 
 // LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
-
 	// Common fields
 	Eth      eth.LivepeerEthClient
 	WorkDir  string

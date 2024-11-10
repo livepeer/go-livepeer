@@ -23,6 +23,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
+	"github.com/livepeer/go-livepeer/hive"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -93,8 +94,8 @@ func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMe
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
 
-func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
-	orch.node.serveTranscoder(stream, capacity, capabilities)
+func (orch *orchestrator) ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, hiveWorkerID string) {
+	orch.node.serveTranscoder(stream, capacity, capabilities, hiveWorkerID)
 }
 
 func (orch *orchestrator) TranscoderResults(tcID int64, res *RemoteTranscoderResult) {
@@ -807,7 +808,7 @@ func (n *LivepeerNode) endTranscodingSession(sessionId string, logCtx context.Co
 	}
 }
 
-func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
+func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, hiveWorkerID string) {
 	from := common.GetConnectionAddr(stream.Context())
 	coreCaps := CapabilitiesFromNetCapabilities(capabilities)
 	n.Capabilities.AddCapacity(coreCaps)
@@ -818,8 +819,8 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	}
 
 	// Manage blocks while transcoder is connected
-	n.TranscoderManager.Manage(stream, capacity, capabilities)
-	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel", from)
+	n.TranscoderManager.Manage(stream, capacity, capabilities, hiveWorkerID)
+	glog.V(common.DEBUG).Infof("Closing transcoder=%s channel workerID=%s", from, hiveWorkerID)
 
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
@@ -842,6 +843,7 @@ type RemoteTranscoder struct {
 	addr         string
 	capacity     int
 	load         int
+	hiveWorkerID string
 }
 
 // RemoteTranscoderFatalError wraps error to indicate that error is fatal
@@ -924,7 +926,7 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 		return chanData.TranscodeData, chanData.Err
 	}
 }
-func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities) *RemoteTranscoder {
+func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_RegisterTranscoderServer, capacity int, caps *Capabilities, hiveWorkerID string) *RemoteTranscoder {
 	return &RemoteTranscoder{
 		manager:      m,
 		stream:       stream,
@@ -932,10 +934,11 @@ func NewRemoteTranscoder(m *RemoteTranscoderManager, stream net.Transcoder_Regis
 		capacity:     capacity,
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
+		hiveWorkerID: hiveWorkerID,
 	}
 }
 
-func NewRemoteTranscoderManager() *RemoteTranscoderManager {
+func NewRemoteTranscoderManager(hiveClient *hive.Hive) *RemoteTranscoderManager {
 	return &RemoteTranscoderManager{
 		remoteTranscoders: []*RemoteTranscoder{},
 		liveTranscoders:   map[net.Transcoder_RegisterTranscoderServer]*RemoteTranscoder{},
@@ -945,6 +948,8 @@ func NewRemoteTranscoderManager() *RemoteTranscoderManager {
 		taskChans: make(map[int64]TranscoderChan),
 
 		streamSessions: make(map[string]*RemoteTranscoder),
+
+		hiveClient: hiveClient,
 	}
 }
 
@@ -972,6 +977,9 @@ type RemoteTranscoderManager struct {
 
 	// Map for keeping track of sessions and their respective transcoders
 	streamSessions map[string]*RemoteTranscoder
+
+	// Hive client
+	hiveClient *hive.Hive
 }
 
 // RegisteredTranscodersCount returns number of registered transcoders
@@ -993,9 +1001,9 @@ func (rtm *RemoteTranscoderManager) RegisteredTranscodersInfo() []common.RemoteT
 }
 
 // Manage adds transcoder to list of live transcoders. Doesn't return until transcoder disconnects
-func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities) {
+func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, hiveWorkerID string) {
 	from := common.GetConnectionAddr(stream.Context())
-	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities))
+	transcoder := NewRemoteTranscoder(rtm, stream, capacity, CapabilitiesFromNetCapabilities(capabilities), hiveWorkerID)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -1012,6 +1020,11 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
+
+	// ConnectWorker Hive
+	ctx := context.Background()
+	rtm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from)
+
 	rtm.RTmutex.Unlock()
 	if lpmon.Enabled {
 		lpmon.SetTranscodersNumberAndLoad(totalLoad, totalCapacity, liveTranscodersNum)
@@ -1022,6 +1035,11 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 
 	rtm.RTmutex.Lock()
 	delete(rtm.liveTranscoders, transcoder.stream)
+
+	// DisConnectWorker Hive
+	ctx = context.Background()
+	rtm.hiveClient.DeactivateWorker(ctx, hiveWorkerID)
+
 	if lpmon.Enabled {
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}

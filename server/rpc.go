@@ -54,9 +54,9 @@ type Orchestrator interface {
 	CheckCapacity(core.ManifestID) error
 	CheckAICapacity(pipeline, modelID string) bool
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
-	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
+	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities, hiveWorkerID string)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hiveWorkerID string)
 	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)

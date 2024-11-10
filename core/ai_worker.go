@@ -17,6 +17,7 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/hive"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
@@ -38,6 +39,7 @@ type RemoteAIWorker struct {
 	capabilities *Capabilities
 	eof          chan struct{}
 	addr         string
+	hiveWorkerID string
 }
 
 func (rw *RemoteAIWorker) done() {
@@ -60,19 +62,22 @@ type RemoteAIWorkerManager struct {
 
 	// Map for keeping track of sessions and their respective aiworkers
 	requestSessions map[string]*RemoteAIWorker
+
+	hiveClient *hive.Hive
 }
 
-func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities) *RemoteAIWorker {
+func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities, hiveWorkerID string) *RemoteAIWorker {
 	return &RemoteAIWorker{
 		manager:      m,
 		stream:       stream,
 		eof:          make(chan struct{}, 1),
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
+		hiveWorkerID: hiveWorkerID,
 	}
 }
 
-func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
+func NewRemoteAIWorkerManager(hiveClient *hive.Hive) *RemoteAIWorkerManager {
 	return &RemoteAIWorkerManager{
 		remoteAIWorkers: []*RemoteAIWorker{},
 		liveAIWorkers:   map[net.AIWorker_RegisterAIWorkerServer]*RemoteAIWorker{},
@@ -82,14 +87,16 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 		taskChans: make(map[int64]AIWorkerChan),
 
 		requestSessions: make(map[string]*RemoteAIWorker),
+
+		hiveClient: hiveClient,
 	}
 }
 
-func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
-	orch.node.serveAIWorker(stream, capabilities)
+func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hiveWorkerID string) {
+	orch.node.serveAIWorker(stream, capabilities, hiveWorkerID)
 }
 
-func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hiveWorkerID string) {
 	from := common.GetConnectionAddr(stream.Context())
 	wkrCaps := CapabilitiesFromNetCapabilities(capabilities)
 	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
@@ -100,7 +107,7 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 		defer n.RemoveAICapabilities(wkrCaps)
 
 		// Manage blocks while AI worker is connected
-		n.AIWorkerManager.Manage(stream, capabilities)
+		n.AIWorkerManager.Manage(stream, capabilities, hiveWorkerID)
 		glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
 	} else {
 		glog.Errorf("worker %s not connected, version not compatible", from)
@@ -108,9 +115,9 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 }
 
 // Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
-func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hiveWorkerID string) {
 	from := common.GetConnectionAddr(stream.Context())
-	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities))
+	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities), hiveWorkerID)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -122,6 +129,10 @@ func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 	rwm.RWmutex.Lock()
 	rwm.liveAIWorkers[aiworker.stream] = aiworker
 	rwm.remoteAIWorkers = append(rwm.remoteAIWorkers, aiworker)
+
+	ctx := context.Background()
+	rwm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from)
+
 	rwm.RWmutex.Unlock()
 
 	<-aiworker.eof
@@ -129,6 +140,7 @@ func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 
 	rwm.RWmutex.Lock()
 	delete(rwm.liveAIWorkers, aiworker.stream)
+	rwm.hiveClient.DeactivateWorker(ctx, hiveWorkerID)
 	rwm.RWmutex.Unlock()
 }
 

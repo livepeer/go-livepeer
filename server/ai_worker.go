@@ -50,7 +50,7 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
 	// blocks until stream is finished
-	h.orchestrator.ServeAIWorker(stream, req.Capabilities)
+	h.orchestrator.ServeAIWorker(stream, req.Capabilities, req.HiveWorkerID)
 	return nil
 }
 

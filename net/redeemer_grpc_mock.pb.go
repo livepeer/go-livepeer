@@ -178,7 +178,7 @@ func (mr *MockTicketRedeemer_MonitorMaxFloatClientMockRecorder) Recv() *gomock.C
 }
 
 // RecvMsg mocks base method.
-func (m_2 *MockTicketRedeemer_MonitorMaxFloatClient) RecvMsg(m interface{}) error {
+func (m_2 *MockTicketRedeemer_MonitorMaxFloatClient) RecvMsg(m any) error {
 	m_2.ctrl.T.Helper()
 	ret := m_2.ctrl.Call(m_2, "RecvMsg", m)
 	ret0, _ := ret[0].(error)
@@ -192,7 +192,7 @@ func (mr *MockTicketRedeemer_MonitorMaxFloatClientMockRecorder) RecvMsg(m interf
 }
 
 // SendMsg mocks base method.
-func (m_2 *MockTicketRedeemer_MonitorMaxFloatClient) SendMsg(m interface{}) error {
+func (m_2 *MockTicketRedeemer_MonitorMaxFloatClient) SendMsg(m any) error {
 	m_2.ctrl.T.Helper()
 	ret := m_2.ctrl.Call(m_2, "SendMsg", m)
 	ret0, _ := ret[0].(error)
@@ -371,7 +371,7 @@ func (mr *MockTicketRedeemer_MonitorMaxFloatServerMockRecorder) Context() *gomoc
 }
 
 // RecvMsg mocks base method.
-func (m_2 *MockTicketRedeemer_MonitorMaxFloatServer) RecvMsg(m interface{}) error {
+func (m_2 *MockTicketRedeemer_MonitorMaxFloatServer) RecvMsg(m any) error {
 	m_2.ctrl.T.Helper()
 	ret := m_2.ctrl.Call(m_2, "RecvMsg", m)
 	ret0, _ := ret[0].(error)
@@ -413,7 +413,7 @@ func (mr *MockTicketRedeemer_MonitorMaxFloatServerMockRecorder) SendHeader(arg0 
 }
 
 // SendMsg mocks base method.
-func (m_2 *MockTicketRedeemer_MonitorMaxFloatServer) SendMsg(m interface{}) error {
+func (m_2 *MockTicketRedeemer_MonitorMaxFloatServer) SendMsg(m any) error {
 	m_2.ctrl.T.Helper()
 	ret := m_2.ctrl.Call(m_2, "SendMsg", m)
 	ret0, _ := ret[0].(error)
