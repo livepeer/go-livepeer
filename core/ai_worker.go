@@ -14,6 +14,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -161,8 +162,29 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 	if err != nil {
 		return nil, err
 	}
+
+	// create job
+	jobID := uuid.New().String()
+	err = rwm.hiveClient.CreateJob(ctx, jobID, &hive.CreateJobRequest{
+		WorkerID: worker.hiveWorkerID,
+		Pipeline: pipeline,
+		Model:    modelID,
+		Tokens:   0,
+		Source:   hive.JobSourceLivepeer,
+	})
+	if err != nil {
+		glog.Errorf("Error creating job=%s err=%q", jobID, err)
+	}
+
 	res, err := worker.Process(ctx, pipeline, modelID, fname, req)
 	if err != nil {
+		err := rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
+			Status:   hive.JobStatusFailed,
+			ErrorMsg: err.Error(),
+		})
+		if err != nil {
+			glog.Errorf("Error completing job=%s err=%q", jobID, err)
+		}
 		rwm.completeAIRequest(requestID, pipeline, modelID)
 	}
 	_, fatal := err.(RemoteAIWorkerFatalError)
@@ -172,6 +194,15 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 			return res, err
 		}
 		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
+	}
+
+	err = rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
+		TokensUsed: 0,
+		Status:     hive.JobStatusCompleted,
+	})
+
+	if err != nil {
+		glog.Errorf("Error completing job=%s err=%q", jobID, err)
 	}
 
 	rwm.completeAIRequest(requestID, pipeline, modelID)

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 type JobSource string
@@ -52,43 +54,44 @@ type PaginatedResponse struct {
 
 type User struct {
 	ID             string    `json:"id" db:"id"`
-	Username       string    `json:"username" db:"username"`
-	Email          string    `json:"email" db:"email"`
+	Username       string    `json:"username" db:"username,omitempty"`
+	Email          string    `json:"email" db:"email,omitempty"`
 	Address        string    `json:"address" db:"address"`
-	PendingBalance float64   `json:"pending_balance" db:"pending_balance"`
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	PendingBalance float64   `json:"pendingBalance" db:"pendingBalance"`
+	CreatedAt      time.Time `json:"createdAt" db:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt" db:"updatedAt"`
 }
 
 type Worker struct {
 	ID            string    `json:"id" db:"id"`
-	UserID        string    `json:"user_id" db:"user_id"`
-	IPPort        string    `json:"ip_port" db:"ip_port"`
+	UserID        string    `json:"userID" db:"userID"`
+	IPPort        string    `json:"ipPort" db:"ipPort"`
 	Pipeline      string    `json:"pipeline" db:"pipeline"`
 	Model         string    `json:"model" db:"model"`
 	Active        bool      `json:"active" db:"active"`
 	Earnings      float64   `json:"earnings" db:"earnings"`
-	JobsCompleted int       `json:"jobs_completed" db:"jobs_completed"`
-	JobsFailed    int       `json:"jobs_failed" db:"jobs_failed"`
-	CreatedAt     time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
+	JobsCompleted int       `json:"jobsCompleted" db:"jobsCompleted"`
+	JobsFailed    int       `json:"jobsFailed" db:"jobsFailed"`
+	CreatedAt     time.Time `json:"createdAt" db:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt" db:"updatedAt"`
 }
 
 type Job struct {
 	ID           string    `json:"id" db:"id"`
 	Orchestrator string    `json:"orchestrator" db:"orchestrator"`
-	WorkerID     string    `json:"worker_id" db:"worker_id"`
+	WorkerID     string    `json:"workerID" db:"workerID"`
 	Status       JobStatus `json:"status" db:"status"`
 	Pipeline     string    `json:"pipeline" db:"pipeline"`
 	Model        string    `json:"model" db:"model"`
 	Tokens       float64   `json:"tokens" db:"tokens"`
 	Source       JobSource `json:"source" db:"source"`
-	ErrorMsg     string    `json:"error_msg" db:"error_msg"`
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	ErrorMsg     string    `json:"errorMsg" db:"errorMsg,omitempty"`
+	CreatedAt    time.Time `json:"createdAt" db:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt" db:"updatedAt"`
 }
 
 type CreateJobRequest struct {
+	WorkerID     string    `json:"worker_id"`
 	Orchestrator string    `json:"orchestrator"`
 	Pipeline     string    `json:"pipeline"`
 	Model        string    `json:"model"`
@@ -97,8 +100,9 @@ type CreateJobRequest struct {
 }
 
 type CompleteJobRequest struct {
-	Status   JobStatus `json:"status"`
-	ErrorMsg string    `json:"error_msg,omitempty"`
+	TokensUsed float64   `json:"usage"`
+	Status     JobStatus `json:"status"`
+	ErrorMsg   string    `json:"error_msg,omitempty"`
 }
 
 // generateHMACSignature creates the HMAC signature for authentication
@@ -172,24 +176,33 @@ func (h *Hive) DeactivateWorker(ctx context.Context, workerID string) error {
 }
 
 // Job methods
-func (h *Hive) CreateJob(ctx context.Context, jobID string, req *CreateJobRequest) (*Job, error) {
-	var job Job
-	endpoint := fmt.Sprintf("/api/v1/jobs/%s", jobID)
-	err := h.sendRequest(ctx, http.MethodPost, endpoint, req, &job)
-	if err != nil {
-		return nil, err
+func (h *Hive) CreateJob(ctx context.Context, jobID string, req *CreateJobRequest) error {
+	glog.Infof("Received create job request ID=%s worker=%s", jobID, req.WorkerID)
+	job := Job{
+		ID:           jobID,
+		Orchestrator: "hive-ai",
+		WorkerID:     req.WorkerID,
+		Status:       JobStatusProcessing,
+		Pipeline:     req.Pipeline,
+		Model:        req.Model,
+		Tokens:       0,
+		Source:       req.Source,
 	}
-	return &job, nil
+	endpoint := fmt.Sprintf("/api/v1/jobs/%s", jobID)
+	err := h.sendRequest(ctx, http.MethodPost, endpoint, job, nil)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (h *Hive) CompleteJob(ctx context.Context, jobID string, req *CompleteJobRequest) (*Job, error) {
-	var job Job
+func (h *Hive) CompleteJob(ctx context.Context, jobID string, req *CompleteJobRequest) error {
 	endpoint := fmt.Sprintf("/api/v1/jobs/%s", jobID)
-	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, &job)
+	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &job, nil
+	return nil
 }
 
 // Helper methods

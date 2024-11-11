@@ -58,13 +58,13 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 
 // RunAIWorker is main routing of standalone aiworker
 // Exiting it will terminate executable
-func RunAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) {
+func RunAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities, hiveWorkerID string) {
 	expb := backoff.NewExponentialBackOff()
 	expb.MaxInterval = time.Minute
 	expb.MaxElapsedTime = 0
 	backoff.Retry(func() error {
 		glog.Info("Registering AI worker to ", orchAddr)
-		err := runAIWorker(n, orchAddr, caps)
+		err := runAIWorker(n, orchAddr, caps, hiveWorkerID)
 		glog.Info("Unregistering AI worker: ", err)
 		if _, fatal := err.(core.RemoteAIWorkerFatalError); fatal {
 			glog.Info("Terminating AI Worker because of ", err)
@@ -92,7 +92,7 @@ func checkAIWorkerError(err error) error {
 	return err
 }
 
-func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) error {
+func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities, hiveWorkerID string) error {
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 	conn, err := grpc.Dial(orchAddr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
@@ -107,7 +107,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) 
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps})
+	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps, HiveWorkerID: hiveWorkerID})
 	if err := checkAIWorkerError(err); err != nil {
 		glog.Error("Could not register aiworker to orchestrator ", err)
 		return err

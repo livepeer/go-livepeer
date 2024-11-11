@@ -1638,7 +1638,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		if n.NodeType == core.AIWorkerNode {
-			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
+			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities(), *cfg.HiveWorkerID)
 		}
 	}
 
