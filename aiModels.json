@@ -1,0 +1,10 @@
+[
+  {
+   "pipeline": "llm",
+    "model_id": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "URL": "http://94.227.85.62:8005/",
+    "price_per_unit": 20000000,
+    "pixels_per_unit": 1000000,
+    "warm": true
+  }
+]
