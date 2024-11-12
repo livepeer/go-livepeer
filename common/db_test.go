@@ -2,6 +2,7 @@ package common
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -334,6 +335,34 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
 	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
 	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
+
+	// Updating only remoteInfo
+	remoteInfo := make(map[string]interface{})
+	remoteInfo["transcoder"] = "http://transcoder.uri:5555"
+	riJson, _ := json.Marshal(remoteInfo)
+	remoteInfoUpdate := &DBOrch{
+		EthereumAddr: orchAddress,
+		RemoteInfo:   string(riJson),
+	}
+
+	assert.Equal(updatedOrch[0].RemoteInfo, "")
+
+	err = dbh.UpdateOrch(remoteInfoUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.NoError(err)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, activationRoundUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
+	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
+	assert.Equal(updatedOrch[0].RemoteInfo, remoteInfoUpdate.RemoteInfo)
+}
+
+func TestUpdateOrch_AddRemoteInfo(t *testing.T) {
+
 }
 
 func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
