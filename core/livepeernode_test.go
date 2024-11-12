@@ -205,3 +205,32 @@ func TestSetAndGetCapabilityPrices(t *testing.T) {
 	assert.Zero(n.GetBasePriceForCap(addr1, Capability_TextToImage, "default").Cmp(price1))
 	assert.Zero(n.GetBasePriceForCap(addr2, Capability_ImageToImage, "default").Cmp(price2))
 }
+
+func TestGetAllCapabilityPrices(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	n, err := NewLivepeerNode(nil, "", nil)
+	require.Nil(err)
+
+	price := big.NewRat(1, 1)
+
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price))
+	assert.Zero(n.priceInfoForCaps["default"].PriceForModelID(Capability_TextToImage, "default").Value().Cmp(price))
+	assert.Zero(n.GetBasePriceForCap("default", Capability_TextToImage, "default").Cmp(price))
+
+	addr1 := "0x0000000000000000000000000000000000000000"
+	addr2 := "0x1000000000000000000000000000000000000000"
+	price1 := big.NewRat(2, 1)
+	price2 := big.NewRat(3, 1)
+
+	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "default", NewFixedPrice(price2))
+
+	prices := n.GetCapsPrices(addr1)
+	modelPrice := prices.PriceForModelID(Capability_TextToImage, "default").Value()
+	modelPrice2 := prices.PriceForModelID(Capability_ImageToImage, "default").Value()
+	assert.Zero(price1.Cmp(modelPrice))
+	assert.Zero(price2.Cmp(modelPrice2))
+
+}
