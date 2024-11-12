@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -337,14 +338,22 @@ func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
 				respond500(w, "could not create sig")
 			}
 
+			type OrchNetworkCapabilities struct {
+				Status           string                `json:"status"`
+				TookMs           int64                 `json:"took_ms"`
+				OrchestratorInfo *net.OrchestratorInfo `json:"orchestrator_info"`
+			}
+
 			//send GetOrchestrator request
 			orch_url := r.Header.Get("Url")
+
 			if orch_url != "" {
 				url, err := url.ParseRequestURI(orch_url)
 				if err != nil {
 					respond400(w, "could not parse url")
 				}
-				orch_info_resp := make(map[string]interface{})
+
+				var resp OrchNetworkCapabilities
 				client, conn, err := startOrchestratorClient(context.Background(), url)
 				defer conn.Close()
 				if conn != nil && err == nil {
@@ -352,19 +361,20 @@ func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
 					start := time.Now()
 					orch_info, err := client.GetOrchestrator(context.Background(), req)
 					if err != nil {
-						orch_info_resp["Status"] = "failed"
-						orch_info_resp["Took"] = time.Since(start).Milliseconds()
-						orch_info_resp["OrchestratroInfo"] = nil
-						respondJson(w, orch_info_resp)
+						resp.Status = "failed"
+						resp.TookMs = time.Since(start).Milliseconds()
+						resp.OrchestratorInfo = nil
+
+						respondJson(w, resp)
 						return
 					}
 					//parse net.OrchestratorInfo to json
-					orch_info_resp["Status"] = "success"
-					orch_info_resp["Took"] = time.Since(start).Milliseconds()
-					orch_info_resp["OrchestratorInfo"] = orch_info
+					resp.Status = "success"
+					resp.TookMs = time.Since(start).Milliseconds()
+					resp.OrchestratorInfo = orch_info
 
 					//send orchestrator info received
-					respondJson(w, orch_info_resp)
+					respondJson(w, resp)
 					return
 				} else {
 					respond500(w, "getorchestrator request failed: "+err.Error())
