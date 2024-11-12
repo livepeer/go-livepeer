@@ -149,6 +149,7 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 		// reset preconnect error
 		c.preconnectErrorCount = 0
 	}
+	c.pendingGet = nil
 
 	if IsEOS(conn) {
 		return nil, EOS
@@ -156,7 +157,7 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 
 	// Set to use the next index for the next (pre-)connection
 	idx := GetSeq(conn)
-	if idx != -1 {
+	if idx >= 0 {
 		c.idx = idx + 1
 	}
 
@@ -172,10 +173,7 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 		}
 
 		c.pendingGet = nextConn
-		idx := GetSeq(nextConn)
-		if idx != -1 {
-			c.idx = idx + 1
-		}
+
 		// reset preconnect error
 		c.preconnectErrorCount = 0
 	}()

@@ -360,6 +360,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+		if streamName == "out-stream" {
+			// skip for now; we don't want to re-publish our own outputs
+			return
+		}
 		requestID := string(core.RandomManifestID())
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
 		clog.Infof(ctx, "Received live video AI request for %s", streamName)

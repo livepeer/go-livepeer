@@ -77,12 +77,22 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 
 	// setFd sets the given file descriptor in the fdSet
 	setFd := func(fd int, fdSet *syscall.FdSet) {
-		fdSet.Bits[fd/64] |= 1 << (uint(fd) % 64)
+		idx := fd / 64
+		if idx >= len(fdSet.Bits) {
+			// only happens under very weird conditions
+			return
+		}
+		fdSet.Bits[idx] |= 1 << (uint(fd) % 64)
 	}
 
 	// isFdSet checks if the given file descriptor is set in the fdSet
 	isFdSet := func(fd int, fdSet *syscall.FdSet) bool {
-		return fdSet.Bits[fd/64]&(1<<(uint(fd)%64)) != 0
+		idx := fd / 64
+		if idx >= len(fdSet.Bits) {
+			// only happens under very weird conditions
+			return false
+		}
+		return fdSet.Bits[idx]&(1<<(uint(fd)%64)) != 0
 	}
 
 	for {
