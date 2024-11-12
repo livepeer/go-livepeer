@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -80,7 +78,6 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/auth", ls.Auth())
 
 	return nil
 }
@@ -356,53 +353,32 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
-type MediaMTXAuthReq struct {
-	User     string `json:"user"`
-	Password string `json:"password"`
-	Action   string `json:"action"`
-	Path     string `json:"path"`
-	Protocol string `json:"protocol"`
-	Query    string `json:"query"`
-}
-
-func (ls *LivepeerServer) Auth() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqBody, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Couldn't read request body", http.StatusInternalServerError)
-			return
-		}
-		authReq := MediaMTXAuthReq{}
-		if err := json.Unmarshal(reqBody, &authReq); err != nil {
-			http.Error(w, "Couldn't unmarshal request body", http.StatusBadRequest)
-			return
-		}
-		if authReq.Action != "publish" {
-			// I don't think we care about other actions like "read", or maybe we need to block anything other than localhost access
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		log.Println("LiveVideo auth", authReq)
-		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
-			Stream: authReq.Path,
-		})
-		if err != nil {
-			clog.Errorf(r.Context(), "Live AI auth failed: %s", err.Error())
-			http.Error(w, "Forbidden", http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-}
-
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("StartLiveVideo")
 		streamName := r.FormValue("stream")
 		if streamName == "" {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+		sourceID := r.FormValue("source_id")
+		if sourceID == "" {
+			http.Error(w, "Missing source_id", http.StatusBadRequest)
+			return
+		}
+
+		err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+			Stream: streamName,
+		})
+		if err != nil {
+			kickErr := kickRTMPConnection(sourceID)
+			if kickErr != nil {
+				clog.Errorf(r.Context(), "failed to kick RTMP connection: %s", kickErr.Error())
+			}
+			clog.Errorf(r.Context(), "Live AI auth failed: %s", err.Error())
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		requestID := string(core.RandomManifestID())
 		ctx := clog.AddVal(r.Context(), "request_id", requestID)
 		clog.Infof(ctx, "Received live video AI request for %s", streamName)
@@ -427,4 +403,11 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		processAIRequest(ctx, params, req)
 	})
+}
+
+const mediaMTXControlPort = "9997"
+
+func kickRTMPConnection(sourceID string) error {
+	_, err := http.Post(fmt.Sprintf("http://localhost:%s/v3/rtmpconns/kick/%s", mediaMTXControlPort, sourceID), "", nil)
+	return err
 }
