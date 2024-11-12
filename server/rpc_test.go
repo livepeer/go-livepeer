@@ -1320,6 +1320,30 @@ func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
 	})
 }
 
+func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri := "http://someuri.com"
+	expectedPrice := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
+	caps := core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryOCapabilities())
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+
+	orchInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{Capabilities: caps.ToNetCapabilities()})
+
+	assert.Nil(t, err)
+	assert.Nil(t, orchInfo.Hardware)
+	assert.Nil(t, orchInfo.CapabilitiesPrices)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
