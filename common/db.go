@@ -253,7 +253,7 @@ func InitDB(dbPath string) (*DB, error) {
 		THEN orchestrators.stake
 		ELSE excluded.stake END,
 	remoteInfo =
-	    CASE WHEN trim(excluded.remoteInfo) == ""
+		CASE WHEN trim(excluded.remoteInfo) == ""
 		THEN orchestrators.remoteInfo
 		ELSE trim(excluded.remoteInfo) END
 	`)
