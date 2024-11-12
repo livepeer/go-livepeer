@@ -366,6 +366,11 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
+		if streamName == "out-stream" {
+			// skip for now; we don't want to re-publish our own outputs
+			return
+		}
+
 		err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
 			Stream: streamName,
 		})

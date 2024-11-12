@@ -847,6 +847,26 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 			ratPrice.FloatString(3)+" wei/pixel",
 			numTickets,
 		)
+		if monitor.Enabled {
+			clientIP := clog.GetVal(ctx, clog.ClientIP)
+			requestID := clog.GetVal(ctx, "request_id")
+			capability := clog.GetVal(ctx, "capability")
+
+			monitor.SendQueueEventAsync("create_new_payment", map[string]string{
+				"clientIP":     clientIP,
+				"requestID":    requestID,
+				"capability":   capability,
+				"manifestID":   string(sess.Params.ManifestID),
+				"sessionID":    sess.OrchestratorInfo.AuthToken.SessionId,
+				"recipient":    batch.Recipient.Hex(),
+				"faceValue":    eth.FormatUnits(batch.FaceValue, "ETH"),
+				"winProb":      batch.WinProbRat().FloatString(10),
+				"price":        ratPrice.FloatString(3) + " wei/pixel",
+				"numTickets":   fmt.Sprintf("%v", numTickets),
+				"sender":       sess.Broadcaster.Address().Hex(),
+				"orchestrator": sess.OrchestratorInfo.Transcoder,
+			})
+		}
 	}
 
 	data, err := proto.Marshal(protoPayment)

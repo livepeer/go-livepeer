@@ -222,6 +222,12 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	// flags
 	cfg.TestOrchAvail = flag.Bool("startupAvailabilityCheck", *cfg.TestOrchAvail, "Set to false to disable the startup Orchestrator availability check on the configured serviceAddr")
 
+	// Gateway metrics
+	cfg.KafkaBootstrapServers = flag.String("kafkaBootstrapServers", *cfg.KafkaBootstrapServers, "URL of Kafka Bootstrap Servers")
+	cfg.KafkaUsername = flag.String("kafkaUser", *cfg.KafkaUsername, "Kafka Username")
+	cfg.KafkaPassword = flag.String("kafkaPassword", *cfg.KafkaPassword, "Kafka Password")
+	cfg.KafkaGatewayTopic = flag.String("kafkaGatewayTopic", *cfg.KafkaGatewayTopic, "Kafka Topic used to send gateway logs")
+
 	return cfg
 }
 

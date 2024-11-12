@@ -63,10 +63,10 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
@@ -94,6 +94,9 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
 		// skipping handleAIRequest for now until we have payments
 
 		var (
@@ -110,6 +113,29 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Precreate the channels to avoid race conditions
+		// TODO get the expected mime type from the request
+		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh.CreateChannel()
+		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh.CreateChannel()
+
+		// Subscribe to the publishUrl for payments monitoring
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			for {
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					return
+				}
+				// We can do something with the segment data here
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
+
+		// TODO subscribe to the subscribeUrl for output monitoring
 
 		respondJsonOk(w, jsonData)
 	})
