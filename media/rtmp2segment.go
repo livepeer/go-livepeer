@@ -27,7 +27,6 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandler) {
-
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -36,8 +35,9 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		defer wg.Done()
 		processSegments(segmentHandler, outFilePattern, completionSignal)
 	}()
+
 	ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-	ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+	_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 		Fname: in,
 	}, []ffmpeg.TranscodeOptions{{
 		Oname:        outFilePattern,
@@ -45,6 +45,9 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
 	}})
+	if err != nil {
+		slog.Error("Failed to run segmentation", "in", in, "err", err)
+	}
 	completionSignal <- true
 	slog.Info("sent completion signal, now waiting")
 	wg.Wait()

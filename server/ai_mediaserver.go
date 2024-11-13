@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -360,12 +361,40 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+		sourceID := r.FormValue("source_id")
+		if sourceID == "" {
+			http.Error(w, "Missing source_id", http.StatusBadRequest)
+			return
+		}
+		sourceType := r.FormValue("source_type")
+		if sourceType == "" {
+			http.Error(w, "Missing source_type", http.StatusBadRequest)
+			return
+		}
+
 		if streamName == "out-stream" {
 			// skip for now; we don't want to re-publish our own outputs
 			return
 		}
+		ctx := clog.AddVal(r.Context(), "stream", streamName)
+		ctx = clog.AddVal(ctx, "source_id", sourceID)
+		ctx = clog.AddVal(ctx, "source_type", sourceType)
+
+		err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+			Stream: streamName,
+		})
+		if err != nil {
+			kickErr := kickInputConnection(sourceID, sourceType)
+			if kickErr != nil {
+				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+			}
+			clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
 		requestID := string(core.RandomManifestID())
-		ctx := clog.AddVal(r.Context(), "request_id", requestID)
+		ctx = clog.AddVal(ctx, "request_id", requestID)
 		clog.Infof(ctx, "Received live video AI request for %s", streamName)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
@@ -388,4 +417,28 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		processAIRequest(ctx, params, req)
 	})
+}
+
+const mediaMTXControlPort = "9997"
+
+func kickInputConnection(sourceID string, sourceType string) error {
+	var apiPath string
+	switch sourceType {
+	case "webrtcSession":
+		apiPath = "webrtcsessions"
+	case "rtmpConn":
+		apiPath = "rtmpconns"
+	default:
+		return fmt.Errorf("invalid sourceType: %s", sourceType)
+	}
+
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/v3/%s/kick/%s", mediaMTXControlPort, apiPath, sourceID), "", nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
+	}
+	return nil
 }
