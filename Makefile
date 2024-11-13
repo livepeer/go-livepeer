@@ -90,7 +90,6 @@ ifeq ($(BUILDOS),linux)
 
 	ifeq ($(GOOS),windows)
 		cc = x86_64-w64-mingw32-gcc
-		cgo_ldflags += -L/usr/x86_64-w64-mingw32/lib -lz
 	endif
 endif
 

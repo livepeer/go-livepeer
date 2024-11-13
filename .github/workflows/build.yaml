@@ -55,7 +55,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev libz-mingw-w64-dev yasm
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
 
       - name: Check out code
         uses: actions/checkout@v4.1.7
@@ -100,7 +100,7 @@ jobs:
             && apt update \
             && apt -yqq install \
               nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev \
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
               golang-goprotobuf-dev protobuf-compiler-grpc
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
