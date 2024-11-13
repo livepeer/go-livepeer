@@ -269,6 +269,20 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 	})
 }
 
+type networkCapabilities struct {
+	CapabilitiesNames map[core.Capability]string `json:"capabilities_names"`
+	Orchestrators     []orchNetworkCapabilities  `json:"orchestrators"`
+}
+type orchNetworkCapabilities struct {
+	Address            string                       `json:"address"`
+	LocalAddress       string                       `json:"local_address"`
+	OrchURI            string                       `json:"orch_uri"`
+	ServiceURI         string                       `json:"service_uri"`
+	Capabilities       *net.Capabilities            `json:"capabilities"`
+	CapabilitiesPrices []*net.PriceInfo             `json:"capabilities_prices"`
+	Hardware           []worker.HardwareInformation `json:"hardware"`
+}
+
 func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthClient, db *common.DB) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.BroadcasterNode {
@@ -283,16 +297,7 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthCli
 				},
 			)
 
-			type OrchNetworkCapabilities struct {
-				Address            string                       `json:"address"`
-				LocalAddress       string                       `json:"local_address"`
-				OrchURI            string                       `json:"orch_uri"`
-				ServiceURI         string                       `json:"service_uri"`
-				Capabilities       *net.Capabilities            `json:"capabilities"`
-				CapabilitiesPrices []*net.PriceInfo             `json:"capabilities_prices"`
-				Hardware           []worker.HardwareInformation `json:"hardware"`
-			}
-			var orchInfos []OrchNetworkCapabilities
+			var orchInfos []orchNetworkCapabilities
 
 			for _, o := range orchs {
 				var info net.OrchestratorInfo
@@ -306,7 +311,7 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthCli
 				var hdw []worker.HardwareInformation
 				json.Unmarshal(info.Hardware, &hdw)
 
-				onc := OrchNetworkCapabilities{
+				onc := orchNetworkCapabilities{
 					Address:            address,
 					LocalAddress:       localAddress,
 					OrchURI:            info.GetTranscoder(),
@@ -318,15 +323,23 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthCli
 				orchInfos = append(orchInfos, onc)
 			}
 
-			networkCapabilities := make(map[string]interface{})
-			networkCapabilities["CapabilitiesNames"] = core.CapabilityNameLookup
-			networkCapabilities["Orchestrators"] = orchInfos
+			networkCapabilities := &networkCapabilities{
+				CapabilitiesNames: core.CapabilityNameLookup,
+				Orchestrators:     orchInfos,
+			}
+
 			respondJson(w, networkCapabilities)
 		} else {
 			respond400(w, "Node must be gateway node to get network capabilities")
 			return
 		}
 	})
+}
+
+type orchInfoResponse struct {
+	Status           string                `json:"status"`
+	TookMs           int64                 `json:"took_ms"`
+	OrchestratorInfo *net.OrchestratorInfo `json:"orchestrator_info"`
 }
 
 func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
@@ -338,12 +351,6 @@ func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
 				respond500(w, "could not create sig")
 			}
 
-			type OrchNetworkCapabilities struct {
-				Status           string                `json:"status"`
-				TookMs           int64                 `json:"took_ms"`
-				OrchestratorInfo *net.OrchestratorInfo `json:"orchestrator_info"`
-			}
-
 			//send GetOrchestrator request
 			orch_url := r.Header.Get("Url")
 
@@ -353,7 +360,7 @@ func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
 					respond400(w, "could not parse url")
 				}
 
-				var resp OrchNetworkCapabilities
+				var resp orchInfoResponse
 				client, conn, err := startOrchestratorClient(context.Background(), url)
 				defer conn.Close()
 				if conn != nil && err == nil {
