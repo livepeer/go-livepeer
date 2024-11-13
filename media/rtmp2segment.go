@@ -7,7 +7,6 @@ import (
 	"encoding/base32"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"math/rand"
 	"os"
@@ -223,7 +222,6 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 }
 
 func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) {
-	log.Println("readSegment")
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
