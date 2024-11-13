@@ -418,8 +418,8 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 		   "name": "gpu-name",
 		   "major": 8,
 		   "minor": 9
-		 }  
-	   } 
+		 }
+	   }
 	  }
 	]
 	`
