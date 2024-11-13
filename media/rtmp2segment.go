@@ -46,7 +46,7 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
 	}})
 	if err != nil {
-		slog.Error("Failed to run segmentation:", "err", err)
+		slog.Error("Failed to run segmentation", "in", in, "err", err)
 	}
 	completionSignal <- true
 	slog.Info("sent completion signal, now waiting")
