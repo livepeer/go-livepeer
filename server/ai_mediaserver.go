@@ -358,26 +358,34 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		streamName := r.FormValue("stream")
 		if streamName == "" {
+			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
+			clog.Errorf(ctx, "Missing source_id")
 			http.Error(w, "Missing source_id", http.StatusBadRequest)
 			return
 		}
+		ctx = clog.AddVal(ctx, "source_id", sourceID)
 		sourceType := r.FormValue("source_type")
 		if sourceType == "" {
+			clog.Errorf(ctx, "Missing source_type")
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
 		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
 		if err != nil {
+			clog.Errorf(ctx, "Invalid source type %s", sourceType)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
@@ -401,9 +409,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			// skip for now; we don't want to re-publish our own outputs
 			return
 		}
-		ctx := clog.AddVal(r.Context(), "stream", streamName)
-		ctx = clog.AddVal(ctx, "source_id", sourceID)
-		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
 		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
 			Stream:      streamName,
