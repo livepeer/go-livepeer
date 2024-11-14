@@ -611,7 +611,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		case core.BroadcasterNode:
 			nodeType = lpmon.Broadcaster
 			if *cfg.KafkaBootstrapServers != "" && *cfg.KafkaUsername != "" && *cfg.KafkaPassword != "" && *cfg.KafkaGatewayTopic != "" {
-				lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic)
+				lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic, n.Eth.Account().Address.Hex())
 			}
 		case core.OrchestratorNode:
 			nodeType = lpmon.Orchestrator
