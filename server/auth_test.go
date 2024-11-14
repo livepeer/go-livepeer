@@ -68,6 +68,16 @@ func TestAuthSucceeds(t *testing.T) {
 	require.Equal(t, "456", resp.StreamID)
 }
 
+func TestAILiveAuthSucceeds(t *testing.T) {
+	s, serverURL := stubAuthServer(t, http.StatusOK, `{}`)
+	defer s.Close()
+
+	err := authenticateAIStream(serverURL, AIAuthRequest{
+		Stream: "stream",
+	})
+	require.NoError(t, err)
+}
+
 func TestNoErrorWhenTranscodeAuthHeaderNotPassed(t *testing.T) {
 	r, err := http.NewRequest(http.MethodPost, "some.com/url", nil)
 	require.NoError(t, err)

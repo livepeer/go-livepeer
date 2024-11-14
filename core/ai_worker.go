@@ -439,6 +439,8 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 				if err != nil {
 					return nil, err
 				}
+				defer os.Remove(image.Url)
+
 				buf = *bytes.NewBuffer(f)
 			}
 

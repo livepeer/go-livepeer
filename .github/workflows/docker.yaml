@@ -4,8 +4,7 @@ on:
   pull_request:
   push:
     branches:
-      # - master
-      - ai-video
+      - master
     tags:
       - "v*"
 
@@ -128,7 +127,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.ref_name }}
-          regex: '^(main|master|ai-video|v[0-9]+\.\d+\.\d+|v[0-9]+\.\d+\.\d+-ai-video-\d+)'
+          regex: '^(main|master|v[0-9]+\.\d+\.\d+)$'
 
       - name: Get build tags
         id: build-tag

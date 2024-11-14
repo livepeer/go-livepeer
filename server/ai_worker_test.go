@@ -216,6 +216,13 @@ func TestRunAIJob(t *testing.T) {
 			expectedOutputs: 1,
 		},
 		{
+			name:            "ImageToText_Success",
+			notify:          createAIJob(8, "image-to-text", modelId, parsedURL.String()+"/image.png"),
+			pipeline:        "image-to-text",
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
 			name:            "TextToSpeech_Success",
 			notify:          createAIJob(9, "text-to-speech", modelId, ""),
 			pipeline:        "text-to-speech",
@@ -337,6 +344,15 @@ func TestRunAIJob(t *testing.T) {
 					assert.Equal(len(results.Files), 0)
 					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
 					assert.Equal(expectedResp, &jsonRes)
+				case "image-to-text":
+					res, _ := json.Marshal(results.Results)
+					var jsonRes worker.ImageToTextResponse
+					json.Unmarshal(res, &jsonRes)
+
+					assert.Equal("8", headers.Get("TaskId"))
+					assert.Equal(len(results.Files), 0)
+					expectedResp, _ := wkr.ImageToText(context.Background(), worker.GenImageToTextMultipartRequestBody{})
+					assert.Equal(expectedResp, &jsonRes)
 				case "text-to-speech":
 					audResp, ok := results.Results.(worker.AudioResponse)
 					assert.True(ok)
@@ -382,6 +398,9 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
 		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+	case "image-to-text":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
 	case "text-to-speech":
 		desc := "a young adult"
 		text := "let me tell you a story"

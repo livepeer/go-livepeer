@@ -1204,7 +1204,7 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(false)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
-	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error"))
+	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error")).Times(1)
 
 	// Check when price = 0
 	payment, err := genPayment(context.TODO(), s, 0)
@@ -1224,6 +1224,11 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
 
 	// Check when price > 0
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil).Times(1)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("Address").Return(ethcommon.Address{})
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
 	payment, err = genPayment(context.TODO(), s, 0)
 	require.Nil(err)
