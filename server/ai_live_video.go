@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -70,4 +71,15 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 		}})
 	}()
+}
+
+func mediamtxSourceTypeToString(s string) (string, error) {
+	switch s {
+	case "webrtcSession":
+		return "whip", nil
+	case "rtmpConn":
+		return "rtmp", nil
+	default:
+		return "", errors.New("unknown media source")
+	}
 }

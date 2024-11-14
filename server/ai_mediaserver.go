@@ -373,6 +373,11 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
+		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
@@ -400,8 +405,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "source_id", sourceID)
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
-		err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
-			Stream: streamName,
+		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+			Stream:      streamName,
+			Type:        sourceTypeStr,
+			QueryParams: queryParams,
 		})
 		if err != nil {
 			kickErr := kickInputConnection(sourceID, sourceType)
