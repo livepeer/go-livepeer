@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -372,7 +374,25 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		if streamName == "out-stream" {
+		queryParams := r.FormValue("query")
+		qp, err := url.ParseQuery(queryParams)
+		if err != nil {
+			clog.Errorf(ctx, "invalid query params, err=%w", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// If auth webhook is set and returns an output URL, this will be replaced
+		outputURL := qp.Get("rtmpOutput")
+		if outputURL == "" {
+			// re-publish to ourselves for now
+			// Not sure if we want this to be permanent
+			outputURL = "rtmp://localhost/" + streamName + "-out"
+		}
+
+		// convention to avoid re-subscribing to our own streams
+		// in case we want to push outputs back into mediamtx -
+		// use an `-out` suffix for the stream name.
+		if strings.HasSuffix(streamName, "-out") {
 			// skip for now; we don't want to re-publish our own outputs
 			return
 		}
@@ -410,6 +430,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:            drivers.NodeStorage.NewSession(requestID),
 			sessManager:   ls.AISessionManager,
 			segmentReader: ssr,
+			outputRTMPURL: outputURL,
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
