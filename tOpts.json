@@ -1,0 +1,11 @@
+[
+{
+  "name": "480p0",
+  "fps": 0,
+  "bitrate": 1600000,
+  "width": 854,
+  "height": 480,
+  "profile": "h264constrainedhigh",
+  "gop": "1"
+}
+]
