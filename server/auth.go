@@ -97,7 +97,15 @@ func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
 }
 
 type AIAuthRequest struct {
+	// Stream name or stream key
 	Stream string `json:"stream"`
+
+	// Stream type, eg RTMP or WHIP
+	Type string `json:"type"`
+
+	// Query parameters that came with the stream, if any
+	QueryParams string `json:"query_params,omitempty"`
+
 	// TODO not sure what params we need yet
 }
 
