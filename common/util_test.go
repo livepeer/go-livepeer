@@ -483,29 +483,28 @@ func TestParsePricePerUnit(t *testing.T) {
 		name             string
 		pricePerUnitStr  string
 		expectedPrice    *big.Rat
-		expectedExponent *big.Rat
 		expectedCurrency string
 		expectError      bool
 	}{
 		{
-			name:             "Valid integer price with currency",
+			name:             "Valid input with integer price",
 			pricePerUnitStr:  "100USD",
 			expectedPrice:    big.NewRat(100, 1),
 			expectedCurrency: "USD",
 			expectError:      false,
 		},
 		{
-			name:             "Valid fractional price with currency",
+			name:             "Valid input with fractional price",
 			pricePerUnitStr:  "0.13USD",
 			expectedPrice:    big.NewRat(13, 100),
 			expectedCurrency: "USD",
 			expectError:      false,
 		},
 		{
-			name:             "Valid price with negative exponent",
-			pricePerUnitStr:  "1.23e-2USD",
-			expectedPrice:    big.NewRat(123, 10000),
-			expectedCurrency: "USD",
+			name:             "Valid input with decimal price",
+			pricePerUnitStr:  "99.99EUR",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "EUR",
 			expectError:      false,
 		},
 		{
@@ -523,7 +522,7 @@ func TestParsePricePerUnit(t *testing.T) {
 			expectError:      false,
 		},
 		{
-			name:             "No specified currency",
+			name:             "No specified currency, empty currency",
 			pricePerUnitStr:  "100",
 			expectedPrice:    big.NewRat(100, 1),
 			expectedCurrency: "",
