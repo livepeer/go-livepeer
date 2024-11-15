@@ -1,0 +1,18 @@
+dependencies:
+  - '**/go.mod'
+  - '**/go.sum'
+  - '**/requirements.txt'
+
+docker:
+  - 'docker/**'
+
+github_actions:
+  - '.github/workflows/*.yml'
+  - '.github/workflows/*.yaml'
+
+go:
+  - '**/*.go'
+
+ai:
+  - 'ai/**'
+  - '**/ai_*.go'
