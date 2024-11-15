@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -64,11 +65,21 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 		}, []ffmpeg.TranscodeOptions{{
-			// TODO take from params
-			Oname:        "rtmp://localhost/out-stream",
+			Oname:        params.outputRTMPURL,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 		}})
 	}()
+}
+
+func mediamtxSourceTypeToString(s string) (string, error) {
+	switch s {
+	case "webrtcSession":
+		return "whip", nil
+	case "rtmpConn":
+		return "rtmp", nil
+	default:
+		return "", errors.New("unknown media source")
+	}
 }
