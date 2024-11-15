@@ -497,3 +497,20 @@ func MimeTypeToExtension(mimeType string) (string, error) {
 	}
 	return "", ErrNoExtensionsForType
 }
+
+// ParsePricePerUnit parses a price string in the format <price><exponent><currency> and returns the price as a big.Rat and the currency.
+func ParsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
+	pricePerUnitRex := regexp.MustCompile(`^(\d+(\.\d+)?([eE][+-]?\d+)?)([A-Za-z][A-Za-z0-9]*)?$`)
+	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
+	if match == nil {
+		return nil, "", fmt.Errorf("price must be in the format of <price><exponent><currency>, provided %v", pricePerUnitStr)
+	}
+	price, currency := match[1], match[4]
+
+	pricePerUnit, ok := new(big.Rat).SetString(price)
+	if !ok {
+		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
+	}
+
+	return pricePerUnit, currency, nil
+}

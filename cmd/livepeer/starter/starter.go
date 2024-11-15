@@ -16,7 +16,6 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -859,7 +858,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Prevent orchestrators from unknowingly doing free work.
 				panic(fmt.Errorf("-pricePerUnit must be set"))
 			} else if cfg.PricePerUnit != nil {
-				pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+				pricePerUnit, currency, err := common.ParsePricePerUnit(*cfg.PricePerUnit)
 				if err != nil {
 					panic(fmt.Errorf("-pricePerUnit must be a valid integer with an optional currency, provided %v", *cfg.PricePerUnit))
 				} else if pricePerUnit.Sign() < 0 {
@@ -998,7 +997,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// Can't divide by 0
 				panic(fmt.Errorf("-pixelsPerUnit must be > 0, provided %v", *cfg.PixelsPerUnit))
 			}
-			maxPricePerUnit, currency, err := parsePricePerUnit(*cfg.MaxPricePerUnit)
+			maxPricePerUnit, currency, err := common.ParsePricePerUnit(*cfg.MaxPricePerUnit)
 			if err != nil {
 				panic(fmt.Errorf("The maximum price per unit must be a valid integer with an optional currency, provided %v instead\n", *cfg.MaxPricePerUnit))
 			}
@@ -1290,7 +1289,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				pricePerUnitBase := new(big.Rat)
 				currencyBase := ""
 				if cfg.PricePerUnit != nil {
-					pricePerUnit, currency, err := parsePricePerUnit(*cfg.PricePerUnit)
+					pricePerUnit, currency, err := common.ParsePricePerUnit(*cfg.PricePerUnit)
 					if err != nil || pricePerUnit.Sign() < 0 {
 						panic(fmt.Errorf("-pricePerUnit must be a valid positive integer with an optional currency, provided %v", *cfg.PricePerUnit))
 					}
@@ -1983,22 +1982,6 @@ func parseEthKeystorePath(ethKeystorePath string) (keystorePath, error) {
 		}
 	}
 	return keystore, nil
-}
-
-func parsePricePerUnit(pricePerUnitStr string) (*big.Rat, string, error) {
-	pricePerUnitRex := regexp.MustCompile(`^(\d+(\.\d+)?)([A-z][A-z0-9]*)?$`)
-	match := pricePerUnitRex.FindStringSubmatch(pricePerUnitStr)
-	if match == nil {
-		return nil, "", fmt.Errorf("price must be in the format of <price><currency>, provided %v", pricePerUnitStr)
-	}
-	price, currency := match[1], match[3]
-
-	pricePerUnit, ok := new(big.Rat).SetString(price)
-	if !ok {
-		return nil, "", fmt.Errorf("price must be a valid number, provided %v", match[1])
-	}
-
-	return pricePerUnit, currency, nil
 }
 
 func refreshOrchPerfScoreLoop(ctx context.Context, region string, orchPerfScoreURL string, score *common.PerfScore) {

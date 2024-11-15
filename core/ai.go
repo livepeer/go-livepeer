@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/common"
 )
 
 var errPipelineNotAvailable = errors.New("pipeline not available")
@@ -82,9 +83,51 @@ type AIModelConfig struct {
 	Currency      string  `json:"currency,omitempty"`
 }
 
+// UnmarshalJSON allows `PricePerUnit` to be specified as a string.
+func (s *AIModelConfig) UnmarshalJSON(data []byte) error {
+	type Alias AIModelConfig
+	aux := &struct {
+		PricePerUnit interface{} `json:"price_per_unit"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Handle PricePerUnit
+	var price JSONRat
+	switch v := aux.PricePerUnit.(type) {
+	case string:
+		pricePerUnit, currency, err := common.ParsePricePerUnit(v)
+		if err != nil {
+			return fmt.Errorf("error parsing price_per_unit: %v", err)
+		}
+		price = JSONRat{pricePerUnit}
+		if s.Currency == "" {
+			s.Currency = currency
+		}
+	default:
+		pricePerUnitData, err := json.Marshal(aux.PricePerUnit)
+		if err != nil {
+			return fmt.Errorf("error marshaling price_per_unit: %v", err)
+		}
+		if err := price.UnmarshalJSON(pricePerUnitData); err != nil {
+			return fmt.Errorf("error unmarshaling price_per_unit: %v", err)
+		}
+	}
+	s.PricePerUnit = price
+
+	return nil
+}
+
+// ParseAIModelConfigs parses AI model configs from a file or a comma-separated list.
 func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 	var configs []AIModelConfig
 
+	// Handle config files.
 	info, err := os.Stat(config)
 	if err == nil && !info.IsDir() {
 		data, err := os.ReadFile(config)
@@ -99,6 +142,7 @@ func ParseAIModelConfigs(config string) ([]AIModelConfig, error) {
 		return configs, nil
 	}
 
+	// Handle comma-separated list of model configs.
 	models := strings.Split(config, ",")
 	for _, m := range models {
 		parts := strings.Split(m, ":")
