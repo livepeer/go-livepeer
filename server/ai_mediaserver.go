@@ -81,6 +81,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.StartLiveVideo())
 
 	return nil
 }
