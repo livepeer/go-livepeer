@@ -18,9 +18,17 @@ import (
 const CHANGEFEED = "_changes"
 
 type TrickleServerConfig struct {
-	BasePath   string
-	Mux        *http.ServeMux
+	// Base HTTP path for the server
+	BasePath string
+
+	// HTTP mux to use
+	Mux *http.ServeMux
+
+	// Whether to enable the changefeed (default false)
 	Changefeed bool
+
+	// Whether to auto-create channels on first publish (default false)
+	Autocreate bool
 }
 
 type Server struct {
@@ -29,6 +37,7 @@ type Server struct {
 
 	// for internal channels
 	changefeed  bool
+	autocreate  bool
 	internalPub *TrickleLocalPublisher
 }
 
@@ -75,6 +84,7 @@ func ConfigureServer(config TrickleServerConfig) *Server {
 	streamManager := &Server{
 		streams:    make(map[string]*Stream),
 		changefeed: config.Changefeed,
+		autocreate: config.Autocreate,
 	}
 
 	// set up changefeed
@@ -102,11 +112,11 @@ func (sm *Server) getStream(streamName string) (*Stream, bool) {
 	return stream, exists
 }
 
-func (sm *Server) getOrCreateStream(streamName, mimeType string) *Stream {
+func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *Stream {
 	sm.mutex.Lock()
 
 	stream, exists := sm.streams[streamName]
-	if !exists {
+	if !exists && (isLocal || sm.autocreate) {
 		stream = &Stream{
 			segments: make([]*Segment, maxSegmentsPerStream),
 			name:     streamName,
@@ -116,6 +126,11 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string) *Stream {
 		slog.Info("Creating stream", "stream", streamName)
 	}
 	sm.mutex.Unlock()
+
+	// didn't exist and wasn't autocreated
+	if stream == nil {
+		return nil
+	}
 
 	// update changefeed
 	if !exists && sm.changefeed {
@@ -185,7 +200,11 @@ func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (sm *Server) handlePost(w http.ResponseWriter, r *http.Request) {
-	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Content-Type"))
+	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Content-Type"), false)
+	if stream == nil {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
 	idx, err := strconv.Atoi(r.PathValue("idx"))
 	if err != nil {
 		http.Error(w, "Invalid idx", http.StatusBadRequest)
