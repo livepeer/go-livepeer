@@ -24,6 +24,8 @@ type JobStatus string
 
 type ActivateWorkerRequest struct {
 	WorkerIP string `json:"worker_ip"`
+	Pipeline string `json:"pipeline"`
+	Model    string `json:"model"`
 }
 
 const (
@@ -79,7 +81,7 @@ type Worker struct {
 type Job struct {
 	ID           string    `json:"id" db:"id"`
 	Orchestrator string    `json:"orchestrator" db:"orchestrator"`
-	WorkerID     string    `json:"workerID" db:"workerID"`
+	WorkerID     string    `json:"workerId" db:"workerId"`
 	Status       JobStatus `json:"status" db:"status"`
 	Pipeline     string    `json:"pipeline" db:"pipeline"`
 	Model        string    `json:"model" db:"model"`
@@ -154,10 +156,13 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 }
 
 // Worker methods
-func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP string) error {
+func (h *Hive) ActivateWorker(ctx context.Context, workerID, workerIP, pipeline, model string) error {
 	req := &ActivateWorkerRequest{
 		WorkerIP: workerIP,
+		Pipeline: pipeline,
+		Model:    model,
 	}
+
 	endpoint := fmt.Sprintf("/api/v1/workers/%v/activate", workerID)
 	err := h.sendRequest(ctx, http.MethodPatch, endpoint, req, nil)
 	if err != nil {

@@ -1021,9 +1021,18 @@ func (rtm *RemoteTranscoderManager) Manage(stream net.Transcoder_RegisterTransco
 		totalLoad, totalCapacity, liveTranscodersNum = rtm.totalLoadAndCapacity()
 	}
 
-	// ConnectWorker Hive
+	var pipeline, model string
+	for k, v := range capabilities.Constraints.PerCapability {
+		pipeline, _ = CapabilityToName(Capability(k))
+		for k1, _ := range v.Models {
+			model = k1
+		}
+	}
+
 	ctx := context.Background()
-	if err := rtm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from); err != nil {
+
+	// ConnectWorker Hive
+	if err := rtm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from, pipeline, model); err != nil {
 		glog.Errorf("Failed to activate worker=%s, err=%q", from, err)
 	}
 

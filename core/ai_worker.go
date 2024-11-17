@@ -118,7 +118,8 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 // Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
 func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hiveWorkerID string) {
 	from := common.GetConnectionAddr(stream.Context())
-	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities), hiveWorkerID)
+	caps := CapabilitiesFromNetCapabilities(capabilities)
+	aiworker := NewRemoteAIWorker(rwm, stream, caps, hiveWorkerID)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -131,8 +132,16 @@ func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 	rwm.liveAIWorkers[aiworker.stream] = aiworker
 	rwm.remoteAIWorkers = append(rwm.remoteAIWorkers, aiworker)
 
+	var pipeline, model string
+	for k, v := range capabilities.Constraints.PerCapability {
+		pipeline, _ = CapabilityToName(Capability(k))
+		for k1, _ := range v.Models {
+			model = k1
+		}
+	}
+
 	ctx := context.Background()
-	rwm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from)
+	rwm.hiveClient.ActivateWorker(ctx, hiveWorkerID, from, pipeline, model)
 
 	rwm.RWmutex.Unlock()
 
