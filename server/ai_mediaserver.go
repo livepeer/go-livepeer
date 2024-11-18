@@ -387,13 +387,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
-		remoteAddr := r.RemoteAddr
-		if remoteAddr == "" {
-			clog.Errorf(ctx, "remoteAddr is empty")
-			http.Error(w, "Could not find callback address", http.StatusBadRequest)
+		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		if err != nil {
+			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
+			http.Error(w, "Could not find callback host", http.StatusBadRequest)
 			return
 		}
-		ctx = clog.AddVal(ctx, "remote_addr", remoteAddr)
+		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
 
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
@@ -407,7 +407,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteAddr, streamName)
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
@@ -424,7 +424,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			QueryParams: queryParams,
 		})
 		if err != nil {
-			kickErr := kickInputConnection(remoteAddr, sourceID, sourceType)
+			kickErr := kickInputConnection(remoteHost, sourceID, sourceType)
 			if kickErr != nil {
 				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 			}
@@ -441,7 +441,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteAddr, streamName), ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
 			ssr.Close()
 		}()
 
@@ -458,6 +458,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		processAIRequest(ctx, params, req)
 	})
+}
+
+func getRemoteHost(remoteAddr string) (string, error) {
+	if remoteAddr == "" {
+		return "", errors.New("remoteAddr is empty")
+	}
+	split := strings.Split(remoteAddr, ":")
+	if len(split) < 1 {
+		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+	}
+	return split[0], nil
 }
 
 const mediaMTXControlPort = "9997"
