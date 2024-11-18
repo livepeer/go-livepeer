@@ -1,18 +1,23 @@
 dependencies:
-  - '**/go.mod'
-  - '**/go.sum'
-  - '**/requirements.txt'
+  - changed-files:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "**/requirements.txt"
 
 docker:
-  - 'docker/**'
+  - changed-files:
+      - "docker/**"
 
 github_actions:
-  - '.github/workflows/*.yml'
-  - '.github/workflows/*.yaml'
+  - changed-files:
+      - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
 
 go:
-  - '**/*.go'
+  - changed-files:
+      - "**/*.go"
 
 ai:
-  - 'ai/**'
-  - '**/ai_*.go'
+  - changed-files:
+      - "ai/**"
+      - "**/ai_*.go"
