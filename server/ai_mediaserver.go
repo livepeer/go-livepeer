@@ -80,7 +80,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
@@ -360,7 +360,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		streamName := r.FormValue("stream")
+		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
