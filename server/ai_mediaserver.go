@@ -387,6 +387,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
+		remoteAddr := r.RemoteAddr
+		if remoteAddr == "" {
+			clog.Errorf(ctx, "remoteAddr is empty")
+			http.Error(w, "Could not find callback address", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "remote_addr", remoteAddr)
+
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
 		if err != nil {
@@ -399,7 +407,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = "rtmp://localhost/" + streamName + "-out"
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteAddr, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
@@ -416,7 +424,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			QueryParams: queryParams,
 		})
 		if err != nil {
-			kickErr := kickInputConnection(sourceID, sourceType)
+			kickErr := kickInputConnection(remoteAddr, sourceID, sourceType)
 			if kickErr != nil {
 				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 			}
@@ -433,7 +441,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteAddr, streamName), ssr.Read)
 			ssr.Close()
 		}()
 
@@ -454,7 +462,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 const mediaMTXControlPort = "9997"
 
-func kickInputConnection(sourceID string, sourceType string) error {
+func kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string
 	switch sourceType {
 	case "webrtcSession":
@@ -465,7 +473,7 @@ func kickInputConnection(sourceID string, sourceType string) error {
 		return fmt.Errorf("invalid sourceType: %s", sourceType)
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/v3/%s/kick/%s", mediaMTXControlPort, apiPath, sourceID), "", nil)
+	resp, err := http.Post(fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), "", nil)
 	if err != nil {
 		return err
 	}
