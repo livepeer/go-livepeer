@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"log/slog"
 	"math"
 	"math/big"
 	"net/http"
@@ -25,7 +24,6 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -91,6 +89,7 @@ type aiRequestParams struct {
 	// For live video pipelines
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
+	stream        string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1047,26 +1046,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
-		startControlPublish(control)
+		startControlPublish(control, params)
 	}
 	return resp, nil
-}
-
-// TODO: Remove it and get requests from POST /stream/update
-func startControlPublish(control *url.URL) {
-	controlPublisher, err := trickle.NewTricklePublisher(control.String())
-	if err != nil {
-		slog.Info("error publishing trickle", "err", err)
-	}
-	go func() {
-		for {
-			time.Sleep(5 * time.Second)
-			fmt.Println("##### Publishing control message")
-			controlPublisher.Write(strings.NewReader(`{"type":"stop"}`))
-			//controlPublisher.Close()
-		}
-	}()
-
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {

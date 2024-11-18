@@ -81,7 +81,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
 }
@@ -444,12 +444,49 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			sessManager:   ls.AISessionManager,
 			segmentReader: ssr,
 			outputRTMPURL: outputURL,
+			stream:        streamName,
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
 			// TODO set model and initial parameters here if necessary (eg, prompt)
 		}
 		processAIRequest(ctx, params, req)
+	})
+}
+
+func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		// Get stream from path param
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		ls.LivepeerNode.LiveMu.RLock()
+		defer ls.LivepeerNode.LiveMu.RUnlock()
+		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		if !ok {
+			// Stream not found
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+		defer r.Body.Close()
+		params, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
+
+		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	})
 }
 

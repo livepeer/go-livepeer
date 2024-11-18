@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -82,4 +83,14 @@ func mediamtxSourceTypeToString(s string) (string, error) {
 	default:
 		return "", errors.New("unknown media source")
 	}
+}
+
+func startControlPublish(control *url.URL, params aiRequestParams) {
+	controlPub, err := trickle.NewTricklePublisher(control.String())
+	if err != nil {
+		slog.Info("error starting control publisher stream=%s err=%v", "err", params.stream, err)
+	}
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+	params.node.LivePipelines[params.stream] = &core.LivePipeline{ControlPub: controlPub}
 }
