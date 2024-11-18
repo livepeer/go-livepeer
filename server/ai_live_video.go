@@ -88,7 +88,7 @@ func mediamtxSourceTypeToString(s string) (string, error) {
 func startControlPublish(control *url.URL, params aiRequestParams) {
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		slog.Info("error starting control publisher stream=%s err=%v", "err", params.stream, err)
+		slog.Info("error starting control publisher", "stream", params.stream, "err", err)
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
