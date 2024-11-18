@@ -21,9 +21,10 @@ const (
 )
 
 type KafkaProducer struct {
-	writer *kafka.Writer
-	topic  string
-	events chan GatewayEvent
+	writer         *kafka.Writer
+	topic          string
+	events         chan GatewayEvent
+	gatewayAddress string
 }
 
 type GatewayEvent struct {
@@ -36,8 +37,8 @@ type GatewayEvent struct {
 
 var kafkaProducer *KafkaProducer
 
-func InitKafkaProducer(bootstrapServers, user, password, topic string) error {
-	producer, err := newKafkaProducer(bootstrapServers, user, password, topic)
+func InitKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress string) error {
+	producer, err := newKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress)
 	if err != nil {
 		return err
 	}
@@ -46,7 +47,7 @@ func InitKafkaProducer(bootstrapServers, user, password, topic string) error {
 	return nil
 }
 
-func newKafkaProducer(bootstrapServers, user, password, topic string) (*KafkaProducer, error) {
+func newKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress string) (*KafkaProducer, error) {
 	dialer := &kafka.Dialer{
 		Timeout: KafkaRequestTimeout,
 		SASLMechanism: plain.Mechanism{
@@ -67,9 +68,10 @@ func newKafkaProducer(bootstrapServers, user, password, topic string) (*KafkaPro
 	})
 
 	return &KafkaProducer{
-		writer: writer,
-		topic:  topic,
-		events: make(chan GatewayEvent, KafkaChannelSize),
+		writer:         writer,
+		topic:          topic,
+		events:         make(chan GatewayEvent, KafkaChannelSize),
+		gatewayAddress: gatewayAddress,
 	}, nil
 }
 
@@ -135,7 +137,7 @@ func SendQueueEventAsync(eventType string, data interface{}) {
 
 	event := GatewayEvent{
 		ID:        stringPtr(randomID),
-		Gateway:   stringPtr(""),
+		Gateway:   stringPtr(kafkaProducer.gatewayAddress),
 		Type:      &eventType,
 		Timestamp: stringPtr(fmt.Sprint(timestampMs)),
 		Data:      data,
@@ -144,7 +146,7 @@ func SendQueueEventAsync(eventType string, data interface{}) {
 	select {
 	case kafkaProducer.events <- event:
 	default:
-		glog.Warningf("kafka producer event queue is full, dropping event")
+		glog.Warningf("kafka producer event queue is full, dropping event %q", eventType)
 	}
 }
 
