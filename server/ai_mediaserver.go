@@ -535,7 +535,6 @@ func (ls *LivepeerServer) ObjectDetection() http.Handler {
 			node:          ls.LivepeerNode,
 			os:            drivers.NodeStorage.NewSession(requestID),
 			sessManager:   ls.AISessionManager,
-			segmentReader: ssr,
 		}
 
 		if !async {
