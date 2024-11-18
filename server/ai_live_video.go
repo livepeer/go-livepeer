@@ -89,6 +89,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		slog.Info("error starting control publisher", "stream", params.stream, "err", err)
+		return
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
