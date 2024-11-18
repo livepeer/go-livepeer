@@ -402,6 +402,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			outputURL = "rtmp://localhost/" + streamName + "-out"
 		}
 
+		fmt.Printf("##### Param rtmpOutput: %s\n", outputURL)
+
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
 		// use an `-out` suffix for the stream name.
