@@ -482,8 +482,8 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
 
+		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
 		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
