@@ -436,6 +436,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
 			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
 			ssr.Close()
+			ls.cleanupLive(streamName)
 		}()
 
 		params := aiRequestParams{
@@ -488,6 +489,12 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 	})
+}
+
+func (ls *LivepeerServer) cleanupLive(stream string) {
+	ls.LivepeerNode.LiveMu.Lock()
+	defer ls.LivepeerNode.LiveMu.Unlock()
+	delete(ls.LivepeerNode.LivePipelines, stream)
 }
 
 const mediaMTXControlPort = "9997"
