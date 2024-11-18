@@ -28,11 +28,11 @@ func NewLocalPublisher(sm *Server, channelName string, mimeType string) *Trickle
 }
 
 func (c *TrickleLocalPublisher) CreateChannel() {
-	c.server.getOrCreateStream(c.channelName, c.mimeType)
+	c.server.getOrCreateStream(c.channelName, c.mimeType, true)
 }
 
 func (c *TrickleLocalPublisher) Write(data io.Reader) error {
-	stream := c.server.getOrCreateStream(c.channelName, c.mimeType)
+	stream := c.server.getOrCreateStream(c.channelName, c.mimeType, true)
 	c.mu.Lock()
 	seq := c.seq
 	segment, exists := stream.getForWrite(seq)

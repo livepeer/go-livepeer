@@ -88,6 +88,7 @@ type aiRequestParams struct {
 
 	// For live video pipelines
 	segmentReader *media.SwitchableSegmentReader
+	outputRTMPURL string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
