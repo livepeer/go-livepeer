@@ -471,7 +471,10 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	return split[0], nil
 }
 
-const mediaMTXControlPort = "9997"
+const (
+	mediaMTXControlPort = "9997"
+	mediaMTXControlUser = "admin"
+)
 
 func kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string
@@ -484,9 +487,15 @@ func kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 		return fmt.Errorf("invalid sourceType: %s", sourceType)
 	}
 
-	resp, err := http.Post(fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), "", nil)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create kick request: %w", err)
+	}
+	// TODO add auth
+	req.SetBasicAuth(mediaMTXControlUser, "")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to kick connection: %w", err)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
