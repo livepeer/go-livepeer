@@ -207,7 +207,8 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 
 	resChan, ok := res.Results.(<-chan worker.LlmStreamChunk)
 	if !ok {
-		err = rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
+		ctxNonRoutine := context.Background()
+		err = rwm.hiveClient.CompleteJob(ctxNonRoutine, jobID, &hive.CompleteJobRequest{
 			TokensUsed: 0,
 			Status:     hive.JobStatusCompleted,
 		})
