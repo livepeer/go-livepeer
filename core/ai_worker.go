@@ -167,7 +167,7 @@ func NewRemoteAIWorkerFatalError(err error) error {
 
 // Process does actual AI job using remote worker from the pool
 func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string, pipeline string, modelID string, fname string, req AIJobRequestData) (*RemoteAIWorkerResult, error) {
-	worker, err := rwm.selectWorker(requestID, pipeline, modelID)
+	w, err := rwm.selectWorker(requestID, pipeline, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 	// create job
 	jobID := uuid.New().String()
 	err = rwm.hiveClient.CreateJob(ctx, jobID, &hive.CreateJobRequest{
-		WorkerID: worker.hiveWorkerID,
+		WorkerID: w.hiveWorkerID,
 		Pipeline: pipeline,
 		Model:    modelID,
 		Tokens:   0,
@@ -185,7 +185,7 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 		glog.Errorf("Error creating job=%s err=%q", jobID, err)
 	}
 
-	res, err := worker.Process(ctx, pipeline, modelID, fname, req)
+	res, err := w.Process(ctx, pipeline, modelID, fname, req)
 	if err != nil {
 		err := rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
 			Status:   hive.JobStatusFailed,
@@ -205,16 +205,41 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 		return rwm.Process(ctx, requestID, pipeline, modelID, fname, req)
 	}
 
-	err = rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
-		TokensUsed: 0,
-		Status:     hive.JobStatusCompleted,
-	})
+	resChan, ok := res.Results.(<-chan worker.LlmStreamChunk)
+	if !ok {
+		err = rwm.hiveClient.CompleteJob(ctx, jobID, &hive.CompleteJobRequest{
+			TokensUsed: 0,
+			Status:     hive.JobStatusCompleted,
+		})
 
-	if err != nil {
-		glog.Errorf("Error completing job=%s err=%q", jobID, err)
+		if err != nil {
+			glog.Errorf("Error completing job=%s err=%q", jobID, err)
+		}
+
+		rwm.completeAIRequest(requestID, pipeline, modelID)
+	} else {
+		go func() {
+			for {
+				_, ok := <-resChan
+				if !ok {
+					rwm.completeAIRequest(requestID, pipeline, modelID)
+
+					ctxRoutine := context.Background()
+					err = rwm.hiveClient.CompleteJob(ctxRoutine, jobID, &hive.CompleteJobRequest{
+						TokensUsed: 0,
+						Status:     hive.JobStatusCompleted,
+					})
+
+					if err != nil {
+						glog.Errorf("Error completing job=%s err=%q", jobID, err)
+					}
+
+					break
+				}
+			}
+		}()
 	}
 
-	rwm.completeAIRequest(requestID, pipeline, modelID)
 	return res, err
 }
 

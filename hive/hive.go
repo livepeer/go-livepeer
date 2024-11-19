@@ -104,7 +104,7 @@ type CreateJobRequest struct {
 type CompleteJobRequest struct {
 	TokensUsed float64   `json:"usage"`
 	Status     JobStatus `json:"status"`
-	ErrorMsg   string    `json:"error_msg,omitempty"`
+	ErrorMsg   string    `json:"errorMsg"`
 }
 
 // generateHMACSignature creates the HMAC signature for authentication

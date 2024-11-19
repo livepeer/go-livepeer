@@ -522,6 +522,10 @@ func (h *lphttp) AIResults() http.Handler {
 			resChan := make(chan worker.LlmStreamChunk, 100)
 			workerResult.Results = (<-chan worker.LlmStreamChunk)(resChan)
 
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+
 			defer r.Body.Close()
 			defer close(resChan)
 			//set a reasonable timeout to stop waiting for results
