@@ -612,7 +612,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		case core.BroadcasterNode:
 			nodeType = lpmon.Broadcaster
 			if *cfg.KafkaBootstrapServers != "" && *cfg.KafkaUsername != "" && *cfg.KafkaPassword != "" && *cfg.KafkaGatewayTopic != "" {
-				err := lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic, n.Eth.Account().Address.Hex())
+				var broadcasterEthAddress = ""
+				if cfg.EthAcctAddr != nil {
+					broadcasterEthAddress = *cfg.EthAcctAddr
+				}
+
+				err := lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic, broadcasterEthAddress)
 				if err != nil {
 					glog.Warning("error while initializing Kafka producer: %w", err)
 				}

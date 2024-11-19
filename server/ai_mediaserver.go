@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -80,7 +81,8 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
 }
@@ -359,7 +361,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		streamName := r.FormValue("stream")
+		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
@@ -443,6 +445,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
 			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
 			ssr.Close()
+			ls.cleanupLive(streamName)
 		}()
 
 		params := aiRequestParams{
@@ -451,6 +454,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			sessManager:   ls.AISessionManager,
 			segmentReader: ssr,
 			outputRTMPURL: outputURL,
+			stream:        streamName,
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -469,6 +473,55 @@ func getRemoteHost(remoteAddr string) (string, error) {
 		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
 	}
 	return split[0], nil
+}
+
+func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		// Get stream from path param
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		ls.LivepeerNode.LiveMu.RLock()
+		defer ls.LivepeerNode.LiveMu.RUnlock()
+		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		if !ok {
+			// Stream not found
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+		defer r.Body.Close()
+		params, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
+		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+func (ls *LivepeerServer) cleanupLive(stream string) {
+	ls.LivepeerNode.LiveMu.Lock()
+	pub, ok := ls.LivepeerNode.LivePipelines[stream]
+	delete(ls.LivepeerNode.LivePipelines, stream)
+	ls.LivepeerNode.LiveMu.Unlock()
+
+	if ok && pub != nil && pub.ControlPub != nil {
+		if err := pub.ControlPub.Close(); err != nil {
+			slog.Info("Error closing trickle publisher", "err", err)
+		}
+	}
 }
 
 const (
