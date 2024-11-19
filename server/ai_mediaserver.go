@@ -424,7 +424,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			QueryParams: queryParams,
 		})
 		if err != nil {
-			kickErr := kickInputConnection(remoteHost, sourceID, sourceType)
+			kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
 			if kickErr != nil {
 				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 			}
@@ -476,7 +476,7 @@ const (
 	mediaMTXControlUser = "admin"
 )
 
-func kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
+func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string
 	switch sourceType {
 	case "webrtcSession":
@@ -491,8 +491,7 @@ func kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create kick request: %w", err)
 	}
-	// TODO add auth
-	req.SetBasicAuth(mediaMTXControlUser, "")
+	req.SetBasicAuth(mediaMTXControlUser, ls.mediaMTXApiPassword)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to kick connection: %w", err)

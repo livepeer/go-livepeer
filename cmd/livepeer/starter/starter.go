@@ -165,6 +165,7 @@ type LivepeerConfig struct {
 	KafkaUsername           *string
 	KafkaPassword           *string
 	KafkaGatewayTopic       *string
+	MediaMTXApiPassword     *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -1544,6 +1545,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		default:
 			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
+	}
+	if cfg.MediaMTXApiPassword != nil {
+		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
 	}
 
 	//Create Livepeer Node

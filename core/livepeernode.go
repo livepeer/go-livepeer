@@ -147,6 +147,8 @@ type LivepeerNode struct {
 	priceInfoForCaps map[string]CapabilityPrices
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+
+	MediaMTXApiPassword string
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
