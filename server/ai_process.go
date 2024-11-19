@@ -26,7 +26,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
-	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 const processingRetryTimeout = 2 * time.Second
@@ -1330,40 +1329,13 @@ func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AI
 		return nil, err
 	}
 
-	video_rdr, err := req.Video.Reader()
+	mediaFormat, err := common.GetInputVideoInfo(req.Video)
 	if err != nil {
-		return nil, err
+		monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
 	}
-	defer video_rdr.Close() // Don't forget to close the video after you're done with it
-
-	probeData, err := ffmpeg_go.ProbeReader(video_rdr)
-	if err != nil {
-		return nil, err
-	}
-
-	var probeDataMap map[string]interface{}
-	err = json.Unmarshal([]byte(probeData), &probeDataMap)
-	if err != nil {
-		return nil, err
-	}
-
-	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
-	width := streamData["width"].(float64)
-	height := streamData["height"].(float64)
-	frameRate := streamData["r_frame_rate"].(string)
-
-	// You can parse the frame rate string to extract the numerator and denominator
-	numerator, denominator := 0, 0
-	_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate the number of frames
-	numberOfFrames := numerator / denominator
 
 	// Calculate the output pixels using the video profile
-	outPixels := int64(width) * int64(height) * int64(numberOfFrames)
+	outPixels := int64(mediaFormat.Width) * int64(mediaFormat.Height) * int64(mediaFormat.FPS) * mediaFormat.DurSecs
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
 	if err != nil {
 		if monitor.Enabled {

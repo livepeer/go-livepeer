@@ -27,7 +27,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
-	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
@@ -342,41 +341,13 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return orch.ObjectDetection(ctx, requestID, v)
 		}
 
-		videoRdr, err := v.Video.Reader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		defer videoRdr.Close() // Don't forget to close the video after you're done with it
-
-		probeData, err := ffmpeg_go.ProbeReader(videoRdr)
+		mediaFormat, err := common.GetInputVideoInfo(v.Video)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 		}
-
-		var probeDataMap map[string]interface{}
-		err = json.Unmarshal([]byte(probeData), &probeDataMap)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
-		width := streamData["width"].(float64)
-		height := streamData["height"].(float64)
-		frameRate := streamData["r_frame_rate"].(string)
-
-		// You can parse the frame rate string to extract the numerator and denominator
-		numerator, denominator := 0, 0
-		_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-		}
-
-		// Calculate the number of frames
-		numberOfFrames := numerator / denominator
 
 		// Calculate the output pixels using the video profile
-		outPixels = int64(width) * int64(height) * int64(numberOfFrames)
+		outPixels = int64(mediaFormat.Width) * int64(mediaFormat.Height) * int64(mediaFormat.FPS) * mediaFormat.DurSecs
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
