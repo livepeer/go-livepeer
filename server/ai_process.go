@@ -1457,7 +1457,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
-		params.sessManager.Remove(ctx, sess)
+		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
 
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
