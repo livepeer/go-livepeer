@@ -89,6 +89,7 @@ type aiRequestParams struct {
 	// For live video pipelines
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
+	stream        string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1038,9 +1039,14 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("sub url %w", err)
 		}
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
+		control, err := appendHostname(resp.JSON200.ControlUrl)
+		if err != nil {
+			return nil, fmt.Errorf("control pub url - %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
+		startControlPublish(control, params)
 	}
 	return resp, nil
 }
