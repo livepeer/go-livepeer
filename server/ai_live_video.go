@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
@@ -14,20 +16,30 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-func startTricklePublish(url *url.URL, params aiRequestParams) {
+func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) {
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		slog.Info("error publishing trickle", "err", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	paymentProcessInterval := 1 * time.Second
+	slog.Info("### Starting live payment processor", "interval", paymentProcessInterval)
+	paymentProcessor := NewLivePaymentProcessor(ctx, sess, paymentProcessInterval, 5)
+
 	params.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
 				slog.Info("Error closing trickle publisher", "err", err)
 			}
+			slog.Info("#### Closing trickle publisher", "url", url)
+			cancel()
 			return
 		}
 		go func() {
+			reader := paymentProcessor.process(reader)
+
 			// TODO this blocks! very bad!
 			if err := publisher.Write(reader); err != nil {
 				slog.Info("Error writing to trickle publisher", "err", err)

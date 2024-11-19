@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"math/big"
 	"math/rand"
@@ -1577,6 +1578,7 @@ func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
 		return err
 	}
 	if shouldRefresh {
+		slog.Info("$$$$ Refreshing session")
 		return refreshSession(ctx, sess)
 	}
 	return nil
