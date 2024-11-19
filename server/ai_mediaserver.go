@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -493,8 +494,15 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 
 func (ls *LivepeerServer) cleanupLive(stream string) {
 	ls.LivepeerNode.LiveMu.Lock()
-	defer ls.LivepeerNode.LiveMu.Unlock()
+	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
+	ls.LivepeerNode.LiveMu.Unlock()
+
+	if ok && pub != nil && pub.ControlPub != nil {
+		if err := pub.ControlPub.Close(); err != nil {
+			slog.Info("Error closing trickle publisher", "err", err)
+		}
+	}
 }
 
 const mediaMTXControlPort = "9997"
