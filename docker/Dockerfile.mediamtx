@@ -5,5 +5,8 @@ RUN apt install -y curl
 
 RUN curl -L https://github.com/bluenviron/mediamtx/releases/download/v1.9.3/mediamtx_v1.9.3_linux_amd64.tar.gz -o /mediamtx.tar.gz
 RUN tar xzvf /mediamtx.tar.gz
+RUN rm /mediamtx.tar.gz
+
+COPY docker/mediamtx.yml /mediamtx.yml
 
 ENTRYPOINT ["/mediamtx"]
