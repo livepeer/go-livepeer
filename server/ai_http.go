@@ -94,38 +94,34 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		// handle initial payment, the rest of the payments are done separately from the stream processing
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+		sender := getPaymentSender(payment)
+		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		var (
 			mid        = string(core.RandomManifestID())
 			pubUrl     = TrickleHTTPPath + mid
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 		)
-		orch := h.orchestrator
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		payment, err := getPayment(r.Header.Get(paymentHeader))
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusPaymentRequired)
-			return
-		}
-
-		sender := getPaymentSender(payment)
-
-		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusForbidden)
-			return
-		}
-
-		// Known limitation:
-		// This call will set a fixed price for all requests in a session identified by a manifestID.
-		// Since all requests for a capability + modelID are treated as "session" with a single manifestID, all
-		// requests for a capability + modelID will get the same fixed price for as long as the orch is running
-		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 
 		jsonData, err := json.Marshal(
 			&worker.LiveVideoToVideoResponse{
@@ -172,7 +168,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 		paymentProcessor := NewLivePaymentProcessor(context.Background(), 1*time.Second, f)
 
-		// Subscribe to the publishUrl for payments monitoring
+		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
@@ -181,10 +177,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-
-				//reader := segment.Reader
 				reader := paymentProcessor.process(segment.Reader)
-				// We can do something with the segment data here
 				io.Copy(io.Discard, reader)
 			}
 		}()

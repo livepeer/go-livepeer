@@ -1052,7 +1052,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, fmt.Errorf("control pub url - %w", err)
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
-		// TODO: Improve this
+		// TODO: Improve this to pass mid from orch
 		pubSplit := strings.Split(pub.Path, "/")
 		mid := pubSplit[len(pubSplit)-1]
 		startTricklePublish(pub, params, sess, mid)
