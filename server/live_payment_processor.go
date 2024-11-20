@@ -135,6 +135,8 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 
 	resReader := io.TeeReader(reader, pipeWriter)
 	go func() {
+		// read the segment into the buffer, because the direct use of the reader causes Broken pipe
+		// it's probably related to different pace of reading by trickle and ffmpeg.GetCodecInfo()
 		defer pipeReader.Close()
 		segData, err := io.ReadAll(pipeReader)
 		if err != nil {
