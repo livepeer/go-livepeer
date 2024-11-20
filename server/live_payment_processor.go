@@ -39,6 +39,7 @@ func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration,
 		processInterval:    processInterval,
 		segCh:              make(chan *segment, 1),
 		processSegmentFunc: processSegmentFunc,
+		lastProcessedAt:    time.Now(),
 	}
 	pp.start(ctx)
 	return pp
@@ -65,9 +66,6 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	}
 
 	lastProcessedAt := p.lastProcessedAt
-	if lastProcessedAt.IsZero() {
-		lastProcessedAt = seg.timestamp.Add(-p.processInterval)
-	}
 
 	info, err := probeSegment(seg)
 	if err != nil {
@@ -120,7 +118,7 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 	p.lastProcessedMu.RLock()
 	defer p.lastProcessedMu.RUnlock()
-	if !p.lastProcessedAt.IsZero() && p.lastProcessedAt.Add(p.processInterval).After(timestamp) {
+	if p.lastProcessedAt.Add(p.processInterval).After(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
 		slog.Info("##### Skipping payment processing", "lastProcessedAt", p.lastProcessedAt, "timestamp", timestamp)
 		return true
