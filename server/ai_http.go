@@ -155,12 +155,20 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 		slog.Info("##### PriceInfo", "priceInfo", priceInfo)
 		f := func(inPixels int64) error {
-			return paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+			err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
 				sender:    sender,
 				inPixels:  inPixels,
 				priceInfo: priceInfo,
 				sessionID: mid,
 			})
+			if err != nil {
+				slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+				// TODO: Check if we do not need to any other cleanup
+				pubCh.Close()
+				subCh.Close()
+				controlPubCh.Close()
+			}
+			return err
 		}
 		paymentProcessor := NewLivePaymentProcessor(context.Background(), 1*time.Second, f)
 
