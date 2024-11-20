@@ -109,9 +109,7 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 
 	go func() {
 		defer pipeWriter.Close()
-		if _, err := io.Copy(pipeWriter, bytes.NewReader(seg.segData)); err != nil {
-			slog.Error("failed to copy data to pipe", "err", err)
-		}
+		io.Copy(pipeWriter, bytes.NewReader(seg.segData))
 	}()
 
 	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
