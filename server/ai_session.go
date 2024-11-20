@@ -126,7 +126,7 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	delete(pool.sessMap, sess.Transcoder())
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
-	// Magic number for timestamp
+	// Magic number for now
 	penalty := 3
 	// If this method is called assume that the orch should be suspended
 	// as well
@@ -280,13 +280,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	var warmSessions []*BroadcastSession
 	var coldSessions []*BroadcastSession
 	for _, sess := range sessions {
-		// If the constraints are missing for this capability shouldSkip this session
+		// If the constraints are missing for this capability skip this session
 		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
 		if !ok {
 			continue
 		}
 
-		// If the constraint for the modelID are missing shouldSkip this session
+		// If the constraint for the modelID are missing skip this session
 		modelConstraint, ok := constraints.Models[sel.modelID]
 		if !ok {
 			continue

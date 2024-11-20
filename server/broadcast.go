@@ -479,12 +479,12 @@ func (sp *SessionPool) completeSession(sess *BroadcastSession) {
 			sess.SegsInFlight = nil
 		} else if len(sess.SegsInFlight) > 1 {
 			sess.SegsInFlight = sess.SegsInFlight[1:]
-			// shouldSkip returning this session back to the selector
+			// skip returning this session back to the selector
 			// we will return it later in transcodeSegment() once all in-flight segs downloaded
 			return
 		}
 
-		// If the latency score meets the selector threshold, we shouldSkip giving the session back to the selector
+		// If the latency score meets the selector threshold, we skip giving the session back to the selector
 		// because we consider it for re-use in selectSession()
 		if sess.LatencyScore > 0 && sess.LatencyScore <= SELECTOR_LATENCY_SCORE_THRESHOLD {
 			return

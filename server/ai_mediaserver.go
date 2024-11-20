@@ -408,7 +408,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// in case we want to push outputs back into mediamtx -
 		// use an `-out` suffix for the stream name.
 		if strings.HasSuffix(streamName, "-out") {
-			// shouldSkip for now; we don't want to re-publish our own outputs
+			// skip for now; we don't want to re-publish our own outputs
 			return
 		}
 
