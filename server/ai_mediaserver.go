@@ -389,6 +389,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
+		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		if err != nil {
+			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
+			http.Error(w, "Could not find callback host", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
+
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
 		if err != nil {
@@ -401,7 +409,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = "rtmp://localhost/" + streamName + "-out"
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
@@ -418,7 +426,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			QueryParams: queryParams,
 		})
 		if err != nil {
-			kickErr := kickInputConnection(sourceID, sourceType)
+			kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
 			if kickErr != nil {
 				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 			}
@@ -435,7 +443,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()
@@ -454,6 +462,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		processAIRequest(ctx, params, req)
 	})
+}
+
+func getRemoteHost(remoteAddr string) (string, error) {
+	if remoteAddr == "" {
+		return "", errors.New("remoteAddr is empty")
+	}
+	split := strings.Split(remoteAddr, ":")
+	if len(split) < 1 {
+		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+	}
+	return split[0], nil
 }
 
 func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
@@ -505,26 +524,7 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 	}
 }
 
-const mediaMTXControlPort = "9997"
-
-func kickInputConnection(sourceID string, sourceType string) error {
-	var apiPath string
-	switch sourceType {
-	case "webrtcSession":
-		apiPath = "webrtcsessions"
-	case "rtmpConn":
-		apiPath = "rtmpconns"
-	default:
-		return fmt.Errorf("invalid sourceType: %s", sourceType)
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/v3/%s/kick/%s", mediaMTXControlPort, apiPath, sourceID), "", nil)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
-	}
-	return nil
-}
+const (
+	mediaMTXControlPort = "9997"
+	mediaMTXControlUser = "admin"
+)
