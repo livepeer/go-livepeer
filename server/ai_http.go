@@ -337,15 +337,14 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		pipeline = "object-detection"
 		cap = core.Capability_ObjectDetection
 		modelID = *v.ModelId
-		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.ObjectDetection(ctx, requestID, v)
-		}
-
 		mediaFormat, err := common.GetInputVideoInfo(v.Video)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 		}
 
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ObjectDetection(ctx, requestID, v)
+		}
 		// Calculate the output pixels using the video profile
 		outPixels = int64(mediaFormat.Width) * int64(mediaFormat.Height) * int64(mediaFormat.FPS) * mediaFormat.DurSecs
 	default:
