@@ -1013,6 +1013,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
+	// Send request to orchestrator 
 	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -68,7 +69,9 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
-	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
+	// lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -86,8 +89,77 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		
+		// Get the request body as bytes to check if it is a live-video-to-video request
+		reqBytes, err := json.Marshal(req)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-		handleAIRequest(ctx, w, r, orch, req)
+		var liveVideoToVideoReq worker.GenLiveVideoToVideoJSONRequestBody
+		if err := json.Unmarshal(reqBytes, &liveVideoToVideoReq); err == nil {
+			mid, liveVideoToVideoResp, err := h.setupLiveVideoToVideo(ctx)
+			if err != nil {
+				respondWithError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			appendHostname := func(urlPath string) (*url.URL, error) {
+				if urlPath == "" {
+					return nil, fmt.Errorf("invalid url")
+				}
+				pu, err := url.Parse(urlPath)
+				if err != nil {
+					return nil, err
+				}
+				if pu.Hostname() != "" {
+					// url has a hostname already so use it
+					return pu, nil
+				}
+				// no hostname, so append one
+				
+				u := orch.ServiceURI().String() + urlPath
+				return url.Parse(u)
+				
+				// host := r.Host
+				// if host == "" {
+				// 	return nil, fmt.Errorf("could not determine host from request")
+				// }
+				// u := "https://" + host + urlPath
+				// return url.Parse(u)
+			}
+
+			// Reverse the subscribe and publish urls intentionally
+			if url, err := appendHostname(liveVideoToVideoResp.PublishUrl); err == nil {
+				liveVideoToVideoReq.PublishUrl = url.String()
+			}
+			if url, err := appendHostname(liveVideoToVideoResp.SubscribeUrl); err == nil {
+				liveVideoToVideoReq.SubscribeUrl = url.String()
+			}
+			if url, err := appendHostname(liveVideoToVideoResp.ControlUrl); err == nil {
+				controlUrlStr := url.String()
+				liveVideoToVideoReq.ControlUrl = &controlUrlStr
+			}
+			
+			// Subscribe to the publishUrl for payments monitoring
+			go func() {
+				sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+				for {
+					segment, err := sub.Read()
+					if err != nil {
+						clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+						return
+					}
+					// We can do something with the segment data here
+					io.Copy(io.Discard, segment.Reader)
+				}
+			}()
+
+			handleAIRequest(ctx, w, r, orch, liveVideoToVideoReq)
+		} else {
+			// non-live-video-to-video request
+			handleAIRequest(ctx, w, r, orch, req)
+		}
 	})
 }
 
@@ -105,12 +177,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 		)
-		jsonData, err := json.Marshal(
-			&worker.LiveVideoToVideoResponse{
-				PublishUrl:   pubUrl,
-				SubscribeUrl: subUrl,
-				ControlUrl:   controlUrl,
-			})
+		resp := &worker.LiveVideoToVideoResponse{
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
+			ControlUrl:   controlUrl,
+		}
+
+		jsonData, err := json.Marshal(resp)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -145,6 +218,62 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	})
 }
 
+func (h *lphttp) setupLiveVideoToVideo(ctx context.Context) (string, *worker.LiveVideoToVideoResponse, error) {
+	mid := string(core.RandomManifestID())
+	pubUrl := TrickleHTTPPath + mid
+	subUrl := pubUrl + "-out"
+	controlUrl := pubUrl + "-control"
+	liveVideoToVideoResp := &worker.LiveVideoToVideoResponse{
+		PublishUrl:   pubUrl,
+		SubscribeUrl: subUrl,
+		ControlUrl:   controlUrl,
+	}
+
+	// Precreate the channels to avoid race conditions
+	// TODO get the expected mime type from the request
+	pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+	pubCh.CreateChannel()
+	subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+	subCh.CreateChannel()
+	controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+	controlPubCh.CreateChannel()
+
+	appendHostname := func(urlPath string) (*url.URL, error) {
+		if urlPath == "" {
+			return nil, fmt.Errorf("invalid url")
+		}
+		pu, err := url.Parse(urlPath)
+		if err != nil {
+			return nil, err
+		}
+		if pu.Hostname() != "" {
+			// url has a hostname already so use it
+			return pu, nil
+		}
+		// no hostname, so append one
+		
+		u := h.orchestrator.ServiceURI().String() + urlPath
+		return url.Parse(u)
+		
+		// host := r.Host
+		// if host == "" {
+		// 	return nil, fmt.Errorf("could not determine host from request")
+		// }
+		// u := "https://" + host + urlPath
+		// return url.Parse(u)
+	}
+	if url, err := appendHostname(liveVideoToVideoResp.PublishUrl); err == nil {
+		liveVideoToVideoResp.PublishUrl = url.String()
+	}
+
+	if url, err := appendHostname(liveVideoToVideoResp.SubscribeUrl); err == nil {
+		liveVideoToVideoResp.SubscribeUrl = url.String()
+	}
+
+
+	return mid, liveVideoToVideoResp, nil
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -153,11 +282,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 	sender := getPaymentSender(payment)
 
-	_, ctx, err = verifySegCreds(ctx, orch, r.Header.Get(segmentHeader), sender)
-	if err != nil {
-		respondWithError(w, err.Error(), http.StatusForbidden)
-		return
-	}
+	//TODO: disabled for now until we have sessions/payments in live-video-to-video
+	//_, ctx, err = verifySegCreds(ctx, orch, r.Header.Get(segmentHeader), sender)
+	//if err != nil {
+	//	respondWithError(w, err.Error(), http.StatusForbidden)
+	//	return
+	//}
 
 	requestID := string(core.RandomManifestID())
 
@@ -336,6 +466,17 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// TTS pricing is typically in characters, including punctuation.
 		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
+	case worker.GenLiveVideoToVideoJSONRequestBody:
+		pipeline = "live-video-to-video"
+		cap = core.Capability_LiveVideoToVideo
+		modelID = *v.ModelId
+
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.LiveVideoToVideo(ctx, requestID, v)
+		}
+
+		outPixels = int64(1000)
+	
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
