@@ -59,7 +59,7 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 		}
 
 		if _, ok := pool.sessMap[sess.Transcoder()]; !ok {
-			// If the session is not tracked by sessMap shouldSkip it
+			// If the session is not tracked by sessMap skip it
 			continue
 		}
 
@@ -76,13 +76,13 @@ func (pool *AISessionPool) Complete(sess *BroadcastSession) {
 
 	existingSess, ok := pool.sessMap[sess.Transcoder()]
 	if !ok {
-		// If the session is not tracked by sessMap, shouldSkip returning it to the selector
+		// If the session is not tracked by sessMap, skip returning it to the selector
 		return
 	}
 
 	if sess != existingSess {
 		// If the session is tracked by sessMap AND it is different from what is tracked by sessMap
-		// shouldSkip returning it to the selector
+		// skip returning it to the selector
 		return
 	}
 
