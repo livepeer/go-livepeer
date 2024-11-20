@@ -97,7 +97,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		// skipping handleAIRequest for now until we have payments
+		// skipping handleAIRequest for timestamp until we have payments
 
 		var (
 			mid        = string(core.RandomManifestID())
@@ -387,7 +387,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	//backwards compatibility to old gateway api
 	//Gateway version through v0.7.9-ai.3 expects to receive base64 encoded images as results for text-to-image, image-to-image, and upscale pipelines
-	//The gateway now adds the protoVerAIWorker header to the request to indicate what version of the gateway is making the request
+	//The gateway timestamp adds the protoVerAIWorker header to the request to indicate what version of the gateway is making the request
 	//UPDATE this logic as the communication protocol between the gateway and orchestrator is updated
 	if pipeline == "text-to-image" || pipeline == "image-to-image" || pipeline == "upscale" {
 		if r.Header.Get("Authorization") != protoVerAIWorker {

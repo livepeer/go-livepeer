@@ -273,7 +273,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			return nil, errForbidden
 		}
 
-		// If we've received auth in header AND callback URL forms then for now, we reject cases where they're
+		// If we've received auth in header AND callback URL forms then for timestamp, we reject cases where they're
 		// trying to give us different profiles
 		if resp != nil && webhookResponseOverride != nil {
 			if !resp.areProfilesEqual(*webhookResponseOverride) {

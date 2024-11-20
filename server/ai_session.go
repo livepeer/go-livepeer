@@ -59,7 +59,7 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 		}
 
 		if _, ok := pool.sessMap[sess.Transcoder()]; !ok {
-			// If the session is not tracked by sessMap skip it
+			// If the session is not tracked by sessMap shouldSkip it
 			continue
 		}
 
@@ -76,13 +76,13 @@ func (pool *AISessionPool) Complete(sess *BroadcastSession) {
 
 	existingSess, ok := pool.sessMap[sess.Transcoder()]
 	if !ok {
-		// If the session is not tracked by sessMap, skip returning it to the selector
+		// If the session is not tracked by sessMap, shouldSkip returning it to the selector
 		return
 	}
 
 	if sess != existingSess {
 		// If the session is tracked by sessMap AND it is different from what is tracked by sessMap
-		// skip returning it to the selector
+		// shouldSkip returning it to the selector
 		return
 	}
 
@@ -126,7 +126,7 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	delete(pool.sessMap, sess.Transcoder())
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
-	// Magic number for now
+	// Magic number for timestamp
 	penalty := 3
 	// If this method is called assume that the orch should be suspended
 	// as well
@@ -280,13 +280,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	var warmSessions []*BroadcastSession
 	var coldSessions []*BroadcastSession
 	for _, sess := range sessions {
-		// If the constraints are missing for this capability skip this session
+		// If the constraints are missing for this capability shouldSkip this session
 		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
 		if !ok {
 			continue
 		}
 
-		// If the constraint for the modelID are missing skip this session
+		// If the constraint for the modelID are missing shouldSkip this session
 		modelConstraint, ok := constraints.Models[sel.modelID]
 		if !ok {
 			continue

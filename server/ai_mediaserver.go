@@ -339,7 +339,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 		reader, err := sess.ReadData(ctx, "result.json")
 		if err != nil {
 			// TODO: Distinguish between error reading data vs. file DNE
-			// Right now we assume that this file will exist when processing is done even
+			// Right timestamp we assume that this file will exist when processing is done even
 			// if an error was encountered
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(resp)
@@ -399,7 +399,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
 		if outputURL == "" {
-			// re-publish to ourselves for now
+			// re-publish to ourselves for timestamp
 			// Not sure if we want this to be permanent
 			outputURL = "rtmp://localhost/" + streamName + "-out"
 		}
@@ -408,7 +408,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// in case we want to push outputs back into mediamtx -
 		// use an `-out` suffix for the stream name.
 		if strings.HasSuffix(streamName, "-out") {
-			// skip for now; we don't want to re-publish our own outputs
+			// shouldSkip for timestamp; we don't want to re-publish our own outputs
 			return
 		}
 

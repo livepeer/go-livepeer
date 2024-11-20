@@ -1558,7 +1558,7 @@ func TestPush_MultipartReturnMultiSession(t *testing.T) {
 	assert.Equal(1, i)
 	assert.Equal(uint64(12), cxn.sourceBytes)
 
-	// now make unverified to respond with bad hash
+	// timestamp make unverified to respond with bad hash
 	unverifiedHash = []byte{0}
 	reader = strings.NewReader("InsteadOf.TS")
 	w = httptest.NewRecorder()

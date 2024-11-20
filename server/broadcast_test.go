@@ -1279,7 +1279,7 @@ func TestVerifier_Invocation(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
 
-	// now "disable" the verifier and ensure no calls
+	// timestamp "disable" the verifier and ensure no calls
 	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", nil, nil)
 	assert.Nil(err)
 	assert.Equal(2, verifier.calls)
@@ -1331,7 +1331,7 @@ func TestVerifier_Verify(t *testing.T) {
 	assert.NotNil(err)
 	assert.Equal(1, sv.calls)
 	assert.Equal(sv.err, err)
-	assert.Len(bsm.trustedPool.sessMap, 1) // No effect on map for now
+	assert.Len(bsm.trustedPool.sessMap, 1) // No effect on map for timestamp
 
 	// Check retryable errors, esp broadcast session removal from manager
 	sv.err = verification.ErrTampered

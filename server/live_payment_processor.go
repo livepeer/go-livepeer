@@ -1,9 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"log/slog"
@@ -27,8 +27,9 @@ type LivePaymentProcessor struct {
 }
 
 type segment struct {
-	reader *os.File
-	now    time.Time
+	reader    *os.File
+	timestamp time.Time
+	segData   []byte
 }
 
 func NewLivePaymentProcessor(ctx context.Context, session *AISession, processInterval time.Duration, intervalsToPayUpfront int64) *LivePaymentProcessor {
@@ -59,40 +60,31 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 }
 
 func (p *LivePaymentProcessor) processSegment(seg *segment) {
-	uuid := core.RandomManifestID()
-	defer seg.reader.Close()
+	//defer seg.reader.Close()
+	//defer io.Copy(io.Discard, seg.reader)
 
-	if !p.worthProcessing(seg.now) {
-		slog.Info("### NOT WORTH, CLosing")
-		io.Copy(io.Discard, seg.reader)
-		slog.Info("### Closed")
+	if p.shouldSkip(seg.timestamp) {
+		//io.Copy(io.Discard, seg.reader)
 		return
 	}
 
 	lastProcessedAt := p.lastProcessedAt
 	if lastProcessedAt.IsZero() {
-		lastProcessedAt = seg.now.Add(-p.processInterval)
+		lastProcessedAt = seg.timestamp.Add(-p.processInterval)
 	}
 
-	slog.Info("#### Publish 0", "uuid", uuid)
-	fname := fmt.Sprintf("pipe:%d", seg.reader.Fd())
-	status, info, err := ffmpeg.GetCodecInfo(fname)
+	info, err := probeSegment(seg)
 	if err != nil {
 		slog.Error("Error probing segment", "err", err)
 		return
 	}
-	if status != ffmpeg.CodecStatusOk {
-		slog.Error("Invalid CodecStatus while probing segment", "status", status)
-		return
-	}
-	io.Copy(io.Discard, seg.reader)
-	slog.Info("Probed segment", "info", info, "uuid", uuid)
+
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-	slog.Info("###### PUBLISH 1", "pixelsPerSec", pixelsPerSec, "uuid", uuid)
-	secSinceLastProcessed := seg.now.Sub(lastProcessedAt).Seconds()
-	slog.Info("###### PUBLISH 2", "secSinceLastProcessed", secSinceLastProcessed, "lastProcessedAt", lastProcessedAt, "now", seg.now, "uuid", uuid)
+	slog.Info("###### PUBLISH 1", "pixelsPerSec", pixelsPerSec)
+	secSinceLastProcessed := seg.timestamp.Sub(lastProcessedAt).Seconds()
+	slog.Info("###### PUBLISH 2", "secSinceLastProcessed", secSinceLastProcessed, "lastProcessedAt", lastProcessedAt, "timestamp", seg.timestamp)
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	slog.Info("###### PUBLISH 3", "pixelsSinceLastProcessed", int64(pixelsSinceLastProcessed), "uuid", uuid)
+	slog.Info("###### PUBLISH 3", "pixelsSinceLastProcessed", int64(pixelsSinceLastProcessed))
 
 	err = p.sender.SendPayment(context.Background(), &SegmentInfoSender{
 		sess:      p.sess.BroadcastSession,
@@ -105,28 +97,55 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	}
 	p.lastProcessedMu.Lock()
 	defer p.lastProcessedMu.Unlock()
-	p.lastProcessedAt = seg.now
-	slog.Info("###### PUBLISH 4", "lastProcessedAt", p.lastProcessedAt, "uuid", uuid)
+	p.lastProcessedAt = seg.timestamp
+	slog.Info("###### PUBLISH 4", "lastProcessedAt", p.lastProcessedAt)
 }
 
-func (p *LivePaymentProcessor) worthProcessing(timestamp time.Time) bool {
+func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		return ffmpeg.MediaFormatInfo{}, err
+	}
+
+	go func() {
+		defer pipeWriter.Close()
+		if _, err := io.Copy(pipeWriter, bytes.NewReader(seg.segData)); err != nil {
+			slog.Error("failed to copy data to pipe", "err", err)
+		}
+	}()
+
+	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
+	status, info, err := ffmpeg.GetCodecInfo(fname)
+	if err != nil {
+		return ffmpeg.MediaFormatInfo{}, err
+	}
+	if status != ffmpeg.CodecStatusOk {
+		slog.Error("Invalid CodecStatus while probing segment", "status", status)
+		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
+	}
+	slog.Info("Probed segment", "info", info)
+	return info, nil
+}
+
+func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 	p.lastProcessedMu.RLock()
 	defer p.lastProcessedMu.RUnlock()
 	if !p.lastProcessedAt.IsZero() && p.lastProcessedAt.Add(p.processInterval).After(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
-		slog.Info("##### Skipping payment processing", "lastProcessedAt", p.lastProcessedAt, "now", timestamp)
-		return false
+		slog.Info("##### Skipping payment processing", "lastProcessedAt", p.lastProcessedAt, "timestamp", timestamp)
+		return true
 	}
-	return true
+	return false
 }
 
 func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
-	now := time.Now()
-	if !p.worthProcessing(now) {
+	timestamp := time.Now()
+	if p.shouldSkip(timestamp) {
+		// We don't process every segment, because it's too compute-expensive
 		return reader
 	}
 
-	slog.Info("##### Processing payment", "lastProcessedAt", p.lastProcessedAt, "now", now)
+	slog.Info("##### Processing payment", "lastProcessedAt", p.lastProcessedAt, "timestamp", timestamp)
 
 	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
@@ -135,13 +154,21 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 	}
 
 	resReader := io.TeeReader(reader, pipeWriter)
-	select {
-	case p.segCh <- &segment{reader: pipeReader, now: now}:
-	default:
+	go func() {
 		defer pipeReader.Close()
-		io.Copy(io.Discard, pipeReader)
-		slog.Error("Segment buffer full")
-	}
+		segData, err := io.ReadAll(pipeReader)
+		if err != nil {
+			slog.Error("Error reading segment data", "err", err)
+			return
+		}
+		slog.Info("##### Read segData", "segData", len(segData))
+
+		select {
+		case p.segCh <- &segment{reader: pipeReader, timestamp: timestamp, segData: segData}:
+		default:
+			// We process one segment at the time, no need to buffer them
+		}
+	}()
 
 	return resReader
 }
