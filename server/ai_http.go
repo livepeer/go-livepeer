@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -69,9 +70,9 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
-	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
-	// lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
-	
+	// lp.transRPC.Handle("/live-video-to-video-callback", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
+	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -89,83 +90,12 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		
-		// Get the request body as bytes to check if it is a live-video-to-video request
-		reqBytes, err := json.Marshal(req)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		var liveVideoToVideoReq worker.GenLiveVideoToVideoJSONRequestBody
-		if err := json.Unmarshal(reqBytes, &liveVideoToVideoReq); err == nil {
-			mid, liveVideoToVideoResp, err := h.setupLiveVideoToVideo(ctx)
-			if err != nil {
-				respondWithError(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			appendHostname := func(urlPath string) (*url.URL, error) {
-				if urlPath == "" {
-					return nil, fmt.Errorf("invalid url")
-				}
-				pu, err := url.Parse(urlPath)
-				if err != nil {
-					return nil, err
-				}
-				if pu.Hostname() != "" {
-					// url has a hostname already so use it
-					return pu, nil
-				}
-				// no hostname, so append one
-				
-				u := orch.ServiceURI().String() + urlPath
-				return url.Parse(u)
-				
-				// host := r.Host
-				// if host == "" {
-				// 	return nil, fmt.Errorf("could not determine host from request")
-				// }
-				// u := "https://" + host + urlPath
-				// return url.Parse(u)
-			}
-
-			// Reverse the subscribe and publish urls intentionally
-			if url, err := appendHostname(liveVideoToVideoResp.PublishUrl); err == nil {
-				liveVideoToVideoReq.PublishUrl = url.String()
-			}
-			if url, err := appendHostname(liveVideoToVideoResp.SubscribeUrl); err == nil {
-				liveVideoToVideoReq.SubscribeUrl = url.String()
-			}
-			if url, err := appendHostname(liveVideoToVideoResp.ControlUrl); err == nil {
-				controlUrlStr := url.String()
-				liveVideoToVideoReq.ControlUrl = &controlUrlStr
-			}
-			
-			// Subscribe to the publishUrl for payments monitoring
-			go func() {
-				sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
-				for {
-					segment, err := sub.Read()
-					if err != nil {
-						clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
-						return
-					}
-					// We can do something with the segment data here
-					io.Copy(io.Discard, segment.Reader)
-				}
-			}()
-
-			handleAIRequest(ctx, w, r, orch, liveVideoToVideoReq)
-		} else {
-			// non-live-video-to-video request
-			handleAIRequest(ctx, w, r, orch, req)
-		}
+		handleAIRequest(ctx, w, r, orch, req)
 	})
 }
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
@@ -183,11 +113,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:   controlUrl,
 		}
 
-		jsonData, err := json.Marshal(resp)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
@@ -213,9 +138,62 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// TODO subscribe to the subscribeUrl for output monitoring
+        // ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
+        var req worker.GenLiveVideoToVideoJSONRequestBody
+        if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+            respondWithError(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+
+		appendHostname := func(urlPath string) (*url.URL, error) {
+			if urlPath == "" {
+				return nil, fmt.Errorf("invalid url from orch")
+			}
+			pu, err := url.Parse(urlPath)
+			if err != nil {
+				return nil, err
+			}
+			if pu.Hostname() != "" {
+				// url has a hostname already so use it
+				return pu, nil
+			}
+			// no hostname, so append one
+			_, port, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				respondWithError(w, "Invalid host", http.StatusBadRequest)
+				return nil, err
+			}
+			u := "https://" + remoteAddr + ":" + port + urlPath
+			return url.Parse(u)
+		}
+		pub, err := appendHostname(resp.PublishUrl)
+		if err == nil {
+			resp.PublishUrl = pub.String()
+		}
+		
+		sub, err := appendHostname(resp.SubscribeUrl)
+		if err == nil {
+			resp.SubscribeUrl = sub.String()
+		}
+
+		control, err := appendHostname(resp.ControlUrl)
+		if err == nil {
+			resp.ControlUrl = control.String()
+		}
+
+		req.PublishUrl = resp.PublishUrl
+		req.SubscribeUrl = resp.SubscribeUrl
+
+		jsonData, err := json.Marshal(resp)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// handleAIRequest(ctx, w, r, h.orchestrator, req)
 		respondJsonOk(w, jsonData)
-	})
+    })
 }
 
 func (h *lphttp) setupLiveVideoToVideo(ctx context.Context) (string, *worker.LiveVideoToVideoResponse, error) {
@@ -237,39 +215,6 @@ func (h *lphttp) setupLiveVideoToVideo(ctx context.Context) (string, *worker.Liv
 	subCh.CreateChannel()
 	controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 	controlPubCh.CreateChannel()
-
-	appendHostname := func(urlPath string) (*url.URL, error) {
-		if urlPath == "" {
-			return nil, fmt.Errorf("invalid url")
-		}
-		pu, err := url.Parse(urlPath)
-		if err != nil {
-			return nil, err
-		}
-		if pu.Hostname() != "" {
-			// url has a hostname already so use it
-			return pu, nil
-		}
-		// no hostname, so append one
-		
-		u := h.orchestrator.ServiceURI().String() + urlPath
-		return url.Parse(u)
-		
-		// host := r.Host
-		// if host == "" {
-		// 	return nil, fmt.Errorf("could not determine host from request")
-		// }
-		// u := "https://" + host + urlPath
-		// return url.Parse(u)
-	}
-	if url, err := appendHostname(liveVideoToVideoResp.PublishUrl); err == nil {
-		liveVideoToVideoResp.PublishUrl = url.String()
-	}
-
-	if url, err := appendHostname(liveVideoToVideoResp.SubscribeUrl); err == nil {
-		liveVideoToVideoResp.SubscribeUrl = url.String()
-	}
-
 
 	return mid, liveVideoToVideoResp, nil
 }

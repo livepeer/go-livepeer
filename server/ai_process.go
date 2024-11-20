@@ -1040,14 +1040,20 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("pub url - %w", err)
 		}
+		resp.JSON200.PublishUrl = pub.String()
+		
 		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
 		if err != nil {
 			return nil, fmt.Errorf("sub url %w", err)
 		}
+		resp.JSON200.SubscribeUrl = sub.String()
+
 		control, err := appendHostname(resp.JSON200.ControlUrl)
 		if err != nil {
 			return nil, fmt.Errorf("control pub url - %w", err)
 		}
+		resp.JSON200.ControlUrl = control.String()
+		
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
@@ -1453,6 +1459,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
+			if _, ok := req.(worker.GenLiveVideoToVideoJSONRequestBody); ok {
+
+			}
 			params.sessManager.Complete(ctx, sess)
 			break
 		}
