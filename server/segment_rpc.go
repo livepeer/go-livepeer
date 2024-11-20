@@ -73,6 +73,12 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.orchestrator.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	ctx = clog.AddSeqNo(ctx, uint64(segData.Seq))
 	clog.V(common.VERBOSE).Infof(ctx, "Received segment dur=%v", segData.Duration)
 	if monitor.Enabled {
@@ -226,6 +232,12 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	buf, err := proto.Marshal(&net.PaymentResult{Info: oInfo})
 	if err != nil {
 		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
@@ -270,12 +282,6 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 	if err != nil {
 		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
-		return net.Payment{}, nil, nil, ctx, err
-	}
-
-	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		clog.Errorf(ctx, "error processing payment: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return net.Payment{}, nil, nil, ctx, err
 	}
 

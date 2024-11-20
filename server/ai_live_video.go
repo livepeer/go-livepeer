@@ -16,7 +16,7 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) {
+func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession, mid string) {
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		slog.Info("error publishing trickle", "err", err)
@@ -31,6 +31,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 			sess:      sess.BroadcastSession,
 			inPixels:  inPixels,
 			priceInfo: sess.OrchestratorInfo.PriceInfo,
+			mid:       mid,
 		})
 	}
 	paymentProcessor := NewLivePaymentProcessor(ctx, paymentProcessInterval, f)

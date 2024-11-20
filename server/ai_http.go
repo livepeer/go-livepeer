@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -93,18 +94,39 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		// skipping handleAIRequest for timestamp until we have payments
-
 		var (
 			mid        = string(core.RandomManifestID())
 			pubUrl     = TrickleHTTPPath + mid
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 		)
+		orch := h.orchestrator
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+
+		sender := getPaymentSender(payment)
+
+		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+
+		// Known limitation:
+		// This call will set a fixed price for all requests in a session identified by a manifestID.
+		// Since all requests for a capability + modelID are treated as "session" with a single manifestID, all
+		// requests for a capability + modelID will get the same fixed price for as long as the orch is running
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		jsonData, err := json.Marshal(
 			&worker.LiveVideoToVideoResponse{
 				PublishUrl:   pubUrl,
@@ -125,22 +147,22 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 
-		//paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
-		//sender := ethcommon.HexToAddress(r.Header.Get("Sender"))
-		//priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
-		//if err != nil {
-		//	respondWithError(w, err.Error(), http.StatusInternalServerError)
-		//	return
-		//}
-		//f := func(inPixels int64) error {
-		//	return paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
-		//		sender:    sender,
-		//		inPixels:  inPixels,
-		//		priceInfo: priceInfo,
-		//		sessionID: mid,
-		//	})
-		//}
-		//paymentProcessor := NewLivePaymentProcessor(ctx, 1*time.Second, f)
+		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+		priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		slog.Info("##### PriceInfo", "priceInfo", priceInfo)
+		f := func(inPixels int64) error {
+			return paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+				sender:    sender,
+				inPixels:  inPixels,
+				priceInfo: priceInfo,
+				sessionID: mid,
+			})
+		}
+		paymentProcessor := NewLivePaymentProcessor(context.Background(), 1*time.Second, f)
 
 		// Subscribe to the publishUrl for payments monitoring
 		go func() {
@@ -152,8 +174,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					return
 				}
 
-				reader := segment.Reader
-				//reader := paymentProcessor.process(segment.Reader)
+				//reader := segment.Reader
+				reader := paymentProcessor.process(segment.Reader)
 				// We can do something with the segment data here
 				io.Copy(io.Discard, reader)
 			}

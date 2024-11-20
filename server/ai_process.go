@@ -1001,6 +1001,8 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+const setupPixelsToPay = 30 * 30 * 1280 * 720 // 30 seconds, 30fps, 720p
+
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
@@ -1009,7 +1011,13 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
+	setupFee := calculateFee(setupPixelsToPay, sess.OrchestratorInfo.PriceInfo)
+	setupFeeInt := new(big.Int).Div(setupFee.Num(), setupFee.Denom()).Int64()
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, setupFeeInt)
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1044,7 +1052,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, fmt.Errorf("control pub url - %w", err)
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
-		startTricklePublish(pub, params, sess)
+		// TODO: Improve this
+		pubSplit := strings.Split(pub.Path, "/")
+		mid := pubSplit[len(pubSplit)-1]
+		startTricklePublish(pub, params, sess, mid)
 		startTrickleSubscribe(sub, params)
 		startControlPublish(control, params)
 	}

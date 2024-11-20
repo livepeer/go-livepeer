@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"time"
@@ -24,6 +25,7 @@ type SegmentInfoSender struct {
 	sess      *BroadcastSession
 	inPixels  int64
 	priceInfo *net.PriceInfo
+	mid       string
 }
 
 type SegmentInfoReceiver struct {
@@ -59,6 +61,11 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
 		return err
 	}
+	sess.lock.Lock()
+	sess.Params.ManifestID = core.ManifestID(segmentInfo.mid)
+	sess.lock.Unlock()
+
+	slog.Info("$$$$$$$$$$ Session.params.manifestID", "manifestID", sess.Params.ManifestID)
 
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
@@ -138,6 +145,7 @@ func (r *livePaymentReceiver) AccountPayment(
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
+	slog.Info("!!!!! Accounting payment", "sessionID", segmentInfo.sessionID, "balance", balance.FloatString(0), "fee", fee.FloatString(0))
 	if balance == nil || balance.Cmp(fee) < 0 {
 		return errors.New("insufficient balance")
 	}

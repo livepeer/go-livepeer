@@ -51,7 +51,7 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 			case seg := <-p.segCh:
 				p.processSegment(seg)
 			case <-ctx.Done():
-				slog.Info("Done processing payments for session", "sessionID", p.sess.OrchestratorInfo.AuthToken.SessionId)
+				slog.Info("Done processing payments for session")
 				return
 			}
 
