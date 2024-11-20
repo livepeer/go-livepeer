@@ -27,7 +27,6 @@ type LivePaymentProcessor struct {
 }
 
 type segment struct {
-	reader    *os.File
 	timestamp time.Time
 	segData   []byte
 }
@@ -60,11 +59,7 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 }
 
 func (p *LivePaymentProcessor) processSegment(seg *segment) {
-	//defer seg.reader.Close()
-	//defer io.Copy(io.Discard, seg.reader)
-
 	if p.shouldSkip(seg.timestamp) {
-		//io.Copy(io.Discard, seg.reader)
 		return
 	}
 
@@ -162,7 +157,7 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 		slog.Info("##### Read segData", "segData", len(segData))
 
 		select {
-		case p.segCh <- &segment{reader: pipeReader, timestamp: timestamp, segData: segData}:
+		case p.segCh <- &segment{timestamp: timestamp, segData: segData}:
 		default:
 			// We process one segment at the time, no need to buffer them
 		}
