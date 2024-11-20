@@ -78,7 +78,7 @@ func getCert(uri *url.URL, workDir string) (string, string, error) {
 	_, certErr := os.Stat(certFile)
 	_, keyErr := os.Stat(keyFile)
 	//if os.IsNotExist(certErr) || os.IsNotExist(keyErr) {
-	// XXX for timestamp, just generate a new cert every time.
+	// XXX for now, just generate a new cert every time.
 	if true {
 		glog.Info("Private key and cert not found. Generating")
 		key, keyBytes, err := genKey()

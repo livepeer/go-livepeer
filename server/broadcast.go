@@ -791,7 +791,7 @@ func (bsm *BroadcastSessionsManager) collectResults(submitResultsCh chan *Submit
 
 	// can have different strategies - for example, just use first one
 	// and ignore everything else
-	// for timestamp wait for all the results
+	// for now wait for all the results
 	for i := 0; i < submittedCount; i++ {
 		submitResults[i] = <-submitResultsCh
 	}
@@ -1440,7 +1440,7 @@ func downloadResults(ctx context.Context, cxn *rtmpConnection, seg *stream.HLSSe
 		err := cpl.InsertHLSSegment(&sess.Params.Profiles[i], seg.SeqNo, url, seg.Duration)
 		if err != nil {
 			// InsertHLSSegment only returns ErrSegmentAlreadyExists error
-			// Right timestamp InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
+			// Right now InsertHLSSegment call is atomic regarding transcoded segments - we either inserting
 			// all the transcoded segments or none, so we shouldn't hit this error
 			// But report in case that InsertHLSSegment changed or something wrong is going on in other parts of workflow
 			clog.Errorf(ctx, "Playlist insertion error nonce=%d manifestID=%s seqNo=%d err=%q", nonce, cxn.mid, seg.SeqNo, err)
@@ -1494,7 +1494,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	accepted, err := verifier.Verify(params)
 	if verification.IsRetryable(err) {
 		// If retryable, means tampering was detected from this O
-		// Remove the O from the working set for timestamp
+		// Remove the O from the working set for now
 		// Error falls through towards end if necessary
 		cxn.sessManager.removeSession(sess)
 	}

@@ -623,7 +623,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	ts11 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": " 1 "}]}`)
 	defer ts11.Close()
 	assert.Nil(createSid(u))
-	// we accept gop: 0 timestamp
+	// we accept gop: 0 now
 	//ts12 := makeServer(`{"manifestID":"a", "profiles": [ {"gop": "0"}]}`)
 	//defer ts12.Close()
 	//assert.Nil(createSid(u))

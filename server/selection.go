@@ -228,7 +228,7 @@ func (s *MinLSSelector) removeUnknownSession(i int) {
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
-// timestamp used only in tests
+// now used only in tests
 type LIFOSelector []*BroadcastSession
 
 // Add adds the sessions to the front of the selector's list

@@ -112,7 +112,7 @@ func TestSelectSession(t *testing.T) {
 	assert.Len(pool.sessList(), 2)
 	assert.Len(pool.sessMap, 1)
 	assert.Equal(firstSess[0], pool.sessList()[1]) // ensure removed sess still in list
-	// timestamp ensure next selectSession call fixes up sessList as expected
+	// now ensure next selectSession call fixes up sessList as expected
 	sess = pool.selectSessions(context.TODO(), 1)[0]
 	assert.Equal(sess, expectedSess)
 	assert.Len(pool.sessList(), 0)
