@@ -70,7 +70,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
-	// lp.transRPC.Handle("/live-video-to-video-callback", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
+	//lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
@@ -182,8 +182,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			resp.ControlUrl = control.String()
 		}
 
-		req.PublishUrl = resp.PublishUrl
-		req.SubscribeUrl = resp.SubscribeUrl
+		req.PublishUrl = resp.SubscribeUrl
+		req.SubscribeUrl = resp.PublishUrl
+		req.ControlUrl = &resp.ControlUrl
 
 		jsonData, err := json.Marshal(resp)
 		if err != nil {
@@ -191,7 +192,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
-		// handleAIRequest(ctx, w, r, h.orchestrator, req)
+		handleAIRequest(ctx, w, r, h.orchestrator, req)
 		respondJsonOk(w, jsonData)
     })
 }
