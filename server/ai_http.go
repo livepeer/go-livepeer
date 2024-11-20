@@ -125,6 +125,23 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 
+		//paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+		//sender := ethcommon.HexToAddress(r.Header.Get("Sender"))
+		//priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
+		//if err != nil {
+		//	respondWithError(w, err.Error(), http.StatusInternalServerError)
+		//	return
+		//}
+		//f := func(inPixels int64) error {
+		//	return paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+		//		sender:    sender,
+		//		inPixels:  inPixels,
+		//		priceInfo: priceInfo,
+		//		sessionID: mid,
+		//	})
+		//}
+		//paymentProcessor := NewLivePaymentProcessor(ctx, 1*time.Second, f)
+
 		// Subscribe to the publishUrl for payments monitoring
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
@@ -134,8 +151,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
+
+				reader := segment.Reader
+				//reader := paymentProcessor.process(segment.Reader)
 				// We can do something with the segment data here
-				io.Copy(io.Discard, segment.Reader)
+				io.Copy(io.Discard, reader)
 			}
 		}()
 

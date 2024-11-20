@@ -25,7 +25,15 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 	ctx, cancel := context.WithCancel(context.Background())
 	paymentProcessInterval := 1 * time.Second
 	slog.Info("### Starting live payment processor", "interval", paymentProcessInterval)
-	paymentProcessor := NewLivePaymentProcessor(ctx, sess, paymentProcessInterval, 5)
+	paymentSender := livePaymentSender{segmentsToPayUpfront: 5}
+	f := func(inPixels int64) error {
+		return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
+			sess:      sess.BroadcastSession,
+			inPixels:  inPixels,
+			priceInfo: sess.OrchestratorInfo.PriceInfo,
+		})
+	}
+	paymentProcessor := NewLivePaymentProcessor(ctx, paymentProcessInterval, f)
 
 	params.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream

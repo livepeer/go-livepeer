@@ -24,6 +24,8 @@ type LivePaymentProcessor struct {
 	lastProcessedAt time.Time
 	lastProcessedMu sync.RWMutex
 	segCh           chan *segment
+
+	processSegmentFunc func(inPixels int64) error
 }
 
 type segment struct {
@@ -31,13 +33,12 @@ type segment struct {
 	segData   []byte
 }
 
-func NewLivePaymentProcessor(ctx context.Context, session *AISession, processInterval time.Duration, intervalsToPayUpfront int64) *LivePaymentProcessor {
+func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(inPixels int64) error) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
-		sender:                &livePaymentSender{segmentsToPayUpfront: 1},
-		sess:                  session,
-		processInterval:       processInterval,
-		intervalsToPayUpfront: intervalsToPayUpfront,
-		segCh:                 make(chan *segment, 1),
+		sender:             &livePaymentSender{segmentsToPayUpfront: 1},
+		processInterval:    processInterval,
+		segCh:              make(chan *segment, 1),
+		processSegmentFunc: processSegmentFunc,
 	}
 	pp.start(ctx)
 	return pp
@@ -81,13 +82,9 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
 	slog.Info("###### PUBLISH 3", "pixelsSinceLastProcessed", int64(pixelsSinceLastProcessed))
 
-	err = p.sender.SendPayment(context.Background(), &SegmentInfoSender{
-		sess:      p.sess.BroadcastSession,
-		inPixels:  int64(pixelsSinceLastProcessed),
-		priceInfo: p.sess.OrchestratorInfo.PriceInfo,
-	})
+	err = p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
-		slog.Error("Error sending payment", "err", err)
+		slog.Error("Error processing payment", "err", err)
 		return
 	}
 	p.lastProcessedMu.Lock()
