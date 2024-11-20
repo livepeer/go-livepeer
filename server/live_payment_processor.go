@@ -74,11 +74,8 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	}
 
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-	slog.Info("###### PUBLISH 1", "pixelsPerSec", pixelsPerSec)
 	secSinceLastProcessed := seg.timestamp.Sub(lastProcessedAt).Seconds()
-	slog.Info("###### PUBLISH 2", "secSinceLastProcessed", secSinceLastProcessed, "lastProcessedAt", lastProcessedAt, "timestamp", seg.timestamp)
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	slog.Info("###### PUBLISH 3", "pixelsSinceLastProcessed", int64(pixelsSinceLastProcessed))
 
 	err = p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
@@ -88,7 +85,6 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	p.lastProcessedMu.Lock()
 	defer p.lastProcessedMu.Unlock()
 	p.lastProcessedAt = seg.timestamp
-	slog.Info("###### PUBLISH 4", "lastProcessedAt", p.lastProcessedAt)
 }
 
 func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
@@ -111,7 +107,6 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 		slog.Error("Invalid CodecStatus while probing segment", "status", status)
 		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
 	}
-	slog.Info("Probed segment", "info", info)
 	return info, nil
 }
 
@@ -120,7 +115,6 @@ func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 	defer p.lastProcessedMu.RUnlock()
 	if p.lastProcessedAt.Add(p.processInterval).After(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
-		slog.Info("##### Skipping payment processing", "lastProcessedAt", p.lastProcessedAt, "timestamp", timestamp)
 		return true
 	}
 	return false
@@ -132,8 +126,6 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 		// We don't process every segment, because it's too compute-expensive
 		return reader
 	}
-
-	slog.Info("##### Processing payment", "lastProcessedAt", p.lastProcessedAt, "timestamp", timestamp)
 
 	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
@@ -149,7 +141,6 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 			slog.Error("Error reading segment data", "err", err)
 			return
 		}
-		slog.Info("##### Read segData", "segData", len(segData))
 
 		select {
 		case p.segCh <- &segment{timestamp: timestamp, segData: segData}:
