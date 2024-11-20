@@ -76,15 +76,13 @@ type segment struct {
 	now    time.Time
 }
 
-const segmentBuffer = 1000
-
 func NewLivePaymentProcessor(ctx context.Context, session *AISession, processInterval time.Duration, intervalsToPayUpfront int64) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
 		sender:                &livePaymentSender{segmentsToPayUpfront: 1},
 		sess:                  session,
 		processInterval:       processInterval,
 		intervalsToPayUpfront: intervalsToPayUpfront,
-		segCh:                 make(chan *segment, segmentBuffer),
+		segCh:                 make(chan *segment, 1),
 	}
 	pp.start(ctx)
 	return pp
@@ -132,6 +130,8 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 		slog.Error("Invalid CodecStatus while probing segment", "status", status)
 		return
 	}
+	io.Copy(io.Discard, seg.reader)
+	slog.Info("Probed segment", "info", info, "uuid", uuid)
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	slog.Info("###### PUBLISH 1", "pixelsPerSec", pixelsPerSec, "uuid", uuid)
 	secSinceLastProcessed := seg.now.Sub(lastProcessedAt).Seconds()
@@ -183,6 +183,8 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 	select {
 	case p.segCh <- &segment{reader: pipeReader, now: now}:
 	default:
+		defer pipeReader.Close()
+		io.Copy(io.Discard, pipeReader)
 		slog.Error("Segment buffer full")
 	}
 
