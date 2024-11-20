@@ -24,7 +24,6 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession, 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	paymentProcessInterval := 1 * time.Second
-	slog.Info("### Starting live payment processor", "interval", paymentProcessInterval)
 	paymentSender := livePaymentSender{segmentsToPayUpfront: 5}
 	f := func(inPixels int64) error {
 		return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
@@ -42,7 +41,6 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession, 
 			if err := publisher.Close(); err != nil {
 				slog.Info("Error closing trickle publisher", "err", err)
 			}
-			slog.Info("#### Closing trickle publisher", "url", url)
 			cancel()
 			return
 		}

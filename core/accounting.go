@@ -1,7 +1,6 @@
 package core
 
 import (
-	"log/slog"
 	"math/big"
 	"sync"
 	"time"
@@ -73,7 +72,6 @@ func NewAddressBalances(ttl time.Duration) *AddressBalances {
 // Credit adds an an amount to the balance for an address' ManifestID
 func (a *AddressBalances) Credit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
 	a.balancesForAddr(addr).Credit(id, amount)
-	slog.Info("!!!! Balance updated", "addr", addr, "manifestID", id, "balance", a.balancesForAddr(addr).Balance(id).FloatString(0))
 }
 
 // Debit subtracts an amount from the balance for an address' ManifestID

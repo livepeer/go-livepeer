@@ -94,7 +94,14 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
+		var (
+			mid        = string(core.RandomManifestID())
+			pubUrl     = TrickleHTTPPath + mid
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
+
+			orch = h.orchestrator
+		)
 
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
@@ -115,13 +122,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		var (
-			mid        = string(core.RandomManifestID())
-			pubUrl     = TrickleHTTPPath + mid
-			subUrl     = pubUrl + "-out"
-			controlUrl = pubUrl + "-control"
-		)
 
 		jsonData, err := json.Marshal(
 			&worker.LiveVideoToVideoResponse{
@@ -149,7 +149,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		slog.Info("##### PriceInfo", "priceInfo", priceInfo)
 		f := func(inPixels int64) error {
 			err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
 				sender:    sender,
