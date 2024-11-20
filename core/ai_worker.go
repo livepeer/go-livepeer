@@ -1025,6 +1025,10 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	return n.AIWorker.TextToSpeech(ctx, req)
 }
 
+func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+	return n.AIWorker.LiveVideoToVideo(ctx, req)
+}
+
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
