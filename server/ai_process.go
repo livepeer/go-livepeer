@@ -1020,58 +1020,21 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	if resp.JSON200 != nil {
 		// append orch hostname to the given url if necessary
-		appendHostname := func(urlPath string) (*url.URL, error) {
-			if urlPath == "" {
-				return nil, fmt.Errorf("invalid url from orch")
-			}
-			pu, err := url.Parse(urlPath)
-			if err != nil {
-				return nil, err
-			}
-			if pu.Hostname() != "" {
-				// url has a hostname already so use it
-				return pu, nil
-			}
-			// no hostname, so append one
-			u := sess.Transcoder() + urlPath
-			return url.Parse(u)
-		}
-		pub, err := appendHostname(resp.JSON200.PublishUrl)
+		pub, err := url.Parse(resp.JSON200.PublishUrl)
 		if err != nil {
-			return nil, fmt.Errorf("pub url - %w", err)
+			return nil, fmt.Errorf("invalid publish URL: %w", err)
 		}
-		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
+		sub, err := url.Parse(resp.JSON200.SubscribeUrl)
 		if err != nil {
-			return nil, fmt.Errorf("sub url %w", err)
+			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		control, err := appendHostname(resp.JSON200.ControlUrl)
+		control, err := url.Parse(resp.JSON200.ControlUrl)
 		if err != nil {
-			return nil, fmt.Errorf("control pub url - %w", err)
+			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		controlStr := control.String()
-
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
 		startControlPublish(control, params)
-
-		//Switch subscribe and publish urls
-		req.SubscribeUrl = pub.String() // publish url
-		req.PublishUrl = sub.String() // subscriber url
-		req.ControlUrl = &controlStr
-		
-		// Send another request to the orchestrator to send the video to the live pipeline
-		if *req.Params == nil {
-			tempMap := make(map[string]interface{})
-			req.Params = &tempMap
-		}
-		(*req.Params)["startStream"] = "true"
-
-		respTrickle, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "response from orchestrator %v", respTrickle)
 	}
 	return resp, nil
 }

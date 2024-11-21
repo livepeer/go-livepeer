@@ -564,7 +564,7 @@ func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "live-video-to-video", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err

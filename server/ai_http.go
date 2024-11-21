@@ -97,6 +97,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
+
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+		sender := getPaymentSender(payment)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
@@ -104,50 +112,24 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
-		// `startStream` is sent on the 2nd request from to the gateway to hand-off the running stream to the ai-runner
-		if req.Params != nil {
-			if startStream, exists := (*req.Params)["startStream"]; exists && startStream == "true" {
-				// send the url to the ai-runner
-				queryParams := r.FormValue("query")
-				qp, err := url.ParseQuery(queryParams)
-				if err != nil {
-					respondWithError(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-
-				// send request to worker
-				workerReq := worker.LiveVideoToVideoParams{
-					ModelId:      req.ModelId,
-					PublishUrl:   req.PublishUrl,
-					SubscribeUrl: req.SubscribeUrl,
-					ControlUrl:   req.ControlUrl,
-				}
-
-				// copy the params if they exist
-				var paramsMap map[string]interface{}
-				params := qp.Get("params")
-				if params != "" {
-					if err := json.Unmarshal([]byte(params), &paramsMap); err != nil {
-						respondWithError(w, err.Error(), http.StatusBadRequest)
-						return
-					}
-					workerReq.Params = &paramsMap
-				}
-
-				handleAIRequest(ctx, w, r, h.orchestrator, workerReq)
-				return
-			}
-		}
-
+		// Start trickle server for live-video
 		mid := string(core.RandomManifestID())
 		pubUrl := TrickleHTTPPath + mid
 		subUrl := pubUrl + "-out"
 		controlUrl := pubUrl + "-control"
-		resp := &worker.LiveVideoToVideoResponse{
-			PublishUrl:   pubUrl,
-			SubscribeUrl: subUrl,
-			ControlUrl:   controlUrl,
-		}
+
+		//Append orchestrator service url host to the urls
+		host := h.node.GetServiceURI().String()
+		publishUrl, _ := common.AppendHostname(pubUrl, host)
+		req.PublishUrl = publishUrl.String()
+
+		subscribeUrl, _ := common.AppendHostname(subUrl, host)
+		req.SubscribeUrl = subscribeUrl.String()
+
+		controlUrlf, _ := common.AppendHostname(controlUrl, host)
+		controlUrlStr := controlUrlf.String()
+		req.ControlUrl = &controlUrlStr
+
 
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
@@ -172,13 +154,81 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 		}()
 
-		// TODO subscribe to the subscribeUrl for output monitoring
-		// ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		// send request to worker, swapping the subscribe and publish urls
+		workerReq := worker.LiveVideoToVideoParams{
+			ModelId:      req.ModelId,
+			PublishUrl:   req.SubscribeUrl,
+			SubscribeUrl: req.PublishUrl,
+			ControlUrl:   req.ControlUrl,
+		}
+
+		// append params to the request
+		queryParams := r.FormValue("query")
+		qp, err := url.ParseQuery(queryParams)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// copy the params if they exist
+		var paramsMap map[string]interface{}
+		params := qp.Get("params")
+		if params != "" {
+			if err := json.Unmarshal([]byte(params), &paramsMap); err != nil {
+				respondWithError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			workerReq.Params = &paramsMap
+		}
+
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := *req.ModelId
+
+		// Create storage for the request
+		err = orch.CreateStorageForRequest(requestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		}
+
+		submitFn := func(ctx context.Context) (interface{}, error) {
+			return  orch.LiveVideoToVideo(ctx, requestID, workerReq)
+		}
+
+		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+
+		// Check if there is capacity for the request.
+		if !orch.CheckAICapacity(pipeline, modelID) {
+			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+			return
+		}
+
+		_, err = submitFn(ctx)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
+			}
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// If runnerResp is successful, then prepare the response
+		//Prepare the response
+		resp := &worker.LiveVideoToVideoResponse{
+			PublishUrl:   req.PublishUrl,
+			SubscribeUrl: req.SubscribeUrl,
+			ControlUrl:   *req.ControlUrl,
+		}
+
 		jsonData, err := json.Marshal(resp)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
+		//clog.Infof(ctx, "Response: %+v", runnerResp) //for testing
 
 		respondJsonOk(w, jsonData)
 	})
