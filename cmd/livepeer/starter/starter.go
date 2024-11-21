@@ -611,17 +611,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		switch n.NodeType {
 		case core.BroadcasterNode:
 			nodeType = lpmon.Broadcaster
-			if *cfg.KafkaBootstrapServers != "" && *cfg.KafkaUsername != "" && *cfg.KafkaPassword != "" && *cfg.KafkaGatewayTopic != "" {
-				var broadcasterEthAddress = ""
-				if cfg.EthAcctAddr != nil {
-					broadcasterEthAddress = *cfg.EthAcctAddr
-				}
-
-				err := lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic, broadcasterEthAddress)
-				if err != nil {
-					glog.Warning("error while initializing Kafka producer: %w", err)
-				}
-			}
 		case core.OrchestratorNode:
 			nodeType = lpmon.Orchestrator
 		case core.TranscoderNode:
@@ -1626,6 +1615,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
+		}
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
 		}
 	}
 
