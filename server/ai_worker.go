@@ -314,18 +314,6 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.TextToSpeech(ctx, req)
 		}
 		reqOk = true
-	case "live-video-to-video":
-		var req worker.GenLiveVideoToVideoJSONRequestBody
-		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
-			break
-		}
-		modelID = *req.ModelId
-		resultType = "application/json"
-		processFn = func(ctx context.Context) (interface{}, error) {
-			return n.LiveVideoToVideo(ctx, req)
-		}
-		reqOk = true
 	default:
 		err = errors.New("AI request pipeline type not supported")
 	}
