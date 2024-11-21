@@ -99,6 +99,47 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
+        var req worker.GenLiveVideoToVideoJSONRequestBody
+        if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+            respondWithError(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+
+		// `startStream` is sent on the 2nd request from to the gateway to hand-off the running stream to the ai-runner
+		if req.Params != nil {
+			if startStream, exists := (*req.Params)["startStream"]; exists && startStream == "true" {
+				// send the url to the ai-runner
+				queryParams := r.FormValue("query")
+				qp, err := url.ParseQuery(queryParams)
+				if err != nil {
+					respondWithError(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+
+				// send request to worker
+				workerReq := worker.LiveVideoToVideoParams{
+					ModelId:      req.ModelId,
+					PublishUrl:   req.PublishUrl,
+					SubscribeUrl: req.SubscribeUrl,
+					ControlUrl:   req.ControlUrl,
+				}
+
+				var paramsMap map[string]interface{}
+				params := qp.Get("params")
+				if (params != "") {
+					if err := json.Unmarshal([]byte(params), &paramsMap); err != nil {
+						respondWithError(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					workerReq.Params = &paramsMap
+				}
+				
+				handleAIRequest(ctx, w, r, h.orchestrator, workerReq)
+				return
+			}
+		}
+
+
 		// skipping handleAIRequest for now until we have payments
 
 		var (
@@ -140,12 +181,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		// TODO subscribe to the subscribeUrl for output monitoring
         // ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-        var req worker.GenLiveVideoToVideoJSONRequestBody
-        if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
-            respondWithError(w, err.Error(), http.StatusBadRequest)
-            return
-        }
-
 		appendHostname := func(urlPath string) (*url.URL, error) {
 			if urlPath == "" {
 				return nil, fmt.Errorf("invalid url from orch")
@@ -182,8 +217,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			resp.ControlUrl = control.String()
 		}
 
-		req.PublishUrl = resp.SubscribeUrl
-		req.SubscribeUrl = resp.PublishUrl
+		req.PublishUrl = resp.PublishUrl
+		req.SubscribeUrl = resp.SubscribeUrl
 		req.ControlUrl = &resp.ControlUrl
 
 		jsonData, err := json.Marshal(resp)
@@ -192,7 +227,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
-		handleAIRequest(ctx, w, r, h.orchestrator, req)
 		respondJsonOk(w, jsonData)
     })
 }

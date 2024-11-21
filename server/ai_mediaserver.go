@@ -406,7 +406,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 
 		//parse model from query params
-		model := qp.Get("model")
+		model := qp.Get("pipeline")
 		modelParams := qp.Get("params")
 
 		var modelParamsMap map[string]interface{}

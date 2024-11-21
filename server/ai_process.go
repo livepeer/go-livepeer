@@ -1040,25 +1040,41 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("pub url - %w", err)
 		}
-		resp.JSON200.PublishUrl = pub.String()
-		
 		sub, err := appendHostname(resp.JSON200.SubscribeUrl)
 		if err != nil {
 			return nil, fmt.Errorf("sub url %w", err)
 		}
-		resp.JSON200.SubscribeUrl = sub.String()
 
 		control, err := appendHostname(resp.JSON200.ControlUrl)
 		if err != nil {
 			return nil, fmt.Errorf("control pub url - %w", err)
 		}
-		resp.JSON200.ControlUrl = control.String()
-		
+		controlStr := control.String()
+
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
 		startControlPublish(control, params)
+
+		//Switch subscribe and publish urls
+		req.SubscribeUrl = pub.String() // publish url
+		req.PublishUrl = sub.String() // subscriber url
+		req.ControlUrl = &controlStr
+		
+		// Send another request to the orchestrator to send the video to the live pipeline
+		if *req.Params == nil {
+			tempMap := make(map[string]interface{})
+			req.Params = &tempMap
+		}
+		(*req.Params)["startStream"] = "true"
+
+		respTrickle, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "response from orchestrator %v", respTrickle)
 	}
+
 	return resp, nil
 }
 
