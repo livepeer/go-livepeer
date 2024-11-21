@@ -1044,7 +1044,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("sub url %w", err)
 		}
-
 		control, err := appendHostname(resp.JSON200.ControlUrl)
 		if err != nil {
 			return nil, fmt.Errorf("control pub url - %w", err)
@@ -1074,7 +1073,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "response from orchestrator %v", respTrickle)
 	}
-
 	return resp, nil
 }
 
@@ -1475,9 +1473,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
-			if _, ok := req.(worker.GenLiveVideoToVideoJSONRequestBody); ok {
-
-			}
 			params.sessManager.Complete(ctx, sess)
 			break
 		}

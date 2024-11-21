@@ -95,15 +95,15 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 }
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-        var req worker.GenLiveVideoToVideoJSONRequestBody
-        if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
-            respondWithError(w, err.Error(), http.StatusBadRequest)
-            return
-        }
+		var req worker.GenLiveVideoToVideoJSONRequestBody
+		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		// `startStream` is sent on the 2nd request from to the gateway to hand-off the running stream to the ai-runner
 		if req.Params != nil {
@@ -126,19 +126,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 				var paramsMap map[string]interface{}
 				params := qp.Get("params")
-				if (params != "") {
+				if params != "" {
 					if err := json.Unmarshal([]byte(params), &paramsMap); err != nil {
 						respondWithError(w, err.Error(), http.StatusBadRequest)
 						return
 					}
 					workerReq.Params = &paramsMap
 				}
-				
+
 				handleAIRequest(ctx, w, r, h.orchestrator, workerReq)
 				return
 			}
 		}
-
 
 		// skipping handleAIRequest for now until we have payments
 
@@ -153,7 +152,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   controlUrl,
 		}
-
 
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
@@ -179,7 +177,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// TODO subscribe to the subscribeUrl for output monitoring
-        // ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		// ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
 		appendHostname := func(urlPath string) (*url.URL, error) {
 			if urlPath == "" {
@@ -206,7 +204,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		if err == nil {
 			resp.PublishUrl = pub.String()
 		}
-		
+
 		sub, err := appendHostname(resp.SubscribeUrl)
 		if err == nil {
 			resp.SubscribeUrl = sub.String()
@@ -228,7 +226,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		respondJsonOk(w, jsonData)
-    })
+	})
 }
 
 func (h *lphttp) setupLiveVideoToVideo(ctx context.Context) (string, *worker.LiveVideoToVideoResponse, error) {
@@ -456,7 +454,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		}
 
 		outPixels = int64(1000)
-	
+
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
