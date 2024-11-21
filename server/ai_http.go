@@ -238,12 +238,11 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 	sender := getPaymentSender(payment)
 
-	//TODO: disabled for now until we have sessions/payments in live-video-to-video
-	//_, ctx, err = verifySegCreds(ctx, orch, r.Header.Get(segmentHeader), sender)
-	//if err != nil {
-	//	respondWithError(w, err.Error(), http.StatusForbidden)
-	//	return
-	//}
+	_, ctx, err = verifySegCreds(ctx, orch, r.Header.Get(segmentHeader), sender)
+	if err != nil {
+		respondWithError(w, err.Error(), http.StatusForbidden)
+		return
+	}
 
 	requestID := string(core.RandomManifestID())
 
