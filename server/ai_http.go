@@ -112,11 +112,28 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := *req.ModelId
+		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+
+		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
+		err = orch.CreateStorageForRequest(requestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		}
+		
+		// Check if there is capacity for the request 
+		if !orch.CheckAICapacity(pipeline, modelID) {
+			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+			return
+		}
+
 		// Start trickle server for live-video
 		mid := string(core.RandomManifestID())
 		pubUrl := TrickleHTTPPath + mid
 		subUrl := pubUrl + "-out"
-		controlUrl := pubUrl + "-control"
 
 		//Append orchestrator service url host to the urls
 		host := h.node.GetServiceURI().String()
@@ -126,39 +143,17 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		subscribeUrl, _ := common.AppendHostname(subUrl, host)
 		req.SubscribeUrl = subscribeUrl.String()
 
-		controlUrlf, _ := common.AppendHostname(controlUrl, host)
-		controlUrlStr := controlUrlf.String()
+		controlUrl, _ := common.AppendHostname(pubUrl + "-control", host)
+		controlUrlStr := controlUrl.String()
 		req.ControlUrl = &controlUrlStr
 
-		// Precreate the channels to avoid race conditions
-		// TODO get the expected mime type from the request
-		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
-		pubCh.CreateChannel()
-		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
-		subCh.CreateChannel()
-		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
-		controlPubCh.CreateChannel()
-
-		// Subscribe to the publishUrl for payments monitoring
-		go func() {
-			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
-			for {
-				segment, err := sub.Read()
-				if err != nil {
-					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
-					return
-				}
-				// We can do something with the segment data here
-				io.Copy(io.Discard, segment.Reader)
-			}
-		}()
-
-		// send request to worker, swapping the subscribe and publish urls
+		// Prepare request to worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   req.SubscribeUrl,
-			SubscribeUrl: req.PublishUrl,
+			PublishUrl:   req.SubscribeUrl, // SubscribeUrl is the publish url for the worker
+			SubscribeUrl: req.PublishUrl,  // PublishUrl is the subscribe url for the worker
 			ControlUrl:   req.ControlUrl,
+			Params: 	  req.Params,
 		}
 
 		// append params to the request
@@ -180,30 +175,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			workerReq.Params = &paramsMap
 		}
 
-		orch := h.orchestrator
-		pipeline := "live-video-to-video"
-		cap := core.Capability_LiveVideoToVideo
-		modelID := *req.ModelId
-
-		// Create storage for the request (for AI Workers)
-		err = orch.CreateStorageForRequest(requestID)
-		if err != nil {
-			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
-		}
-
-		submitFn := func(ctx context.Context) (interface{}, error) {
-			return orch.LiveVideoToVideo(ctx, requestID, workerReq)
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
-
-		// Check if there is capacity for the request 
-		if !orch.CheckAICapacity(pipeline, modelID) {
-			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
-			return
-		}
-
-		_, err = submitFn(ctx)
+		// Send request to the worker
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
 		if err != nil {
 			if monitor.Enabled {
 				monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
@@ -211,6 +184,29 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		
+		//If successful, then create the trickle channels
+		// Precreate the channels to avoid race conditions
+		// TODO get the expected mime type from the request
+		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh.CreateChannel()
+		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh.CreateChannel()
+		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+		controlPubCh.CreateChannel()
+
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			for {
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					return
+				}
+				// We can do something with the segment data here
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
 
 		// Prepare the response
 		resp := &worker.LiveVideoToVideoResponse{
@@ -218,7 +214,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: req.SubscribeUrl,
 			ControlUrl:   *req.ControlUrl,
 		}
-
 		jsonData, err := json.Marshal(resp)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
