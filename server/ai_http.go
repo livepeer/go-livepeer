@@ -185,7 +185,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		cap := core.Capability_LiveVideoToVideo
 		modelID := *req.ModelId
 
-		// Create storage for the request
+		// Create storage for the request (for AI Workers)
 		err = orch.CreateStorageForRequest(requestID)
 		if err != nil {
 			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
@@ -197,7 +197,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
 
-		// Check if there is capacity for the request.
+		// Check if there is capacity for the request 
 		if !orch.CheckAICapacity(pipeline, modelID) {
 			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 			return
@@ -212,8 +212,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			return
 		}
 
-		// If runnerResp is successful, then prepare the response
-		//Prepare the response
+		// Prepare the response
 		resp := &worker.LiveVideoToVideoResponse{
 			PublishUrl:   req.PublishUrl,
 			SubscribeUrl: req.SubscribeUrl,
@@ -227,8 +226,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
-		//clog.Infof(ctx, "Response: %+v", runnerResp) //for testing
-
 		respondJsonOk(w, jsonData)
 	})
 }
