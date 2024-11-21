@@ -7,6 +7,7 @@ on:
       - master
     paths:
       - 'docker/Dockerfile.mediamtx'
+      - 'docker/mediamtx.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -76,3 +77,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          context: docker/
