@@ -8,6 +8,7 @@ import (
 func startKafkaProducer(cfg LivepeerConfig) error {
 	if *cfg.KafkaBootstrapServers == "" || *cfg.KafkaUsername == "" || *cfg.KafkaPassword == "" || *cfg.KafkaGatewayTopic == "" {
 		glog.Warning("not starting Kafka producer as producer config values aren't present")
+		return nil
 	}
 
 	var broadcasterEthAddress = ""
