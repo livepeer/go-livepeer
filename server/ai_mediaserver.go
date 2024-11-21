@@ -405,19 +405,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		//parse model from query params
-		pipeline := qp.Get("pipeline")
-		modelParams := qp.Get("params")
-
-		var modelParamsMap map[string]interface{}
-		if modelParams != "" {
-			if err := json.Unmarshal([]byte(modelParams), &modelParamsMap); err != nil {
-				clog.Errorf(ctx, "Invalid model params: %s", err)
-				http.Error(w, "Invalid model params", http.StatusBadRequest)
-				return 
-			}
-		}
-
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
 		if outputURL == "" {
