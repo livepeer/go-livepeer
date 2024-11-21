@@ -86,7 +86,11 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	// For live video pipelines
+	liveParams liveRequestParams
+}
+
+// For live video pipelines
+type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
 	stream        string
@@ -1402,7 +1406,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	case worker.GenLiveVideoToVideoJSONRequestBody:
 		cap = core.Capability_LiveVideoToVideo
 		modelID = defaultLiveVideoToVideoModelID
-		if v.ModelId != nil {
+		if v.ModelId != nil && *v.ModelId != "" {
 			modelID = *v.ModelId
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
