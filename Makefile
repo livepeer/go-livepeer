@@ -111,3 +111,6 @@ livepeer_router:
 
 docker:
 	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile .
+
+docker_mtx:
+	docker buildx build -f docker/Dockerfile.mediamtx docker/
