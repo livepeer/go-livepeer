@@ -68,8 +68,8 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
-
-	//lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody])))
+	
+	// skipping handleAIRequest for now until we have payments
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
@@ -123,6 +123,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					ControlUrl:   req.ControlUrl,
 				}
 
+				// copy the params if they exist
 				var paramsMap map[string]interface{}
 				params := qp.Get("params")
 				if params != "" {
@@ -138,14 +139,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 		}
 
-		// skipping handleAIRequest for now until we have payments
-
-		var (
-			mid        = string(core.RandomManifestID())
-			pubUrl     = TrickleHTTPPath + mid
-			subUrl     = pubUrl + "-out"
-			controlUrl = pubUrl + "-control"
-		)
+		mid := string(core.RandomManifestID())
+		pubUrl := TrickleHTTPPath + mid
+		subUrl := pubUrl + "-out"
+		controlUrl := pubUrl + "-control"
 		resp := &worker.LiveVideoToVideoResponse{
 			PublishUrl:   pubUrl,
 			SubscribeUrl: subUrl,
@@ -185,29 +182,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		respondJsonOk(w, jsonData)
 	})
-}
-
-func (h *lphttp) setupLiveVideoToVideo(ctx context.Context) (string, *worker.LiveVideoToVideoResponse, error) {
-	mid := string(core.RandomManifestID())
-	pubUrl := TrickleHTTPPath + mid
-	subUrl := pubUrl + "-out"
-	controlUrl := pubUrl + "-control"
-	liveVideoToVideoResp := &worker.LiveVideoToVideoResponse{
-		PublishUrl:   pubUrl,
-		SubscribeUrl: subUrl,
-		ControlUrl:   controlUrl,
-	}
-
-	// Precreate the channels to avoid race conditions
-	// TODO get the expected mime type from the request
-	pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
-	pubCh.CreateChannel()
-	subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
-	subCh.CreateChannel()
-	controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
-	controlPubCh.CreateChannel()
-
-	return mid, liveVideoToVideoResp, nil
 }
 
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
