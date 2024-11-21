@@ -68,7 +68,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
-	
+
 	// skipping handleAIRequest for now until we have payments
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 
@@ -129,7 +129,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlUrlf, _ := common.AppendHostname(controlUrl, host)
 		controlUrlStr := controlUrlf.String()
 		req.ControlUrl = &controlUrlStr
-
 
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
@@ -193,7 +192,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		submitFn := func(ctx context.Context) (interface{}, error) {
-			return  orch.LiveVideoToVideo(ctx, requestID, workerReq)
+			return orch.LiveVideoToVideo(ctx, requestID, workerReq)
 		}
 
 		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
