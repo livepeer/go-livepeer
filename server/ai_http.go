@@ -123,8 +123,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		if err != nil {
 			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
 		}
-		
-		// Check if there is capacity for the request 
+
+		// Check if there is capacity for the request
 		if !orch.CheckAICapacity(pipeline, modelID) {
 			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 			return
@@ -143,7 +143,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		subscribeUrl, _ := common.AppendHostname(subUrl, host)
 		req.SubscribeUrl = subscribeUrl.String()
 
-		controlUrl, _ := common.AppendHostname(pubUrl + "-control", host)
+		controlUrl, _ := common.AppendHostname(pubUrl+"-control", host)
 		controlUrlStr := controlUrl.String()
 		req.ControlUrl = &controlUrlStr
 
@@ -151,9 +151,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
 			PublishUrl:   req.SubscribeUrl, // SubscribeUrl is the publish url for the worker
-			SubscribeUrl: req.PublishUrl,  // PublishUrl is the subscribe url for the worker
+			SubscribeUrl: req.PublishUrl,   // PublishUrl is the subscribe url for the worker
 			ControlUrl:   req.ControlUrl,
-			Params: 	  req.Params,
+			Params:       req.Params,
 		}
 
 		// append params to the request
@@ -184,7 +184,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		
+
 		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
