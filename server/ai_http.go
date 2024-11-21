@@ -12,7 +12,6 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -178,47 +177,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		// TODO subscribe to the subscribeUrl for output monitoring
 		// ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		appendHostname := func(urlPath string) (*url.URL, error) {
-			if urlPath == "" {
-				return nil, fmt.Errorf("invalid url from orch")
-			}
-			pu, err := url.Parse(urlPath)
-			if err != nil {
-				return nil, err
-			}
-			if pu.Hostname() != "" {
-				// url has a hostname already so use it
-				return pu, nil
-			}
-			// no hostname, so append one
-			_, port, err := net.SplitHostPort(r.Host)
-			if err != nil {
-				respondWithError(w, "Invalid host", http.StatusBadRequest)
-				return nil, err
-			}
-			u := "https://" + remoteAddr + ":" + port + urlPath
-			return url.Parse(u)
-		}
-		pub, err := appendHostname(resp.PublishUrl)
-		if err == nil {
-			resp.PublishUrl = pub.String()
-		}
-
-		sub, err := appendHostname(resp.SubscribeUrl)
-		if err == nil {
-			resp.SubscribeUrl = sub.String()
-		}
-
-		control, err := appendHostname(resp.ControlUrl)
-		if err == nil {
-			resp.ControlUrl = control.String()
-		}
-
-		req.PublishUrl = resp.PublishUrl
-		req.SubscribeUrl = resp.SubscribeUrl
-		req.ControlUrl = &resp.ControlUrl
-
 		jsonData, err := json.Marshal(resp)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
