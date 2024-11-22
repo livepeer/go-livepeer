@@ -127,7 +127,7 @@ func authenticateAIStream(authURL *url.URL, req AIAuthRequest) error {
 
 	rbody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
 	}
 
