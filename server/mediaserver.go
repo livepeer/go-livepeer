@@ -124,6 +124,8 @@ type LivepeerServer struct {
 	context           context.Context
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
+
+	mediaMTXApiPassword string
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -189,6 +191,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
+		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)

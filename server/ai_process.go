@@ -87,9 +87,14 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	// For live video pipelines
+	liveParams liveRequestParams
+}
+
+// For live video pipelines
+type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
+	stream        string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1039,9 +1044,14 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("sub url %w", err)
 		}
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s", pub, sub)
+		control, err := appendHostname(resp.JSON200.ControlUrl)
+		if err != nil {
+			return nil, fmt.Errorf("control pub url - %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
+		startControlPublish(control, params)
 	}
 	return resp, nil
 }
@@ -1528,7 +1538,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	case worker.GenLiveVideoToVideoJSONRequestBody:
 		cap = core.Capability_LiveVideoToVideo
 		modelID = defaultLiveVideoToVideoModelID
-		if v.ModelId != nil {
+		if v.ModelId != nil && *v.ModelId != "" {
 			modelID = *v.ModelId
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {

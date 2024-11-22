@@ -165,6 +165,7 @@ type LivepeerConfig struct {
 	KafkaUsername           *string
 	KafkaPassword           *string
 	KafkaGatewayTopic       *string
+	MediaMTXApiPassword     *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -610,12 +611,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		switch n.NodeType {
 		case core.BroadcasterNode:
 			nodeType = lpmon.Broadcaster
-			if *cfg.KafkaBootstrapServers != "" && *cfg.KafkaUsername != "" && *cfg.KafkaPassword != "" && *cfg.KafkaGatewayTopic != "" {
-				err := lpmon.InitKafkaProducer(*cfg.KafkaBootstrapServers, *cfg.KafkaUsername, *cfg.KafkaPassword, *cfg.KafkaGatewayTopic, n.Eth.Account().Address.Hex())
-				if err != nil {
-					glog.Warning("error while initializing Kafka producer: %w", err)
-				}
-			}
 		case core.OrchestratorNode:
 			nodeType = lpmon.Orchestrator
 		case core.TranscoderNode:
@@ -1545,6 +1540,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
+	if cfg.MediaMTXApiPassword != nil {
+		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
+	}
 
 	//Create Livepeer Node
 
@@ -1617,6 +1615,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
+		}
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
 		}
 	}
 

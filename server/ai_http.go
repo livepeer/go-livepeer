@@ -101,14 +101,16 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		// skipping handleAIRequest for now until we have payments
 
 		var (
-			mid    = string(core.RandomManifestID())
-			pubUrl = TrickleHTTPPath + mid
-			subUrl = pubUrl + "-out"
+			mid        = string(core.RandomManifestID())
+			pubUrl     = TrickleHTTPPath + mid
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
 		)
 		jsonData, err := json.Marshal(
 			&worker.LiveVideoToVideoResponse{
 				PublishUrl:   pubUrl,
 				SubscribeUrl: subUrl,
+				ControlUrl:   controlUrl,
 			})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
@@ -121,6 +123,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		pubCh.CreateChannel()
 		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
 		subCh.CreateChannel()
+		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+		controlPubCh.CreateChannel()
 
 		// Subscribe to the publishUrl for payments monitoring
 		go func() {
