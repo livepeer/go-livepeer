@@ -69,9 +69,7 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 
-	// skipping handleAIRequest for now until we have payments
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
-
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -89,12 +87,14 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+
 		handleAIRequest(ctx, w, r, orch, req)
 	})
 }
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 		requestID := string(core.RandomManifestID())
@@ -195,6 +195,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 
+		// Subscribe to the publishUrl for payments monitoring
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
@@ -416,17 +417,6 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// TTS pricing is typically in characters, including punctuation.
 		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
-	case worker.GenLiveVideoToVideoJSONRequestBody:
-		pipeline = "live-video-to-video"
-		cap = core.Capability_LiveVideoToVideo
-		modelID = *v.ModelId
-
-		submitFn = func(ctx context.Context) (interface{}, error) {
-			return orch.LiveVideoToVideo(ctx, requestID, v)
-		}
-
-		outPixels = int64(1000)
-
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return

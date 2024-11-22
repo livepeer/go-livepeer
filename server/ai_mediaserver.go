@@ -404,7 +404,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
 		if outputURL == "" {
