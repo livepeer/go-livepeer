@@ -1311,7 +1311,7 @@ func CalculateObjectDetectionLatencyScore(took time.Duration, outPixels int64) f
 	return took.Seconds() / float64(outPixels)
 }
 
-func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	var buf bytes.Buffer
 	mw, err := worker.NewObjectDetectionMultipartWriter(&buf, req)
 	if err != nil {
@@ -1373,7 +1373,7 @@ func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AI
 		balUpdate.Status = ReceivedChange
 	}
 
-	var res worker.ImageResponse
+	var res worker.ObjectDetectionResponse
 	if err := json.Unmarshal(data, &res); err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
@@ -1396,41 +1396,40 @@ func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AI
 	return &res, nil
 }
 
-func processObjectDetection(ctx context.Context, params aiRequestParams, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+func processObjectDetection(ctx context.Context, params aiRequestParams, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
 	}
 
-	// HACK: Re-use worker.ImageResponse to return results
-	// TODO: Refactor to return worker.VideoResponse
-	frameResp, ok := resp.(*worker.ImageResponse)
+	frameResp, ok := resp.(*worker.ObjectDetectionResponse)
 	if !ok {
 		return nil, errWrongFormat
 	}
 
-	videos := make([]worker.Media, len(frameResp.Images))
-	for i, media := range frameResp.Images {
-		data, err := core.DownloadData(ctx, media.Url)
-		if err != nil {
-			return nil, err
+	videos := [][]worker.Media{}
+	for _, frame := range frameResp.Frames {
+		frames := make([]worker.Media, len(frame))
+		for i, media := range frame {
+			data, err := downloadSeg(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+			name := filepath.Base(media.Url)
+			newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+			frames[i] = worker.Media{
+				Nsfw: media.Nsfw,
+				Seed: media.Seed,
+				Url:  newUrl,
+			}
 		}
-
-		name := filepath.Base(media.Url)
-		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
-		if err != nil {
-			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
-		}
-
-		videos[i] = worker.Media{
-			Nsfw: media.Nsfw,
-			Seed: media.Seed,
-			Url:  newUrl,
-		}
-
+		videos = append(videos, frames)
 	}
 
-	frameResp.Images = videos
+	frameResp.Frames = videos
 
 	return frameResp, nil
 }

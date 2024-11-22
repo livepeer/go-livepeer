@@ -363,12 +363,12 @@ func TestRunAIJob(t *testing.T) {
 					worker.ReadAudioB64DataUrl(expectedResp.Audio.Url, &respFile)
 					assert.Equal(len(results.Files[audResp.Audio.Url]), respFile.Len())
 				case "object-detection":
-					vidResp, ok := results.Results.(worker.ImageResponse)
+					vidResp, ok := results.Results.(worker.ObjectDetectionResponse)
 					assert.True(ok)
 					assert.Equal("10", headers.Get("TaskId"))
 					assert.Equal(len(results.Files), 1)
 					expectedResp, _ := wkr.ObjectDetection(context.Background(), worker.GenObjectDetectionMultipartRequestBody{})
-					assert.Equal(expectedResp.Frames[0][0].Seed, vidResp.Images[0].Seed)
+					assert.Equal(expectedResp.Frames[0][0].Seed, vidResp.Frames[0][0].Seed)
 				}
 			}
 		})

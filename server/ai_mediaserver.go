@@ -62,7 +62,7 @@ type ObjectDetectionResultResponse struct {
 }
 
 type ObjectDetectionResult struct {
-	*worker.ImageResponse
+	*worker.ObjectDetectionResponse
 	Error *APIError `json:"error,omitempty"`
 }
 

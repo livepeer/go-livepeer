@@ -1070,7 +1070,7 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	return n.AIWorker.TextToSpeech(ctx, req)
 }
 
-func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ImageResponse, error) {
+func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 
 	// Generate annotated frames
 	start := time.Now()
@@ -1136,13 +1136,21 @@ func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObject
 		return nil, err
 	}
 
-	videos := append([]worker.Media{},
-		worker.Media{
-			Url: fname,
-		},
-	)
+	objectDetectionResponse := &worker.ObjectDetectionResponse{
+		ConfidenceScores: resp.ConfidenceScores,
+		Labels:           resp.Labels,
+		Frames:           resp.Frames,
+	}
+	
+	// To include video segment URL as part of Frames
+	videos := worker.Media{
+		Nsfw: false,
+		Seed: 0,
+		Url: fname,
+	}
+	objectDetectionResponse.Frames = [][]worker.Media{{videos}}
 
-	return &worker.ImageResponse{Images: videos}, nil
+	return objectDetectionResponse, nil
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video and object-detection pipeline.
