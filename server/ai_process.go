@@ -1036,8 +1036,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
 		//trickle urls are swapped back to original order, before starting trickle subscriber and publisher
-		startTricklePublish(sub, params)
-		startTrickleSubscribe(pub, params)
+		startTricklePublish(pub, params)
+		startTrickleSubscribe(sub, params)
 		startControlPublish(control, params)
 	}
 	return resp, nil

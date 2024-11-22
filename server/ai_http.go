@@ -167,7 +167,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			respondWithError(w, fmt.Errorf("invalid subscribe URL: %w", err).Error(), http.StatusBadRequest)
 			return
 		}
-		control, err := common.AppendHostname(controlUrl+"-control", host)
+		control, err := common.AppendHostname(controlUrl, host)
 		if err != nil {
 			respondWithError(w, fmt.Errorf("invalid control URL: %w", err).Error(), http.StatusBadRequest)
 			return
@@ -178,7 +178,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ModelId:      req.ModelId,
 			PublishUrl:   sub, // SubscribeUrl is the publish url for the worker
 			SubscribeUrl: pub, // PublishUrl is the subscribe url for the worker
-			ControlUrl:   &control,
+			ControlUrl:   control,
 			Params:       req.Params,
 		}
 
@@ -217,17 +217,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		// Prepare the response
-		resp := &worker.LiveVideoToVideoResponse{
-			PublishUrl:   workerReq.PublishUrl,
-			SubscribeUrl: workerReq.SubscribeUrl,
-		}
-
-		// TODO: Fix the nullable type in the worker response
-		if workerReq.ControlUrl != nil {
-			resp.ControlUrl = *workerReq.ControlUrl
-		}
-
-		jsonData, err := json.Marshal(resp)
+		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
+			PublishUrl:   pub,
+			SubscribeUrl: sub,
+			ControlUrl:   control,
+		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
