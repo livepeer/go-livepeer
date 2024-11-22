@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
@@ -68,7 +69,6 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
-
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
@@ -99,13 +99,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 		requestID := string(core.RandomManifestID())
 
-		payment, err := getPayment(r.Header.Get(paymentHeader))
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusPaymentRequired)
-			return
-		}
-		sender := getPaymentSender(payment)
-
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
@@ -119,7 +112,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
 
 		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
-		err = orch.CreateStorageForRequest(requestID)
+		err := orch.CreateStorageForRequest(requestID)
 		if err != nil {
 			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
 		}
@@ -131,28 +124,61 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		// Start trickle server for live-video
-		mid := string(core.RandomManifestID())
-		pubUrl := TrickleHTTPPath + mid
-		subUrl := pubUrl + "-out"
+		var (
+			mid        = requestID // Request ID is used for the manifest ID
+			pubUrl     = TrickleHTTPPath + mid
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
+		)
 
-		//Append orchestrator service url host to the urls
-		host := h.node.GetServiceURI().String()
-		publishUrl, _ := common.AppendHostname(pubUrl, host)
-		req.PublishUrl = publishUrl.String()
+		//If successful, then create the trickle channels
+		// Precreate the channels to avoid race conditions
+		// TODO get the expected mime type from the request
+		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh.CreateChannel()
+		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh.CreateChannel()
+		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+		controlPubCh.CreateChannel()
 
-		subscribeUrl, _ := common.AppendHostname(subUrl, host)
-		req.SubscribeUrl = subscribeUrl.String()
+		// Subscribe to the publishUrl for payments monitoring
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			for {
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					return
+				}
+				// We can do something with the segment data here
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
 
-		controlUrl, _ := common.AppendHostname(pubUrl+"-control", host)
-		controlUrlStr := controlUrl.String()
-		req.ControlUrl = &controlUrlStr
+		// TODO: Use params temporarily to pass the host from gateway
+		host := req.PublishUrl
+		pub, err := common.AppendHostname(pubUrl, host)
+		if err != nil {
+			respondWithError(w, fmt.Errorf("invalid publish URL: %w", err).Error(), http.StatusBadRequest)
+			return
+		}
+		sub, err := common.AppendHostname(subUrl, host)
+		if err != nil {
+			respondWithError(w, fmt.Errorf("invalid subscribe URL: %w", err).Error(), http.StatusBadRequest)
+			return
+		}
+		control, err := common.AppendHostname(controlUrl+"-control", host)
+		if err != nil {
+			respondWithError(w, fmt.Errorf("invalid control URL: %w", err).Error(), http.StatusBadRequest)
+			return
+		}
 
 		// Prepare request to worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   req.SubscribeUrl, // SubscribeUrl is the publish url for the worker
-			SubscribeUrl: req.PublishUrl,   // PublishUrl is the subscribe url for the worker
-			ControlUrl:   req.ControlUrl,
+			PublishUrl:   sub, // SubscribeUrl is the publish url for the worker
+			SubscribeUrl: pub, // PublishUrl is the subscribe url for the worker
+			ControlUrl:   &control,
 			Params:       req.Params,
 		}
 
@@ -179,42 +205,28 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
 		if err != nil {
 			if monitor.Enabled {
-				monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
 			}
+
+			pubCh.Close()
+			subCh.Close()
+			controlPubCh.Close()
+
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		//If successful, then create the trickle channels
-		// Precreate the channels to avoid race conditions
-		// TODO get the expected mime type from the request
-		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
-		pubCh.CreateChannel()
-		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
-		subCh.CreateChannel()
-		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
-		controlPubCh.CreateChannel()
-
-		// Subscribe to the publishUrl for payments monitoring
-		go func() {
-			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
-			for {
-				segment, err := sub.Read()
-				if err != nil {
-					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
-					return
-				}
-				// We can do something with the segment data here
-				io.Copy(io.Discard, segment.Reader)
-			}
-		}()
-
 		// Prepare the response
 		resp := &worker.LiveVideoToVideoResponse{
-			PublishUrl:   req.PublishUrl,
-			SubscribeUrl: req.SubscribeUrl,
-			ControlUrl:   *req.ControlUrl,
+			PublishUrl:   workerReq.PublishUrl,
+			SubscribeUrl: workerReq.SubscribeUrl,
 		}
+
+		// TODO: Fix the nullable type in the worker response
+		if workerReq.ControlUrl != nil {
+			resp.ControlUrl = *workerReq.ControlUrl
+		}
+
 		jsonData, err := json.Marshal(resp)
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)

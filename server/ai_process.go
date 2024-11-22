@@ -1013,13 +1013,16 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
+
 	// Send request to orchestrator
+	host := sess.Transcoder()
+	req.PublishUrl = host // host is passed using PublishUrl field
 	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+
 	if resp.JSON200 != nil {
-		// append orch hostname to the given url if necessary
 		pub, err := url.Parse(resp.JSON200.PublishUrl)
 		if err != nil {
 			return nil, fmt.Errorf("invalid publish URL: %w", err)
@@ -1032,8 +1035,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		startTricklePublish(pub, params)
-		startTrickleSubscribe(sub, params)
+		//trickle urls are swapped back to original order, before starting trickle subscriber and publisher
+		startTricklePublish(sub, params)
+		startTrickleSubscribe(pub, params)
 		startControlPublish(control, params)
 	}
 	return resp, nil
