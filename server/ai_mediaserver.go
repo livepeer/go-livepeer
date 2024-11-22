@@ -432,8 +432,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
-		if AuthWebhookURL != nil {
-			authResp, err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+		if LiveAIAuthWebhookURL != nil {
+			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,

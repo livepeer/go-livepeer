@@ -67,6 +67,7 @@ const AISessionManagerTTL = 10 * time.Minute
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
+var LiveAIAuthWebhookURL *url.URL
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
