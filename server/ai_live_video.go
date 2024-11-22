@@ -20,7 +20,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 	if err != nil {
 		slog.Info("error publishing trickle", "err", err)
 	}
-	params.segmentReader.SwitchReader(func(reader io.Reader) {
+	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
@@ -67,7 +67,7 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 		}, []ffmpeg.TranscodeOptions{{
-			Oname:        params.outputRTMPURL,
+			Oname:        params.liveParams.outputRTMPURL,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
@@ -88,14 +88,20 @@ func mediamtxSourceTypeToString(s string) (string, error) {
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
 	controlPub, err := trickle.NewTricklePublisher(control.String())
+	stream := params.liveParams.stream
 	if err != nil {
-		slog.Info("error starting control publisher", "stream", params.stream, "err", err)
+		slog.Info("error starting control publisher", "stream", stream, "err", err)
 		return
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
-	params.node.LivePipelines[params.stream] = &core.LivePipeline{ControlPub: controlPub}
+	params.node.LivePipelines[stream] = &core.LivePipeline{ControlPub: controlPub}
 }
+
+const (
+	mediaMTXControlPort = "9997"
+	mediaMTXControlUser = "admin"
+)
 
 func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string

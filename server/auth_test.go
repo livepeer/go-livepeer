@@ -72,10 +72,11 @@ func TestAILiveAuthSucceeds(t *testing.T) {
 	s, serverURL := stubAuthServer(t, http.StatusOK, `{}`)
 	defer s.Close()
 
-	err := authenticateAIStream(serverURL, AIAuthRequest{
+	resp, err := authenticateAIStream(serverURL, AIAuthRequest{
 		Stream: "stream",
 	})
 	require.NoError(t, err)
+	require.Equal(t, AIAuthResponse{}, *resp)
 }
 
 func TestNoErrorWhenTranscodeAuthHeaderNotPassed(t *testing.T) {

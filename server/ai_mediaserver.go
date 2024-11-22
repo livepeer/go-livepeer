@@ -420,19 +420,45 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
-			Stream:      streamName,
-			Type:        sourceTypeStr,
-			QueryParams: queryParams,
-		})
-		if err != nil {
-			kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
-			if kickErr != nil {
-				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+		// if auth webhook returns pipeline config these will be replaced
+		pipeline := qp.Get("pipeline")
+		rawParams := qp.Get("params")
+		var pipelineParams map[string]interface{}
+		if rawParams != "" {
+			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+				clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+				http.Error(w, "Invalid model params", http.StatusBadRequest)
+				return
 			}
-			clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
+		}
+
+		if AuthWebhookURL != nil {
+			authResp, err := authenticateAIStream(AuthWebhookURL, AIAuthRequest{
+				Stream:      streamName,
+				Type:        sourceTypeStr,
+				QueryParams: queryParams,
+			})
+			if err != nil {
+				kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
+				if kickErr != nil {
+					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+				}
+				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			if authResp.RTMPOutputURL != "" {
+				outputURL = authResp.RTMPOutputURL
+			}
+
+			if authResp.Pipeline != "" {
+				pipeline = authResp.Pipeline
+			}
+
+			if len(authResp.paramsMap) > 0 {
+				pipelineParams = authResp.paramsMap
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
@@ -449,16 +475,20 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}()
 
 		params := aiRequestParams{
-			node:          ls.LivepeerNode,
-			os:            drivers.NodeStorage.NewSession(requestID),
-			sessManager:   ls.AISessionManager,
-			segmentReader: ssr,
-			outputRTMPURL: outputURL,
-			stream:        streamName,
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+
+			liveParams: liveRequestParams{
+				segmentReader: ssr,
+				outputRTMPURL: outputURL,
+				stream:        streamName,
+			},
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
-			// TODO set model and initial parameters here if necessary (eg, prompt)
+			ModelId: &pipeline,
+			Params:  &pipelineParams,
 		}
 		processAIRequest(ctx, params, req)
 	})
@@ -523,8 +553,3 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 		}
 	}
 }
-
-const (
-	mediaMTXControlPort = "9997"
-	mediaMTXControlUser = "admin"
-)
