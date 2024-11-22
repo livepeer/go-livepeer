@@ -112,7 +112,7 @@ type AIAuthRequest struct {
 // Contains the configuration parameters for this AI job
 type AIAuthResponse struct {
 	// Where to send the output video
-	RTMPOutputURL string `json:"rtmp_output_url""`
+	RTMPOutputURL string `json:"rtmp_output_url"`
 
 	// Name of the pipeline to run
 	Pipeline string `json:"pipeline"`
