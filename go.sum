@@ -605,8 +605,6 @@ github.com/libp2p/go-netroute v0.2.0 h1:0FpsbsvuSnAhXFnCY0VLFbJOzaK0VnP0r1QT/o4n
 github.com/libp2p/go-netroute v0.2.0/go.mod h1:Vio7LTzZ+6hoT4CMZi5/6CpY3Snzh2vgZhWgxMNwlQI=
 github.com/libp2p/go-openssl v0.1.0 h1:LBkKEcUv6vtZIQLVTegAil8jbNpJErQ9AnT+bWV+Ooo=
 github.com/libp2p/go-openssl v0.1.0/go.mod h1:OiOxwPpL3n4xlenjx2h7AwSGaFSC/KZvf6gNdOBQMtc=
-github.com/livepeer/ai-worker v0.12.3-0.20241120192519-ca5d650f9ebb h1:pzV8vwfhy3YZX5ITGIuCHygThIWM8C7br+gc3U6JaQw=
-github.com/livepeer/ai-worker v0.12.3-0.20241120192519-ca5d650f9ebb/go.mod h1:/Deme7XXRP4BiYXt/j694Ygw+dh8rWJdikJsKY64sjE=
 github.com/livepeer/ai-worker v0.12.3 h1:LoSfYlh66clbG5j2Q0WLvyGDM6HKCWeHHmzrxT6lMnQ=
 github.com/livepeer/ai-worker v0.12.3/go.mod h1:/Deme7XXRP4BiYXt/j694Ygw+dh8rWJdikJsKY64sjE=
 github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b h1:VQcnrqtCA2UROp7q8ljkh2XA/u0KRgVv0S1xoUvOweE=
