@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -98,7 +99,8 @@ func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
 
 type AIAuthRequest struct {
 	// Stream name or stream key
-	Stream string `json:"stream"`
+	Stream    string `json:"stream"`
+	StreamKey string `json:"stream_key"`
 
 	// Stream type, eg RTMP or WHIP
 	Type string `json:"type"`
@@ -123,6 +125,7 @@ type AIAuthResponse struct {
 }
 
 func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse, error) {
+	req.StreamKey = req.Stream
 	if authURL == nil {
 		return nil, fmt.Errorf("No auth URL configured")
 	}
@@ -133,7 +136,15 @@ func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse,
 		return nil, err
 	}
 
-	resp, err := http.Post(authURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+	request, err := http.NewRequest("POST", authURL.String(), bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return nil, err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-api-key", os.Getenv("SHOWCASE_API_KEY"))
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
 	}
