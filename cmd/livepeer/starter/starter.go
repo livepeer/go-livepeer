@@ -210,6 +210,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultLiveAIAuthWebhookURL := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -311,11 +312,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry: &defaultAIServiceRegistry,
-		AIWorker:          &defaultAIWorker,
-		AIModels:          &defaultAIModels,
-		AIModelsDir:       &defaultAIModelsDir,
-		AIRunnerImage:     &defaultAIRunnerImage,
+		AIServiceRegistry:    &defaultAIServiceRegistry,
+		AIWorker:             &defaultAIWorker,
+		AIModels:             &defaultAIModels,
+		AIModelsDir:          &defaultAIModelsDir,
+		AIRunnerImage:        &defaultAIRunnerImage,
+		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
