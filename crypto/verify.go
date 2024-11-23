@@ -14,7 +14,7 @@ var (
 	secp256k1halfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
 )
 
-// Verify verifies that a ETH ECDSA signature over a given message
+// VerifySig verifies that a ETH ECDSA signature over a given message
 // is produced by a given ETH address
 func VerifySig(addr ethcommon.Address, msg, sig []byte) bool {
 	recovered, err := ecrecover(msg, sig)

@@ -241,7 +241,7 @@ func (rwm *RemoteAIWorkerManager) workerHasCapacity(pipeline, modelID string) bo
 	return false
 }
 
-// completeRequestSessions end a AI request session for a remote ai worker
+// completeAIRequest end a AI request session for a remote ai worker
 // caller should hold the mutex lock
 func (rwm *RemoteAIWorkerManager) completeAIRequest(requestID, pipeline, modelID string) {
 	rwm.RWmutex.Lock()
