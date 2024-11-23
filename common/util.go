@@ -498,23 +498,26 @@ func MimeTypeToExtension(mimeType string) (string, error) {
 	return "", ErrNoExtensionsForType
 }
 
-func AppendHostname(urlPath string, host string) (string, error) {
+func AppendHostname(urlPath string, host string) (*url.URL, error) {
 	if urlPath == "" {
-		return urlPath, fmt.Errorf("invalid url from orch")
+		return nil, fmt.Errorf("invalid url from orch")
 	}
 	pu, err := url.Parse(urlPath)
 	if err != nil {
-		return urlPath, err
+		return nil, err
 	}
 	if pu.Hostname() != "" {
 		// url has a hostname already so use it
-		return pu.String(), nil
+		return pu, nil
 	} else {
 		// no hostname, so append one
 		if !strings.HasPrefix(urlPath, "/") {
 			urlPath = "/" + urlPath
 		}
-		u := host + urlPath
+		u, err := url.Parse(host + urlPath)
+		if err != nil {
+			return nil, err
+		}
 		return u, nil
 	}
 }

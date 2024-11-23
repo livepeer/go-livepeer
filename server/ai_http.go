@@ -13,7 +13,6 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -155,50 +154,19 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 		}()
 
-		// TODO: Use params temporarily to pass the host from gateway
-		host := req.PublishUrl
-		pub, err := common.AppendHostname(pubUrl, host)
-		if err != nil {
-			respondWithError(w, fmt.Errorf("invalid publish URL: %w", err).Error(), http.StatusBadRequest)
-			return
+		// Append trickle_url to req.Params
+		if req.Params == nil {
+			req.Params = &map[string]interface{}{}
 		}
-		sub, err := common.AppendHostname(subUrl, host)
-		if err != nil {
-			respondWithError(w, fmt.Errorf("invalid subscribe URL: %w", err).Error(), http.StatusBadRequest)
-			return
-		}
-		control, err := common.AppendHostname(controlUrl, host)
-		if err != nil {
-			respondWithError(w, fmt.Errorf("invalid control URL: %w", err).Error(), http.StatusBadRequest)
-			return
-		}
+		(*req.Params)["trickle_port"] = orch.ServiceURI().Port()
 
 		// Prepare request to worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   sub, // SubscribeUrl is the publish url for the worker
-			SubscribeUrl: pub, // PublishUrl is the subscribe url for the worker
-			ControlUrl:   control,
-			Params:       req.Params,
-		}
-
-		// append params to the request
-		queryParams := r.FormValue("query")
-		qp, err := url.ParseQuery(queryParams)
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// copy the params if they exist
-		var paramsMap map[string]interface{}
-		params := qp.Get("params")
-		if params != "" {
-			if err := json.Unmarshal([]byte(params), &paramsMap); err != nil {
-				respondWithError(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			workerReq.Params = &paramsMap
+			PublishUrl:   subUrl, // SubscribeUrl is the publish url for the worker
+			SubscribeUrl: pubUrl, // PublishUrl is the subscribe url for the worker
+			ControlUrl:   controlUrl,
+			Params: 	  req.Params,
 		}
 
 		// Send request to the worker
@@ -211,16 +179,15 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubCh.Close()
 			subCh.Close()
 			controlPubCh.Close()
-
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		// Prepare the response
 		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
-			PublishUrl:   pub,
-			SubscribeUrl: sub,
-			ControlUrl:   control,
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
+			ControlUrl:   controlUrl,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)

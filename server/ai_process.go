@@ -12,7 +12,6 @@ import (
 	"math"
 	"math/big"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1015,27 +1014,25 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	// Send request to orchestrator
-	host := sess.Transcoder()
-	req.PublishUrl = host // host is passed using PublishUrl field
 	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.JSON200 != nil {
-		pub, err := url.Parse(resp.JSON200.PublishUrl)
+		host := sess.Transcoder()
+		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 		if err != nil {
 			return nil, fmt.Errorf("invalid publish URL: %w", err)
 		}
-		sub, err := url.Parse(resp.JSON200.SubscribeUrl)
+		sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
 		if err != nil {
 			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		control, err := url.Parse(resp.JSON200.ControlUrl)
+		control, err := common.AppendHostname(resp.JSON200.ControlUrl, host)
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		//trickle urls are swapped back to original order, before starting trickle subscriber and publisher
 		startTricklePublish(pub, params)
 		startTrickleSubscribe(sub, params)
 		startControlPublish(control, params)
