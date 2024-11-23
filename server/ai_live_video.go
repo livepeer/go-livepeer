@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -50,7 +49,6 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 	// read segments from trickle subscription
 	go func() {
 		defer w.Close()
-		i := 0
 		for {
 			segment, err := subscriber.Read()
 			if err != nil {
@@ -59,50 +57,21 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 				return
 			}
 			defer segment.Body.Close()
-
-			out, err := io.ReadAll(segment.Body)
-			if err != nil {
-				slog.Info("Error reading segment body", "url", url, "err", err)
-				return
-			}
-
-			if err := os.WriteFile(fmt.Sprintf("segment-%d.ts", i), out, 0644); err != nil {
-				slog.Info("Error writing segment to file", "url", url, "err", err)
-				return
-			}
-			if i > 0 {
-				// skip the first segment which is used to startup the stream
-				_, err = io.Copy(w, bytes.NewReader(out))
-				if err != nil {
-					slog.Error("Error copying segment to output ffmpeg", "err", err)
-				}
-			}
-			i++
+			// TODO send this into ffmpeg
+			io.Copy(w, segment.Body)
 		}
 	}()
 
 	// lpms
 	go func() {
-		slog.Info("Output RTMP URL", "url", params.liveParams.outputRTMPURL)
-		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-			Profile: ffmpeg.VideoProfile{
-        	Name: "segments",
-        	Format: ffmpeg.FormatMPEGTS,
-			Resolution: "512x512",
-			AspectRatio: "1:1",
-    	},
 		}, []ffmpeg.TranscodeOptions{{
 			Oname:        params.liveParams.outputRTMPURL,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
-			VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 		}})
-		if err != nil {
-			slog.Info("Error transcoding trickle stream", "url", url, "err", err)
-		} else {
-			slog.Info("Transcoding complete", "url", url)
-		}
 	}()
 }
 
