@@ -161,12 +161,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		(*req.Params)["trickle_port"] = orch.ServiceURI().Port()
 
 		// Prepare request to worker
+		//Subscribe and Publish urls are swapped for the worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   subUrl, // SubscribeUrl is the publish url for the worker
-			SubscribeUrl: pubUrl, // PublishUrl is the subscribe url for the worker
+			PublishUrl:   subUrl,
+			SubscribeUrl: pubUrl,
 			ControlUrl:   controlUrl,
-			Params: 	  req.Params,
+			Params:       req.Params,
 		}
 
 		// Send request to the worker
