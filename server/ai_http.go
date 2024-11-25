@@ -155,12 +155,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
-		//Subscribe and Publish urls are swapped for the worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
 			PublishUrl:   subUrl,
 			SubscribeUrl: pubUrl,
-			ControlUrl:   &controlUrl,
+			ControlUrl:   controlUrl,
 			Params:       req.Params,
 		}
 
