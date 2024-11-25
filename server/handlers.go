@@ -1373,12 +1373,12 @@ func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
 		}
 
 		supportStr := r.FormValue("support")
-		support, err := strconv.Atoi(supportStr)
-		if err != nil {
+		support, ok := new(big.Int).SetString(supportStr, 10)
+		if !ok {
 			respond500(w, "support is not a valid integer value")
 			return
 		}
-		if !types.ProposalVoteChoice(support).IsValid() {
+		if !types.ProposalVoteChoice(int(support.Int64())).IsValid() {
 			respond500(w, "invalid support")
 			return
 		}
@@ -1387,10 +1387,11 @@ func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
 
 		// submit tx
 		var tx *ethtypes.Transaction
+		var err error
 		if reason != "" {
-			tx, err = client.ProposalVoteWithReason(proposalID, uint8(support), reason)
+			tx, err = client.ProposalVoteWithReason(proposalID, uint8(support.Uint64()), reason)
 		} else {
-			tx, err = client.ProposalVote(proposalID, uint8(support))
+			tx, err = client.ProposalVote(proposalID, uint8(support.Uint64()))
 		}
 		if err != nil {
 			respond500(w, fmt.Sprintf("unable to submit proposal vote transaction err=%q", err))
