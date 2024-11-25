@@ -52,6 +52,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// read segments from trickle subscription
 	go func() {
 		defer w.Close()
+		i := 0
 		for {
 			segment, err := subscriber.Read()
 			if err != nil {
@@ -62,7 +63,11 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.Infof(ctx, "Got output segment from trickle url=%s", url)
 			defer segment.Body.Close()
 			// TODO send this into ffmpeg
-			io.Copy(w, segment.Body)
+
+			if i > 0 {
+				io.Copy(w, segment.Body)
+			}
+			i++
 		}
 	}()
 
