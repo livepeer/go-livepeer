@@ -13,7 +13,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
-	"github.com/livepeer/lpms/ffmpeg"
+	ff "github.com/u2takey/ffmpeg-go"
 )
 
 func startTricklePublish(url *url.URL, params aiRequestParams) {
@@ -67,14 +67,21 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 	// lpms
 	go func() {
 		for {
-			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-			}, []ffmpeg.TranscodeOptions{{
-				Oname:        params.liveParams.outputRTMPURL,
-				AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
-				VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
-				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-			}})
+			//_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			//	Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+			//}, []ffmpeg.TranscodeOptions{{
+			//	Oname:        params.liveParams.outputRTMPURL,
+			//	AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
+			//	VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
+			//	Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+			//}})
+			err := ff.Input(fmt.Sprintf("pipe:%d", r.Fd())).
+				Output(params.liveParams.outputRTMPURL, ff.KwArgs{
+					"c:a": "aac",
+					"c:v": "libx264",
+					"f":   "flv",
+				}).OverWriteOutput().ErrorToStdOut().Run()
+
 			if err != nil {
 				slog.Error("Error transcoding", "err", err)
 			}
