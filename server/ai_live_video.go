@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
-	ff "github.com/u2takey/ffmpeg-go"
 )
 
 func startTricklePublish(url *url.URL, params aiRequestParams) {
@@ -73,16 +73,27 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			//	Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 			//}, []ffmpeg.TranscodeOptions{{
 			//	Oname:        params.liveParams.outputRTMPURL,
+			//	Profile:      ffmpeg.VideoProfile{Resolution: "512x512"},
 			//	AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
 			//	VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
 			//	Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 			//}})
-			err := ff.Input(fmt.Sprintf("pipe:%d", r.Fd())).
-				Output(params.liveParams.outputRTMPURL, ff.KwArgs{
-					"c:a": "aac",
-					"c:v": "libx264",
-					"f":   "flv",
-				}).OverWriteOutput().ErrorToStdOut().Run()
+			//err := ff.Input(fmt.Sprintf("pipe:%d", r.Fd())).
+			//	Output(params.liveParams.outputRTMPURL, ff.KwArgs{
+			//		"c:a": "aac",
+			//		"c:v": "libx264",
+			//		"f":   "flv",
+			//	}).OverWriteOutput().ErrorToStdOut().Run()
+
+			cmd := exec.Command("ffmpeg", "-y", "-i", fmt.Sprintf("pipe:%d", r.Fd()), "-c:v", "libx264", "-c:a", "aac", "-f", "flv", params.liveParams.outputRTMPURL)
+
+			// Pass the read end of the pipe to FFmpeg
+			cmd.ExtraFiles = []*os.File{r}
+
+			// Set stdout and stderr to see FFmpeg output
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
 
 			if err != nil {
 				clog.Errorf(ctx, "Error transcoding: %s", err)
