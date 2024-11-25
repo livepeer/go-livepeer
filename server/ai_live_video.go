@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 func startTricklePublish(url *url.URL, params aiRequestParams) {
@@ -64,22 +64,16 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 		}
 	}()
 
-	// TODO: Change this to LPMS
+	// lpms
 	go func() {
-		defer r.Close()
-		cmd := exec.Command("ffmpeg",
-			"-i", "pipe:0",
-			"-c:a", "copy",
-			"-c:v", "copy",
-			"-f", "flv",
-			params.liveParams.outputRTMPURL,
-		)
-		cmd.Stdin = r
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			slog.Info("Error running ffmpeg command", "err", err, "url", url)
-		}
+		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+		}, []ffmpeg.TranscodeOptions{{
+			Oname:        params.liveParams.outputRTMPURL,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+		}})
 	}()
 }
 
