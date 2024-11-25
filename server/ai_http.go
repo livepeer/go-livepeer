@@ -159,7 +159,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ModelId:      req.ModelId,
 			PublishUrl:   subUrl,
 			SubscribeUrl: pubUrl,
-			ControlUrl:   controlUrl,
+			ControlUrl:   &controlUrl,
 			Params:       req.Params,
 		}
 
