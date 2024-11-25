@@ -1281,6 +1281,49 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 	}))
 }
 
+func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proposalIDStr := r.FormValue("proposalID")
+		proposalID, ok := new(big.Int).SetString(proposalIDStr, 10)
+		if !ok {
+			respond500(w, "proposalID is not a valid integer value")
+			return
+		}
+
+		supportStr := r.FormValue("support")
+		support, err := strconv.Atoi(supportStr)
+		if err != nil {
+			respond500(w, "support is not a valid integer value")
+			return
+		}
+		if !types.ProposalVoteChoice(support).IsValid() {
+			respond500(w, "invalid support")
+			return
+		}
+
+		reason := r.FormValue("reason")
+
+		// submit tx
+		var tx *ethtypes.Transaction
+		if reason != "" {
+			tx, err = client.ProposalVoteWithReason(proposalID, uint8(support), reason)
+		} else {
+			tx, err = client.ProposalVote(proposalID, uint8(support))
+		}
+		if err != nil {
+			respond500(w, fmt.Sprintf("unable to submit proposal vote transaction err=%q", err))
+			return
+		}
+
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("unable to mine proposal vote transaction err=%q", err))
+			return
+		}
+
+		respondOk(w, tx.Hash().Bytes())
+	}))
+}
+
 // Gas Price
 func setMaxGasPriceHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
