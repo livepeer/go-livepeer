@@ -36,7 +36,7 @@ const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
-const defaultLiveVideoToVideoModelID = "cumulo-autumn/stream-diffusion"
+const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
