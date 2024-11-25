@@ -1,18 +1,21 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
-	"github.com/livepeer/lpms/ffmpeg"
 )
 
 func startTricklePublish(url *url.URL, params aiRequestParams) {
@@ -38,40 +41,69 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 	slog.Info("trickle pub", "url", url)
 }
 
-func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
 	if err != nil {
-		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
+		clog.Errorf(ctx, "error getting pipe for trickle-ffmpeg url=%s err=%s", url, err)
 	}
 
 	// read segments from trickle subscription
 	go func() {
 		defer w.Close()
+		i := 0
 		for {
 			segment, err := subscriber.Read()
 			if err != nil {
 				// TODO if not EOS then signal a new orchestrator is needed
-				slog.Info("Error reading trickle subscription", "url", url, "err", err)
+				clog.Infof(ctx, "Error reading trickle subscription url=%s err=%s", url, err)
 				return
 			}
+			clog.Infof(ctx, "Got output segment from trickle url=%s", url)
 			defer segment.Body.Close()
 			// TODO send this into ffmpeg
-			io.Copy(w, segment.Body)
+
+			if i > 0 {
+				io.Copy(w, segment.Body)
+			}
+			i++
 		}
 	}()
 
 	// lpms
 	go func() {
-		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-		}, []ffmpeg.TranscodeOptions{{
-			Oname:        params.liveParams.outputRTMPURL,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-		}})
+		for {
+			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+			}, []ffmpeg.TranscodeOptions{{
+				Oname:        params.liveParams.outputRTMPURL,
+				Profile:      ffmpeg.VideoProfile{Format: ffmpeg.FormatMPEGTS},
+				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+			}})
+			//err := ff.Input(fmt.Sprintf("pipe:%d", r.Fd())).
+			//	Output(params.liveParams.outputRTMPURL, ff.KwArgs{
+			//		"c:a": "aac",
+			//		"c:v": "libx264",
+			//		"f":   "flv",
+			//	}).OverWriteOutput().ErrorToStdOut().Run()
+
+			//cmd := exec.Command("ffmpeg", "-y", "-i", fmt.Sprintf("pipe:%d", r.Fd()), "-c:v", "libx264", "-c:a", "aac", "-f", "flv", params.liveParams.outputRTMPURL)
+			//
+			//// Pass the read end of the pipe to FFmpeg
+			//cmd.ExtraFiles = []*os.File{r}
+			//
+			//// Set stdout and stderr to see FFmpeg output
+			//cmd.Stdout = os.Stdout
+			//cmd.Stderr = os.Stderr
+			//err := cmd.Run()
+
+			if err != nil {
+				clog.Errorf(ctx, "Error transcoding: %s", err)
+			}
+			time.Sleep(5 * time.Second)
+		}
 	}()
 }
 

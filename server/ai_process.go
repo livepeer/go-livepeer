@@ -1049,7 +1049,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(pub, params)
-		startTrickleSubscribe(sub, params)
+		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
 	}
 	return resp, nil
