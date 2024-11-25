@@ -26,11 +26,12 @@ var (
 	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
+	_ = abi.ConvertType
 )
 
 // PollMetaData contains all meta data concerning the Poll contract.
 var PollMetaData = &bind.MetaData{
-	ABI: "[{\"constant\":false,\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_choiceID\",\"type\":\"uint256\"}],\"name\":\"vote\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"constant\":true,\"inputs\":[],\"name\":\"endBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"view\",\"type\":\"function\"},{\"constant\":false,\"inputs\":[],\"name\":\"destroy\",\"outputs\":[],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endBlock\",\"type\":\"uint256\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"choiceID\",\"type\":\"uint256\"}],\"name\":\"Vote\",\"type\":\"event\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_endBlock\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"voter\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"choiceID\",\"type\":\"uint256\"}],\"name\":\"Vote\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"destroy\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"endBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_choiceID\",\"type\":\"uint256\"}],\"name\":\"vote\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // PollABI is the input ABI used to generate the binding from.
@@ -134,11 +135,11 @@ func NewPollFilterer(address common.Address, filterer bind.ContractFilterer) (*P
 
 // bindPoll binds a generic wrapper to an already deployed contract.
 func bindPoll(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(PollABI))
+	parsed, err := PollMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
