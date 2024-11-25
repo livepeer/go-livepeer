@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/clog"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,12 +41,12 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 	slog.Info("trickle pub", "url", url)
 }
 
-func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
 	if err != nil {
-		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
+		clog.Errorf(ctx, "error getting pipe for trickle-ffmpeg url=%s err=%s", url, err)
 	}
 
 	// read segments from trickle subscription
@@ -54,10 +56,10 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 			segment, err := subscriber.Read()
 			if err != nil {
 				// TODO if not EOS then signal a new orchestrator is needed
-				slog.Info("Error reading trickle subscription", "url", url, "err", err)
+				clog.Infof(ctx, "Error reading trickle subscription url=%s err=%s", url, err)
 				return
 			}
-			slog.Info("Got output segment from trickle", "url", url)
+			clog.Infof(ctx, "Got output segment from trickle url=%s", url)
 			defer segment.Body.Close()
 			// TODO send this into ffmpeg
 			io.Copy(w, segment.Body)
@@ -83,7 +85,7 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 				}).OverWriteOutput().ErrorToStdOut().Run()
 
 			if err != nil {
-				slog.Error("Error transcoding", "err", err)
+				clog.Errorf(ctx, "Error transcoding: %s", err)
 			}
 			time.Sleep(5 * time.Second)
 		}
