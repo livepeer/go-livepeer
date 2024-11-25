@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/livepeer/go-livepeer/core"
@@ -74,15 +74,14 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// lpms
 	go func() {
 		for {
-			//_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-			//	Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-			//}, []ffmpeg.TranscodeOptions{{
-			//	Oname:        params.liveParams.outputRTMPURL,
-			//	Profile:      ffmpeg.VideoProfile{Resolution: "512x512"},
-			//	AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
-			//	VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
-			//	Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-			//}})
+			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+			}, []ffmpeg.TranscodeOptions{{
+				Oname:        params.liveParams.outputRTMPURL,
+				Profile:      ffmpeg.VideoProfile{Format: ffmpeg.FormatMPEGTS},
+				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+			}})
 			//err := ff.Input(fmt.Sprintf("pipe:%d", r.Fd())).
 			//	Output(params.liveParams.outputRTMPURL, ff.KwArgs{
 			//		"c:a": "aac",
@@ -90,15 +89,15 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			//		"f":   "flv",
 			//	}).OverWriteOutput().ErrorToStdOut().Run()
 
-			cmd := exec.Command("ffmpeg", "-y", "-i", fmt.Sprintf("pipe:%d", r.Fd()), "-c:v", "libx264", "-c:a", "aac", "-f", "flv", params.liveParams.outputRTMPURL)
-
-			// Pass the read end of the pipe to FFmpeg
-			cmd.ExtraFiles = []*os.File{r}
-
-			// Set stdout and stderr to see FFmpeg output
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err := cmd.Run()
+			//cmd := exec.Command("ffmpeg", "-y", "-i", fmt.Sprintf("pipe:%d", r.Fd()), "-c:v", "libx264", "-c:a", "aac", "-f", "flv", params.liveParams.outputRTMPURL)
+			//
+			//// Pass the read end of the pipe to FFmpeg
+			//cmd.ExtraFiles = []*os.File{r}
+			//
+			//// Set stdout and stderr to see FFmpeg output
+			//cmd.Stdout = os.Stdout
+			//cmd.Stderr = os.Stderr
+			//err := cmd.Run()
 
 			if err != nil {
 				clog.Errorf(ctx, "Error transcoding: %s", err)
