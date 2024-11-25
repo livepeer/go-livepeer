@@ -48,7 +48,7 @@ func (s JSONRat) String() string {
 	return s.FloatString(2)
 }
 
-// parsePipelineFromModelID converts a pipeline name to a capability enum.
+// PipelineToCapability converts a pipeline name to a capability enum.
 func PipelineToCapability(pipeline string) (Capability, error) {
 	if pipeline == "" {
 		return Capability_Unused, errPipelineNotAvailable
