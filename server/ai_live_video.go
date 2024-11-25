@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
@@ -65,16 +66,19 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 
 	// lpms
 	go func() {
-		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-		}, []ffmpeg.TranscodeOptions{{
-			Oname:        params.liveParams.outputRTMPURL,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-		}})
-		if err != nil {
-			slog.Error("Error transcoding", "err", err)
+		for {
+			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+			}, []ffmpeg.TranscodeOptions{{
+				Oname:        params.liveParams.outputRTMPURL,
+				AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+			}})
+			if err != nil {
+				slog.Error("Error transcoding", "err", err)
+			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
 }
