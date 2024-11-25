@@ -133,16 +133,16 @@ type client struct {
 	transOpts      bind.TransactOpts
 	transOptsMu    sync.RWMutex
 
-	controllerAddr      ethcommon.Address
-	tokenAddr           ethcommon.Address
-	serviceRegistryAddr ethcommon.Address
-	bondingManagerAddr  ethcommon.Address
-	ticketBrokerAddr    ethcommon.Address
-	roundsManagerAddr   ethcommon.Address
-	minterAddr          ethcommon.Address
-	verifierAddr        ethcommon.Address
-	faucetAddr          ethcommon.Address
-	governorAddr        ethcommon.Address
+	controllerAddr       ethcommon.Address
+	tokenAddr            ethcommon.Address
+	serviceRegistryAddr  ethcommon.Address
+	bondingManagerAddr   ethcommon.Address
+	ticketBrokerAddr     ethcommon.Address
+	roundsManagerAddr    ethcommon.Address
+	minterAddr           ethcommon.Address
+	verifierAddr         ethcommon.Address
+	faucetAddr           ethcommon.Address
+	livepeerGovernorAddr ethcommon.Address
 
 	// Contracts
 	controller          *contracts.Controller
@@ -330,22 +330,22 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
 
-	governorAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerGovernor")))
+	livepeerGovernorAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerGovernor")))
 	if err != nil {
 		glog.Errorf("Error getting Governor address: %v", err)
 		return err
 	}
 
-	c.governorAddr = governorAddr
+	c.livepeerGovernorAddr = livepeerGovernorAddr
 
-	governor, err := contracts.NewGovernor(governorAddr, c.backend)
+	governor, err := contracts.NewGovernor(livepeerGovernorAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating Governor binding: %v", err)
 		return err
 	}
 	c.livepeerGovernor = governor
 
-	glog.V(common.SHORT).Infof("LivepeerGovernor: %v", c.governorAddr.Hex())
+	glog.V(common.SHORT).Infof("LivepeerGovernor: %v", c.livepeerGovernorAddr.Hex())
 
 	return nil
 }
