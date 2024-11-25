@@ -56,6 +56,7 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 				slog.Info("Error reading trickle subscription", "url", url, "err", err)
 				return
 			}
+			slog.Info("Got output segment from trickle", "url", url)
 			defer segment.Body.Close()
 			// TODO send this into ffmpeg
 			io.Copy(w, segment.Body)
@@ -64,7 +65,7 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 
 	// lpms
 	go func() {
-		ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 		}, []ffmpeg.TranscodeOptions{{
 			Oname:        params.liveParams.outputRTMPURL,
@@ -72,6 +73,9 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
 			Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 		}})
+		if err != nil {
+			slog.Error("Error transcoding", "err", err)
+		}
 	}()
 }
 
