@@ -57,8 +57,10 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 				return
 			}
 			defer segment.Body.Close()
-			// TODO send this into ffmpeg
-			io.Copy(w, segment.Body)
+			if _, err = io.Copy(w, segment.Body); err != nil {
+				slog.Info("Error copying to ffmpeg stdin", "url", url, "err", err)
+				return
+			}
 		}
 	}()
 

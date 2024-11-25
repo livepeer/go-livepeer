@@ -626,6 +626,15 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	}
 }
 
+func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.LiveVideoToVideoResponse{}, nil
+	}
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	a.Called++
 	return nil

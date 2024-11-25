@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
@@ -67,7 +68,6 @@ func startAIServer(lp lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
-
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
@@ -96,26 +96,41 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
 
-		// skipping handleAIRequest for now until we have payments
-
-		var (
-			mid        = string(core.RandomManifestID())
-			pubUrl     = TrickleHTTPPath + mid
-			subUrl     = pubUrl + "-out"
-			controlUrl = pubUrl + "-control"
-		)
-		jsonData, err := json.Marshal(
-			&worker.LiveVideoToVideoResponse{
-				PublishUrl:   pubUrl,
-				SubscribeUrl: subUrl,
-				ControlUrl:   controlUrl,
-			})
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		var req worker.GenLiveVideoToVideoJSONRequestBody
+		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := *req.ModelId
+		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+
+		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
+		err := orch.CreateStorageForRequest(requestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		}
+
+		// Check if there is capacity for the request
+		if !orch.CheckAICapacity(pipeline, modelID) {
+			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+			return
+		}
+
+		// Start trickle server for live-video
+		var (
+			mid        = requestID // Request ID is used for the manifest ID
+			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
+		)
+
+		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
 		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
@@ -139,8 +154,41 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 		}()
 
-		// TODO subscribe to the subscribeUrl for output monitoring
+		// Prepare request to worker
+		workerReq := worker.LiveVideoToVideoParams{
+			ModelId:      req.ModelId,
+			PublishUrl:   subUrl,
+			SubscribeUrl: pubUrl,
+			ControlUrl:   &controlUrl,
+			Params:       req.Params,
+		}
 
+		// Send request to the worker
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
+			}
+
+			pubCh.Close()
+			subCh.Close()
+			controlPubCh.Close()
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Prepare the response
+		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
+			ControlUrl:   controlUrl,
+		})
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
 		respondJsonOk(w, jsonData)
 	})
 }
