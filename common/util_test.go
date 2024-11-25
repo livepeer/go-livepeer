@@ -16,6 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFFmpegProfiletoNetProfile(t *testing.T) {
@@ -475,4 +476,120 @@ func TestMimeTypeToExtension(t *testing.T) {
 	invalidContentType := "invalid/type"
 	_, err := MimeTypeToExtension(invalidContentType)
 	assert.Equal(ErrNoExtensionsForType, err)
+}
+
+func TestParsePricePerUnit(t *testing.T) {
+	tests := []struct {
+		name             string
+		pricePerUnitStr  string
+		expectedPrice    *big.Rat
+		expectedCurrency string
+		expectError      bool
+	}{
+		{
+			name:             "Valid input with integer price",
+			pricePerUnitStr:  "100USD",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with fractional price",
+			pricePerUnitStr:  "0.13USD",
+			expectedPrice:    big.NewRat(13, 100),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid input with decimal price",
+			pricePerUnitStr:  "99.99EUR",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "EUR",
+			expectError:      false,
+		},
+		{
+			name:             "Lower case currency",
+			pricePerUnitStr:  "99.99eur",
+			expectedPrice:    big.NewRat(9999, 100),
+			expectedCurrency: "eur",
+			expectError:      false,
+		},
+		{
+			name:             "Currency with numbers",
+			pricePerUnitStr:  "420DOG3",
+			expectedPrice:    big.NewRat(420, 1),
+			expectedCurrency: "DOG3",
+			expectError:      false,
+		},
+		{
+			name:             "No specified currency, empty currency",
+			pricePerUnitStr:  "100",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "",
+			expectError:      false,
+		},
+		{
+			name:             "Explicit wei currency",
+			pricePerUnitStr:  "100wei",
+			expectedPrice:    big.NewRat(100, 1),
+			expectedCurrency: "wei",
+			expectError:      false,
+		},
+		{
+			name:             "Valid price with scientific notation and currency",
+			pricePerUnitStr:  "1.23e2USD",
+			expectedPrice:    big.NewRat(123, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid price with capital scientific notation and currency",
+			pricePerUnitStr:  "1.23E2USD",
+			expectedPrice:    big.NewRat(123, 1),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Valid price with negative scientific notation and currency",
+			pricePerUnitStr:  "1.23e-2USD",
+			expectedPrice:    big.NewRat(123, 10000),
+			expectedCurrency: "USD",
+			expectError:      false,
+		},
+		{
+			name:             "Invalid number",
+			pricePerUnitStr:  "abcUSD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+		{
+			name:             "Negative price",
+			pricePerUnitStr:  "-100USD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+		{
+			name:             "Only exponent part without base (e-2)",
+			pricePerUnitStr:  "e-2USD",
+			expectedPrice:    nil,
+			expectedCurrency: "",
+			expectError:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			price, currency, err := ParsePricePerUnit(tt.pricePerUnitStr)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.True(t, tt.expectedPrice.Cmp(price) == 0)
+				assert.Equal(t, tt.expectedCurrency, currency)
+			}
+		})
+	}
 }
