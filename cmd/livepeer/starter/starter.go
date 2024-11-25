@@ -156,6 +156,7 @@ type LivepeerConfig struct {
 	FVfailGsBucket          *string
 	FVfailGsKey             *string
 	AuthWebhookURL          *string
+	LiveAIAuthWebhookURL    *string
 	OrchWebhookURL          *string
 	OrchBlacklist           *string
 	OrchMinLivepeerVersion  *string
@@ -209,6 +210,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultLiveAIAuthWebhookURL := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -310,11 +312,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry: &defaultAIServiceRegistry,
-		AIWorker:          &defaultAIWorker,
-		AIModels:          &defaultAIModels,
-		AIModelsDir:       &defaultAIModelsDir,
-		AIRunnerImage:     &defaultAIRunnerImage,
+		AIServiceRegistry:    &defaultAIServiceRegistry,
+		AIWorker:             &defaultAIWorker,
+		AIModels:             &defaultAIModels,
+		AIModelsDir:          &defaultAIModelsDir,
+		AIRunnerImage:        &defaultAIRunnerImage,
+		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1376,6 +1379,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
 		server.AuthWebhookURL = parsedUrl
+	}
+
+	if *cfg.LiveAIAuthWebhookURL != "" {
+		parsedUrl, err := validateURL(*cfg.LiveAIAuthWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting live AI auth webhook URL ", err)
+		}
+		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
+		server.LiveAIAuthWebhookURL = parsedUrl
 	}
 
 	httpIngest := true
