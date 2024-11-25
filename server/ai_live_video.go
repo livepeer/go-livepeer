@@ -71,8 +71,8 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 			}, []ffmpeg.TranscodeOptions{{
 				Oname:        params.liveParams.outputRTMPURL,
-				AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				AudioEncoder: ffmpeg.ComponentOptions{Name: "aac"},
+				VideoEncoder: ffmpeg.ComponentOptions{Name: "libx264"},
 				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
 			}})
 			if err != nil {
