@@ -125,7 +125,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		// Start trickle server for live-video
 		var (
 			mid        = requestID // Request ID is used for the manifest ID
-			pubUrl     = TrickleHTTPPath + mid
+			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 		)
@@ -154,19 +154,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 		}()
 
-		// Append trickle_url to req.Params
-		if req.Params == nil {
-			req.Params = &map[string]interface{}{}
-		}
-		(*req.Params)["trickle_port"] = orch.ServiceURI().Port()
-
 		// Prepare request to worker
 		//Subscribe and Publish urls are swapped for the worker
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
 			PublishUrl:   subUrl,
 			SubscribeUrl: pubUrl,
-			ControlUrl:   controlUrl,
+			ControlUrl:   &controlUrl,
 			Params:       req.Params,
 		}
 
