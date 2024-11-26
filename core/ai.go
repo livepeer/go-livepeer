@@ -28,6 +28,7 @@ type AI interface {
 	ImageToText(context.Context, worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error)
 	TextToSpeech(context.Context, worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
+	EnsureImageAvailable(context.Context, string, string) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
 }
