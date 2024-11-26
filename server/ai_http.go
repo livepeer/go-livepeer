@@ -157,12 +157,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
-		controlUrl = overwriteForWorker(controlUrl)
+		controlUrlOverwrite := overwriteForWorker(controlUrl)
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
 			PublishUrl:   overwriteForWorker(subUrl),
 			SubscribeUrl: overwriteForWorker(pubUrl),
-			ControlUrl:   &controlUrl,
+			ControlUrl:   &controlUrlOverwrite,
 			Params:       req.Params,
 		}
 
