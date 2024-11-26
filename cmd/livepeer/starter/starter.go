@@ -167,6 +167,7 @@ type LivepeerConfig struct {
 	KafkaPassword           *string
 	KafkaGatewayTopic       *string
 	MediaMTXApiPassword     *string
+	LiveAIAuthApiKey        *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -1554,6 +1555,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	if cfg.MediaMTXApiPassword != nil {
 		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
+	}
+	if cfg.LiveAIAuthApiKey != nil {
+		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
 
 	//Create Livepeer Node

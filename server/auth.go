@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -124,7 +123,7 @@ type AIAuthResponse struct {
 	paramsMap      map[string]interface{} // unmarshaled params
 }
 
-func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse, error) {
+func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*AIAuthResponse, error) {
 	req.StreamKey = req.Stream
 	if authURL == nil {
 		return nil, fmt.Errorf("No auth URL configured")
@@ -142,7 +141,7 @@ func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse,
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("x-api-key", os.Getenv("SHOWCASE_API_KEY"))
+	request.Header.Set("x-api-key", apiKey)
 
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
