@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	url2 "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -155,10 +157,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
+		controlUrl = overwriteForWorker(controlUrl)
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   subUrl,
-			SubscribeUrl: pubUrl,
+			PublishUrl:   overwriteForWorker(subUrl),
+			SubscribeUrl: overwriteForWorker(pubUrl),
 			ControlUrl:   &controlUrl,
 			Params:       req.Params,
 		}
@@ -191,6 +194,15 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
 		respondJsonOk(w, jsonData)
 	})
+}
+
+func overwriteForWorker(url string) string {
+	u, err := url2.ParseRequestURI(url)
+	if err != nil {
+		slog.Warn("Couldn't parse url to overwrite for worker, using original url", "url", url, "err", err)
+	}
+	u.Host = "host.docker.internal:8935"
+	return u.String()
 }
 
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
