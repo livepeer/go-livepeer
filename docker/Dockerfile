@@ -20,7 +20,6 @@ RUN	apt update \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
 	&& apt update \
 	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev \
-    	&& apt -yqq install ffmpeg
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
@@ -68,5 +67,7 @@ COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
+
+RUN apt update && apt install -yqq ffmpeg
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]
