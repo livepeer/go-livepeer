@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
@@ -67,18 +68,21 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 	// TODO: Change this to LPMS
 	go func() {
 		defer r.Close()
-		cmd := exec.Command("ffmpeg",
-			"-i", "pipe:0",
-			"-c:a", "copy",
-			"-c:v", "copy",
-			"-f", "flv",
-			params.liveParams.outputRTMPURL,
-		)
-		cmd.Stdin = r
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			slog.Info("Error running ffmpeg command", "err", err, "url", url)
+		for {
+			cmd := exec.Command("ffmpeg",
+				"-i", "pipe:0",
+				"-c:a", "copy",
+				"-c:v", "copy",
+				"-f", "flv",
+				params.liveParams.outputRTMPURL,
+			)
+			cmd.Stdin = r
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				slog.Info("Error running ffmpeg command", "err", err, "url", url)
+			}
+			time.Sleep(5 * time.Second)
 		}
 	}()
 }
