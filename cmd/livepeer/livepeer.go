@@ -164,6 +164,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 
 	// Live AI:
 	cfg.MediaMTXApiPassword = flag.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
+	cfg.LiveAITrickleHostForRunner = flag.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
 	cfg.LiveAIAuthApiKey = flag.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
 	cfg.LiveAIAuthWebhookURL = flag.String("liveAIAuthWebhookUrl", "", "Live AI RTMP authentication webhook URL")
 
