@@ -168,7 +168,8 @@ type LivepeerConfig struct {
 	KafkaPassword              *string
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
-	LiveAIAuthApiKey        *string
+	LiveAIAuthApiKey           *string
+}
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
 func DefaultLivepeerConfig() LivepeerConfig {
