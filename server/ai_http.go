@@ -157,11 +157,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
-		controlUrlOverwrite := overwriteForWorker(controlUrl)
+		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   overwriteForWorker(subUrl),
-			SubscribeUrl: overwriteForWorker(pubUrl),
+			PublishUrl:   overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl),
+			SubscribeUrl: overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl),
 			ControlUrl:   &controlUrlOverwrite,
 			Params:       req.Params,
 		}
@@ -196,12 +196,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	})
 }
 
-func overwriteForWorker(url string) string {
+// overwriteHost is used to overwrite the trickle host, because it may be different for runner
+// runner may run inside Docker container, in a different network, or even on a different machine
+func overwriteHost(hostOverwrite, url string) string {
+	if hostOverwrite == "" {
+		return url
+	}
 	u, err := url2.ParseRequestURI(url)
 	if err != nil {
 		slog.Warn("Couldn't parse url to overwrite for worker, using original url", "url", url, "err", err)
+		return url
 	}
-	u.Host = "host.docker.internal:8935"
+	u.Host = hostOverwrite
 	return u.String()
 }
 
