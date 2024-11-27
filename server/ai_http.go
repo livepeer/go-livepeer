@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	url2 "net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -155,11 +157,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
+		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   subUrl,
-			SubscribeUrl: pubUrl,
-			ControlUrl:   &controlUrl,
+			PublishUrl:   overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl),
+			SubscribeUrl: overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl),
+			ControlUrl:   &controlUrlOverwrite,
 			Params:       req.Params,
 		}
 
@@ -191,6 +194,21 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
 		respondJsonOk(w, jsonData)
 	})
+}
+
+// overwriteHost is used to overwrite the trickle host, because it may be different for runner
+// runner may run inside Docker container, in a different network, or even on a different machine
+func overwriteHost(hostOverwrite, url string) string {
+	if hostOverwrite == "" {
+		return url
+	}
+	u, err := url2.ParseRequestURI(url)
+	if err != nil {
+		slog.Warn("Couldn't parse url to overwrite for worker, using original url", "url", url, "err", err)
+		return url
+	}
+	u.Host = hostOverwrite
+	return u.String()
 }
 
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
