@@ -361,13 +361,6 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		streamName := r.PathValue("stream")
-		if streamName == "" {
-			clog.Errorf(ctx, "Missing stream name")
-			http.Error(w, "Missing stream name", http.StatusBadRequest)
-			return
-		}
-		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
 			clog.Errorf(ctx, "Missing source_id")
@@ -388,6 +381,20 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
+		streamName := r.PathValue("stream")
+		mediaMTXStreamName := streamName
+		if streamName == "" {
+			clog.Errorf(ctx, "Missing stream name")
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+
+		// For webrtc we need to strip a path prefix due to the ingress setup
+		if sourceType == mediaMTXWebrtcSession && strings.Contains(streamName, "/") {
+			split := strings.Split(streamName, "/")
+			streamName = split[len(split)-1]
+		}
+		ctx = clog.AddVal(ctx, "stream", streamName)
 
 		remoteHost, err := getRemoteHost(r.RemoteAddr)
 		if err != nil {
@@ -469,7 +476,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, mediaMTXStreamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()

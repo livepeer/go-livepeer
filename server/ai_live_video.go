@@ -89,9 +89,9 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 
 func mediamtxSourceTypeToString(s string) (string, error) {
 	switch s {
-	case "webrtcSession":
+	case mediaMTXWebrtcSession:
 		return "whip", nil
-	case "rtmpConn":
+	case mediaMTXRtmpConn:
 		return "rtmp", nil
 	default:
 		return "", errors.New("unknown media source")
@@ -111,16 +111,18 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 }
 
 const (
-	mediaMTXControlPort = "9997"
-	mediaMTXControlUser = "admin"
+	mediaMTXControlPort   = "9997"
+	mediaMTXControlUser   = "admin"
+	mediaMTXWebrtcSession = "webrtcSession"
+	mediaMTXRtmpConn      = "rtmpConn"
 )
 
 func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string
 	switch sourceType {
-	case "webrtcSession":
+	case mediaMTXWebrtcSession:
 		apiPath = "webrtcsessions"
-	case "rtmpConn":
+	case mediaMTXRtmpConn:
 		apiPath = "rtmpconns"
 	default:
 		return fmt.Errorf("invalid sourceType: %s", sourceType)
