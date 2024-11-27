@@ -153,7 +153,8 @@ type LivepeerNode struct {
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
 
-	MediaMTXApiPassword string
+	MediaMTXApiPassword        string
+	LiveAITrickleHostForRunner string
 }
 
 type LivePipeline struct {
