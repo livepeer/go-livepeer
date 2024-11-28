@@ -4,12 +4,14 @@ on:
   pull_request:
     branches:
       - master
-      - ai-video
   push:
     branches:
       - master
     tags:
       - "v*"
+    paths-ignore:
+      - 'doc/**'
+      - 'docker/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

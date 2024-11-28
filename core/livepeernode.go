@@ -20,6 +20,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/trickle"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
@@ -147,6 +148,17 @@ type LivepeerNode struct {
 	priceInfoForCaps map[string]CapabilityPrices
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+
+	// For live video pipelines, cache for live pipelines; key is the stream name
+	LivePipelines map[string]*LivePipeline
+	LiveMu        *sync.RWMutex
+
+	MediaMTXApiPassword        string
+	LiveAITrickleHostForRunner string
+}
+
+type LivePipeline struct {
+	ControlPub *trickle.TricklePublisher
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -164,6 +176,8 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		priceInfoForCaps: make(map[string]CapabilityPrices),
 		StorageConfigs:   make(map[string]*transcodeConfig),
 		storageMutex:     &sync.RWMutex{},
+		LivePipelines:    make(map[string]*LivePipeline),
+		LiveMu:           &sync.RWMutex{},
 	}, nil
 }
 

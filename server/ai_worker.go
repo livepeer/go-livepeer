@@ -285,6 +285,23 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.LLM(ctx, req)
 		}
 		reqOk = true
+	case "image-to-text":
+		var req worker.GenImageToTextMultipartRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
+			break
+		}
+		modelID = *req.ModelId
+		resultType = "application/json"
+		req.Image.InitFromBytes(input, "image")
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.ImageToText(ctx, req)
+		}
+		reqOk = true
 	case "text-to-speech":
 		var req worker.GenTextToSpeechJSONRequestBody
 		err = json.Unmarshal(reqData.Request, &req)
@@ -348,7 +365,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 	// reserve the capabilities to process this request, release after work is done
 	err = n.ReserveAICapability(notify.AIJobData.Pipeline, modelID)
 	if err != nil {
-		clog.Errorf(ctx, "No capability avaiable to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
+		clog.Errorf(ctx, "No capability available to process requested AI job with this node taskId=%d pipeline=%s modelID=%s err=%q", notify.TaskId, notify.AIJobData.Pipeline, modelID, core.ErrNoCompatibleWorkersAvailable)
 		sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, core.ErrNoCompatibleWorkersAvailable)
 		return
 	}

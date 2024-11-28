@@ -1,5 +1,7 @@
 package server
 
+// ai_http.go implements the HTTP server for AI-related requests at the Orchestrator.
+
 import (
 	"bufio"
 	"context"
@@ -8,14 +10,17 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	url2 "net/url"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
@@ -23,12 +28,15 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
 	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
+
+var TrickleHTTPPath = "/ai/trickle/"
 
 func startAIServer(lp lphttp) error {
 	swagger, err := worker.GetSwagger()
@@ -50,244 +58,160 @@ func startAIServer(lp lphttp) error {
 
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 
-	lp.transRPC.Handle("/text-to-image", oapiReqValidator(lp.TextToImage()))
-	lp.transRPC.Handle("/image-to-image", oapiReqValidator(lp.ImageToImage()))
-	lp.transRPC.Handle("/image-to-video", oapiReqValidator(lp.ImageToVideo()))
-	lp.transRPC.Handle("/upscale", oapiReqValidator(lp.Upscale()))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(lp.AudioToText()))
-	lp.transRPC.Handle("/llm", oapiReqValidator(lp.LLM()))
-	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(lp.SegmentAnything2()))
-	lp.transRPC.Handle("/image-to-text", oapiReqValidator(lp.ImageToText()))
-	lp.transRPC.Handle("/live-portrait", oapiReqValidator(lp.LivePortrait()))
+	lp.trickleSrv = trickle.ConfigureServer(trickle.TrickleServerConfig{
+		Mux:      lp.transRPC,
+		BasePath: TrickleHTTPPath,
+	})
+
+	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
+	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
+	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/live-portrait", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.LivePortraitLivePortraitPostMultipartRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(lp.TextToSpeech()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
 }
 
-func (h *lphttp) TextToImage() http.Handler {
+// aiHttpHandle handles AI requests by decoding the request body and processing it.
+func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		orch := h.orchestrator
-
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-		var req worker.GenTextToImageJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var req I
+		if err := decoderFunc(&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToImage() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToImageMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToVideo() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToVideoMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) Upscale() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenUpscaleMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) AudioToText() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenAudioToTextMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) SegmentAnything2() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenSegmentAnything2MultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) LLM() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenLLMFormdataRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
-}
-
-func (h *lphttp) ImageToText() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenImageToTextMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-
 	})
 }
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		// skipping handleAIRequest for now until we have payments
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
 
+		var req worker.GenLiveVideoToVideoJSONRequestBody
+		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := *req.ModelId
+		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+
+		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
+		err := orch.CreateStorageForRequest(requestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		}
+
+		// Check if there is capacity for the request
+		if !orch.CheckAICapacity(pipeline, modelID) {
+			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+			return
+		}
+
+		// Start trickle server for live-video
 		var (
-			mid    = string(core.RandomManifestID())
-			pubUrl = "/ai/live-video/" + mid
-			subUrl = pubUrl + "/out"
+			mid        = requestID // Request ID is used for the manifest ID
+			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
 		)
-		jsonData, err := json.Marshal(struct {
-			PublishUrl   string
-			SubscribeUrl string
-		}{
+
+		//If successful, then create the trickle channels
+		// Precreate the channels to avoid race conditions
+		// TODO get the expected mime type from the request
+		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh.CreateChannel()
+		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh.CreateChannel()
+		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+		controlPubCh.CreateChannel()
+
+		// Subscribe to the publishUrl for payments monitoring
+		go func() {
+			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
+			for {
+				segment, err := sub.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
+					return
+				}
+				// We can do something with the segment data here
+				io.Copy(io.Discard, segment.Reader)
+			}
+		}()
+
+		// Prepare request to worker
+		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
+		workerReq := worker.LiveVideoToVideoParams{
+			ModelId:      req.ModelId,
+			PublishUrl:   overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl),
+			SubscribeUrl: overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl),
+			ControlUrl:   &controlUrlOverwrite,
+			Params:       req.Params,
+		}
+
+		// Send request to the worker
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
+			}
+
+			pubCh.Close()
+			subCh.Close()
+			controlPubCh.Close()
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Prepare the response
+		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
 			PublishUrl:   pubUrl,
 			SubscribeUrl: subUrl,
+			ControlUrl:   controlUrl,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jsonData)
+		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
+		respondJsonOk(w, jsonData)
 	})
 }
 
-func (h *lphttp) TextToSpeech() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		orch := h.orchestrator
-
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		var req worker.GenTextToSpeechJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondWithError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		handleAIRequest(ctx, w, r, orch, req)
-	})
+// overwriteHost is used to overwrite the trickle host, because it may be different for runner
+// runner may run inside Docker container, in a different network, or even on a different machine
+func overwriteHost(hostOverwrite, url string) string {
+	if hostOverwrite == "" {
+		return url
+	}
+	u, err := url2.ParseRequestURI(url)
+	if err != nil {
+		slog.Warn("Couldn't parse url to overwrite for worker, using original url", "url", url, "err", err)
+		return url
+	}
+	u.Host = hostOverwrite
+	return u.String()
 }
 
 func (h *lphttp) LivePortrait() http.Handler {
@@ -858,7 +782,7 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					break
 				}
 				results = parsedResp
-			case "audio-to-text", "segment-anything-2", "llm":
+			case "audio-to-text", "segment-anything-2", "llm", "image-to-text":
 				err := json.Unmarshal(body, &results)
 				if err != nil {
 					glog.Error("Error getting results json:", err)

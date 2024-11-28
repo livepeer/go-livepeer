@@ -21,6 +21,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
@@ -37,7 +38,7 @@ const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultLivePortraitModelID = "default"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
-const defaultLiveVideoToVideoModelID = "cumulo-autumn/stream-diffusion"
+const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
@@ -85,6 +86,15 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+
+	liveParams liveRequestParams
+}
+
+// For live video pipelines
+type liveRequestParams struct {
+	segmentReader *media.SwitchableSegmentReader
+	outputRTMPURL string
+	stream        string
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1052,6 +1062,21 @@ func processAudioToText(ctx context.Context, params aiRequestParams, req worker.
 }
 
 func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
+	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// Add the duration to the request via 'metadata' field.
+	metadata := map[string]string{
+		"duration": strconv.Itoa(int(durationSeconds)),
+	}
+	metadataStr := encodeReqMetadata(metadata)
+	req.Metadata = &metadataStr
+
 	var buf bytes.Buffer
 	mw, err := worker.NewAudioToTextMultipartWriter(&buf, req)
 	if err != nil {
@@ -1062,14 +1087,6 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
-		}
-		return nil, err
-	}
-
-	durationSeconds, err := common.CalculateAudioDuration(req.Audio)
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "audio-to-text", *req.ModelId, sess.OrchestratorInfo)
@@ -1138,17 +1155,40 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req struct{ ModelId *string }) (any, error) {
-	//client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
-	var err error
+func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
-	// TODO check urls and add sess.Transcoder to the host if necessary
-	return nil, nil
+
+	// Send request to orchestrator
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.JSON200 != nil {
+		host := sess.Transcoder()
+		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+		if err != nil {
+			return nil, fmt.Errorf("invalid publish URL: %w", err)
+		}
+		sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+		if err != nil {
+			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
+		}
+		control, err := common.AppendHostname(resp.JSON200.ControlUrl, host)
+		if err != nil {
+			return nil, fmt.Errorf("invalid control URL: %w", err)
+		}
+		startTricklePublish(pub, params)
+		startTrickleSubscribe(sub, params)
+		startControlPublish(control, params)
+	}
+	return resp, nil
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1509,17 +1549,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitTextToSpeech(ctx, params, sess, v)
 		}
-		/*
-			case worker.StartLiveVideoToVideoFormdataRequestBody:
-				cap = core.Capability_LiveVideoToVideo
-				modelID = defaultLiveVideoToVideoModelID
-				if v.ModelId != nil {
-					modelID = *v.ModelId
-				}
-				submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
-					return submitLiveVideoToVideo(ctx, params, sess, v)
-				}
-		*/
+	case worker.GenLiveVideoToVideoJSONRequestBody:
+		cap = core.Capability_LiveVideoToVideo
+		modelID = defaultLiveVideoToVideoModelID
+		if v.ModelId != nil && *v.ModelId != "" {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLiveVideoToVideo(ctx, params, sess, v)
+		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
@@ -1565,7 +1603,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
-		params.sessManager.Remove(ctx, sess)
+		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
 
 		if errors.Is(err, common.ErrAudioDurationCalculation) {
 			return nil, &BadRequestError{err}
@@ -1649,4 +1687,10 @@ func estimateAIFee(outPixels int64, priceInfo *big.Rat) (*big.Rat, error) {
 	fee.Mul(fee, priceInfo)
 
 	return fee, nil
+}
+
+// encodeReqMetadata encodes a map of metadata into a JSON string.
+func encodeReqMetadata(metadata map[string]string) string {
+	metadataBytes, _ := json.Marshal(metadata)
+	return string(metadataBytes)
 }

@@ -78,89 +78,96 @@ const (
 )
 
 type LivepeerConfig struct {
-	Network                 *string
-	RtmpAddr                *string
-	CliAddr                 *string
-	HttpAddr                *string
-	ServiceAddr             *string
-	OrchAddr                *string
-	VerifierURL             *string
-	EthController           *string
-	VerifierPath            *string
-	LocalVerify             *bool
-	HttpIngest              *bool
-	Orchestrator            *bool
-	Transcoder              *bool
-	AIServiceRegistry       *bool
-	AIWorker                *bool
-	Gateway                 *bool
-	Broadcaster             *bool
-	OrchSecret              *string
-	TranscodingOptions      *string
-	AIModels                *string
-	MaxAttempts             *int
-	SelectRandWeight        *float64
-	SelectStakeWeight       *float64
-	SelectPriceWeight       *float64
-	SelectPriceExpFactor    *float64
-	OrchPerfStatsURL        *string
-	Region                  *string
-	MaxPricePerUnit         *string
-	MaxPricePerCapability   *string
-	IgnoreMaxPriceIfNeeded  *bool
-	MinPerfScore            *float64
-	DiscoveryTimeout        *time.Duration
-	MaxSessions             *string
-	CurrentManifest         *bool
-	Nvidia                  *string
-	Netint                  *string
-	HevcDecoding            *bool
-	TestTranscoder          *bool
-	EthAcctAddr             *string
-	EthPassword             *string
-	EthKeystorePath         *string
-	EthOrchAddr             *string
-	EthUrl                  *string
-	TxTimeout               *time.Duration
-	MaxTxReplacements       *int
-	GasLimit                *int
-	MinGasPrice             *int64
-	MaxGasPrice             *int
-	InitializeRound         *bool
-	InitializeRoundMaxDelay *time.Duration
-	TicketEV                *string
-	MaxFaceValue            *string
-	MaxTicketEV             *string
-	MaxTotalEV              *string
-	DepositMultiplier       *int
-	PricePerUnit            *string
-	PixelsPerUnit           *string
-	PriceFeedAddr           *string
-	AutoAdjustPrice         *bool
-	PricePerGateway         *string
-	PricePerBroadcaster     *string
-	BlockPollingInterval    *int
-	Redeemer                *bool
-	RedeemerAddr            *string
-	Reward                  *bool
-	Monitor                 *bool
-	MetricsPerStream        *bool
-	MetricsExposeClientIP   *bool
-	MetadataQueueUri        *string
-	MetadataAmqpExchange    *string
-	MetadataPublishTimeout  *time.Duration
-	Datadir                 *string
-	AIModelsDir             *string
-	Objectstore             *string
-	Recordstore             *string
-	FVfailGsBucket          *string
-	FVfailGsKey             *string
-	AuthWebhookURL          *string
-	OrchWebhookURL          *string
-	OrchBlacklist           *string
-	OrchMinLivepeerVersion  *string
-	TestOrchAvail           *bool
-	AIRunnerImage           *string
+	Network                    *string
+	RtmpAddr                   *string
+	CliAddr                    *string
+	HttpAddr                   *string
+	ServiceAddr                *string
+	OrchAddr                   *string
+	VerifierURL                *string
+	EthController              *string
+	VerifierPath               *string
+	LocalVerify                *bool
+	HttpIngest                 *bool
+	Orchestrator               *bool
+	Transcoder                 *bool
+	AIServiceRegistry          *bool
+	AIWorker                   *bool
+	Gateway                    *bool
+	Broadcaster                *bool
+	OrchSecret                 *string
+	TranscodingOptions         *string
+	AIModels                   *string
+	MaxAttempts                *int
+	SelectRandWeight           *float64
+	SelectStakeWeight          *float64
+	SelectPriceWeight          *float64
+	SelectPriceExpFactor       *float64
+	OrchPerfStatsURL           *string
+	Region                     *string
+	MaxPricePerUnit            *string
+	MaxPricePerCapability      *string
+	IgnoreMaxPriceIfNeeded     *bool
+	MinPerfScore               *float64
+	DiscoveryTimeout           *time.Duration
+	MaxSessions                *string
+	CurrentManifest            *bool
+	Nvidia                     *string
+	Netint                     *string
+	HevcDecoding               *bool
+	TestTranscoder             *bool
+	EthAcctAddr                *string
+	EthPassword                *string
+	EthKeystorePath            *string
+	EthOrchAddr                *string
+	EthUrl                     *string
+	TxTimeout                  *time.Duration
+	MaxTxReplacements          *int
+	GasLimit                   *int
+	MinGasPrice                *int64
+	MaxGasPrice                *int
+	InitializeRound            *bool
+	InitializeRoundMaxDelay    *time.Duration
+	TicketEV                   *string
+	MaxFaceValue               *string
+	MaxTicketEV                *string
+	MaxTotalEV                 *string
+	DepositMultiplier          *int
+	PricePerUnit               *string
+	PixelsPerUnit              *string
+	PriceFeedAddr              *string
+	AutoAdjustPrice            *bool
+	PricePerGateway            *string
+	PricePerBroadcaster        *string
+	BlockPollingInterval       *int
+	Redeemer                   *bool
+	RedeemerAddr               *string
+	Reward                     *bool
+	Monitor                    *bool
+	MetricsPerStream           *bool
+	MetricsExposeClientIP      *bool
+	MetadataQueueUri           *string
+	MetadataAmqpExchange       *string
+	MetadataPublishTimeout     *time.Duration
+	Datadir                    *string
+	AIModelsDir                *string
+	Objectstore                *string
+	Recordstore                *string
+	FVfailGsBucket             *string
+	FVfailGsKey                *string
+	AuthWebhookURL             *string
+	LiveAIAuthWebhookURL       *string
+	LiveAITrickleHostForRunner *string
+	OrchWebhookURL             *string
+	OrchBlacklist              *string
+	OrchMinLivepeerVersion     *string
+	TestOrchAvail              *bool
+	AIRunnerImage              *string
+	KafkaBootstrapServers      *string
+	KafkaUsername              *string
+	KafkaPassword              *string
+	KafkaGatewayTopic          *string
+	MediaMTXApiPassword        *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -204,6 +211,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultLiveAIAuthWebhookURL := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -264,6 +272,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// Flags
 	defaultTestOrchAvail := true
 
+	// Gateway logs
+	defaultKafkaBootstrapServers := ""
+	defaultKafkaUsername := ""
+	defaultKafkaPassword := ""
+	defaultKafkaGatewayTopic := ""
+
 	return LivepeerConfig{
 		// Network & Addresses:
 		Network:      &defaultNetwork,
@@ -299,11 +313,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry: &defaultAIServiceRegistry,
-		AIWorker:          &defaultAIWorker,
-		AIModels:          &defaultAIModels,
-		AIModelsDir:       &defaultAIModelsDir,
-		AIRunnerImage:     &defaultAIRunnerImage,
+		AIServiceRegistry:    &defaultAIServiceRegistry,
+		AIWorker:             &defaultAIWorker,
+		AIModels:             &defaultAIModels,
+		AIModelsDir:          &defaultAIModelsDir,
+		AIRunnerImage:        &defaultAIRunnerImage,
+		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -365,6 +380,12 @@ func DefaultLivepeerConfig() LivepeerConfig {
 
 		// Flags
 		TestOrchAvail: &defaultTestOrchAvail,
+
+		// Gateway logs
+		KafkaBootstrapServers: &defaultKafkaBootstrapServers,
+		KafkaUsername:         &defaultKafkaUsername,
+		KafkaPassword:         &defaultKafkaPassword,
+		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
 	}
 }
 
@@ -1297,8 +1318,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pricePerUnit = pricePerUnitBase
 					currency = currencyBase
 					glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
-				} else if !pricePerUnit.IsInt() || pricePerUnit.Sign() <= 0 {
-					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive integer, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
+				} else if pricePerUnit.Sign() <= 0 {
+					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive number, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 				}
 
 				pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
@@ -1359,6 +1380,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 		glog.Info("Using auth webhook URL ", parsedUrl.Redacted())
 		server.AuthWebhookURL = parsedUrl
+	}
+
+	if *cfg.LiveAIAuthWebhookURL != "" {
+		parsedUrl, err := validateURL(*cfg.LiveAIAuthWebhookURL)
+		if err != nil {
+			glog.Exit("Error setting live AI auth webhook URL ", err)
+		}
+		glog.Info("Using live AI auth webhook URL ", parsedUrl.Redacted())
+		server.LiveAIAuthWebhookURL = parsedUrl
 	}
 
 	httpIngest := true
@@ -1523,6 +1553,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
 	}
+	if cfg.MediaMTXApiPassword != nil {
+		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
+	}
+	if cfg.LiveAITrickleHostForRunner != nil {
+		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
+	}
 
 	//Create Livepeer Node
 
@@ -1595,6 +1631,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
+		}
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
 		}
 	}
 

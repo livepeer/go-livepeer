@@ -149,6 +149,14 @@ func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID 
 func (r *stubOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64) {
 }
 
+func (r *stubOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
+}
+
+func (o *mockOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
+	return big.NewRat(0, 1)
+}
+
 func (r *stubOrchestrator) Capabilities() *net.Capabilities {
 	if r.caps != nil {
 		return r.caps.ToNetCapabilities()
@@ -215,6 +223,10 @@ func (r *stubOrchestrator) LivePortrait(ctx context.Context, requestID string, r
 	return nil, nil
 }
 func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+
+func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 
@@ -1421,6 +1433,9 @@ func (r *mockOrchestrator) LivePortrait(ctx context.Context, requestID string, r
 	return nil, nil
 }
 func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

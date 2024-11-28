@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -14,6 +18,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-tools/drivers"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/oapi-codegen/runtime"
@@ -90,40 +95,27 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	openapi3filter.RegisterBodyDecoder("image/png", openapi3filter.FileBodyDecoder)
 	openapi3filter.RegisterBodyDecoder("video/mp4", openapi3filter.FileBodyDecoder)
 
-	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
-	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
-	ls.HTTPMux.Handle("/upscale", oapiReqValidator(handle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
+	ls.HTTPMux.Handle("/text-to-image", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToImageJSONRequestBody], processTextToImage)))
+	ls.HTTPMux.Handle("/image-to-image", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToImageMultipartRequestBody], processImageToImage)))
+	ls.HTTPMux.Handle("/upscale", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenUpscaleMultipartRequestBody], processUpscale)))
 	ls.HTTPMux.Handle("/image-to-video", oapiReqValidator(ls.ImageToVideo()))
 	ls.HTTPMux.Handle("/image-to-video/result", ls.ImageToVideoResult())
-	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
+	ls.HTTPMux.Handle("/audio-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenAudioToTextMultipartRequestBody], processAudioToText)))
 	ls.HTTPMux.Handle("/llm", oapiReqValidator(ls.LLM()))
-	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(handle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
+	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
+	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
+	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 	ls.HTTPMux.Handle("/live-portrait", oapiReqValidator(ls.LivePortrait()))
-	ls.HTTPMux.Handle("/live-portrait/result", ls.LivePortraitResult())
-	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(handle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
-	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(handle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
+	ls.HTTPMux.Handle("/live-portrait/result", ls.LivePortraitResult())	
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
 }
 
-// Decoder for JSON requests
-func jsonDecoder[T any](req *T, r *http.Request) error {
-	return json.NewDecoder(r.Body).Decode(req)
-}
-
-// Decoder for Multipart requests
-func multipartDecoder[T any](req *T, r *http.Request) error {
-	multiRdr, err := r.MultipartReader()
-	if err != nil {
-		return err
-	}
-	return runtime.BindMultipart(req, *multiRdr)
-}
-
-func handle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
+func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
@@ -559,21 +551,196 @@ func (ls *LivepeerServer) LivePortraitResult() http.Handler {
 
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		streamName := r.FormValue("stream")
+		ctx := r.Context()
+		streamName := r.PathValue("stream")
 		if streamName == "" {
+			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+		ctx = clog.AddVal(ctx, "stream", streamName)
+		sourceID := r.FormValue("source_id")
+		if sourceID == "" {
+			clog.Errorf(ctx, "Missing source_id")
+			http.Error(w, "Missing source_id", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "source_id", sourceID)
+		sourceType := r.FormValue("source_type")
+		if sourceType == "" {
+			clog.Errorf(ctx, "Missing source_type")
+			http.Error(w, "Missing source_type", http.StatusBadRequest)
+			return
+		}
+		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
+		if err != nil {
+			clog.Errorf(ctx, "Invalid source type %s", sourceType)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "source_type", sourceType)
+
+		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		if err != nil {
+			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
+			http.Error(w, "Could not find callback host", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
+
+		queryParams := r.FormValue("query")
+		qp, err := url.ParseQuery(queryParams)
+		if err != nil {
+			clog.Errorf(ctx, "invalid query params, err=%w", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// If auth webhook is set and returns an output URL, this will be replaced
+		outputURL := qp.Get("rtmpOutput")
+		if outputURL == "" {
+			// re-publish to ourselves for now
+			// Not sure if we want this to be permanent
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
+		}
+
+		// convention to avoid re-subscribing to our own streams
+		// in case we want to push outputs back into mediamtx -
+		// use an `-out` suffix for the stream name.
+		if strings.HasSuffix(streamName, "-out") {
+			// skip for now; we don't want to re-publish our own outputs
+			return
+		}
+
+		// if auth webhook returns pipeline config these will be replaced
+		pipeline := qp.Get("pipeline")
+		rawParams := qp.Get("params")
+		var pipelineParams map[string]interface{}
+		if rawParams != "" {
+			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+				clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+				http.Error(w, "Invalid model params", http.StatusBadRequest)
+				return
+			}
+		}
+
+		if LiveAIAuthWebhookURL != nil {
+			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, AIAuthRequest{
+				Stream:      streamName,
+				Type:        sourceTypeStr,
+				QueryParams: queryParams,
+			})
+			if err != nil {
+				kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
+				if kickErr != nil {
+					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+				}
+				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			if authResp.RTMPOutputURL != "" {
+				outputURL = authResp.RTMPOutputURL
+			}
+
+			if authResp.Pipeline != "" {
+				pipeline = authResp.Pipeline
+			}
+
+			if len(authResp.paramsMap) > 0 {
+				pipelineParams = authResp.paramsMap
+			}
+		}
+
 		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+		clog.Infof(ctx, "Received live video AI request for %s", streamName)
+
+		// Kick off the RTMP pull and segmentation as soon as possible
+		ssr := media.NewSwitchableSegmentReader()
+		go func() {
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
+			ssr.Close()
+			ls.cleanupLive(streamName)
+		}()
+
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+
+			liveParams: liveRequestParams{
+				segmentReader: ssr,
+				outputRTMPURL: outputURL,
+				stream:        streamName,
+			},
 		}
-		ctx := clog.AddVal(r.Context(), "request_id", requestID)
-		// TODO set model and initial parameters here if necessary (eg, prompt)
-		req := struct{}{}
-		resp, err := processAIRequest(ctx, params, req)
-		clog.Infof(ctx, "Received live video AI request stream=%s resp=%v err=%v", streamName, resp, err)
+
+		req := worker.GenLiveVideoToVideoJSONRequestBody{
+			ModelId: &pipeline,
+			Params:  &pipelineParams,
+		}
+		processAIRequest(ctx, params, req)
 	})
+}
+
+func getRemoteHost(remoteAddr string) (string, error) {
+	if remoteAddr == "" {
+		return "", errors.New("remoteAddr is empty")
+	}
+	split := strings.Split(remoteAddr, ":")
+	if len(split) < 1 {
+		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+	}
+	return split[0], nil
+}
+
+func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		// Get stream from path param
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		ls.LivepeerNode.LiveMu.RLock()
+		defer ls.LivepeerNode.LiveMu.RUnlock()
+		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		if !ok {
+			// Stream not found
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+		defer r.Body.Close()
+		params, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
+		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+func (ls *LivepeerServer) cleanupLive(stream string) {
+	ls.LivepeerNode.LiveMu.Lock()
+	pub, ok := ls.LivepeerNode.LivePipelines[stream]
+	delete(ls.LivepeerNode.LivePipelines, stream)
+	ls.LivepeerNode.LiveMu.Unlock()
+
+	if ok && pub != nil && pub.ControlPub != nil {
+		if err := pub.ControlPub.Close(); err != nil {
+			slog.Info("Error closing trickle publisher", "err", err)
+		}
+	}
 }
