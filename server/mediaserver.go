@@ -66,6 +66,7 @@ const AISessionManagerTTL = 10 * time.Minute
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
+var LiveAIAuthWebhookURL *url.URL
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
@@ -123,6 +124,8 @@ type LivepeerServer struct {
 	context           context.Context
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
+
+	mediaMTXApiPassword string
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -188,6 +191,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
+		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
@@ -709,7 +713,8 @@ type BreakOperation bool
 func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	errorOut := func(status int, s string, params ...interface{}) {
 		httpErr := fmt.Sprintf(s, params...)
-		glog.Error(httpErr)
+		statusErr := fmt.Sprintf(" statusCode=%d", status)
+		glog.Error(httpErr + statusErr)
 		http.Error(w, httpErr, status)
 	}
 
@@ -1013,7 +1018,7 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(urls) == 0 {
 		if len(cxn.params.Profiles) > 0 {
-			clog.Errorf(ctx, "No sessions available name=%s url=%s", fname, r.URL)
+			clog.Errorf(ctx, "No sessions available name=%s url=%s statusCode=%d", fname, r.URL, http.StatusServiceUnavailable)
 			http.Error(w, "No sessions available", http.StatusServiceUnavailable)
 		}
 		return

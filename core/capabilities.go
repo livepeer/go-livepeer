@@ -15,7 +15,8 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm bool
+	Warm     bool
+	Capacity int
 }
 
 type Capability int
@@ -79,7 +80,10 @@ const (
 	Capability_AudioToText                Capability = 31
 	Capability_SegmentAnything2           Capability = 32
 	Capability_LLM                        Capability = 33
-  	Capability_FrameInterpolation         Capability = 34
+	Capability_ImageToText                Capability = 34
+	Capability_LiveVideoToVideo           Capability = 35
+	Capability_TextToSpeech               Capability = 36
+	Capability_FrameInterpolation         Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -117,8 +121,11 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_Upscale:                    "Upscale",
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
-	Capability_LLM:                        "Large language model",
-  	Capability_FrameInterpolation:         "Frame Interpolation",  
+	Capability_LLM:                        "Llm",
+	Capability_ImageToText:                "Image to text",
+	Capability_LiveVideoToVideo:           "Live video to video",
+	Capability_TextToSpeech:               "Text to speech",
+	Capability_FrameInterpolation:         "Frame Interpolation",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -211,6 +218,8 @@ func OptionalCapabilities() []Capability {
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
+		Capability_ImageToText,
+		Capability_TextToSpeech,
 	}
 }
 
@@ -426,28 +435,11 @@ func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities)
 		return false
 	}
 
-	// // Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
-	// minVerNoSuffix, _ := minVer.SetPrerelease("")
-	// verNoSuffix, _ := ver.SetPrerelease("")
+	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	minVerNoSuffix, _ := minVer.SetPrerelease("")
+	verNoSuffix, _ := ver.SetPrerelease("")
 
-	// return !verNoSuffix.LessThan(&minVerNoSuffix)
-
-	// TODO: Remove AI-specific cases below when merging into master.
-	// NOTE: This logic was added to allow the version suffix (i.e. v0.7.6-ai.1) to be
-	// used correctly during the version constraint filtering.
-	minVerHasSuffix := minVer.Prerelease() != ""
-	verHasSuffix := ver.Prerelease() != ""
-	if !minVerHasSuffix || !verHasSuffix {
-		minVerNoSuffix, _ := minVer.SetPrerelease("")
-		verNoSuffix, _ := ver.SetPrerelease("")
-		minVer = &minVerNoSuffix
-		ver = &verNoSuffix
-	}
-	if minVer.Equal(ver) && minVerHasSuffix && !verHasSuffix {
-		return false
-	}
-
-	return !ver.LessThan(minVer)
+	return !verNoSuffix.LessThan(&minVerNoSuffix)
 }
 
 func (bcast *Capabilities) CompatibleWith(orch *net.Capabilities) bool {
@@ -492,16 +484,19 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 	for capability, capacity := range c.capacities {
 		netCaps.Capacities[uint32(capability)] = uint32(capacity)
 	}
-	for capability, constraints := range c.constraints.perCapability {
-		models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
-		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
-				Warm: modelConstraint.Warm,
+	if c.constraints.perCapability != nil {
+		for capability, constraints := range c.constraints.perCapability {
+			models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
+					Warm:     modelConstraint.Warm,
+					Capacity: uint32(modelConstraint.Capacity),
+				}
 			}
-		}
 
-		netCaps.Constraints.PerCapability[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
-			Models: models,
+			netCaps.Constraints.PerCapability[uint32(capability)] = &net.Capabilities_CapabilityConstraints{
+				Models: models,
+			}
 		}
 	}
 	return netCaps
@@ -534,14 +529,16 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		}
 	}
 
-	for capabilityInt, constraints := range caps.Constraints.PerCapability {
-		models := make(map[string]*ModelConstraint)
-		for modelID, modelConstraint := range constraints.Models {
-			models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm}
-		}
+	if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
+		for capabilityInt, constraints := range caps.Constraints.PerCapability {
+			models := make(map[string]*ModelConstraint)
+			for modelID, modelConstraint := range constraints.Models {
+				models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity)}
+			}
 
-		coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
-			Models: models,
+			coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
+				Models: models,
+			}
 		}
 	}
 
