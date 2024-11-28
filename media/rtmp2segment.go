@@ -265,6 +265,8 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 			break
 		}
 	}
+	slog.Info("read segment", "totalRead", humanBytes(totalBytesRead))
+
 }
 
 func randomString() string {

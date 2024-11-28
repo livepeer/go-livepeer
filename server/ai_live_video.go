@@ -32,6 +32,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 			return
 		}
 		go func() {
+			slog.Debug("Publishing trickle", "url", url.String())
 			// TODO this blocks! very bad!
 			if err := publisher.Write(reader); err != nil {
 				slog.Info("Error writing to trickle publisher", "err", err)
