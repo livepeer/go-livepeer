@@ -32,7 +32,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 			return
 		}
 		go func() {
-			slog.Debug("Publishing trickle", "url", url.String())
+			clog.V(8).Infof(context.Background(), "publishing trickle. url=%s", url.Redacted())
 			// TODO this blocks! very bad!
 			if err := publisher.Write(reader); err != nil {
 				slog.Info("Error writing to trickle publisher", "err", err)
@@ -72,7 +72,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// TODO: Change this to LPMS
 	go func() {
 		defer r.Close()
-		for {
+		retryCount := 0
+		for retryCount < 10 {
 			cmd := exec.Command("ffmpeg",
 				"-i", "pipe:0",
 				"-c:a", "copy",
@@ -84,8 +85,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
-				clog.Infof(ctx, "Error running ffmpeg command: %s", err)
+				clog.Infof(ctx, "Error running trickle subscribe ffmpeg: %s", err)
 			}
+			retryCount++
 			time.Sleep(5 * time.Second)
 		}
 	}()

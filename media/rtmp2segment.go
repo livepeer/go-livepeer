@@ -4,6 +4,7 @@ package media
 
 import (
 	"bufio"
+	"context"
 	"encoding/base32"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
@@ -38,7 +40,7 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 
 	retryCount := 0
 	for retryCount < 5 {
-		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogDebug)
+		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
 		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: in,
 		}, []ffmpeg.TranscodeOptions{{
@@ -270,7 +272,7 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 			break
 		}
 	}
-	slog.Info("read segment", "totalRead", humanBytes(totalBytesRead))
+	clog.V(8).Infof(context.Background(), "read segment. totalRead=%s", humanBytes(totalBytesRead))
 
 }
 
