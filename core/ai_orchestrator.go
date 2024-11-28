@@ -420,6 +420,8 @@ func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
 	if orch.node.AIWorker != nil {
 		return orch.node.AIWorker.HardwareInformation()
 	} else {
+		// return combined hardware information from all live remote workers from information provided by workers
+		// when connecting to orchestrator. Does not reach out for real-time information.
 		var wkrHdw []worker.HardwareInformation
 		for _, worker := range orch.node.AIWorkerManager.liveAIWorkers {
 			wkrHdw = append(wkrHdw, worker.hardware...)
