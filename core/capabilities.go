@@ -214,12 +214,12 @@ func OptionalCapabilities() []Capability {
 		Capability_TextToImage,
 		Capability_ImageToImage,
 		Capability_ImageToVideo,
-		Capability_FrameInterpolation,
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
 		Capability_ImageToText,
 		Capability_TextToSpeech,
+		Capability_FrameInterpolation,
 	}
 }
 
