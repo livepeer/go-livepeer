@@ -122,10 +122,10 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_AudioToText:                "Audio to text",
 	Capability_SegmentAnything2:           "Segment anything 2",
 	Capability_LLM:                        "Llm",
-	Capability_LivePortrait:               "Live portrait",
 	Capability_ImageToText:                "Image to text",
 	Capability_LiveVideoToVideo:           "Live video to video",
 	Capability_TextToSpeech:               "Text to speech",
+	Capability_LivePortrait:               "Live portrait",	
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
