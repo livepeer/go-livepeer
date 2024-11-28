@@ -36,17 +36,22 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		processSegments(segmentHandler, outFilePattern, completionSignal)
 	}()
 
-	ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-	_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-		Fname: in,
-	}, []ffmpeg.TranscodeOptions{{
-		Oname:        outFilePattern,
-		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
-	}})
-	if err != nil {
-		slog.Error("Failed to run segmentation", "in", in, "err", err)
+	retryCount := 0
+	for retryCount < 5 {
+		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogDebug)
+		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			Fname: in,
+		}, []ffmpeg.TranscodeOptions{{
+			Oname:        outFilePattern,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
+		}})
+		if err != nil {
+			slog.Error("Failed to run segmentation", "in", in, "err", err)
+		}
+		retryCount++
+		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
 	slog.Info("sent completion signal, now waiting")
