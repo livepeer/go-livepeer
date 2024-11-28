@@ -1,8 +1,8 @@
 FROM ubuntu:24.04
 
-ARG TARGETARCH
 ENV MEDIAMTX_VERSION="v1.9.3"
 
+# we need curl in the image as it's later used in the runOnReady command
 RUN apt-get update \
     && apt-get install -y \
         ca-certificates \
@@ -13,7 +13,5 @@ RUN apt-get update \
 RUN curl -L https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION}_linux_amd64.tar.gz -o /mediamtx.tar.gz \
     && tar xzvf /mediamtx.tar.gz \
     && rm /mediamtx.tar.gz
-
-COPY ./mediamtx.yml /mediamtx.yml
 
 ENTRYPOINT ["/mediamtx"]
