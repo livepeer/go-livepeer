@@ -80,10 +80,10 @@ const (
 	Capability_AudioToText                Capability = 31
 	Capability_SegmentAnything2           Capability = 32
 	Capability_LLM                        Capability = 33
-	Capability_LivePortrait               Capability = 34
 	Capability_ImageToText                Capability = 34
 	Capability_LiveVideoToVideo           Capability = 35
 	Capability_TextToSpeech               Capability = 36
+	Capability_LivePortrait               Capability = 37	
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -217,9 +217,9 @@ func OptionalCapabilities() []Capability {
 		Capability_Upscale,
 		Capability_AudioToText,
 		Capability_SegmentAnything2,
-		Capability_LivePortrait,
 		Capability_ImageToText,
 		Capability_TextToSpeech,
+		Capability_LivePortrait,
 	}
 }
 
