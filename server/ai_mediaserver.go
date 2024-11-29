@@ -49,10 +49,6 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
-type ObjectDetectionResponseAsync struct {
-	RequestID string `json:"request_id"`
-}
-
 type ObjectDetectionResultRequest struct {
 	RequestID string `json:"request_id"`
 }
@@ -601,13 +597,7 @@ func (ls *LivepeerServer) ObjectDetection() http.Handler {
 			return
 		}
 
-		var async bool
-		prefer := r.Header.Get("Prefer")
-		if prefer == "respond-async" {
-			async = true
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received ObjectDetection request videoSize=%v model_id=%v async=%v", req.Video.FileSize(), *req.ModelId, async)
+		clog.V(common.VERBOSE).Infof(ctx, "Received ObjectDetection request videoSize=%v model_id=%v", req.Video.FileSize(), *req.ModelId)
 
 		params := aiRequestParams{
 			node:          ls.LivepeerNode,
@@ -615,83 +605,29 @@ func (ls *LivepeerServer) ObjectDetection() http.Handler {
 			sessManager:   ls.AISessionManager,
 		}
 
-		if !async {
-			start := time.Now()
+		start := time.Now()
 
-			resp, err := processObjectDetection(ctx, params, req)
-			if err != nil {
-				var serviceUnavailableErr *ServiceUnavailableError
-				var badRequestErr *BadRequestError
-				if errors.As(err, &serviceUnavailableErr) {
-					respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-					return
-				}
-				if errors.As(err, &badRequestErr) {
-					respondJsonError(ctx, w, err, http.StatusBadRequest)
-					return
-				}
-				respondJsonError(ctx, w, err, http.StatusInternalServerError)
-				return
-			}
-
-			took := time.Since(start)
-			clog.Infof(ctx, "Processed ObjectDetection request videoSize=%v model_id=%v took=%v", req.Video.FileSize(), *req.ModelId, took)
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		var data bytes.Buffer
-		if err := json.NewEncoder(&data).Encode(req); err != nil {
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		path, err := params.os.SaveData(ctx, "request.json", bytes.NewReader(data.Bytes()), nil, 0)
+		resp, err := processObjectDetection(ctx, params, req)
 		if err != nil {
+			var serviceUnavailableErr *ServiceUnavailableError
+			var badRequestErr *BadRequestError
+			if errors.As(err, &serviceUnavailableErr) {
+				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
+				return
+			}
+			if errors.As(err, &badRequestErr) {
+				respondJsonError(ctx, w, err, http.StatusBadRequest)
+				return
+			}
 			respondJsonError(ctx, w, err, http.StatusInternalServerError)
 			return
 		}
 
-		clog.Infof(ctx, "Saved ObjectDetection request path=%v", requestID, path)
-
-		cctx := clog.Clone(context.Background(), ctx)
-		go func(ctx context.Context) {
-			start := time.Now()
-
-			var data bytes.Buffer
-			resp, err := processObjectDetection(ctx, params, req)
-			if err != nil {
-				clog.Errorf(ctx, "Error processing ObjectDetection request err=%v", err)
-
-				handleAPIError(ctx, &data, err, http.StatusInternalServerError)
-			} else {
-				took := time.Since(start)
-				clog.Infof(ctx, "Processed ObjectDetection request videoSize=%v model_id=%v took=%v", req.Video.FileSize(), *req.ModelId, took)
-
-				if err := json.NewEncoder(&data).Encode(resp); err != nil {
-					clog.Errorf(ctx, "Error JSON encoding ObjectDetection response err=%v", err)
-					return
-				}
-			}
-
-			path, err := params.os.SaveData(ctx, "result.json", bytes.NewReader(data.Bytes()), nil, 0)
-			if err != nil {
-				clog.Errorf(ctx, "Error saving ObjectDetection result to object store err=%v", err)
-				return
-			}
-
-			clog.Infof(ctx, "Saved ObjectDetection result path=%v", path)
-		}(cctx)
-
-		resp := &ObjectDetectionResponseAsync{
-			RequestID: requestID,
-		}
+		took := time.Since(start)
+		clog.Infof(ctx, "Processed ObjectDetection request videoSize=%v model_id=%v took=%v", req.Video.FileSize(), *req.ModelId, took)
 
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
+		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)
 	})
 }
