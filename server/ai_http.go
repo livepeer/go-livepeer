@@ -650,7 +650,7 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 		if p.Header.Get("Content-Type") == "application/json" {
 			var results interface{}
 			switch pipeline {
-			case "text-to-image", "image-to-image", "upscale", "image-to-video", "object-detection":
+			case "text-to-image", "image-to-image", "upscale", "image-to-video":
 				var parsedResp worker.ImageResponse
 
 				err := json.Unmarshal(body, &parsedResp)
@@ -669,6 +669,16 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 				}
 			case "text-to-speech":
 				var parsedResp worker.AudioResponse
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
+			case "object-detection":
+				var parsedResp worker.ObjectDetectionResponse
+
 				err := json.Unmarshal(body, &parsedResp)
 				if err != nil {
 					glog.Error("Error getting results json:", err)
