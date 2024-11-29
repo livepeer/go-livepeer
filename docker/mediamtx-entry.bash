@@ -16,4 +16,4 @@ EOF
     curl -X POST --data-binary @- "$LP_PUBLISH_MEDIAMTX_METRICS_ENDPOINT"
 fi
 
-/usr/local/bin/mediamtx
+exec "${@:-/usr/local/bin/mediamtx}"
