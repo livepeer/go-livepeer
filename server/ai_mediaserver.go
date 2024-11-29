@@ -49,27 +49,6 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
-type ObjectDetectionResultRequest struct {
-	RequestID string `json:"request_id"`
-}
-
-type ObjectDetectionResultResponse struct {
-	Result *ObjectDetectionResult `json:"result,omitempty"`
-	Status ObjectDetectionStatus  `json:"status"`
-}
-
-type ObjectDetectionResult struct {
-	*worker.ObjectDetectionResponse
-	Error *APIError `json:"error,omitempty"`
-}
-
-type ObjectDetectionStatus string
-
-const (
-	DetectionProcessing ObjectDetectionStatus = "processing"
-	DetectionComplete   ObjectDetectionStatus = "complete"
-)
-
 func startAIMediaServer(ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -100,13 +79,11 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
+	ls.HTTPMux.Handle("/object-detection", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenObjectDetectionMultipartRequestBody], processObjectDetection)))
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
-
-	ls.HTTPMux.Handle("/object-detection", oapiReqValidator(ls.ObjectDetection()))
-	ls.HTTPMux.Handle("/object-detection/result", ls.ObjectDetectionResult())
 
 	return nil
 }
@@ -576,107 +553,4 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
 	}
-}
-
-func (ls *LivepeerServer) ObjectDetection() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		var req worker.GenObjectDetectionMultipartRequestBody
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received ObjectDetection request videoSize=%v model_id=%v", req.Video.FileSize(), *req.ModelId)
-
-		params := aiRequestParams{
-			node:          ls.LivepeerNode,
-			os:            drivers.NodeStorage.NewSession(requestID),
-			sessManager:   ls.AISessionManager,
-		}
-
-		start := time.Now()
-
-		resp, err := processObjectDetection(ctx, params, req)
-		if err != nil {
-			var serviceUnavailableErr *ServiceUnavailableError
-			var badRequestErr *BadRequestError
-			if errors.As(err, &serviceUnavailableErr) {
-				respondJsonError(ctx, w, err, http.StatusServiceUnavailable)
-				return
-			}
-			if errors.As(err, &badRequestErr) {
-				respondJsonError(ctx, w, err, http.StatusBadRequest)
-				return
-			}
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		took := time.Since(start)
-		clog.Infof(ctx, "Processed ObjectDetection request videoSize=%v model_id=%v took=%v", req.Video.FileSize(), *req.ModelId, took)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
-}
-
-func (ls *LivepeerServer) ObjectDetectionResult() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		var req ObjectDetectionResultRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		ctx = clog.AddVal(ctx, "request_id", req.RequestID)
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received ObjectDetectionResult request request_id=%v", req.RequestID)
-
-		sess := drivers.NodeStorage.NewSession(req.RequestID)
-
-		_, err := sess.ReadData(ctx, "request.json")
-		if err != nil {
-			respondJsonError(ctx, w, errors.New("invalid request ID"), http.StatusBadRequest)
-			return
-		}
-
-		resp := ObjectDetectionResultResponse{
-			Status: DetectionProcessing,
-		}
-
-		reader, err := sess.ReadData(ctx, "result.json")
-		if err != nil {
-			// TODO: Distinguish between error reading data vs. file DNE
-			// Right now we assume that this file will exist when processing is done even
-			// if an error was encountered
-			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-
-		resp.Status = DetectionComplete
-
-		if err := json.NewDecoder(reader.Body).Decode(&resp.Result); err != nil {
-			respondJsonError(ctx, w, err, http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(resp)
-	})
 }
