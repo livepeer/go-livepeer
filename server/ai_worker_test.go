@@ -234,7 +234,7 @@ func TestRunAIJob(t *testing.T) {
 			notify:          createAIJob(10, "object-detection", modelId, parsedURL.String()+"/video.mp4"),
 			pipeline:        "object-detection",
 			expectedErr:     "",
-			expectedOutputs: 2,
+			expectedOutputs: 1,
 		},
 		{
 			name:            "UnsupportedPipeline",
@@ -663,19 +663,9 @@ func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObject
 			Frames: [][]worker.Media{
 				{
 					{
-						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Url:  "data:video/mp4;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
 						Nsfw: false,
 						Seed: 113,
-					},
-					{
-						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
-						Nsfw: false,
-						Seed: 131,
-					},
-					{
-						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
-						Nsfw: false,
-						Seed: 311,
 					},
 				},
 			},
