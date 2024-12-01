@@ -666,12 +666,10 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	return &worker.ObjectDetectionResponse{Frames: [][]worker.Media{
 		{
-			{Url: "http://example.com/frame1.png", Nsfw: false},
-			{Url: "http://example.com/frame2.png", Nsfw: false},
+			{Url: "http://example.com/frames1.mp4", Nsfw: false},
 		},
 		{
-			{Url: "http://example.com/frame3.png", Nsfw: false},
-			{Url: "http://example.com/frame4.png", Nsfw: false},
+			{Url: "http://example.com/frames2.mp4", Nsfw: false},
 		},
 	}, ConfidenceScores: "confidence_scores", Labels: "labels"}, nil
 }

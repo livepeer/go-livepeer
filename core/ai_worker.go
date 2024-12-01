@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1115,25 +1116,22 @@ func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObject
 		Format:     ffmpeg.FormatMP4,
 	}
 
-	// Create slice of frame urls for a batch
-	urls := make([]string, len(resp.Frames[0]))
-	for j, frame := range resp.Frames[0] {
-		urls[j] = frame.Url
-	}
+	// Video returned in the first frame URL field as a base64 string.
+	base64Video := resp.Frames[0][0].Url
 
-	// Transcode slice of frame urls into a segment
-	res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
-	if res.Err != nil {
-		return nil, res.Err
-	}
-
-	// Assume only single rendition right now
-	seg := res.TranscodeData.Segments[0]
-	resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
-	fname := path.Join(n.WorkDir, resultFile)
-	if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
-		clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
-		return nil, err
+	if base64Video != "" {
+		decodedVideo, err := base64.StdEncoding.DecodeString(base64Video)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 video: %v", err)
+		}
+		resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
+		fname := path.Join(n.WorkDir, resultFile)
+		if err := os.WriteFile(fname, decodedVideo, 0644); err != nil {
+			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
+			return nil, err
+		}
+	} else {
+		fname := ""
 	}
 
 	objectDetectionResponse := &worker.ObjectDetectionResponse{

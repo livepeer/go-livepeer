@@ -1421,19 +1421,27 @@ func processObjectDetection(ctx context.Context, params aiRequestParams, req wor
 	for _, frame := range frameResp.Frames {
 		frames := make([]worker.Media, len(frame))
 		for i, media := range frame {
-			data, err := downloadSeg(ctx, media.Url)
-			if err != nil {
-				return nil, err
-			}
-			name := filepath.Base(media.Url)
-			newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
-			if err != nil {
-				return nil, err
-			}
-			frames[i] = worker.Media{
-				Nsfw: media.Nsfw,
-				Seed: media.Seed,
-				Url:  newUrl,
+			if media.Url != "" {
+				data, err := downloadSeg(ctx, media.Url)
+				if err != nil {
+					return nil, err
+				}
+				name := filepath.Base(media.Url)
+				newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+				if err != nil {
+					return nil, err
+				}
+				frames[i] = worker.Media{
+					Nsfw: media.Nsfw,
+					Seed: media.Seed,
+					Url:  newUrl,
+				}
+			} else {
+				frames[i] = worker.Media{
+					Nsfw: media.Nsfw,
+					Seed: media.Seed,
+					Url:  "",
+				}
 			}
 		}
 		videos = append(videos, frames)
