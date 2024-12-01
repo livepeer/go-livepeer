@@ -671,7 +671,7 @@ func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObject
 		{
 			{Url: "http://example.com/frames2.mp4", Nsfw: false},
 		},
-	}, ConfidenceScores: "confidence_scores", Labels: "labels"}, nil
+	}, ConfidenceScores: "confidence_scores", Labels: "labels", DetectionBoxes: "detection_boxes", FramesPts: "frames_pts"}, nil
 }
 
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {

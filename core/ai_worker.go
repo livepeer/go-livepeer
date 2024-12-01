@@ -1138,6 +1138,8 @@ func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObject
 		ConfidenceScores: resp.ConfidenceScores,
 		Labels:           resp.Labels,
 		Frames:           resp.Frames,
+		DetectionBoxes:   resp.DetectionBoxes,
+		FramesPts:        resp.FramesPts,
 	}
 	
 	// To include video segment URL as part of Frames
