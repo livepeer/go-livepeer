@@ -2,6 +2,7 @@ package common
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -242,7 +243,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(orchs[0].Stake, int64(0))
 
 	// updating row with same orchAddress
-	orchUpdate := NewDBOrch(orchAddress, "127.0.0.1:8937", 1000, 5, 10, 50)
+	orchUpdate := NewDBOrch(orchAddress, "127.0.0.1:8937", 1000, 5, 10, 50, "")
 	err = dbh.UpdateOrch(orchUpdate)
 	require.Nil(err)
 
@@ -334,6 +335,30 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
 	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
 	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
+
+	// Updating only remoteInfo
+	remoteInfo := make(map[string]interface{})
+	remoteInfo["transcoder"] = "http://transcoder.uri:5555"
+	riJson, _ := json.Marshal(remoteInfo)
+	remoteInfoUpdate := &DBOrch{
+		EthereumAddr: orchAddress,
+		RemoteInfo:   string(riJson),
+	}
+
+	assert.Equal(updatedOrch[0].RemoteInfo, "")
+
+	err = dbh.UpdateOrch(remoteInfoUpdate)
+	require.Nil(err)
+
+	updatedOrch, err = dbh.SelectOrchs(nil)
+	assert.Len(updatedOrch, 1)
+	assert.NoError(err)
+	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
+	assert.Equal(updatedOrch[0].ActivationRound, activationRoundUpdate.ActivationRound)
+	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
+	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
+	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
+	assert.Equal(updatedOrch[0].RemoteInfo, remoteInfoUpdate.RemoteInfo)
 }
 
 func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
@@ -347,7 +372,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	// adding one row
 	orchAddress := pm.RandAddress().String()
 
-	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0, 0)
+	orch := NewDBOrch(orchAddress, "127.0.0.1:8936", 1, 0, 0, 0, "")
 	err = dbh.UpdateOrch(orch)
 	require.Nil(err)
 
@@ -359,7 +384,7 @@ func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
 	// adding second row
 	orchAddress = pm.RandAddress().String()
 
-	orchAdd := NewDBOrch(orchAddress, "127.0.0.1:8938", 1, 0, 0, 0)
+	orchAdd := NewDBOrch(orchAddress, "127.0.0.1:8938", 1, 0, 0, 0, "")
 	err = dbh.UpdateOrch(orchAdd)
 	require.Nil(err)
 
@@ -384,7 +409,7 @@ func TestOrchCount(t *testing.T) {
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
-		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), pm.RandAddress().String(), 1, int64(i), int64(5+i), 0)
+		orch := NewDBOrch("https://127.0.0.1:"+strconv.Itoa(8936+i), pm.RandAddress().String(), 1, int64(i), int64(5+i), 0, "")
 		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
 		require.Nil(err)
 		err = dbh.UpdateOrch(orch)
@@ -440,7 +465,7 @@ func TestDBFilterOrchs(t *testing.T) {
 	require.Nil(err)
 
 	for i := 0; i < 10; i++ {
-		orch := NewDBOrch(pm.RandAddress().String(), "https://127.0.0.1:"+strconv.Itoa(8936+i), 1, int64(i), int64(5+i), 0)
+		orch := NewDBOrch(pm.RandAddress().String(), "https://127.0.0.1:"+strconv.Itoa(8936+i), 1, int64(i), int64(5+i), 0, "")
 		orch.PricePerPixel, err = PriceToFixed(big.NewRat(1, int64(5+i)))
 		require.Nil(err)
 		err = dbh.UpdateOrch(orch)
@@ -578,7 +603,7 @@ func TestIsOrchActive(t *testing.T) {
 	assert.EqualError(err, "Orchestrator not found")
 
 	activationRound := 5
-	orch := NewDBOrch(addr, "https://127.0.0.1:8936", 1, int64(activationRound), int64(activationRound+2), 0)
+	orch := NewDBOrch(addr, "https://127.0.0.1:8936", 1, int64(activationRound), int64(activationRound+2), 0, "")
 	dbh.UpdateOrch(orch)
 
 	// inactive in round 4

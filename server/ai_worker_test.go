@@ -431,7 +431,7 @@ func newMockAIOrchestratorServer() *httptest.Server {
 func connectWorker(n *core.LivepeerNode) {
 	strm := &StubAIWorkerServer{}
 	caps := createStubAIWorkerCapabilities()
-	go func() { n.AIWorkerManager.Manage(strm, caps.ToNetCapabilities()) }()
+	go func() { n.AIWorkerManager.Manage(strm, caps.ToNetCapabilities(), nil) }()
 	time.Sleep(1 * time.Millisecond)
 }
 
@@ -648,4 +648,9 @@ func (a *stubAIWorker) Stop(ctx context.Context) error {
 func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	a.Called++
 	return true
+}
+
+func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
+	a.Called++
+	return []worker.HardwareInformation{}
 }

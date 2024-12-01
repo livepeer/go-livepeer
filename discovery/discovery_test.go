@@ -206,7 +206,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 	require.Nil(err)
 
 	// Populate test DB with a stub orch so that serverGetOrchInfo will be called in cacheDBOrchs
-	orch := common.NewDBOrch("foo", "foo", 1, 0, 1000000000000, 100)
+	orch := common.NewDBOrch("foo", "foo", 1, 0, 1000000000000, 100, "")
 	require.Nil(dbh.UpdateOrch(orch))
 
 	node := &core.LivepeerNode{
@@ -260,7 +260,7 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 	require.Nil(err)
 
 	// Populate test DB with a stub orch so that serverGetOrchInfo will be called in cacheDBOrchs
-	orch := common.NewDBOrch("foo", "foo", 0, 0, 1000000000000, 100)
+	orch := common.NewDBOrch("foo", "foo", 0, 0, 1000000000000, 100, "")
 	require.Nil(dbh.UpdateOrch(orch))
 
 	node := &core.LivepeerNode{

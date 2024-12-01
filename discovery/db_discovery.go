@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -20,7 +21,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 1 * time.Hour
+var cacheRefreshInterval = 25 * time.Minute
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
@@ -307,6 +308,10 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
+
+		infoStr, err := json.Marshal(info)
+		dbOrch.RemoteInfo = string(infoStr)
+
 		resc <- dbOrch
 	}
 

@@ -8,7 +8,7 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
-  rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
+ rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
   rpc Ping(PingPong) returns (PingPong);
 }
 
@@ -102,6 +102,12 @@ message PriceInfo {
   // Pixels covered in the price
   // Set price to 1 wei and pixelsPerUnit > 1 to have a smaller price granularity per pixel than 1 wei
   int64 pixelsPerUnit = 2;
+
+  // Capability price is for
+  uint32 capability = 3;
+
+  // constraint price is for
+  string constraint = 4;
 }
 
 message Capabilities {
@@ -134,8 +140,6 @@ message Capabilities {
 
       map<string, ModelConstraint> models = 1;
     }
-
-
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
@@ -160,8 +164,14 @@ message OrchestratorInfo {
   // Data for transcoding authentication
   AuthToken auth_token = 6;
 
+  // Information on Orchestrator hardware
+  bytes hardware = 7;
+
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
+
+  // prices for capabilities
+  repeated PriceInfo capabilities_prices = 33;
 }
 
 // Data for transcoding authentication that is included in the OrchestratorInfo message during discovery
@@ -393,6 +403,9 @@ message RegisterAIWorkerRequest {
 
     // AIWorker capabilities
     Capabilities capabilities = 2;
+
+    // AIWorker hardware info
+    bytes hardware = 3;
 }
 
 // Data included by the gateway when submitting a AI job.

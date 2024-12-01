@@ -31,6 +31,7 @@ type AI interface {
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
 	HasCapacity(pipeline, modelID string) bool
+	HardwareInformation() []worker.HardwareInformation
 }
 
 // Custom type to parse a big.Rat from a JSON number.
