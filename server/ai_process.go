@@ -1004,7 +1004,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const setupPixelsToPay = 30 * 30 * 1280 * 720 // 30 seconds, 30fps, 720p
+const initPixelsToPay = 30 * 30 * 1280 * 720 // 30 seconds, 30fps, 720p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
@@ -1014,7 +1014,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	setupFee := calculateFee(setupPixelsToPay, sess.OrchestratorInfo.PriceInfo)
+	setupFee := calculateFee(initPixelsToPay, sess.OrchestratorInfo.PriceInfo)
 	setupFeeInt := new(big.Int).Div(setupFee.Num(), setupFee.Denom()).Int64()
 
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, setupFeeInt)
