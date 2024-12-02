@@ -133,6 +133,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		)
 
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
+		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
 		payment, err := getPayment(r.Header.Get(paymentHeader))
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusPaymentRequired)
@@ -146,6 +147,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(mid)) {
+			respondWithError(w, "Insufficient balance", http.StatusBadRequest)
 			return
 		}
 
