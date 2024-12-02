@@ -82,6 +82,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
@@ -367,6 +368,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
@@ -468,8 +470,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
+			// Currently for webrtc we need to add a path prefix due to the ingress setup
+			mediaMTXStreamPrefix := r.PathValue("prefix")
+			if mediaMTXStreamPrefix != "" {
+				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
+			}
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()

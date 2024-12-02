@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -30,6 +32,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 			return
 		}
 		go func() {
+			clog.V(8).Infof(context.Background(), "publishing trickle. url=%s", url.Redacted())
 			// TODO this blocks! very bad!
 			if err := publisher.Write(reader); err != nil {
 				slog.Info("Error writing to trickle publisher", "err", err)
@@ -39,13 +42,14 @@ func startTricklePublish(url *url.URL, params aiRequestParams) {
 	slog.Info("trickle pub", "url", url)
 }
 
-func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
 	if err != nil {
 		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
 	}
+	ctx = clog.AddVal(ctx, "url", url.Redacted())
 
 	// read segments from trickle subscription
 	go func() {
@@ -54,12 +58,12 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 			segment, err := subscriber.Read()
 			if err != nil {
 				// TODO if not EOS then signal a new orchestrator is needed
-				slog.Info("Error reading trickle subscription", "url", url, "err", err)
+				clog.Infof(ctx, "Error reading trickle subscription: %s", err)
 				return
 			}
 			defer segment.Body.Close()
 			if _, err = io.Copy(w, segment.Body); err != nil {
-				slog.Info("Error copying to ffmpeg stdin", "url", url, "err", err)
+				clog.Infof(ctx, "Error copying to ffmpeg stdin: %s", err)
 				return
 			}
 		}
@@ -68,7 +72,8 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 	// TODO: Change this to LPMS
 	go func() {
 		defer r.Close()
-		for {
+		retryCount := 0
+		for retryCount < 10 {
 			cmd := exec.Command("ffmpeg",
 				"-i", "pipe:0",
 				"-c:a", "copy",
@@ -80,8 +85,9 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
-				slog.Info("Error running ffmpeg command", "err", err, "url", url)
+				clog.Infof(ctx, "Error running trickle subscribe ffmpeg: %s", err)
 			}
+			retryCount++
 			time.Sleep(5 * time.Second)
 		}
 	}()
@@ -89,9 +95,9 @@ func startTrickleSubscribe(url *url.URL, params aiRequestParams) {
 
 func mediamtxSourceTypeToString(s string) (string, error) {
 	switch s {
-	case "webrtcSession":
+	case mediaMTXWebrtcSession:
 		return "whip", nil
-	case "rtmpConn":
+	case mediaMTXRtmpConn:
 		return "rtmp", nil
 	default:
 		return "", errors.New("unknown media source")
@@ -111,16 +117,18 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 }
 
 const (
-	mediaMTXControlPort = "9997"
-	mediaMTXControlUser = "admin"
+	mediaMTXControlPort   = "9997"
+	mediaMTXControlUser   = "admin"
+	mediaMTXWebrtcSession = "webrtcSession"
+	mediaMTXRtmpConn      = "rtmpConn"
 )
 
 func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
 	var apiPath string
 	switch sourceType {
-	case "webrtcSession":
+	case mediaMTXWebrtcSession:
 		apiPath = "webrtcsessions"
-	case "rtmpConn":
+	case mediaMTXRtmpConn:
 		apiPath = "rtmpconns"
 	default:
 		return fmt.Errorf("invalid sourceType: %s", sourceType)

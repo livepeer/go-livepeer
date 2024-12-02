@@ -10,6 +10,11 @@ docker:
     - any-glob-to-any-file:
       - "docker/**"
 
+docs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "doc/**"
+
 github_actions:
   - changed-files:
     - any-glob-to-any-file:

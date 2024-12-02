@@ -2,12 +2,15 @@ name: MediaMTX Docker build
 
 on:
   pull_request:
+    branches:
+      - master
+    paths:
+      - 'docker/*mediamtx*'
   push:
     branches:
       - master
     paths:
-      - 'docker/Dockerfile.mediamtx'
-      - 'docker/mediamtx.yml'
+      - 'docker/*mediamtx*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -20,7 +23,7 @@ jobs:
     permissions:
       packages: write
       contents: read
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4.1.7

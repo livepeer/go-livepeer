@@ -1184,6 +1184,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error parsing -nvidia for devices: %v", err)
 				return
 			}
+		} else {
+			glog.Warningf("!!! No GPU discovered, using CPU for AIWorker !!!")
+			// Create 2 fake GPU instances, intended for the local non-GPU setup
+			gpus = []string{"emulated-0", "emulated-1"}
 		}
 
 		modelsDir := *cfg.AIModelsDir
