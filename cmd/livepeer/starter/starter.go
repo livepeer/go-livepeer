@@ -169,6 +169,7 @@ type LivepeerConfig struct {
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
+	LivePaymentInterval        *time.Duration
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -213,6 +214,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLivePaymentInterval := 5 * time.Second
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -320,6 +322,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIModelsDir:          &defaultAIModelsDir,
 		AIRunnerImage:        &defaultAIRunnerImage,
 		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:  &defaultLivePaymentInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1564,6 +1567,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAIAuthApiKey != nil {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
+	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}

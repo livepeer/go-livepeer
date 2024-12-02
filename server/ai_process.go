@@ -93,6 +93,8 @@ type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
 	stream        string
+
+	paymentProcessInterval time.Duration
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.

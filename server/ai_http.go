@@ -181,7 +181,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 			return err
 		}
-		paymentProcessor := NewLivePaymentProcessor(context.Background(), 1*time.Second, f)
+		paymentProcessor := NewLivePaymentProcessor(context.Background(), h.node.LivePaymentInterval, f)
 
 		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {
