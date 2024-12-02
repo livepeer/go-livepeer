@@ -55,8 +55,7 @@ type livePaymentReceiver struct {
 
 func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
 	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
-		// Skip accounting if priceInfo is not set
-		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting for requestID=%s, ", segmentInfo.mid)
+		clog.V(common.DEBUG).Infof(ctx, "Skipping sending payment, priceInfo not set for requestID=%s, ", segmentInfo.mid)
 		return nil
 	}
 	sess := segmentInfo.sess
@@ -142,8 +141,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 func (r *livePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
 	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
-		// Skip accounting if priceInfo is not set
-		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting for sessionID=%s, ", segmentInfo.sessionID)
+		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting, priceInfo not set for sessionID=%s, ", segmentInfo.sessionID)
 		return nil
 	}
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
