@@ -7,6 +7,9 @@ on:
       - master
     tags:
       - "v*"
+    paths-ignore:
+      - 'doc/**'
+      - 'docker/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -191,7 +194,11 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
-        run: brew install coreutils pkg-config
+        run: |
+          brew update
+          brew upgrade
+          brew uninstall --ignore-dependencies --force pkg-config@0.29.2
+          brew install coreutils pkgconf
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'

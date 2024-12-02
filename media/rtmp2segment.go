@@ -4,6 +4,7 @@ package media
 
 import (
 	"bufio"
+	"context"
 	"encoding/base32"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
@@ -36,17 +38,22 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 		processSegments(segmentHandler, outFilePattern, completionSignal)
 	}()
 
-	ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-	_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-		Fname: in,
-	}, []ffmpeg.TranscodeOptions{{
-		Oname:        outFilePattern,
-		AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-		Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
-	}})
-	if err != nil {
-		slog.Error("Failed to run segmentation", "in", in, "err", err)
+	retryCount := 0
+	for retryCount < 5 {
+		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
+		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+			Fname: in,
+		}, []ffmpeg.TranscodeOptions{{
+			Oname:        outFilePattern,
+			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
+		}})
+		if err != nil {
+			slog.Error("Failed to run segmentation", "in", in, "err", err)
+		}
+		retryCount++
+		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
 	slog.Info("sent completion signal, now waiting")
@@ -252,7 +259,7 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 		}
 		if n == len(buf) && n < 1024*1024 {
 			newLen := int(float64(len(buf)) * 1.5)
-			slog.Info("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", humanBytes(int64(newLen)))
+			slog.Debug("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", humanBytes(int64(newLen)))
 			buf = make([]byte, newLen)
 		}
 
@@ -265,6 +272,8 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 			break
 		}
 	}
+	clog.V(8).Infof(context.Background(), "read segment. totalRead=%s", humanBytes(totalBytesRead))
+
 }
 
 func randomString() string {

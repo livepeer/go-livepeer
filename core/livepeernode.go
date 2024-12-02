@@ -152,6 +152,9 @@ type LivepeerNode struct {
 	// For live video pipelines, cache for live pipelines; key is the stream name
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
+
+	MediaMTXApiPassword        string
+	LiveAITrickleHostForRunner string
 }
 
 type LivePipeline struct {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -98,7 +99,8 @@ func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
 
 type AIAuthRequest struct {
 	// Stream name or stream key
-	Stream string `json:"stream"`
+	Stream    string `json:"stream"`
+	StreamKey string `json:"stream_key"`
 
 	// Stream type, eg RTMP or WHIP
 	Type string `json:"type"`
@@ -109,26 +111,48 @@ type AIAuthRequest struct {
 	// TODO not sure what params we need yet
 }
 
-func authenticateAIStream(authURL *url.URL, req AIAuthRequest) error {
+// Contains the configuration parameters for this AI job
+type AIAuthResponse struct {
+	// Where to send the output video
+	RTMPOutputURL string `json:"rtmp_output_url"`
+
+	// Name of the pipeline to run
+	Pipeline string `json:"pipeline"`
+
+	// Parameters for the pipeline
+	PipelineParams json.RawMessage        `json:"pipeline_parameters"`
+	paramsMap      map[string]interface{} // unmarshaled params
+}
+
+func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse, error) {
+	req.StreamKey = req.Stream
 	if authURL == nil {
-		return nil
+		return nil, fmt.Errorf("No auth URL configured")
 	}
 	started := time.Now()
 
 	jsonValue, err := json.Marshal(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	resp, err := http.Post(authURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+	request, err := http.NewRequest("POST", authURL.String(), bytes.NewBuffer(jsonValue))
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-api-key", os.Getenv("SHOWCASE_API_KEY"))
+
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
 	}
 
 	rbody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("status=%d error=%s", resp.StatusCode, string(rbody))
 	}
 
 	took := time.Since(started)
@@ -137,5 +161,15 @@ func authenticateAIStream(authURL *url.URL, req AIAuthRequest) error {
 		monitor.AuthWebhookFinished(took)
 	}
 
-	return nil
+	var authResp AIAuthResponse
+	if err := json.Unmarshal(rbody, &authResp); err != nil {
+		return nil, err
+	}
+	if len(authResp.PipelineParams) > 0 {
+		if err := json.Unmarshal([]byte(authResp.PipelineParams), &authResp.paramsMap); err != nil {
+			return nil, err
+		}
+	}
+
+	return &authResp, nil
 }

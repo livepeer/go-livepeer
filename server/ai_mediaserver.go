@@ -82,6 +82,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
@@ -367,6 +368,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
@@ -389,6 +391,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
+		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		if err != nil {
+			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
+			http.Error(w, "Could not find callback host", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
+
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
 		if err != nil {
@@ -401,7 +411,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = "rtmp://localhost/" + streamName + "-out"
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
@@ -412,19 +422,45 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		err = authenticateAIStream(AuthWebhookURL, AIAuthRequest{
-			Stream:      streamName,
-			Type:        sourceTypeStr,
-			QueryParams: queryParams,
-		})
-		if err != nil {
-			kickErr := kickInputConnection(sourceID, sourceType)
-			if kickErr != nil {
-				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+		// if auth webhook returns pipeline config these will be replaced
+		pipeline := qp.Get("pipeline")
+		rawParams := qp.Get("params")
+		var pipelineParams map[string]interface{}
+		if rawParams != "" {
+			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+				clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+				http.Error(w, "Invalid model params", http.StatusBadRequest)
+				return
 			}
-			clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
+		}
+
+		if LiveAIAuthWebhookURL != nil {
+			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, AIAuthRequest{
+				Stream:      streamName,
+				Type:        sourceTypeStr,
+				QueryParams: queryParams,
+			})
+			if err != nil {
+				kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
+				if kickErr != nil {
+					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+				}
+				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			if authResp.RTMPOutputURL != "" {
+				outputURL = authResp.RTMPOutputURL
+			}
+
+			if authResp.Pipeline != "" {
+				pipeline = authResp.Pipeline
+			}
+
+			if len(authResp.paramsMap) > 0 {
+				pipelineParams = authResp.paramsMap
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
@@ -434,26 +470,46 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
+			// Currently for webrtc we need to add a path prefix due to the ingress setup
+			mediaMTXStreamPrefix := r.PathValue("prefix")
+			if mediaMTXStreamPrefix != "" {
+				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
+			}
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation("rtmp://localhost/"+streamName, ssr.Read)
+			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()
 
 		params := aiRequestParams{
-			node:          ls.LivepeerNode,
-			os:            drivers.NodeStorage.NewSession(requestID),
-			sessManager:   ls.AISessionManager,
-			segmentReader: ssr,
-			outputRTMPURL: outputURL,
-			stream:        streamName,
+			node:        ls.LivepeerNode,
+			os:          drivers.NodeStorage.NewSession(requestID),
+			sessManager: ls.AISessionManager,
+
+			liveParams: liveRequestParams{
+				segmentReader: ssr,
+				outputRTMPURL: outputURL,
+				stream:        streamName,
+			},
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
-			// TODO set model and initial parameters here if necessary (eg, prompt)
+			ModelId: &pipeline,
+			Params:  &pipelineParams,
 		}
 		processAIRequest(ctx, params, req)
 	})
+}
+
+func getRemoteHost(remoteAddr string) (string, error) {
+	if remoteAddr == "" {
+		return "", errors.New("remoteAddr is empty")
+	}
+	split := strings.Split(remoteAddr, ":")
+	if len(split) < 1 {
+		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+	}
+	return split[0], nil
 }
 
 func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
@@ -503,28 +559,4 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
 	}
-}
-
-const mediaMTXControlPort = "9997"
-
-func kickInputConnection(sourceID string, sourceType string) error {
-	var apiPath string
-	switch sourceType {
-	case "webrtcSession":
-		apiPath = "webrtcsessions"
-	case "rtmpConn":
-		apiPath = "rtmpconns"
-	default:
-		return fmt.Errorf("invalid sourceType: %s", sourceType)
-	}
-
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%s/v3/%s/kick/%s", mediaMTXControlPort, apiPath, sourceID), "", nil)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
-	}
-	return nil
 }
