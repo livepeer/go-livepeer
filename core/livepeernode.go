@@ -155,6 +155,7 @@ type LivepeerNode struct {
 
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
+	LiveAIAuthApiKey           string
 }
 
 type LivePipeline struct {
