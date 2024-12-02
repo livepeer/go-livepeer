@@ -7,19 +7,13 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"log/slog"
-	"math/big"
 	"os"
 	"sync"
 	"time"
 )
 
 type LivePaymentProcessor struct {
-	sender LivePaymentSender
-	sess   *AISession
-
-	processInterval       time.Duration
-	setupFee              *big.Rat
-	intervalsToPayUpfront int64
+	processInterval time.Duration
 
 	lastProcessedAt time.Time
 	lastProcessedMu sync.RWMutex
@@ -64,8 +58,6 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 		return
 	}
 
-	lastProcessedAt := p.lastProcessedAt
-
 	info, err := probeSegment(seg)
 	if err != nil {
 		slog.Error("Error probing segment", "err", err)
@@ -73,9 +65,8 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	}
 
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
-	secSinceLastProcessed := seg.timestamp.Sub(lastProcessedAt).Seconds()
+	secSinceLastProcessed := seg.timestamp.Sub(p.lastProcessedAt).Seconds()
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-
 	err = p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
 		slog.Error("Error processing payment", "err", err)
@@ -111,8 +102,9 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 
 func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 	p.lastProcessedMu.RLock()
-	defer p.lastProcessedMu.RUnlock()
-	if p.lastProcessedAt.Add(p.processInterval).After(timestamp) {
+	lastProcessedAt := p.lastProcessedAt
+	p.lastProcessedMu.RUnlock()
+	if lastProcessedAt.Add(p.processInterval).After(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
 		return true
 	}
