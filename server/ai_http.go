@@ -174,7 +174,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			})
 			if err != nil {
 				slog.Warn("Error accounting payment, stopping stream processing", "err", err)
-				// TODO: Check if we do not need to any other cleanup
 				pubCh.Close()
 				subCh.Close()
 				controlPubCh.Close()
