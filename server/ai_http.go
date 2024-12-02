@@ -131,14 +131,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
-			orch = h.orchestrator
 		)
 
-		// Process Initial Payment
-		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-
-		// handle initial payment, the rest of the payments are done separately from the stream processing
+		// Handle initial payment, the rest of the payments are done separately from the stream processing
 		payment, err := getPayment(r.Header.Get(paymentHeader))
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusPaymentRequired)
