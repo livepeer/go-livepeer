@@ -252,7 +252,7 @@ func currentBalanceLog(h *lphttp, payment net.Payment, segData *core.SegTranscod
 	if h == nil || h.node == nil || h.node.Balances == nil || segData == nil || segData.AuthToken == nil {
 		return "invalid configuration"
 	}
-	currentBalance := h.node.Balances.Balance(getPaymentSender(payment), core.ManifestID(segData.AuthToken.SessionId))
+	currentBalance := h.node.Balances.Balance(getPaymentSender(payment), segData.ManifestID)
 	if currentBalance == nil {
 		return "no balance available"
 	}
