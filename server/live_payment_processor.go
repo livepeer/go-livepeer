@@ -77,40 +77,6 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	p.lastProcessedAt = seg.timestamp
 }
 
-func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-
-	go func() {
-		defer pipeWriter.Close()
-		io.Copy(pipeWriter, bytes.NewReader(seg.segData))
-	}()
-
-	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
-	status, info, err := ffmpeg.GetCodecInfo(fname)
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-	if status != ffmpeg.CodecStatusOk {
-		slog.Error("Invalid CodecStatus while probing segment", "status", status)
-		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
-	}
-	return info, nil
-}
-
-func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
-	p.lastProcessedMu.RLock()
-	lastProcessedAt := p.lastProcessedAt
-	p.lastProcessedMu.RUnlock()
-	if lastProcessedAt.Add(p.processInterval).After(timestamp) {
-		// We don't process every segment, because it's too compute-expensive
-		return true
-	}
-	return false
-}
-
 func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 	timestamp := time.Now()
 	if p.shouldSkip(timestamp) {
@@ -143,4 +109,38 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 	}()
 
 	return resReader
+}
+
+func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
+	p.lastProcessedMu.RLock()
+	lastProcessedAt := p.lastProcessedAt
+	p.lastProcessedMu.RUnlock()
+	if lastProcessedAt.Add(p.processInterval).After(timestamp) {
+		// We don't process every segment, because it's too compute-expensive
+		return true
+	}
+	return false
+}
+
+func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		return ffmpeg.MediaFormatInfo{}, err
+	}
+
+	go func() {
+		defer pipeWriter.Close()
+		io.Copy(pipeWriter, bytes.NewReader(seg.segData))
+	}()
+
+	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
+	status, info, err := ffmpeg.GetCodecInfo(fname)
+	if err != nil {
+		return ffmpeg.MediaFormatInfo{}, err
+	}
+	if status != ffmpeg.CodecStatusOk {
+		slog.Error("Invalid CodecStatus while probing segment", "status", status)
+		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
+	}
+	return info, nil
 }
