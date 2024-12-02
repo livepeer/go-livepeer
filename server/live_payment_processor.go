@@ -67,11 +67,13 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := seg.timestamp.Sub(p.lastProcessedAt).Seconds()
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
+
 	err = p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
 		slog.Error("Error processing payment", "err", err)
 		return
 	}
+
 	p.lastProcessedMu.Lock()
 	defer p.lastProcessedMu.Unlock()
 	p.lastProcessedAt = seg.timestamp
