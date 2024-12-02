@@ -1014,10 +1014,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	setupFee := calculateFee(initPixelsToPay, sess.OrchestratorInfo.PriceInfo)
-	setupFeeInt := new(big.Int).Div(setupFee.Num(), setupFee.Denom()).Int64()
-
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, setupFeeInt)
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	// Send request to orchestrator
