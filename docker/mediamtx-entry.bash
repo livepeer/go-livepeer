@@ -8,10 +8,10 @@ if [ -v LP_PUBLISH_MEDIAMTX_METRICS ]; then
   if [ -z "$LP_PUBLISH_MEDIAMTX_METRICS_ENDPOINT" ]; then
     echo >&2 "No endpoint specified for publishing mediamtx metrics."
   fi
-  echo <<EOF |
+  cat <<EOF |
 # HELP version Current software version as a tag, always 1
 # TYPE version gauge
-version{app="MediaMTX",version="$MEDIAMTX_VERSION"} 1
+version{app="MediaMTX",version="$MEDIAMTX_VERSION",region="$MEDIAMTX_REGION",ecosystem="$MEDIAMTX_ECOSYSTEM"} 1
 EOF
     curl -X POST --data-binary @- "$LP_PUBLISH_MEDIAMTX_METRICS_ENDPOINT"
 fi
