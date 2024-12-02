@@ -159,13 +159,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 
+		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 		priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		f := func(inPixels int64) error {
+		accountPaymentFunc := func(inPixels int64) error {
 			err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
 				sender:    sender,
 				inPixels:  inPixels,
@@ -180,7 +181,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			}
 			return err
 		}
-		paymentProcessor := NewLivePaymentProcessor(context.Background(), h.node.LivePaymentInterval, f)
+		paymentProcessor := NewLivePaymentProcessor(context.Background(), h.node.LivePaymentInterval, accountPaymentFunc)
 
 		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {

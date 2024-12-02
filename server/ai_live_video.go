@@ -18,22 +18,24 @@ import (
 	"github.com/livepeer/go-livepeer/trickle"
 )
 
-func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession, mid string) {
+func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) {
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		slog.Info("error publishing trickle", "err", err)
 	}
+
+	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(context.Background())
 	paymentSender := livePaymentSender{}
-	f := func(inPixels int64) error {
+	sendPaymentFunc := func(inPixels int64) error {
 		return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 			sess:      sess.BroadcastSession,
 			inPixels:  inPixels,
 			priceInfo: sess.OrchestratorInfo.PriceInfo,
-			mid:       mid,
+			mid:       extractMid(url.Path),
 		})
 	}
-	paymentProcessor := NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, f)
+	paymentProcessor := NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 
 	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream

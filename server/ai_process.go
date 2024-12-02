@@ -1040,14 +1040,20 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
-		// TODO: Improve this to pass mid from orch
-		pubSplit := strings.Split(pub.Path, "/")
-		mid := pubSplit[len(pubSplit)-1]
-		startTricklePublish(pub, params, sess, mid)
+		startTricklePublish(pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
 	}
 	return resp, nil
+}
+
+// extractMid extracts the mid (manifest ID) from the publish URL
+// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
+// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
+// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
+func extractMid(path string) string {
+	pubSplit := strings.Split(path, "/")
+	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
