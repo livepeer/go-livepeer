@@ -35,7 +35,6 @@ type segment struct {
 
 func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(inPixels int64) error) *LivePaymentProcessor {
 	pp := &LivePaymentProcessor{
-		sender:             &livePaymentSender{segmentsToPayUpfront: 1},
 		processInterval:    processInterval,
 		segCh:              make(chan *segment, 1),
 		processSegmentFunc: processSegmentFunc,

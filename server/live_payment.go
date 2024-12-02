@@ -47,7 +47,6 @@ type LivePaymentReceiver interface {
 }
 
 type livePaymentSender struct {
-	segmentsToPayUpfront int64
 }
 
 type livePaymentReceiver struct {
@@ -71,9 +70,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
-	// We pay a few segments upfront to avoid race condition between payment and segment processing
-	minCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
-	balUpdate, err := newBalanceUpdate(sess, minCredit)
+	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
 		return err
 	}

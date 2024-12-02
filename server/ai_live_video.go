@@ -25,7 +25,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession, 
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	paymentProcessInterval := 1 * time.Second
-	paymentSender := livePaymentSender{segmentsToPayUpfront: 5}
+	paymentSender := livePaymentSender{}
 	f := func(inPixels int64) error {
 		return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 			sess:      sess.BroadcastSession,
