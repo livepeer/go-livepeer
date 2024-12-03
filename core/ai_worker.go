@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -1083,41 +1082,10 @@ func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObject
 	took := time.Since(start)
 	clog.V(common.DEBUG).Infof(ctx, "Generating annotated frames took=%v", took)
 
-	sessionID := string(RandomManifestID())
-	mediaFormat, err := common.GetInputVideoInfo(req.Video)
-	if err != nil {
-		return nil, err
-	}
-
-	inProfile := ffmpeg.VideoProfile{
-		Framerate:    uint(mediaFormat.FPS),
-		FramerateDen: 1,
-	}
-	height := mediaFormat.Height
-	width := mediaFormat.Width
-	bitrate := "6000k"
-	//try to find a lower bitrate if possible based on default profiles
-	//this can be enhanced by adding the video bitrate to ffmpeg.GetCodecInfoBytes or
-	//passthrough encoding at the runner
-	for _, profile := range ffmpeg.VideoProfileLookup {
-		profResolution := strings.Split(profile.Resolution, "x")
-		profWidth, _ := strconv.Atoi(profResolution[0])
-		if profWidth <= width {
-			if uint(mediaFormat.FPS) <= profile.Framerate {
-				bitrate = profile.Bitrate
-				break
-			}
-		}
-	}
-	outProfile := ffmpeg.VideoProfile{
-		Name:       "object-detection",
-		Resolution: fmt.Sprintf("%vx%v", width, height),
-		Bitrate:    bitrate,
-		Format:     ffmpeg.FormatMP4,
-	}
-
 	// Video returned in the first frame URL field as a base64 string.
 	base64Video := resp.Frames[0][0].Url
+
+	var fname string
 
 	if base64Video != "" {
 		decodedVideo, err := base64.StdEncoding.DecodeString(base64Video)
@@ -1125,13 +1093,13 @@ func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObject
 			return nil, fmt.Errorf("failed to decode base64 video: %v", err)
 		}
 		resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
-		fname := path.Join(n.WorkDir, resultFile)
+		fname = path.Join(n.WorkDir, resultFile)
 		if err := os.WriteFile(fname, decodedVideo, 0644); err != nil {
 			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
 			return nil, err
 		}
 	} else {
-		fname := ""
+		fname = ""
 	}
 
 	objectDetectionResponse := &worker.ObjectDetectionResponse{
