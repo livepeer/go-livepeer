@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
@@ -25,10 +26,12 @@ import (
 var waitTimeout = 20 * time.Second
 
 type MediaSegmenter struct {
-	Workdir string
+	Workdir        string
+	MediaMTXClient *mediaserver.MediaMTXClient
+	MediaMTXHost   string
 }
 
-func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
+func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler, id, sourceType string) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -39,10 +42,17 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	}()
 
 	retryCount := 0
-	// TODO better retry logic
-	for retryCount < 5 {
+	for {
+		streamExists, err := ms.MediaMTXClient.StreamExists(ms.MediaMTXHost, id, sourceType)
+		if err != nil {
+			clog.Errorf(ctx, "Failed to check if input stream exists. err=%s", err)
+		}
+		if retryCount > 20 && !streamExists {
+			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			break
+		}
 		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: in,
 		}, []ffmpeg.TranscodeOptions{{
 			Oname:        outFilePattern,

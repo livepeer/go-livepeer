@@ -475,8 +475,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if mediaMTXStreamPrefix != "" {
 				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 			}
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: ls.mediaMTXClient, MediaMTXHost: remoteHost}
+			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read, sourceID, sourceType)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()
