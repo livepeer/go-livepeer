@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -148,7 +148,11 @@ func (r *livePaymentReceiver) AccountPayment(
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	if balance == nil || balance.Cmp(fee) < 0 {
-		return errors.New("insufficient balance")
+		balanceStr := "nil"
+		if balance != nil {
+			balanceStr = balance.FloatString(0)
+		}
+		return fmt.Errorf("insufficient balance, mid=%s, fee=%s, balance=%s", segmentInfo.sessionID, fee.FloatString(0), balanceStr)
 	}
 	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
 	clog.V(common.DEBUG).Infof(ctx, "Accounted payment for sessionID=%s, fee=%s", segmentInfo.sessionID, fee.FloatString(0))
