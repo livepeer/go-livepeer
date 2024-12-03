@@ -42,7 +42,7 @@ func TestLocalTranscoder(t *testing.T) {
 func TestNvidia_Transcoder(t *testing.T) {
 	dev := os.Getenv("NV_DEVICE")
 	if dev == "" {
-		t.Skip("No device specified; skipping remainder of Nvidia tests")
+		t.Skip("No device specified teste test; skipping remainder of Nvidia tests")
 		return
 	}
 
