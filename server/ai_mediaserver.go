@@ -441,7 +441,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				QueryParams: queryParams,
 			})
 			if err != nil {
-				kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
+				kickErr := ls.mediaMTXClient.KickInputConnection(remoteHost, sourceID, sourceType)
 				if kickErr != nil {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
@@ -476,7 +476,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 			}
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
+			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()

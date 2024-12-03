@@ -28,7 +28,7 @@ type MediaSegmenter struct {
 	Workdir string
 }
 
-func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandler) {
+func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -39,6 +39,7 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 	}()
 
 	retryCount := 0
+	// TODO better retry logic
 	for retryCount < 5 {
 		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
 		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
@@ -50,13 +51,13 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
 		}})
 		if err != nil {
-			slog.Error("Failed to run segmentation", "in", in, "err", err)
+			clog.Errorf(ctx, "Failed to run segmentation. in=%s err=%s", in, err)
 		}
 		retryCount++
 		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
-	slog.Info("sent completion signal, now waiting")
+	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
 }
 

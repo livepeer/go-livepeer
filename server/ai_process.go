@@ -1033,7 +1033,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		startTricklePublish(pub, params)
+		startTricklePublish(ctx, pub, params)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
 	}

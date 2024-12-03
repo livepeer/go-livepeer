@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,31 +13,33 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/go-livepeer/trickle"
 )
 
-func startTricklePublish(url *url.URL, params aiRequestParams) {
+func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams) {
+	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
-		slog.Info("error publishing trickle", "err", err)
+		clog.Infof(ctx, "error publishing trickle. err=%s", err)
 	}
 	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
-				slog.Info("Error closing trickle publisher", "err", err)
+				clog.Infof(ctx, "Error closing trickle publisher. err=%s", err)
 			}
 			return
 		}
 		go func() {
-			clog.V(8).Infof(context.Background(), "publishing trickle. url=%s", url.Redacted())
+			clog.V(8).Infof(ctx, "trickle publish writing data")
 			// TODO this blocks! very bad!
 			if err := publisher.Write(reader); err != nil {
-				slog.Info("Error writing to trickle publisher", "err", err)
+				clog.Infof(ctx, "Error writing to trickle publisher. err=%s", err)
 			}
 		}()
 	})
-	slog.Info("trickle pub", "url", url)
+	clog.Infof(ctx, "trickle pub")
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
@@ -73,6 +73,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		defer r.Close()
 		retryCount := 0
+		// TODO better retry logic
 		for retryCount < 10 {
 			cmd := exec.Command("ffmpeg",
 				"-i", "pipe:0",
@@ -95,9 +96,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 func mediamtxSourceTypeToString(s string) (string, error) {
 	switch s {
-	case mediaMTXWebrtcSession:
+	case mediaserver.MediaMTXWebrtcSession:
 		return "whip", nil
-	case mediaMTXRtmpConn:
+	case mediaserver.MediaMTXRtmpConn:
 		return "rtmp", nil
 	default:
 		return "", errors.New("unknown media source")
@@ -114,38 +115,4 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
 	params.node.LivePipelines[stream] = &core.LivePipeline{ControlPub: controlPub}
-}
-
-const (
-	mediaMTXControlPort   = "9997"
-	mediaMTXControlUser   = "admin"
-	mediaMTXWebrtcSession = "webrtcSession"
-	mediaMTXRtmpConn      = "rtmpConn"
-)
-
-func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
-	var apiPath string
-	switch sourceType {
-	case mediaMTXWebrtcSession:
-		apiPath = "webrtcsessions"
-	case mediaMTXRtmpConn:
-		apiPath = "rtmpconns"
-	default:
-		return fmt.Errorf("invalid sourceType: %s", sourceType)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create kick request: %w", err)
-	}
-	req.SetBasicAuth(mediaMTXControlUser, ls.mediaMTXApiPassword)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to kick connection: %w", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
-	}
-	return nil
 }
