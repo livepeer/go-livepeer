@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
@@ -27,7 +26,7 @@ var waitTimeout = 20 * time.Second
 
 type MediaSegmenter struct {
 	Workdir        string
-	MediaMTXClient *mediaserver.MediaMTXClient
+	MediaMTXClient *MediaMTXClient
 	MediaMTXHost   string
 }
 
@@ -45,7 +44,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	for {
 		streamExists, err := ms.MediaMTXClient.StreamExists(ms.MediaMTXHost, id, sourceType)
 		if err != nil {
-			clog.Errorf(ctx, "Failed to check if input stream exists. err=%s", err)
+			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
 		}
 		if retryCount > 20 && !streamExists {
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)

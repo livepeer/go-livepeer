@@ -13,7 +13,6 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
-	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -95,9 +94,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 func mediamtxSourceTypeToString(s string) (string, error) {
 	switch s {
-	case mediaserver.MediaMTXWebrtcSession:
+	case media.MediaMTXWebrtcSession:
 		return "whip", nil
-	case mediaserver.MediaMTXRtmpConn:
+	case media.MediaMTXRtmpConn:
 		return "rtmp", nil
 	default:
 		return "", errors.New("unknown media source")

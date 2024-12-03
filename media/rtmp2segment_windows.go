@@ -2,8 +2,12 @@
 
 package media
 
+import "context"
+
 type MediaSegmenter struct {
-	Workdir string
+	Workdir        string
+	MediaMTXClient *MediaMTXClient
+	MediaMTXHost   string
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler, id, sourceType string) {

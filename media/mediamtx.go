@@ -1,4 +1,4 @@
-package mediaserver
+package media
 
 import (
 	"fmt"
