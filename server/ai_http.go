@@ -165,28 +165,36 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
-		paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 		priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
+
 		}
-		accountPaymentFunc := func(inPixels int64) error {
-			err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
-				sender:    sender,
-				inPixels:  inPixels,
-				priceInfo: priceInfo,
-				sessionID: mid,
-			})
-			if err != nil {
-				slog.Warn("Error accounting payment, stopping stream processing", "err", err)
-				pubCh.Close()
-				subCh.Close()
-				controlPubCh.Close()
+		var paymentProcessor *LivePaymentProcessor
+		ctx, cancel := context.WithCancel(context.Background())
+		if priceInfo != nil {
+			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+			accountPaymentFunc := func(inPixels int64) error {
+				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+					sender:    sender,
+					inPixels:  inPixels,
+					priceInfo: priceInfo,
+					sessionID: mid,
+				})
+				if err != nil {
+					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+					pubCh.Close()
+					subCh.Close()
+					controlPubCh.Close()
+					cancel()
+				}
+				return err
 			}
-			return err
+			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+		} else {
+			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
 		}
-		paymentProcessor := NewLivePaymentProcessor(context.Background(), h.node.LivePaymentInterval, accountPaymentFunc)
 
 		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {
@@ -197,7 +205,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-				reader := paymentProcessor.process(segment.Reader)
+				reader := segment.Reader
+				if paymentProcessor != nil {
+					reader = paymentProcessor.process(segment.Reader)
+				}
 				io.Copy(io.Discard, reader)
 			}
 		}()
@@ -222,6 +233,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubCh.Close()
 			subCh.Close()
 			controlPubCh.Close()
+			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

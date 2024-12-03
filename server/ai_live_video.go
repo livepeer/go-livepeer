@@ -26,16 +26,22 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(context.Background())
-	paymentSender := livePaymentSender{}
-	sendPaymentFunc := func(inPixels int64) error {
-		return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
-			sess:      sess.BroadcastSession,
-			inPixels:  inPixels,
-			priceInfo: sess.OrchestratorInfo.PriceInfo,
-			mid:       extractMid(url.Path),
-		})
+	priceInfo := sess.OrchestratorInfo.PriceInfo
+	var paymentProcessor *LivePaymentProcessor
+	if priceInfo != nil {
+		paymentSender := livePaymentSender{}
+		sendPaymentFunc := func(inPixels int64) error {
+			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
+				sess:      sess.BroadcastSession,
+				inPixels:  inPixels,
+				priceInfo: priceInfo,
+				mid:       extractMid(url.Path),
+			})
+		}
+		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
+	} else {
+		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
-	paymentProcessor := NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 
 	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream
@@ -48,10 +54,14 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 		}
 		go func() {
 			clog.V(8).Infof(context.Background(), "publishing trickle. url=%s", url.Redacted())
-			reader := paymentProcessor.process(reader)
+
+			r := reader
+			if paymentProcessor != nil {
+				r = paymentProcessor.process(reader)
+			}
 
 			// TODO this blocks! very bad!
-			if err := publisher.Write(reader); err != nil {
+			if err := publisher.Write(r); err != nil {
 				slog.Info("Error writing to trickle publisher", "err", err)
 			}
 		}()
