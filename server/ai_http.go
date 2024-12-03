@@ -184,12 +184,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				})
 				if err != nil {
 					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
-					pubCh.Close()
-					subCh.Close()
-					controlPubCh.Close()
-					cancel()
+					//pubCh.Close()
+					//subCh.Close()
+					//controlPubCh.Close()
+					//cancel()
 				}
-				return err
+				return nil
+				//return err
 			}
 			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {
