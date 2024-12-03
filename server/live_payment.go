@@ -24,7 +24,6 @@ type SegmentInfoSender struct {
 	sess      *BroadcastSession
 	inPixels  int64
 	priceInfo *net.PriceInfo
-	mid       string
 }
 
 type SegmentInfoReceiver struct {
@@ -47,6 +46,7 @@ type LivePaymentReceiver interface {
 }
 
 type livePaymentSender struct {
+	segmentsToPayUpfront int64
 }
 
 type livePaymentReceiver struct {
@@ -54,22 +54,17 @@ type livePaymentReceiver struct {
 }
 
 func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
-	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
-		clog.V(common.DEBUG).Infof(ctx, "Skipping sending payment, priceInfo not set for requestID=%s, ", segmentInfo.mid)
-		return nil
-	}
 	sess := segmentInfo.sess
 
 	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
 		return err
 	}
-	sess.lock.Lock()
-	sess.Params.ManifestID = core.ManifestID(segmentInfo.mid)
-	sess.lock.Unlock()
 
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
-	balUpdate, err := newBalanceUpdate(sess, fee)
+	// We pay a few segments upfront to avoid race condition between payment and segment processing
+	minCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
+	balUpdate, err := newBalanceUpdate(sess, minCredit)
 	if err != nil {
 		return err
 	}
@@ -140,10 +135,6 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 
 func (r *livePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
-	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
-		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting, priceInfo not set for sessionID=%s, ", segmentInfo.sessionID)
-		return nil
-	}
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))

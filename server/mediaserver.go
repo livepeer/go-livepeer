@@ -128,7 +128,6 @@ type LivepeerServer struct {
 
 	mediaMTXApiPassword string
 	liveAIAuthApiKey    string
-	livePaymentInterval time.Duration
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -196,7 +195,6 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
-		livePaymentInterval:     lpNode.LivePaymentInterval,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
