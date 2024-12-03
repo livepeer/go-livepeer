@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -15,6 +15,7 @@ import (
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/mediaserver"
 	"github.com/livepeer/go-livepeer/trickle"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams) {
@@ -69,24 +70,22 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		}
 	}()
 
-	// TODO: Change this to LPMS
 	go func() {
 		defer r.Close()
 		retryCount := 0
-		// TODO better retry logic
+		// TODO check whether stream is actually terminated
+		//      so we aren't just looping unnecessarily
 		for retryCount < 10 {
-			cmd := exec.Command("ffmpeg",
-				"-i", "pipe:0",
-				"-c:a", "copy",
-				"-c:v", "copy",
-				"-f", "flv",
-				params.liveParams.outputRTMPURL,
-			)
-			cmd.Stdin = r
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				clog.Infof(ctx, "Error running trickle subscribe ffmpeg: %s", err)
+			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
+			}, []ffmpeg.TranscodeOptions{{
+				Oname:        params.liveParams.outputRTMPURL,
+				AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
+				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
+			}})
+			if err != nil {
+				clog.Infof(ctx, "Error sending RTMP out: %s", err)
 			}
 			retryCount++
 			time.Sleep(5 * time.Second)
