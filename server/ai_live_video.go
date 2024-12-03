@@ -31,6 +31,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 	if priceInfo != nil {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
+			slog.Debug("Sending payment", "mid", extractMid(url.Path), "inPixels", inPixels, "pricePerUnit", priceInfo.PricePerUnit, "pixelsPerUnit", priceInfo.PixelsPerUnit)
 			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 				sess:      sess.BroadcastSession,
 				inPixels:  inPixels,
