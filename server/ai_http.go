@@ -176,7 +176,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		if priceInfo != nil {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 			accountPaymentFunc := func(inPixels int64) error {
-				slog.Debug("Accounting payment", "mid", mid, "inPixels", inPixels, "pricePerUnit", priceInfo.PricePerUnit, "pixelsPerUnit", priceInfo.PixelsPerUnit)
+				clog.V(common.DEBUG).Infof(ctx, "Accounting payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", mid, inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
 					sender:    sender,
 					inPixels:  inPixels,

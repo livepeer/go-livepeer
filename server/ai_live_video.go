@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/common"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,7 +32,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 	if priceInfo != nil {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
-			slog.Debug("Sending payment", "mid", extractMid(url.Path), "inPixels", inPixels, "pricePerUnit", priceInfo.PricePerUnit, "pixelsPerUnit", priceInfo.PixelsPerUnit)
+			clog.V(common.DEBUG).Infof(ctx, "Sending payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", extractMid(url.Path), inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 				sess:      sess.BroadcastSession,
 				inPixels:  inPixels,
