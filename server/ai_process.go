@@ -1020,6 +1020,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	if resp.JSON200 != nil {
+		if resp.JSON200.ControlUrl == nil {
+			return nil, errors.New("control URL is missing")
+		}
+
 		host := sess.Transcoder()
 		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 		if err != nil {
