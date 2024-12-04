@@ -1242,6 +1242,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					modelConstraint.Capacity = config.Capacity
 				}
 
+				// Ensure the AI worker has the image needed to serve the job.
+				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
+				if err != nil {
+					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
+				}
+
 				if config.Warm || config.URL != "" {
 					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
