@@ -487,9 +487,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			sessManager: ls.AISessionManager,
 
 			liveParams: liveRequestParams{
-				segmentReader: ssr,
-				outputRTMPURL: outputURL,
-				stream:        streamName,
+				segmentReader:          ssr,
+				outputRTMPURL:          outputURL,
+				stream:                 streamName,
+				paymentProcessInterval: ls.livePaymentInterval,
 			},
 		}
 
