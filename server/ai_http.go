@@ -173,7 +173,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 		var paymentProcessor *LivePaymentProcessor
 		ctx, cancel := context.WithCancel(context.Background())
-		if priceInfo != nil {
+		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 			accountPaymentFunc := func(inPixels int64) error {
 				clog.V(common.DEBUG).Infof(ctx, "Accounting payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", mid, inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)

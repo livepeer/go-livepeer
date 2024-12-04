@@ -29,7 +29,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 	ctx, cancel := context.WithCancel(context.Background())
 	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
-	if priceInfo != nil {
+	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
 			clog.V(common.DEBUG).Infof(ctx, "Sending payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", extractMid(url.Path), inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
