@@ -127,7 +127,7 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
 
-	mediaMTXClient   *media.MediaMTXClient
+	mediaMTXClient      *media.MediaMTXClient
 	liveAIAuthApiKey    string
 	livePaymentInterval time.Duration
 }
