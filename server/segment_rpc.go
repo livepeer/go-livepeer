@@ -758,6 +758,8 @@ func newBalanceUpdate(sess *BroadcastSession, minCredit *big.Rat) (*BalanceUpdat
 	ev, err := sess.Sender.EV(sess.PMSessionID)
 	if err != nil {
 		return nil, err
+	} else if ev == nil || ev.Cmp(big.NewRat(0, 1)) == 0 {
+		return nil, fmt.Errorf("EV is 0 for SessionID=%s", sess.PMSessionID)
 	}
 
 	// The orchestrator requires the broadcaster's balance to be at least the EV of a single ticket
