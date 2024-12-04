@@ -72,10 +72,17 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		defer r.Close()
 		retryCount := 0
-		// TODO check whether stream is actually terminated
-		//      so we aren't just looping unnecessarily
-		for retryCount < 10 {
-			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		for {
+			streamExists, err := params.mediaMTXClient.StreamExists()
+			if err != nil {
+				clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
+			}
+			if retryCount > 20 && !streamExists {
+				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist. err=%s", err)
+				break
+			}
+
+			_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 			}, []ffmpeg.TranscodeOptions{{
 				Oname:        params.liveParams.outputRTMPURL,

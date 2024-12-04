@@ -492,6 +492,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				outputRTMPURL: outputURL,
 				stream:        streamName,
 			},
+			mediaMTXClient: mediaMTXClient,
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{

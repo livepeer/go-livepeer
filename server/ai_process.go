@@ -85,7 +85,8 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	liveParams liveRequestParams
+	liveParams     liveRequestParams
+	mediaMTXClient *media.MediaMTXClient
 }
 
 // For live video pipelines
