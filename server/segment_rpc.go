@@ -285,7 +285,7 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 		return net.Payment{}, nil, nil, ctx, err
 	}
 
-	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
+	oInfo, err := orchestratorInfoWithCaps(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), segData.Caps.ToNetCapabilities())
 	if err != nil {
 		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
