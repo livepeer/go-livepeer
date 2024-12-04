@@ -205,6 +205,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				}
 				reader := segment.Reader
 				if paymentProcessor != nil {
+					clog.V(common.DEBUG).Infof(ctx, "Processing segment, metadata=%v", segment.Metadata)
 					reader = paymentProcessor.process(segment.Reader)
 				}
 				io.Copy(io.Discard, reader)
