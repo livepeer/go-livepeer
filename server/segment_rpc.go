@@ -68,10 +68,19 @@ var httpClient = &http.Client{
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
-	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
 	if err != nil {
 		return
 	}
+
+	oInfo, err := orchestratorInfo(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
 
 	if err := h.orchestrator.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
 		clog.Errorf(ctx, "error processing payment: %v", err)
@@ -227,10 +236,23 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // Payment receives payment from Gateway and adds it into the orchestrator's balance
 func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
-	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
 	if err != nil {
 		return
 	}
+
+	var netCaps *net.Capabilities
+	if segData != nil && segData.Caps != nil {
+		netCaps = segData.Caps.ToNetCapabilities()
+	}
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), netCaps)
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
 
 	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
 		clog.Errorf(ctx, "error processing payment: %v", err)
@@ -259,7 +281,7 @@ func currentBalanceLog(h *lphttp, payment net.Payment, segData *core.SegTranscod
 	return currentBalance.FloatString(0)
 }
 
-func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, *net.OrchestratorInfo, context.Context, error) {
+func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, context.Context, error) {
 	orch := h.orchestrator
 
 	remoteAddr := getRemoteAddr(r)
@@ -269,7 +291,7 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 	if err != nil {
 		clog.Errorf(ctx, "Could not parse payment")
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return net.Payment{}, nil, nil, ctx, err
+		return net.Payment{}, nil, ctx, err
 	}
 
 	sender := getPaymentSender(payment)
@@ -282,19 +304,10 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 	if err != nil {
 		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
-		return net.Payment{}, nil, nil, ctx, err
+		return net.Payment{}, nil, ctx, err
 	}
 
-	oInfo, err := orchestratorInfoWithCaps(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), segData.Caps.ToNetCapabilities())
-	if err != nil {
-		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return net.Payment{}, nil, nil, ctx, err
-	}
-	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
-	oInfo.AuthToken = segData.AuthToken
-
-	return payment, segData, oInfo, ctx, nil
+	return payment, segData, ctx, nil
 }
 
 func getPayment(header string) (net.Payment, error) {
@@ -758,8 +771,6 @@ func newBalanceUpdate(sess *BroadcastSession, minCredit *big.Rat) (*BalanceUpdat
 	ev, err := sess.Sender.EV(sess.PMSessionID)
 	if err != nil {
 		return nil, err
-	} else if ev == nil || ev.Cmp(big.NewRat(0, 1)) == 0 {
-		return nil, fmt.Errorf("EV is 0 for SessionID=%s", sess.PMSessionID)
 	}
 
 	// The orchestrator requires the broadcaster's balance to be at least the EV of a single ticket
