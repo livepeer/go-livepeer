@@ -146,5 +146,9 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 		slog.Error("Invalid CodecStatus while probing segment", "status", status)
 		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
 	}
+
+	// For WebRTC the probing sometimes returns FPS=90000, which is incorrect and causes issues with payment,
+	// so as a hack let's hardcode FPS to 30
+	info.FPS = 30.0
 	return info, nil
 }
