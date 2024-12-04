@@ -165,14 +165,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
-		// TODO: Take it for capabilities
 		priceInfo := payment.GetExpectedPrice()
 		var paymentProcessor *LivePaymentProcessor
 		ctx, cancel := context.WithCancel(context.Background())
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
 			accountPaymentFunc := func(inPixels int64) error {
-				clog.V(common.DEBUG).Infof(ctx, "Accounting payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", mid, inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
 					sender:    sender,
 					inPixels:  inPixels,
@@ -181,13 +179,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				})
 				if err != nil {
 					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
-					//pubCh.Close()
-					//subCh.Close()
-					//controlPubCh.Close()
-					//cancel()
+					pubCh.Close()
+					subCh.Close()
+					controlPubCh.Close()
+					cancel()
 				}
-				return nil
-				//return err
+				return err
 			}
 			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
 		} else {

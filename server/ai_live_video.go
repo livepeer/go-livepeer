@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -32,7 +31,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 		paymentSender := livePaymentSender{}
 		sendPaymentFunc := func(inPixels int64) error {
-			clog.V(common.DEBUG).Infof(ctx, "Sending payment, mid=%v, inPixels=%v, pricePerUnit=%v, pixelsPerUnit=%v", extractMid(url.Path), inPixels, priceInfo.PricePerUnit, priceInfo.PixelsPerUnit)
 			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
 				sess:      sess.BroadcastSession,
 				inPixels:  inPixels,
@@ -55,8 +53,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			return
 		}
 		go func() {
-			clog.V(8).Infof(context.Background(), "publishing trickle. url=%s", url.Redacted())
-
 			r := reader
 			if paymentProcessor != nil {
 				r = paymentProcessor.process(reader)
@@ -69,7 +65,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			}
 		}()
 	})
-	slog.Info("trickle pub", "url", url)
+	clog.Infof(ctx, "trickle pub")
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {

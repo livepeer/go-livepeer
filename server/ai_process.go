@@ -1006,7 +1006,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 30 * 30 * 1280 * 720 // 30 seconds, 30fps, 720p
+const initPixelsToPay = 45 * 30 * 1280 * 720 // 45 seconds, 30fps, 720p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
@@ -1039,7 +1039,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
 		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
