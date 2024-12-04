@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
 	"time"
 
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -144,38 +143,4 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
 	params.node.LivePipelines[stream] = &core.LivePipeline{ControlPub: controlPub}
-}
-
-const (
-	mediaMTXControlPort   = "9997"
-	mediaMTXControlUser   = "admin"
-	mediaMTXWebrtcSession = "webrtcSession"
-	mediaMTXRtmpConn      = "rtmpConn"
-)
-
-func (ls *LivepeerServer) kickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
-	var apiPath string
-	switch sourceType {
-	case mediaMTXWebrtcSession:
-		apiPath = "webrtcsessions"
-	case mediaMTXRtmpConn:
-		apiPath = "rtmpconns"
-	default:
-		return fmt.Errorf("invalid sourceType: %s", sourceType)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create kick request: %w", err)
-	}
-	req.SetBasicAuth(mediaMTXControlUser, ls.mediaMTXApiPassword)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to kick connection: %w", err)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
-	}
-	return nil
 }
