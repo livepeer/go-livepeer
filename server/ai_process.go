@@ -1020,6 +1020,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	if resp.JSON200 != nil {
+		if resp.JSON200.ControlUrl == nil {
+			return nil, errors.New("control URL is missing")
+		}
+
 		host := sess.Transcoder()
 		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 		if err != nil {
@@ -1029,7 +1033,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		control, err := common.AppendHostname(resp.JSON200.ControlUrl, host)
+		control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
