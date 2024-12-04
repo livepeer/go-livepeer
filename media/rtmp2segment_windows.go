@@ -7,9 +7,8 @@ import "context"
 type MediaSegmenter struct {
 	Workdir        string
 	MediaMTXClient *MediaMTXClient
-	MediaMTXHost   string
 }
 
-func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler, id, sourceType string) {
+func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	// Not supported for Windows
 }
