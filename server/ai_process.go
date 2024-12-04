@@ -1040,7 +1040,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s", pub, sub, control)
-		startTricklePublish(pub, params, sess)
+		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/livepeer/go-livepeer/common"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
@@ -19,10 +19,11 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) {
+func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
+	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
-		slog.Info("error publishing trickle", "err", err)
+		clog.Infof(ctx, "error publishing trickle. err=%s", err)
 	}
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
@@ -49,7 +50,7 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
-				slog.Info("Error closing trickle publisher", "err", err)
+				clog.Infof(ctx, "Error closing trickle publisher. err=%s", err)
 			}
 			cancel()
 			return
@@ -62,9 +63,10 @@ func startTricklePublish(url *url.URL, params aiRequestParams, sess *AISession) 
 				r = paymentProcessor.process(reader)
 			}
 
+			clog.V(8).Infof(ctx, "trickle publish writing data")
 			// TODO this blocks! very bad!
 			if err := publisher.Write(r); err != nil {
-				slog.Info("Error writing to trickle publisher", "err", err)
+				clog.Infof(ctx, "Error writing to trickle publisher. err=%s", err)
 			}
 		}()
 	})
@@ -123,9 +125,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 func mediamtxSourceTypeToString(s string) (string, error) {
 	switch s {
-	case mediaMTXWebrtcSession:
+	case media.MediaMTXWebrtcSession:
 		return "whip", nil
-	case mediaMTXRtmpConn:
+	case media.MediaMTXRtmpConn:
 		return "rtmp", nil
 	default:
 		return "", errors.New("unknown media source")
