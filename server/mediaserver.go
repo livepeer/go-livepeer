@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
@@ -126,8 +127,8 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
 
-	mediaMTXApiPassword string
-	liveAIAuthApiKey    string
+	mediaMTXClient   *media.MediaMTXClient
+	liveAIAuthApiKey string
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -193,7 +194,7 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
-		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
+		mediaMTXClient:          media.NewMediaMTXClient(lpNode.MediaMTXApiPassword),
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {

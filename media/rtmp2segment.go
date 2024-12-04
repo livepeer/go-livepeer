@@ -25,23 +25,33 @@ import (
 var waitTimeout = 20 * time.Second
 
 type MediaSegmenter struct {
-	Workdir string
+	Workdir        string
+	MediaMTXClient *MediaMTXClient
+	MediaMTXHost   string
 }
 
-func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandler) {
+func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler, id, sourceType string) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		processSegments(segmentHandler, outFilePattern, completionSignal)
+		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
 	retryCount := 0
-	for retryCount < 5 {
+	for {
+		streamExists, err := ms.MediaMTXClient.StreamExists(ms.MediaMTXHost, id, sourceType)
+		if err != nil {
+			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
+		}
+		if retryCount > 20 && !streamExists {
+			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			break
+		}
 		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-		_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 			Fname: in,
 		}, []ffmpeg.TranscodeOptions{{
 			Oname:        outFilePattern,
@@ -50,13 +60,13 @@ func (ms *MediaSegmenter) RunSegmentation(in string, segmentHandler SegmentHandl
 			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
 		}})
 		if err != nil {
-			slog.Error("Failed to run segmentation", "in", in, "err", err)
+			clog.Errorf(ctx, "Failed to run segmentation. in=%s err=%s", in, err)
 		}
 		retryCount++
 		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
-	slog.Info("sent completion signal, now waiting")
+	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
 }
 
@@ -160,7 +170,7 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 	}
 }
 
-func processSegments(segmentHandler SegmentHandler, outFilePattern string, completionSignal <-chan bool) {
+func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFilePattern string, completionSignal <-chan bool) {
 
 	// things protected by the mutex mu
 	mu := &sync.Mutex{}
@@ -208,7 +218,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 		mu.Unlock()
 
 		// Handle the reading process
-		readSegment(segmentHandler, file, pipeName)
+		readSegment(ctx, segmentHandler, file, pipeName)
 
 		// Increment to the next pipe
 		pipeNum++
@@ -228,7 +238,7 @@ func processSegments(segmentHandler SegmentHandler, outFilePattern string, compl
 	}
 }
 
-func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) {
+func readSegment(ctx context.Context, segmentHandler SegmentHandler, file *os.File, pipeName string) {
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
@@ -246,33 +256,33 @@ func readSegment(segmentHandler SegmentHandler, file *os.File, pipeName string) 
 		n, err := reader.Read(buf)
 		if n > 0 {
 			if !firstByteRead {
-				slog.Debug("First byte read", "pipeName", pipeName)
+				clog.V(7).Infof(ctx, "First byte read. pipeName=%s", pipeName)
 				firstByteRead = true
 
 			}
 			totalBytesRead += int64(n)
 			if _, err := interfaceWriter.Write(buf[:n]); err != nil {
 				if err != io.EOF {
-					slog.Error("Error writing", "pipeName", pipeName, "err", err)
+					clog.Errorf(ctx, "Error writing. pipeName=%s err=%s", pipeName, err)
 				}
 			}
 		}
 		if n == len(buf) && n < 1024*1024 {
 			newLen := int(float64(len(buf)) * 1.5)
-			slog.Debug("Max buf hit, increasing", "oldSize", humanBytes(int64(len(buf))), "newSize", humanBytes(int64(newLen)))
+			clog.V(7).Infof(ctx, "Max buf hit, increasing. oldSize=%s newSize=%s", humanBytes(int64(len(buf))), humanBytes(int64(newLen)))
 			buf = make([]byte, newLen)
 		}
 
 		if err != nil {
 			if err.Error() == "EOF" {
-				slog.Debug("Last byte read", "pipeName", pipeName, "totalRead", humanBytes(totalBytesRead))
+				clog.V(7).Infof(ctx, "Last byte read. pipeName=%s totalRead=%s", pipeName, humanBytes(totalBytesRead))
 			} else {
-				slog.Error("Error reading", "pipeName", pipeName, "err", err)
+				clog.Errorf(ctx, "Error reading. pipeName=%s err=%s", pipeName, err)
 			}
 			break
 		}
 	}
-	clog.V(8).Infof(context.Background(), "read segment. totalRead=%s", humanBytes(totalBytesRead))
+	clog.V(8).Infof(ctx, "read segment. totalRead=%s", humanBytes(totalBytesRead))
 
 }
 
