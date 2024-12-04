@@ -61,6 +61,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				clog.Infof(ctx, "Error reading trickle subscription: %s", err)
 				return
 			}
+			clog.V(8).Infof(ctx, "trickle subscribe read data")
+			// TODO move to func (there's a defer)
 			defer segment.Body.Close()
 			if _, err = io.Copy(w, segment.Body); err != nil {
 				clog.Infof(ctx, "Error copying to ffmpeg stdin: %s", err)
