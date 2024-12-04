@@ -68,7 +68,7 @@ func (p *LivePaymentProcessor) processSegment(seg *segment) {
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := seg.timestamp.Sub(p.lastProcessedAt).Seconds()
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.V(6).Infof(context.Background(), "Probed segment: height=%d, width=%d, FPS=%v, secSinceLastProcessed=%v, lastTimestamp=%v, segTimestamp=%v", info.Height, info.Width, info.FPS, secSinceLastProcessed, p.lastProcessedAt, seg.timestamp)
+	clog.V(6).Infof(context.Background(), "Probed segment: height=%d, width=%d, FPS=%v, durSec=%d, secSinceLastProcessed=%v, lastTimestamp=%v, segTimestamp=%v", info.Height, info.Width, info.FPS, info.DurSecs, secSinceLastProcessed, p.lastProcessedAt, seg.timestamp)
 
 	err = p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
