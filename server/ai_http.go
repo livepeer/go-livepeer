@@ -165,12 +165,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
-		priceInfo, err := h.orchestrator.PriceInfo(sender, core.ManifestID(mid))
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
-			return
-
-		}
+		// TODO: Take it for capabilities
+		priceInfo := payment.GetExpectedPrice()
 		var paymentProcessor *LivePaymentProcessor
 		ctx, cancel := context.WithCancel(context.Background())
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
