@@ -875,8 +875,13 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
+	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("Address").Return(ethcommon.Address{})
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),

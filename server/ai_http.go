@@ -132,6 +132,28 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			controlUrl = pubUrl + "-control"
 		)
 
+		// Handle initial payment, the rest of the payments are done separately from the stream processing
+		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+		sender := getPaymentSender(payment)
+		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(mid)) {
+			respondWithError(w, "Insufficient balance", http.StatusBadRequest)
+			return
+		}
+
 		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
@@ -142,7 +164,34 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
 
-		// Subscribe to the publishUrl for payments monitoring
+		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
+		priceInfo := payment.GetExpectedPrice()
+		var paymentProcessor *LivePaymentProcessor
+		ctx, cancel := context.WithCancel(context.Background())
+		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+			accountPaymentFunc := func(inPixels int64) error {
+				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+					sender:    sender,
+					inPixels:  inPixels,
+					priceInfo: priceInfo,
+					sessionID: mid,
+				})
+				if err != nil {
+					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+					pubCh.Close()
+					subCh.Close()
+					controlPubCh.Close()
+					cancel()
+				}
+				return err
+			}
+			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+		} else {
+			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
+		}
+
+		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
@@ -151,8 +200,11 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-				// We can do something with the segment data here
-				io.Copy(io.Discard, segment.Reader)
+				reader := segment.Reader
+				if paymentProcessor != nil {
+					reader = paymentProcessor.process(segment.Reader)
+				}
+				io.Copy(io.Discard, reader)
 			}
 		}()
 
@@ -176,6 +228,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubCh.Close()
 			subCh.Close()
 			controlPubCh.Close()
+			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

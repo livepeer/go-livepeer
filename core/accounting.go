@@ -1,11 +1,13 @@
 package core
 
 import (
+	"context"
 	"math/big"
 	"sync"
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/livepeer/go-livepeer/clog"
 )
 
 // Balance holds the credit balance for a broadcast session
@@ -41,6 +43,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	}
 
 	creditGap := new(big.Rat).Sub(minCredit, existingCredit)
+	if ev == nil || ev.Cmp(big.NewRat(0, 1)) == 0 {
+		clog.Warningf(context.Background(), "Error calculating tickets: ev is nil or zero")
+		return 0, big.NewRat(0, 1), existingCredit
+	}
 	sizeRat := creditGap.Quo(creditGap, ev)
 	res := sizeRat.Num()
 	if !sizeRat.IsInt() {
