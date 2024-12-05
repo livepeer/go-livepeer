@@ -233,6 +233,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		return err
 	}
 
+	stopTrickle := lp.trickleSrv.Start()
+	defer stopTrickle()
+
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
 		Addr:        bind,
