@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -138,5 +139,35 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
-	params.node.LivePipelines[stream] = &core.LivePipeline{ControlPub: controlPub}
+
+	ticker := time.NewTicker(10 * time.Second)
+	done := make(chan bool, 1)
+	stop := func() {
+		ticker.Stop()
+		done <- true
+	}
+
+	params.node.LivePipelines[stream] = &core.LivePipeline{
+		ControlPub:  controlPub,
+		StopControl: stop,
+	}
+
+	// send a keepalive periodically to keep both ends of the connection alive
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				msg := `{"keep":"alive"}`
+				err := controlPub.Write(strings.NewReader(msg))
+				if err == trickle.StreamNotFoundErr {
+					// the channel doesn't exist anymore, so stop
+					stop()
+					continue // loop back to consume the `done` chan
+				}
+				// if there was another type of error, we'll just retry anyway
+			case <-done:
+				return
+			}
+		}
+	}()
 }
