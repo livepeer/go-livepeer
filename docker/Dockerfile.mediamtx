@@ -28,4 +28,4 @@ RUN	tar xzf /opt/mediamtx/mediamtx.tar.gz -C /opt/mediamtx/ \
 	&& mv /opt/mediamtx/mediamtx.yml /etc/mediamtx/mediamtx.yml \
 	&& rm -rf /opt/mediamtx/
 
-ENTRYPOINT	/bin/bash -c "declare -p >> /etc/environment && cron && /usr/local/bin/mediamtx"
+CMD	[ "/bin/bash", "-c", "declare -p >> /etc/environment && cron && /usr/local/bin/mediamtx" ]
