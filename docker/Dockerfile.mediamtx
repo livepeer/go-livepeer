@@ -2,22 +2,30 @@ FROM	ubuntu:24.04
 
 # we need curl in the image as it's later used in the runOnReady command
 RUN	apt-get update \
-	&& apt-get install -y \
+	&& apt-get install -yqq \
 		ca-certificates \
 		curl \
+		cron \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 
+# Setup cron job for publishing metrics
+RUN	mkdir -p /etc/cron.d/ /var/log/ \
+	&& echo "*/1 * * * * /opt/mediamtx-metrics.bash >> /var/log/cron.log 2>&1\n" > /etc/cron.d/mediamtx \
+	&& chmod 0644 /etc/cron.d/mediamtx \
+	&& crontab /etc/cron.d/mediamtx \
+	&& touch /var/log/cron.log
+
+COPY --chmod=0755	mediamtx-metrics.bash	/opt/mediamtx-metrics.bash
+
 ENV	MEDIAMTX_VERSION="1.9.3"
 
-ADD	"https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"	/opt/mediamtx.tar.gz
+ADD	"https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"	/opt/mediamtx/mediamtx.tar.gz
 
-RUN	tar xzf /opt/mediamtx.tar.gz -C /opt/ \
+RUN	tar xzf /opt/mediamtx/mediamtx.tar.gz -C /opt/mediamtx/ \
 	&& mkdir -p /usr/local/bin /etc/mediamtx/ \
-	&& mv /opt/mediamtx /usr/local/bin/mediamtx \
-	&& mv /opt/mediamtx.yml /etc/mediamtx/mediamtx.yml \
-	&& rm -rf /opt/
+	&& mv /opt/mediamtx/mediamtx /usr/local/bin/mediamtx \
+	&& mv /opt/mediamtx/mediamtx.yml /etc/mediamtx/mediamtx.yml \
+	&& rm -rf /opt/mediamtx/
 
-COPY	mediamtx-entry.bash	/
-
-ENTRYPOINT	["/mediamtx-entry.bash"]
+ENTRYPOINT	/bin/bash -c "declare -p >> /etc/environment && cron && /usr/local/bin/mediamtx"
