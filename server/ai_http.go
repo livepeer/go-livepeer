@@ -237,7 +237,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
 			PublishUrl:   pubUrl,
 			SubscribeUrl: subUrl,
-			ControlUrl:   controlUrl,
+			ControlUrl:   &controlUrl,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
