@@ -174,25 +174,34 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	for {
-		segment, err := subscriber.Read()
-		if err != nil {
-			clog.Infof(ctx, "Error reading events subscription: %s", err)
-			return
-		}
-		defer segment.Body.Close()
-		if _, err = io.Copy(os.Stdout, segment.Body); err != nil {
-			body, err := io.ReadAll(segment.Body)
-			if err != nil {
-				clog.Infof(ctx, "Error reading events subscription body: %s", err)
+	ctx = clog.AddVal(ctx, "url", url.Redacted())
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
 				return
+			default:
+				segment, err := subscriber.Read()
+				if err != nil {
+					clog.Infof(ctx, "Error reading events subscription: %s", err)
+					return
+				}
+
+				body, err := io.ReadAll(segment.Body)
+				segment.Body.Close()
+
+				if err != nil {
+					clog.Infof(ctx, "Error reading events subscription body: %s", err)
+					continue
+				}
+
+				clog.Infof(ctx, "Received from events trickle: %s", string(body))
+				monitor.SendQueueEventAsync(
+					"stream_status",
+					string(body),
+				)
 			}
-			clog.Infof(ctx, "Received from events trickle: %s", string(body))
-			monitor.SendQueueEventAsync(
-				"stream_status",
-				string(body), // todo event payload
-			)
-			return
 		}
-	}
+	}()
 }
