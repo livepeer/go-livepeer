@@ -94,6 +94,8 @@ type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
 	stream        string
+
+	paymentProcessInterval time.Duration
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1005,6 +1007,8 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
+const initPixelsToPay = 45 * 30 * 1280 * 720 // 45 seconds, 30fps, 720p
+
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
@@ -1013,14 +1017,20 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.JSON200 != nil {
+		if resp.JSON200.ControlUrl == nil {
+			return nil, errors.New("control URL is missing")
+		}
+
 		host := sess.Transcoder()
 		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 		if err != nil {
@@ -1030,16 +1040,25 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		control, err := common.AppendHostname(resp.JSON200.ControlUrl, host)
+		control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
 		// TODO any errors from these funcs should we kill the input stream?
-		startTricklePublish(ctx, pub, params)
+		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
 	}
 	return resp, nil
+}
+
+// extractMid extracts the mid (manifest ID) from the publish URL
+// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
+// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
+// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
+func extractMid(path string) string {
+	pubSplit := strings.Split(path, "/")
+	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {

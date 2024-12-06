@@ -17,24 +17,50 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
-func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams) {
+func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		clog.Infof(ctx, "error publishing trickle. err=%s", err)
 	}
+
+	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
+	ctx, cancel := context.WithCancel(context.Background())
+	priceInfo := sess.OrchestratorInfo.PriceInfo
+	var paymentProcessor *LivePaymentProcessor
+	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+		paymentSender := livePaymentSender{}
+		sendPaymentFunc := func(inPixels int64) error {
+			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
+				sess:      sess.BroadcastSession,
+				inPixels:  inPixels,
+				priceInfo: priceInfo,
+				mid:       extractMid(url.Path),
+			})
+		}
+		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
+	} else {
+		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
+	}
+
 	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
 				clog.Infof(ctx, "Error closing trickle publisher. err=%s", err)
 			}
+			cancel()
 			return
 		}
 		go func() {
+			r := reader
+			if paymentProcessor != nil {
+				r = paymentProcessor.process(reader)
+			}
+
 			clog.V(8).Infof(ctx, "trickle publish writing data")
 			// TODO this blocks! very bad!
-			if err := publisher.Write(reader); err != nil {
+			if err := publisher.Write(r); err != nil {
 				clog.Infof(ctx, "Error writing to trickle publisher. err=%s", err)
 			}
 		}()

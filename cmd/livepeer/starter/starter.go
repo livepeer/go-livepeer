@@ -169,6 +169,7 @@ type LivepeerConfig struct {
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
+	LivePaymentInterval        *time.Duration
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -213,6 +214,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLivePaymentInterval := 5 * time.Second
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -320,6 +322,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIModelsDir:          &defaultAIModelsDir,
 		AIRunnerImage:        &defaultAIRunnerImage,
 		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:  &defaultLivePaymentInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1242,6 +1245,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					modelConstraint.Capacity = config.Capacity
 				}
 
+				// Ensure the AI worker has the image needed to serve the job.
+				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
+				if err != nil {
+					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
+				}
+
 				if config.Warm || config.URL != "" {
 					// Register external container endpoint if URL is provided.
 					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
@@ -1564,6 +1573,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAIAuthApiKey != nil {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
+	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}
