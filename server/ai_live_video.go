@@ -182,12 +182,16 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		}
 		defer segment.Body.Close()
 		if _, err = io.Copy(os.Stdout, segment.Body); err != nil {
-			// TODO: produce kafka
+			body, err := io.ReadAll(segment.Body)
+			if err != nil {
+				clog.Infof(ctx, "Error reading events subscription body: %s", err)
+				return
+			}
+			clog.Infof(ctx, "Received from events trickle: %s", string(body))
 			monitor.SendQueueEventAsync(
-				"event", // todo event type
-				"error", // todo event payload
+				"stream_status",
+				string(body), // todo event payload
 			)
-			clog.Infof(ctx, "Error copying to stdout: %s", err)
 			return
 		}
 	}
