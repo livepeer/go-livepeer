@@ -45,7 +45,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		if err != nil {
 			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
 		}
-		if retryCount > 20 && !streamExists {
+		if retryCount > 2 && !streamExists {
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}
