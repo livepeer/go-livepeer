@@ -1,6 +1,7 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,17 @@ const (
 	MediaMTXWebrtcSession = "webrtcSession"
 	MediaMTXRtmpConn      = "rtmpConn"
 )
+
+func MediamtxSourceTypeToString(s string) (string, error) {
+	switch s {
+	case MediaMTXWebrtcSession:
+		return "whip", nil
+	case MediaMTXRtmpConn:
+		return "rtmp", nil
+	default:
+		return "", errors.New("unknown media source")
+	}
+}
 
 func getApiPath(sourceType string) (string, error) {
 	var apiPath string

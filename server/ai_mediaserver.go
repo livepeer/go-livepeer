@@ -383,7 +383,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
-		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
+		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -493,7 +493,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 			},
-			mediaMTXClient: mediaMTXClient,
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{

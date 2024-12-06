@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"time"
@@ -88,9 +88,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				return
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data")
-			// TODO move to func (there's a defer)
-			defer segment.Body.Close()
-			if _, err = io.Copy(w, segment.Body); err != nil {
+
+			if err = copySegment(segment, w); err != nil {
 				clog.Infof(ctx, "Error copying to ffmpeg stdin: %s", err)
 				return
 			}
@@ -99,13 +98,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 	go func() {
 		defer r.Close()
-		retryCount := 0
 		for {
-			streamExists, err := params.mediaMTXClient.StreamExists()
-			if err != nil {
-				clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
-			}
-			if retryCount > 20 && !streamExists {
+			_, ok := params.node.LivePipelines[params.liveParams.stream]
+			if !ok {
 				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist. err=%s", err)
 				break
 			}
@@ -121,21 +116,15 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if err != nil {
 				clog.Infof(ctx, "Error sending RTMP out: %s", err)
 			}
-			retryCount++
 			time.Sleep(5 * time.Second)
 		}
 	}()
 }
 
-func mediamtxSourceTypeToString(s string) (string, error) {
-	switch s {
-	case media.MediaMTXWebrtcSession:
-		return "whip", nil
-	case media.MediaMTXRtmpConn:
-		return "rtmp", nil
-	default:
-		return "", errors.New("unknown media source")
-	}
+func copySegment(segment *http.Response, w io.Writer) error {
+	defer segment.Body.Close()
+	_, err := io.Copy(w, segment.Body)
+	return err
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
