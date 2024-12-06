@@ -499,7 +499,11 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ModelId: &pipeline,
 			Params:  &pipelineParams,
 		}
-		processAIRequest(ctx, params, req)
+		_, err = processAIRequest(ctx, params, req)
+		if err != nil {
+			clog.Errorf(ctx, "Failed to process live video: %s", err.Error())
+			mediaMTXClient.KickInputConnection()
+		}
 	})
 }
 

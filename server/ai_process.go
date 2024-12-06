@@ -1029,6 +1029,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	if err != nil {
 		return nil, err
 	}
+	bodyString := string(resp.Body)
+	if strings.Contains(bodyString, "Insufficient capacity") {
+		return nil, errors.New(bodyString)
+	}
 
 	if resp.JSON200 != nil {
 		if resp.JSON200.ControlUrl == nil {
