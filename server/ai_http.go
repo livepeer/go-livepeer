@@ -234,6 +234,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubCh.Close()
 			subCh.Close()
 			controlPubCh.Close()
+			eventsCh.Close()
 			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
