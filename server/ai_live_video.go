@@ -76,6 +76,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
 	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
+	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 
 	// read segments from trickle subscription
 	go func() {
