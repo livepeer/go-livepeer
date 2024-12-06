@@ -157,7 +157,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 		for {
 			select {
 			case <-ticker.C:
-				msg := `{"keep":"alive"}`
+				const msg = `{"keep":"alive"}`
 				err := controlPub.Write(strings.NewReader(msg))
 				if err == trickle.StreamNotFoundErr {
 					// the channel doesn't exist anymore, so stop
