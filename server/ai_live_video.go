@@ -174,7 +174,6 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	ctx = clog.AddVal(ctx, "url", url.Redacted())
 
 	go func() {
 		for {
