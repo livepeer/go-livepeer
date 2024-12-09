@@ -44,7 +44,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
-	params.liveParams.segmentReader.SwitchReader(func(reader io.Reader) {
+	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
@@ -54,7 +54,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			return
 		}
 		go func() {
-			r := reader
+			var r io.Reader = reader
 			if paymentProcessor != nil {
 				r = paymentProcessor.process(reader)
 			}

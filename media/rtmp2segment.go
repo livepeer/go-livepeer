@@ -240,50 +240,11 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 
 func readSegment(ctx context.Context, segmentHandler SegmentHandler, file *os.File, pipeName string) {
 	defer file.Close()
-
 	reader := bufio.NewReader(file)
-	firstByteRead := false
-	totalBytesRead := int64(0)
-
-	buf := make([]byte, 32*1024)
-
-	// TODO should be explicitly buffered for better management
-	interfaceReader, interfaceWriter := io.Pipe()
-	defer interfaceWriter.Close()
-	segmentHandler(interfaceReader)
-
-	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			if !firstByteRead {
-				clog.V(7).Infof(ctx, "First byte read. pipeName=%s", pipeName)
-				firstByteRead = true
-
-			}
-			totalBytesRead += int64(n)
-			if _, err := interfaceWriter.Write(buf[:n]); err != nil {
-				if err != io.EOF {
-					clog.Errorf(ctx, "Error writing. pipeName=%s err=%s", pipeName, err)
-				}
-			}
-		}
-		if n == len(buf) && n < 1024*1024 {
-			newLen := int(float64(len(buf)) * 1.5)
-			clog.V(7).Infof(ctx, "Max buf hit, increasing. oldSize=%s newSize=%s", humanBytes(int64(len(buf))), humanBytes(int64(newLen)))
-			buf = make([]byte, newLen)
-		}
-
-		if err != nil {
-			if err.Error() == "EOF" {
-				clog.V(7).Infof(ctx, "Last byte read. pipeName=%s totalRead=%s", pipeName, humanBytes(totalBytesRead))
-			} else {
-				clog.Errorf(ctx, "Error reading. pipeName=%s err=%s", pipeName, err)
-			}
-			break
-		}
-	}
-	clog.V(8).Infof(ctx, "read segment. totalRead=%s", humanBytes(totalBytesRead))
-
+	writer := NewMediaWriter()
+	segmentHandler(writer.MakeReader())
+	io.Copy(writer, reader)
+	writer.Close()
 }
 
 func randomString() string {
@@ -293,17 +254,4 @@ func randomString() string {
 		b[i] = byte(rand.Intn(256))
 	}
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(b), "=")
-}
-
-func humanBytes(bytes int64) string {
-	var unit int64 = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := unit, 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
