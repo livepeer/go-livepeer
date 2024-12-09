@@ -36,7 +36,7 @@ var MaxAIRequestSize = 3000000000 // 3GB
 
 var TrickleHTTPPath = "/ai/trickle/"
 
-func startAIServer(lp lphttp) error {
+func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
 		return err
@@ -61,15 +61,15 @@ func startAIServer(lp lphttp) error {
 		BasePath: TrickleHTTPPath,
 	})
 
-	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
-	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
-	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
-	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
+	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
+	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
