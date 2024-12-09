@@ -1009,6 +1009,11 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 45 * 30 * 1280 * 720 // 45 seconds, 30fps, 720p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
+	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
+	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
+	clearSessionBalance(sess.BroadcastSession, core.RandomManifestID())
+
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
