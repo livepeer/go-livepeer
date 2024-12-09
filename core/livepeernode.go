@@ -160,7 +160,8 @@ type LivepeerNode struct {
 }
 
 type LivePipeline struct {
-	ControlPub *trickle.TricklePublisher
+	ControlPub  *trickle.TricklePublisher
+	StopControl func()
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

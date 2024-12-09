@@ -559,5 +559,6 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
+		pub.StopControl()
 	}
 }
