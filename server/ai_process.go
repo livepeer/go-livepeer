@@ -1029,34 +1029,33 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	if err != nil {
 		return nil, err
 	}
-	bodyString := string(resp.Body)
-	if strings.Contains(bodyString, "Insufficient capacity") {
-		return nil, errors.New(bodyString)
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
 	}
 
-	if resp.JSON200 != nil {
-		if resp.JSON200.ControlUrl == nil {
-			return nil, errors.New("control URL is missing")
-		}
-
-		host := sess.Transcoder()
-		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid publish URL: %w", err)
-		}
-		sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
-		}
-		control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid control URL: %w", err)
-		}
-		// TODO any errors from these funcs should we kill the input stream?
-		startTricklePublish(ctx, pub, params, sess)
-		startTrickleSubscribe(ctx, sub, params)
-		startControlPublish(control, params)
+	if resp.JSON200.ControlUrl == nil {
+		return nil, errors.New("control URL is missing")
 	}
+
+	host := sess.Transcoder()
+	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid publish URL: %w", err)
+	}
+	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid control URL: %w", err)
+	}
+	// TODO any errors from these funcs should we kill the input stream?
+	startTricklePublish(ctx, pub, params, sess)
+	startTrickleSubscribe(ctx, sub, params)
+	startControlPublish(control, params)
 	return resp, nil
 }
 
