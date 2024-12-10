@@ -234,8 +234,8 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	}
 
 	/* This starts the idle channel sweep process
-		 Disable for now until we figure out why
-		 some channels are being swept too early
+			Disable for now until we figure out why
+			some channels are being swept too early
 	stopTrickle := lp.trickleSrv.Start()
 	defer stopTrickle()
 	*/
