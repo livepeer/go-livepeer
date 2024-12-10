@@ -27,10 +27,9 @@ var waitTimeout = 20 * time.Second
 type MediaSegmenter struct {
 	Workdir        string
 	MediaMTXClient *MediaMTXClient
-	MediaMTXHost   string
 }
 
-func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler, id, sourceType string) {
+func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -42,11 +41,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 
 	retryCount := 0
 	for {
-		streamExists, err := ms.MediaMTXClient.StreamExists(ms.MediaMTXHost, id, sourceType)
+		streamExists, err := ms.MediaMTXClient.StreamExists()
 		if err != nil {
 			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
 		}
-		if retryCount > 20 && !streamExists {
+		if retryCount > 2 && !streamExists {
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}

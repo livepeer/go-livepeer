@@ -1,17 +1,26 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 )
 
 type MediaMTXClient struct {
+	host        string
 	apiPassword string
+	sourceID    string
+	sourceType  string
 }
 
-func NewMediaMTXClient(apiPassword string) *MediaMTXClient {
-	return &MediaMTXClient{apiPassword: apiPassword}
+func NewMediaMTXClient(host, apiPassword, sourceID, sourceType string) *MediaMTXClient {
+	return &MediaMTXClient{
+		host:        host,
+		apiPassword: apiPassword,
+		sourceID:    sourceID,
+		sourceType:  sourceType,
+	}
 }
 
 const (
@@ -20,6 +29,17 @@ const (
 	MediaMTXWebrtcSession = "webrtcSession"
 	MediaMTXRtmpConn      = "rtmpConn"
 )
+
+func MediamtxSourceTypeToString(s string) (string, error) {
+	switch s {
+	case MediaMTXWebrtcSession:
+		return "whip", nil
+	case MediaMTXRtmpConn:
+		return "rtmp", nil
+	default:
+		return "", errors.New("unknown media source")
+	}
+}
 
 func getApiPath(sourceType string) (string, error) {
 	var apiPath string
@@ -34,13 +54,13 @@ func getApiPath(sourceType string) (string, error) {
 	return apiPath, nil
 }
 
-func (mc *MediaMTXClient) KickInputConnection(mediaMTXHost, sourceID, sourceType string) error {
-	apiPath, err := getApiPath(sourceType)
+func (mc *MediaMTXClient) KickInputConnection() error {
+	apiPath, err := getApiPath(mc.sourceType)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), nil)
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create kick request: %w", err)
 	}
@@ -56,12 +76,12 @@ func (mc *MediaMTXClient) KickInputConnection(mediaMTXHost, sourceID, sourceType
 	return nil
 }
 
-func (mc *MediaMTXClient) StreamExists(mediaMTXHost, sourceID, sourceType string) (bool, error) {
-	apiPath, err := getApiPath(sourceType)
+func (mc *MediaMTXClient) StreamExists() (bool, error) {
+	apiPath, err := getApiPath(mc.sourceType)
 	if err != nil {
 		return false, err
 	}
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mediaMTXHost, mediaMTXControlPort, apiPath, sourceID), nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create get stream request: %w", err)
 	}
