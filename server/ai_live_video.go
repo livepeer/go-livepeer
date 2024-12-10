@@ -211,12 +211,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			pipelineStatus, err := json.Marshal(status)
-			if err != nil {
-				clog.Infof(ctx, "Failed to re-serialize pipeline status: %s", err)
-				continue
-			}
-
 			status.StreamID = &stream
 
 			// update the in-memory pipeline status
@@ -224,7 +218,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			monitor.SendQueueEventAsync(
 				"stream_status",
-				pipelineStatus,
+				status,
 			)
 		}
 	}()
