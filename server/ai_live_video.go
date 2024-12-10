@@ -14,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -169,4 +170,25 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 			}
 		}
 	}()
+}
+
+func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
+	subscriber := trickle.NewTrickleSubscriber(url.String())
+	for {
+		segment, err := subscriber.Read()
+		if err != nil {
+			clog.Infof(ctx, "Error reading events subscription: %s", err)
+			return
+		}
+		defer segment.Body.Close()
+		if _, err = io.Copy(os.Stdout, segment.Body); err != nil {
+			// TODO: produce kafka
+			monitor.SendQueueEventAsync(
+				"event", // todo event type
+				"error", // todo event payload
+			)
+			clog.Infof(ctx, "Error copying to stdout: %s", err)
+			return
+		}
+	}
 }
