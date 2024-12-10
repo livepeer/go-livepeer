@@ -222,7 +222,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
 
-	startAIServer(lp)
+	startAIServer(&lp)
 	if acceptRemoteAIWorkers {
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
@@ -232,6 +232,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	if err != nil {
 		return err
 	}
+
+	stopTrickle := lp.trickleSrv.Start()
+	defer stopTrickle()
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
