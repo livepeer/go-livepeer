@@ -149,23 +149,12 @@ func SendQueueEventAsync(eventType string, data interface{}) {
 	randomID := uuid.New().String()
 	timestampMs := time.Now().UnixMilli()
 
-	// Add debug logging
-	if status, ok := data.(PipelineStatus); ok {
-		glog.Infof("Pipeline Status before sending to Kafka - StreamID: %v, Pipeline: %s",
-			status.StreamID, status.Pipeline)
-	}
-
 	event := GatewayEvent{
 		ID:        stringPtr(randomID),
 		Gateway:   stringPtr(kafkaProducer.gatewayAddress),
 		Type:      &eventType,
 		Timestamp: stringPtr(fmt.Sprint(timestampMs)),
 		Data:      data,
-	}
-
-	// Add debug logging for the full event
-	if eventBytes, err := json.Marshal(event); err == nil {
-		glog.Infof("Full event being sent to Kafka: %s", string(eventBytes))
 	}
 
 	select {
