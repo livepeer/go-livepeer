@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -77,6 +77,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
 	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
+	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 
 	// read segments from trickle subscription
 	go func() {
@@ -88,9 +89,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				clog.Infof(ctx, "Error reading trickle subscription: %s", err)
 				return
 			}
-			_, err = io.Copy(w, segment.Body)
-			segment.Body.Close()
-			if err != nil {
+			clog.V(8).Infof(ctx, "trickle subscribe read data")
+
+			if err = copySegment(segment, w); err != nil {
 				clog.Infof(ctx, "Error copying to ffmpeg stdin: %s", err)
 				return
 			}
@@ -99,11 +100,14 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 	go func() {
 		defer r.Close()
-		retryCount := 0
-		// TODO check whether stream is actually terminated
-		//      so we aren't just looping unnecessarily
-		for retryCount < 10 {
-			_, err := ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
+		for {
+			_, ok := params.node.LivePipelines[params.liveParams.stream]
+			if !ok {
+				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist. err=%s", err)
+				break
+			}
+
+			_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
 				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
 			}, []ffmpeg.TranscodeOptions{{
 				Oname:        params.liveParams.outputRTMPURL,
@@ -114,21 +118,15 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if err != nil {
 				clog.Infof(ctx, "Error sending RTMP out: %s", err)
 			}
-			retryCount++
 			time.Sleep(5 * time.Second)
 		}
 	}()
 }
 
-func mediamtxSourceTypeToString(s string) (string, error) {
-	switch s {
-	case media.MediaMTXWebrtcSession:
-		return "whip", nil
-	case media.MediaMTXRtmpConn:
-		return "rtmp", nil
-	default:
-		return "", errors.New("unknown media source")
-	}
+func copySegment(segment *http.Response, w io.Writer) error {
+	defer segment.Body.Close()
+	_, err := io.Copy(w, segment.Body)
+	return err
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {

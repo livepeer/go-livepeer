@@ -383,7 +383,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
-		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
+		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -433,6 +433,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				return
 			}
 		}
+		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
@@ -441,7 +442,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				QueryParams: queryParams,
 			})
 			if err != nil {
-				kickErr := ls.mediaMTXClient.KickInputConnection(remoteHost, sourceID, sourceType)
+				kickErr := mediaMTXClient.KickInputConnection()
 				if kickErr != nil {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
@@ -465,7 +466,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s", streamName)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
@@ -475,8 +476,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if mediaMTXStreamPrefix != "" {
 				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 			}
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: ls.mediaMTXClient, MediaMTXHost: remoteHost}
-			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read, sourceID, sourceType)
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()
