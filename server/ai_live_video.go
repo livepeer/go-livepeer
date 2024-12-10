@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -196,10 +197,30 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			clog.Infof(ctx, "Received from events trickle: %s", string(body))
+			stream := params.liveParams.stream
+
+			if stream == "" {
+				clog.Infof(ctx, "Stream ID is missing")
+				continue
+			}
+
+			var status monitor.PipelineStatus
+			if err := json.Unmarshal(body, &status); err != nil {
+				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
+				continue
+			}
+
+			pipelineStatus, err := json.Marshal(status)
+			if err != nil {
+				clog.Infof(ctx, "Failed to re-serialize pipeline status: %s", err)
+				continue
+			}
+
+			status.StreamID = &stream
+
 			monitor.SendQueueEventAsync(
 				"stream_status",
-				string(body),
+				pipelineStatus,
 			)
 		}
 	}()
