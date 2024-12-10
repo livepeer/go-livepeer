@@ -153,9 +153,10 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	stream, exists := sm.streams[streamName]
 	if !exists && (isLocal || sm.config.Autocreate) {
 		stream = &Stream{
-			segments: make([]*Segment, maxSegmentsPerStream),
-			name:     streamName,
-			mimeType: mimeType,
+			segments:  make([]*Segment, maxSegmentsPerStream),
+			name:      streamName,
+			mimeType:  mimeType,
+			writeTime: time.Now(),
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
