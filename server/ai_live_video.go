@@ -211,7 +211,13 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
+			// Add debug logging
+			clog.Infof(ctx, "Raw event body: %s", string(body))
+			clog.Infof(ctx, "Unmarshaled status before StreamID assignment: %+v", status)
+
 			status.StreamID = &stream
+
+			clog.Infof(ctx, "Status after StreamID assignment: %+v", status)
 
 			// update the in-memory pipeline status
 			monitor.UpdatePipelineStatus(stream, status)
