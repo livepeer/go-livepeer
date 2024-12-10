@@ -222,7 +222,10 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
 
-	startAIServer(&lp)
+	err := startAIServer(&lp)
+	if err != nil {
+		return err
+	}
 	if acceptRemoteAIWorkers {
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())

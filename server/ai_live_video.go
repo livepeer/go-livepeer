@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -81,14 +82,32 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 	// read segments from trickle subscription
 	go func() {
+		var err error
 		defer w.Close()
+		defer func() { params.liveParams.errorCallback(err) }() // wrapper function to be able to reference the latest err
+		retries := 0
 		for {
-			segment, err := subscriber.Read()
+			if !params.inputStreamExists() {
+				clog.Errorf(ctx, "Stopping trickle subscribe, input stream does not exist.")
+				break
+			}
+			var segment *http.Response
+			segment, err = subscriber.Read()
 			if err != nil {
+				if errors.Is(err, trickle.EOS) {
+					clog.Infof(ctx, "Trickle subscription end of stream: %s", err)
+					return
+				}
 				// TODO if not EOS then signal a new orchestrator is needed
 				clog.Infof(ctx, "Error reading trickle subscription: %s", err)
-				return
+				if retries > 2 {
+					return
+				}
+				retries++
+				time.Sleep(5 * time.Second)
+				continue
 			}
+			retries = 0
 			clog.V(8).Infof(ctx, "trickle subscribe read data")
 
 			if err = copySegment(segment, w); err != nil {
@@ -101,9 +120,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		defer r.Close()
 		for {
-			_, ok := params.node.LivePipelines[params.liveParams.stream]
-			if !ok {
-				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist. err=%s", err)
+			if !params.inputStreamExists() {
+				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 				break
 			}
 

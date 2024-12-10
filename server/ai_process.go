@@ -88,6 +88,14 @@ type aiRequestParams struct {
 	liveParams liveRequestParams
 }
 
+func (a aiRequestParams) inputStreamExists() bool {
+	if a.node == nil {
+		return false
+	}
+	_, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok
+}
+
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
@@ -95,6 +103,7 @@ type liveRequestParams struct {
 	stream        string
 
 	paymentProcessInterval time.Duration
+	errorCallback          func(error)
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.

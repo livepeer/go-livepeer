@@ -442,7 +442,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				QueryParams: queryParams,
 			})
 			if err != nil {
-				kickErr := mediaMTXClient.KickInputConnection()
+				kickErr := mediaMTXClient.KickInputConnection(ctx)
 				if kickErr != nil {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
@@ -482,6 +482,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ls.cleanupLive(streamName)
 		}()
 
+		errorCallback := func(err error) {
+			clog.Errorf(ctx, "Failed to process live video: %s", err)
+			err = mediaMTXClient.KickInputConnection(ctx)
+			if err != nil {
+				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
+			}
+		}
+
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -492,6 +500,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				outputRTMPURL:          outputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
+				errorCallback:          errorCallback,
 			},
 		}
 
@@ -501,8 +510,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		_, err = processAIRequest(ctx, params, req)
 		if err != nil {
-			clog.Errorf(ctx, "Failed to process live video: %s", err.Error())
-			mediaMTXClient.KickInputConnection()
+			errorCallback(err)
 		}
 	})
 }

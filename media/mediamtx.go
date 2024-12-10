@@ -1,10 +1,13 @@
 package media
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/livepeer/go-livepeer/clog"
 )
 
 type MediaMTXClient struct {
@@ -54,7 +57,8 @@ func getApiPath(sourceType string) (string, error) {
 	return apiPath, nil
 }
 
-func (mc *MediaMTXClient) KickInputConnection() error {
+func (mc *MediaMTXClient) KickInputConnection(ctx context.Context) error {
+	clog.V(8).Infof(ctx, "Kicking mediamtx input connection")
 	apiPath, err := getApiPath(mc.sourceType)
 	if err != nil {
 		return err
