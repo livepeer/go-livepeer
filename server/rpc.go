@@ -233,8 +233,12 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		return err
 	}
 
+	/* This starts the idle channel sweep process
+		 Disable for now until we figure out why
+		 some channels are being swept too early
 	stopTrickle := lp.trickleSrv.Start()
 	defer stopTrickle()
+	*/
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{
