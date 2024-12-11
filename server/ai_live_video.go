@@ -178,8 +178,12 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
+	stream := params.liveParams.stream
 
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
+
+	// Clear the in-memory status when the function returns
+	defer monitor.ClearStreamStatus(stream)
 
 	go func() {
 		for {
@@ -187,8 +191,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
-				// TODO
-				// monitor.DeletePipelineStatus(params.liveParams.stream)
+				monitor.ClearStreamStatus(stream)
 				return
 			}
 
@@ -200,29 +203,30 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			stream := params.liveParams.stream
-
-			if stream == "" {
-				clog.Infof(ctx, "Stream ID is missing")
-				continue
-			}
-
 			var status map[string]interface{}
 			if err := json.Unmarshal(body, &status); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
-			if typeVal, ok := status["type"]; ok && typeVal == "status" {
-				// TODO: update the in-memory latest non-nil last_restart_logs and last_params
+			streamStatus := &monitor.StreamStatus{
+				Status:    status,
+				UpdatedAt: time.Now(),
 			}
 
-			status["stream_id"] = stream
+			if typeVal, ok := status["type"]; ok && typeVal == "status" {
+				if logs, ok := status["last_restart_logs"]; ok && logs != nil {
+					streamStatus.LastRestartLogs = logs
+				}
+				if params, ok := status["last_params"]; ok && params != nil {
+					streamStatus.LastParams = params
+				}
+			}
 
-			monitor.SendQueueEventAsync(
-				"stream_status",
-				status,
-			)
+			monitor.StoreStreamStatus(stream, streamStatus)
+
+			status["stream_id"] = stream
+			monitor.SendQueueEventAsync("stream_status", status)
 		}
 	}()
 }
