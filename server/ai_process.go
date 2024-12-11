@@ -1048,12 +1048,18 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
+		events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+		if err != nil {
+			return nil, fmt.Errorf("invalid events URL: %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
 		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{}
 
 		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)
+		startEventsSubscribe(ctx, events, params)
 	}
 	return resp, nil
 }
