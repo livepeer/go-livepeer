@@ -182,10 +182,9 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
-	// Clear the in-memory status when the function returns
-	defer monitor.ClearStreamStatus(stream)
-
 	go func() {
+		// Clear the in-memory status when the function returns
+		defer monitor.ClearStreamStatus(stream)
 		for {
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
