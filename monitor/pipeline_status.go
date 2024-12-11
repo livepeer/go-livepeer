@@ -2,24 +2,15 @@ package monitor
 
 import (
 	"sync"
-	"time"
 )
 
-// StreamStatus stores the latest status for each stream
-type StreamStatus struct {
-	Status          map[string]interface{}
-	LastRestartLogs interface{}
-	LastParams      interface{}
-	UpdatedAt       time.Time
-}
-
 var (
-	streamStatusStore = make(map[string]*StreamStatus)
+	streamStatusStore = make(map[string]map[string]interface{})
 	streamStatusMu    sync.RWMutex
 )
 
 // StoreStreamStatus updates the status for a stream
-func StoreStreamStatus(streamID string, status *StreamStatus) {
+func StoreStreamStatus(streamID string, status map[string]interface{}) {
 	streamStatusMu.Lock()
 	streamStatusStore[streamID] = status
 	streamStatusMu.Unlock()
@@ -33,7 +24,7 @@ func ClearStreamStatus(streamID string) {
 }
 
 // GetStreamStatus returns the current status for a stream
-func GetStreamStatus(streamID string) (*StreamStatus, bool) {
+func GetStreamStatus(streamID string) (map[string]interface{}, bool) {
 	streamStatusMu.RLock()
 	defer streamStatusMu.RUnlock()
 	status, exists := streamStatusStore[streamID]

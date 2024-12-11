@@ -183,7 +183,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		// Clear the in-memory status when the function returns
 		defer monitor.ClearStreamStatus(stream)
 		for {
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
@@ -208,26 +207,41 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			streamStatus := &monitor.StreamStatus{
-				Status:    status,
-				UpdatedAt: time.Now(),
+			if _, ok := status["stream_id"]; !ok {
+				clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
+				status["stream_id"] = stream
+			}
+
+			monitor.SendQueueEventAsync("stream_status", status)
+
+			streamStatus := map[string]interface{}{
+				"status":    status,
+				"updatedAt": time.Now(),
+			}
+
+			lastStreamStatus, ok := monitor.GetStreamStatus(stream)
+			if !ok {
+				lastStreamStatus = make(map[string]interface{})
 			}
 
 			if typeVal, ok := status["type"]; ok && typeVal == "status" {
-				if logs, ok := status["last_restart_logs"]; ok && logs != nil {
-					streamStatus.LastRestartLogs = logs
+				if logs, ok := status["last_restart_logs"]; !ok || logs == nil {
+					if lastLogs, exists := lastStreamStatus["lastRestartLogs"]; exists && lastLogs != nil {
+						streamStatus["lastRestartLogs"] = lastLogs
+					}
+				} else {
+					streamStatus["lastRestartLogs"] = logs
 				}
-				if params, ok := status["last_params"]; ok && params != nil {
-					streamStatus.LastParams = params
+
+				if params, ok := status["last_params"]; !ok || params == nil {
+					if lastParams, exists := lastStreamStatus["lastParams"]; exists && lastParams != nil {
+						streamStatus["lastParams"] = lastParams
+					}
+				} else {
+					streamStatus["lastParams"] = params
 				}
 			}
-
 			monitor.StoreStreamStatus(stream, streamStatus)
-
-			clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
-
-			status["stream_id"] = stream
-			monitor.SendQueueEventAsync("stream_status", status)
 		}
 	}()
 }

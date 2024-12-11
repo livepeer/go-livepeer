@@ -813,11 +813,9 @@ func (h *lphttp) handleStreamStatus() http.HandlerFunc {
 			return
 		}
 
-		streamID := r.URL.Query().Get("streamId")
+		streamID := r.URL.Query().Get("stream")
 		if streamID == "" {
-			// Return empty array when no streamId is provided
-			jsonData, _ := json.Marshal([]monitor.StreamStatus{})
-			respondJsonOk(w, jsonData)
+			respondWithError(w, "stream parameter is required", http.StatusBadRequest)
 			return
 		}
 
