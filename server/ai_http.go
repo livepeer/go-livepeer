@@ -130,7 +130,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
-			eventsUrl  = pubUrl + "-events"
 		)
 
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
@@ -164,8 +163,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		subCh.CreateChannel()
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
-		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
-		eventsCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		priceInfo := payment.GetExpectedPrice()
@@ -184,7 +181,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
 					pubCh.Close()
 					subCh.Close()
-					eventsCh.Close()
 					controlPubCh.Close()
 					cancel()
 				}
@@ -214,15 +210,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		// Prepare request to worker
 		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
-		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
-		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
-		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
-
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   publishUrlOverwrite,
-			SubscribeUrl: subscribeUrlOverwrite,
-			EventsUrl:    &eventsUrlOverwrite,
+			PublishUrl:   overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl),
+			SubscribeUrl: overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl),
 			ControlUrl:   &controlUrlOverwrite,
 			Params:       req.Params,
 		}
@@ -237,7 +228,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			pubCh.Close()
 			subCh.Close()
 			controlPubCh.Close()
-			eventsCh.Close()
 			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -248,7 +238,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			PublishUrl:   pubUrl,
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
-			EventsUrl:    &eventsUrl,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
