@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
@@ -147,13 +148,10 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 		done <- true
 	}
 
-	p, ok := params.node.LivePipelines[stream]
-	if !ok {
-		slog.Info("error starting control publisher, stream not found", "stream", stream)
-		return
+	params.node.LivePipelines[stream] = &core.LivePipeline{
+		ControlPub:  controlPub,
+		StopControl: stop,
 	}
-	p.ControlPub = controlPub
-	p.StopControl = stop
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {

@@ -1054,11 +1054,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{}
-
+		startControlPublish(control, params)
 		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
-		startControlPublish(control, params)
 		startEventsSubscribe(ctx, events, params)
 	}
 	return resp, nil
