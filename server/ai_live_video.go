@@ -152,6 +152,9 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 		ControlPub:  controlPub,
 		StopControl: stop,
 	}
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
+	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {

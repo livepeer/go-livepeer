@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/livepeer/go-livepeer/monitor"
 	"io"
 	"log/slog"
 	"net/http"
@@ -555,6 +556,9 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
 	ls.LivepeerNode.LiveMu.Unlock()
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
+	}
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
