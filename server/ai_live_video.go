@@ -215,7 +215,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			monitor.SendQueueEventAsync("stream_status", status)
 
 			streamStatus := map[string]interface{}{
-				"status":    status,
 				"updatedAt": time.Now(),
 			}
 
