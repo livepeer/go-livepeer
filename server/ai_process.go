@@ -1048,7 +1048,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		if err != nil {
 			return nil, fmt.Errorf("invalid control URL: %w", err)
 		}
-		// TODO any errors from these funcs should we kill the input stream?
+
+		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{}
+
 		startTricklePublish(ctx, pub, params, sess)
 		startTrickleSubscribe(ctx, sub, params)
 		startControlPublish(control, params)

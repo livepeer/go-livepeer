@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -130,8 +129,8 @@ func copySegment(segment *http.Response, w io.Writer) error {
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
-	controlPub, err := trickle.NewTricklePublisher(control.String())
 	stream := params.liveParams.stream
+	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		slog.Info("error starting control publisher", "stream", stream, "err", err)
 		return
@@ -146,10 +145,13 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 		done <- true
 	}
 
-	params.node.LivePipelines[stream] = &core.LivePipeline{
-		ControlPub:  controlPub,
-		StopControl: stop,
+	p, ok := params.node.LivePipelines[stream]
+	if !ok {
+		slog.Info("error starting control publisher, stream not found", "stream", stream)
+		return
 	}
+	p.ControlPub = controlPub
+	p.StopControl = stop
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
