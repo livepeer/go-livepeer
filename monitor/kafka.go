@@ -35,6 +35,23 @@ type GatewayEvent struct {
 	Data      interface{} `json:"data"`
 }
 
+type PipelineStatus struct {
+	Pipeline             string      `json:"pipeline"`
+	StartTime            float64     `json:"start_time"`
+	LastParamsUpdateTime float64     `json:"last_params_update_time"`
+	LastParams           interface{} `json:"last_params"`
+	LastParamsHash       string      `json:"last_params_hash"`
+	InputFPS             float64     `json:"input_fps"`
+	OutputFPS            float64     `json:"output_fps"`
+	LastInputTime        float64     `json:"last_input_time"`
+	LastOutputTime       float64     `json:"last_output_time"`
+	RestartCount         int         `json:"restart_count"`
+	LastRestartTime      float64     `json:"last_restart_time"`
+	LastRestartLogs      []string    `json:"last_restart_logs"`
+	LastError            *string     `json:"last_error"`
+	StreamID             *string     `json:"stream_id"`
+}
+
 var kafkaProducer *KafkaProducer
 
 func InitKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress string) error {
