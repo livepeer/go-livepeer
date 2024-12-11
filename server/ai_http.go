@@ -215,10 +215,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		// Prepare request to worker
 		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
 		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
+		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
+		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
+
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:      req.ModelId,
-			PublishUrl:   overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl),
-			SubscribeUrl: overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl),
+			PublishUrl:   publishUrlOverwrite,
+			SubscribeUrl: subscribeUrlOverwrite,
 			EventsUrl:    &eventsUrlOverwrite,
 			ControlUrl:   &controlUrlOverwrite,
 			Params:       req.Params,

@@ -184,7 +184,8 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
-				monitor.DeletePipelineStatus(params.liveParams.stream)
+				// TODO
+				// monitor.DeletePipelineStatus(params.liveParams.stream)
 				return
 			}
 
@@ -213,8 +214,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			status.StreamID = &stream
 
-			// update the in-memory pipeline status
-			monitor.UpdatePipelineStatus(stream, status)
+			// TODO: update the in-memory pipeline status
+			// monitor.UpdatePipelineStatus(stream, status)
+
+			clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
 
 			monitor.SendQueueEventAsync(
 				"stream_status",
