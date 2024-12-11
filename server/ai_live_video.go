@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -46,6 +47,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
+	slowOrchChecker := &SlowOrchChecker{}
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -55,7 +58,15 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			cancel()
 			return
 		}
+		if !slowOrchChecker.BeginSegment() {
+			clog.Infof(ctx, "Orchestrator is slow - terminating")
+			cancel()
+			return
+			// TODO kill the rest of the processing, including ingest
+			// TODO switch orchestrators
+		}
 		go func() {
+			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
 				r = paymentProcessor.process(reader)
@@ -225,4 +236,37 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			)
 		}
 	}()
+}
+
+// Detect 'slow' orchs by keeping track of in-flight segments
+// Count the difference between segments produced and segments completed
+// Should only have ~1 segment in-flight at once
+//
+// Sometimes the beginning of the current segment may briefly overlap with
+// the end of the previous segment, so accommodate that
+type SlowOrchChecker struct {
+	mu            sync.Mutex
+	segmentCount  int
+	completeCount int
+}
+
+func (s *SlowOrchChecker) BeginSegment() bool {
+	// Returns `false` if there are multiple segments in-flight
+	// this means the orchestrator is slow reading them
+	// If all-OK, returns `true`
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.segmentCount >= s.completeCount+2 {
+		// There is > 1 segment in flight ... orchestrator is slow reading
+		return false
+	}
+	s.segmentCount += 1
+	return true
+
+}
+
+func (s *SlowOrchChecker) EndSegment() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.completeCount += 1
 }
