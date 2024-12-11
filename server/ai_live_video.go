@@ -183,7 +183,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 	go func() {
 		for {
-			clog.Infof(ctx, "Attempting to read from event subscription for URL: %s", url.String())
+			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
@@ -191,8 +191,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				// monitor.DeletePipelineStatus(params.liveParams.stream)
 				return
 			}
-
-			clog.Infof(ctx, "Successfully read segment from event subscription for URL: %s", url.String())
 
 			body, err := io.ReadAll(segment.Body)
 			segment.Body.Close()
@@ -209,18 +207,17 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var status monitor.PipelineStatus
+			var status map[string]interface{}
 			if err := json.Unmarshal(body, &status); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
-			status.StreamID = &stream
+			if typeVal, ok := status["type"]; ok && typeVal == "status" {
+				// TODO: update the in-memory latest non-nil last_restart_logs and last_params
+			}
 
-			// TODO: update the in-memory pipeline status
-			// monitor.UpdatePipelineStatus(stream, status)
-
-			clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
+			status["stream_id"] = stream
 
 			monitor.SendQueueEventAsync(
 				"stream_status",
