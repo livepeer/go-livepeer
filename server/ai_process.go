@@ -93,6 +93,9 @@ type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
 	stream        string
+	requestID     string
+	streamID      string
+	pipelineID    string
 
 	paymentProcessInterval time.Duration
 }

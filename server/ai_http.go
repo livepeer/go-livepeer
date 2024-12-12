@@ -73,6 +73,9 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
+	// This endpoint is used to get the latest status of a live-video-to-video stream
+	lp.transRPC.HandleFunc("/stream-status/{streamID}", lp.handleStreamStatus())
+
 	return nil
 }
 
@@ -800,4 +803,34 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 	}
 
 	return wkrResult
+}
+
+// handleStreamStatus returns the latest available status of a live-video-to-video stream
+func (h *lphttp) handleStreamStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		streamID := strings.TrimPrefix(r.URL.Path, "/stream-status/")
+		if streamID == "" {
+			respondWithError(w, "stream ID is required", http.StatusBadRequest)
+			return
+		}
+
+		// Get status for specific stream
+		status, exists := StreamStatusStore.Get(streamID)
+		if !exists {
+			respondWithError(w, "Stream status not found", http.StatusNotFound)
+			return
+		}
+
+		jsonData, err := json.Marshal(status)
+		if err != nil {
+			respondWithError(w, "Failed to marshal status", http.StatusInternalServerError)
+			return
+		}
+		respondJsonOk(w, jsonData)
+	}
 }
