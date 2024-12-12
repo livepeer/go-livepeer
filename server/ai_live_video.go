@@ -132,8 +132,8 @@ func copySegment(segment *http.Response, w io.Writer) error {
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
-	controlPub, err := trickle.NewTricklePublisher(control.String())
 	stream := params.liveParams.stream
+	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		slog.Info("error starting control publisher", "stream", stream, "err", err)
 		return
