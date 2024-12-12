@@ -1061,10 +1061,16 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	if err != nil {
 		return nil, fmt.Errorf("invalid control URL: %w", err)
 	}
-	// TODO any errors from these funcs should we kill the input stream?
+	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid events URL: %w", err)
+	}
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+
+	startControlPublish(control, params)
 	startTricklePublish(ctx, pub, params, sess)
 	startTrickleSubscribe(ctx, sub, params)
-	startControlPublish(control, params)
+	startEventsSubscribe(ctx, events, params)
 	return resp, nil
 }
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
 )
@@ -148,8 +150,8 @@ func copySegment(segment *http.Response, w io.Writer) error {
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
-	controlPub, err := trickle.NewTricklePublisher(control.String())
 	stream := params.liveParams.stream
+	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		slog.Info("error starting control publisher", "stream", stream, "err", err)
 		return
@@ -168,6 +170,9 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 		ControlPub:  controlPub,
 		StopControl: stop,
 	}
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
+	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
@@ -185,6 +190,60 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 			case <-done:
 				return
 			}
+		}
+	}()
+}
+
+func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
+	subscriber := trickle.NewTrickleSubscriber(url.String())
+
+	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
+
+	go func() {
+		for {
+			clog.Infof(ctx, "Attempting to read from event subscription for URL: %s", url.String())
+			segment, err := subscriber.Read()
+			if err != nil {
+				clog.Infof(ctx, "Error reading events subscription: %s", err)
+				// TODO
+				// monitor.DeletePipelineStatus(params.liveParams.stream)
+				return
+			}
+
+			clog.Infof(ctx, "Successfully read segment from event subscription for URL: %s", url.String())
+
+			body, err := io.ReadAll(segment.Body)
+			segment.Body.Close()
+
+			if err != nil {
+				clog.Infof(ctx, "Error reading events subscription body: %s", err)
+				continue
+			}
+
+			stream := params.liveParams.stream
+
+			if stream == "" {
+				clog.Infof(ctx, "Stream ID is missing")
+				continue
+			}
+
+			var status monitor.PipelineStatus
+			if err := json.Unmarshal(body, &status); err != nil {
+				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
+				continue
+			}
+
+			status.StreamID = &stream
+
+			// TODO: update the in-memory pipeline status
+			// monitor.UpdatePipelineStatus(stream, status)
+
+			clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
+
+			monitor.SendQueueEventAsync(
+				"stream_status",
+				status,
+			)
 		}
 	}()
 }
