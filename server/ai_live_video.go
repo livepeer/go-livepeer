@@ -206,32 +206,30 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			if _, ok := event["stream_id"]; !ok {
-				clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
-			}
-
 			event["stream_id"] = params.liveParams.streamID
 			event["request_id"] = params.liveParams.requestID
 			event["pipeline_id"] = params.liveParams.pipelineID
-			monitor.SendQueueEventAsync("stream_status", event)
 
-			streamStatus := map[string]interface{}{}
-			lastStreamStatus, _ := GetStreamStatus(stream)
+			clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
-			if typeVal, ok := event["type"]; ok && typeVal == "status" {
-				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
-					streamStatus["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
-				} else {
-					streamStatus["last_restart_logs"] = logs
-				}
-
-				if params, ok := event["last_params"]; !ok || params == nil {
-					streamStatus["last_params"] = lastStreamStatus["last_params"]
-				} else {
-					streamStatus["last_params"] = params
-				}
-				StoreStreamStatus(stream, streamStatus)
+			eventType, ok := event["type"].(string)
+			if !ok {
+				eventType = "unknown"
+				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
+
+			lastStreamStatus, _ := GetStreamStatus(stream)
+			if eventType == "status" {
+				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
+					event["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
+				}
+				if params, ok := event["last_params"]; !ok || params == nil {
+					event["last_params"] = lastStreamStatus["last_params"]
+				}
+				StoreStreamStatus(stream, event)
+			}
+
+			monitor.SendQueueEventAsync("ai_stream_"+eventType, event)
 		}
 	}()
 }
