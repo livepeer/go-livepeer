@@ -222,6 +222,8 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			lastStreamStatus, _ := GetStreamStatus(stream)
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
+				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
+				// incoming status with the last non-null value that we received on such fields for the status API.
 				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
 					event["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
 				}
