@@ -183,13 +183,12 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer monitor.ClearStreamStatus(stream)
+		defer ClearStreamStatus(stream)
 		for {
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
-				monitor.ClearStreamStatus(stream)
 				return
 			}
 
@@ -201,47 +200,37 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var status map[string]interface{}
-			if err := json.Unmarshal(body, &status); err != nil {
+			var event map[string]interface{}
+			if err := json.Unmarshal(body, &event); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
-			if _, ok := status["stream_id"]; !ok {
-				clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
-				status["stream_id"] = stream
-				status["request_id"] = params.liveParams.requestID
+			if _, ok := event["stream_id"]; !ok {
+				clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
+				event["stream_id"] = stream
+				event["request_id"] = params.liveParams.requestID
 			}
 
-			monitor.SendQueueEventAsync("stream_status", status)
+			monitor.SendQueueEventAsync("stream_status", event)
 
-			streamStatus := map[string]interface{}{
-				"updatedAt": time.Now(),
-			}
+			streamStatus := map[string]interface{}{}
+			lastStreamStatus, _ := GetStreamStatus(stream)
 
-			lastStreamStatus, ok := monitor.GetStreamStatus(stream)
-			if !ok {
-				lastStreamStatus = make(map[string]interface{})
-			}
-
-			if typeVal, ok := status["type"]; ok && typeVal == "status" {
-				if logs, ok := status["last_restart_logs"]; !ok || logs == nil {
-					if lastLogs, exists := lastStreamStatus["lastRestartLogs"]; exists && lastLogs != nil {
-						streamStatus["lastRestartLogs"] = lastLogs
-					}
+			if typeVal, ok := event["type"]; ok && typeVal == "status" {
+				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
+					streamStatus["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
 				} else {
-					streamStatus["lastRestartLogs"] = logs
+					streamStatus["last_restart_logs"] = logs
 				}
 
-				if params, ok := status["last_params"]; !ok || params == nil {
-					if lastParams, exists := lastStreamStatus["lastParams"]; exists && lastParams != nil {
-						streamStatus["lastParams"] = lastParams
-					}
+				if params, ok := event["last_params"]; !ok || params == nil {
+					streamStatus["last_params"] = lastStreamStatus["last_params"]
 				} else {
-					streamStatus["lastParams"] = params
+					streamStatus["last_params"] = params
 				}
+				StoreStreamStatus(stream, streamStatus)
 			}
-			monitor.StoreStreamStatus(stream, streamStatus)
 		}
 	}()
 }

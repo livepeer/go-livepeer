@@ -74,7 +74,7 @@ func startAIServer(lp *lphttp) error {
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	// This endpoint is used to get the latest status of a live-video-to-video stream
-	lp.transRPC.HandleFunc("/stream-status", lp.handleStreamStatus())
+	lp.transRPC.HandleFunc("/stream-status/{streamID}", lp.handleStreamStatus())
 
 	return nil
 }
@@ -813,20 +813,24 @@ func (h *lphttp) handleStreamStatus() http.HandlerFunc {
 			return
 		}
 
-		streamID := r.URL.Query().Get("stream")
+		streamID := strings.TrimPrefix(r.URL.Path, "/stream-status/")
 		if streamID == "" {
-			respondWithError(w, "stream parameter is required", http.StatusBadRequest)
+			respondWithError(w, "stream ID is required", http.StatusBadRequest)
 			return
 		}
 
 		// Get status for specific stream
-		status, exists := monitor.GetStreamStatus(streamID)
+		status, exists := GetStreamStatus(streamID)
 		if !exists {
 			respondWithError(w, "Stream status not found", http.StatusNotFound)
 			return
 		}
 
-		jsonData, _ := json.Marshal(status)
+		jsonData, err := json.Marshal(status)
+		if err != nil {
+			respondWithError(w, "Failed to marshal status", http.StatusInternalServerError)
+			return
+		}
 		respondJsonOk(w, jsonData)
 	}
 }
