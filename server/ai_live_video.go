@@ -183,7 +183,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer ClearStreamStatus(stream)
+		defer StreamStatusStore.Clear(stream)
 		for {
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
@@ -219,7 +219,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 
 			queueEventType := "ai_stream_events"
-			lastStreamStatus, _ := GetStreamStatus(stream)
+			lastStreamStatus, _ := StreamStatusStore.Get(stream)
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
@@ -230,7 +230,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				if params, ok := event["last_params"]; !ok || params == nil {
 					event["last_params"] = lastStreamStatus["last_params"]
 				}
-				StoreStreamStatus(stream, event)
+				StreamStatusStore.Store(stream, event)
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)

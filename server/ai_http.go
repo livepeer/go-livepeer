@@ -820,7 +820,7 @@ func (h *lphttp) handleStreamStatus() http.HandlerFunc {
 		}
 
 		// Get status for specific stream
-		status, exists := GetStreamStatus(streamID)
+		status, exists := StreamStatusStore.Get(streamID)
 		if !exists {
 			respondWithError(w, "Stream status not found", http.StatusNotFound)
 			return
