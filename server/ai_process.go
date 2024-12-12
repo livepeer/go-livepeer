@@ -94,6 +94,7 @@ type liveRequestParams struct {
 	outputRTMPURL string
 	stream        string
 	requestID     string
+	streamID      string
 
 	paymentProcessInterval time.Duration
 }

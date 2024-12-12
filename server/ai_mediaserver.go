@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/livepeer/go-livepeer/monitor"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
@@ -426,6 +427,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
+		var streamID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -463,11 +465,15 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if len(authResp.paramsMap) > 0 {
 				pipelineParams = authResp.paramsMap
 			}
+
+			if authResp.StreamID != "" {
+				streamID = authResp.StreamID
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v streamID=%s", streamName, pipelineParams, streamID)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
@@ -494,6 +500,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				requestID:              requestID,
+				streamID:               streamID,
 			},
 		}
 

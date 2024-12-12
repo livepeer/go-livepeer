@@ -208,9 +208,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			if _, ok := event["stream_id"]; !ok {
 				clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
-				event["stream_id"] = stream
-				event["request_id"] = params.liveParams.requestID
 			}
+
+			event["stream_id"] = params.liveParams.streamID
+			event["request_id"] = params.liveParams.requestID
 
 			monitor.SendQueueEventAsync("stream_status", event)
 

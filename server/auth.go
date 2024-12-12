@@ -118,6 +118,9 @@ type AIAuthResponse struct {
 	// Name of the pipeline to run
 	Pipeline string `json:"pipeline"`
 
+	// ID of the stream
+	StreamID string `json:"stream_id"`
+
 	// Parameters for the pipeline
 	PipelineParams json.RawMessage        `json:"pipeline_parameters"`
 	paramsMap      map[string]interface{} // unmarshaled params
