@@ -1424,6 +1424,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		modelID = defaultLiveVideoToVideoModelID
 		if v.ModelId != nil && *v.ModelId != "" {
 			modelID = *v.ModelId
+		} else {
+			// set default model
+			v.ModelId = &modelID
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLiveVideoToVideo(ctx, params, sess, v)
