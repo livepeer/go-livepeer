@@ -212,7 +212,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			event["stream_id"] = params.liveParams.streamID
 			event["request_id"] = params.liveParams.requestID
-
+			event["pipeline_id"] = params.liveParams.pipelineID
 			monitor.SendQueueEventAsync("stream_status", event)
 
 			streamStatus := map[string]interface{}{}

@@ -427,7 +427,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
-		var streamID string
+		var streamID, pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -469,6 +469,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if authResp.StreamID != "" {
 				streamID = authResp.StreamID
 			}
+
+			if authResp.PipelineID != "" {
+				pipelineID = authResp.PipelineID
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
@@ -501,6 +505,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				paymentProcessInterval: ls.livePaymentInterval,
 				requestID:              requestID,
 				streamID:               streamID,
+				pipelineID:             pipelineID,
 			},
 		}
 

@@ -118,6 +118,9 @@ type AIAuthResponse struct {
 	// Name of the pipeline to run
 	Pipeline string `json:"pipeline"`
 
+	// ID of the pipeline to run
+	PipelineID string `json:"pipeline_id"`
+
 	// ID of the stream
 	StreamID string `json:"stream_id"`
 
