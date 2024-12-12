@@ -218,8 +218,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
+			queueEventType := "ai_stream_events"
 			lastStreamStatus, _ := GetStreamStatus(stream)
 			if eventType == "status" {
+				queueEventType = "ai_stream_status"
 				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
 					event["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
 				}
@@ -229,7 +231,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				StoreStreamStatus(stream, event)
 			}
 
-			monitor.SendQueueEventAsync("ai_stream_"+eventType, event)
+			monitor.SendQueueEventAsync(queueEventType, event)
 		}
 	}()
 }
