@@ -77,7 +77,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
 	if err != nil {
-		slog.Info("error getting pipe for trickle-ffmpeg", "url", url, "err", err)
+		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%s %w", url, err))
+		return
 	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
@@ -86,23 +87,24 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		var err error
 		defer w.Close()
-		defer func() { params.liveParams.errorCallback(err) }() // wrapper function to be able to reference the latest err
 		retries := 0
 		for {
 			if !params.inputStreamExists() {
-				clog.Errorf(ctx, "Stopping trickle subscribe, input stream does not exist.")
+				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
 			var segment *http.Response
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) {
-					clog.Infof(ctx, "Trickle subscription end of stream: %s", err)
+					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe end of stream: %w", err))
 					return
 				}
 				// TODO if not EOS then signal a new orchestrator is needed
-				clog.Infof(ctx, "Error reading trickle subscription: %s", err)
+				err = fmt.Errorf("trickle subscribe error reading: %w", err)
+				clog.Infof(ctx, "%s", err)
 				if retries > 2 {
+					params.liveParams.stopPipeline(err)
 					return
 				}
 				retries++
@@ -113,7 +115,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Infof(ctx, "trickle subscribe read data")
 
 			if err = copySegment(segment, w); err != nil {
-				clog.Infof(ctx, "Error copying to ffmpeg stdin: %s", err)
+				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
 		}

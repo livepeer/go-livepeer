@@ -103,7 +103,7 @@ type liveRequestParams struct {
 	stream        string
 
 	paymentProcessInterval time.Duration
-	errorCallback          func(error)
+	stopPipeline           func(error)
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.

@@ -483,8 +483,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ls.cleanupLive(streamName)
 		}()
 
-		errorCallback := func(err error) {
-			clog.Errorf(ctx, "Failed to process live video: %s", err)
+		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
+		// the client to reconnect and restart the pipeline
+		stopPipeline := func(err error) {
+			if err == nil {
+				return
+			}
+			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
 			err = mediaMTXClient.KickInputConnection(ctx)
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
@@ -501,7 +506,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				outputRTMPURL:          outputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
-				errorCallback:          errorCallback,
+				stopPipeline:           stopPipeline,
 			},
 		}
 
@@ -511,7 +516,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		_, err = processAIRequest(ctx, params, req)
 		if err != nil {
-			errorCallback(err)
+			stopPipeline(err)
 		}
 	})
 }
