@@ -276,10 +276,10 @@ func (s *SlowOrchChecker) BeginSegment() (int, bool) {
 	defer s.mu.Unlock()
 	if s.segmentCount >= s.completeCount+maxInflightSegments {
 		// There is > 1 segment in flight ... orchestrator is slow reading
-		return s.segmentCount, false
+		return s.segmentCount, true
 	}
 	s.segmentCount += 1
-	return s.segmentCount, true
+	return s.segmentCount, false
 }
 
 func (s *SlowOrchChecker) EndSegment() {
