@@ -88,6 +88,14 @@ type aiRequestParams struct {
 	liveParams liveRequestParams
 }
 
+func (a aiRequestParams) inputStreamExists() bool {
+	if a.node == nil {
+		return false
+	}
+	_, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok
+}
+
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
@@ -98,6 +106,7 @@ type liveRequestParams struct {
 	pipelineID    string
 
 	paymentProcessInterval time.Duration
+	stopPipeline           func(error)
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1033,35 +1042,38 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, err
 	}
 
-	if resp.JSON200 != nil {
-		if resp.JSON200.ControlUrl == nil {
-			return nil, errors.New("control URL is missing")
-		}
-
-		host := sess.Transcoder()
-		pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid publish URL: %w", err)
-		}
-		sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid subscribe URL: %w", err)
-		}
-		control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid control URL: %w", err)
-		}
-		events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
-		if err != nil {
-			return nil, fmt.Errorf("invalid events URL: %w", err)
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
-
-		startControlPublish(control, params)
-		startTricklePublish(ctx, pub, params, sess)
-		startTrickleSubscribe(ctx, sub, params)
-		startEventsSubscribe(ctx, events, params)
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
 	}
+
+	if resp.JSON200.ControlUrl == nil {
+		return nil, errors.New("control URL is missing")
+	}
+
+	host := sess.Transcoder()
+	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid publish URL: %w", err)
+	}
+	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid control URL: %w", err)
+	}
+	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid events URL: %w", err)
+	}
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+
+	startControlPublish(control, params)
+	startTricklePublish(ctx, pub, params, sess)
+	startTrickleSubscribe(ctx, sub, params)
+	startEventsSubscribe(ctx, events, params)
 	return resp, nil
 }
 

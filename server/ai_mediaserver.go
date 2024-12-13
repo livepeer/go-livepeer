@@ -87,6 +87,9 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
+	// Stream status
+	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
+
 	return nil
 }
 
@@ -445,7 +448,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				QueryParams: queryParams,
 			})
 			if err != nil {
-				kickErr := mediaMTXClient.KickInputConnection()
+				kickErr := mediaMTXClient.KickInputConnection(ctx)
 				if kickErr != nil {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
@@ -493,6 +496,19 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ls.cleanupLive(streamName)
 		}()
 
+		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
+		// the client to reconnect and restart the pipeline
+		stopPipeline := func(err error) {
+			if err == nil {
+				return
+			}
+			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
+			err = mediaMTXClient.KickInputConnection(ctx)
+			if err != nil {
+				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
+			}
+		}
+
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -506,6 +522,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
+				stopPipeline:           stopPipeline,
 			},
 		}
 
@@ -513,7 +530,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ModelId: &pipeline,
 			Params:  &pipelineParams,
 		}
-		processAIRequest(ctx, params, req)
+		_, err = processAIRequest(ctx, params, req)
+		if err != nil {
+			stopPipeline(err)
+		}
 	})
 }
 
@@ -559,6 +579,33 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
 		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		streamId := r.PathValue("streamId")
+		if streamId == "" {
+			http.Error(w, "stream id is required", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", streamId)
+
+		// Get status for specific stream
+		status, exists := StreamStatusStore.Get(streamId)
+		if !exists {
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			clog.Errorf(ctx, "Failed to encode stream status err=%v", err)
+			http.Error(w, "Failed to encode status", http.StatusInternalServerError)
 			return
 		}
 	})
