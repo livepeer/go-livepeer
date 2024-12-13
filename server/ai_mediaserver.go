@@ -584,8 +584,7 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 	})
 }
 
-// GetLiveVideoToVideoStatus returns the latest available status of a live-video-to-video stream
-func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.HandlerFunc {
+func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamId := r.PathValue("stream")
 		if streamId == "" {
