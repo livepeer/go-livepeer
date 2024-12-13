@@ -589,7 +589,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamId := r.PathValue("stream")
 		if streamId == "" {
-			http.Error(w, "stream name is required", http.StatusBadRequest)
+			http.Error(w, "stream id is required", http.StatusBadRequest)
 			return
 		}
 
