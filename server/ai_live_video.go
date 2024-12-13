@@ -58,7 +58,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			cancel()
 			return
 		}
-		if !slowOrchChecker.BeginSegment() {
+		if _, atMax := slowOrchChecker.BeginSegment(); atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			cancel()
 			return
@@ -240,29 +240,34 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 // Detect 'slow' orchs by keeping track of in-flight segments
 // Count the difference between segments produced and segments completed
-// Should only have ~1 segment in-flight at once
-//
-// Sometimes the beginning of the current segment may briefly overlap with
-// the end of the previous segment, so accommodate that
 type SlowOrchChecker struct {
 	mu            sync.Mutex
 	segmentCount  int
 	completeCount int
 }
 
-func (s *SlowOrchChecker) BeginSegment() bool {
+// Number of in flight segments to allow.
+// Should generally not be less than 1, because
+// sometimes the beginning of the current segment
+// may briefly overlap with the end of the previous segment
+const maxInflightSegments = 3
+
+// Returns the number of segments begun so far and
+// whether the max number of inflight segments was hit.
+// Number of segments is not incremented if inflight max is hit.
+// If inflight max is hit, returns true, false otherwise.
+func (s *SlowOrchChecker) BeginSegment() (int, bool) {
 	// Returns `false` if there are multiple segments in-flight
 	// this means the orchestrator is slow reading them
 	// If all-OK, returns `true`
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.segmentCount >= s.completeCount+2 {
+	if s.segmentCount >= s.completeCount+maxInflightSegments {
 		// There is > 1 segment in flight ... orchestrator is slow reading
-		return false
+		return s.segmentCount, false
 	}
 	s.segmentCount += 1
-	return true
-
+	return s.segmentCount, true
 }
 
 func (s *SlowOrchChecker) EndSegment() {
