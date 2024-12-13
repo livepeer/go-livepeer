@@ -88,8 +88,11 @@ func (mw *MediaWriter) MakeReader() CloneableReader {
 func (mr *MediaReader) Read(p []byte) (int, error) {
 	data, eof := mr.source.readData(mr.readPos)
 	toRead := len(p)
-	if len(data) < toRead {
+	if len(data) <= toRead {
 		toRead = len(data)
+	} else {
+		// there is more data to read
+		eof = false
 	}
 
 	copy(p, data[:toRead])

@@ -143,8 +143,8 @@ func copySegment(segment *http.Response, w io.Writer) error {
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
-	controlPub, err := trickle.NewTricklePublisher(control.String())
 	stream := params.liveParams.stream
+	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		slog.Info("error starting control publisher", "stream", stream, "err", err)
 		return
@@ -162,6 +162,9 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		ControlPub:  controlPub,
 		StopControl: stop,
+	}
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
 	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
@@ -186,21 +189,20 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
+	stream := params.liveParams.stream
+	streamId := params.liveParams.streamID
 
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
+		defer StreamStatusStore.Clear(streamId)
 		for {
-			clog.Infof(ctx, "Attempting to read from event subscription for URL: %s", url.String())
+			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
-				// TODO
-				// monitor.DeletePipelineStatus(params.liveParams.stream)
 				return
 			}
-
-			clog.Infof(ctx, "Successfully read segment from event subscription for URL: %s", url.String())
 
 			body, err := io.ReadAll(segment.Body)
 			segment.Body.Close()
@@ -210,30 +212,40 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			stream := params.liveParams.stream
-
-			if stream == "" {
-				clog.Infof(ctx, "Stream ID is missing")
-				continue
-			}
-
-			var status monitor.PipelineStatus
-			if err := json.Unmarshal(body, &status); err != nil {
+			var event map[string]interface{}
+			if err := json.Unmarshal(body, &event); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
-			status.StreamID = &stream
+			event["stream_id"] = streamId
+			event["request_id"] = params.liveParams.requestID
+			event["pipeline_id"] = params.liveParams.pipelineID
 
-			// TODO: update the in-memory pipeline status
-			// monitor.UpdatePipelineStatus(stream, status)
+			clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
-			clog.Infof(ctx, "Received event for stream=%s status=%+v", stream, status)
+			eventType, ok := event["type"].(string)
+			if !ok {
+				eventType = "unknown"
+				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
+			}
 
-			monitor.SendQueueEventAsync(
-				"stream_status",
-				status,
-			)
+			queueEventType := "ai_stream_events"
+			if eventType == "status" {
+				queueEventType = "ai_stream_status"
+				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
+				// incoming status with the last non-null value that we received on such fields for the status API.
+				lastStreamStatus, _ := StreamStatusStore.Get(streamId)
+				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
+					event["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
+				}
+				if params, ok := event["last_params"]; !ok || params == nil {
+					event["last_params"] = lastStreamStatus["last_params"]
+				}
+				StreamStatusStore.Store(streamId, event)
+			}
+
+			monitor.SendQueueEventAsync(queueEventType, event)
 		}
 	}()
 }

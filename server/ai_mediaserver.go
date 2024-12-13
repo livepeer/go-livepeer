@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/monitor"
+
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -425,6 +427,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
+		var streamID, pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -462,11 +465,19 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if len(authResp.paramsMap) > 0 {
 				pipelineParams = authResp.paramsMap
 			}
+
+			if authResp.StreamID != "" {
+				streamID = authResp.StreamID
+			}
+
+			if authResp.PipelineID != "" {
+				pipelineID = authResp.PipelineID
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v streamID=%s", streamName, pipelineParams, streamID)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
@@ -492,6 +503,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				outputRTMPURL:          outputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
+				requestID:              requestID,
+				streamID:               streamID,
+				pipelineID:             pipelineID,
 			},
 		}
 
@@ -555,6 +569,9 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
 	ls.LivepeerNode.LiveMu.Unlock()
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
+	}
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
