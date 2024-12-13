@@ -87,6 +87,9 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
+	// Stream status
+	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
+
 	return nil
 }
 
@@ -576,6 +579,33 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
 		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		streamId := r.PathValue("streamId")
+		if streamId == "" {
+			http.Error(w, "stream id is required", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", streamId)
+
+		// Get status for specific stream
+		status, exists := StreamStatusStore.Get(streamId)
+		if !exists {
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			clog.Errorf(ctx, "Failed to encode stream status err=%v", err)
+			http.Error(w, "Failed to encode status", http.StatusInternalServerError)
 			return
 		}
 	})
