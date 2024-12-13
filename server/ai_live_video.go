@@ -88,6 +88,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		var err error
 		defer w.Close()
 		retries := 0
+		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
+		const retryPause = 300 * time.Millisecond
+		const maxRetries = 5
 		for {
 			if !params.inputStreamExists() {
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
@@ -103,12 +106,12 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				// TODO if not EOS then signal a new orchestrator is needed
 				err = fmt.Errorf("trickle subscribe error reading: %w", err)
 				clog.Infof(ctx, "%s", err)
-				if retries > 2 {
+				if retries > maxRetries {
 					params.liveParams.stopPipeline(err)
 					return
 				}
 				retries++
-				time.Sleep(5 * time.Second)
+				time.Sleep(retryPause)
 				continue
 			}
 			retries = 0
