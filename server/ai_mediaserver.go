@@ -506,9 +506,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			capability := clog.GetVal(ctx, "capability")
 			monitor.SendQueueEventAsync("ai_stream_events", map[string]string{
+				"type":        "error",
 				"request_id":  requestID,
 				"capability":  capability,
-				"error":       err.Error(),
+				"message":     err.Error(),
 				"stream_id":   streamID,
 				"pipeline_id": pipelineID,
 				"pipeline":    pipeline,
