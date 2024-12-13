@@ -54,31 +54,56 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
-				clog.Infof(ctx, "Error closing trickle publisher. err=%s", err)
+				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
 			return
 		}
-		if _, atMax := slowOrchChecker.BeginSegment(); atMax {
+		thisSeq, atMax := slowOrchChecker.BeginSegment()
+		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			cancel()
 			return
 			// TODO kill the rest of the processing, including ingest
 			// TODO switch orchestrators
 		}
-		go func() {
+		go func(seq int) {
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
 				r = paymentProcessor.process(reader)
 			}
 
-			clog.V(8).Infof(ctx, "trickle publish writing data")
-			// TODO this blocks! very bad!
-			if err := publisher.Write(r); err != nil {
-				clog.Infof(ctx, "Error writing to trickle publisher. err=%s", err)
+			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
+			segment, err := publisher.Next()
+			if err != nil {
+				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
+				return
 			}
-		}()
+			for {
+				currentSeq := slowOrchChecker.GetCount()
+				if seq != currentSeq {
+					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
+					return
+				}
+				n, err := segment.Write(r)
+				if err == nil {
+					// no error, all done, let's leave
+					return
+				}
+				// Retry segment only if nothing has been sent yet
+				// and the next segment has not yet started
+				// otherwise drop
+				if n > 0 {
+					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
+					return
+				}
+				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
+				// Clone in case read head was incremented somewhere, which cloning ressets
+				r = reader.Clone()
+				time.Sleep(250 * time.Millisecond)
+			}
+		}(thisSeq)
 	})
 	clog.Infof(ctx, "trickle pub")
 }
@@ -251,7 +276,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 			}
 
-			clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
+			clog.V(8).Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
 			eventType, ok := event["type"].(string)
 			if !ok {
@@ -327,4 +352,10 @@ func (s *SlowOrchChecker) EndSegment() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.completeCount += 1
+}
+
+func (s *SlowOrchChecker) GetCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.segmentCount
 }
