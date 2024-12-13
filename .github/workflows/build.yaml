@@ -72,7 +72,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.2
+          go-version-file: './go.mod'
           cache: true
           cache-dependency-path: go.sum
 
@@ -174,7 +174,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.2
+          go-version-file: './go.mod'
           cache: true
           cache-dependency-path: go.sum
 
@@ -196,7 +196,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew upgrade
+          # brew upgrade  # temporarily disabled because of the issues it's causing
           brew uninstall --ignore-dependencies --force pkg-config@0.29.2
           brew install coreutils pkgconf
 

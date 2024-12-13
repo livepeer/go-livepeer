@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
-
-// TODO sweep idle streams connections
 
 const CHANGEFEED = "_changes"
 
@@ -29,15 +30,21 @@ type TrickleServerConfig struct {
 
 	// Whether to auto-create channels on first publish (default false)
 	Autocreate bool
+
+	// Amount of time a channel has no new segments before being swept (default 5 minutes)
+	IdleTimeout time.Duration
+
+	// How often to sweep for idle channels (default 1 minute)
+	SweepInterval time.Duration
 }
 
 type Server struct {
 	mutex   sync.RWMutex
 	streams map[string]*Stream
 
+	config TrickleServerConfig
+
 	// for internal channels
-	changefeed  bool
-	autocreate  bool
 	internalPub *TrickleLocalPublisher
 }
 
@@ -47,6 +54,7 @@ type Stream struct {
 	latestWrite int
 	name        string
 	mimeType    string
+	writeTime   time.Time
 }
 
 type Segment struct {
@@ -78,31 +86,58 @@ func applyDefaults(config *TrickleServerConfig) {
 	if config.Mux == nil {
 		config.Mux = http.DefaultServeMux
 	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = 5 * time.Minute
+	}
+	if config.SweepInterval == 0 {
+		config.SweepInterval = time.Minute
+	}
 }
 
 func ConfigureServer(config TrickleServerConfig) *Server {
 	streamManager := &Server{
-		streams:    make(map[string]*Stream),
-		changefeed: config.Changefeed,
-		autocreate: config.Autocreate,
+		streams: make(map[string]*Stream),
+		config:  config,
 	}
 
 	// set up changefeed
-	if streamManager.changefeed {
+	if config.Changefeed {
 		streamManager.internalPub = NewLocalPublisher(streamManager, CHANGEFEED, "application/json")
 		streamManager.internalPub.CreateChannel()
 	}
 
-	applyDefaults(&config)
+	applyDefaults(&streamManager.config)
 	var (
-		mux      = config.Mux
-		basePath = config.BasePath
+		mux      = streamManager.config.Mux
+		basePath = streamManager.config.BasePath
 	)
 
+	mux.HandleFunc("POST "+basePath+"{streamName}", streamManager.handleCreate)
 	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
 	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
 	mux.HandleFunc("DELETE "+basePath+"{streamName}", streamManager.handleDelete)
 	return streamManager
+}
+
+func (sm *Server) Start() func() {
+	ticker := time.NewTicker(sm.config.SweepInterval)
+	done := make(chan bool)
+	stop := func() {
+		ticker.Stop()
+		done <- true
+	}
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				sm.sweepIdleChannels()
+			case <-done:
+				sm.clearAllStreams()
+				return
+			}
+		}
+	}()
+	return stop
 }
 
 func (sm *Server) getStream(streamName string) (*Stream, bool) {
@@ -116,11 +151,12 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	sm.mutex.Lock()
 
 	stream, exists := sm.streams[streamName]
-	if !exists && (isLocal || sm.autocreate) {
+	if !exists && (isLocal || sm.config.Autocreate) {
 		stream = &Stream{
-			segments: make([]*Segment, maxSegmentsPerStream),
-			name:     streamName,
-			mimeType: mimeType,
+			segments:  make([]*Segment, maxSegmentsPerStream),
+			name:      streamName,
+			mimeType:  mimeType,
+			writeTime: time.Now(),
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
@@ -133,7 +169,7 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	}
 
 	// update changefeed
-	if !exists && sm.changefeed {
+	if !exists && sm.config.Changefeed {
 		jb, _ := json.Marshal(&Changefeed{
 			Added: []string{streamName},
 		})
@@ -152,6 +188,29 @@ func (sm *Server) clearAllStreams() {
 		stream.clear()
 	}
 	sm.streams = make(map[string]*Stream)
+}
+
+func (sm *Server) sweepIdleChannels() {
+	sm.mutex.Lock()
+	streams := slices.Collect(maps.Values(sm.streams))
+	sm.mutex.Unlock()
+	now := time.Now()
+	for _, s := range streams {
+		// skip internal channels for now, eg changefeed
+		if strings.HasPrefix(s.name, "_") {
+			continue
+		}
+		s.mutex.Lock()
+		writeTime := s.writeTime
+		s.mutex.Unlock()
+		if now.Sub(writeTime) > sm.config.IdleTimeout {
+			if err := sm.closeStream(s.name); err != nil {
+				slog.Warn("Could not close idle channel", "channel", s.name, "err", err)
+			} else {
+				slog.Info("Closed idle channel", "channel", s.name)
+			}
+		}
+	}
 }
 
 func (s *Stream) clear() {
@@ -178,7 +237,7 @@ func (sm *Server) closeStream(streamName string) error {
 	slog.Info("Deleted stream", "streamName", streamName)
 
 	// update changefeed if needed
-	if !sm.changefeed {
+	if !sm.config.Changefeed {
 		return nil
 	}
 	jb, err := json.Marshal(&Changefeed{
@@ -195,6 +254,14 @@ func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	streamName := r.PathValue("streamName")
 	if err := sm.closeStream(streamName); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+}
+
+func (sm *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Expect-Content"), false)
+	if stream == nil {
+		http.Error(w, "Stream not found", http.StatusNotFound)
 		return
 	}
 }
@@ -266,7 +333,6 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	if exists {
 		slog.Warn("Overwriting existing entry", "idx", idx)
 		// Overwrite anything that exists now. TODO figure out a safer behavior?
-		http.Error(w, "Entry already exists for this index", http.StatusBadRequest)
 		return
 	}
 
@@ -319,6 +385,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	} else {
 		s.latestWrite = idx
 	}
+	s.writeTime = time.Now()
 	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {

@@ -168,6 +168,8 @@ type LivepeerConfig struct {
 	KafkaPassword              *string
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
+	LiveAIAuthApiKey           *string
+	LivePaymentInterval        *time.Duration
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -212,6 +214,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultLiveAIAuthWebhookURL := ""
+	defaultLivePaymentInterval := 5 * time.Second
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -319,6 +322,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIModelsDir:          &defaultAIModelsDir,
 		AIRunnerImage:        &defaultAIRunnerImage,
 		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:  &defaultLivePaymentInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1183,6 +1187,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error parsing -nvidia for devices: %v", err)
 				return
 			}
+		} else {
+			glog.Warningf("!!! No GPU discovered, using CPU for AIWorker !!!")
+			// Create 2 fake GPU instances, intended for the local non-GPU setup
+			gpus = []string{"emulated-0", "emulated-1"}
 		}
 
 		modelsDir := *cfg.AIModelsDir
@@ -1235,6 +1243,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				// External containers do auto-scale; default to 1 or use provided capacity.
 				if config.URL != "" && config.Capacity != 0 {
 					modelConstraint.Capacity = config.Capacity
+				}
+
+				// Ensure the AI worker has the image needed to serve the job.
+				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
+				if err != nil {
+					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
 				}
 
 				if config.Warm || config.URL != "" {
@@ -1556,6 +1570,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.MediaMTXApiPassword != nil {
 		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword
 	}
+	if cfg.LiveAIAuthApiKey != nil {
+		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
+	}
+	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}

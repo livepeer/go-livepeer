@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livepeer/go-livepeer/monitor"
+
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -110,6 +112,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	return nil
@@ -558,6 +561,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
@@ -572,7 +576,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
-		sourceTypeStr, err := mediamtxSourceTypeToString(sourceType)
+		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -614,6 +618,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
+		var streamID, pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -622,15 +627,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				return
 			}
 		}
+		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		if LiveAIAuthWebhookURL != nil {
-			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, AIAuthRequest{
+			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 			})
 			if err != nil {
-				kickErr := ls.kickInputConnection(remoteHost, sourceID, sourceType)
+				kickErr := mediaMTXClient.KickInputConnection()
 				if kickErr != nil {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
@@ -650,17 +656,30 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if len(authResp.paramsMap) > 0 {
 				pipelineParams = authResp.paramsMap
 			}
+
+			if authResp.StreamID != "" {
+				streamID = authResp.StreamID
+			}
+
+			if authResp.PipelineID != "" {
+				pipelineID = authResp.PipelineID
+			}
 		}
 
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s", streamName)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v streamID=%s", streamName, pipelineParams, streamID)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir}
-			ms.RunSegmentation(fmt.Sprintf("rtmp://%s/%s", remoteHost, streamName), ssr.Read)
+			// Currently for webrtc we need to add a path prefix due to the ingress setup
+			mediaMTXStreamPrefix := r.PathValue("prefix")
+			if mediaMTXStreamPrefix != "" {
+				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
+			}
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(streamName)
 		}()
@@ -671,9 +690,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			sessManager: ls.AISessionManager,
 
 			liveParams: liveRequestParams{
-				segmentReader: ssr,
-				outputRTMPURL: outputURL,
-				stream:        streamName,
+				segmentReader:          ssr,
+				outputRTMPURL:          outputURL,
+				stream:                 streamName,
+				paymentProcessInterval: ls.livePaymentInterval,
+				requestID:              requestID,
+				streamID:               streamID,
+				pipelineID:             pipelineID,
 			},
 		}
 
@@ -737,10 +760,14 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
 	ls.LivepeerNode.LiveMu.Unlock()
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
+	}
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
+		pub.StopControl()
 	}
 }
