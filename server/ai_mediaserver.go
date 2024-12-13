@@ -88,7 +88,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 
 	// Stream status
-	ls.HTTPMux.Handle("/live/video-to-video/{stream-id}/status", ls.GetLiveVideoToVideoStatus())
+	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
 	return nil
 }
@@ -586,7 +586,7 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		streamId := r.PathValue("stream-id")
+		streamId := r.PathValue("streamId")
 		if streamId == "" {
 			http.Error(w, "stream id is required", http.StatusBadRequest)
 			return
