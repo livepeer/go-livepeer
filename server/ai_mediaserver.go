@@ -503,6 +503,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				return
 			}
 			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
+
+			capability := clog.GetVal(ctx, "capability")
+			monitor.SendQueueEventAsync("ai_stream_events", map[string]string{
+				"type":        "error",
+				"request_id":  requestID,
+				"capability":  capability,
+				"message":     err.Error(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"pipeline":    pipeline,
+			})
+
 			err = mediaMTXClient.KickInputConnection(ctx)
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)

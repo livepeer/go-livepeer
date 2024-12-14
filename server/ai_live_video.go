@@ -259,12 +259,24 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
 				// incoming status with the last non-null value that we received on such fields for the status API.
 				lastStreamStatus, _ := StreamStatusStore.Get(streamId)
-				if logs, ok := event["last_restart_logs"]; !ok || logs == nil {
-					event["last_restart_logs"] = lastStreamStatus["last_restart_logs"]
+
+				// Check if inference_status exists in both current and last status
+				inferenceStatus, hasInference := event["inference_status"].(map[string]interface{})
+				lastInferenceStatus, hasLastInference := lastStreamStatus["inference_status"].(map[string]interface{})
+
+				if hasInference {
+					if logs, ok := inferenceStatus["last_restart_logs"]; !ok || logs == nil {
+						if hasLastInference {
+							inferenceStatus["last_restart_logs"] = lastInferenceStatus["last_restart_logs"]
+						}
+					}
+					if params, ok := inferenceStatus["last_params"]; !ok || params == nil {
+						if hasLastInference {
+							inferenceStatus["last_params"] = lastInferenceStatus["last_params"]
+						}
+					}
 				}
-				if params, ok := event["last_params"]; !ok || params == nil {
-					event["last_params"] = lastStreamStatus["last_params"]
-				}
+
 				StreamStatusStore.Store(streamId, event)
 			}
 
