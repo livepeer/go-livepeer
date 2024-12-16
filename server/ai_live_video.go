@@ -199,7 +199,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}()
 }
 
-func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
+func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
@@ -233,6 +233,12 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			event["stream_id"] = streamId
 			event["request_id"] = params.liveParams.requestID
 			event["pipeline_id"] = params.liveParams.pipelineID
+			if sess != nil {
+				event["orchestrator_info"] = map[string]interface{}{
+					"address": sess.Address(),
+					"url":     sess.Transcoder(),
+				}
+			}
 
 			clog.Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
