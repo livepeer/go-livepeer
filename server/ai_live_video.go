@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -47,6 +48,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
+	slowOrchChecker := &SlowOrchChecker{}
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -56,7 +59,15 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			cancel()
 			return
 		}
+		if _, atMax := slowOrchChecker.BeginSegment(); atMax {
+			clog.Infof(ctx, "Orchestrator is slow - terminating")
+			cancel()
+			return
+			// TODO kill the rest of the processing, including ingest
+			// TODO switch orchestrators
+		}
 		go func() {
+			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
 				r = paymentProcessor.process(reader)
@@ -278,4 +289,42 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			monitor.SendQueueEventAsync(queueEventType, event)
 		}
 	}()
+}
+
+// Detect 'slow' orchs by keeping track of in-flight segments
+// Count the difference between segments produced and segments completed
+type SlowOrchChecker struct {
+	mu            sync.Mutex
+	segmentCount  int
+	completeCount int
+}
+
+// Number of in flight segments to allow.
+// Should generally not be less than 1, because
+// sometimes the beginning of the current segment
+// may briefly overlap with the end of the previous segment
+const maxInflightSegments = 3
+
+// Returns the number of segments begun so far and
+// whether the max number of inflight segments was hit.
+// Number of segments is not incremented if inflight max is hit.
+// If inflight max is hit, returns true, false otherwise.
+func (s *SlowOrchChecker) BeginSegment() (int, bool) {
+	// Returns `false` if there are multiple segments in-flight
+	// this means the orchestrator is slow reading them
+	// If all-OK, returns `true`
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.segmentCount >= s.completeCount+maxInflightSegments {
+		// There is > 1 segment in flight ... orchestrator is slow reading
+		return s.segmentCount, true
+	}
+	s.segmentCount += 1
+	return s.segmentCount, false
+}
+
+func (s *SlowOrchChecker) EndSegment() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.completeCount += 1
 }
