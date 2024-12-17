@@ -217,6 +217,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultGatewayHost := ""
+
 	// Onchain:
 	defaultEthAcctAddr := ""
 	defaultEthPassword := ""
