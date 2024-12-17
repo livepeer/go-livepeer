@@ -333,7 +333,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	if exists {
 		slog.Warn("Overwriting existing entry", "idx", idx)
 		// Overwrite anything that exists now. TODO figure out a safer behavior?
-		return
+		// TODO fix concurrent writes to the same segment; would be very bad
+		segment.buffer.Reset()
+		segment.closed = false
 	}
 
 	// Wrap the request body with the custom timeoutReader so we can send
@@ -527,6 +529,8 @@ func (s *Segment) readData(startPos int) ([]byte, bool) {
 		}
 		if startPos > totalLen {
 			slog.Info("Invalid start pos, invoking eof")
+			// This might happen if the buffer was reset
+			// eg because of a repeated POST
 			return nil, true
 		}
 		if s.closed {

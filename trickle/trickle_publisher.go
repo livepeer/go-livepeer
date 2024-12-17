@@ -36,6 +36,10 @@ type pendingPost struct {
 	index  int
 	writer *io.PipeWriter
 	errCh  chan error
+
+	// needed to help with reconnects
+	written bool
+	client  *TricklePublisher
 }
 
 // NewTricklePublisher creates a new trickle stream client
@@ -53,7 +57,6 @@ func NewTricklePublisher(url string) (*TricklePublisher, error) {
 	return c, nil
 }
 
-// Acquire lock to manage access to pendingPost and index
 // NB expects to have the lock already since we mutate the index
 func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 
@@ -113,6 +116,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 		writer: pw,
 		index:  index,
 		errCh:  errCh,
+		client: c,
 	}, nil
 }
 
@@ -136,11 +140,10 @@ func (c *TricklePublisher) Close() error {
 	return nil
 }
 
-// Write sends data to the current segment, sets up the next segment concurrently, and blocks until completion
-func (c *TricklePublisher) Write(data io.Reader) error {
-
+func (c *TricklePublisher) Next() (*pendingPost, error) {
 	// Acquire lock to manage access to pendingPost and index
 	c.writeLock.Lock()
+	defer c.writeLock.Unlock()
 
 	// Get the writer to use
 	pp := c.pendingPost
@@ -148,29 +151,61 @@ func (c *TricklePublisher) Write(data io.Reader) error {
 		p, err := c.preconnect()
 		if err != nil {
 			c.writeLock.Unlock()
-			return err
+			return nil, err
 		}
 		pp = p
 	}
-	writer := pp.writer
-	index := pp.index
-	errCh := pp.errCh
 
 	// Set up the next connection
 	nextPost, err := c.preconnect()
 	if err != nil {
 		c.writeLock.Unlock()
-		return err
+		return nil, err
 	}
 	c.pendingPost = nextPost
 
-	// Now unlock so the copy does not block
-	c.writeLock.Unlock()
+	return pp, nil
+}
+
+func (p *pendingPost) reconnect() (*pendingPost, error) {
+	// This is a little gnarly but works for now:
+	// Set the publisher's sequence sequence to the intended reconnect
+	// Call publisher's preconnect (which increments its sequence)
+	// then reset publisher's sequence back to the original
+	//slog.Info("Re-connecting", "url", p.client.baseURL, "seq", p.client.index)
+	p.client.writeLock.Lock()
+	defer p.client.writeLock.Unlock()
+	currentSeq := p.client.index
+	p.client.index = p.index
+	pp, err := p.client.preconnect()
+	p.client.index = currentSeq
+	return pp, err
+}
+
+func (p *pendingPost) Write(data io.Reader) (int64, error) {
+
+	// If writing multiple times, reconnect
+	if p.written {
+		pp, err := p.reconnect()
+		if err != nil {
+			return 0, err
+		}
+		p = pp
+	}
+
+	var (
+		writer = p.writer
+		index  = p.index
+		errCh  = p.errCh
+	)
+
+	// Mark as written
+	p.written = true
 
 	// before writing, check for error from preconnects
 	select {
 	case err := <-errCh:
-		return err
+		return 0, err
 	default:
 		// no error, continue
 	}
@@ -192,18 +227,28 @@ func (c *TricklePublisher) Write(data io.Reader) error {
 	// also prioritize errors over this channel compared to io errors
 	// such as "read/write on closed pipe"
 	if err := <-errCh; err != nil {
-		return err
+		return n, err
 	}
 
 	if ioError != nil {
-		return fmt.Errorf("error streaming data to segment %d: %w", index, err)
+		return n, fmt.Errorf("error streaming data to segment %d: %w", index, ioError)
 	}
 
 	if closeErr != nil {
-		return fmt.Errorf("error closing writer for segment %d: %w", index, err)
+		return n, fmt.Errorf("error closing writer for segment %d: %w", index, closeErr)
 	}
 
-	return nil
+	return n, nil
+}
+
+// Write sends data to the current segment, sets up the next segment concurrently, and blocks until completion
+func (c *TricklePublisher) Write(data io.Reader) error {
+	pp, err := c.Next()
+	if err != nil {
+		return err
+	}
+	_, err = pp.Write(data)
+	return err
 }
 
 func humanBytes(bytes int64) string {
