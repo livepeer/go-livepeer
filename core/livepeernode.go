@@ -158,8 +158,7 @@ type LivepeerNode struct {
 	LiveAIAuthApiKey           string
 	LivePaymentInterval        time.Duration
 
-	// Region in which the node is running
-	Region      string
+	// Gateway
 	GatewayHost string
 }
 
