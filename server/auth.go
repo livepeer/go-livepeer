@@ -107,8 +107,8 @@ type AIAuthRequest struct {
 	// Query parameters that came with the stream, if any
 	QueryParams string `json:"query_params,omitempty"`
 
-	// Region in which the gateway is running
-	Region string `json:"region,omitempty"`
+	// Gateway host
+	GatewayHost string `json:"gateway_host"`
 
 	// TODO not sure what params we need yet
 }

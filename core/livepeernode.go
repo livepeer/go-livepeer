@@ -159,7 +159,8 @@ type LivepeerNode struct {
 	LivePaymentInterval        time.Duration
 
 	// Region in which the node is running
-	Region string
+	Region      string
+	GatewayHost string
 }
 
 type LivePipeline struct {
