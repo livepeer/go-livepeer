@@ -446,6 +446,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
+				GatewayHost: ls.LivepeerNode.GatewayHost,
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -480,7 +481,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
-		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v streamID=%s", streamName, pipelineParams, streamID)
+		ctx = clog.AddVal(ctx, "stream_id", streamID)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()

@@ -30,7 +30,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	}
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
 	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
