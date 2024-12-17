@@ -446,6 +446,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
+				GatewayHost: ls.LivepeerNode.GatewayHost,
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)

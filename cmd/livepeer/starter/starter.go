@@ -116,6 +116,7 @@ type LivepeerConfig struct {
 	Netint                     *string
 	HevcDecoding               *bool
 	TestTranscoder             *bool
+	GatewayHost                *string
 	EthAcctAddr                *string
 	EthPassword                *string
 	EthKeystorePath            *string
@@ -215,6 +216,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
+	defaultGatewayHost := ""
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -323,6 +325,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerImage:        &defaultAIRunnerImage,
 		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:  &defaultLivePaymentInterval,
+		GatewayHost:          &defaultGatewayHost,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1413,6 +1416,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.RtmpAddr = defaultAddr(*cfg.RtmpAddr, "127.0.0.1", BroadcasterRtmpPort)
 		*cfg.HttpAddr = defaultAddr(*cfg.HttpAddr, "127.0.0.1", BroadcasterRpcPort)
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", BroadcasterCliPort)
+
+		if *cfg.GatewayHost != "" {
+			n.GatewayHost = *cfg.GatewayHost
+		}
 
 		bcast := core.NewBroadcaster(n)
 		orchBlacklist := parseOrchBlacklist(cfg.OrchBlacklist)

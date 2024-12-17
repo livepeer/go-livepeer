@@ -157,6 +157,9 @@ type LivepeerNode struct {
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
 	LivePaymentInterval        time.Duration
+
+	// Gateway
+	GatewayHost string
 }
 
 type LivePipeline struct {
