@@ -133,6 +133,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 			var segment *http.Response
+			clog.V(8).Infof(ctx, "trickle subscribe read data begin")
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) {
@@ -151,7 +152,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				continue
 			}
 			retries = 0
-			clog.V(8).Infof(ctx, "trickle subscribe read data")
+			clog.V(8).Infof(ctx, "trickle subscribe read data end")
 
 			if err = copySegment(segment, w); err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
