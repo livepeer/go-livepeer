@@ -453,7 +453,7 @@ func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int)
 }
 
 // RedeemWinningTickets redeems all winning tickets with the broker
-// for a all sessionIDs
+// for an all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
 	return args.Error(0)
