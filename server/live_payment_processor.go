@@ -94,7 +94,8 @@ func (p *LivePaymentProcessor) processOne(timestamp time.Time) {
 	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
 		slog.Error("Error processing payment", "err", err)
-		return
+		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
+		// return
 	}
 
 	p.lastProcessedMu.Lock()
