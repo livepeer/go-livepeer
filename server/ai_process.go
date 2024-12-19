@@ -106,7 +106,12 @@ type liveRequestParams struct {
 	pipelineID    string
 
 	paymentProcessInterval time.Duration
-	stopPipeline           func(error)
+
+	// Stops the pipeline with an error. Also kicks the input
+	stopPipeline func(error)
+
+	// Report an error event
+	sendErrorEvent func(error)
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
