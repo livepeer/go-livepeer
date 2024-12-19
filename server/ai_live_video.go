@@ -253,7 +253,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	go func() {
 		defer StreamStatusStore.Clear(streamId)
 		for {
-			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
+			clog.V(8).Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err != nil {
 				clog.Infof(ctx, "Error reading events subscription: %s", err)
