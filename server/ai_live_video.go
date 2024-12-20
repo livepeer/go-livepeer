@@ -89,6 +89,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
+					segment.Close()
 					return
 				}
 				n, err := segment.Write(r)
@@ -107,6 +108,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if n > 0 {
 					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
+					segment.Close()
 					return
 				}
 				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
