@@ -498,6 +498,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ls.cleanupLive(streamName)
 		}()
 
+		sendErrorEvent := LiveErrorEventSender(ctx, map[string]string{
+			"type":        "error",
+			"request_id":  requestID,
+			"stream_id":   streamID,
+			"pipeline_id": pipelineID,
+			"pipeline":    pipeline,
+		})
+
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
 		stopPipeline := func(err error) {
@@ -506,16 +514,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
 
-			capability := clog.GetVal(ctx, "capability")
-			monitor.SendQueueEventAsync("ai_stream_events", map[string]string{
-				"type":        "error",
-				"request_id":  requestID,
-				"capability":  capability,
-				"message":     err.Error(),
-				"stream_id":   streamID,
-				"pipeline_id": pipelineID,
-				"pipeline":    pipeline,
-			})
+			sendErrorEvent(err)
 
 			err = mediaMTXClient.KickInputConnection(ctx)
 			if err != nil {
@@ -537,6 +536,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				streamID:               streamID,
 				pipelineID:             pipelineID,
 				stopPipeline:           stopPipeline,
+				sendErrorEvent:         sendErrorEvent,
 			},
 		}
 

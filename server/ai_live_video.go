@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,6 +28,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		clog.Infof(ctx, "error publishing trickle. err=%s", err)
+		params.liveParams.stopPipeline(fmt.Errorf("Error publishing trickle %w", err))
+		return
 	}
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
@@ -62,9 +65,9 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
+			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
 			cancel()
 			return
-			// TODO kill the rest of the processing, including ingest
 			// TODO switch orchestrators
 		}
 		go func(seq int) {
@@ -78,12 +81,14 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			segment, err := publisher.Next()
 			if err != nil {
 				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
+				params.liveParams.sendErrorEvent(fmt.Errorf("Missing next handle %v", err))
 				return
 			}
 			for {
 				currentSeq := slowOrchChecker.GetCount()
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
+					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
 					return
 				}
 				n, err := segment.Write(r)
@@ -96,6 +101,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				// otherwise drop
 				if n > 0 {
 					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
+					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
 					return
 				}
 				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
@@ -133,6 +139,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 			var segment *http.Response
+			clog.V(8).Infof(ctx, "trickle subscribe read data begin")
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) {
@@ -147,11 +154,12 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 					return
 				}
 				retries++
+				params.liveParams.sendErrorEvent(err)
 				time.Sleep(retryPause)
 				continue
 			}
 			retries = 0
-			clog.V(8).Infof(ctx, "trickle subscribe read data")
+			clog.V(8).Infof(ctx, "trickle subscribe read data end")
 
 			if err = copySegment(segment, w); err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
@@ -358,4 +366,13 @@ func (s *SlowOrchChecker) GetCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.segmentCount
+}
+
+func LiveErrorEventSender(ctx context.Context, event map[string]string) func(err error) {
+	return func(err error) {
+		ev := maps.Clone(event)
+		ev["capability"] = clog.GetVal(ctx, "capability")
+		ev["message"] = err.Error()
+		monitor.SendQueueEventAsync("ai_stream_events", ev)
+	}
 }

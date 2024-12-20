@@ -181,12 +181,16 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					sessionID: mid,
 				})
 				if err != nil {
-					slog.Warn("Error accounting payment, stopping stream processing", "err", err)
-					pubCh.Close()
-					subCh.Close()
-					eventsCh.Close()
-					controlPubCh.Close()
-					cancel()
+					slog.Warn("Error accounting payment", "err", err)
+					// We encounter "insufficient balance" error from time to time on prod.
+					// This needs investigation, but since we're not using public Os,
+					// let's temporarily not stop steams even if not enough payment
+					//slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+					//pubCh.Close()
+					//subCh.Close()
+					//eventsCh.Close()
+					//controlPubCh.Close()
+					//cancel()
 				}
 				return err
 			}
