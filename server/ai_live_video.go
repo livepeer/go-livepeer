@@ -89,11 +89,17 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
+					segment.Close()
 					return
 				}
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
+					return
+				}
+				if errors.Is(err, trickle.StreamNotFoundErr) {
+					clog.Infof(ctx, "Stream no longer exists on orchestrator; terminating")
+					params.liveParams.stopPipeline(fmt.Errorf("Stream does not exist"))
 					return
 				}
 				// Retry segment only if nothing has been sent yet
@@ -102,6 +108,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if n > 0 {
 					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
+					segment.Close()
 					return
 				}
 				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
@@ -142,9 +149,14 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Infof(ctx, "trickle subscribe read data begin")
 			segment, err = subscriber.Read()
 			if err != nil {
-				if errors.Is(err, trickle.EOS) {
+				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
 					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe end of stream: %w", err))
 					return
+				}
+				var sequenceNonexistent *trickle.SequenceNonexistent
+				if errors.As(err, &sequenceNonexistent) {
+					// stream exists but segment doesn't, so skip to leading edge
+					subscriber.SetSeq(sequenceNonexistent.Latest)
 				}
 				// TODO if not EOS then signal a new orchestrator is needed
 				err = fmt.Errorf("trickle subscribe error reading: %w", err)

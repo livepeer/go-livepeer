@@ -55,6 +55,7 @@ type Stream struct {
 	name        string
 	mimeType    string
 	writeTime   time.Time
+	closed      bool
 }
 
 type Segment struct {
@@ -115,6 +116,7 @@ func ConfigureServer(config TrickleServerConfig) *Server {
 	mux.HandleFunc("POST "+basePath+"{streamName}", streamManager.handleCreate)
 	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
 	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
+	mux.HandleFunc("DELETE "+basePath+"{streamName}/{idx}", streamManager.closeSeq)
 	mux.HandleFunc("DELETE "+basePath+"{streamName}", streamManager.handleDelete)
 	return streamManager
 }
@@ -185,7 +187,7 @@ func (sm *Server) clearAllStreams() {
 	// TODO update changefeed
 
 	for _, stream := range sm.streams {
-		stream.clear()
+		stream.close()
 	}
 	sm.streams = make(map[string]*Stream)
 }
@@ -213,13 +215,14 @@ func (sm *Server) sweepIdleChannels() {
 	}
 }
 
-func (s *Stream) clear() {
+func (s *Stream) close() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	for _, segment := range s.segments {
 		segment.close()
 	}
 	s.segments = make([]*Segment, maxSegmentsPerStream)
+	s.closed = true
 }
 
 func (sm *Server) closeStream(streamName string) error {
@@ -230,7 +233,7 @@ func (sm *Server) closeStream(streamName string) error {
 
 	// TODO there is a bit of an issue around session reuse
 
-	stream.clear()
+	stream.close()
 	sm.mutex.Lock()
 	delete(sm.streams, streamName)
 	sm.mutex.Unlock()
@@ -256,6 +259,28 @@ func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+}
+
+func (sm *Server) closeSeq(w http.ResponseWriter, r *http.Request) {
+	s, exists := sm.getStream(r.PathValue("streamName"))
+	if !exists {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+	idx, err := strconv.Atoi(r.PathValue("idx"))
+	if err != nil {
+		http.Error(w, "Invalid idx", http.StatusBadRequest)
+		return
+	}
+	slog.Info("DELETE closing seq", "channel", s.name, "seq", idx)
+	s.mutex.RLock()
+	seg := s.segments[idx%maxSegmentsPerStream]
+	s.mutex.RUnlock()
+	if seg == nil || seg.idx != idx {
+		http.Error(w, "Nonexistent segment", http.StatusBadRequest)
+		return
+	}
+	seg.close()
 }
 
 func (sm *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -489,8 +514,20 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			}
 			if eof {
 				if totalWrites <= 0 {
+					// check if the channel was closed; sometimes we drop / skip a segment
+					s.mutex.RLock()
+					closed := s.closed
+					latestSeq := s.latestWrite
+					s.mutex.RUnlock()
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
-					w.Header().Set("Lp-Trickle-Closed", "terminated")
+					if closed {
+						w.Header().Set("Lp-Trickle-Closed", "terminated")
+					} else {
+						// if the segment was dropped, its probably slow
+						// send over latest seq so the client can grab leading edge
+						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
+						w.WriteHeader(470)
+					}
 				}
 				return totalWrites, nil
 			}
