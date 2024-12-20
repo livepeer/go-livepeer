@@ -241,6 +241,39 @@ func (p *pendingPost) Write(data io.Reader) (int64, error) {
 	return n, nil
 }
 
+/*
+Close a segment. This is a polite action to notify any
+subscribers that might be waiting for this segment.
+
+Only needed if the segment is dropped or otherwise errored;
+not required if the segment is written normally.
+
+Note that subscribers still work fine even without this call;
+it would just take longer for them to stop waiting when
+the current segment drops out of the window of active segments.
+*/
+func (p *pendingPost) Close() error {
+	p.writer.Close()
+	url := fmt.Sprintf("%s/%d", p.client.baseURL, p.index)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := (&http.Client{Transport: &http.Transport{
+		// ignore orch certs for now
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return &HTTPError{Code: resp.StatusCode, Body: string(body)}
+	}
+	return nil
+}
+
 // Write sends data to the current segment, sets up the next segment concurrently, and blocks until completion
 func (c *TricklePublisher) Write(data io.Reader) error {
 	pp, err := c.Next()
