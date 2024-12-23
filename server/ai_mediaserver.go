@@ -468,7 +468,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			if len(authResp.paramsMap) > 0 {
 				if _, ok := authResp.paramsMap["prompt"]; !ok && pipeline == "comfyui" {
-					pipelineParams["prompt"] = authResp.paramsMap
+					pipelineParams = map[string]interface{}{"prompt": authResp.paramsMap}
 				} else {
 					pipelineParams = authResp.paramsMap
 				}
