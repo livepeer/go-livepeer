@@ -256,7 +256,7 @@ jobs:
       id-token: "write"
     runs-on: ubuntu-20.04
     needs:
-      - macos-build
+#      - macos-build
       - linux-build
     steps:
       - name: Check out code
