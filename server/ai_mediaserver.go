@@ -255,20 +255,13 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.GenLLMFormdataRequestBody
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
+		var req worker.GenLLMJSONRequestBody
+		if err := jsonDecoder(&req, r); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
-			return
-		}
-
-		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, *req.Stream)
+		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request model_id=%v stream=%v", *req.Model, *req.Stream)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -289,7 +282,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		}
 
 		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request model_id=%v took=%v", *req.Model, took)
 
 		if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
 			// Handle streaming response (SSE)

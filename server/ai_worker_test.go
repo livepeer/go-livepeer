@@ -324,7 +324,7 @@ func TestRunAIJob(t *testing.T) {
 
 					assert.Equal("7", headers.Get("TaskId"))
 					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
+					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMJSONRequestBody{})
 					assert.Equal(expectedResp, &jsonRes)
 				case "image-to-text":
 					res, _ := json.Marshal(results.Results)
@@ -372,7 +372,7 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
-		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+		req = worker.GenLLMJSONRequestBody{Prompt: "tell me a story", ModelId: &modelId}
 	case "image-to-text":
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
@@ -597,7 +597,7 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	}
 }
 
-func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	a.Called++
 	if a.Err != nil {
 		return nil, a.Err

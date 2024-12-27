@@ -651,7 +651,7 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	return &worker.MasksResponse{Logits: "logits", Masks: "masks", Scores: "scores"}, nil
 }
 
-func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	return &worker.LLMResponse{Response: "response tokens", TokensUsed: 10}, nil
 }
 
