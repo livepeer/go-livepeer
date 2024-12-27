@@ -787,14 +787,14 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 }
 
 // Return type is LLMResponse, but a stream is available as well as chan(string)
-func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		// no file response to save, response is text sent back to gateway
 		return orch.node.AIWorker.LLM(ctx, req)
 	}
 
-	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.ModelId, "", AIJobRequestData{Request: req})
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.Model, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
 	}
@@ -805,7 +805,7 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 		if err != nil {
 			clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
 			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "llm", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+				monitor.AIResultSaveError(ctx, "llm", *req.Model, string(monitor.SegmentUploadErrorUnknown))
 			}
 			return nil, err
 
@@ -1050,7 +1050,7 @@ func (n *LivepeerNode) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	return n.AIWorker.SegmentAnything2(ctx, req)
 }
 
-func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (n *LivepeerNode) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	return n.AIWorker.LLM(ctx, req)
 }
 

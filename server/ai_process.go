@@ -1107,7 +1107,7 @@ func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
 	return took.Seconds() / float64(tokensUsed)
 }
 
-func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		return nil, err
@@ -1129,20 +1129,20 @@ func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMFo
 	return llmResp, nil
 }
 
-func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
-	var buf bytes.Buffer
+func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLLMJSONRequestBody) (interface{}, error) {
+	/*var buf bytes.Buffer
 	mw, err := worker.NewLLMMultipartWriter(&buf, req)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, nil)
+			monitor.AIRequestError(err.Error(), "llm", *req.Moded, nil)
 		}
 		return nil, err
 	}
-
+	*/
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "llm", *req.Model, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -1155,17 +1155,17 @@ func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, int64(*req.MaxTokens))
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "llm", *req.Model, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	start := time.Now()
-	resp, err := client.GenLLMWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	resp, err := client.GenLLM(ctx, req, setHeaders)
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "llm", *req.Model, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -1182,7 +1182,7 @@ func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req
 	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
 }
 
-func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMJSONRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
 	streamChan := make(chan worker.LlmStreamChunk, 100)
 	go func() {
 		defer close(streamChan)
@@ -1218,19 +1218,19 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 			if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 				pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 			}
-			monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+			monitor.AIRequestFinished(ctx, "llm", *req.Model, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 		}
 	}()
 
 	return streamChan, nil
 }
 
-func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMFormdataRequestBody, start time.Time) (*worker.LLMResponse, error) {
+func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMJSONRequestBody, start time.Time) (*worker.LLMResponse, error) {
 	data, err := io.ReadAll(body)
 	defer body.Close()
 	if err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "llm", *req.Model, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -1238,7 +1238,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	var res worker.LLMResponse
 	if err := json.Unmarshal(data, &res); err != nil {
 		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.ModelId, sess.OrchestratorInfo)
+			monitor.AIRequestError(err.Error(), "llm", *req.Model, sess.OrchestratorInfo)
 		}
 		return nil, err
 	}
@@ -1251,7 +1251,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
 			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
 		}
-		monitor.AIRequestFinished(ctx, "llm", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+		monitor.AIRequestFinished(ctx, "llm", *req.Model, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
 	return &res, nil
@@ -1410,16 +1410,16 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
 		}
-	case worker.GenLLMFormdataRequestBody:
+	case worker.GenLLMJSONRequestBody:
 		cap = core.Capability_LLM
 		modelID = defaultLLMModelID
-		if v.ModelId != nil {
-			modelID = *v.ModelId
+		if v.Model != nil {
+			modelID = *v.Model
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLLM(ctx, params, sess, v)
 		}
-		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
+
 	case worker.GenSegmentAnything2MultipartRequestBody:
 		cap = core.Capability_SegmentAnything2
 		modelID = defaultSegmentAnything2ModelID

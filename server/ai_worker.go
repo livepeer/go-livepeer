@@ -271,12 +271,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		}
 		reqOk = true
 	case "llm":
-		var req worker.GenLLMFormdataRequestBody
+		var req worker.GenLLMJSONRequestBody
 		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
+		if err != nil || req.Model == nil {
 			break
 		}
-		modelID = *req.ModelId
+		modelID = *req.Model
 		resultType = "application/json"
 		if req.Stream != nil && *req.Stream {
 			resultType = "text/event-stream"
