@@ -372,7 +372,10 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
-		req = worker.GenLLMJSONRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+		var msgs []worker.LLMMessage
+		msgs = append(msgs, worker.LLMMessage{Role: "system", Content: "you are a robot"})
+		msgs = append(msgs, worker.LLMMessage{Role: "user", Content: "tell me a story"})
+		req = worker.GenLLMJSONRequestBody{Messages: msgs, Model: &modelId}
 	case "image-to-text":
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
