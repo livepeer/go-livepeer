@@ -1130,15 +1130,7 @@ func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMJS
 }
 
 func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLLMJSONRequestBody) (interface{}, error) {
-	/*var buf bytes.Buffer
-	mw, err := worker.NewLLMMultipartWriter(&buf, req)
-	if err != nil {
-		if monitor.Enabled {
-			monitor.AIRequestError(err.Error(), "llm", *req.Moded, nil)
-		}
-		return nil, err
-	}
-	*/
+
 	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
 	if err != nil {
 		if monitor.Enabled {
