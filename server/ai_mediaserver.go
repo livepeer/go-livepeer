@@ -90,6 +90,8 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	ls.HTTPMux.Handle("/image-to-image-generic", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToImageGenericMultipartRequestBody], processImageToImageGeneric)))
+
 	return nil
 }
 

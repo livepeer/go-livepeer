@@ -219,15 +219,22 @@ func TestRunAIJob(t *testing.T) {
 			expectedOutputs: 1,
 		},
 		{
+			name:            "ImageToImageGeneric_Success",
+			notify:          createAIJob(10, "image-to-image-generic", modelId, parsedURL.String()+"/image.png"),
+			pipeline:        "image-to-image-generic",
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
 			name:            "UnsupportedPipeline",
-			notify:          createAIJob(10, "unsupported-pipeline", modelId, ""),
+			notify:          createAIJob(11, "unsupported-pipeline", modelId, ""),
 			pipeline:        "unsupported-pipeline",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
 		},
 		{
 			name:            "InvalidRequestData",
-			notify:          createAIJob(11, "text-to-image-invalid", modelId, ""),
+			notify:          createAIJob(12, "text-to-image-invalid", modelId, ""),
 			pipeline:        "text-to-image",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
@@ -344,6 +351,13 @@ func TestRunAIJob(t *testing.T) {
 					var respFile bytes.Buffer
 					worker.ReadAudioB64DataUrl(expectedResp.Audio.Url, &respFile)
 					assert.Equal(len(results.Files[audResp.Audio.Url]), respFile.Len())
+				case "image-to-image-generic":
+					i2iResp, ok := results.Results.(worker.ImageResponse)
+					assert.True(ok)
+					assert.Equal("10", headers.Get("TaskId"))
+					assert.Equal(len(results.Files), 1)
+					expectedResp, _ := wkr.ImageToImageGeneric(context.Background(), worker.GenImageToImageGenericMultipartRequestBody{})
+					assert.Equal(expectedResp.Images[0].Seed, i2iResp.Images[0].Seed)
 				}
 			}
 		})
@@ -380,6 +394,9 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		desc := "a young adult"
 		text := "let me tell you a story"
 		req = worker.GenTextToSpeechJSONRequestBody{Description: &desc, ModelId: &modelId, Text: &text}
+	case "image-to-image-generic":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenImageToImageGenericMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
 	case "unsupported-pipeline":
 		req = worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}
 	case "text-to-image-invalid":
@@ -632,6 +649,23 @@ func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 		return nil, a.Err
 	} else {
 		return &worker.LiveVideoToVideoResponse{}, nil
+	}
+}
+
+func (a *stubAIWorker) ImageToImageGeneric(ctx context.Context, req worker.GenImageToImageGenericMultipartRequestBody) (*worker.ImageResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.ImageResponse{
+			Images: []worker.Media{
+				{
+					Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+					Nsfw: false,
+					Seed: 115,
+				},
+			},
+		}, nil
 	}
 }
 
