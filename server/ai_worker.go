@@ -325,7 +325,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			break
 		}
 		modelID = *req.ModelId
-		resultType = "application/json"
+		resultType = "video/mp4"
 		req.Video.InitFromBytes(input, "video")
 		processFn = func(ctx context.Context) (interface{}, error) {
 			return n.ObjectDetection(ctx, req)
