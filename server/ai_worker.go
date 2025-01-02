@@ -325,7 +325,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			break
 		}
 		modelID = *req.ModelId
-		resultType = "video/mp4"
+		resultType = "application/json"
 		req.Video.InitFromBytes(input, "video")
 		processFn = func(ctx context.Context) (interface{}, error) {
 			return n.ObjectDetection(ctx, req)
@@ -469,6 +469,34 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			}
 			io.Copy(fw, &resBuf)
 			resBuf.Reset()
+		case *worker.ObjectDetectionResponse:
+			//annotated video is optional
+			if wkrResp.Video.Url != "" {
+				err := worker.ReadVideoB64DataUrl(wkrResp.Video.Url, &resBuf)
+
+				if err != nil {
+					clog.Errorf(ctx, "AI Worker failed to save image from data url err=%q", err)
+					sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, &body, err)
+					return
+				}
+				length = resBuf.Len()
+				wkrResp.Video.Url = fmt.Sprintf("%v.mp4", core.RandomManifestID()) // update json response to track filename attached
+				// create the part
+				w.SetBoundary(boundary)
+				hdrs := textproto.MIMEHeader{
+					"Content-Type":        {resultType},
+					"Content-Length":      {strconv.Itoa(length)},
+					"Content-Disposition": {"attachment; filename=" + wkrResp.Video.Url},
+				}
+				fw, err := w.CreatePart(hdrs)
+				if err != nil {
+					clog.Errorf(ctx, "Could not create multipart part err=%q", err)
+					sendAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, modelID, httpc, contentType, nil, err)
+					return
+				}
+				io.Copy(fw, &resBuf)
+				resBuf.Reset()
+			}
 		}
 
 		// add the json to the response

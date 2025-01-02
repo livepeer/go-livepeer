@@ -1412,44 +1412,41 @@ func processObjectDetection(ctx context.Context, params aiRequestParams, req wor
 		return nil, err
 	}
 
-	frameResp, ok := resp.(*worker.ObjectDetectionResponse)
+	detectionResp, ok := resp.(*worker.ObjectDetectionResponse)
 	if !ok {
 		return nil, errWrongFormat
 	}
 
-	videos := [][]worker.Media{}
-	for _, frame := range frameResp.Frames {
-		frames := make([]worker.Media, len(frame))
-		for i, media := range frame {
-			if media.Url != "" {
-				data, err := downloadSeg(ctx, media.Url)
-				if err != nil {
-					return nil, err
-				}
-				name := filepath.Base(media.Url)
-				newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
-				if err != nil {
-					return nil, err
-				}
-				frames[i] = worker.Media{
-					Nsfw: media.Nsfw,
-					Seed: media.Seed,
-					Url:  newUrl,
-				}
-			} else {
-				frames[i] = worker.Media{
-					Nsfw: media.Nsfw,
-					Seed: media.Seed,
-					Url:  "",
-				}
+	if detectionResp.Video.Url != "" {
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err = worker.ReadVideoB64DataUrl(detectionResp.Video.Url, writer)
+		if err == nil {
+			// orchestrator sent base64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".mp4"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+
+			name = filepath.Base(detectionResp.Video.Url)
+			result, err = core.DownloadData(ctx, detectionResp.Video.Url)
+			if err != nil {
+				return nil, err
 			}
 		}
-		videos = append(videos, frames)
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
+		if err != nil {
+			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
+		}
+
+		detectionResp.Video.Url = newUrl
 	}
 
-	frameResp.Frames = videos
-
-	return frameResp, nil
+	return detectionResp, nil
 }
 
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
