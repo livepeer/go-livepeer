@@ -523,8 +523,9 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 					if closed {
 						w.Header().Set("Lp-Trickle-Closed", "terminated")
 					} else {
-						// if the segment was dropped, its probably slow
-						// send over latest seq so the client can grab leading edge
+						// usually happens if a publisher cancels a pending segment right before closing the channel
+						// other times, the subscriber is slow and the segment falls out of the live window
+						// send over latest seq so slow clients can grab leading edge
 						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
 						w.WriteHeader(470)
 					}
