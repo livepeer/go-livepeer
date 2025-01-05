@@ -649,3 +649,8 @@ func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	a.Called++
 	return true
 }
+
+func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
+	a.Called++
+	return nil
+}

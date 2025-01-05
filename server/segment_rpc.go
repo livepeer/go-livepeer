@@ -68,8 +68,23 @@ var httpClient = &http.Client{
 }
 
 func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
-	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
 	if err != nil {
+		return
+	}
+
+	oInfo, err := orchestratorInfo(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
+
+	if err := h.orchestrator.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -221,8 +236,27 @@ func (h *lphttp) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 // Payment receives payment from Gateway and adds it into the orchestrator's balance
 func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
-	payment, segData, oInfo, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
+	payment, segData, ctx, err := h.processPaymentAndSegmentHeaders(w, r)
 	if err != nil {
+		return
+	}
+
+	var netCaps *net.Capabilities
+	if segData != nil && segData.Caps != nil {
+		netCaps = segData.Caps.ToNetCapabilities()
+	}
+	oInfo, err := orchestratorInfoWithCaps(h.orchestrator, getPaymentSender(payment), h.orchestrator.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId), netCaps)
+	if err != nil {
+		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
+	oInfo.AuthToken = segData.AuthToken
+
+	if err := h.orchestrator.ProcessPayment(ctx, payment, segData.ManifestID); err != nil {
+		clog.Errorf(ctx, "error processing payment: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -240,14 +274,14 @@ func currentBalanceLog(h *lphttp, payment net.Payment, segData *core.SegTranscod
 	if h == nil || h.node == nil || h.node.Balances == nil || segData == nil || segData.AuthToken == nil {
 		return "invalid configuration"
 	}
-	currentBalance := h.node.Balances.Balance(getPaymentSender(payment), core.ManifestID(segData.AuthToken.SessionId))
+	currentBalance := h.node.Balances.Balance(getPaymentSender(payment), segData.ManifestID)
 	if currentBalance == nil {
 		return "no balance available"
 	}
 	return currentBalance.FloatString(0)
 }
 
-func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, *net.OrchestratorInfo, context.Context, error) {
+func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.Request) (net.Payment, *core.SegTranscodingMetadata, context.Context, error) {
 	orch := h.orchestrator
 
 	remoteAddr := getRemoteAddr(r)
@@ -257,7 +291,7 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 	if err != nil {
 		clog.Errorf(ctx, "Could not parse payment")
 		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return net.Payment{}, nil, nil, ctx, err
+		return net.Payment{}, nil, ctx, err
 	}
 
 	sender := getPaymentSender(payment)
@@ -270,25 +304,10 @@ func (h *lphttp) processPaymentAndSegmentHeaders(w http.ResponseWriter, r *http.
 	if err != nil {
 		clog.Errorf(ctx, "Could not verify segment creds err=%q", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
-		return net.Payment{}, nil, nil, ctx, err
+		return net.Payment{}, nil, ctx, err
 	}
 
-	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(segData.AuthToken.SessionId)); err != nil {
-		clog.Errorf(ctx, "error processing payment: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return net.Payment{}, nil, nil, ctx, err
-	}
-
-	oInfo, err := orchestratorInfo(orch, sender, orch.ServiceURI().String(), core.ManifestID(segData.AuthToken.SessionId))
-	if err != nil {
-		clog.Errorf(ctx, "Error updating orchestrator info - err=%q", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return net.Payment{}, nil, nil, ctx, err
-	}
-	// Use existing auth token because new auth tokens should only be sent out in GetOrchestrator() RPC calls
-	oInfo.AuthToken = segData.AuthToken
-
-	return payment, segData, oInfo, ctx, nil
+	return payment, segData, ctx, nil
 }
 
 func getPayment(header string) (net.Payment, error) {

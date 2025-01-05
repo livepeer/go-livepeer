@@ -46,9 +46,7 @@ func TestSendPayment(t *testing.T) {
 	sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId), sess.Balances)
 
 	// Create Payment sender and segment info
-	paymentSender := livePaymentSender{
-		segmentsToPayUpfront: 10,
-	}
+	paymentSender := livePaymentSender{}
 	segmentInfo := &SegmentInfoSender{
 		sess:     sess,
 		inPixels: 1000000,
@@ -64,11 +62,10 @@ func TestSendPayment(t *testing.T) {
 	// then
 	require.Nil(err)
 	// One segment costs 1000000
-	// Paid upfront for 10 segments => 10000000
 	// Spent cost for 1 segment => 1000000
-	// The balance should be 9000000
+	// The balance should be 0
 	balance := sess.Balances.Balance(ethcommon.BytesToAddress(sess.OrchestratorInfo.Address), core.ManifestID(sess.OrchestratorInfo.AuthToken.SessionId))
-	require.Equal(new(big.Rat).SetInt64(9000000), balance)
+	require.Equal(new(big.Rat).SetInt64(0), balance)
 }
 
 func mockSender() pm.Sender {

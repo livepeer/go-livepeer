@@ -72,7 +72,7 @@ func TestAILiveAuthSucceeds(t *testing.T) {
 	s, serverURL := stubAuthServer(t, http.StatusOK, `{}`)
 	defer s.Close()
 
-	resp, err := authenticateAIStream(serverURL, AIAuthRequest{
+	resp, err := authenticateAIStream(serverURL, "", AIAuthRequest{
 		Stream: "stream",
 	})
 	require.NoError(t, err)

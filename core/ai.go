@@ -30,7 +30,8 @@ type AI interface {
 	LiveVideoToVideo(context.Context, worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
-	HasCapacity(pipeline, modelID string) bool
+	HasCapacity(string, string) bool
+	EnsureImageAvailable(context.Context, string, string) error
 }
 
 // Custom type to parse a big.Rat from a JSON number.

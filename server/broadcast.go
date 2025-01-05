@@ -1571,6 +1571,14 @@ func updateSession(sess *BroadcastSession, res *ReceivedTranscodeResult) {
 	}
 }
 
+func clearSessionBalance(sess *BroadcastSession, id core.ManifestID) {
+	sess.lock.Lock()
+	defer sess.lock.Unlock()
+	if sess.Balances != nil && sess.OrchestratorInfo != nil && sess.OrchestratorInfo.TicketParams != nil {
+		sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient), id, sess.Balances)
+	}
+}
+
 func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
 	shouldRefresh, err := shouldRefreshSession(ctx, sess)
 	if err != nil {

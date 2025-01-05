@@ -1,6 +1,6 @@
 # HTTP endpoint
 
-The Livepeer node exposes a HTTP interface for monitoring and managing the node. This is how the `livepeer_cli` tool interfaces with a running node.
+The Livepeer node exposes an HTTP interface for monitoring and managing the node. This is how the `livepeer_cli` tool interfaces with a running node.
 By default, the CLI listens to localhost:7935. This can be adjusted with the -cliAddr `<interface>:<port>` flag.
 
 ## Available endpoints:

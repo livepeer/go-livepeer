@@ -5,18 +5,19 @@ import (
 	"sync"
 )
 
-type SegmentHandler func(reader io.Reader)
+type SegmentHandler func(reader CloneableReader)
 
-func NoopReader(reader io.Reader) {
-	go func() {
-		io.Copy(io.Discard, reader)
-	}()
+func NoopReader(reader CloneableReader) {
+	// don't have to do anything here
 }
 
 type EOSReader struct{}
 
-func (r EOSReader) Read(p []byte) (n int, err error) {
+func (r *EOSReader) Read(p []byte) (n int, err error) {
 	return 0, io.EOF
+}
+func (r *EOSReader) Clone() CloneableReader {
+	return r
 }
 
 type SwitchableSegmentReader struct {
@@ -36,7 +37,7 @@ func (sr *SwitchableSegmentReader) SwitchReader(newReader SegmentHandler) {
 	sr.reader = newReader
 }
 
-func (sr *SwitchableSegmentReader) Read(reader io.Reader) {
+func (sr *SwitchableSegmentReader) Read(reader CloneableReader) {
 	sr.mu.RLock()
 	defer sr.mu.RUnlock()
 	sr.reader(reader)

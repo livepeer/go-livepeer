@@ -679,6 +679,10 @@ func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	return true
 }
 
+func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
+	return nil
+}
+
 type StubAIWorkerServer struct {
 	manager      *RemoteAIWorkerManager
 	SendError    error
