@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -467,6 +466,21 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 		resp.Audio.Url = osUrl
 
 		results = resp
+	case worker.ObjectDetectionResponse:
+		if resp.Video.Url != "" {
+			err := worker.ReadVideoB64DataUrl(resp.Video.Url, &buf)
+			if err != nil {
+				return nil, err
+			}
+
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+			resp.Video.Url = osUrl
+		}
+
+		results = resp
 	}
 
 	//no file response to save, response is text
@@ -511,6 +525,19 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 		delete(results.Files, fileName)
 
 		results.Results = resp
+	case worker.ObjectDetectionResponse:
+		if resp.Video.Url != "" {
+			fileName := resp.Video.Url
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+
+			resp.Video.Url = osUrl
+			delete(results.Files, fileName)
+
+			results.Results = resp
+		}
 	}
 
 	// no file response to save, response is text
@@ -1071,54 +1098,7 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 }
 
 func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
-
-	// Generate annotated frames
-	start := time.Now()
-	resp, err := n.AIWorker.ObjectDetection(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	took := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Generating annotated frames took=%v", took)
-
-	// Video returned in the first frame URL field as a base64 string.
-	base64Video := resp.Frames[0][0].Url
-
-	var fname string
-
-	if base64Video != "" {
-		decodedVideo, err := base64.StdEncoding.DecodeString(base64Video)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode base64 video: %v", err)
-		}
-		resultFile := fmt.Sprintf("%v.mp4", RandomManifestID())
-		fname = path.Join(n.WorkDir, resultFile)
-		if err := os.WriteFile(fname, decodedVideo, 0644); err != nil {
-			clog.Errorf(ctx, "AI Worker cannot write file err=%q", err)
-			return nil, err
-		}
-	} else {
-		fname = ""
-	}
-
-	objectDetectionResponse := &worker.ObjectDetectionResponse{
-		ConfidenceScores: resp.ConfidenceScores,
-		Labels:           resp.Labels,
-		Frames:           resp.Frames,
-		DetectionBoxes:   resp.DetectionBoxes,
-		FramesPts:        resp.FramesPts,
-	}
-	
-	// To include video segment URL as part of Frames
-	videos := worker.Media{
-		Nsfw: false,
-		Seed: 0,
-		Url: fname,
-	}
-	objectDetectionResponse.Frames = [][]worker.Media{{videos}}
-
-	return objectDetectionResponse, nil
+	return n.AIWorker.ObjectDetection(ctx, req)
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video and object-detection pipeline.
