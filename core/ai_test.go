@@ -663,6 +663,10 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
 }
 
+func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+	return &worker.LiveVideoToVideoResponse{}, nil
+}
+
 func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	return &worker.ObjectDetectionResponse{
 		Video:            {Url: "http://example.com/frames1.mp4"},
@@ -682,6 +686,10 @@ func (a *stubAIWorker) Stop(ctx context.Context) error {
 
 func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	return true
+}
+
+func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
+	return nil
 }
 
 type StubAIWorkerServer struct {

@@ -10,14 +10,17 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	url2 "net/url"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
 	"github.com/livepeer/ai-worker/worker"
@@ -33,7 +36,7 @@ var MaxAIRequestSize = 3000000000 // 3GB
 
 var TrickleHTTPPath = "/ai/trickle/"
 
-func startAIServer(lp lphttp) error {
+func startAIServer(lp *lphttp) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
 		return err
@@ -58,16 +61,15 @@ func startAIServer(lp lphttp) error {
 		BasePath: TrickleHTTPPath,
 	})
 
-	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
-	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
-	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
-	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
-	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
-	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(&lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
-
+	lp.transRPC.Handle("/text-to-image", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToImageJSONRequestBody])))
+	lp.transRPC.Handle("/image-to-image", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageMultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
+	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
+	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
+	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
+	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	lp.transRPC.Handle("/object-detection", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenObjectDetectionMultipartRequestBody])))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
@@ -97,26 +99,64 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		requestID := string(core.RandomManifestID())
 
-		// skipping handleAIRequest for now until we have payments
-
-		var (
-			mid        = string(core.RandomManifestID())
-			pubUrl     = TrickleHTTPPath + mid
-			subUrl     = pubUrl + "-out"
-			controlUrl = pubUrl + "-control"
-		)
-		jsonData, err := json.Marshal(
-			&worker.LiveVideoToVideoResponse{
-				PublishUrl:   pubUrl,
-				SubscribeUrl: subUrl,
-				ControlUrl:   controlUrl,
-			})
-		if err != nil {
-			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		var req worker.GenLiveVideoToVideoJSONRequestBody
+		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		orch := h.orchestrator
+		pipeline := "live-video-to-video"
+		cap := core.Capability_LiveVideoToVideo
+		modelID := *req.ModelId
+		clog.V(common.VERBOSE).Infof(ctx, "Received request id=%v cap=%v modelID=%v", requestID, cap, modelID)
+
+		// Create storage for the request (for AI Workers, must run before CheckAICapacity)
+		err := orch.CreateStorageForRequest(requestID)
+		if err != nil {
+			respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		}
+
+		// Check if there is capacity for the request
+		if !orch.CheckAICapacity(pipeline, modelID) {
+			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+			return
+		}
+
+		// Start trickle server for live-video
+		var (
+			mid        = requestID // Request ID is used for the manifest ID
+			pubUrl     = orch.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
+			subUrl     = pubUrl + "-out"
+			controlUrl = pubUrl + "-control"
+			eventsUrl  = pubUrl + "-events"
+		)
+
+		// Handle initial payment, the rest of the payments are done separately from the stream processing
+		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
+		payment, err := getPayment(r.Header.Get(paymentHeader))
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
+		sender := getPaymentSender(payment)
+		_, ctx, err = verifySegCreds(ctx, h.orchestrator, r.Header.Get(segmentHeader), sender)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(mid)); err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, core.ManifestID(mid)) {
+			respondWithError(w, "Insufficient balance", http.StatusBadRequest)
+			return
+		}
+
+		//If successful, then create the trickle channels
 		// Precreate the channels to avoid race conditions
 		// TODO get the expected mime type from the request
 		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
@@ -125,8 +165,42 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		subCh.CreateChannel()
 		controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 		controlPubCh.CreateChannel()
+		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
+		eventsCh.CreateChannel()
 
-		// Subscribe to the publishUrl for payments monitoring
+		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
+		priceInfo := payment.GetExpectedPrice()
+		var paymentProcessor *LivePaymentProcessor
+		ctx, cancel := context.WithCancel(context.Background())
+		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+			paymentReceiver := livePaymentReceiver{orchestrator: h.orchestrator}
+			accountPaymentFunc := func(inPixels int64) error {
+				err := paymentReceiver.AccountPayment(context.Background(), &SegmentInfoReceiver{
+					sender:    sender,
+					inPixels:  inPixels,
+					priceInfo: priceInfo,
+					sessionID: mid,
+				})
+				if err != nil {
+					slog.Warn("Error accounting payment", "err", err)
+					// We encounter "insufficient balance" error from time to time on prod.
+					// This needs investigation, but since we're not using public Os,
+					// let's temporarily not stop steams even if not enough payment
+					//slog.Warn("Error accounting payment, stopping stream processing", "err", err)
+					//pubCh.Close()
+					//subCh.Close()
+					//eventsCh.Close()
+					//controlPubCh.Close()
+					//cancel()
+				}
+				return err
+			}
+			paymentProcessor = NewLivePaymentProcessor(ctx, h.node.LivePaymentInterval, accountPaymentFunc)
+		} else {
+			clog.Warningf(ctx, "No price info found for model %v, Orchestrator will not charge for video processing", modelID)
+		}
+
+		// Subscribe to the publishUrl for payments monitoring and payment processing
 		go func() {
 			sub := trickle.NewLocalSubscriber(h.trickleSrv, mid)
 			for {
@@ -135,15 +209,75 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-				// We can do something with the segment data here
-				io.Copy(io.Discard, segment.Reader)
+				reader := segment.Reader
+				if paymentProcessor != nil {
+					reader = paymentProcessor.process(segment.Reader)
+				}
+				io.Copy(io.Discard, reader)
 			}
 		}()
 
-		// TODO subscribe to the subscribeUrl for output monitoring
+		// Prepare request to worker
+		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
+		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
+		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
+		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 
+		workerReq := worker.LiveVideoToVideoParams{
+			ModelId:      req.ModelId,
+			PublishUrl:   publishUrlOverwrite,
+			SubscribeUrl: subscribeUrlOverwrite,
+			EventsUrl:    &eventsUrlOverwrite,
+			ControlUrl:   &controlUrlOverwrite,
+			Params:       req.Params,
+		}
+
+		// Send request to the worker
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
+		if err != nil {
+			if monitor.Enabled {
+				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
+			}
+
+			pubCh.Close()
+			subCh.Close()
+			controlPubCh.Close()
+			eventsCh.Close()
+			cancel()
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Prepare the response
+		jsonData, err := json.Marshal(&worker.LiveVideoToVideoResponse{
+			PublishUrl:   pubUrl,
+			SubscribeUrl: subUrl,
+			ControlUrl:   &controlUrl,
+			EventsUrl:    &eventsUrl,
+		})
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Processed request id=%v cap=%v modelID=%v took=%v", requestID, cap, modelID)
 		respondJsonOk(w, jsonData)
 	})
+}
+
+// overwriteHost is used to overwrite the trickle host, because it may be different for runner
+// runner may run inside Docker container, in a different network, or even on a different machine
+func overwriteHost(hostOverwrite, url string) string {
+	if hostOverwrite == "" {
+		return url
+	}
+	u, err := url2.ParseRequestURI(url)
+	if err != nil {
+		slog.Warn("Couldn't parse url to overwrite for worker, using original url", "url", url, "err", err)
+		return url
+	}
+	u.Host = hostOverwrite
+	return u.String()
 }
 
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {

@@ -153,11 +153,19 @@ type LivepeerNode struct {
 	LivePipelines map[string]*LivePipeline
 	LiveMu        *sync.RWMutex
 
-	MediaMTXApiPassword string
+	MediaMTXApiPassword        string
+	LiveAITrickleHostForRunner string
+	LiveAIAuthApiKey           string
+	LivePaymentInterval        time.Duration
+
+	// Gateway
+	GatewayHost string
 }
 
 type LivePipeline struct {
-	ControlPub *trickle.TricklePublisher
+	ControlPub  *trickle.TricklePublisher
+	StopControl func()
+	EventsPub   *trickle.TricklePublisher
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

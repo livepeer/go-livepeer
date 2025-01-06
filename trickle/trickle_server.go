@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
-
-// TODO sweep idle streams connections
 
 const CHANGEFEED = "_changes"
 
@@ -29,15 +30,21 @@ type TrickleServerConfig struct {
 
 	// Whether to auto-create channels on first publish (default false)
 	Autocreate bool
+
+	// Amount of time a channel has no new segments before being swept (default 5 minutes)
+	IdleTimeout time.Duration
+
+	// How often to sweep for idle channels (default 1 minute)
+	SweepInterval time.Duration
 }
 
 type Server struct {
 	mutex   sync.RWMutex
 	streams map[string]*Stream
 
+	config TrickleServerConfig
+
 	// for internal channels
-	changefeed  bool
-	autocreate  bool
 	internalPub *TrickleLocalPublisher
 }
 
@@ -47,6 +54,8 @@ type Stream struct {
 	latestWrite int
 	name        string
 	mimeType    string
+	writeTime   time.Time
+	closed      bool
 }
 
 type Segment struct {
@@ -78,31 +87,59 @@ func applyDefaults(config *TrickleServerConfig) {
 	if config.Mux == nil {
 		config.Mux = http.DefaultServeMux
 	}
+	if config.IdleTimeout == 0 {
+		config.IdleTimeout = 5 * time.Minute
+	}
+	if config.SweepInterval == 0 {
+		config.SweepInterval = time.Minute
+	}
 }
 
 func ConfigureServer(config TrickleServerConfig) *Server {
 	streamManager := &Server{
-		streams:    make(map[string]*Stream),
-		changefeed: config.Changefeed,
-		autocreate: config.Autocreate,
+		streams: make(map[string]*Stream),
+		config:  config,
 	}
 
 	// set up changefeed
-	if streamManager.changefeed {
+	if config.Changefeed {
 		streamManager.internalPub = NewLocalPublisher(streamManager, CHANGEFEED, "application/json")
 		streamManager.internalPub.CreateChannel()
 	}
 
-	applyDefaults(&config)
+	applyDefaults(&streamManager.config)
 	var (
-		mux      = config.Mux
-		basePath = config.BasePath
+		mux      = streamManager.config.Mux
+		basePath = streamManager.config.BasePath
 	)
 
+	mux.HandleFunc("POST "+basePath+"{streamName}", streamManager.handleCreate)
 	mux.HandleFunc("GET "+basePath+"{streamName}/{idx}", streamManager.handleGet)
 	mux.HandleFunc("POST "+basePath+"{streamName}/{idx}", streamManager.handlePost)
+	mux.HandleFunc("DELETE "+basePath+"{streamName}/{idx}", streamManager.closeSeq)
 	mux.HandleFunc("DELETE "+basePath+"{streamName}", streamManager.handleDelete)
 	return streamManager
+}
+
+func (sm *Server) Start() func() {
+	ticker := time.NewTicker(sm.config.SweepInterval)
+	done := make(chan bool)
+	stop := func() {
+		ticker.Stop()
+		done <- true
+	}
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				sm.sweepIdleChannels()
+			case <-done:
+				sm.clearAllStreams()
+				return
+			}
+		}
+	}()
+	return stop
 }
 
 func (sm *Server) getStream(streamName string) (*Stream, bool) {
@@ -116,11 +153,12 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	sm.mutex.Lock()
 
 	stream, exists := sm.streams[streamName]
-	if !exists && (isLocal || sm.autocreate) {
+	if !exists && (isLocal || sm.config.Autocreate) {
 		stream = &Stream{
-			segments: make([]*Segment, maxSegmentsPerStream),
-			name:     streamName,
-			mimeType: mimeType,
+			segments:  make([]*Segment, maxSegmentsPerStream),
+			name:      streamName,
+			mimeType:  mimeType,
+			writeTime: time.Now(),
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
@@ -133,7 +171,7 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 	}
 
 	// update changefeed
-	if !exists && sm.changefeed {
+	if !exists && sm.config.Changefeed {
 		jb, _ := json.Marshal(&Changefeed{
 			Added: []string{streamName},
 		})
@@ -149,18 +187,42 @@ func (sm *Server) clearAllStreams() {
 	// TODO update changefeed
 
 	for _, stream := range sm.streams {
-		stream.clear()
+		stream.close()
 	}
 	sm.streams = make(map[string]*Stream)
 }
 
-func (s *Stream) clear() {
+func (sm *Server) sweepIdleChannels() {
+	sm.mutex.Lock()
+	streams := slices.Collect(maps.Values(sm.streams))
+	sm.mutex.Unlock()
+	now := time.Now()
+	for _, s := range streams {
+		// skip internal channels for now, eg changefeed
+		if strings.HasPrefix(s.name, "_") {
+			continue
+		}
+		s.mutex.Lock()
+		writeTime := s.writeTime
+		s.mutex.Unlock()
+		if now.Sub(writeTime) > sm.config.IdleTimeout {
+			if err := sm.closeStream(s.name); err != nil {
+				slog.Warn("Could not close idle channel", "channel", s.name, "err", err)
+			} else {
+				slog.Info("Closed idle channel", "channel", s.name)
+			}
+		}
+	}
+}
+
+func (s *Stream) close() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	for _, segment := range s.segments {
 		segment.close()
 	}
 	s.segments = make([]*Segment, maxSegmentsPerStream)
+	s.closed = true
 }
 
 func (sm *Server) closeStream(streamName string) error {
@@ -171,14 +233,14 @@ func (sm *Server) closeStream(streamName string) error {
 
 	// TODO there is a bit of an issue around session reuse
 
-	stream.clear()
+	stream.close()
 	sm.mutex.Lock()
 	delete(sm.streams, streamName)
 	sm.mutex.Unlock()
 	slog.Info("Deleted stream", "streamName", streamName)
 
 	// update changefeed if needed
-	if !sm.changefeed {
+	if !sm.config.Changefeed {
 		return nil
 	}
 	jb, err := json.Marshal(&Changefeed{
@@ -195,6 +257,36 @@ func (sm *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 	streamName := r.PathValue("streamName")
 	if err := sm.closeStream(streamName); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+}
+
+func (sm *Server) closeSeq(w http.ResponseWriter, r *http.Request) {
+	s, exists := sm.getStream(r.PathValue("streamName"))
+	if !exists {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+	idx, err := strconv.Atoi(r.PathValue("idx"))
+	if err != nil {
+		http.Error(w, "Invalid idx", http.StatusBadRequest)
+		return
+	}
+	slog.Info("DELETE closing seq", "channel", s.name, "seq", idx)
+	s.mutex.RLock()
+	seg := s.segments[idx%maxSegmentsPerStream]
+	s.mutex.RUnlock()
+	if seg == nil || seg.idx != idx {
+		http.Error(w, "Nonexistent segment", http.StatusBadRequest)
+		return
+	}
+	seg.close()
+}
+
+func (sm *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
+	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Expect-Content"), false)
+	if stream == nil {
+		http.Error(w, "Stream not found", http.StatusNotFound)
 		return
 	}
 }
@@ -266,8 +358,9 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	if exists {
 		slog.Warn("Overwriting existing entry", "idx", idx)
 		// Overwrite anything that exists now. TODO figure out a safer behavior?
-		http.Error(w, "Entry already exists for this index", http.StatusBadRequest)
-		return
+		// TODO fix concurrent writes to the same segment; would be very bad
+		segment.buffer.Reset()
+		segment.closed = false
 	}
 
 	// Wrap the request body with the custom timeoutReader so we can send
@@ -319,6 +412,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	} else {
 		s.latestWrite = idx
 	}
+	s.writeTime = time.Now()
 	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
@@ -334,7 +428,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	return segment, false
 }
 
-func (s *Stream) getForRead(idx int) (*Segment, bool) {
+func (s *Stream) getForRead(idx int) (*Segment, int, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	exists := func(seg *Segment, i int) bool {
@@ -352,7 +446,7 @@ func (s *Stream) getForRead(idx int) (*Segment, bool) {
 		slog.Info("GET precreating", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	}
 	slog.Info("GET segment", "stream", s.name, "idx", idx, "latest", s.latestWrite, "exists?", exists(segment, idx))
-	return segment, exists(segment, idx)
+	return segment, s.latestWrite, exists(segment, idx)
 }
 
 func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -370,9 +464,13 @@ func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
-	segment, exists := s.getForRead(idx)
+	segment, latestSeq, exists := s.getForRead(idx)
 	if !exists {
-		http.Error(w, "Entry not found", http.StatusNotFound)
+		// Special status to indicate "stream exists but segment doesn't"
+		w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
+		w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(idx))
+		w.WriteHeader(470)
+		w.Write([]byte("Entry not found"))
 		return
 	}
 
@@ -400,6 +498,9 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			data, eof := subscriber.readData()
 			if len(data) > 0 {
 				if totalWrites <= 0 {
+					if segment.idx != latestSeq {
+						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
+					}
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 					w.Header().Set("Content-Type", s.mimeType)
 				}
@@ -413,8 +514,20 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			}
 			if eof {
 				if totalWrites <= 0 {
+					// check if the channel was closed; sometimes we drop / skip a segment
+					s.mutex.RLock()
+					closed := s.closed
+					latestSeq := s.latestWrite
+					s.mutex.RUnlock()
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
-					w.Header().Set("Lp-Trickle-Closed", "terminated")
+					if closed {
+						w.Header().Set("Lp-Trickle-Closed", "terminated")
+					} else {
+						// if the segment was dropped, its probably slow
+						// send over latest seq so the client can grab leading edge
+						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
+						w.WriteHeader(470)
+					}
 				}
 				return totalWrites, nil
 			}
@@ -460,6 +573,8 @@ func (s *Segment) readData(startPos int) ([]byte, bool) {
 		}
 		if startPos > totalLen {
 			slog.Info("Invalid start pos, invoking eof")
+			// This might happen if the buffer was reset
+			// eg because of a repeated POST
 			return nil, true
 		}
 		if s.closed {

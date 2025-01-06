@@ -139,6 +139,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.IgnoreMaxPriceIfNeeded = flag.Bool("ignoreMaxPriceIfNeeded", *cfg.IgnoreMaxPriceIfNeeded, "Set to true to allow exceeding max price condition if there is no O that meets this requirement")
 	cfg.MinPerfScore = flag.Float64("minPerfScore", *cfg.MinPerfScore, "The minimum orchestrator's performance score a broadcaster is willing to accept")
 	cfg.DiscoveryTimeout = flag.Duration("discoveryTimeout", *cfg.DiscoveryTimeout, "Time to wait for orchestrators to return info to be included in transcoding sessions for manifest (default = 500ms)")
+	cfg.GatewayHost = flag.String("gatewayHost", *cfg.GatewayHost, "External hostname on which the Gateway node is running. Used when telling external services how to reach the node.")
 
 	// Transcoding:
 	cfg.Orchestrator = flag.Bool("orchestrator", *cfg.Orchestrator, "Set to true to be an orchestrator")
@@ -162,8 +163,12 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.AIModelsDir = flag.String("aiModelsDir", *cfg.AIModelsDir, "Set directory where AI model weights are stored")
 	cfg.AIRunnerImage = flag.String("aiRunnerImage", *cfg.AIRunnerImage, "Set the docker image for the AI runner: Example - livepeer/ai-runner:0.0.1")
 
-	// Live AI Media Server:
+	// Live AI:
 	cfg.MediaMTXApiPassword = flag.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
+	cfg.LiveAITrickleHostForRunner = flag.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
+	cfg.LiveAIAuthApiKey = flag.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
+	cfg.LiveAIAuthWebhookURL = flag.String("liveAIAuthWebhookUrl", "", "Live AI RTMP authentication webhook URL")
+	cfg.LivePaymentInterval = flag.Duration("livePaymentInterval", *cfg.LivePaymentInterval, "Interval to pay process Gateway <> Orchestrator Payments for Live AI Video")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")

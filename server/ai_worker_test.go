@@ -654,6 +654,15 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	}
 }
 
+func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.LiveVideoToVideoResponse{}, nil
+	}
+}
+
 func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
 	a.Called++
 	if a.Err != nil {
@@ -690,4 +699,9 @@ func (a *stubAIWorker) Stop(ctx context.Context) error {
 func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 	a.Called++
 	return true
+}
+
+func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
+	a.Called++
+	return nil
 }

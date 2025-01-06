@@ -39,7 +39,7 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	segment, exists := stream.getForRead(c.seq)
+	segment, latestSeq, exists := stream.getForRead(c.seq)
 	if !exists {
 		return nil, errors.New("seq not found")
 	}
@@ -70,8 +70,9 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 	return &TrickleData{
 		Reader: r,
 		Metadata: map[string]string{
-			"Lp-Trickle-Seq": strconv.Itoa(segment.idx),
-			"Content-Type":   stream.mimeType,
+			"Lp-Trickle-Latest": strconv.Itoa(latestSeq),
+			"Lp-Trickle-Seq":    strconv.Itoa(segment.idx),
+			"Content-Type":      stream.mimeType,
 		}, // TODO take more metadata from http headers
 	}, nil
 }

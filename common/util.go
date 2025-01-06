@@ -272,7 +272,7 @@ func PriceToFixed(price *big.Rat) (int64, error) {
 	return ratToFixed(price, priceScalingFactor)
 }
 
-// FixedToPrice converts an fixed point number with 3 decimal places represented as in int64 into a big.Rat
+// FixedToPrice converts a fixed point number with 3 decimal places represented as in int64 into a big.Rat
 func FixedToPrice(price int64) *big.Rat {
 	return big.NewRat(price, priceScalingFactor)
 }
@@ -511,4 +511,28 @@ func MimeTypeToExtension(mimeType string) (string, error) {
 		return ext, nil
 	}
 	return "", ErrNoExtensionsForType
+}
+
+func AppendHostname(urlPath string, host string) (*url.URL, error) {
+	if urlPath == "" {
+		return nil, fmt.Errorf("invalid url from orch")
+	}
+	pu, err := url.Parse(urlPath)
+	if err != nil {
+		return nil, err
+	}
+	if pu.Hostname() != "" {
+		// url has a hostname already so use it
+		return pu, nil
+	} else {
+		// no hostname, so append one
+		if !strings.HasPrefix(urlPath, "/") {
+			urlPath = "/" + urlPath
+		}
+		u, err := url.Parse(host + urlPath)
+		if err != nil {
+			return nil, err
+		}
+		return u, nil
+	}
 }

@@ -27,10 +27,12 @@ type AI interface {
 	SegmentAnything2(context.Context, worker.GenSegmentAnything2MultipartRequestBody) (*worker.MasksResponse, error)
 	ImageToText(context.Context, worker.GenImageToTextMultipartRequestBody) (*worker.ImageToTextResponse, error)
 	TextToSpeech(context.Context, worker.GenTextToSpeechJSONRequestBody) (*worker.AudioResponse, error)
+	LiveVideoToVideo(context.Context, worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error)
 	ObjectDetection(context.Context, worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error)
 	Warm(context.Context, string, string, worker.RunnerEndpoint, worker.OptimizationFlags) error
 	Stop(context.Context) error
-	HasCapacity(pipeline, modelID string) bool
+	HasCapacity(string, string) bool
+	EnsureImageAvailable(context.Context, string, string) error
 }
 
 // Custom type to parse a big.Rat from a JSON number.
@@ -49,7 +51,7 @@ func (s JSONRat) String() string {
 	return s.FloatString(2)
 }
 
-// parsePipelineFromModelID converts a pipeline name to a capability enum.
+// PipelineToCapability converts a pipeline name to a capability enum.
 func PipelineToCapability(pipeline string) (Capability, error) {
 	if pipeline == "" {
 		return Capability_Unused, errPipelineNotAvailable

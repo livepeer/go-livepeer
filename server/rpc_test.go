@@ -223,6 +223,10 @@ func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 	return nil, nil
 }
 
+func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+
 func (r *stubOrchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
 	return nil, nil
 }
@@ -1426,6 +1430,9 @@ func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, re
 	return nil, nil
 }
 func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
+	return nil, nil
+}
+func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
