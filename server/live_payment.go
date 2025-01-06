@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -24,6 +24,7 @@ type SegmentInfoSender struct {
 	sess      *BroadcastSession
 	inPixels  int64
 	priceInfo *net.PriceInfo
+	mid       string
 }
 
 type SegmentInfoReceiver struct {
@@ -46,7 +47,6 @@ type LivePaymentReceiver interface {
 }
 
 type livePaymentSender struct {
-	segmentsToPayUpfront int64
 }
 
 type livePaymentReceiver struct {
@@ -54,17 +54,22 @@ type livePaymentReceiver struct {
 }
 
 func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *SegmentInfoSender) error {
+	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
+		clog.V(common.DEBUG).Infof(ctx, "Skipping sending payment, priceInfo not set for requestID=%s, ", segmentInfo.mid)
+		return nil
+	}
 	sess := segmentInfo.sess
 
 	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
 		return err
 	}
+	sess.lock.Lock()
+	sess.Params.ManifestID = core.ManifestID(segmentInfo.mid)
+	sess.lock.Unlock()
 
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
-	// We pay a few segments upfront to avoid race condition between payment and segment processing
-	minCredit := new(big.Rat).Mul(fee, new(big.Rat).SetInt64(r.segmentsToPayUpfront))
-	balUpdate, err := newBalanceUpdate(sess, minCredit)
+	balUpdate, err := newBalanceUpdate(sess, fee)
 	if err != nil {
 		return err
 	}
@@ -135,11 +140,19 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 
 func (r *livePaymentReceiver) AccountPayment(
 	ctx context.Context, segmentInfo *SegmentInfoReceiver) error {
+	if segmentInfo.priceInfo == nil || segmentInfo.priceInfo.PricePerUnit == 0 {
+		clog.V(common.DEBUG).Infof(ctx, "Skipping accounting, priceInfo not set for sessionID=%s, ", segmentInfo.sessionID)
+		return nil
+	}
 	fee := calculateFee(segmentInfo.inPixels, segmentInfo.priceInfo)
 
 	balance := r.orchestrator.Balance(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID))
 	if balance == nil || balance.Cmp(fee) < 0 {
-		return errors.New("insufficient balance")
+		balanceStr := "nil"
+		if balance != nil {
+			balanceStr = balance.FloatString(0)
+		}
+		return fmt.Errorf("insufficient balance, mid=%s, fee=%s, balance=%s", segmentInfo.sessionID, fee.FloatString(0), balanceStr)
 	}
 	r.orchestrator.DebitFees(segmentInfo.sender, core.ManifestID(segmentInfo.sessionID), segmentInfo.priceInfo, segmentInfo.inPixels)
 	clog.V(common.DEBUG).Infof(ctx, "Accounted payment for sessionID=%s, fee=%s", segmentInfo.sessionID, fee.FloatString(0))

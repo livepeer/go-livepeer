@@ -15,6 +15,15 @@ import (
 
 var EOS = errors.New("End of stream")
 
+type SequenceNonexistent struct {
+	Latest int
+	Seq    int
+}
+
+func (e *SequenceNonexistent) Error() string {
+	return fmt.Sprintf("Channel exists but sequence does not: requested %d latest %d", e.Seq, e.Latest)
+}
+
 const preconnectRefreshTimeout = 20 * time.Second
 
 // TrickleSubscriber represents a trickle streaming reader that always fetches from index -1
@@ -51,8 +60,26 @@ func GetSeq(resp *http.Response) int {
 	return i
 }
 
+func GetLatest(resp *http.Response) int {
+	if resp == nil {
+		return -99 // TODO hmm
+	}
+	v := resp.Header.Get("Lp-Trickle-Latest")
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		return -1 // Use the latest index on the server
+	}
+	return i
+}
+
 func IsEOS(resp *http.Response) bool {
 	return resp.Header.Get("Lp-Trickle-Closed") != ""
+}
+
+func (c *TrickleSubscriber) SetSeq(seq int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.idx = seq
 }
 
 func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error) {
@@ -76,6 +103,9 @@ func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close() // Ensure we close the body to avoid leaking connections
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == 470 {
+			return resp, nil
+		}
 		return nil, fmt.Errorf("failed GET segment, status code: %d, msg: %s", resp.StatusCode, string(body))
 	}
 
@@ -152,7 +182,17 @@ func (c *TrickleSubscriber) Read() (*http.Response, error) {
 	c.pendingGet = nil
 
 	if IsEOS(conn) {
+		conn.Body.Close() // because this is a 200; maybe use a custom status code
 		return nil, EOS
+	}
+
+	if conn.StatusCode == http.StatusNotFound {
+		return nil, StreamNotFoundErr
+	}
+
+	if conn.StatusCode == 470 {
+		// stream exists but segment dosn't
+		return nil, &SequenceNonexistent{Seq: GetSeq(conn), Latest: GetLatest(conn)}
 	}
 
 	// Set to use the next index for the next (pre-)connection

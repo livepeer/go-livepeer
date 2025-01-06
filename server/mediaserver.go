@@ -67,6 +67,7 @@ const AISessionManagerTTL = 10 * time.Minute
 var BroadcastJobVideoProfiles = []ffmpeg.VideoProfile{ffmpeg.P240p30fps4x3, ffmpeg.P360p30fps16x9}
 
 var AuthWebhookURL *url.URL
+var LiveAIAuthWebhookURL *url.URL
 
 func PixelFormatNone() ffmpeg.PixelFormat {
 	return ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNone}
@@ -126,6 +127,8 @@ type LivepeerServer struct {
 	serverLock        *sync.RWMutex
 
 	mediaMTXApiPassword string
+	liveAIAuthApiKey    string
+	livePaymentInterval time.Duration
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -192,6 +195,8 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
+		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
+		livePaymentInterval:     lpNode.LivePaymentInterval,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)

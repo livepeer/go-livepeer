@@ -76,11 +76,11 @@ type TimeManager interface {
 	PreLastInitializedL1BlockHash() [32]byte
 	// GetTranscoderPoolSize returns the size of the active transcoder set for a round
 	GetTranscoderPoolSize() *big.Int
-	// LastSeenBlock returns the last seen block number
+	// LastSeenL1Block returns the last seen block number
 	LastSeenL1Block() *big.Int
 	// SubscribeRounds allows one to subscribe to new round events
 	SubscribeRounds(sink chan<- types.Log) event.Subscription
-	// SubscribeBlocks allows one to subscribe to newly seen block numbers
+	// SubscribeL1Blocks allows one to subscribe to newly seen block numbers
 	SubscribeL1Blocks(sink chan<- *big.Int) event.Subscription
 }
 

@@ -78,6 +78,7 @@ type Orchestrator interface {
 	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
+	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -221,7 +222,10 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.HandleFunc("/transcodeResults", lp.TranscodeResults)
 	}
 
-	startAIServer(lp)
+	err := startAIServer(&lp)
+	if err != nil {
+		return err
+	}
 	if acceptRemoteAIWorkers {
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
@@ -231,6 +235,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	if err != nil {
 		return err
 	}
+
+	stopTrickle := lp.trickleSrv.Start()
+	defer stopTrickle()
 
 	glog.Info("Listening for RPC on ", bind)
 	srv := http.Server{

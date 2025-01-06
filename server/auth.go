@@ -98,13 +98,17 @@ func (a authWebhookResponse) areProfilesEqual(b authWebhookResponse) bool {
 
 type AIAuthRequest struct {
 	// Stream name or stream key
-	Stream string `json:"stream"`
+	Stream    string `json:"stream"`
+	StreamKey string `json:"stream_key"`
 
 	// Stream type, eg RTMP or WHIP
 	Type string `json:"type"`
 
 	// Query parameters that came with the stream, if any
 	QueryParams string `json:"query_params,omitempty"`
+
+	// Gateway host
+	GatewayHost string `json:"gateway_host"`
 
 	// TODO not sure what params we need yet
 }
@@ -117,12 +121,19 @@ type AIAuthResponse struct {
 	// Name of the pipeline to run
 	Pipeline string `json:"pipeline"`
 
+	// ID of the pipeline to run
+	PipelineID string `json:"pipeline_id"`
+
+	// ID of the stream
+	StreamID string `json:"stream_id"`
+
 	// Parameters for the pipeline
 	PipelineParams json.RawMessage        `json:"pipeline_parameters"`
 	paramsMap      map[string]interface{} // unmarshaled params
 }
 
-func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse, error) {
+func authenticateAIStream(authURL *url.URL, apiKey string, req AIAuthRequest) (*AIAuthResponse, error) {
+	req.StreamKey = req.Stream
 	if authURL == nil {
 		return nil, fmt.Errorf("No auth URL configured")
 	}
@@ -133,7 +144,15 @@ func authenticateAIStream(authURL *url.URL, req AIAuthRequest) (*AIAuthResponse,
 		return nil, err
 	}
 
-	resp, err := http.Post(authURL.String(), "application/json", bytes.NewBuffer(jsonValue))
+	request, err := http.NewRequest("POST", authURL.String(), bytes.NewBuffer(jsonValue))
+	if err != nil {
+		return nil, err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("x-api-key", apiKey)
+
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
 	}

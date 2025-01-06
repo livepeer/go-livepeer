@@ -27,7 +27,7 @@ docker run -p 8545:8545 -p 8546:8546 --name geth-with-livepeer-protocol livepeer
 This command will submit the setup transactions for a broadcaster and generate the Bash script
 `run_broadcaster_<ETH_ACCOUNT>.sh` which can be used to start a broadcaster node.
 
-### Step 3: Set up a orchestrator/transcoder
+### Step 3: Set up an orchestrator/transcoder
 
 `go run cmd/devtool/devtool.go setup transcoder`
 

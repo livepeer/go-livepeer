@@ -2,7 +2,7 @@
 
 Incoming streams can be authenticated using webhooks on both orchestrator and broadcaster nodes. To use these webhooks, node operators must implement their own web service / endpoint to be accessed only by the Livepeer node. As new streams appear, the Livepeer node will call this endpoint to determine whether the given stream is allowed.
 
-The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the stream. A response with a HTTP status code other than `200` will cause the Livepeer node to disconnect the stream.
+The webhook server should respond with HTTP status code `200` in order to authenticate / authorize the stream. A response with an HTTP status code other than `200` will cause the Livepeer node to disconnect the stream.
 
 To enable webhook authentication functionality, the Livepeer node should be started with the `-authWebhookUrl` flag, along with the webhook endpoint URL.
 
