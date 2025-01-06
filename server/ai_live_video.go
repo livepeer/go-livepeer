@@ -21,6 +21,8 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	"github.com/livepeer/lpms/ffmpeg"
+
+	"github.com/dustin/go-humanize"
 )
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
@@ -146,7 +148,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 			var segment *http.Response
-			clog.V(8).Infof(ctx, "trickle subscribe read data begin")
+			clog.V(8).Infof(ctx, "trickle subscribe read data await")
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
@@ -171,17 +173,31 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				continue
 			}
 			retries = 0
-			clog.V(8).Infof(ctx, "trickle subscribe read data end")
+			seq := trickle.GetSeq(segment)
+			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			if err = copySegment(segment, w); err != nil {
+			n, err := copySegment(segment, w)
+			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
+			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
 
 	go func() {
-		defer r.Close()
+		defer func() {
+			r.Close()
+			if rec := recover(); rec != nil {
+				// panicked, so shut down the stream and handle it
+				err, ok := rec.(error)
+				if !ok {
+					err = errors.New("unknown error")
+				}
+				clog.Errorf(ctx, "LPMS panic err=%v", err)
+				params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
+			}
+		}()
 		for {
 			if !params.inputStreamExists() {
 				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
@@ -204,10 +220,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 }
 
-func copySegment(segment *http.Response, w io.Writer) error {
+func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 	defer segment.Body.Close()
-	_, err := io.Copy(w, segment.Body)
-	return err
+	return io.Copy(w, segment.Body)
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
