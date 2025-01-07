@@ -1026,6 +1026,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 30 * 30 * 3200 * 1800 // 30 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	startTime := time.Now()
 	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
 	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
 	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
@@ -1077,7 +1078,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 
 	startControlPublish(control, params)
 	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params)
+	startTrickleSubscribe(ctx, sub, params, startTime)
 	startEventsSubscribe(ctx, events, params, sess)
 	return resp, nil
 }

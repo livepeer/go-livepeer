@@ -123,7 +123,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, startTime time.Time) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -137,6 +137,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// read segments from trickle subscription
 	go func() {
 		var err error
+		firstSegment := false
+
 		defer w.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
@@ -180,6 +182,10 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
+			}
+			if monitor.Enabled && firstSegment {
+				firstSegment = false
+				monitor.AIFirstSegmentDelay(time.Since(startTime).Milliseconds())
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
