@@ -279,12 +279,35 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 	go func() {
 		defer StreamStatusStore.Clear(streamId)
+		const maxRetries = 5
+		const retryPause = 300 * time.Millisecond
+		retries := 0
 		for {
 			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
-			if err != nil {
-				clog.Infof(ctx, "Error reading events subscription: %s", err)
-				return
+			if err == nil {
+				retries = 0
+			} else {
+				// handle errors from event read
+				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
+					clog.Infof(ctx, "Stopping subscription due to %s", err)
+					return
+				}
+				var seqErr *trickle.SequenceNonexistent
+				if errors.As(err, &seqErr) {
+					// stream exists but segment doesn't, so skip to leading edge
+					subscriber.SetSeq(seqErr.Latest)
+				}
+				if retries > maxRetries {
+					clog.Infof(ctx, "Too many errors reading events; stopping subscription err=%v", err)
+					err = fmt.Errorf("Error reading subscription: %w", err)
+					params.liveParams.stopPipeline(err)
+					return
+				}
+				clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
+				retries++
+				time.Sleep(retryPause)
+				continue
 			}
 
 			body, err := io.ReadAll(segment.Body)
