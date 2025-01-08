@@ -19,7 +19,9 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/trickle"
+
 	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/dustin/go-humanize"
@@ -123,7 +125,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, startTime time.Time) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, startTime time.Time, orchInfo *net.OrchestratorInfo) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -137,7 +139,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// read segments from trickle subscription
 	go func() {
 		var err error
-		firstSegment := false
+		firstSegment := true
 
 		defer w.Close()
 		retries := 0
@@ -185,7 +187,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			if monitor.Enabled && firstSegment {
 				firstSegment = false
-				monitor.AIFirstSegmentDelay(time.Since(startTime).Milliseconds())
+				monitor.AIFirstSegmentDelay(time.Since(startTime).Milliseconds(), orchInfo)
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}

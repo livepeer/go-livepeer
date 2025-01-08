@@ -376,7 +376,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
-	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay", "Delay of the first live AI segment being processed", "ms")
+	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -985,10 +985,10 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "ai_first_segment_delay",
+			Name:        "ai_first_segment_delay_ms",
 			Measure:     census.mAIFirstSegmentDelay,
 			Description: "Delay of the first live AI segment being processed",
-			TagKeys:     baseTags,
+			TagKeys:     baseTagsWithOrchInfo,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
 	}
@@ -1996,8 +1996,19 @@ func AIResultDownloaded(ctx context.Context, pipeline string, model string, down
 	}
 }
 
-func AIFirstSegmentDelay(delay int64) {
-	stats.Record(census.ctx, census.mAIFirstSegmentDelay.M(delay))
+func AIFirstSegmentDelay(delay int64, orchInfo *lpnet.OrchestratorInfo) {
+	orchAddr := ""
+	if addr := orchInfo.GetAddress(); addr != nil {
+		orchAddr = common.BytesToAddress(addr).String()
+	}
+	tags := []tag.Mutator{tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
+	capabilities := orchInfo.GetCapabilities()
+	if capabilities != nil {
+		tags = append(tags, tag.Insert(census.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
+	}
+	if err := stats.RecordWithTags(census.ctx, tags, census.mAIFirstSegmentDelay.M(delay)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 // Convert wei to gwei

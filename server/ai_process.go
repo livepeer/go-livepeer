@@ -1078,7 +1078,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 
 	startControlPublish(control, params)
 	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, startTime)
+	startTrickleSubscribe(ctx, sub, params, startTime, sess.OrchestratorInfo)
 	startEventsSubscribe(ctx, events, params, sess)
 	return resp, nil
 }
