@@ -205,6 +205,7 @@ type (
 		mAIResultUploadTime     *stats.Float64Measure
 		mAIResultSaveFailed     *stats.Int64Measure
 		mAICurrentLivePipelines *stats.Int64Measure
+		mAIFirstSegmentDelay    *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -375,6 +376,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
+	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -982,6 +984,13 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
+		{
+			Name:        "ai_first_segment_delay_ms",
+			Measure:     census.mAIFirstSegmentDelay,
+			Description: "Delay of the first live AI segment being processed",
+			TagKeys:     baseTagsWithOrchInfo,
+			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
 	}
 
 	// Register the views
@@ -1034,20 +1043,21 @@ func manifestIDTag(ctx context.Context, others ...tag.Mutator) []tag.Mutator {
 	return others
 }
 
-func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
-	others = manifestIDTag(ctx, others...)
-
-	others = append(
-		others,
-		tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()),
-		tag.Insert(census.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String()),
-	)
+func orchInfoTags(orchInfo *lpnet.OrchestratorInfo) []tag.Mutator {
+	orchAddr := ""
+	if addr := orchInfo.GetAddress(); addr != nil {
+		orchAddr = common.BytesToAddress(addr).String()
+	}
+	tags := []tag.Mutator{tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
 	capabilities := orchInfo.GetCapabilities()
 	if capabilities != nil {
-		others = append(others, tag.Insert(census.kOrchestratorVersion, capabilities.Version))
+		tags = append(tags, tag.Insert(census.kOrchestratorVersion, capabilities.GetVersion()))
 	}
+	return tags
+}
 
-	return others
+func manifestIDTagAndOrchInfo(orchInfo *lpnet.OrchestratorInfo, ctx context.Context, others ...tag.Mutator) []tag.Mutator {
+	return append(manifestIDTag(ctx, others...), orchInfoTags(orchInfo)...)
 }
 
 func manifestIDTagStr(manifestID string, others ...tag.Mutator) []tag.Mutator {
@@ -1870,11 +1880,8 @@ func (cen *censusMetricsCounter) recordAIRequestLatencyScore(pipeline string, Mo
 	cen.lock.Lock()
 	defer cen.lock.Unlock()
 
-	tags := []tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model), tag.Insert(cen.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(cen.kOrchestratorAddress, common.BytesToAddress(orchInfo.GetAddress()).String())}
-	capabilities := orchInfo.GetCapabilities()
-	if capabilities != nil {
-		tags = append(tags, tag.Insert(cen.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
-	}
+	tags := []tag.Mutator{tag.Insert(cen.kPipeline, pipeline), tag.Insert(cen.kModelName, Model)}
+	tags = append(tags, orchInfoTags(orchInfo)...)
 
 	if err := stats.RecordWithTags(cen.ctx, tags, cen.mAIRequestLatencyScore.M(latencyScore)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1895,16 +1902,8 @@ func (cen *censusMetricsCounter) recordAIRequestPricePerUnit(pipeline string, Mo
 
 // AIRequestError logs an error in a gateway AI job request.
 func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.OrchestratorInfo) {
-	orchAddr := ""
-	if addr := orchInfo.GetAddress(); addr != nil {
-		orchAddr = common.BytesToAddress(addr).String()
-	}
-
-	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, orchInfo.GetTranscoder()), tag.Insert(census.kOrchestratorAddress, orchAddr)}
-	capabilities := orchInfo.GetCapabilities()
-	if capabilities != nil {
-		tags = append(tags, tag.Insert(census.kOrchestratorVersion, orchInfo.GetCapabilities().GetVersion()))
-	}
+	tags := []tag.Mutator{tag.Insert(census.kErrorCode, code), tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, model)}
+	tags = append(tags, orchInfoTags(orchInfo)...)
 
 	if err := stats.RecordWithTags(census.ctx, tags, census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
@@ -1984,6 +1983,12 @@ func AIResultDownloaded(ctx context.Context, pipeline string, model string, down
 		census.mAIResultDownloaded.M(1),
 		census.mAIResultDownloadTime.M(downloadDur.Seconds())); err != nil {
 		clog.Errorf(ctx, "Error recording metrics err=%q", err)
+	}
+}
+
+func AIFirstSegmentDelay(delayMs int64, orchInfo *lpnet.OrchestratorInfo) {
+	if err := stats.RecordWithTags(census.ctx, orchInfoTags(orchInfo), census.mAIFirstSegmentDelay.M(delayMs)); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
