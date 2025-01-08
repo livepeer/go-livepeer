@@ -36,8 +36,8 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		defer recoverFromPanic()
 		defer wg.Done()
+		defer recoverFromPanic()
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
