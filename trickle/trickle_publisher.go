@@ -78,6 +78,7 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 	go func() {
 		// Createa new client to prevent connection reuse
 		client := http.Client{Transport: &http.Transport{
+			DisableKeepAlives: true,
 			// ignore orch certs for now
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}}
@@ -126,6 +127,7 @@ func (c *TricklePublisher) Close() error {
 		return err
 	}
 	resp, err := (&http.Client{Transport: &http.Transport{
+		DisableKeepAlives: true,
 		// ignore orch certs for now
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}}).Do(req)
@@ -260,6 +262,7 @@ func (p *pendingPost) Close() error {
 		return err
 	}
 	resp, err := (&http.Client{Transport: &http.Transport{
+		DisableKeepAlives: true,
 		// ignore orch certs for now
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}}).Do(req)
