@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,6 +36,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
+		defer recoverFromPanic()
 		defer wg.Done()
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
@@ -253,4 +255,14 @@ func randomString() string {
 		b[i] = byte(rand.Intn(256))
 	}
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(b), "=")
+}
+
+func recoverFromPanic() {
+	if r := recover(); r != nil {
+		err, ok := r.(error)
+		if !ok {
+			err = errors.New("unrecoverable error")
+		}
+		clog.Errorf(context.Background(), "RunSegmentation failed with panic err=%v", err)
+	}
 }
