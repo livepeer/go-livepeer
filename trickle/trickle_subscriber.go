@@ -94,7 +94,8 @@ func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error)
 
 	// Execute the GET request
 	resp, err := (&http.Client{Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DisableKeepAlives: true,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 	}}).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to complete GET for next segment: %w", err)
