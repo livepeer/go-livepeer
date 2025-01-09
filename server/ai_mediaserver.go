@@ -16,7 +16,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"

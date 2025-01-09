@@ -6,7 +6,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
 type FileWorker struct {
