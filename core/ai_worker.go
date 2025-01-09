@@ -132,7 +132,7 @@ func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerSer
 	rwm.RWmutex.Unlock()
 }
 
-// RemoteAIworkerFatalError wraps error to indicate that error is fatal
+// RemoteAIWorkerFatalError wraps error to indicate that error is fatal
 type RemoteAIWorkerFatalError struct {
 	error
 }
