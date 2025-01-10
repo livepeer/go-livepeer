@@ -206,6 +206,7 @@ type (
 		mAIResultSaveFailed     *stats.Int64Measure
 		mAICurrentLivePipelines *stats.Int64Measure
 		mAIFirstSegmentDelay    *stats.Int64Measure
+		mAILiveAttempts         *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -377,6 +378,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
+	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -990,6 +992,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "Delay of the first live AI segment being processed",
 			TagKeys:     baseTagsWithOrchInfo,
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
+		},
+		{
+			Name:        "ai_live_attempt",
+			Measure:     census.mAILiveAttempts,
+			Description: "AI Live stream attempted",
+			TagKeys:     baseTags,
+			Aggregation: view.Count(),
 		},
 	}
 
@@ -1990,6 +1999,10 @@ func AIFirstSegmentDelay(delayMs int64, orchInfo *lpnet.OrchestratorInfo) {
 	if err := stats.RecordWithTags(census.ctx, orchInfoTags(orchInfo), census.mAIFirstSegmentDelay.M(delayMs)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
+}
+
+func AILiveVideoAttempt() {
+	stats.Record(census.ctx, census.mAILiveAttempts.M(1))
 }
 
 // Convert wei to gwei
