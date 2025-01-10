@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,7 +19,6 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/lpms/ffmpeg"
 	"golang.org/x/sys/unix"
 )
 
@@ -56,18 +56,16 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}
-		ffmpeg.FfmpegSetLogLevel(ffmpeg.FFLogWarning)
-		_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-			Fname: in,
-		}, []ffmpeg.TranscodeOptions{{
-			Oname:        outFilePattern,
-			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
-		}})
+		cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, outFilePattern)
+		_, err = cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Failed to run segmentation. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Failed to run segmentation process. in=%s err=%s", in, err)
 		}
+		err = cmd.Wait()
+		if err != nil {
+			clog.Errorf(ctx, "Failed to run segmentation process. in=%s err=%s", in, err)
+		}
+		clog.Infof(ctx, "Done with segmentation process")
 		retryCount++
 		time.Sleep(5 * time.Second)
 	}

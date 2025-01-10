@@ -53,7 +53,7 @@ RUN	./install_ffmpeg.sh \
 
 COPY	.	.
 
-RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
+RUN	make livepeer livepeer_cli livepeer_bench livepeer_router livepeer_ffmpeg
 
 FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
 
