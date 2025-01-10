@@ -30,6 +30,12 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
+	defer func() {
+		if r := recover(); r != nil {
+			clog.Warningf(ctx, "Recovered from panic:")
+		}
+	}()
+
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
