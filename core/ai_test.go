@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"

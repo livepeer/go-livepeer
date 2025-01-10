@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
 func Test_submitLLM(t *testing.T) {
