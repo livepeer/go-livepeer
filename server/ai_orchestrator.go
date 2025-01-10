@@ -1,5 +1,7 @@
 package server
 
+// ai_orchestrator.go implements logic for orchestrators to send AI jobs to AI Workers.
+
 import (
 	"bytes"
 	"context"
