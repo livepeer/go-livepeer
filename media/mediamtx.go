@@ -64,12 +64,14 @@ func (mc *MediaMTXClient) KickInputConnection(ctx context.Context) error {
 		return err
 	}
 
+	clog.Infof(ctx, "Sending req to MediaMTX")
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create kick request: %w", err)
 	}
 	req.SetBasicAuth(mediaMTXControlUser, mc.apiPassword)
 	resp, err := http.DefaultClient.Do(req)
+	clog.Infof(ctx, "Done Sending req to MediaMTX")
 	if err != nil {
 		return fmt.Errorf("failed to kick connection: %w", err)
 	}
@@ -85,12 +87,14 @@ func (mc *MediaMTXClient) StreamExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	clog.Infof(context.Background(), "StreamExist: Sending request to MediaMTX, sourceID=%v", mc.sourceID)
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create get stream request: %w", err)
 	}
 	req.SetBasicAuth(mediaMTXControlUser, mc.apiPassword)
 	resp, err := http.DefaultClient.Do(req)
+	clog.Infof(context.Background(), "StreamExist: Done Sending request to MediaMTX, sourceID=%v", mc.sourceID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get stream: %w", err)
 	}

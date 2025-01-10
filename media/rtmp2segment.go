@@ -41,6 +41,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 
 	retryCount := 0
 	for {
+		clog.Infof(ctx, "Checking if stream exists, sourceID=%v, retryCount=%v", ms.MediaMTXClient.sourceID, retryCount)
 		streamExists, err := ms.MediaMTXClient.StreamExists()
 		if err != nil {
 			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)

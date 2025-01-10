@@ -68,4 +68,6 @@ COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 
+RUN apt update && apt install net-tools lsof -y
+
 ENTRYPOINT	["/usr/local/bin/livepeer"]
