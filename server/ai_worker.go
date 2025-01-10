@@ -1,6 +1,6 @@
 package server
 
-// ai_orchestrator.go implements logic for orchestrators to send AI jobs to AI Workers.
+// ai_worker.go implements logic for orchestrators to spin up and send AI jobs to workers.
 
 import (
 	"bytes"
