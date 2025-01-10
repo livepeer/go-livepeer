@@ -1,5 +1,7 @@
 package core
 
+// ai_orchestrator.go implements logic for managing AI workers and processing AI jobs.
+
 import (
 	"bytes"
 	"context"
