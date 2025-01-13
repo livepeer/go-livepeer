@@ -56,7 +56,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}
-		cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, outFilePattern)
+		cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, outFilePattern, "segment")
 		_, err = cmd.CombinedOutput()
 		if err != nil {
 			clog.Errorf(ctx, "Failed to run segmentation process. in=%s err=%s", in, err)
