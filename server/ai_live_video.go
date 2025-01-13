@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
 	"log/slog"
 	"maps"
@@ -211,29 +210,17 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 
-			in := fmt.Sprintf("pipe:%d", r.Fd())
-			clog.Infof(ctx, "File descriptor: %s", in)
+			in := "pipe:0"
 			out := params.liveParams.outputRTMPURL
 			cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, out, "flv")
+			cmd.Stdin = r
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				clog.Errorf(ctx, "Error sending RTMP out process: %v", err)
 				clog.Infof(ctx, "Process output: %s", output)
 				return
 			}
-			clog.Infof(ctx, "Process output: %s", output)
 			err = cmd.Wait()
-			if err != nil {
-				clog.Infof(ctx, "Error sending RTMP out: %s", err)
-			}
-			_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-				Fname: in,
-			}, []ffmpeg.TranscodeOptions{{
-				Oname:        out,
-				AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-			}})
 			if err != nil {
 				clog.Infof(ctx, "Error sending RTMP out: %s", err)
 			}
