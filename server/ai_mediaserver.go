@@ -364,6 +364,8 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
+var MediaMTXHost string
+
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -371,6 +373,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		if strings.HasPrefix(streamName, "out") {
 			return
 		}
 
@@ -441,6 +446,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
+		MediaMTXHost = remoteHost
 
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
