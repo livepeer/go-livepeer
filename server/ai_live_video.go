@@ -213,10 +213,13 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			in := fmt.Sprintf("pipe:%d", r.Fd())
 			out := params.liveParams.outputRTMPURL
 			cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, out, "flv")
-			_, err = cmd.CombinedOutput()
+			output, err := cmd.CombinedOutput()
 			if err != nil {
 				clog.Errorf(ctx, "Error sending RTMP out process: %v", err)
+				clog.Infof(ctx, "Process output: %s", output)
+				return
 			}
+			clog.Infof(ctx, "Process output: %s", output)
 			err = cmd.Wait()
 			if err != nil {
 				clog.Infof(ctx, "Error sending RTMP out: %s", err)
