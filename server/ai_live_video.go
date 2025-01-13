@@ -216,10 +216,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				"-c:a", "copy",
 				"-c:v", "copy",
 				"-f", "flv",
-				"-bufsize", "100k",
-				"-g", "30",
-				"-preset", "ultrafast",
-				"-tune", "zerolatency",
 				out,
 			)
 			cmd.Stdin = r
