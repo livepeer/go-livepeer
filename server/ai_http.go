@@ -95,10 +95,6 @@ func aiHttpHandle[I any](h *lphttp, decoderFunc func(*I, *http.Request) error) h
 
 func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if monitor.Enabled {
-			monitor.AILiveVideoAttempt()
-		}
-
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 		requestID := string(core.RandomManifestID())

@@ -439,6 +439,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				return
 			}
 		}
+
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		if LiveAIAuthWebhookURL != nil {
@@ -487,6 +488,12 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+
+		// Count `ai_live_attempts` after successful parameters validation
+		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
+		if monitor.Enabled {
+			monitor.AILiveVideoAttempt()
+		}
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
