@@ -1114,7 +1114,7 @@ func processLLM(ctx context.Context, params aiRequestParams, req worker.GenLLMJS
 	}
 
 	if req.Stream != nil && *req.Stream {
-		streamChan, ok := resp.(chan worker.LlmStreamChunk)
+		streamChan, ok := resp.(chan *worker.LLMResponse)
 		if !ok {
 			return nil, errors.New("unexpected response type for streaming request")
 		}
@@ -1174,28 +1174,28 @@ func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req
 	return handleNonStreamingResponse(ctx, resp.Body, sess, req, start)
 }
 
-func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMJSONRequestBody, start time.Time) (chan worker.LlmStreamChunk, error) {
-	streamChan := make(chan worker.LlmStreamChunk, 100)
+func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, req worker.GenLLMJSONRequestBody, start time.Time) (chan *worker.LLMResponse, error) {
+	streamChan := make(chan *worker.LLMResponse, 100)
 	go func() {
 		defer close(streamChan)
 		defer body.Close()
 		scanner := bufio.NewScanner(body)
-		var totalTokens int
+		var totalTokens worker.LLMTokenUsage
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data: ") {
 				data := strings.TrimPrefix(line, "data: ")
 				if data == "[DONE]" {
-					streamChan <- worker.LlmStreamChunk{Done: true, TokensUsed: totalTokens}
+					//streamChan <- worker.LLMResponse{Done: true, TokensUsed: totalTokens}
 					break
 				}
-				var chunk worker.LlmStreamChunk
+				var chunk worker.LLMResponse
 				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
 					continue
 				}
-				totalTokens += chunk.TokensUsed
-				streamChan <- chunk
+				totalTokens = chunk.TokensUsed
+				streamChan <- &chunk
 			}
 		}
 		if err := scanner.Err(); err != nil {
@@ -1203,7 +1203,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 		}
 
 		took := time.Since(start)
-		sess.LatencyScore = CalculateLLMLatencyScore(took, totalTokens)
+		sess.LatencyScore = CalculateLLMLatencyScore(took, totalTokens.TotalTokens)
 
 		if monitor.Enabled {
 			var pricePerAIUnit float64

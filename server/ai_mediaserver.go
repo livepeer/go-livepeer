@@ -289,7 +289,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		took := time.Since(start)
 		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request model_id=%v took=%v", *req.Model, took)
 
-		if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+		if streamChan, ok := resp.(chan *worker.LLMResponse); ok {
 			// Handle streaming response (SSE)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
@@ -299,7 +299,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 				data, _ := json.Marshal(chunk)
 				fmt.Fprintf(w, "data: %s\n\n", data)
 				w.(http.Flusher).Flush()
-				if chunk.Done {
+				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
 					break
 				}
 			}

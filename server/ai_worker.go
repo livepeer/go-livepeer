@@ -354,7 +354,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	if resp != nil {
 		if resultType == "text/event-stream" {
-			streamChan, ok := resp.(<-chan worker.LlmStreamChunk)
+			streamChan, ok := resp.(<-chan *worker.LLMResponse)
 			if ok {
 				sendStreamingAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, httpc, resultType, streamChan)
 				return
@@ -530,7 +530,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pi
 }
 
 func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pipeline string, httpc *http.Client,
-	contentType string, streamChan <-chan worker.LlmStreamChunk,
+	contentType string, streamChan <-chan *worker.LLMResponse,
 ) {
 	clog.Infof(ctx, "sending streaming results back to Orchestrator")
 	taskId := clog.GetVal(ctx, "taskId")
@@ -571,7 +571,7 @@ func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr s
 		}
 		fmt.Fprintf(pWriter, "data: %s\n\n", data)
 
-		if chunk.Done {
+		if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
 			pWriter.Close()
 			clog.Infof(ctx, "streaming results finished")
 			return

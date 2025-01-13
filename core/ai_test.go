@@ -653,7 +653,7 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 
 func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	var choices []worker.LLMChoice
-	choices = append(choices, worker.LLMChoice{Delta: worker.LLMMessage{Content: "choice1", Role: "assistant"}, Index: 0})
+	choices = append(choices, worker.LLMChoice{Delta: &worker.LLMMessage{Content: "choice1", Role: "assistant"}, Index: 0})
 	tokensUsed := worker.LLMTokenUsage{PromptTokens: 40, CompletionTokens: 10, TotalTokens: 50}
 	return &worker.LLMResponse{Choices: choices, Created: 1, Model: "llm_model", TokensUsed: tokensUsed}, nil
 }
