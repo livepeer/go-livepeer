@@ -56,14 +56,18 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}
-		cmd := exec.Command("/usr/local/bin/livepeer_ffmpeg", in, outFilePattern, "segment")
-		_, err = cmd.CombinedOutput()
+		cmd := exec.Command("ffmpeg",
+			"-i", in,
+			"-c:a", "copy",
+			"-c:v", "copy",
+			"-f", "segment",
+			outFilePattern,
+		)
+		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Failed to run segmentation process. in=%s err=%s", in, err)
-		}
-		err = cmd.Wait()
-		if err != nil {
-			clog.Errorf(ctx, "Failed to run segmentation process. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Error sending RTMP out process: %v", err)
+			clog.Infof(ctx, "Process output: %s", output)
+			return
 		}
 		clog.Infof(ctx, "Done with segmentation process")
 		retryCount++
