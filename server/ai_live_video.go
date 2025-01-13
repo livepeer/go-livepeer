@@ -210,6 +210,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 
+			out := fmt.Sprintf("rtmp://%s/out%s", MediaMTXHost, params.liveParams.stream)
 			cmd := exec.Command("ffmpeg",
 				"-i", "pipe:0",
 				"-c:a", "copy",
@@ -219,7 +220,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				"-g", "30",
 				"-preset", "ultrafast",
 				"-tune", "zerolatency",
-				params.liveParams.outputRTMPURL,
+				out,
 			)
 			cmd.Stdin = r
 			output, err := cmd.CombinedOutput()
