@@ -28,10 +28,11 @@ func NewMediaMTXClient(host, apiPassword, sourceID, sourceType string) *MediaMTX
 }
 
 const (
-	mediaMTXControlPort   = "9997"
-	mediaMTXControlUser   = "admin"
-	MediaMTXWebrtcSession = "webrtcSession"
-	MediaMTXRtmpConn      = "rtmpConn"
+	mediaMTXControlPort    = "9997"
+	mediaMTXControlTimeout = 30 * time.Second
+	mediaMTXControlUser    = "admin"
+	MediaMTXWebrtcSession  = "webrtcSession"
+	MediaMTXRtmpConn       = "rtmpConn"
 )
 
 func MediamtxSourceTypeToString(s string) (string, error) {
@@ -65,17 +66,14 @@ func (mc *MediaMTXClient) KickInputConnection(ctx context.Context) error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mediaMTXControlTimeout)
 	defer cancel()
-
-	clog.Infof(ctx, "Sending req to MediaMTX")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create kick request: %w", err)
 	}
 	req.SetBasicAuth(mediaMTXControlUser, mc.apiPassword)
 	resp, err := http.DefaultClient.Do(req)
-	clog.Infof(ctx, "Done Sending req to MediaMTX")
 	if err != nil {
 		return fmt.Errorf("failed to kick connection: %w", err)
 	}
@@ -91,8 +89,7 @@ func (mc *MediaMTXClient) StreamExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	clog.Infof(context.Background(), "StreamExist: Sending request to MediaMTX, sourceID=%v", mc.sourceID)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), mediaMTXControlTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
@@ -100,7 +97,6 @@ func (mc *MediaMTXClient) StreamExists() (bool, error) {
 	}
 	req.SetBasicAuth(mediaMTXControlUser, mc.apiPassword)
 	resp, err := http.DefaultClient.Do(req)
-	clog.Infof(context.Background(), "StreamExist: Done Sending request to MediaMTX, sourceID=%v", mc.sourceID)
 	if err != nil {
 		return false, fmt.Errorf("failed to get stream: %w", err)
 	}

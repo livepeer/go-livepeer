@@ -220,7 +220,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			cmd.Stdin = r
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				clog.Errorf(ctx, "Error sending RTMP out process: %v", err)
+				clog.Errorf(ctx, "Error sending RTMP out: %v", err)
 				clog.Infof(ctx, "Process output: %s", output)
 				return
 			}

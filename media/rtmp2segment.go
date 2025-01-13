@@ -30,12 +30,6 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
-	defer func() {
-		if r := recover(); r != nil {
-			clog.Warningf(ctx, "Recovered from panic:")
-		}
-	}()
-
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
 	completionSignal := make(chan bool, 1)
 	wg := &sync.WaitGroup{}
@@ -47,7 +41,6 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 
 	retryCount := 0
 	for {
-		clog.Infof(ctx, "Checking if stream exists, sourceID=%v, retryCount=%v", ms.MediaMTXClient.sourceID, retryCount)
 		streamExists, err := ms.MediaMTXClient.StreamExists()
 		if err != nil {
 			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
@@ -69,7 +62,6 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Infof(ctx, "Process output: %s", output)
 			return
 		}
-		clog.Infof(ctx, "Done with segmentation process")
 		retryCount++
 		time.Sleep(5 * time.Second)
 	}
