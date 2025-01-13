@@ -430,7 +430,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
-		var streamID, pipelineID string
+		streamID := streamName
+		var pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -455,6 +456,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
 				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+				monitor.SendQueueEventAsync("ai_stream_events", map[string]string{
+					"type":    "error",
+					"message": "Live AI auth failed: " + err.Error(),
+				})
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

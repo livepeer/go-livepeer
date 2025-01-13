@@ -290,7 +290,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		const retryPause = 300 * time.Millisecond
 		retries := 0
 		for {
-			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
+			clog.V(8).Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err == nil {
 				retries = 0

@@ -59,7 +59,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			Muxer:        ffmpeg.ComponentOptions{Name: "segment"},
 		}})
 		if err != nil {
-			clog.Errorf(ctx, "Failed to run segmentation. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Failed to run segmentation. in=%s try=%d err=%s", in, retryCount, err)
 		}
 		retryCount++
 		time.Sleep(5 * time.Second)
