@@ -261,7 +261,8 @@ func (ls *LivepeerServer) LLM() http.Handler {
 			return
 		}
 
-		if req.Model == nil || req.Messages == nil || req.Stream == nil || req.MaxTokens == nil {
+		//check required fields
+		if req.Model == nil || req.Messages == nil || req.Stream == nil || req.MaxTokens == nil || len(req.Messages) == 0 {
 			respondJsonError(ctx, w, errors.New("missing required fields"), http.StatusBadRequest)
 			return
 		}
