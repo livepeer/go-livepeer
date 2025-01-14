@@ -4,10 +4,12 @@ on:
   pull_request:
   push:
     branches:
-      # - master
-      - ai-video
+      - master
     tags:
       - "v*"
+    paths-ignore:
+      - 'doc/**'
+      - 'docker/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -30,25 +32,25 @@ jobs:
             container: ubuntu:20.04
             type: cpu
 
-          # - GOOS: linux
-          #   GOARCH: arm64
-          #   container: ubuntu-20.04
-          #   type: cpu
+          - GOOS: linux
+            GOARCH: arm64
+            container: ubuntu:20.04
+            type: cpu
 
           - GOOS: linux
             GOARCH: amd64
             container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
             type: gpu
 
-          # - GOOS: linux
-          #   GOARCH: arm64
-          #   container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
-          #   type: gpu
+          - GOOS: linux
+            GOARCH: arm64
+            container: livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04
+            type: gpu
 
-          # - GOOS: windows
-          #   GOARCH: amd64
-          #   container: ubuntu:22.04
-          #   type: cpu
+          - GOOS: windows
+            GOARCH: amd64
+            container: ubuntu:22.04
+            type: cpu
 
     steps:
       - name: Setup ubuntu container
@@ -56,7 +58,7 @@ jobs:
           apt update
           apt install -yqq build-essential make software-properties-common
           add-apt-repository -y ppa:git-core/candidate
-          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g yasm
+          apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev libz-mingw-w64-dev yasm
 
       - name: Check out code
         uses: actions/checkout@v4.1.7
@@ -70,7 +72,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.21.5
+          go-version-file: './go.mod'
           cache: true
           cache-dependency-path: go.sum
 
@@ -101,7 +103,7 @@ jobs:
             && apt update \
             && apt -yqq install \
               nasm clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python3 \
-              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 \
+              gcc-mingw-w64 libgcc-9-dev-arm64-cross mingw-w64-tools gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev \
               golang-goprotobuf-dev protobuf-compiler-grpc
 
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
@@ -172,7 +174,7 @@ jobs:
         id: go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.21.5
+          go-version-file: './go.mod'
           cache: true
           cache-dependency-path: go.sum
 
@@ -192,7 +194,11 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target.GOOS }}-${{ matrix.target.GOARCH }}-ffmpeg-${{ hashFiles('**/install_ffmpeg.sh') }}
 
       - name: Install dependencies
-        run: brew install coreutils pkg-config
+        run: |
+          brew update
+          # brew upgrade  # temporarily disabled because of the issues it's causing
+          brew uninstall --ignore-dependencies --force pkg-config@0.29.2
+          brew install coreutils pkgconf
 
       - name: Install go modules
         # if: steps.go.outputs.cache-hit != 'true'
@@ -214,7 +220,7 @@ jobs:
         id: match-tag
         with:
           text: ${{ github.ref_name }}
-          regex: '^(master|main|ai-video|v[0-9]+\.\d+\.\d+)$'
+          regex: '^(master|main|v[0-9]+\.\d+\.\d+)$'
 
       - name: Codesign and notarize binaries
         if: steps.match-tag.outputs.match != '' && matrix.target.GOOS == 'darwin'
@@ -244,6 +250,7 @@ jobs:
 
   upload:
     name: Upload artifacts to google bucket
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: "read"
       id-token: "write"
@@ -314,38 +321,6 @@ jobs:
         with:
           path: ${{ steps.branch-manifest.outputs.manifest-file }}
           destination: "build.livepeer.live/${{ github.event.repository.name }}/"
-          parent: false
-          process_gcloudignore: false
-
-      # Get the latest release tag
-      - name: Get latest tag
-        id: get-latest-tag
-        run: |
-          git fetch --tags
-          latest_tag=$(git tag -l "v*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-ai.[0-9]+$' | sort -V | tail -n 1)
-          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
-          echo "Latest tag: $latest_tag"
-          echo "GitHub Ref: ${{ github.ref }}"
-
-      # Update the latest release
-      - name: Upload release archives to Google Cloud stable folder
-        id: upload-archives-latest
-        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
-        uses: google-github-actions/upload-cloud-storage@v2
-        with:
-          path: "releases"
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
-          parent: false
-          process_gcloudignore: false
-      
-      # Update the latest branch manifest
-      - name: Upload branch manifest file to Google Cloud stable folder
-        id: upload-manifest-latest
-        if: ${{ github.ref == format('refs/tags/{0}', steps.get-latest-tag.outputs.latest_tag) }}
-        uses: google-github-actions/upload-cloud-storage@v2
-        with:
-          path: ${{ steps.branch-manifest.outputs.manifest-file }}
-          destination: "build.livepeer.live/${{ github.event.repository.name }}/ai-video/stable"
           parent: false
           process_gcloudignore: false
 

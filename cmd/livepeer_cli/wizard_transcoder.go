@@ -108,7 +108,7 @@ func (w *wizard) activateOrchestrator() {
 	val := w.getOrchestratorConfigFormValues()
 
 	if d.BondedAmount.Cmp(big.NewInt(0)) <= 0 || d.DelegateAddress != d.Address {
-		fmt.Printf("You must bond to yourself in order to become a orchestrator\n")
+		fmt.Printf("You must bond to yourself in order to become an orchestrator\n")
 
 		rebond := false
 

@@ -220,27 +220,6 @@ func TestVerifySegCreds_Duration(t *testing.T) {
 	assert.Nil(md)
 }
 
-func TestCoreSegMetadata_Profiles(t *testing.T) {
-	assert := assert.New(t)
-	// testing with the following profiles doesn't work: ffmpeg.P720p60fps16x9, ffmpeg.P144p25fps16x9
-	profiles := []ffmpeg.VideoProfile{ffmpeg.P576p30fps16x9, ffmpeg.P240p30fps4x3}
-	segData := &net.SegData{
-		ManifestId: []byte("manifestID"),
-		Profiles:   common.ProfilesToTranscodeOpts(profiles),
-	}
-	md, err := coreSegMetadata(segData)
-	assert.Nil(err)
-	assert.Equal(profiles, md.Profiles)
-
-	// Check error handling with the default invalid Profiles
-	segData, err = core.NetSegData(&core.SegTranscodingMetadata{})
-	assert.Nil(err)
-	assert.Equal([]byte("invalid"), segData.Profiles)
-	md, err = coreSegMetadata(segData)
-	assert.Nil(md)
-	assert.Equal(common.ErrProfile, err)
-}
-
 func TestGenSegCreds_FullProfiles(t *testing.T) {
 	assert := assert.New(t)
 	profiles := []ffmpeg.VideoProfile{
@@ -896,8 +875,13 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 
 	require := require.New(t)
 	assert := assert.New(t)
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(stubAuthToken)
+	orch.On("ServiceURI").Return(url.Parse("http://someuri.com"))
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("Address").Return(ethcommon.Address{})
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),
@@ -1225,7 +1209,7 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 	orch.On("SufficientBalance", mock.Anything, core.ManifestID(s.OrchestratorInfo.AuthToken.SessionId)).Return(false)
 	url, _ := url.Parse("foo")
 	orch.On("ServiceURI").Return(url)
-	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error"))
+	orch.On("PriceInfo", mock.Anything).Return(nil, errors.New("PriceInfo error")).Times(1)
 
 	// Check when price = 0
 	payment, err := genPayment(context.TODO(), s, 0)
@@ -1245,6 +1229,11 @@ func TestServeSegment_InsufficientBalance(t *testing.T) {
 	assert.Equal("Internal Server Error", strings.TrimSpace(string(body)))
 
 	// Check when price > 0
+	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil).Times(1)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
+	orch.On("Address").Return(ethcommon.Address{})
+
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	s.OrchestratorInfo.PriceInfo = &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}
 	payment, err = genPayment(context.TODO(), s, 0)
 	require.Nil(err)

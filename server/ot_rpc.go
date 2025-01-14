@@ -166,7 +166,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, errCapabilities)
 		return
 	}
-	data, err := core.GetSegmentData(ctx, notify.Url)
+	data, err := core.DownloadData(ctx, notify.Url)
 	if err != nil {
 		clog.Errorf(ctx, "Transcoder cannot get segment from taskId=%d url=%s err=%q", notify.TaskId, notify.Url, err)
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
@@ -190,6 +190,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 	}
 	defer os.Remove(fname)
 	md.Fname = fname
+	md.Metadata = core.MakeMetadata(notify.OrchId)
 	clog.V(common.DEBUG).Infof(ctx, "Segment from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
 
 	start := time.Now()

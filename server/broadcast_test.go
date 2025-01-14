@@ -61,18 +61,8 @@ func StubBroadcastSession(transcoder string) *BroadcastSession {
 		},
 		OrchestratorScore: common.Score_Trusted,
 		lock:              &sync.RWMutex{},
+		CleanupSession:    func(sessionId string) {},
 	}
-}
-
-func StubBroadcastSessionsManager() *BroadcastSessionsManager {
-	sess1 := StubBroadcastSession("transcoder1")
-	sess2 := StubBroadcastSession("transcoder2")
-
-	return bsmWithSessList([]*BroadcastSession{sess1, sess2})
-}
-
-func selFactoryEmpty() BroadcastSessionsSelector {
-	return &LIFOSelector{}
 }
 
 func bsmWithSessList(sessList []*BroadcastSession) *BroadcastSessionsManager {
@@ -101,6 +91,8 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 		return cloneSessions(sessList), nil
 	}
 
+	var deleteSessions = func(sessionID string) {}
+
 	untrustedSessMap := make(map[string]*BroadcastSession)
 	for _, sess := range untrustedSessList {
 		untrustedSessMap[sess.OrchestratorInfo.Transcoder] = sess
@@ -118,11 +110,10 @@ func bsmWithSessListExt(sessList, untrustedSessList []*BroadcastSession, noRefre
 	if noRefresh {
 		createSessions = createSessionsEmpty
 		createSessionsUntrusted = createSessionsEmpty
-
 	}
-	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, sel)
+	trustedPool := NewSessionPool("test", len(sessList), 1, newSuspender(), createSessions, deleteSessions, sel)
 	trustedPool.sessMap = sessMap
-	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, unsel)
+	untrustedPool := NewSessionPool("test", len(untrustedSessList), 1, newSuspender(), createSessionsUntrusted, deleteSessions, unsel)
 	untrustedPool.sessMap = untrustedSessMap
 
 	return &BroadcastSessionsManager{
@@ -313,7 +304,7 @@ func TestNewSessionManager(t *testing.T) {
 
 	// Check empty pool produces expected numOrchs
 
-	sess := NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+	sess := NewSessionManager(context.TODO(), n, params)
 	assert.Equal(0, sess.trustedPool.numOrchs)
 	assert.Equal(0, sess.untrustedPool.numOrchs)
 
@@ -322,7 +313,7 @@ func TestNewSessionManager(t *testing.T) {
 	n.OrchestratorPool = sd
 	max := int(common.HTTPTimeout.Seconds()/SegLen.Seconds()) * 2
 	for i := 0; i < 10; i++ {
-		sess = NewSessionManager(context.TODO(), n, params, selFactoryEmpty)
+		sess = NewSessionManager(context.TODO(), n, params)
 		if i < max {
 			assert.Equal(i, sess.trustedPool.numOrchs)
 		} else {
@@ -402,6 +393,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	sess := StubBroadcastSession(ts.URL)
 	sender := &pm.MockSender{}
 	sender.On("StartSession", mock.Anything).Return("foo").Times(3)
+	sender.On("StopSession", mock.Anything).Times(3)
 	sender.On("EV", mock.Anything).Return(big.NewRat(1000000, 1), nil)
 	sender.On("CreateTicketBatch", mock.Anything, mock.Anything).Return(defaultTicketBatch(), nil)
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil)
@@ -1134,7 +1126,9 @@ func TestUpdateSession(t *testing.T) {
 
 	balances := core.NewAddressBalances(5 * time.Minute)
 	defer balances.StopCleanup()
-	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}}
+	sess := &BroadcastSession{PMSessionID: "foo", LatencyScore: 1.1, Balances: balances, lock: &sync.RWMutex{}, CleanupSession: func(sessionID string) {
+
+	}}
 	res := &ReceivedTranscodeResult{
 		LatencyScore: 2.1,
 	}
@@ -1829,4 +1823,123 @@ func TestVerifcationRunsBasedOnVerificationFrequency(t *testing.T) {
 
 	require.Greater(t, float32(shouldSkipCount), float32(numTests)*(1-2/float32(verificationFreq)))
 	require.Less(t, float32(shouldSkipCount), float32(numTests)*(1-0.5/float32(verificationFreq)))
+}
+
+func TestMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if max price is not set.
+	assert.Nil(t, cfg.MaxPrice())
+
+	// Should return correct price if max price is set.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.MaxPrice())
+
+	// Should update the max price correctly.
+	newPrice := core.NewFixedPrice(big.NewRat(20, 1))
+	cfg.SetMaxPrice(newPrice)
+	assert.Equal(t, big.NewRat(20, 1), cfg.MaxPrice())
+
+	// Should handle nil value gracefully.
+	cfg.SetMaxPrice(nil)
+	assert.Nil(t, cfg.MaxPrice())
+}
+
+func TestCapabilityMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if no price is set for the capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(core.Capability(1), "model1"))
+
+	// Should set and return the correct price for a capability and model.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	assert.Equal(t, big.NewRat(5, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+	assert.Equal(t, big.NewRat(7, 1), cfg.getCapabilityMaxPrice(capability2, modelID2))
+
+	// Should return default price when no specific model price is set.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	assert.Equal(t, big.NewRat(3, 1), cfg.getCapabilityMaxPrice(capability1, "nonexistentModel"))
+
+	// Should return nil when no model or default price is set for a capability.
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability2, "nonexistentModel"))
+
+	// Should update the price for a capability and model correctly.
+	newPrice1 := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, newPrice1)
+	assert.Equal(t, big.NewRat(10, 1), cfg.getCapabilityMaxPrice(capability1, modelID1))
+
+	// Should handle nil value gracefully.
+	capability3 := core.Capability(3)
+	modelID23 := "model3"
+	cfg.SetCapabilityMaxPrice(capability3, "model3", nil)
+	assert.Nil(t, cfg.getCapabilityMaxPrice(capability3, modelID23))
+}
+
+func TestGetCapabilitiesMaxPrice(t *testing.T) {
+	cfg := newBroadcastConfig()
+
+	// Should return nil if no max price is set and no capabilities are provided.
+	assert.Nil(t, cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Should return the max price if no capabilities are provided.
+	price := core.NewFixedPrice(big.NewRat(10, 1))
+	cfg.SetMaxPrice(price)
+	assert.Equal(t, big.NewRat(10, 1), cfg.GetCapabilitiesMaxPrice(nil))
+
+	// Create capabilities object.
+	capability1 := core.Capability(1)
+	modelID1 := "model1"
+	capability2 := core.Capability(2)
+	modelID2 := "model2"
+	netCaps := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID1: {},
+					},
+				},
+				uint32(capability2): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						modelID2: {},
+					},
+				},
+			},
+		},
+	}
+	capabilities := &StubCapabilityComparator{NetCaps: netCaps}
+
+	// Should return the sum of prices for the given capabilities.
+	price1 := core.NewFixedPrice(big.NewRat(5, 1))
+	cfg.SetCapabilityMaxPrice(capability1, modelID1, price1)
+	price2 := core.NewFixedPrice(big.NewRat(7, 1))
+	cfg.SetCapabilityMaxPrice(capability2, modelID2, price2)
+	expectedPrice := big.NewRat(12, 1)
+	assert.Equal(t, expectedPrice, cfg.GetCapabilitiesMaxPrice(capabilities))
+
+	// Should test fallback to "default" model price.
+	defaultPrice := core.NewFixedPrice(big.NewRat(3, 1))
+	cfg.SetCapabilityMaxPrice(capability1, "default", defaultPrice)
+	netCapsWithDefault := &net.Capabilities{
+		Constraints: &net.Capabilities_Constraints{
+			PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+				uint32(capability1): {
+					Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+						"nonexistentModel": {},
+					},
+				},
+			},
+		},
+	}
+	capabilitiesWithDefault := &StubCapabilityComparator{NetCaps: netCapsWithDefault}
+	assert.Equal(t, big.NewRat(3, 1), cfg.GetCapabilitiesMaxPrice(capabilitiesWithDefault))
 }

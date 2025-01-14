@@ -345,51 +345,6 @@ func TestCapability_CompatibleWithNetCap(t *testing.T) {
 	bcast.constraints.minVersion = "0.4.1"
 	orch.version = "0.4.1"
 	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// TODO: Remove AI-specific cases below when merging into master.
-	// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
-	// capabilities.go to achieve this behavior.
-	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2"
-	orch.version = "0.7.2-ai.1"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - no ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.1"
-	orch.version = "0.7.2"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - lower ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.2-ai.1"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is not compatible with AI orchestrator - lower major version
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.1-ai.1"
-	assert.False(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is compatible with AI orchestrator - higher ai suffix
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.1"
-	orch.version = "0.7.2-ai.2"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
-
-	// AI broadcaster is compatible with AI orchestrator- higher major version
-	orch = NewCapabilities(nil, nil)
-	bcast = NewCapabilities(nil, nil)
-	bcast.constraints.minVersion = "0.7.2-ai.2"
-	orch.version = "0.7.3-ai.1"
-	assert.True(bcast.CompatibleWith(orch.ToNetCapabilities()))
 }
 
 func TestCapability_RoundTrip_Net(t *testing.T) {
@@ -502,7 +457,7 @@ func TestCapability_ProfileToCapability(t *testing.T) {
 	// iterate through lpms-defined profiles to ensure all are accounted for
 	// need to put into a slice and sort to ensure consistent ordering
 	profs := []int{}
-	for k, _ := range ffmpeg.ProfileParameters {
+	for k := range ffmpeg.ProfileParameters {
 		profs = append(profs, int(k))
 	}
 	sort.Ints(profs)
@@ -666,45 +621,6 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 			transcoderVersion:     "nonparsablesemversion",
 			expected:              false,
 		},
-		// TODO: Remove AI-specific cases below when merging into master.
-		// NOTE: Additional logic was added to the `LivepeerVersionCompatibleWith` method in
-		// capabilities.go to achieve this behavior.
-		{
-			name:                  "AI broadcaster required version has no AI suffix",
-			broadcasterMinVersion: "0.7.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              true,
-		},
-		{
-			name:                  "AI transcoder version has no AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.2",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required version AI suffix is higher than AI transcoder AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required major version is higher than AI transcoder major version",
-			broadcasterMinVersion: "0.7.2-ai.2",
-			transcoderVersion:     "0.7.2-ai.1",
-			expected:              false,
-		},
-		{
-			name:                  "AI broadcaster required version AI suffix is lower than AI transcoder AI suffix",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.2-ai.2",
-			expected:              true,
-		},
-		{
-			name:                  "AI broadcaster required major version is lower than AI transcoder major version",
-			broadcasterMinVersion: "0.7.2-ai.1",
-			transcoderVersion:     "0.7.3-ai.1",
-			expected:              true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -712,5 +628,128 @@ func TestLiveeerVersionCompatibleWith(t *testing.T) {
 			tCapabilities := &Capabilities{version: tt.transcoderVersion}
 			assert.Equal(t, tt.expected, bCapabilities.LivepeerVersionCompatibleWith(tCapabilities.ToNetCapabilities()))
 		})
+	}
+}
+
+func TestCapability_String(t *testing.T) {
+	var unknownCap Capability = -100
+	tests := []struct {
+		name string
+		c    Capability
+		want string
+	}{
+		{
+			name: "Capability_TextToImage",
+			c:    Capability_TextToImage,
+			want: "Text to image",
+		},
+		{
+			name: "Unknown",
+			c:    unknownCap,
+			want: "-100",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.c.String())
+		})
+	}
+}
+
+func TestCapabilities_CapabilityConstraints(t *testing.T) {
+	assert := assert.New(t)
+	capabilities := []Capability{Capability_TextToImage}
+	mandatories := []Capability{4}
+
+	// create model constraints
+	model_id1 := "Model1"
+	model_id2 := "Model2"
+	constraints := make(PerCapabilityConstraints)
+	constraints[Capability_TextToImage] = &CapabilityConstraints{
+		Models: make(ModelConstraints),
+	}
+	model1Constraint := ModelConstraint{Warm: true, Capacity: 1}
+	constraints[Capability_TextToImage].Models[model_id1] = &ModelConstraint{Warm: true, Capacity: 1}
+
+	// create capabilities with only Model1
+	caps := NewCapabilities(capabilities, mandatories)
+	caps.SetPerCapabilityConstraints(constraints)
+	_, model1ConstraintExists := caps.constraints.perCapability[Capability_TextToImage].Models[model_id1]
+	assert.True(model1ConstraintExists)
+
+	newModelConstraint := CapabilityConstraints{
+		Models: make(ModelConstraints),
+	}
+	model2Constraint := ModelConstraint{Warm: true, Capacity: 1}
+	newModelConstraint.Models[model_id2] = &model2Constraint
+
+	// add another model
+	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+
+	checkCapsConstraints := caps.constraints.perCapability
+
+	checkConstraint, model2ConstraintExists := checkCapsConstraints[Capability_TextToImage].Models[model_id2]
+
+	assert.True(model2ConstraintExists)
+	// check that ModelConstraint values are the same but for two different modelIDs
+	assert.Equal(&model2Constraint, checkConstraint)
+	assert.Equal(model1Constraint, model2Constraint)
+
+	// add another to Model2
+	caps.constraints.addCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+	checkCapsConstraints = caps.constraints.perCapability
+	// check capacity increased to 2
+	checkConstraintCapacity := checkCapsConstraints[Capability_TextToImage].Models["Model2"].Capacity
+	assert.Equal(checkConstraintCapacity, 2)
+	// confirm Model1 capacity is still 1
+	checkConstraintCapacity = checkCapsConstraints[Capability_TextToImage].Models["Model1"].Capacity
+	assert.Equal(checkConstraintCapacity, 1)
+
+	// remove constraint and make sure is 1
+	removeModel2Constraint := ModelConstraint{Warm: true, Capacity: 1}
+	newModelConstraint.Models[model_id2] = &removeModel2Constraint
+	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 2)
+	assert.Equal(caps.constraints.perCapability[Capability_TextToImage].Models["Model2"].Capacity, 1)
+
+	// remove constraint and make sure is removed from constraints
+	caps.constraints.removeCapabilityConstraints(Capability_TextToImage, newModelConstraint)
+	assert.Equal(len(caps.constraints.perCapability[Capability_TextToImage].Models), 1)
+	_, exists := caps.constraints.perCapability[Capability_TextToImage].Models["Model2"]
+	assert.False(exists)
+}
+
+func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
+	// the capability should be added by AddCapacity
+	for modelID, modelConstraint := range constraint.Models {
+		if _, ok := c.perCapability[cap]; ok {
+			if _, ok := c.perCapability[cap].Models[modelID]; ok {
+				if c.perCapability[cap].Models[modelID].Warm == modelConstraint.Warm {
+					c.perCapability[cap].Models[modelID].Capacity += modelConstraint.Capacity
+				} else {
+					c.perCapability[cap].Models[modelID] = modelConstraint
+				}
+			} else {
+				c.perCapability[cap].Models[modelID] = modelConstraint
+			}
+		} else {
+			c.perCapability[cap] = &CapabilityConstraints{Models: make(ModelConstraints)}
+		}
+	}
+}
+
+func (c *Constraints) removeCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
+	// the capability should be removed by RemoveCapacity
+	for modelID, modelConstraint := range constraint.Models {
+		if _, ok := c.perCapability[cap]; ok {
+			if _, ok := c.perCapability[cap].Models[modelID]; ok {
+				if c.perCapability[cap].Models[modelID].Warm == modelConstraint.Warm {
+					c.perCapability[cap].Models[modelID].Capacity -= modelConstraint.Capacity
+					if c.perCapability[cap].Models[modelID].Capacity <= 0 {
+						delete(c.perCapability[cap].Models, modelID)
+					}
+				}
+			}
+		}
 	}
 }

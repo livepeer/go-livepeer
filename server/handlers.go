@@ -242,7 +242,7 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 					var err error
 					autoPrice, err = core.NewAutoConvertedPrice(currency, pricePerPixel, func(price *big.Rat) {
 						if monitor.Enabled {
-							monitor.MaxPriceForCapability(core.CapabilityNameLookup[cap], modelID, price)
+							monitor.MaxPriceForCapability(monitor.ToPipeline(core.CapabilityNameLookup[cap]), modelID, price)
 						}
 						glog.Infof("Maximum price per unit set to %v wei for capability=%v model_id=%v", price.FloatString(3), pipeline, modelID)
 					})
@@ -593,6 +593,12 @@ func (s *LivepeerServer) setOrchestratorPriceInfo(broadcasterEthAddr, pricePerUn
 func (s *LivepeerServer) setServiceURI(client eth.LivepeerEthClient, serviceURI string) error {
 	parsedURI, err := url.Parse(serviceURI)
 	if err != nil {
+		glog.Error(err)
+		return err
+	}
+
+	if !common.ValidateServiceURI(parsedURI) {
+		err = errors.New("service address must be a public IP address or hostname")
 		glog.Error(err)
 		return err
 	}
@@ -1587,7 +1593,7 @@ func respond400(w http.ResponseWriter, errMsg string) {
 }
 
 func respondWithError(w http.ResponseWriter, errMsg string, code int) {
-	glog.Errorf("HTTP Response Error %v: %v", code, errMsg)
+	glog.Errorf("HTTP Response Error statusCode=%d err=%v", code, errMsg)
 	http.Error(w, errMsg, code)
 }
 

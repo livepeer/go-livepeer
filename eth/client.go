@@ -167,6 +167,9 @@ type LivepeerEthClientConfig struct {
 	Signer             types.Signer
 	ControllerAddr     ethcommon.Address
 	CheckTxTimeout     time.Duration
+
+	// For the time-being Livepeer AI Subnet uses its own ServiceRegistry, so we define it here
+	ServiceRegistryAddr ethcommon.Address
 }
 
 func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
@@ -174,11 +177,12 @@ func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
 	backend := NewBackend(cfg.EthClient, cfg.Signer, cfg.GasPriceMonitor, cfg.TransactionManager)
 
 	return &client{
-		accountManager: cfg.AccountManager,
-		backend:        backend,
-		tm:             cfg.TransactionManager,
-		controllerAddr: cfg.ControllerAddr,
-		checkTxTimeout: cfg.CheckTxTimeout,
+		accountManager:      cfg.AccountManager,
+		backend:             backend,
+		tm:                  cfg.TransactionManager,
+		controllerAddr:      cfg.ControllerAddr,
+		checkTxTimeout:      cfg.CheckTxTimeout,
+		serviceRegistryAddr: cfg.ServiceRegistryAddr,
 	}, nil
 }
 
@@ -211,28 +215,15 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 
 	glog.V(common.SHORT).Infof("LivepeerToken: %v", c.tokenAddr.Hex())
 
-	chainID, err := c.backend.ChainID(context.Background())
-	if err != nil {
-		glog.Errorf("Failed to get chain ID from remote ethereum node: %v", err)
-		return err
-	}
-
-	// TODO: This is a temporary setup for a separate AIServiceRegistry. Revise this when AI subnet merges with the mainnet.
-	var serviceRegistryAddr ethcommon.Address
-	arbitrumOneChainID := big.NewInt(42161)
-	if chainID.Cmp(arbitrumOneChainID) == 0 {
-		serviceRegistryAddr = ethcommon.HexToAddress("0x04C0b249740175999E5BF5c9ac1dA92431EF34C5")
-	} else {
-		serviceRegistryAddr, err = c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
+	if c.serviceRegistryAddr == (ethcommon.Address{}) {
+		c.serviceRegistryAddr, err = c.GetContract(crypto.Keccak256Hash([]byte("ServiceRegistry")))
 		if err != nil {
 			glog.Errorf("Error getting ServiceRegistry address: %v", err)
 			return err
 		}
 	}
 
-	c.serviceRegistryAddr = serviceRegistryAddr
-
-	serviceRegistry, err := contracts.NewServiceRegistry(serviceRegistryAddr, c.backend)
+	serviceRegistry, err := contracts.NewServiceRegistry(c.serviceRegistryAddr, c.backend)
 	if err != nil {
 		glog.Errorf("Error creating ServiceRegistry binding: %v", err)
 		return err

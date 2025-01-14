@@ -58,7 +58,7 @@ func (ts *stubTicketStore) StoreWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address, minCreationRound int64) (*SignedTicket, error) {
+func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address, _ int64) (*SignedTicket, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
@@ -72,7 +72,7 @@ func (ts *stubTicketStore) SelectEarliestWinningTicket(sender ethcommon.Address,
 	return nil, nil
 }
 
-func (ts *stubTicketStore) MarkWinningTicketRedeemed(ticket *SignedTicket, txHash ethcommon.Hash) error {
+func (ts *stubTicketStore) MarkWinningTicketRedeemed(ticket *SignedTicket, _ ethcommon.Hash) error {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	ts.submitted[fmt.Sprintf("%x", ticket.Sig)] = true
@@ -99,7 +99,7 @@ func (ts *stubTicketStore) RemoveWinningTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, minCreationRound int64) (int, error) {
+func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, _ int64) (int, error) {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 	if ts.loadShouldFail {
@@ -114,7 +114,7 @@ func (ts *stubTicketStore) WinningTicketCount(sender ethcommon.Address, minCreat
 	return count, nil
 }
 
-func (ts *stubTicketStore) IsOrchActive(addr ethcommon.Address, round *big.Int) (bool, error) {
+func (ts *stubTicketStore) IsOrchActive(_ ethcommon.Address, _ *big.Int) (bool, error) {
 	return ts.isActive, ts.err
 }
 
@@ -130,7 +130,7 @@ func (sv *stubSigVerifier) SetVerifyResult(verifyResult bool) {
 	sv.verifyResult = verifyResult
 }
 
-func (sv *stubSigVerifier) Verify(addr ethcommon.Address, msg, sig []byte) bool {
+func (sv *stubSigVerifier) Verify(_ ethcommon.Address, _, _ []byte) bool {
 	return sv.verifyResult
 }
 
@@ -156,15 +156,15 @@ func newStubBroker() *stubBroker {
 	}
 }
 
-func (b *stubBroker) FundDepositAndReserve(depositAmount, reserveAmount *big.Int) (*types.Transaction, error) {
+func (b *stubBroker) FundDepositAndReserve(_, _ *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
-func (b *stubBroker) FundDeposit(amount *big.Int) (*types.Transaction, error) {
+func (b *stubBroker) FundDeposit(_ *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
-func (b *stubBroker) FundReserve(amount *big.Int) (*types.Transaction, error) {
+func (b *stubBroker) FundReserve(_ *big.Int) (*types.Transaction, error) {
 	return nil, nil
 }
 
@@ -180,7 +180,7 @@ func (b *stubBroker) Withdraw() (*types.Transaction, error) {
 	return nil, nil
 }
 
-func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) (*types.Transaction, error) {
+func (b *stubBroker) RedeemWinningTicket(ticket *Ticket, _ []byte, _ *big.Int) (*types.Transaction, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -204,7 +204,7 @@ func (b *stubBroker) IsUsedTicket(ticket *Ticket) (bool, error) {
 	return b.usedTickets[ticket.Hash()], nil
 }
 
-func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, _ ethcommon.Address) (*big.Int, error) {
 	if b.claimableReserveShouldFail {
 		return nil, fmt.Errorf("stub broker ClaimableReserve error")
 	}
@@ -212,7 +212,7 @@ func (b *stubBroker) ClaimableReserve(reserveHolder ethcommon.Address, claimant 
 	return b.reserves[reserveHolder], nil
 }
 
-func (b *stubBroker) CheckTx(tx *types.Transaction) error {
+func (b *stubBroker) CheckTx(_ *types.Transaction) error {
 	return b.checkTxErr
 }
 
@@ -229,7 +229,7 @@ func (v *stubValidator) SetIsWinningTicket(isWinningTicket bool) {
 	v.isWinningTicket = isWinningTicket
 }
 
-func (v *stubValidator) ValidateTicket(recipient ethcommon.Address, ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+func (v *stubValidator) ValidateTicket(_ ethcommon.Address, _ *Ticket, _ []byte, _ *big.Int) error {
 	if !v.isValidTicket {
 		return fmt.Errorf("stub validator invalid ticket error")
 	}
@@ -237,7 +237,7 @@ func (v *stubValidator) ValidateTicket(recipient ethcommon.Address, ticket *Tick
 	return nil
 }
 
-func (v *stubValidator) IsWinningTicket(ticket *Ticket, sig []byte, recipientRand *big.Int) bool {
+func (v *stubValidator) IsWinningTicket(_ *Ticket, _ []byte, _ *big.Int) bool {
 	return v.isWinningTicket
 }
 
@@ -252,7 +252,7 @@ type stubSigner struct {
 // TODO remove this function
 // NOTE: Keeping this function for now because removing it causes the tests to fail when run with the
 // logtostderr flag.
-func (s *stubSigner) CreateTransactOpts(gasLimit uint64, gasPrice *big.Int) (*bind.TransactOpts, error) {
+func (s *stubSigner) CreateTransactOpts(_ uint64, _ *big.Int) (*bind.TransactOpts, error) {
 	return nil, nil
 }
 
@@ -353,7 +353,7 @@ func (s *stubSenderManager) GetSenderInfo(addr ethcommon.Address) (*SenderInfo, 
 	return s.info[addr], nil
 }
 
-func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, claimant ethcommon.Address) (*big.Int, error) {
+func (s *stubSenderManager) ClaimedReserve(reserveHolder ethcommon.Address, _ ethcommon.Address) (*big.Int, error) {
 	if s.claimedReserveErr != nil {
 		return nil, s.claimedReserveErr
 	}
@@ -413,7 +413,7 @@ func (s *stubSenderMonitor) QueueTicket(ticket *SignedTicket) error {
 	return nil
 }
 
-func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) error {
+func (s *stubSenderMonitor) AddFloat(_ ethcommon.Address, _ *big.Int) error {
 	if s.addFloatErr != nil {
 		return s.addFloatErr
 	}
@@ -421,11 +421,11 @@ func (s *stubSenderMonitor) AddFloat(addr ethcommon.Address, amount *big.Int) er
 	return nil
 }
 
-func (s *stubSenderMonitor) SubFloat(addr ethcommon.Address, amount *big.Int) {
+func (s *stubSenderMonitor) SubFloat(_ ethcommon.Address, amount *big.Int) {
 	s.maxFloat.Sub(s.maxFloat, amount)
 }
 
-func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
+func (s *stubSenderMonitor) MaxFloat(_ ethcommon.Address) (*big.Int, error) {
 	if s.maxFloatErr != nil {
 		return nil, s.maxFloatErr
 	}
@@ -433,7 +433,7 @@ func (s *stubSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error) {
 	return s.maxFloat, nil
 }
 
-func (s *stubSenderMonitor) ValidateSender(addr ethcommon.Address) error { return s.validateSenderErr }
+func (s *stubSenderMonitor) ValidateSender(_ ethcommon.Address) error { return s.validateSenderErr }
 
 // MockRecipient is useful for testing components that depend on pm.Recipient
 type MockRecipient struct {
@@ -453,7 +453,7 @@ func (m *MockRecipient) ReceiveTicket(ticket *Ticket, sig []byte, seed *big.Int)
 }
 
 // RedeemWinningTickets redeems all winning tickets with the broker
-// for a all sessionIDs
+// for all sessionIDs
 func (m *MockRecipient) RedeemWinningTickets(sessionIDs []string) error {
 	args := m.Called(sessionIDs)
 	return args.Error(0)
@@ -495,7 +495,7 @@ func (m *MockRecipient) EV() *big.Rat {
 }
 
 // Sets the max ticket facevalue for the orchestrator
-func (m *MockRecipient) SetMaxFaceValue(maxfacevalue *big.Int) {
+func (m *MockRecipient) SetMaxFaceValue(_ *big.Int) {
 
 }
 
@@ -509,6 +509,11 @@ type MockSender struct {
 func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	args := m.Called(ticketParams)
 	return args.String(0)
+}
+
+// CleanupSession deletes session from the internal ma
+func (m *MockSender) CleanupSession(sessionID string) {
+	m.Called(sessionID)
 }
 
 // EV returns the ticket EV for a session

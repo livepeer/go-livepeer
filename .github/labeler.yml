@@ -1,2 +1,33 @@
-AI:
-  - base-branch: "ai-video"
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "**/go.mod"
+      - "**/go.sum"
+      - "**/requirements.txt"
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "docker/**"
+
+docs:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "doc/**"
+
+github_actions:
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
+
+go:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "**/*.go"
+
+ai:
+  - changed-files:
+    - any-glob-to-any-file:
+      - "ai/**"
+      - "**/ai_*.go"

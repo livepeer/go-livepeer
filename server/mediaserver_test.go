@@ -115,31 +115,6 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 	return S, cancel
 }
 
-func setupServerWithCancelAndPorts() (*LivepeerServer, context.CancelFunc) {
-	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	var S *LivepeerServer
-	if S == nil {
-		httpPushResetTimer = func() (context.Context, context.CancelFunc) {
-			ctx, cancel := context.WithCancel(context.Background())
-			pushResetWg.Add(1)
-			wrapCancel := func() {
-				cancel()
-				pushResetWg.Done()
-			}
-			return ctx, wrapCancel
-		}
-		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-		S, _ = NewLivepeerServer("127.0.0.1:2938", n, true, "")
-		go S.StartMediaServer(ctx, "127.0.0.1:9080")
-		go func() {
-			srv := &http.Server{Addr: "127.0.0.1:9938"}
-			S.StartCliWebserver(srv)
-		}()
-	}
-	return S, cancel
-}
-
 // since we have test that checks that there is no goroutine
 // left running after using RTMP connection - we have to properly
 // close connections in all the tests that are using them
@@ -170,6 +145,8 @@ type stubDiscovery struct {
 func (d *stubDiscovery) GetInfos() []common.OrchestratorLocalInfo {
 	return nil
 }
+
+var cleanupSessions = func(sessionID string) {}
 
 func (d *stubDiscovery) GetOrchestrators(ctx context.Context, num int, sus common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
@@ -237,14 +214,14 @@ func TestSelectOrchestrator(t *testing.T) {
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	sp := &core.StreamParameters{ManifestID: mid, Profiles: []ffmpeg.VideoProfile{ffmpeg.P360p30fps16x9}, OS: storage}
-	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); err != errDiscovery {
+	if _, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); err != errDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0)); sess != nil || err != errNoOrchs {
+	if sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions); sess != nil || err != errNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -255,7 +232,7 @@ func TestSelectOrchestrator(t *testing.T) {
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken0},
 		{PriceInfo: &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1}, TicketParams: &net.TicketParams{}, AuthToken: authToken1},
 	}
-	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, _ := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 
 	if len(sess) != len(sd.infos) {
 		t.Error("Expected session length of 2")
@@ -290,7 +267,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	externalStorage := drivers.NodeStorage.NewSession(string(mid))
 	sp.OS = externalStorage
 
-	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err := selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 	assert.Nil(err)
 
 	// B should initialize new OS session using auth token sessionID
@@ -378,7 +355,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	expSessionID2 := "bar"
 	sender.On("StartSession", mock.Anything).Return(expSessionID2).Once()
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0))
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), common.ScoreAtLeast(0), cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 2)
@@ -407,7 +384,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	// Skip orchestrator if missing auth token
 	sd.infos[0].AuthToken = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -417,7 +394,7 @@ func TestSelectOrchestrator(t *testing.T) {
 	sd.infos[0].AuthToken = &net.AuthToken{}
 	sd.infos[0].TicketParams = nil
 
-	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true })
+	sess, err = selectOrchestrator(context.TODO(), s.LivepeerNode, sp, 4, newSuspender(), func(float32) bool { return true }, cleanupSessions)
 	require.Nil(err)
 
 	assert.Len(sess, 1)
@@ -677,7 +654,7 @@ func TestCreateRTMPStreamHandlerWebhook(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(sid)
 
-	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store"}`)
+	ts17 := makeServer(`{"manifestID":"a3", "objectStore": "s3+http://us:pass@object.store/path", "recordObjectStore": "s3+http://us:pass@record.store/bucket"}`)
 	defer ts17.Close()
 	id4, err := createSid(u)
 	require.NoError(t, err)
@@ -1492,6 +1469,101 @@ func TestJsonProfileToVideoProfiles(t *testing.T) {
 	resp.Profiles[0].Profile = "invalid"
 	_, err = ffmpeg.ParseProfilesFromJsonProfileArray(resp.Profiles)
 	assert.Equal("unable to parse the H264 encoder profile: unknown VideoProfile profile name", err.Error())
+}
+
+func TestMediaCompatible(t *testing.T) {
+	empty := ffmpeg.MediaFormatInfo{}
+	normal := ffmpeg.MediaFormatInfo{
+		Acodec:       "aac",
+		Vcodec:       "h264",
+		PixFormat:    ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatNV12},
+		Format:       "mpegts",
+		Width:        100,
+		Height:       200,
+		AudioBitrate: 300,
+		DurSecs:      5,
+	}
+	tests := []struct {
+		name  string
+		a     ffmpeg.MediaFormatInfo
+		b     ffmpeg.MediaFormatInfo
+		match bool
+	}{{
+		name:  "empty",
+		a:     empty,
+		match: true,
+	}, {
+		name:  "normal",
+		match: true,
+		a:     normal,
+		b: ffmpeg.MediaFormatInfo{
+			Format:       "mp4",
+			DurSecs:      10,
+			AudioBitrate: 400,
+			Acodec:       normal.Acodec,
+			Vcodec:       normal.Vcodec,
+			PixFormat:    normal.PixFormat,
+			Width:        normal.Width,
+			Height:       normal.Height,
+		},
+	}, {
+		name: "w",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "h",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Height:    normal.Height + 1,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+		},
+	}, {
+		name: "pixfmt",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Width:     normal.Width,
+			Acodec:    normal.Acodec,
+			Vcodec:    normal.Vcodec,
+			PixFormat: ffmpeg.PixelFormat{RawValue: ffmpeg.PixelFormatYUV420P},
+			Height:    normal.Height,
+		},
+	}, {
+		name: "video codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Vcodec:    "flv",
+			Acodec:    normal.Acodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}, {
+		name: "audio codec",
+		a:    normal,
+		b: ffmpeg.MediaFormatInfo{
+			Acodec:    "opus",
+			Vcodec:    normal.Vcodec,
+			Format:    normal.Format,
+			PixFormat: normal.PixFormat,
+			Width:     normal.Width,
+			Height:    normal.Height,
+		},
+	}}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.match, mediaCompatible(tt.a, tt.b))
+		})
+	}
 }
 
 func mustParseUrl(t *testing.T, str string) *url.URL {
