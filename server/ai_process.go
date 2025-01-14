@@ -1185,10 +1185,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data: ") {
 				data := strings.TrimPrefix(line, "data: ")
-				if data == "[DONE]" {
-					//streamChan <- worker.LLMResponse{Done: true, TokensUsed: totalTokens}
-					break
-				}
+
 				var chunk worker.LLMResponse
 				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
@@ -1196,6 +1193,10 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 				}
 				totalTokens = chunk.TokensUsed
 				streamChan <- &chunk
+				//check if stream is finished
+				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
+					break
+				}
 			}
 		}
 		if err := scanner.Err(); err != nil {
