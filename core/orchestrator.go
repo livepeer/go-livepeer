@@ -599,6 +599,27 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		return &TranscodeResult{Err: err}
 	}
 
+	// Create job in Hive when starting transcoding
+	if n.TranscoderManager != nil && n.TranscoderManager.hiveClient != nil {
+		var workerID string
+		if transcoder, ok := n.Transcoder.(*RemoteTranscoderManager); ok {
+			// Get the assigned transcoder for this session
+			if worker, err := transcoder.selectTranscoder(md.AuthToken.SessionId, md.Caps); err == nil {
+				workerID = worker.hiveWorkerID
+			}
+		}
+		// Create unique job ID by combining session ID and segment sequence number
+		jobID := fmt.Sprintf("%s-%d", md.AuthToken.SessionId, seg.SeqNo)
+		createJobReq := &hive.CreateJobRequest{
+			Pipeline: "transcoding",
+			Source:   hive.JobSourceLivepeer,
+			WorkerID: workerID,
+		}
+		if err := n.TranscoderManager.hiveClient.CreateJob(ctx, jobID, createJobReq); err != nil {
+			return terr(fmt.Errorf("failed to create job in Hive: %w", err))
+		}
+	}
+
 	// Prevent unnecessary work, check for replayed sequence numbers.
 	// NOTE: If we ever process segments from the same job concurrently,
 	// we may still end up doing work multiple times. But this is OK for now.
@@ -680,6 +701,26 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	clog.V(common.DEBUG).Infof(ctx, "Transcoding of segment took=%v", took)
 	if lpmon.Enabled {
 		lpmon.SegmentTranscoded(ctx, 0, seg.SeqNo, md.Duration, took, common.ProfilesNames(md.Profiles), true, true)
+	}
+
+	// Complete job in Hive
+	if n.TranscoderManager != nil && n.TranscoderManager.hiveClient != nil {
+		// Calculate payout in USD based on pixels transcoded
+		// Assuming $0.01 per million pixels as base rate
+		usdPayout := float64(tData.Pixels) * 0.01 / 1_000_000
+		completeJobReq := &hive.CompleteJobRequest{
+			Status: hive.JobStatusCompleted,
+			Usage:  tData.Pixels,
+			Payout: usdPayout,
+		}
+		if err != nil {
+			completeJobReq.Payout = 0
+			completeJobReq.Status = hive.JobStatusFailed
+			completeJobReq.ErrorMsg = err.Error()
+		}
+		if err := n.TranscoderManager.hiveClient.CompleteJob(ctx, fmt.Sprintf("%s-%d", md.AuthToken.SessionId, seg.SeqNo), completeJobReq); err != nil {
+			clog.Errorf(ctx, "Failed to complete job in Hive: %v", err)
+		}
 	}
 
 	// Prepare the result object

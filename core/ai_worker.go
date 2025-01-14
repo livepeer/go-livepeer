@@ -209,8 +209,8 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 	if !ok {
 		ctxNonRoutine := context.Background()
 		err = rwm.hiveClient.CompleteJob(ctxNonRoutine, jobID, &hive.CompleteJobRequest{
-			TokensUsed: 0,
-			Status:     hive.JobStatusCompleted,
+			Payout: 0,
+			Status: hive.JobStatusCompleted,
 		})
 
 		if err != nil {
@@ -227,8 +227,8 @@ func (rwm *RemoteAIWorkerManager) Process(ctx context.Context, requestID string,
 
 					ctxRoutine := context.Background()
 					err = rwm.hiveClient.CompleteJob(ctxRoutine, jobID, &hive.CompleteJobRequest{
-						TokensUsed: 0,
-						Status:     hive.JobStatusCompleted,
+						Payout: 0,
+						Status: hive.JobStatusCompleted,
 					})
 
 					if err != nil {
