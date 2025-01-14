@@ -128,9 +128,9 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	// If this method is called assume that the orch should be suspended
 	// as well.  Since AISessionManager re-uses the pools the suspension
 	// penalty needs to consider the current suspender count to set the penalty
-	last_count, ok := pool.suspender.list[sess.Transcoder()]
+	lastCount, ok := pool.suspender.list[sess.Transcoder()]
 	if ok {
-		penalty = pool.suspender.count - last_count + pool.penalty
+		penalty = pool.suspender.count - lastCount + pool.penalty
 	} else {
 		penalty = pool.suspender.count + pool.penalty
 	}
@@ -230,8 +230,7 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersio
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	shouldRefreshSelector := func() bool {
-		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
-		// 1/2 the total # of orchs that can be queried during discovery
+
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
 		if (sel.warmPool.Size() + sel.coldPool.Size()) == 0 {
@@ -242,7 +241,8 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 				sel.suspender.signalRefresh()
 			}
 		}
-
+		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
+		// 1/2 the total # of orchs that can be queried during discovery
 		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
 			return true
 		}
