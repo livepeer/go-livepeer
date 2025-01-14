@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
-
-	"github.com/livepeer/lpms/ffmpeg"
 
 	"github.com/dustin/go-humanize"
 )
@@ -211,16 +210,19 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				break
 			}
 
-			_, err = ffmpeg.Transcode3(&ffmpeg.TranscodeOptionsIn{
-				Fname: fmt.Sprintf("pipe:%d", r.Fd()),
-			}, []ffmpeg.TranscodeOptions{{
-				Oname:        params.liveParams.outputRTMPURL,
-				AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-				VideoEncoder: ffmpeg.ComponentOptions{Name: "copy"},
-				Muxer:        ffmpeg.ComponentOptions{Name: "flv"},
-			}})
+			cmd := exec.Command("ffmpeg",
+				"-i", "pipe:0",
+				"-c:a", "copy",
+				"-c:v", "copy",
+				"-f", "flv",
+				params.liveParams.outputRTMPURL,
+			)
+			cmd.Stdin = r
+			output, err := cmd.CombinedOutput()
 			if err != nil {
-				clog.Infof(ctx, "Error sending RTMP out: %s", err)
+				clog.Errorf(ctx, "Error sending RTMP out: %v", err)
+				clog.Infof(ctx, "Process output: %s", output)
+				return
 			}
 			time.Sleep(5 * time.Second)
 		}

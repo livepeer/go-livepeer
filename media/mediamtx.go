@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
 )
@@ -27,10 +28,11 @@ func NewMediaMTXClient(host, apiPassword, sourceID, sourceType string) *MediaMTX
 }
 
 const (
-	mediaMTXControlPort   = "9997"
-	mediaMTXControlUser   = "admin"
-	MediaMTXWebrtcSession = "webrtcSession"
-	MediaMTXRtmpConn      = "rtmpConn"
+	mediaMTXControlPort    = "9997"
+	mediaMTXControlTimeout = 30 * time.Second
+	mediaMTXControlUser    = "admin"
+	MediaMTXWebrtcSession  = "webrtcSession"
+	MediaMTXRtmpConn       = "rtmpConn"
 )
 
 func MediamtxSourceTypeToString(s string) (string, error) {
@@ -64,7 +66,9 @@ func (mc *MediaMTXClient) KickInputConnection(ctx context.Context) error {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), mediaMTXControlTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://%s:%s/v3/%s/kick/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create kick request: %w", err)
 	}
@@ -85,7 +89,9 @@ func (mc *MediaMTXClient) StreamExists() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), mediaMTXControlTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s:%s/v3/%s/get/%s", mc.host, mediaMTXControlPort, apiPath, mc.sourceID), nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create get stream request: %w", err)
 	}
