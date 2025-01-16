@@ -578,6 +578,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		} else if !*cfg.HevcDecoding {
 			transcoderCaps = core.RemoveCapability(transcoderCaps, core.Capability_HEVC_Decode)
 		}
+	} else if *cfg.AIWorker {
+		// Assign default capabilities to AI workers so they don't require the `-transcoder` flag.
+		transcoderCaps = core.DefaultCapabilities()
 	}
 
 	if *cfg.Redeemer {
