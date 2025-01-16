@@ -1534,10 +1534,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	} else if n.NodeType == core.AIWorkerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
-		// Need to have default Capabilities if not running transcoder.
-		if !*cfg.Transcoder {
-			aiCaps = append(aiCaps, core.DefaultCapabilities()...)
-		}
+	}
+
+	// Apply default capabilities if not running as a transcoder.
+	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
+		aiCaps = append(aiCaps, core.DefaultCapabilities()...)
 	}
 
 	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
