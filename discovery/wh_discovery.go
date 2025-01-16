@@ -16,7 +16,7 @@ import (
 )
 
 type webhookResponse struct {
-	Address string  `json:"address,omitempty"`
+	Address string  `json:"address"`
 	Score   float32 `json:"score,omitempty"`
 }
 
@@ -147,12 +147,9 @@ func deserializeWebhookJSON(body []byte) ([]common.OrchestratorLocalInfo, error)
 	}
 	var infos []common.OrchestratorLocalInfo
 	for _, addr := range addrs {
-		if addr.Address == "" {
-			continue
-		}
 		uri, err := url.ParseRequestURI(addr.Address)
 		if err != nil {
-			glog.Errorf("Unable to parse address  %q : %s", addr.Address, err)
+			glog.Errorf("Unable to parse address %q : %s", addr.Address, err)
 			continue
 		}
 		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: addr.Score})
