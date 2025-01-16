@@ -1167,6 +1167,12 @@ func submitLLM(ctx context.Context, params aiRequestParams, sess *AISession, req
 		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	// TODO: move to after receive stream response in handleSSEStream and handleNonStreamingResponse to count input tokens
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
 	if req.Stream != nil && *req.Stream {
 		return handleSSEStream(ctx, resp.Body, sess, req, start)
 	}
