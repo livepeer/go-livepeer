@@ -14,7 +14,7 @@
 
 #### Orchestrator
 
--   [#3355](https://github.com/livepeer/go-livepeer/pull/3355) Allow AI orchs to run without `transcoder` flag.
+-   [#3355](https://github.com/livepeer/go-livepeer/pull/3355) Allow O/T AI orchs to run without `transcoder` flag.
 
 #### Transcoder
 
