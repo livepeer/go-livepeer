@@ -71,6 +71,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/image-to-image-generic", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToImageGenericMultipartRequestBody])))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -469,6 +470,31 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// TTS pricing is typically in characters, including punctuation.
 		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
+	case worker.GenImageToImageGenericMultipartRequestBody:
+		pipeline = "image-to-image-generic"
+		cap = core.Capability_ImageToImageGeneric
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ImageToImageGeneric(ctx, requestID, v)
+		}
+
+		imageRdr, err := v.Image.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		config, _, err := image.DecodeConfig(imageRdr)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// NOTE: Should be enforced by the gateway, added for backwards compatibility.
+		numImages := int64(1)
+		if v.NumImagesPerPrompt != nil {
+			numImages = int64(*v.NumImagesPerPrompt)
+		}
+
+		outPixels = int64(config.Height) * int64(config.Width) * numImages
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -574,6 +600,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 		case worker.GenTextToSpeechJSONRequestBody:
 			latencyScore = CalculateTextToSpeechLatencyScore(took, outPixels)
+		case worker.GenImageToImageGenericMultipartRequestBody:
+			latencyScore = CalculateImageToImageGenericLatencyScore(took, v, outPixels)
 		}
 
 		var pricePerAIUnit float64
@@ -766,7 +794,7 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 		if p.Header.Get("Content-Type") == "application/json" {
 			var results interface{}
 			switch pipeline {
-			case "text-to-image", "image-to-image", "upscale", "image-to-video":
+			case "text-to-image", "image-to-image", "upscale", "image-to-video", "image-to-image-generic":
 				var parsedResp worker.ImageResponse
 
 				err := json.Unmarshal(body, &parsedResp)

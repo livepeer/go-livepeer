@@ -884,6 +884,50 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 	return res.Results, nil
 }
 
+func (orch *orchestrator) ImageToImageGeneric(ctx context.Context, requestID string, req worker.GenImageToImageGenericMultipartRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.ImageToImageGeneric(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "image-to-image-generic", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	imgBytes, err := req.Image.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, imgBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Image.InitFromBytes(nil, "") // remove image data
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "image-to-image-generic", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "image-to-image-generic", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -1060,6 +1104,10 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 
 func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
 	return n.AIWorker.LiveVideoToVideo(ctx, req)
+}
+
+func (n *LivepeerNode) ImageToImageGeneric(ctx context.Context, req worker.GenImageToImageGenericMultipartRequestBody) (*worker.ImageResponse, error) {
+	return n.AIWorker.ImageToImageGeneric(ctx, req)
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.

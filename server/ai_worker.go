@@ -314,6 +314,23 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 			return n.TextToSpeech(ctx, req)
 		}
 		reqOk = true
+	case "image-to-image-generic":
+		var req worker.GenImageToImageGenericMultipartRequestBody
+		err = json.Unmarshal(reqData.Request, &req)
+		if err != nil || req.ModelId == nil {
+			break
+		}
+		input, err = core.DownloadData(ctx, reqData.InputUrl)
+		if err != nil {
+			break
+		}
+		modelID = *req.ModelId
+		resultType = "image/png"
+		req.Image.InitFromBytes(input, "image")
+		processFn = func(ctx context.Context) (interface{}, error) {
+			return n.ImageToImageGeneric(ctx, req)
+		}
+		reqOk = true
 	default:
 		err = errors.New("AI request pipeline type not supported")
 	}

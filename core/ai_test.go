@@ -667,6 +667,14 @@ func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 	return &worker.LiveVideoToVideoResponse{}, nil
 }
 
+func (a *stubAIWorker) ImageToImageGeneric(ctx context.Context, req worker.GenImageToImageGenericMultipartRequestBody) (*worker.ImageResponse, error) {
+	return &worker.ImageResponse{
+		Images: []worker.Media{
+			{Url: "http://example.com/image.png"},
+		},
+	}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }
