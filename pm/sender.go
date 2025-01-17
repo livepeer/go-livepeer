@@ -21,6 +21,8 @@ type Sender interface {
 	// StartSession creates a session for a given set of ticket params which tracks information
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
+	StartSessionByID(ticketParams TicketParams, sessionID string) string
+	UpdateSessionByID(TicketParams TicketParams, sessionID string)
 
 	// CleanupSession deletes session from the internal map
 	CleanupSession(sessionID string)
@@ -73,6 +75,24 @@ func (s *sender) StartSession(ticketParams TicketParams) string {
 	})
 
 	return sessionID
+}
+
+func (s *sender) StartSessionByID(ticketParams TicketParams, sessionID string) string {
+	s.sessions.Store(sessionID, &session{
+		ticketParams: ticketParams,
+		senderNonce:  0,
+	})
+
+	return sessionID
+}
+
+func (s *sender) UpdateSessionByID(ticketParams TicketParams, sessionID string) {
+	_, err := s.loadSession(sessionID)
+	if err != nil {
+		s.StartSessionByID(ticketParams, sessionID)
+	}
+	session, _ := s.loadSession(sessionID)
+	session.ticketParams = ticketParams
 }
 
 // EV returns the ticket EV for a session
