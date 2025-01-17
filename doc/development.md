@@ -22,7 +22,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
 <details>
 <summary>Launch.json (transcoding)</summary>
 
-```bash
+<!-- prettier-ignore -->
+```json
 {
   "version": "0.2.0",
   "configurations": [
@@ -175,6 +176,18 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-ethAcctAddr=<ETH_ACCT_ADDR>"
       ]
     }
+  ],
+  "compounds": [
+    {
+      "name": "Launch full stack (off-chain)",
+      "configurations": ["Launch O/T (off-chain)", "Launch G (off-chain)"],
+      "stopAll": true
+    },
+    {
+      "name": "Launch full stack (on-chain)",
+      "configurations": ["Launch O/T (on-chain)", "Launch G (on-chain)"],
+      "stopAll": true
+    }
   ]
 }
 ```
@@ -184,7 +197,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
 <details>
 <summary>Launch.json (AI)</summary>
 
-```bash
+<!-- prettier-ignore -->
+```json
 {
   "version": "0.2.0",
   "configurations": [
@@ -343,6 +357,21 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-ethPassword=<ETH_SECRET>",
         "-ethAcctAddr=<ETH_ACCT_ADDR>"
       ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch full AI stack (off-chain)",
+      "configurations": [
+        "Launch AI O/W (off-chain)",
+        "Launch AI G (off-chain)"
+      ],
+      "stopAll": true
+    },
+    {
+      "name": "Launch full stack (on-chain)",
+      "configurations": ["Launch AI O/W (on-chain)", "Launch AI G (on-chain)"],
+      "stopAll": true
     }
   ]
 }
