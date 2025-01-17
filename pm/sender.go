@@ -22,7 +22,7 @@ type Sender interface {
 	// for creating new tickets
 	StartSession(ticketParams TicketParams) string
 	StartSessionByID(ticketParams TicketParams, sessionID string) string
-	UpdateSessionByID(TicketParams TicketParams, sessionID string)
+	UpdateSessionByID(ticketParams TicketParams, sessionID string)
 
 	// CleanupSession deletes session from the internal map
 	CleanupSession(sessionID string)

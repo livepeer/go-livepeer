@@ -510,6 +510,13 @@ func (m *MockSender) StartSession(ticketParams TicketParams) string {
 	args := m.Called(ticketParams)
 	return args.String(0)
 }
+func (m *MockSender) StartSessionByID(ticketParams TicketParams, sessionID string) string {
+	args := m.Called(ticketParams)
+	return args.String(0)
+}
+func (m *MockSender) UpdateSessionByID(ticketParams TicketParams, sessionID string) {
+	m.Called(ticketParams)
+}
 
 // CleanupSession deletes session from the internal ma
 func (m *MockSender) CleanupSession(sessionID string) {

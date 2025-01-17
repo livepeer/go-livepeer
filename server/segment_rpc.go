@@ -781,7 +781,7 @@ func newBalanceUpdate(sess *BroadcastSession, minCredit *big.Rat) (*BalanceUpdat
 	}
 
 	update.NumTickets, update.NewCredit, update.ExistingCredit = sess.Balance.StageUpdate(safeMinCredit, ev)
-	glog.Infof("Staged balance update - numTickets=%v newCredit=%v existingCredit=%v", update.NumTickets, update.NewCredit.FloatString(3), update.ExistingCredit.FloatString(3))
+	//glog.Infof("Staged balance update - numTickets=%v newCredit=%v existingCredit=%v", update.NumTickets, update.NewCredit.FloatString(3), update.ExistingCredit.FloatString(3))
 	return update, nil
 }
 
