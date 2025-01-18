@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"math/rand"
@@ -368,7 +367,7 @@ func ReadAtMost(r io.Reader, n int) ([]byte, error) {
 	// Reading one extra byte to check if input Reader
 	// had more than n bytes
 	limitedReader := io.LimitReader(r, int64(n)+1)
-	b, err := ioutil.ReadAll(limitedReader)
+	b, err := io.ReadAll(limitedReader)
 	if err == nil && len(b) > n {
 		return nil, errors.New("input bigger than max buffer size")
 	}

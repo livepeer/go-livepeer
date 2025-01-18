@@ -30,6 +30,8 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
+	"github.com/oapi-codegen/runtime"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
@@ -71,6 +73,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/frame-interpolation", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.FrameInterpolationMultipartRequestBody])))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -278,6 +281,29 @@ func overwriteHost(hostOverwrite, url string) string {
 	return u.String()
 }
 
+func (h *lphttp) FrameInterpolation() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.FrameInterpolationMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -390,6 +416,53 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		frames := int64(25)
 
 		outPixels = height * width * int64(frames)
+
+	case worker.FrameInterpolationMultipartRequestBody:
+		pipeline = "frame-interpolation"
+		cap = core.Capability_FrameInterpolation
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.FrameInterpolation(ctx, v)
+		}
+		video, err := v.Video.Reader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+		defer video.Close() // Don't forget to close the video after you're done with it
+
+		probeData, err := ffmpeg_go.ProbeReader(video)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+
+		var probeDataMap map[string]interface{}
+		err = json.Unmarshal([]byte(probeData), &probeDataMap)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+		width := streamData["width"].(float64)
+		height := streamData["height"].(float64)
+		frameRate := streamData["r_frame_rate"].(string)
+
+		// You can parse the frame rate string to extract the numerator and denominator
+		numerator, denominator := 0, 0
+		_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+		var numInterFrames int64
+		if v.InterFrames != nil {
+			numInterFrames = int64(*v.InterFrames)
+		}
+
+		// Calculate the number of frames
+		numberOfFrames := numerator / denominator
+
+		// Calculate the output pixels using the video profile
+		outPixels = int64(width) * int64(height) * int64(numberOfFrames) * int64(numInterFrames)
+
 	case worker.GenAudioToTextMultipartRequestBody:
 		pipeline = "audio-to-text"
 		cap = core.Capability_AudioToText
@@ -563,6 +636,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateImageToVideoLatencyScore(took, v, outPixels)
 		case worker.GenUpscaleMultipartRequestBody:
 			latencyScore = CalculateUpscaleLatencyScore(took, v, outPixels)
+		case worker.FrameInterpolationMultipartRequestBody:
+			latencyScore = CalculateFrameInterpolationLatencyScore(took, v, outPixels)
 		case worker.GenAudioToTextMultipartRequestBody:
 			durationSeconds, err := common.CalculateAudioDuration(v.Audio)
 			if err == nil {
