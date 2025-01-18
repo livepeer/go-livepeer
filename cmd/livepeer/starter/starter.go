@@ -1179,7 +1179,29 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	var aiCaps []core.Capability
+	var aiConfig []core.AIModelConfig
+	var externalAIRunner bool
+
 	capabilityConstraints := make(core.PerCapabilityConstraints)
+	if *cfg.AIModels != "" {
+		aiConfig, err = core.ParseAIModelConfigs(*cfg.AIModels)
+		if err != nil {
+			glog.Errorf("Error parsing -aiModels: %v", err)
+			return
+		}
+
+		// Check if each entry has a valid URL
+		for _, config := range aiConfig {
+			if config.URL != "" {
+				_, err := url.ParseRequestURI(config.URL)
+				if err != nil {
+					glog.Errorf("Error parsing URL for model %v: %v", config.ModelID, err)
+					return
+				}
+				externalAIRunner = true
+			}
+		}
+	}
 
 	if *cfg.AIWorker {
 		gpus := []string{}
@@ -1211,7 +1233,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir, externalAIRunner)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1230,13 +1252,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 
 	if *cfg.AIModels != "" {
-		configs, err := core.ParseAIModelConfigs(*cfg.AIModels)
-		if err != nil {
-			glog.Errorf("Error parsing -aiModels: %v", err)
-			return
-		}
-
-		for _, config := range configs {
+		for _, config := range aiConfig {
 			pipelineCap, err := core.PipelineToCapability(config.Pipeline)
 			if err != nil {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
