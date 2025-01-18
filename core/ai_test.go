@@ -643,6 +643,19 @@ func (a *stubAIWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipa
 	}, nil
 }
 
+func (a *stubAIWorker) LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
+	return &worker.VideoResponse{
+		Frames: [][]worker.Media{
+			{
+				{Url: "http://example.com/frame1.png", Nsfw: false},
+				{Url: "http://example.com/frame2.png", Nsfw: false},
+				{Url: "http://example.com/frame3.png", Nsfw: false},
+				{Url: "http://example.com/frame4.png", Nsfw: false},
+			},
+		},
+	}, nil
+}
+
 func (a *stubAIWorker) AudioToText(ctx context.Context, req worker.GenAudioToTextMultipartRequestBody) (*worker.TextResponse, error) {
 	return &worker.TextResponse{Text: "Transcribed text"}, nil
 }

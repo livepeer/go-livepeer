@@ -373,6 +373,8 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
 		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+	case "live-portrait":
+		req = worker.LivePortraitLivePortraitPostMultipartRequestBody{ModelId: &modelId, SourceImage: inputFile, DrivingVideo: inputFile}
 	case "image-to-text":
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
@@ -632,6 +634,35 @@ func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 		return nil, a.Err
 	} else {
 		return &worker.LiveVideoToVideoResponse{}, nil
+	}
+}
+
+func (a *stubAIWorker) LivePortrait(ctx context.Context, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.VideoResponse{
+			Frames: [][]worker.Media{
+				{
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 113,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 131,
+					},
+					{
+						Url:  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 311,
+					},
+				},
+			},
+		}, nil
 	}
 }
 
