@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"

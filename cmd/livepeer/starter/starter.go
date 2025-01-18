@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
