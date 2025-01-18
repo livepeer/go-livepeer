@@ -18,7 +18,7 @@ RUN	mkdir -p /var/log/ \
 
 COPY --chmod=0755	mediamtx-metrics.bash	/opt/mediamtx-metrics.bash
 
-ENV	MEDIAMTX_VERSION="1.9.3"
+ENV	MEDIAMTX_VERSION="1.11.1"
 
 ADD	"https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"	/opt/mediamtx/mediamtx.tar.gz
 
