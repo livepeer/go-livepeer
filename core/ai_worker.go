@@ -466,6 +466,21 @@ func (n *LivepeerNode) saveLocalAIWorkerResults(ctx context.Context, results int
 		resp.Audio.Url = osUrl
 
 		results = resp
+	case worker.ObjectDetectionResponse:
+		if resp.Video.Url != "" {
+			err := worker.ReadVideoB64DataUrl(resp.Video.Url, &buf)
+			if err != nil {
+				return nil, err
+			}
+
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewBuffer(buf.Bytes()), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+			resp.Video.Url = osUrl
+		}
+
+		results = resp
 	}
 
 	//no file response to save, response is text
@@ -510,6 +525,19 @@ func (n *LivepeerNode) saveRemoteAIWorkerResults(ctx context.Context, results *R
 		delete(results.Files, fileName)
 
 		results.Results = resp
+	case worker.ObjectDetectionResponse:
+		if resp.Video.Url != "" {
+			fileName := resp.Video.Url
+			osUrl, err := storage.OS.SaveData(ctx, fileName, bytes.NewReader(results.Files[fileName]), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+
+			resp.Video.Url = osUrl
+			delete(results.Files, fileName)
+
+			results.Results = resp
+		}
 	}
 
 	// no file response to save, response is text
@@ -884,6 +912,50 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 	return res.Results, nil
 }
 
+func (orch *orchestrator) ObjectDetection(ctx context.Context, requestID string, req worker.GenObjectDetectionMultipartRequestBody) (interface{}, error) {
+	// local AIWorker processes job if combined orchestrator/ai worker
+	if orch.node.AIWorker != nil {
+		workerResp, err := orch.node.ObjectDetection(ctx, req)
+		if err == nil {
+			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
+		} else {
+			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
+			if monitor.Enabled {
+				monitor.AIResultSaveError(ctx, "object-detection", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+			}
+			return nil, err
+		}
+	}
+
+	// remote ai worker proceses job
+	videoBytes, err := req.Video.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	inputUrl, err := orch.SaveAIRequestInput(ctx, requestID, videoBytes)
+	if err != nil {
+		return nil, err
+	}
+	req.Video.InitFromBytes(nil, "")
+
+	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "object-detection", *req.ModelId, inputUrl, AIJobRequestData{Request: req, InputUrl: inputUrl})
+	if err != nil {
+		return nil, err
+	}
+
+	res, err = orch.node.saveRemoteAIWorkerResults(ctx, res, requestID)
+	if err != nil {
+		clog.Errorf(ctx, "Error saving remote ai result err=%q", err)
+		if monitor.Enabled {
+			monitor.AIResultSaveError(ctx, "object-detection", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
+		}
+		return nil, err
+	}
+
+	return res.Results, nil
+}
+
 // only used for sending work to remote AI worker
 func (orch *orchestrator) SaveAIRequestInput(ctx context.Context, requestID string, fileData []byte) (string, error) {
 	node := orch.node
@@ -1062,7 +1134,11 @@ func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 	return n.AIWorker.LiveVideoToVideo(ctx, req)
 }
 
-// transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
+func (n *LivepeerNode) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	return n.AIWorker.ObjectDetection(ctx, req)
+}
+
+// transcodeFrames converts a series of image URLs into a video segment for the image-to-video and object-detection pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
 

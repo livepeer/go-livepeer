@@ -71,6 +71,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
+	lp.transRPC.Handle("/object-detection", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.GenObjectDetectionMultipartRequestBody])))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
 	return nil
@@ -469,6 +470,20 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		// TTS pricing is typically in characters, including punctuation.
 		words := utf8.RuneCountInString(*v.Text)
 		outPixels = int64(1000 * words)
+	case worker.GenObjectDetectionMultipartRequestBody:
+		pipeline = "object-detection"
+		cap = core.Capability_ObjectDetection
+		modelID = *v.ModelId
+		mediaFormat, err := common.GetInputVideoInfo(v.Video)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.ObjectDetection(ctx, requestID, v)
+		}
+		// Calculate the output pixels using the video profile
+		outPixels = int64(mediaFormat.Width) * int64(mediaFormat.Height) * int64(mediaFormat.FPS) * mediaFormat.DurSecs
 	default:
 		respondWithError(w, "Unknown request type", http.StatusBadRequest)
 		return
@@ -574,6 +589,8 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 		case worker.GenTextToSpeechJSONRequestBody:
 			latencyScore = CalculateTextToSpeechLatencyScore(took, outPixels)
+		case worker.GenObjectDetectionMultipartRequestBody:
+			latencyScore = CalculateObjectDetectionLatencyScore(took, outPixels)
 		}
 
 		var pricePerAIUnit float64
@@ -785,6 +802,16 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 				}
 			case "text-to-speech":
 				var parsedResp worker.AudioResponse
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
+			case "object-detection":
+				var parsedResp worker.ObjectDetectionResponse
+
 				err := json.Unmarshal(body, &parsedResp)
 				if err != nil {
 					glog.Error("Error getting results json:", err)
