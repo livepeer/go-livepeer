@@ -233,6 +233,15 @@ func (m *MockClient) ReplaceTransaction(tx *types.Transaction, method string, ga
 func (m *MockClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
 	args := m.Called()
 	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) ProposalVote(proposalId *big.Int, support uint8) (*types.Transaction, error) {
+	args := m.Called(proposalId, support)
+	return mockTransaction(args, 0), args.Error(1)
+}
+
+func (m *MockClient) ProposalVoteWithReason(proposalId *big.Int, support uint8, reason string) (*types.Transaction, error) {
+	args := m.Called(proposalId, support, reason)
 	return mockTransaction(args, 0), args.Error(1)
 }
 
@@ -442,5 +451,11 @@ func (c *StubClient) NextValidRequest(common.Address) (*big.Int, error) { return
 
 // Governance
 func (c *StubClient) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Transaction, error) {
+	return types.NewTx(&types.DynamicFeeTx{}), c.Err
+}
+func (c *StubClient) ProposalVote(proposalId *big.Int, support uint8) (*types.Transaction, error) {
+	return types.NewTx(&types.DynamicFeeTx{}), c.Err
+}
+func (c *StubClient) ProposalVoteWithReason(proposalId *big.Int, support uint8, reason string) (*types.Transaction, error) {
 	return types.NewTx(&types.DynamicFeeTx{}), c.Err
 }
