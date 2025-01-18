@@ -388,6 +388,7 @@ func (orch *orchestrator) SufficientBalance(addr ethcommon.Address, manifestID M
 	}
 
 	balance := orch.node.Balances.Balance(addr, manifestID)
+	glog.Infof("Checking balance for %v | %v: %v", addr.Hex(), string(manifestID), balance.FloatString(3))
 	if balance == nil || balance.Cmp(orch.node.Recipient.EV()) < 0 {
 		return false
 	}
