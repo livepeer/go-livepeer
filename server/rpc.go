@@ -74,7 +74,7 @@ type Orchestrator interface {
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
 	Upscale(ctx context.Context, requestID string, req worker.GenUpscaleMultipartRequestBody) (interface{}, error)
 	AudioToText(ctx context.Context, requestID string, req worker.GenAudioToTextMultipartRequestBody) (interface{}, error)
-	LLM(ctx context.Context, requestID string, req worker.GenLLMFormdataRequestBody) (interface{}, error)
+	LLM(ctx context.Context, requestID string, req worker.GenLLMJSONRequestBody) (interface{}, error)
 	SegmentAnything2(ctx context.Context, requestID string, req worker.GenSegmentAnything2MultipartRequestBody) (interface{}, error)
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
