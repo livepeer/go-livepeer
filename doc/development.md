@@ -369,7 +369,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "stopAll": true
     },
     {
-      "name": "Launch full stack (on-chain)",
+      "name": "Launch full AI stack (on-chain)",
       "configurations": ["Launch AI O/W (on-chain)", "Launch AI G (on-chain)"],
       "stopAll": true
     }
