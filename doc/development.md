@@ -33,9 +33,10 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "request": "launch",
       "mode": "debug",
       "program": "cmd/livepeer_cli",
+      "console": "integratedTerminal",
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
-        // "--http=8935", // Uncomment for Orch CLI.
+        // "--http=7935", // Uncomment for Orch CLI.
         "--http=5935" // Uncomment for Gateway CLI.
       ]
     },
@@ -208,9 +209,10 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "request": "launch",
       "mode": "debug",
       "program": "cmd/livepeer_cli",
+      "console": "integratedTerminal",
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
-        // "--http=8935", // Uncomment for Orch CLI.
+        // "--http=7935", // Uncomment for Orch CLI.
         "--http=5935" // Uncomment for Gateway CLI.
       ]
     },
@@ -271,6 +273,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
         "-gateway",
+        "-datadir=${env:HOME}/.lpData2",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
@@ -288,6 +291,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-aiWorker",
+        "-aiServiceRegistry",
         "-serviceAddr=0.0.0.0:8935",
         "-v=6",
         "-nvidia=all",
@@ -310,6 +314,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-orchSecret=orchSecret",
+        "-aiServiceRegistry",
         "-serviceAddr=0.0.0.0:8935",
         "-v=6",
         "-network=arbitrum-one-mainnet",
@@ -346,7 +351,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-tags=mainnet,experimental -ldflags=-extldflags=-lm", // Fix missing symbol error and enable mainnet.
       "args": [
         "-gateway",
-        "-transcodingOptions=${env:HOME}/.lpData/offchain/transcodingOptions.json",
+        "-aiServiceRegistry",
+        "-datadir=${env:HOME}/.lpData2",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
