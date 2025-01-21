@@ -15,7 +15,7 @@ bash test.sh
 
 ## Debugging
 
-To debug the code, it is recommended to use [Visual Studio Code](https://code.visualstudio.com/) with the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.Go). Example VSCode configuration files are provided below. For more information on how to interact with the [go-livepeer](https://github.com/livepeer/go-livepeer) software, please check out the [Livepeer Docs](https://docs.livepeer.org/orchestrators/guides/get-started).
+To debug the code, it is recommended to use [Visual Studio Code](https://code.visualstudio.com/) with the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.Go). Example VSCode configuration files are provided below. For more information on how to interact with the [go-livepeer](https://github.com/livepeer/go-livepeer) software, please check out the [Livepeer Docs](https://docs.livepeer.org/orchestrators/guides/get-started). Please ensure that you followed the steps in the [Build from Source documentation](https://docs.livepeer.org/orchestrators/guides/install-go-livepeer#build-from-source) and have the right dependencies and environment variables set in your shell configuration file (e.g., `.bashrc`, `.zshrc`).
 
 ### Configuration Files
 
@@ -33,9 +33,10 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "request": "launch",
       "mode": "debug",
       "program": "cmd/livepeer_cli",
+      "console": "integratedTerminal",
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
-        // "--http=8935", // Uncomment for Orch CLI.
+        // "--http=7935", // Uncomment for Orch CLI.
         "--http=5935" // Uncomment for Gateway CLI.
       ]
     },
@@ -92,7 +93,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
         "-gateway",
-        "-transcodingOptions=/home/<USER>/.lpData/offchain/transcodingOptions.json",
+        "-transcodingOptions=${env:HOME}/.lpData/offchain/transcodingOptions.json",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
@@ -164,7 +165,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-tags=mainnet,experimental -ldflags=-extldflags=-lm", // Fix missing symbol error and enable mainnet.
       "args": [
         "-gateway",
-        "-transcodingOptions=/home/<USER>/.lpData/offchain/transcodingOptions.json",
+        "-transcodingOptions=${env:HOME}/.lpData/offchain/transcodingOptions.json",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
@@ -208,9 +209,10 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "request": "launch",
       "mode": "debug",
       "program": "cmd/livepeer_cli",
+      "console": "integratedTerminal",
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
-        // "--http=8935", // Uncomment for Orch CLI.
+        // "--http=7935", // Uncomment for Orch CLI.
         "--http=5935" // Uncomment for Gateway CLI.
       ]
     },
@@ -227,8 +229,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-serviceAddr=0.0.0.0:8935",
         "-v=6",
         "-nvidia=all",
-        "-aiModels=/home/<USER>/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=/home/<USER>/.lpData/models"
+        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
+        "-aiModelsDir=${env:HOME}/.lpData/models"
       ]
     },
     {
@@ -258,8 +260,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-orchAddr=0.0.0.0:8935",
         "-v=6",
         "-nvidia=all",
-        "-aiModels=/home/<USER>/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=/home/<USER>/.lpData/models"
+        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
+        "-aiModelsDir=${env:HOME}/.lpData/models"
       ]
     },
     {
@@ -271,6 +273,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-ldflags=-extldflags=-lm", // Fix missing symbol error.
       "args": [
         "-gateway",
+        "-datadir=${env:HOME}/.lpData2",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
@@ -288,11 +291,12 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-aiWorker",
+        "-aiServiceRegistry",
         "-serviceAddr=0.0.0.0:8935",
         "-v=6",
         "-nvidia=all",
-        "-aiModels=/home/<USER>/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=/home/<USER>/.lpData/models",
+        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
+        "-aiModelsDir=${env:HOME}/.lpData/models",
         "-network=arbitrum-one-mainnet",
         "-ethUrl=https://arb1.arbitrum.io/rpc",
         "-ethPassword=<ETH_SECRET>",
@@ -310,6 +314,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "args": [
         "-orchestrator",
         "-orchSecret=orchSecret",
+        "-aiServiceRegistry",
         "-serviceAddr=0.0.0.0:8935",
         "-v=6",
         "-network=arbitrum-one-mainnet",
@@ -333,8 +338,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
         "-orchAddr=0.0.0.0:8935",
         "-v=6",
         "-nvidia=all",
-        "-aiModels=/home/<USER>/.lpData/cfg/aiModels.json",
-        "-aiModelsDir=/home/<USER>/.lpData/models"
+        "-aiModels=${env:HOME}/.lpData/cfg/aiModels.json",
+        "-aiModelsDir=${env:HOME}/.lpData/models"
       ]
     },
     {
@@ -346,7 +351,8 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "buildFlags": "-tags=mainnet,experimental -ldflags=-extldflags=-lm", // Fix missing symbol error and enable mainnet.
       "args": [
         "-gateway",
-        "-transcodingOptions=/home/<USER>/.lpData/offchain/transcodingOptions.json",
+        "-aiServiceRegistry",
+        "-datadir=${env:HOME}/.lpData2",
         "-orchAddr=0.0.0.0:8935",
         "-httpAddr=0.0.0.0:9935",
         "-v",
@@ -369,7 +375,7 @@ To debug the code, it is recommended to use [Visual Studio Code](https://code.vi
       "stopAll": true
     },
     {
-      "name": "Launch full stack (on-chain)",
+      "name": "Launch full AI stack (on-chain)",
       "configurations": ["Launch AI O/W (on-chain)", "Launch AI G (on-chain)"],
       "stopAll": true
     }
