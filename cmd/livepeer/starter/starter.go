@@ -737,6 +737,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		}
 
 		if *cfg.AIServiceRegistry {
+			glog.Infof("Using AIServiceRegistry")
 			// For the time-being Livepeer AI Subnet uses its own ServiceRegistry, so we define it here
 			ethCfg.ServiceRegistryAddr = ethcommon.HexToAddress("0x04C0b249740175999E5BF5c9ac1dA92431EF34C5")
 		}
