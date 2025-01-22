@@ -125,6 +125,9 @@ docker:
 docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
 
+docker-windows:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile.windows .
+
 swagger:
 	swag init --generalInfo server/ai_mediaserver.go --outputTypes yaml --output . && mv swagger.yaml liveai.openapi.yaml
 

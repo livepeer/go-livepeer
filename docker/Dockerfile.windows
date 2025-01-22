@@ -1,0 +1,26 @@
+FROM ubuntu:22.04 as builder
+WORKDIR /root/
+ENV GOOS=windows
+ENV GOARCH=amd64
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=$PATH:/usr/local/go/bin
+ENV GO111MODULE=on
+ENV CGO_ENABLED=1
+ENV CGO_LDFLAGS="-L/usr/x86_64-w64-mingw32/lib -lz"
+ENV PKG_CONFIG_PATH=~/compiled/lib/pkgconfig
+ENV BUILD_TAGS=mainnet,experimental
+
+RUN apt-get update && apt-get upgrade -y && apt-get install -y zip curl binutils build-essential pkg-config nasm clang git make autoconf automake patch libtool texinfo zip wget mingw-w64 protobuf-compiler-grpc golang-goprotobuf-dev yasm mockgen zlib1g-dev
+
+RUN wget https://zlib.net/fossils/zlib-1.2.11.tar.gz
+RUN tar -xvf zlib-1.2.11.tar.gz && \
+    cd zlib-1.2.11 && \
+    CC=x86_64-w64-mingw32-gcc ./configure --prefix=/usr/x86_64-w64-mingw32 --static && \
+    make && \
+    make install
+
+RUN wget https://go.dev/dl/go1.21.6.linux-amd64.tar.gz
+RUN rm -rf /usr/local/go && tar -C /usr/local -xzf go1.21.6.linux-amd64.tar.gz
+COPY . .
+RUN ./install_ffmpeg.sh
+RUN PKG_CONFIG_PATH=~/compiled/lib/pkgconfig make livepeer livepeer_bench livepeer_cli livepeer_router
