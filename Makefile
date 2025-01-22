@@ -114,3 +114,5 @@ docker:
 
 docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
+docker-windows:
+	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile.windows .
