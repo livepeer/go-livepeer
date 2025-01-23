@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/url"
 	"os"
@@ -26,6 +26,7 @@ import (
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 
 	lpcrypto "github.com/livepeer/go-livepeer/crypto"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
@@ -610,7 +611,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
 	fnamep = &fname
-	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
+	if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		return terr(err)
 	}
@@ -820,6 +821,96 @@ func (n *LivepeerNode) serveTranscoder(stream net.Transcoder_RegisterTranscoderS
 	if n.AutoSessionLimit {
 		defer n.SetMaxSessions(n.GetCurrentCapacity())
 	}
+}
+func (n *LivepeerNode) FrameInterpolation(ctx context.Context, req worker.FrameInterpolationMultipartRequestBody) (*worker.VideoResponse, error) {
+	// Generate interpolated frames
+	start := time.Now()
+	resp, err := n.AIWorker.FrameInterpolation(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	took := time.Since(start)
+	clog.V(common.DEBUG).Infof(ctx, "Generating interpolated frames took=%v", took)
+
+	sessionID := string(RandomManifestID())
+	framerate := 24
+
+	video, err := req.Video.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer video.Close() // Don't forget to close the video after you're done with it
+
+	probeData, err := ffmpeg_go.ProbeReader(video)
+	if err != nil {
+		return nil, err
+	}
+
+	var probeDataMap map[string]interface{}
+	err = json.Unmarshal([]byte(probeData), &probeDataMap)
+	if err != nil {
+		return nil, err
+	}
+
+	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+	width := streamData["width"].(float64)
+	height := streamData["height"].(float64)
+	frameRate := streamData["r_frame_rate"].(string)
+
+	// You can parse the frame rate string to extract the numerator and denominator
+	numerator, denominator := 0, 0
+	_, err = fmt.Sscanf(frameRate, "%d/%d", &numerator, &denominator)
+	if err != nil {
+		return nil, err
+	}
+
+	inProfile := ffmpeg.VideoProfile{
+		Framerate:    uint(framerate),
+		FramerateDen: 1,
+	}
+	outProfile := ffmpeg.VideoProfile{
+		Name:       "frame-interpolation",
+		Resolution: fmt.Sprintf("%vx%v", width, height),
+		// hardcoded to 24fps but later can be modified
+		// such that we can provide the option to choose.
+		Framerate: 24,
+		Bitrate:   "6000k",
+		Format:    ffmpeg.FormatMP4,
+	}
+
+	// Transcode frames into segments.
+	videos := make([][]worker.Media, len(resp.Frames))
+	for i, batch := range resp.Frames {
+		videos[i] = make([]worker.Media, 1)
+		// Create slice of frame urls for a batch
+		urls := make([]string, len(batch))
+		for j, frame := range batch {
+			urls[j] = frame.Url
+		}
+		// Transcode slice of frame urls into a segment
+		res := n.transcodeFrames(ctx, sessionID, urls, inProfile, outProfile)
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		// Assume only single rendition right now
+		seg := res.TranscodeData.Segments[0]
+		name := fmt.Sprintf("%v.mp4", RandomManifestID())
+		segData := bytes.NewReader(seg.Data)
+		uri, err := res.OS.SaveData(ctx, name, segData, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		videos[i][0] = worker.Media{
+			Url: uri,
+		}
+		// NOTE: Seed is consistent for video; NSFW check applies to first frame only.
+		if len(batch) > 0 {
+			videos[i][0].Nsfw = batch[0].Nsfw
+			videos[i][0].Seed = batch[0].Seed
+		}
+	}
+	return &worker.VideoResponse{Frames: videos}, nil
 }
 
 func (rtm *RemoteTranscoderManager) transcoderResults(tcID int64, res *RemoteTranscoderResult) {

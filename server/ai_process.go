@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 const processingRetryTimeout = 2 * time.Second
@@ -32,6 +33,7 @@ const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
 const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
+const defaultFrameInterpolationModelID = "film_net_fp16.pt"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
@@ -550,6 +552,149 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 		monitor.AIRequestFinished(ctx, "image-to-video", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
 	}
 
+	return &res, nil
+}
+
+// CalculateFrameInterpolationLatencyScore computes the time taken per pixel for an frame-interpolation request.
+func CalculateFrameInterpolationLatencyScore(took time.Duration, req worker.FrameInterpolationMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	var numInterFrames int64
+	if req.InterFrames != nil {
+		numInterFrames = int64(math.Max(1, float64(*req.InterFrames)))
+	}
+	return took.Seconds() / float64(outPixels) / float64(numInterFrames)
+}
+
+func processFrameInterpolation(ctx context.Context, params aiRequestParams, req worker.FrameInterpolationMultipartRequestBody) (*worker.VideoResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+	// HACK: Re-use worker.ImageResponse to return results
+	// DID : Refactored to return worker.VideoResponse
+	frameResp := resp.(*worker.VideoResponse)
+	videos := [][]worker.Media{}
+	for _, frame := range frameResp.Frames {
+		frames := make([]worker.Media, len(frame))
+		for i, media := range frame {
+			data, err := downloadSeg(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+			name := filepath.Base(media.Url)
+			newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+			frames[i] = worker.Media{
+				Nsfw: media.Nsfw,
+				Seed: media.Seed,
+				Url:  newUrl,
+			}
+		}
+		videos = append(videos, frames)
+	}
+	return &worker.VideoResponse{Frames: videos}, nil
+}
+
+func submitFrameInterpolation(ctx context.Context, params aiRequestParams, sess *AISession, req worker.FrameInterpolationMultipartRequestBody) (*worker.VideoResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewFrameInterpolationMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	var numInterFrames int64
+	if req.InterFrames != nil {
+		numInterFrames = int64(*req.InterFrames)
+	}
+
+	video_n, err := req.Video.Reader()
+	if err != nil {
+		return nil, err
+	}
+	defer video_n.Close() // Don't forget to close the video after you're done with it
+
+	probeData, err := ffmpeg_go.ProbeReader(video_n)
+	if err != nil {
+		return nil, err
+	}
+
+	var probeDataMap map[string]interface{}
+	err = json.Unmarshal([]byte(probeData), &probeDataMap)
+	if err != nil {
+		return nil, err
+	}
+
+	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+	width := streamData["width"].(float64)
+	height := streamData["height"].(float64)
+
+	total_frames := int64(numInterFrames) * (int64(25) - int64(1)) // hardcoded value of number of frames from image-to-video output of generated frames
+
+	outPixels := int64(width) * int64(height) * total_frames
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.FrameInterpolationWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+	var res worker.VideoResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "frame-interpolation", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateFrameInterpolationLatencyScore(took, req, outPixels)
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+		monitor.AIRequestFinished(ctx, "frame-interpolation", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
 	return &res, nil
 }
 
@@ -1401,6 +1546,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			return submitUpscale(ctx, params, sess, v)
 		}
 		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
+	case worker.FrameInterpolationMultipartRequestBody:
+		cap = core.Capability_FrameInterpolation
+		modelID = defaultFrameInterpolationModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitFrameInterpolation(ctx, params, sess, v)
+		}		
 	case worker.GenAudioToTextMultipartRequestBody:
 		cap = core.Capability_AudioToText
 		modelID = defaultAudioToTextModelID

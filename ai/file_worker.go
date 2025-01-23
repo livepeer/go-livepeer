@@ -74,7 +74,27 @@ func (w *FileWorker) ImageToVideo(ctx context.Context, req worker.GenImageToVide
 	return &resp, nil
 }
 
+func (w *FileWorker) FrameInterpolation(ctx context.Context, req worker.FrameInterpolationMultipartRequestBody) (*worker.VideoResponse, error) {
+	fname, ok := w.files["frame-interpolation"]
+	if !ok {
+		return nil, errors.New("frame-interpolation response file not found")
+	}
+
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp worker.VideoResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
 func (w *FileWorker) Upscale(ctx context.Context, req worker.GenUpscaleMultipartRequestBody) (*worker.ImageResponse, error) {
+
 	fname, ok := w.files["upscale"]
 	if !ok {
 		return nil, errors.New("upscale response file not found")
