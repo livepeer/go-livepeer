@@ -38,6 +38,7 @@ const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
+const defaultImageToImageGenericModelID = "{'inpainting':'kandinsky-community/kandinsky-2-2-decoder-inpaint', 'outpainting':'destitech/controlnet-inpaint-dreamer-sdxl', 'sketch_to_image':'xinsir/controlnet-scribble-sdxl-1.0'}"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -1356,6 +1357,160 @@ func processImageToText(ctx context.Context, params aiRequestParams, req worker.
 	return txtResp, nil
 }
 
+// CalculateImageToImageGenericLatencyScore computes the time taken per pixel for an image-to-image-generic request.
+func CalculateImageToImageGenericLatencyScore(took time.Duration, req worker.GenImageToImageGenericMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	// TODO: Default values for the number of inference steps is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	numInferenceSteps := float64(100)
+	if req.NumInferenceSteps != nil {
+		numInferenceSteps = math.Max(1, float64(*req.NumInferenceSteps))
+	}
+	// Handle special case for SDXL-Lightning model. (In generic case it is valid if any user uses it for stage2 pipeline for outpainting task)
+	if strings.HasPrefix(*req.ModelId, "ByteDance/SDXL-Lightning") {
+		numInferenceSteps = math.Max(1, core.ParseStepsFromModelID(req.ModelId, 8))
+	}
+
+	return took.Seconds() / float64(outPixels) / numInferenceSteps
+}
+
+func processImageToImageGeneric(ctx context.Context, params aiRequestParams, req worker.GenImageToImageGenericMultipartRequestBody) (*worker.ImageResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	imgResp, ok := resp.(*worker.ImageResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
+
+	newMedia := make([]worker.Media, len(imgResp.Images))
+	for i, media := range imgResp.Images {
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err := worker.ReadImageB64DataUrl(media.Url, writer)
+		if err == nil {
+			// orchestrator sent bae64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".png"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+			name = filepath.Base(media.Url)
+			result, err = core.DownloadData(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
+		if err != nil {
+			return nil, fmt.Errorf("error saving image to objectStore: %w", err)
+		}
+
+		newMedia[i] = worker.Media{Nsfw: media.Nsfw, Seed: media.Seed, Url: newUrl}
+	}
+
+	imgResp.Images = newMedia
+
+	return imgResp, nil
+}
+
+func submitImageToImageGeneric(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenImageToImageGenericMultipartRequestBody) (*worker.ImageResponse, error) {
+	// TODO: Default values for the number of images is currently hardcoded.
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	defaultNumImages := 1
+	if req.NumImagesPerPrompt == nil {
+		req.NumImagesPerPrompt = &defaultNumImages
+	} else {
+		*req.NumImagesPerPrompt = int(math.Max(1, float64(*req.NumImagesPerPrompt)))
+	}
+
+	var buf bytes.Buffer
+	mw, err := worker.NewImageToImageGenericMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	imageRdr, err := req.Image.Reader()
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	config, _, err := image.DecodeConfig(imageRdr)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	outPixels := int64(config.Height) * int64(config.Width) * int64(*req.NumImagesPerPrompt)
+
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenImageToImageGenericWithBodyWithResponse(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+
+	// TODO: Refine this rough estimate in future iterations.
+	sess.LatencyScore = CalculateImageToImageGenericLatencyScore(took, req, outPixels)
+
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "image-to-image-generic", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.JSON200 == nil {
+		// TODO: Replace trim newline with better error spec from O
+		return nil, errors.New(strings.TrimSuffix(string(resp.Body), "\n"))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "image-to-image-generic", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return resp.JSON200, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1459,6 +1614,16 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLiveVideoToVideo(ctx, params, sess, v)
 		}
+	case worker.GenImageToImageGenericMultipartRequestBody:
+		cap = core.Capability_ImageToImageGeneric
+		modelID = defaultImageToImageGenericModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitImageToImageGeneric(ctx, params, sess, v)
+		}
+		ctx = clog.AddVal(ctx, "prompt", v.Prompt)
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
