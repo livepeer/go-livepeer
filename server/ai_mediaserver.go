@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -86,6 +87,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/smoketest", ls.SmokeTestLiveVideo())
 
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
@@ -651,4 +653,59 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 		}
 		pub.StopControl()
 	}
+}
+
+// Default to using an FFMPEG test card
+var ffmpegParams = []string{
+	"-re",
+	"-f", "lavfi",
+	"-i", "testsrc=size=1920x1080:rate=30,format=yuv420p",
+	"-f", "lavfi",
+	"-i", "sine",
+	"-c:v", "libx264",
+	"-b:v", "1000k",
+	"-x264-params", "keyint=60",
+	"-c:a", "aac",
+	"-f", "flv",
+}
+
+func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//ctx := r.Context()
+		if r.Method != http.MethodPut {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		// Get stream from path param
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+
+		rtmpURL := "rtmp://ai.livepeer.com:1935"
+		ingestURL := fmt.Sprintf("%s/%s", rtmpURL, stream)
+		params := append(ffmpegParams, ingestURL)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		cmd := exec.CommandContext(ctx, "ffmpeg", params...)
+		var outputBuf bytes.Buffer
+		var stdErr bytes.Buffer
+		cmd.Stdout = &outputBuf
+		cmd.Stderr = &stdErr
+
+		if err := cmd.Start(); err != nil {
+			cancel()
+			clog.Errorf(ctx, "failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
+			http.Error(w, "Failed to start stream", http.StatusInternalServerError)
+		}
+
+		go func() {
+			defer cancel()
+			if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
+				clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(ffmpegParams, " "))
+				clog.Errorf(ctx, "ffmpeg output:\n%s\n%s\n", outputBuf.String(), stdErr.String())
+			}
+		}()
+	})
 }
