@@ -18,6 +18,8 @@
 
 #### CLI
 
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
+
 #### General
 
 #### Broadcaster
