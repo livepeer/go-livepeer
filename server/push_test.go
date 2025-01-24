@@ -426,7 +426,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	// HTTP ingest disabled
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, false, "")
+	s, _ := NewLivepeerServer(ctx, "127.0.0.1:1938", n, false, "")
 	s.SetContextFromUnitTest(ctx)
 	h, pattern := s.HTTPMux.Handler(req)
 	assert.Equal("", pattern)
@@ -440,7 +440,7 @@ func TestPush_HTTPIngest(t *testing.T) {
 
 	ctx, cancel = context.WithCancel(context.Background())
 	// HTTP ingest enabled
-	s, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ = NewLivepeerServer(ctx, "127.0.0.1:1938", n, true, "")
 	s.SetContextFromUnitTest(ctx)
 	h, pattern = s.HTTPMux.Handler(req)
 	assert.Equal("/live/", pattern)
@@ -1106,8 +1106,8 @@ func TestPush_OSPerStream(t *testing.T) {
 	assert := assert.New(t)
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
-	s, _ := NewLivepeerServer("127.0.0.1:1939", n, true, "")
 	serverCtx, serverCancel := context.WithCancel(context.Background())
+	s, _ := NewLivepeerServer(serverCtx, "127.0.0.1:1939", n, true, "")
 	s.SetContextFromUnitTest(serverCtx)
 	defer serverCleanup(s)
 
@@ -1273,8 +1273,8 @@ func TestPush_ConcurrentSegments(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
 	n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 	n.NodeType = core.BroadcasterNode
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
 	serverCtx, serverCancel := context.WithCancel(context.Background())
+	s, _ := NewLivepeerServer(serverCtx, "127.0.0.1:1938", n, true, "")
 	s.SetContextFromUnitTest(serverCtx)
 	oldURL := AuthWebhookURL
 	defer func() { AuthWebhookURL = oldURL }()

@@ -267,8 +267,11 @@ func randomString() string {
 func StartFileCleanup(ctx context.Context, workDir string) {
 	go func() {
 		ticker := time.NewTicker(fileCleanupInterval)
+		defer ticker.Stop()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				if err := cleanUpLocalTmpFiles(ctx, workDir, "*"+outFileSuffix, fileCleanupMaxAge); err != nil {
 					clog.Errorf(ctx, "Error cleaning up segment files: %v", err)
