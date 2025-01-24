@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"net/url"
 	"os"
@@ -610,7 +609,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// Create input file from segment. Removed after claiming complete or error
 	fname := path.Join(n.WorkDir, inName)
 	fnamep = &fname
-	if err := ioutil.WriteFile(fname, seg.Data, 0644); err != nil {
+	if err := os.WriteFile(fname, seg.Data, 0644); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		return terr(err)
 	}

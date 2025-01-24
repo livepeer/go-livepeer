@@ -30,6 +30,8 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
 	middleware "github.com/oapi-codegen/nethttp-middleware"
+	"github.com/oapi-codegen/runtime"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 var MaxAIRequestSize = 3000000000 // 3GB
@@ -70,6 +72,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
+	lp.transRPC.Handle("/live-portrait", oapiReqValidator(aiHttpHandle(&lp, multipartDecoder[worker.LivePortraitLivePortraitPostMultipartRequestBody])))
 	lp.transRPC.Handle("/live-video-to-video", oapiReqValidator(lp.StartLiveVideoToVideo()))
 	// Additionally, there is the '/aiResults' endpoint registered in server/rpc.go
 
@@ -278,6 +281,29 @@ func overwriteHost(hostOverwrite, url string) string {
 	return u.String()
 }
 
+func (h *lphttp) LivePortrait() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orch := h.orchestrator
+
+		remoteAddr := getRemoteAddr(r)
+		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		multiRdr, err := r.MultipartReader()
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req worker.LivePortraitLivePortraitPostMultipartRequestBody
+		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		handleAIRequest(ctx, w, r, orch, req)
+	})
+}
+
 func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, orch Orchestrator, req interface{}) {
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
@@ -438,6 +464,52 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels = int64(config.Height) * int64(config.Width)
+
+	case worker.LivePortraitLivePortraitPostMultipartRequestBody:
+		pipeline = "live-portrait"
+		cap = core.Capability_LivePortrait
+		modelID = *v.ModelId
+		submitFn = func(ctx context.Context) (interface{}, error) {
+			return orch.LivePortrait(ctx, requestID, v)
+		}
+
+		video := v.DrivingVideo.Filename() // Don't forget to close the video after you're done with it
+		probeData, err := ffmpeg_go.Probe(video)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+		}
+
+		var probeDataMap map[string]interface{}
+		err = json.Unmarshal([]byte(probeData), &probeDataMap)
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+		width := streamData["width"].(float64)
+		height := streamData["height"].(float64)
+		duration := streamData["duration"].(string)        // Duration in seconds
+		framerate := streamData["avg_frame_rate"].(string) // Framerate as a string (e.g., "25/1")
+
+		// Calculate total frames based on duration and framerate
+		framerateParts := strings.Split(framerate, "/")
+		var frameRate float64
+		if len(framerateParts) == 2 {
+			numerator, _ := strconv.ParseFloat(framerateParts[0], 64)
+			denominator, _ := strconv.ParseFloat(framerateParts[1], 64)
+			frameRate = numerator / denominator
+		} else {
+			frameRate, _ = strconv.ParseFloat(framerate, 64) // Fallback if not in "num/den" format
+		}
+		durationFloat, err := strconv.ParseFloat(duration, 64) // Convert duration to float64
+		if err != nil {
+			respondWithError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		total_frames := int64(durationFloat * frameRate) // Calculate total frames based on duration and framerate
+		outPixels = int64(width) * int64(height) * total_frames
+
 	case worker.GenImageToTextMultipartRequestBody:
 		pipeline = "image-to-text"
 		cap = core.Capability_ImageToText
@@ -574,8 +646,9 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			latencyScore = CalculateImageToTextLatencyScore(took, outPixels)
 		case worker.GenTextToSpeechJSONRequestBody:
 			latencyScore = CalculateTextToSpeechLatencyScore(took, outPixels)
+		case worker.LivePortraitLivePortraitPostMultipartRequestBody:
+			latencyScore = CalculateLivePortraitLatencyScore(took, v, outPixels)
 		}
-
 		var pricePerAIUnit float64
 		if priceInfo := payment.GetExpectedPrice(); priceInfo != nil && priceInfo.GetPixelsPerUnit() != 0 {
 			pricePerAIUnit = float64(priceInfo.GetPricePerUnit()) / float64(priceInfo.GetPixelsPerUnit())
@@ -783,6 +856,16 @@ func parseMultiPartResult(body io.Reader, boundary string, pipeline string) core
 					wkrResult.Err = err
 					break
 				}
+			case "live-portrait":
+				var parsedResp worker.VideoResponse
+
+				err := json.Unmarshal(body, &parsedResp)
+				if err != nil {
+					glog.Error("Error getting results json:", err)
+					wkrResult.Err = err
+					break
+				}
+				results = parsedResp
 			case "text-to-speech":
 				var parsedResp worker.AudioResponse
 				err := json.Unmarshal(body, &parsedResp)

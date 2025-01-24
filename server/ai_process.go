@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
+	ffmpeg_go "github.com/u2takey/ffmpeg-go"
 )
 
 const processingRetryTimeout = 2 * time.Second
@@ -35,6 +36,7 @@ const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
 const defaultAudioToTextModelID = "openai/whisper-large-v3"
 const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
 const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+const defaultLivePortraitModelID = "default"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
@@ -253,6 +255,155 @@ func submitTextToImage(ctx context.Context, params aiRequestParams, sess *AISess
 	}
 
 	return resp.JSON200, nil
+}
+
+func CalculateLivePortraitLatencyScore(took time.Duration, req worker.LivePortraitLivePortraitPostMultipartRequestBody, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+	// These should be managed by the nethttpmiddleware. Refer to issue LIV-412 for more details.
+	return took.Seconds() / float64(outPixels) / float64(24)
+}
+
+func processLivePortrait(ctx context.Context, params aiRequestParams, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+	// HACK: Re-use worker.ImageResponse to return results
+	// DID : Refactored to return worker.VideoResponse
+	frameResp := resp.(*worker.VideoResponse)
+	videos := [][]worker.Media{}
+	for _, frame := range frameResp.Frames {
+		frames := make([]worker.Media, len(frame))
+		for i, media := range frame {
+			data, err := downloadSeg(ctx, media.Url)
+			if err != nil {
+				return nil, err
+			}
+			name := filepath.Base(media.Url)
+			newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(data), nil, 0)
+			if err != nil {
+				return nil, err
+			}
+			frames[i] = worker.Media{
+				Nsfw: media.Nsfw,
+				Seed: media.Seed,
+				Url:  newUrl,
+			}
+		}
+		videos = append(videos, frames)
+	}
+	return &worker.VideoResponse{Frames: videos}, nil
+}
+
+func submitLivePortrait(ctx context.Context, params aiRequestParams, sess *AISession, req worker.LivePortraitLivePortraitPostMultipartRequestBody) (*worker.VideoResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewLivePortraitMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	video_n := req.DrivingVideo.Filename()
+	probeData, err := ffmpeg_go.Probe(video_n)
+	if err != nil {
+		return nil, err
+	}
+
+	var probeDataMap map[string]interface{}
+	err = json.Unmarshal([]byte(probeData), &probeDataMap)
+	if err != nil {
+		return nil, err
+	}
+
+	streamData := probeDataMap["streams"].([]interface{})[0].(map[string]interface{})
+	width := streamData["width"].(float64)
+	height := streamData["height"].(float64)
+
+	// Extract duration and framerate
+	duration := streamData["duration"].(string)        // Duration in seconds
+	framerate := streamData["avg_frame_rate"].(string) // Framerate as a string (e.g., "25/1")
+
+	// Calculate total frames based on duration and framerate
+	framerateParts := strings.Split(framerate, "/")
+	var frameRate float64
+	if len(framerateParts) == 2 {
+		numerator, _ := strconv.ParseFloat(framerateParts[0], 64)
+		denominator, _ := strconv.ParseFloat(framerateParts[1], 64)
+		frameRate = numerator / denominator
+	} else {
+		frameRate, _ = strconv.ParseFloat(framerate, 64) // Fallback if not in "num/den" format
+	}
+
+	durationFloat, err := strconv.ParseFloat(duration, 64) // Convert duration to float64
+	if err != nil {
+		return nil, err
+	}
+
+	total_frames := int64(durationFloat * frameRate) // Calculate total frames based on duration and framerate
+
+	outPixels := int64(width) * int64(height) * total_frames
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.LivePortraitLivePortraitPostWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+	var res worker.VideoResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "live-portrait", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateLivePortraitLatencyScore(took, req, outPixels)
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+		monitor.AIRequestFinished(ctx, "live-portrait", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+	return &res, nil
 }
 
 // CalculateImageToImageLatencyScore computes the time taken per pixel for an image-to-image request.
@@ -1410,6 +1561,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitAudioToText(ctx, params, sess, v)
 		}
+
 	case worker.GenLLMFormdataRequestBody:
 		cap = core.Capability_LLM
 		modelID = defaultLLMModelID
@@ -1428,6 +1580,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitSegmentAnything2(ctx, params, sess, v)
+		}
+	case worker.LivePortraitLivePortraitPostMultipartRequestBody:
+		cap = core.Capability_LivePortrait
+		modelID = defaultLivePortraitModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitLivePortrait(ctx, params, sess, v)
 		}
 	case worker.GenImageToTextMultipartRequestBody:
 		cap = core.Capability_ImageToText
