@@ -90,6 +90,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	media.StartFileCleanup(context.Background(), ls.LivepeerNode.WorkDir)
 	return nil
 }
 

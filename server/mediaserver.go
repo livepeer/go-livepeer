@@ -201,7 +201,9 @@ func NewLivepeerServer(rtmpAddr string, lpNode *core.LivepeerNode, httpIngest bo
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 
-		startAIMediaServer(ls)
+		if err := startAIMediaServer(ls); err != nil {
+			return nil, fmt.Errorf("failed to start AI media server: %w", err)
+		}
 	}
 	opts.HttpMux.HandleFunc("/recordings/", ls.HandleRecordings)
 	return ls, nil
