@@ -1197,7 +1197,7 @@ func handleSSEStream(ctx context.Context, body io.ReadCloser, sess *AISession, r
 					clog.Errorf(ctx, "Error unmarshaling SSE data: %v", err)
 					continue
 				}
-				totalTokens = chunk.TokensUsed
+				totalTokens = chunk.Usage
 				streamChan <- &chunk
 				//check if stream is finished
 				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
@@ -1243,7 +1243,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	}
 
 	took := time.Since(start)
-	sess.LatencyScore = CalculateLLMLatencyScore(took, res.TokensUsed.TotalTokens)
+	sess.LatencyScore = CalculateLLMLatencyScore(took, res.Usage.TotalTokens)
 
 	if monitor.Enabled {
 		var pricePerAIUnit float64
