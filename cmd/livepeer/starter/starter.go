@@ -1216,9 +1216,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Retrieve image overrides from the config.
 		var imageOverrides worker.ImageOverrides
-		if err := json.Unmarshal([]byte(*cfg.AIRunnerImageOverrides), &imageOverrides); err != nil {
-			glog.Errorf("Error unmarshaling image overrides: %v", err)
-			return
+		if *cfg.AIRunnerImageOverrides != "" {
+			if err := json.Unmarshal([]byte(*cfg.AIRunnerImageOverrides), &imageOverrides); err != nil {
+				glog.Errorf("Error unmarshaling image overrides: %v", err)
+				return
+			}
 		}
 
 		// Backwards compatibility for deprecated flags.
