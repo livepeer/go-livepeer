@@ -1589,7 +1589,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	//Create Livepeer Node
 
 	//Set up the media server
-	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
+	s, err := server.NewLivepeerServer(ctx, *cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
 		exit("Error creating Livepeer server: err=%q", err)
 	}

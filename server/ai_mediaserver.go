@@ -51,7 +51,7 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
-func startAIMediaServer(ls *LivepeerServer) error {
+func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
 		return err
@@ -90,6 +90,7 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
 }
 
