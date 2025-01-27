@@ -16,6 +16,7 @@ import (
 
 	"github.com/livepeer/go-livepeer/monitor"
 
+	"github.com/cenkalti/backoff"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -712,9 +713,8 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 		ctx, cancel := context.WithTimeout(context.Background(), duration+time.Minute)
 		cmd := exec.CommandContext(ctx, "ffmpeg", params...)
 		var outputBuf bytes.Buffer
-		var stdErr bytes.Buffer
 		cmd.Stdout = &outputBuf
-		cmd.Stderr = &stdErr
+		cmd.Stderr = &outputBuf
 
 		clog.Infof(ctx, "Starting smoke test for %s duration %s", ingestURL, duration)
 
@@ -725,15 +725,17 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 			return
 		}
 
-		// TODO retries
 		go func() {
 			defer cancel()
-			if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
-				clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
-				clog.Errorf(ctx, "ffmpeg output:\n%s\n%s\n", outputBuf.String(), stdErr.String())
-			} else {
+			_ = backoff.Retry(func() error {
+				if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
+					clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
+					clog.Errorf(ctx, "ffmpeg output:\n%s\n", outputBuf.String())
+					return fmt.Errorf("ffmpeg failed")
+				}
 				clog.Infof(ctx, "Smoke test finished successfully for %s", ingestURL)
-			}
+				return nil
+			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
 		}()
 	})
 }
