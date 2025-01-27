@@ -1243,6 +1243,7 @@ func handleNonStreamingResponse(ctx context.Context, body io.ReadCloser, sess *A
 	}
 
 	took := time.Since(start)
+
 	sess.LatencyScore = CalculateLLMLatencyScore(took, res.Usage.TotalTokens)
 
 	if monitor.Enabled {

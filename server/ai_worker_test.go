@@ -19,7 +19,6 @@ import (
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	oapitypes "github.com/oapi-codegen/runtime/types"
@@ -406,11 +405,6 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 	return notify
 }
 
-type stubResult struct {
-	Attachment []byte
-	Result     string
-}
-
 func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int, string) {
 	handler := l.AIResults()
 	handler.ServeHTTP(w, r)
@@ -419,23 +413,6 @@ func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int
 	body, _ := io.ReadAll(resp.Body)
 
 	return resp.StatusCode, string(body)
-}
-
-func newMockAIOrchestratorServer() *httptest.Server {
-	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
-	n.NodeType = core.OrchestratorNode
-	n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
-	mux := s.cliWebServerHandlers("addr")
-	srv := httptest.NewServer(mux)
-	return srv
-}
-
-func connectWorker(n *core.LivepeerNode) {
-	strm := &StubAIWorkerServer{}
-	caps := createStubAIWorkerCapabilities()
-	go func() { n.AIWorkerManager.Manage(strm, caps.ToNetCapabilities()) }()
-	time.Sleep(1 * time.Millisecond)
 }
 
 func createStubAIWorkerCapabilities() *core.Capabilities {
