@@ -323,7 +323,7 @@ func TestRunAIJob(t *testing.T) {
 
 					assert.Equal("7", headers.Get("TaskId"))
 					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
+					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMJSONRequestBody{})
 					assert.Equal(expectedResp, &jsonRes)
 				case "image-to-text":
 					res, _ := json.Marshal(results.Results)
@@ -371,7 +371,10 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
-		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+		var msgs []worker.LLMMessage
+		msgs = append(msgs, worker.LLMMessage{Role: "system", Content: "you are a robot"})
+		msgs = append(msgs, worker.LLMMessage{Role: "user", Content: "tell me a story"})
+		req = worker.GenLLMJSONRequestBody{Messages: msgs, Model: &modelId}
 	case "image-to-text":
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
@@ -574,12 +577,15 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	}
 }
 
-func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	a.Called++
 	if a.Err != nil {
 		return nil, a.Err
 	} else {
-		return &worker.LLMResponse{Response: "output tokens", TokensUsed: 10}, nil
+		var choices []worker.LLMChoice
+		choices = append(choices, worker.LLMChoice{Delta: &worker.LLMMessage{Content: "choice1", Role: "assistant"}, Index: 0})
+		tokensUsed := worker.LLMTokenUsage{PromptTokens: 40, CompletionTokens: 10, TotalTokens: 50}
+		return &worker.LLMResponse{Choices: choices, Created: 1, Model: "llm_model", TokensUsed: tokensUsed}, nil
 	}
 }
 
