@@ -19,7 +19,6 @@ import (
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
-	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	oapitypes "github.com/oapi-codegen/runtime/types"
@@ -324,7 +323,7 @@ func TestRunAIJob(t *testing.T) {
 
 					assert.Equal("7", headers.Get("TaskId"))
 					assert.Equal(len(results.Files), 0)
-					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMFormdataRequestBody{})
+					expectedResp, _ := wkr.LLM(context.Background(), worker.GenLLMJSONRequestBody{})
 					assert.Equal(expectedResp, &jsonRes)
 				case "image-to-text":
 					res, _ := json.Marshal(results.Results)
@@ -372,7 +371,10 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenSegmentAnything2MultipartRequestBody{ModelId: &modelId, Image: inputFile}
 	case "llm":
-		req = worker.GenLLMFormdataRequestBody{Prompt: "tell me a story", ModelId: &modelId}
+		var msgs []worker.LLMMessage
+		msgs = append(msgs, worker.LLMMessage{Role: "system", Content: "you are a robot"})
+		msgs = append(msgs, worker.LLMMessage{Role: "user", Content: "tell me a story"})
+		req = worker.GenLLMJSONRequestBody{Messages: msgs, Model: &modelId}
 	case "image-to-text":
 		inputFile.InitFromBytes(nil, inputUrl)
 		req = worker.GenImageToImageMultipartRequestBody{Prompt: "test prompt", ModelId: &modelId, Image: inputFile}
@@ -403,11 +405,6 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 	return notify
 }
 
-type stubResult struct {
-	Attachment []byte
-	Result     string
-}
-
 func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int, string) {
 	handler := l.AIResults()
 	handler.ServeHTTP(w, r)
@@ -416,23 +413,6 @@ func aiResultsTest(l lphttp, w *httptest.ResponseRecorder, r *http.Request) (int
 	body, _ := io.ReadAll(resp.Body)
 
 	return resp.StatusCode, string(body)
-}
-
-func newMockAIOrchestratorServer() *httptest.Server {
-	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
-	n.NodeType = core.OrchestratorNode
-	n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
-	mux := s.cliWebServerHandlers("addr")
-	srv := httptest.NewServer(mux)
-	return srv
-}
-
-func connectWorker(n *core.LivepeerNode) {
-	strm := &StubAIWorkerServer{}
-	caps := createStubAIWorkerCapabilities()
-	go func() { n.AIWorkerManager.Manage(strm, caps.ToNetCapabilities()) }()
-	time.Sleep(1 * time.Millisecond)
 }
 
 func createStubAIWorkerCapabilities() *core.Capabilities {
@@ -597,12 +577,15 @@ func (a *stubAIWorker) SegmentAnything2(ctx context.Context, req worker.GenSegme
 	}
 }
 
-func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMFormdataRequestBody) (interface{}, error) {
+func (a *stubAIWorker) LLM(ctx context.Context, req worker.GenLLMJSONRequestBody) (interface{}, error) {
 	a.Called++
 	if a.Err != nil {
 		return nil, a.Err
 	} else {
-		return &worker.LLMResponse{Response: "output tokens", TokensUsed: 10}, nil
+		var choices []worker.LLMChoice
+		choices = append(choices, worker.LLMChoice{Delta: &worker.LLMMessage{Content: "choice1", Role: "assistant"}, Index: 0})
+		tokensUsed := worker.LLMTokenUsage{PromptTokens: 40, CompletionTokens: 10, TotalTokens: 50}
+		return &worker.LLMResponse{Choices: choices, Created: 1, Model: "llm_model", Usage: tokensUsed}, nil
 	}
 }
 
