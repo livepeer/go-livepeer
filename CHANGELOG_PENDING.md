@@ -6,6 +6,8 @@
 
 ### Features ⚒
 
+-   [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
 #### General
 
 #### Broadcaster
