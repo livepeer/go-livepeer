@@ -56,19 +56,25 @@ var containerHostPorts = map[string]string{
 	"live-video-to-video": "8900",
 }
 
-// Mapping for per pipeline container images.
+// Default pipeline container image mapping to use if no overrides are provided.
+var defaultBaseImage = "livepeer/ai-runner:latest"
 var pipelineToImage = map[string]string{
 	"segment-anything-2": "livepeer/ai-runner:segment-anything-2",
 	"text-to-speech":     "livepeer/ai-runner:text-to-speech",
 	"audio-to-text":      "livepeer/ai-runner:audio-to-text",
 	"llm":                "livepeer/ai-runner:llm",
 }
-
 var livePipelineToImage = map[string]string{
 	"streamdiffusion":    "livepeer/ai-runner:live-app-streamdiffusion",
 	"comfyui":            "livepeer/ai-runner:live-app-comfyui",
 	"segment_anything_2": "livepeer/ai-runner:live-app-segment_anything_2",
 	"noop":               "livepeer/ai-runner:live-app-noop",
+}
+
+type ImageOverrides struct {
+	Default string            `json:"default"`
+	Batch   map[string]string `json:"batch"`
+	Live    map[string]string `json:"live"`
 }
 
 // DockerClient is an interface for the Docker client, allowing for mocking in tests.
@@ -91,9 +97,9 @@ var _ DockerClient = (*docker.Client)(nil)
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
 type DockerManager struct {
-	defaultImage string
-	gpus         []string
-	modelDir     string
+	gpus      []string
+	modelDir  string
+	overrides ImageOverrides
 
 	dockerClient DockerClient
 	// gpu ID => container name
@@ -103,7 +109,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(defaultImage string, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
 	if err := removeExistingContainers(ctx, client); err != nil {
 		cancel()
@@ -112,9 +118,9 @@ func NewDockerManager(defaultImage string, gpus []string, modelDir string, clien
 	cancel()
 
 	manager := &DockerManager{
-		defaultImage:  defaultImage,
 		gpus:          gpus,
 		modelDir:      modelDir,
+		overrides:     overrides,
 		dockerClient:  client,
 		gpuContainers: make(map[string]string),
 		containers:    make(map[string]*RunnerContainer),
@@ -215,17 +221,24 @@ func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string, error) {
 	if pipeline == "live-video-to-video" {
 		// We currently use the model ID as the live pipeline name for legacy reasons.
-		if image, ok := livePipelineToImage[modelID]; ok {
+		if image, ok := m.overrides.Live[modelID]; ok {
+			return image, nil
+		} else if image, ok := livePipelineToImage[modelID]; ok {
 			return image, nil
 		}
 		return "", fmt.Errorf("no container image found for live pipeline %s", modelID)
 	}
 
-	if image, ok := pipelineToImage[pipeline]; ok {
+	if image, ok := m.overrides.Batch[pipeline]; ok {
+		return image, nil
+	} else if image, ok := pipelineToImage[pipeline]; ok {
 		return image, nil
 	}
 
-	return m.defaultImage, nil
+	if m.overrides.Default != "" {
+		return m.overrides.Default, nil
+	}
+	return defaultBaseImage, nil
 }
 
 // HasCapacity checks if an unused managed container exists or if a GPU is available for a new container.
