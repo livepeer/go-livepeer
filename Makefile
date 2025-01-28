@@ -95,7 +95,7 @@ ifeq ($(BUILDOS),linux)
 endif
 
 
-.PHONY: livepeer livepeer_bench livepeer_cli livepeer_router docker
+.PHONY: livepeer livepeer_bench livepeer_cli livepeer_router docker swagger
 
 livepeer:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -tags "$(BUILD_TAGS)" -ldflags="$(ldflags)" cmd/livepeer/*.go
@@ -114,3 +114,6 @@ docker:
 
 docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
+
+swagger:
+	swag init --generalInfo cmd/livepeer/livepeer.go --outputTypes yaml --output . && mv swagger.yaml openapi.yaml
