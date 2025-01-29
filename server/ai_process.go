@@ -38,6 +38,7 @@ const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
 const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
 const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
+const defaultObjectDetectionModelID = "PekingU/rtdetr_r50vd"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -1356,6 +1357,142 @@ func processImageToText(ctx context.Context, params aiRequestParams, req worker.
 	return txtResp, nil
 }
 
+func CalculateObjectDetectionLatencyScore(took time.Duration, outPixels int64) float64 {
+	if outPixels <= 0 {
+		return 0
+	}
+
+	return took.Seconds() / float64(outPixels)
+}
+
+func submitObjectDetection(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	var buf bytes.Buffer
+	mw, err := worker.NewObjectDetectionMultipartWriter(&buf, req)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	client, err := worker.NewClientWithResponses(sess.Transcoder(), worker.WithHTTPClient(httpClient))
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	mediaFormat, err := common.GetInputVideoInfo(req.Video)
+	if err != nil {
+		monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+	}
+
+	// Calculate the output pixels using the video profile
+	outPixels := int64(mediaFormat.Width) * int64(mediaFormat.Height) * int64(mediaFormat.FPS) * mediaFormat.DurSecs
+	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	start := time.Now()
+	resp, err := client.GenObjectDetectionWithBody(ctx, mw.FormDataContentType(), &buf, setHeaders)
+	took := time.Since(start)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New(string(data))
+	}
+
+	// We treat a response as "receiving change" where the change is the difference between the credit and debit for the update
+	if balUpdate != nil {
+		balUpdate.Status = ReceivedChange
+	}
+
+	var res worker.ObjectDetectionResponse
+	if err := json.Unmarshal(data, &res); err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "object-detection", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
+
+	// TODO: Refine this rough estimate in future iterations
+	sess.LatencyScore = CalculateObjectDetectionLatencyScore(took, outPixels)
+
+	if monitor.Enabled {
+		var pricePerAIUnit float64
+		if priceInfo := sess.OrchestratorInfo.GetPriceInfo(); priceInfo != nil && priceInfo.PixelsPerUnit != 0 {
+			pricePerAIUnit = float64(priceInfo.PricePerUnit) / float64(priceInfo.PixelsPerUnit)
+		}
+
+		monitor.AIRequestFinished(ctx, "object-detection", *req.ModelId, monitor.AIJobInfo{LatencyScore: sess.LatencyScore, PricePerUnit: pricePerAIUnit}, sess.OrchestratorInfo)
+	}
+
+	return &res, nil
+}
+
+func processObjectDetection(ctx context.Context, params aiRequestParams, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		return nil, err
+	}
+
+	detectionResp, ok := resp.(*worker.ObjectDetectionResponse)
+	if !ok {
+		return nil, errWrongFormat
+	}
+
+	if detectionResp.Video.Url != "" {
+		var result []byte
+		var data bytes.Buffer
+		var name string
+		writer := bufio.NewWriter(&data)
+		err = worker.ReadVideoB64DataUrl(detectionResp.Video.Url, writer)
+		if err == nil {
+			// orchestrator sent base64 encoded result in .Url
+			name = string(core.RandomManifestID()) + ".mp4"
+			writer.Flush()
+			result = data.Bytes()
+		} else {
+			// orchestrator sent download url, get the data
+
+			name = filepath.Base(detectionResp.Video.Url)
+			result, err = core.DownloadData(ctx, detectionResp.Video.Url)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		newUrl, err := params.os.SaveData(ctx, name, bytes.NewReader(result), nil, 0)
+		if err != nil {
+			return nil, fmt.Errorf("error saving video to objectStore: %w", err)
+		}
+
+		detectionResp.Video.Url = newUrl
+	}
+
+	return detectionResp, nil
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1458,6 +1595,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
 			return submitLiveVideoToVideo(ctx, params, sess, v)
+		}
+	case worker.GenObjectDetectionMultipartRequestBody:
+		cap = core.Capability_ObjectDetection
+		modelID = defaultObjectDetectionModelID
+		if v.ModelId != nil {
+			modelID = *v.ModelId
+		}
+		submitFn = func(ctx context.Context, params aiRequestParams, sess *AISession) (interface{}, error) {
+			return submitObjectDetection(ctx, params, sess, v)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported request type %T", req)

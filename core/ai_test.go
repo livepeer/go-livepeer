@@ -670,6 +670,15 @@ func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 	return &worker.LiveVideoToVideoResponse{}, nil
 }
 
+func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	return &worker.ObjectDetectionResponse{
+		Video:            {Url: "http://example.com/frames1.mp4"},
+		ConfidenceScores: "confidence_scores",
+		Labels:           "labels",
+		DetectionBoxes:   "detection_boxes",
+		DetectionPts:     "detection_pts"}, nil
+}
+
 func (a *stubAIWorker) Warm(ctx context.Context, arg1, arg2 string, endpoint worker.RunnerEndpoint, flags worker.OptimizationFlags) error {
 	return nil
 }

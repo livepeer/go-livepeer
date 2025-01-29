@@ -139,6 +139,17 @@ func TestRunAIJob(t *testing.T) {
 			}
 			w.Write(imgData)
 			return
+		} else if r.URL.Path == "/video.mp4" {
+			data, err := os.ReadFile("../test/ai/video")
+			if err != nil {
+				t.Fatalf("failed to read test video: %v", err)
+			}
+			vidData, err := base64.StdEncoding.DecodeString(string(data))
+			if err != nil {
+				t.Fatalf("failed to decode base64 test video: %v", err)
+			}
+			w.Write(vidData)
+			return
 		}
 	}))
 	defer ts.Close()
@@ -218,15 +229,22 @@ func TestRunAIJob(t *testing.T) {
 			expectedOutputs: 1,
 		},
 		{
+			name:            "ObjectDetection_Success",
+			notify:          createAIJob(10, "object-detection", modelId, parsedURL.String()+"/video.mp4"),
+			pipeline:        "object-detection",
+			expectedErr:     "",
+			expectedOutputs: 1,
+		},
+		{
 			name:            "UnsupportedPipeline",
-			notify:          createAIJob(10, "unsupported-pipeline", modelId, ""),
+			notify:          createAIJob(11, "unsupported-pipeline", modelId, ""),
 			pipeline:        "unsupported-pipeline",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
 		},
 		{
 			name:            "InvalidRequestData",
-			notify:          createAIJob(11, "text-to-image-invalid", modelId, ""),
+			notify:          createAIJob(12, "text-to-image-invalid", modelId, ""),
 			pipeline:        "text-to-image",
 			expectedErr:     "AI request validation failed for",
 			expectedOutputs: 0,
@@ -343,6 +361,13 @@ func TestRunAIJob(t *testing.T) {
 					var respFile bytes.Buffer
 					worker.ReadAudioB64DataUrl(expectedResp.Audio.Url, &respFile)
 					assert.Equal(len(results.Files[audResp.Audio.Url]), respFile.Len())
+				case "object-detection":
+					vidResp, ok := results.Results.(worker.ObjectDetectionResponse)
+					assert.True(ok)
+					assert.Equal("10", headers.Get("TaskId"))
+					assert.Equal(len(results.Files), 1)
+					expectedResp, _ := wkr.ObjectDetection(context.Background(), worker.GenObjectDetectionMultipartRequestBody{})
+					assert.Equal(expectedResp.Frames[0][0].Seed, vidResp.Frames[0][0].Seed)
 				}
 			}
 		})
@@ -382,6 +407,9 @@ func createAIJob(taskId int64, pipeline, modelId, inputUrl string) *net.NotifyAI
 		desc := "a young adult"
 		text := "let me tell you a story"
 		req = worker.GenTextToSpeechJSONRequestBody{Description: &desc, ModelId: &modelId, Text: &text}
+	case "object-detection":
+		inputFile.InitFromBytes(nil, inputUrl)
+		req = worker.GenObjectDetectionMultipartRequestBody{ModelId: &modelId, Video: inputFile}
 	case "unsupported-pipeline":
 		req = worker.GenTextToImageJSONRequestBody{Prompt: "test prompt", ModelId: &modelId}
 	case "text-to-image-invalid":
@@ -615,6 +643,29 @@ func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 		return nil, a.Err
 	} else {
 		return &worker.LiveVideoToVideoResponse{}, nil
+	}
+}
+
+func (a *stubAIWorker) ObjectDetection(ctx context.Context, req worker.GenObjectDetectionMultipartRequestBody) (*worker.ObjectDetectionResponse, error) {
+	a.Called++
+	if a.Err != nil {
+		return nil, a.Err
+	} else {
+		return &worker.ObjectDetectionResponse{
+			Frames: [][]worker.Media{
+				{
+					{
+						Url:  "data:video/mp4;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII=",
+						Nsfw: false,
+						Seed: 113,
+					},
+				},
+			},
+			ConfidenceScores: "[[0.952, 0.948, ...], [0.961, 0.952, ...], [0.965, 0.96, ...], ...]",
+			Labels: "[['person', 'person', ...], ['person', 'person', ...], ['person', 'person', ...], ...]",
+			DetectionBoxes: "[[[0.14, 0.38, 640.13, 476.21], [343.38, 24.28, 640.14, 371.5], ...],[[75.1, 80.5, 320.7, 420.6], [60.4, 190.3, 370.2, 460.1], ...],[[50.5, 60.2, 200.8, 300.9], [100.3, 120.1, 350.5, 400.4], ...], ...]",
+			FramesPts: "[[0.03336666666666667], [0.06673333333333334], [0.1001], ...]"
+		}, nil
 	}
 }
 

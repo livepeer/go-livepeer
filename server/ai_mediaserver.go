@@ -83,6 +83,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/segment-anything-2", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody], processSegmentAnything2)))
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
+	ls.HTTPMux.Handle("/object-detection", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenObjectDetectionMultipartRequestBody], processObjectDetection)))
 
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())

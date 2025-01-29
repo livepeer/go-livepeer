@@ -462,6 +462,21 @@ func ParseEthAddr(strJsonKey string) (string, error) {
 	return "", errors.New("Error parsing address from keyfile")
 }
 
+func GetInputVideoInfo(video types.File) (ffmpeg.MediaFormatInfo, error) {
+	bytearr, _ := video.Bytes()
+	_, mediaFormat, err := ffmpeg.GetCodecInfoBytes(bytearr)
+	if err != nil {
+		return ffmpeg.MediaFormatInfo{}, errors.New("Error getting codec info")
+	}
+
+	duration := int64(mediaFormat.DurSecs)
+	if duration <= 0 {
+		return ffmpeg.MediaFormatInfo{}, errors.New("video duration calculation failed")
+	}
+
+	return mediaFormat, nil
+}
+
 // CalculateAudioDuration calculates audio file duration using the lpms/ffmpeg package.
 func CalculateAudioDuration(audio types.File) (int64, error) {
 	read, err := audio.Reader()

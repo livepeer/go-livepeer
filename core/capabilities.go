@@ -83,6 +83,7 @@ const (
 	Capability_ImageToText                Capability = 34
 	Capability_LiveVideoToVideo           Capability = 35
 	Capability_TextToSpeech               Capability = 36
+	Capability_ObjectDetection            Capability = 37
 )
 
 var CapabilityNameLookup = map[Capability]string{
@@ -124,6 +125,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ImageToText:                "Image to text",
 	Capability_LiveVideoToVideo:           "Live video to video",
 	Capability_TextToSpeech:               "Text to speech",
+	Capability_ObjectDetection:            "Object detection",
 }
 
 var CapabilityTestLookup = map[Capability]CapabilityTest{
@@ -217,6 +219,7 @@ func OptionalCapabilities() []Capability {
 		Capability_SegmentAnything2,
 		Capability_ImageToText,
 		Capability_TextToSpeech,
+		Capability_ObjectDetection,
 	}
 }
 
