@@ -279,6 +279,8 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}()
 }
 
+const clearStreamDelay = 1 * time.Minute
+
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	stream := params.liveParams.stream
@@ -287,7 +289,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer StreamStatusStore.Clear(streamId)
+		defer time.AfterFunc(clearStreamDelay, func() { StreamStatusStore.Clear(streamId) })
 		const maxRetries = 5
 		const retryPause = 300 * time.Millisecond
 		retries := 0
