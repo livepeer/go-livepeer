@@ -6,10 +6,11 @@
 
 ### Features ⚒
 
+-   [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
 #### General
 
 #### Broadcaster
-- [#3321](https://github.com/livepeer/go-livepeer/pull/3321) Add orchestrator info on live AI monitoring events
 
 #### Orchestrator
 
@@ -18,6 +19,8 @@
 ### Bug Fixes 🐞
 
 #### CLI
+
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
 
 #### General
 

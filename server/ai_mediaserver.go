@@ -10,11 +10,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/monitor"
 
+	"github.com/cenkalti/backoff"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/livepeer/ai-worker/worker"
 	"github.com/livepeer/go-livepeer/clog"
@@ -51,7 +53,7 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
-func startAIMediaServer(ls *LivepeerServer) error {
+func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
 		return err
@@ -86,10 +88,12 @@ func startAIMediaServer(ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
 
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
 }
 
@@ -255,20 +259,19 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
-		var req worker.GenLLMFormdataRequestBody
-
-		multiRdr, err := r.MultipartReader()
-		if err != nil {
+		var req worker.GenLLMJSONRequestBody
+		if err := jsonDecoder(&req, r); err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
 
-		if err := runtime.BindMultipart(&req, *multiRdr); err != nil {
-			respondJsonError(ctx, w, err, http.StatusBadRequest)
+		//check required fields
+		if req.Model == nil || req.Messages == nil || req.Stream == nil || req.MaxTokens == nil || len(req.Messages) == 0 {
+			respondJsonError(ctx, w, errors.New("missing required fields"), http.StatusBadRequest)
 			return
 		}
 
-		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request prompt=%v model_id=%v stream=%v", req.Prompt, *req.ModelId, *req.Stream)
+		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request model_id=%v stream=%v", *req.Model, *req.Stream)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -289,9 +292,9 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		}
 
 		took := time.Since(start)
-		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request prompt=%v model_id=%v took=%v", req.Prompt, *req.ModelId, took)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request model_id=%v took=%v", *req.Model, took)
 
-		if streamChan, ok := resp.(chan worker.LlmStreamChunk); ok {
+		if streamChan, ok := resp.(chan *worker.LLMResponse); ok {
 			// Handle streaming response (SSE)
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
@@ -301,7 +304,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 				data, _ := json.Marshal(chunk)
 				fmt.Fprintf(w, "data: %s\n\n", data)
 				w.(http.Flusher).Flush()
-				if chunk.Done {
+				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
 					break
 				}
 			}
@@ -651,4 +654,87 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 		}
 		pub.StopControl()
 	}
+}
+
+const defaultSmokeTestDuration = 5 * time.Minute
+const maxSmokeTestDuration = 60 * time.Minute
+
+type smokeTestRequest struct {
+	StreamURL    string `json:"stream_url"`
+	DurationSecs int    `json:"duration_secs"`
+}
+
+func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req smokeTestRequest
+		defer r.Body.Close()
+		d := json.NewDecoder(r.Body)
+		err := d.Decode(&req)
+		if err != nil {
+			http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+			return
+		}
+		if req.StreamURL == "" {
+			http.Error(w, "Missing stream url", http.StatusBadRequest)
+			return
+		}
+
+		ingestURL := req.StreamURL
+		duration := defaultSmokeTestDuration
+		if req.DurationSecs != 0 {
+			if float64(req.DurationSecs) > maxSmokeTestDuration.Seconds() {
+				http.Error(w, "Request exceeds max duration "+maxSmokeTestDuration.String(), http.StatusBadRequest)
+				return
+			}
+			duration = time.Duration(req.DurationSecs) * time.Second
+		}
+		// Use an FFMPEG test card
+		var params = []string{
+			"-re",
+			"-f", "lavfi",
+			"-i", "testsrc=size=1920x1080:rate=30,format=yuv420p",
+			"-f", "lavfi",
+			"-i", "sine",
+			"-c:v", "libx264",
+			"-b:v", "1000k",
+			"-x264-params", "keyint=60",
+			"-c:a", "aac",
+			"-to", fmt.Sprintf("%f", duration.Seconds()),
+			"-f", "flv",
+			ingestURL,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), duration+time.Minute)
+		cmd := exec.CommandContext(ctx, "ffmpeg", params...)
+		var outputBuf bytes.Buffer
+		cmd.Stdout = &outputBuf
+		cmd.Stderr = &outputBuf
+
+		clog.Infof(ctx, "Starting smoke test for %s duration %s", ingestURL, duration)
+
+		if err := cmd.Start(); err != nil {
+			cancel()
+			clog.Errorf(ctx, "failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
+			http.Error(w, "Failed to start stream", http.StatusInternalServerError)
+			return
+		}
+
+		go func() {
+			defer cancel()
+			_ = backoff.Retry(func() error {
+				if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
+					clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
+					clog.Errorf(ctx, "ffmpeg output:\n%s\n", outputBuf.String())
+					return fmt.Errorf("ffmpeg failed")
+				}
+				clog.Infof(ctx, "Smoke test finished successfully for %s", ingestURL)
+				return nil
+			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
+		}()
+	})
 }

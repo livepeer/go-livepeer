@@ -164,6 +164,7 @@ type LivepeerConfig struct {
 	OrchMinLivepeerVersion     *string
 	TestOrchAvail              *bool
 	AIRunnerImage              *string
+	AIRunnerImageOverrides     *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -214,6 +215,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultGatewayHost := ""
@@ -318,14 +320,15 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry:    &defaultAIServiceRegistry,
-		AIWorker:             &defaultAIWorker,
-		AIModels:             &defaultAIModels,
-		AIModelsDir:          &defaultAIModelsDir,
-		AIRunnerImage:        &defaultAIRunnerImage,
-		LiveAIAuthWebhookURL: &defaultLiveAIAuthWebhookURL,
-		LivePaymentInterval:  &defaultLivePaymentInterval,
-		GatewayHost:          &defaultGatewayHost,
+		AIServiceRegistry:      &defaultAIServiceRegistry,
+		AIWorker:               &defaultAIWorker,
+		AIModels:               &defaultAIModels,
+		AIModelsDir:            &defaultAIModelsDir,
+		AIRunnerImage:          &defaultAIRunnerImage,
+		AIRunnerImageOverrides: &defaultAIRunnerImageOverrides,
+		LiveAIAuthWebhookURL:   &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:    &defaultLivePaymentInterval,
+		GatewayHost:            &defaultGatewayHost,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1211,7 +1214,24 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			return
 		}
 
-		n.AIWorker, err = worker.NewWorker(*cfg.AIRunnerImage, gpus, modelsDir)
+		// Retrieve image overrides from the config.
+		var imageOverrides worker.ImageOverrides
+		if *cfg.AIRunnerImageOverrides != "" {
+			if err := json.Unmarshal([]byte(*cfg.AIRunnerImageOverrides), &imageOverrides); err != nil {
+				glog.Errorf("Error unmarshaling image overrides: %v", err)
+				return
+			}
+		}
+
+		// Backwards compatibility for deprecated flags.
+		if *cfg.AIRunnerImage != "" {
+			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiWorkerImageOverrides instead")
+			if imageOverrides.Default == "" {
+				imageOverrides.Default = *cfg.AIRunnerImage
+			}
+		}
+
+		n.AIWorker, err = worker.NewWorker(imageOverrides, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1534,10 +1554,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", TranscoderCliPort)
 	} else if n.NodeType == core.AIWorkerNode {
 		*cfg.CliAddr = defaultAddr(*cfg.CliAddr, "127.0.0.1", AIWorkerCliPort)
-		// Need to have default Capabilities if not running transcoder.
-		if !*cfg.Transcoder {
-			aiCaps = append(aiCaps, core.DefaultCapabilities()...)
-		}
+	}
+
+	// Apply default capabilities if not running as a transcoder.
+	if !*cfg.Transcoder && (n.NodeType == core.AIWorkerNode || n.NodeType == core.OrchestratorNode) {
+		aiCaps = append(aiCaps, core.DefaultCapabilities()...)
 	}
 
 	n.Capabilities = core.NewCapabilities(append(transcoderCaps, aiCaps...), nil)
@@ -1588,7 +1609,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	//Create Livepeer Node
 
 	//Set up the media server
-	s, err := server.NewLivepeerServer(*cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
+	s, err := server.NewLivepeerServer(ctx, *cfg.RtmpAddr, n, httpIngest, *cfg.TranscodingOptions)
 	if err != nil {
 		exit("Error creating Livepeer server: err=%q", err)
 	}

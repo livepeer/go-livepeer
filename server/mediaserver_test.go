@@ -88,7 +88,7 @@ func setupServerWithCancel() (*LivepeerServer, context.CancelFunc) {
 		}
 		n, _ := core.NewLivepeerNode(nil, "./tmp", nil)
 		// doesn't really starts server at 1938
-		S, _ = NewLivepeerServer("127.0.0.1:1938", n, true, "")
+		S, _ = NewLivepeerServer(ctx, "127.0.0.1:1938", n, true, "")
 		// rtmpurl := fmt.Sprintf("rtmp://127.0.0.1:%d", port)
 		// S, _ = NewLivepeerServer(rtmpurl, n, true, "")
 		// glog.Errorf("++> rtmp server with port %d", port)

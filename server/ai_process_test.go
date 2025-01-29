@@ -13,7 +13,7 @@ func Test_submitLLM(t *testing.T) {
 		ctx    context.Context
 		params aiRequestParams
 		sess   *AISession
-		req    worker.GenLLMFormdataRequestBody
+		req    worker.GenLLMJSONRequestBody
 	}
 	tests := []struct {
 		name    string
