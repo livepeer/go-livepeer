@@ -1,5 +1,23 @@
 # Changelog
 
+## V0.8.3
+
+### Features ⚒
+
+#### General
+
+-   [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
+#### Orchestrator
+
+- [#3284](https://github.com/livepeer/go-livepeer/pull/3284) deprecate `-aiRunnerImage` flag for `-aiRunnerImageOverrides`.
+
+### Bug Fixes 🐞
+
+#### CLI
+
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
+
 ## v0.8.2
 
 ### Features ⚒
