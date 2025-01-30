@@ -116,4 +116,4 @@ docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
 
 swagger:
-	swag init --generalInfo cmd/livepeer/livepeer.go --outputTypes yaml --output . && mv swagger.yaml openapi.yaml
+	swag init --generalInfo server/ai_mediaserver.go --outputTypes yaml --output . && mv swagger.yaml liveai.openapi.yaml

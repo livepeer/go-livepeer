@@ -53,6 +53,9 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
+// @title Live Video-To-Video AI
+// @version 0.0.0
+
 func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -368,6 +371,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 }
 
 // @Summary Start Live Video
+// @Accept multipart/form-data
 // @Param stream path string true "Stream Key"
 // @Param source_id formData string true "MediaMTX source ID, used for calls back to MediaMTX"
 // @Param source_type formData string true "MediaMTX specific source type (webrtcSession/rtmpConn)"
