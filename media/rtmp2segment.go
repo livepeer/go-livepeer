@@ -46,16 +46,16 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
-	retryCount := 0
 	for {
 		streamExists, err := ms.MediaMTXClient.StreamExists()
 		if err != nil {
-			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
+			clog.Errorf(ctx, "Segmentation StreamExists check failed. err=%s", err)
 		}
-		if retryCount > 2 && !streamExists {
+		if !streamExists {
 			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
 			break
 		}
+		clog.Infof(ctx, "Starting segmentation. in=%s", in)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
@@ -66,10 +66,9 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
-			clog.Infof(ctx, "Process output: %s", output)
-			return
+			break
 		}
-		retryCount++
+		clog.Infof(ctx, "Segmentation ffmpeg output: %s", output)
 		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
