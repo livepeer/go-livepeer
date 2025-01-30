@@ -479,6 +479,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)
 
 	// Check if there is capacity for the request.
+	// Capability capacity is reserved if available and released when response is received
 	if !orch.CheckAICapacity(pipeline, modelID) {
 		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
 		return
@@ -510,6 +511,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
