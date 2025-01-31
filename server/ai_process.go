@@ -40,6 +40,7 @@ const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
+var errInsufficientCapacity = errors.New("insufficient capacity")
 
 type ServiceUnavailableError struct {
 	err error
@@ -1501,6 +1502,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if err == nil {
 			params.sessManager.Complete(ctx, sess)
 			break
+		}
+
+		//errors that do not result in suspensinding the orchestrator
+		if strings.Contains(err.Error(), "insufficient capacity") || strings.Contains(err.Error(), "invalid ticker senderNonce") {
+			params.sessManager.Complete(ctx, sess)
+			continue
 		}
 
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
