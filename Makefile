@@ -95,7 +95,7 @@ ifeq ($(BUILDOS),linux)
 endif
 
 
-.PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router docker
+.PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router docker swagger
 
 # Git reference to download the OpenAPI spec from, defaults to `main` branch.
 # It can also be a simple git commit hash. e.g. `make ai_worker_codegen REF=c19289d`
@@ -124,3 +124,6 @@ docker:
 
 docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
+
+swagger:
+	swag init --generalInfo cmd/livepeer/livepeer.go --outputTypes yaml --output . && mv swagger.yaml openapi.yaml

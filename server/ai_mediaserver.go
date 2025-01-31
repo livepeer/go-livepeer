@@ -367,6 +367,13 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
+// @Summary Start Live Video
+// @Param stream path string true "Stream Key"
+// @Param source_id formData string true "MediaMTX source ID, used for calls back to MediaMTX"
+// @Param source_type formData string true "MediaMTX specific source type (webrtcSession/rtmpConn)"
+// @Param query formData string true "Queryparams from the original ingest URL"
+// @Success 200
+// @Router /live/video-to-video/{stream}/start [get]
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -576,6 +583,11 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	return split[0], nil
 }
 
+// @Summary Update Live Stream
+// @Param stream path string true "Stream Key"
+// @Param params body string true "update request"
+// @Success 200
+// @Router /live/video-to-video/{stream}/update [post]
 func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -612,6 +624,10 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 	})
 }
 
+// @Summary Get Live Stream Status
+// @Param stream path string true "Stream ID"
+// @Success 200
+// @Router /live/video-to-video/{stream}/status [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamId := r.PathValue("streamId")
@@ -664,6 +680,10 @@ type smokeTestRequest struct {
 	DurationSecs int    `json:"duration_secs"`
 }
 
+// @Summary Start Smoke Test
+// @Param request body smokeTestRequest true "smoke test request"
+// @Success 200
+// @Router /live/video-to-video/smoketest [put]
 func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
@@ -719,7 +739,7 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 
 		if err := cmd.Start(); err != nil {
 			cancel()
-			clog.Errorf(ctx, "failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
+			clog.Errorf(ctx, "Smoke test failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
 			http.Error(w, "Failed to start stream", http.StatusInternalServerError)
 			return
 		}
@@ -728,8 +748,8 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 			defer cancel()
 			_ = backoff.Retry(func() error {
 				if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
-					clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
-					clog.Errorf(ctx, "ffmpeg output:\n%s\n", outputBuf.String())
+					clog.Errorf(ctx, "Smoke test failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
+					clog.Errorf(ctx, "Smoke test ffmpeg output:\n%s\n", outputBuf.String())
 					return fmt.Errorf("ffmpeg failed")
 				}
 				clog.Infof(ctx, "Smoke test finished successfully for %s", ingestURL)
