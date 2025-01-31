@@ -205,6 +205,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 		}()
 		for {
+			clog.V(6).Infof(ctx, "Starting output rtmp")
 			if !params.inputStreamExists() {
 				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 				break
