@@ -1,3 +1,5 @@
+ARG MEDIAMTX_VERSION="1.11.2-livepeer-1"
+
 FROM golang:1.23 AS builder
 
 # Install any build dependencies (e.g., git)
@@ -5,9 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	git \
 	&& rm -rf /var/lib/apt/lists/*
 
-# Temporarily use this branch while we have changes waiting for upstream
+# Use this branch while we have changes waiting for upstream
+ARG MEDIAMTX_VERSION
 WORKDIR /app
-RUN git clone --branch v1.11.2-livepeer-1 https://github.com/livepeer/mediamtx.git .
+RUN git clone --branch v${MEDIAMTX_VERSION} https://github.com/livepeer/mediamtx.git .
 
 # Download Go dependencies
 RUN go mod download
@@ -40,6 +43,8 @@ RUN	mkdir -p /var/log/ \
 COPY --chmod=0755	mediamtx-metrics.bash	/opt/mediamtx-metrics.bash
 
 # Copy artifacts from the builder stage
+ARG MEDIAMTX_VERSION
+ENV MEDIAMTX_VERSION=${MEDIAMTX_VERSION}
 COPY --from=builder /app/mediamtx /usr/local/bin/mediamtx
 COPY --from=builder /app/mediamtx.yml /etc/mediamtx/mediamtx.yml
 
