@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/livepeer/go-livepeer/clog"
 	"golang.org/x/sys/unix"
 )
@@ -47,12 +48,19 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	}()
 
 	for {
-		streamExists, err := ms.MediaMTXClient.StreamExists()
+		err := backoff.Retry(func() error {
+			streamExists, err := ms.MediaMTXClient.StreamExists()
+			if err != nil {
+				return fmt.Errorf("StreamExists check failed: %w", err)
+			}
+			if !streamExists {
+				clog.Errorf(ctx, "input stream does not exist")
+				return fmt.Errorf("input stream does not exist")
+			}
+			return nil
+		}, backoff.WithMaxRetries(newExponentialBackOff(), 3))
 		if err != nil {
-			clog.Errorf(ctx, "Segmentation StreamExists check failed. err=%s", err)
-		}
-		if !streamExists {
-			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
 		clog.Infof(ctx, "Starting segmentation. in=%s", in)
@@ -74,6 +82,14 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	completionSignal <- true
 	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
+}
+
+func newExponentialBackOff() *backoff.ExponentialBackOff {
+	backOff := backoff.NewExponentialBackOff()
+	backOff.InitialInterval = 500 * time.Millisecond
+	backOff.MaxInterval = 5 * time.Second
+	backOff.Reset()
+	return backOff
 }
 
 func createNamedPipe(pipeName string) {
