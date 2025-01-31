@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
 var errPipelineNotAvailable = errors.New("pipeline not available")

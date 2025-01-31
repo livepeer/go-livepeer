@@ -1,5 +1,7 @@
 package core
 
+// ai_orchestrator.go implements logic for managing AI workers and processing AI jobs.
+
 import (
 	"bytes"
 	"context"
@@ -14,7 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
