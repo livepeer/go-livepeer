@@ -8,9 +8,13 @@ definitions:
     type: object
 info:
   contact: {}
+  title: Live Video-To-Video AI
+  version: 0.0.0
 paths:
   /live/video-to-video/{stream}/start:
     get:
+      consumes:
+      - multipart/form-data
       parameters:
       - description: Stream Key
         in: path
