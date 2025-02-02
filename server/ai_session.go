@@ -233,7 +233,7 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
-		if (sel.warmPool.Size() + sel.coldPool.Size()) == 0 {
+		if sel.SelectorIsEmpty() {
 			// release all orchestrators from suspension and try refresh
 			// if there are no orchestrators in the pools
 			clog.Infof(ctx, "refreshing sessions, no orchestrators in pools")
@@ -275,6 +275,10 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	return nil
 }
 
+func (sel *AISessionSelector) SelectorIsEmpty() bool {
+	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
+}
+
 func (sel *AISessionSelector) Complete(sess *AISession) {
 	if sess.Warm {
 		sel.warmPool.Complete(sess.BroadcastSession)
@@ -311,6 +315,12 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 			continue
 		}
 
+		// this should not be needed, the GetOrchestrators checks for suspension but was seeing orchestrators get back into
+		// the pool that were suspended
+		if sel.suspender.Suspended(sess.Transcoder()) > 0 {
+			clog.Infof(ctx, "skipping suspended orchestrator=%s", sess.Transcoder())
+			continue
+		}
 		// If the constraint for the modelID are missing skip this session
 		modelConstraint, ok := constraints.Models[sel.modelID]
 		if !ok {
