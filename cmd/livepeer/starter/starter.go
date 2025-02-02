@@ -1225,7 +1225,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Backwards compatibility for deprecated flags.
 		if *cfg.AIRunnerImage != "" {
-			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiWorkerImageOverrides instead")
+			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
 			if imageOverrides.Default == "" {
 				imageOverrides.Default = *cfg.AIRunnerImage
 			}
