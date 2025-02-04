@@ -1504,8 +1504,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
-		//errors that do not result in suspensinding the orchestrator
-		if strings.Contains(err.Error(), "insufficient capacity") || strings.Contains(err.Error(), "invalid ticker senderNonce") {
+		//errors that do not result in suspending the orchestrator
+		if strings.Contains(err.Error(), "insufficient capacity") || strings.Contains(err.Error(), "invalid ticket senderNonce") {
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
