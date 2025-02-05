@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -1225,7 +1225,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Backwards compatibility for deprecated flags.
 		if *cfg.AIRunnerImage != "" {
-			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiWorkerImageOverrides instead")
+			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
 			if imageOverrides.Default == "" {
 				imageOverrides.Default = *cfg.AIRunnerImage
 			}

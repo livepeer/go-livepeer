@@ -18,7 +18,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -52,6 +52,9 @@ const (
 	Processing ImageToVideoStatus = "processing"
 	Complete   ImageToVideoStatus = "complete"
 )
+
+// @title Live Video-To-Video AI
+// @version 0.0.0
 
 func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
@@ -368,6 +371,7 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 }
 
 // @Summary Start Live Video
+// @Accept multipart/form-data
 // @Param stream path string true "Stream Key"
 // @Param source_id formData string true "MediaMTX source ID, used for calls back to MediaMTX"
 // @Param source_type formData string true "MediaMTX specific source type (webrtcSession/rtmpConn)"
