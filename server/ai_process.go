@@ -40,7 +40,6 @@ const defaultLiveVideoToVideoModelID = "noop"
 const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
-var errInsufficientCapacity = errors.New("insufficient capacity")
 
 type ServiceUnavailableError struct {
 	err error
