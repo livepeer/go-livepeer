@@ -47,6 +47,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
+	retryCount := 0
 	for {
 		err := backoff.Retry(func() error {
 			streamExists, err := ms.MediaMTXClient.StreamExists()
@@ -63,7 +64,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
-		clog.Infof(ctx, "Starting segmentation. in=%s", in)
+		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
@@ -76,8 +77,9 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
 			break
 		}
-		clog.Infof(ctx, "Segmentation ffmpeg output: %s", output)
+		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
 		time.Sleep(5 * time.Second)
+		retryCount++
 	}
 	completionSignal <- true
 	clog.Infof(ctx, "sent completion signal, now waiting")
