@@ -31,8 +31,8 @@ const (
 	mediaMTXControlPort    = "9997"
 	mediaMTXControlTimeout = 30 * time.Second
 	mediaMTXControlUser    = "admin"
-	MediaMTXWebrtcSession  = "webrtcSession"
-	MediaMTXRtmpConn       = "rtmpConn"
+	MediaMTXWebrtcSession  = "webrtcsession"
+	MediaMTXRtmpConn       = "rtmpconn"
 )
 
 func MediamtxSourceTypeToString(s string) (string, error) {

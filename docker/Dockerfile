@@ -12,7 +12,7 @@ ENV	GOARCH="$TARGETARCH" \
 	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
 
 RUN	apt update \
-	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release yasm \
+	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm \
 	&& curl -fsSL https://dl.google.com/go/go1.21.5.linux-${BUILDARCH}.tar.gz | tar -C /usr/local -xz \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
@@ -29,6 +29,11 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 	&& curl -fsSL https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${TARGETARCH} -o /usr/bin/grpc_health_probe \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
+
+RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
+	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
+	&& git checkout ${FFMPEG_SHA} \
+	&& ./configure --prefix=build && make -j"$(nproc)" && make install
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
@@ -67,7 +72,7 @@ COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
-
-RUN apt update && apt install -yqq ffmpeg
+COPY --from=build /ffmpeg/build/ /usr/local
+RUN ldconfig /usr/local/lib
 
 ENTRYPOINT	["/usr/local/bin/livepeer"]

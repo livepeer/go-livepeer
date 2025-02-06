@@ -18,11 +18,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/livepeer/go-livepeer/clog"
 	"golang.org/x/sys/unix"
 )
 
-var waitTimeout = 20 * time.Second
+const (
+	waitTimeout         = 20 * time.Second
+	fileCleanupInterval = time.Hour
+	fileCleanupMaxAge   = 4 * time.Hour
+	outFileSuffix       = ".ts"
+)
 
 type MediaSegmenter struct {
 	Workdir        string
@@ -30,7 +36,7 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
-	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
+	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
 	completionSignal := make(chan bool, 1)
 	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
 	wg := &sync.WaitGroup{}
@@ -46,16 +52,23 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
-	retryCount := 0
 	for {
-		streamExists, err := ms.MediaMTXClient.StreamExists()
+		err := backoff.Retry(func() error {
+			streamExists, err := ms.MediaMTXClient.StreamExists()
+			if err != nil {
+				return fmt.Errorf("StreamExists check failed: %w", err)
+			}
+			if !streamExists {
+				clog.Errorf(ctx, "input stream does not exist")
+				return fmt.Errorf("input stream does not exist")
+			}
+			return nil
+		}, backoff.WithMaxRetries(newExponentialBackOff(), 3))
 		if err != nil {
-			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
-		}
-		if retryCount > 2 && !streamExists {
-			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
+		clog.Infof(ctx, "Starting segmentation. in=%s", in)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
@@ -66,15 +79,22 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
-			clog.Infof(ctx, "Process output: %s", output)
-			return
+			break
 		}
-		retryCount++
+		clog.Infof(ctx, "Segmentation ffmpeg output: %s", output)
 		time.Sleep(5 * time.Second)
 	}
 	completionSignal <- true
 	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
+}
+
+func newExponentialBackOff() *backoff.ExponentialBackOff {
+	backOff := backoff.NewExponentialBackOff()
+	backOff.InitialInterval = 500 * time.Millisecond
+	backOff.MaxInterval = 5 * time.Second
+	backOff.Reset()
+	return backOff
 }
 
 func createNamedPipe(pipeName string) {
@@ -261,4 +281,45 @@ func randomString() string {
 		b[i] = byte(rand.Intn(256))
 	}
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(b), "=")
+}
+
+// StartFileCleanup starts a goroutine to periodically remove any old temporary files accidentally left behind
+func StartFileCleanup(ctx context.Context, workDir string) {
+	go func() {
+		ticker := time.NewTicker(fileCleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := cleanUpLocalTmpFiles(ctx, workDir, "*"+outFileSuffix, fileCleanupMaxAge); err != nil {
+					clog.Errorf(ctx, "Error cleaning up segment files: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+func cleanUpLocalTmpFiles(ctx context.Context, dir string, filenamePattern string, maxAge time.Duration) error {
+	filesRemoved := 0
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.Mode().IsRegular() {
+			if match, _ := filepath.Match(filenamePattern, info.Name()); match {
+				if time.Since(info.ModTime()) > maxAge {
+					err = os.Remove(path)
+					if err != nil {
+						return fmt.Errorf("error removing file %s: %w", path, err)
+					}
+					filesRemoved++
+				}
+			}
+		}
+		return nil
+	})
+	clog.Infof(ctx, "Segment file cleanup removed %d files", filesRemoved)
+	return err
 }

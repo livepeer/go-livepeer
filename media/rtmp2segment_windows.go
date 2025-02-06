@@ -12,3 +12,7 @@ type MediaSegmenter struct {
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	// Not supported for Windows
 }
+
+func StartFileCleanup(ctx context.Context, workDir string) {
+	// Not supported for Windows
+}

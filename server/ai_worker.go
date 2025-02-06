@@ -1,5 +1,7 @@
 package server
 
+// ai_worker.go implements logic for orchestrators to spin up and send AI jobs to workers.
+
 import (
 	"bytes"
 	"context"
@@ -20,7 +22,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -271,12 +273,12 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 		}
 		reqOk = true
 	case "llm":
-		var req worker.GenLLMFormdataRequestBody
+		var req worker.GenLLMJSONRequestBody
 		err = json.Unmarshal(reqData.Request, &req)
-		if err != nil || req.ModelId == nil {
+		if err != nil || req.Model == nil {
 			break
 		}
-		modelID = *req.ModelId
+		modelID = *req.Model
 		resultType = "application/json"
 		if req.Stream != nil && *req.Stream {
 			resultType = "text/event-stream"
@@ -354,7 +356,7 @@ func runAIJob(n *core.LivepeerNode, orchAddr string, httpc *http.Client, notify 
 
 	if resp != nil {
 		if resultType == "text/event-stream" {
-			streamChan, ok := resp.(<-chan worker.LlmStreamChunk)
+			streamChan, ok := resp.(<-chan *worker.LLMResponse)
 			if ok {
 				sendStreamingAIResult(ctx, n, orchAddr, notify.AIJobData.Pipeline, httpc, resultType, streamChan)
 				return
@@ -530,7 +532,7 @@ func sendAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pi
 }
 
 func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr string, pipeline string, httpc *http.Client,
-	contentType string, streamChan <-chan worker.LlmStreamChunk,
+	contentType string, streamChan <-chan *worker.LLMResponse,
 ) {
 	clog.Infof(ctx, "sending streaming results back to Orchestrator")
 	taskId := clog.GetVal(ctx, "taskId")
@@ -571,7 +573,7 @@ func sendStreamingAIResult(ctx context.Context, n *core.LivepeerNode, orchAddr s
 		}
 		fmt.Fprintf(pWriter, "data: %s\n\n", data)
 
-		if chunk.Done {
+		if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
 			pWriter.Close()
 			clog.Infof(ctx, "streaming results finished")
 			return
