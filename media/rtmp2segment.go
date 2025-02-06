@@ -41,6 +41,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
+	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
+
+	// create first named pipe to preempt races between ffmpeg and processSegments
+	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
 		defer procCancel()
@@ -216,7 +221,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 	}()
 
 	pipeNum := 0
-	createNamedPipe(fmt.Sprintf(outFilePattern, pipeNum))
+	// first named pipe should have been created already
 
 	for {
 		pipeName := fmt.Sprintf(outFilePattern, pipeNum)
