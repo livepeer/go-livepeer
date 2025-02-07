@@ -68,6 +68,8 @@ FROM	livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
+RUN	apt update && apt install -y libx264-155
+
 COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
 COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
