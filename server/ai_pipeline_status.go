@@ -10,6 +10,7 @@ type streamStatusStore struct {
 }
 
 var StreamStatusStore = streamStatusStore{store: make(map[string]map[string]interface{})}
+var GatewayStatus = streamStatusStore{store: make(map[string]map[string]interface{})}
 
 // StoreStreamStatus updates the status for a stream
 func (s *streamStatusStore) Store(streamID string, status map[string]interface{}) {

@@ -301,7 +301,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer time.AfterFunc(clearStreamDelay, func() { StreamStatusStore.Clear(streamId) })
+		defer time.AfterFunc(clearStreamDelay, func() {
+			StreamStatusStore.Clear(streamId)
+			GatewayStatus.Clear(streamId)
+		})
 		defer func() {
 			eventTicker.Stop()
 			eventsDone <- true
@@ -470,8 +473,10 @@ func (s *SlowOrchChecker) GetCount() int {
 	return s.segmentCount
 }
 
-func LiveErrorEventSender(ctx context.Context, event map[string]string) func(err error) {
+func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
+		GatewayStatus.Store(streamID, map[string]interface{}{"last_error": err.Error()})
+
 		ev := maps.Clone(event)
 		ev["capability"] = clog.GetVal(ctx, "capability")
 		ev["message"] = err.Error()
