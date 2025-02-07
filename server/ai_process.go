@@ -1039,8 +1039,23 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
+	paymentHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
+
+	setHeaders := func(ctx context.Context, req *http.Request) error {
+		if err := paymentHeaders(ctx, req); err != nil {
+			return err
+		}
+		req.Header.Set("requestID", params.liveParams.requestID)
+		req.Header.Set("streamID", params.liveParams.streamID)
+		return nil
+	}
 
 	// Send request to orchestrator
 	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
