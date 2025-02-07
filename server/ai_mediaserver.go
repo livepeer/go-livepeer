@@ -402,6 +402,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
+		sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
 		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
