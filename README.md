@@ -24,7 +24,7 @@ serve as the live media layer in the decentralized development (Web3) stack.
 - [Requirements](#requirements)
 - [Getting Started](#getting-started)
 - [Contributing](#contributing)
-- [Other Documentation](#documentation)
+- [Other Documentation](https://docs.livepeer.org/developers/introduction)
 - [Resources](#resources)
 
 <!-- hide-on-docup-stop -->
