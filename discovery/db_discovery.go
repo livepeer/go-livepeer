@@ -189,7 +189,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -266,7 +266,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	}
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
-	timeout := getOrchestratorTimeoutLoop //needs to be same or longer than GRPCConnectTimeout in server/rpc.go
+	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -276,7 +276,11 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
-
+		// Do not connect if URI host is not set
+		if uri.Host == "" {
+			errc <- fmt.Errorf("skipping orch=%v, URI not set", dbOrch.EthereumAddr)
+			return
+		}
 		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, nil)
 		if err != nil {
 			errc <- err
@@ -328,7 +332,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
-			glog.Info("Done fetching orch info for orchestrators, context timeout")
+			glog.Infof("Done fetching orch info for orchestrators, context timeout (fetched: %v out of %v)", i, numOrchs)
 			return nil
 		}
 	}
