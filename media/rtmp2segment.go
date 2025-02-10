@@ -18,11 +18,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/livepeer/go-livepeer/clog"
 	"golang.org/x/sys/unix"
 )
 
-var waitTimeout = 20 * time.Second
+const (
+	waitTimeout         = 20 * time.Second
+	fileCleanupInterval = time.Hour
+	fileCleanupMaxAge   = 4 * time.Hour
+	outFileSuffix       = ".ts"
+)
 
 type MediaSegmenter struct {
 	Workdir        string
@@ -30,26 +36,41 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
-	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d.ts")
+	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
 	completionSignal := make(chan bool, 1)
+	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
+	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
+
+	// create first named pipe to preempt races between ffmpeg and processSegments
+	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
+		defer procCancel()
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
 	retryCount := 0
 	for {
-		streamExists, err := ms.MediaMTXClient.StreamExists()
+		err := backoff.Retry(func() error {
+			streamExists, err := ms.MediaMTXClient.StreamExists()
+			if err != nil {
+				return fmt.Errorf("StreamExists check failed: %w", err)
+			}
+			if !streamExists {
+				clog.Errorf(ctx, "input stream does not exist")
+				return fmt.Errorf("input stream does not exist")
+			}
+			return nil
+		}, backoff.WithMaxRetries(newExponentialBackOff(), 3))
 		if err != nil {
-			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
-		}
-		if retryCount > 2 && !streamExists {
-			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
-		cmd := exec.Command("ffmpeg",
+		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
+		cmd := exec.CommandContext(procCtx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
 			"-c:v", "copy",
@@ -58,16 +79,24 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Error sending RTMP out process: %v", err)
-			clog.Infof(ctx, "Process output: %s", output)
-			return
+			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
+			break
 		}
-		retryCount++
+		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
 		time.Sleep(5 * time.Second)
+		retryCount++
 	}
 	completionSignal <- true
 	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
+}
+
+func newExponentialBackOff() *backoff.ExponentialBackOff {
+	backOff := backoff.NewExponentialBackOff()
+	backOff.InitialInterval = 500 * time.Millisecond
+	backOff.MaxInterval = 5 * time.Second
+	backOff.Reset()
+	return backOff
 }
 
 func createNamedPipe(pipeName string) {
@@ -185,16 +214,16 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 		defer mu.Unlock()
 		if currentSegment != nil {
 			// Trigger EOF on the current segment by closing the file
-			slog.Info("Completion signal received. Closing current segment to trigger EOF.")
+			clog.Infof(ctx, "Completion signal received. Closing current segment to trigger EOF.")
 			currentSegment.Close()
 		}
 		isComplete = true
 		pipeCompletion <- true
-		slog.Info("Got completion signal")
+		clog.Infof(ctx, "Got completion signal")
 	}()
 
 	pipeNum := 0
-	createNamedPipe(fmt.Sprintf(outFilePattern, pipeNum))
+	// first named pipe should have been created already
 
 	for {
 		pipeName := fmt.Sprintf(outFilePattern, pipeNum)
@@ -207,7 +236,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 		// Blocks if no writer is available so do some tricks to it
 		file, err := openNonBlockingWithRetry(pipeName, waitTimeout, pipeCompletion)
 		if err != nil {
-			slog.Error("Error opening pipe", "pipeName", pipeName, "err", err)
+			clog.Errorf(ctx, "Error opening pipe pipeName=%s err=%s", pipeName, err)
 			cleanUpPipe(pipeName)
 			cleanUpPipe(nextPipeName)
 			break
@@ -254,4 +283,45 @@ func randomString() string {
 		b[i] = byte(rand.Intn(256))
 	}
 	return strings.TrimRight(base32.StdEncoding.EncodeToString(b), "=")
+}
+
+// StartFileCleanup starts a goroutine to periodically remove any old temporary files accidentally left behind
+func StartFileCleanup(ctx context.Context, workDir string) {
+	go func() {
+		ticker := time.NewTicker(fileCleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := cleanUpLocalTmpFiles(ctx, workDir, "*"+outFileSuffix, fileCleanupMaxAge); err != nil {
+					clog.Errorf(ctx, "Error cleaning up segment files: %v", err)
+				}
+			}
+		}
+	}()
+}
+
+func cleanUpLocalTmpFiles(ctx context.Context, dir string, filenamePattern string, maxAge time.Duration) error {
+	filesRemoved := 0
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.Mode().IsRegular() {
+			if match, _ := filepath.Match(filenamePattern, info.Name()); match {
+				if time.Since(info.ModTime()) > maxAge {
+					err = os.Remove(path)
+					if err != nil {
+						return fmt.Errorf("error removing file %s: %w", path, err)
+					}
+					filesRemoved++
+				}
+			}
+		}
+		return nil
+	})
+	clog.Infof(ctx, "Segment file cleanup removed %d files", filesRemoved)
+	return err
 }

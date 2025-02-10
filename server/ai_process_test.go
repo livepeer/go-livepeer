@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
 func Test_submitLLM(t *testing.T) {
@@ -13,7 +13,7 @@ func Test_submitLLM(t *testing.T) {
 		ctx    context.Context
 		params aiRequestParams
 		sess   *AISession
-		req    worker.GenLLMFormdataRequestBody
+		req    worker.GenLLMJSONRequestBody
 	}
 	tests := []struct {
 		name    string

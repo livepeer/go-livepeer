@@ -23,7 +23,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -66,7 +66,7 @@ func startAIServer(lp *lphttp) error {
 	lp.transRPC.Handle("/image-to-video", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToVideoMultipartRequestBody])))
 	lp.transRPC.Handle("/upscale", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenUpscaleMultipartRequestBody])))
 	lp.transRPC.Handle("/audio-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenAudioToTextMultipartRequestBody])))
-	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenLLMFormdataRequestBody])))
+	lp.transRPC.Handle("/llm", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenLLMJSONRequestBody])))
 	lp.transRPC.Handle("/segment-anything-2", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenSegmentAnything2MultipartRequestBody])))
 	lp.transRPC.Handle("/image-to-text", oapiReqValidator(aiHttpHandle(lp, multipartDecoder[worker.GenImageToTextMultipartRequestBody])))
 	lp.transRPC.Handle("/text-to-speech", oapiReqValidator(aiHttpHandle(lp, jsonDecoder[worker.GenTextToSpeechJSONRequestBody])))
@@ -404,10 +404,10 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			return
 		}
 		outPixels *= 1000 // Convert to milliseconds
-	case worker.GenLLMFormdataRequestBody:
+	case worker.GenLLMJSONRequestBody:
 		pipeline = "llm"
 		cap = core.Capability_LLM
-		modelID = *v.ModelId
+		modelID = *v.Model
 		submitFn = func(ctx context.Context) (interface{}, error) {
 			return orch.LLM(ctx, requestID, v)
 		}
@@ -585,7 +585,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}
 
 	// Check if the response is a streaming response
-	if streamChan, ok := resp.(<-chan worker.LlmStreamChunk); ok {
+	if streamChan, ok := resp.(<-chan *worker.LLMResponse); ok {
 		glog.Infof("Streaming response for request id=%v", requestID)
 
 		// Set headers for SSE
@@ -609,7 +609,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			fmt.Fprintf(w, "data: %s\n\n", data)
 			flusher.Flush()
 
-			if chunk.Done {
+			if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
 				break
 			}
 		}
@@ -682,8 +682,8 @@ func (h *lphttp) AIResults() http.Handler {
 		case "text/event-stream":
 			resultType = "streaming"
 			glog.Infof("Received %s response from remote worker=%s taskId=%d", resultType, r.RemoteAddr, tid)
-			resChan := make(chan worker.LlmStreamChunk, 100)
-			workerResult.Results = (<-chan worker.LlmStreamChunk)(resChan)
+			resChan := make(chan *worker.LLMResponse, 100)
+			workerResult.Results = (<-chan *worker.LLMResponse)(resChan)
 
 			defer r.Body.Close()
 			defer close(resChan)
@@ -702,12 +702,12 @@ func (h *lphttp) AIResults() http.Handler {
 					line := scanner.Text()
 					if strings.HasPrefix(line, "data: ") {
 						data := strings.TrimPrefix(line, "data: ")
-						var chunk worker.LlmStreamChunk
+						var chunk worker.LLMResponse
 						if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 							clog.Errorf(ctx, "Error unmarshaling stream data: %v", err)
 							continue
 						}
-						resChan <- chunk
+						resChan <- &chunk
 					}
 				}
 			}

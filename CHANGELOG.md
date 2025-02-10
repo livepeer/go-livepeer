@@ -1,5 +1,40 @@
 # Changelog
 
+## V0.8.3
+
+### Features ⚒
+
+#### General
+
+-   [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
+#### Orchestrator
+
+- [#3284](https://github.com/livepeer/go-livepeer/pull/3284) deprecate `-aiRunnerImage` flag for `-aiRunnerImageOverrides`.
+
+### Bug Fixes 🐞
+
+#### CLI
+
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
+
+## v0.8.2
+
+### Features ⚒
+
+#### Broadcaster
+
+-   [#3321](https://github.com/livepeer/go-livepeer/pull/3321) Add orchestrator info on live AI monitoring events
+
+#### Orchestrator
+
+-   [#3355](https://github.com/livepeer/go-livepeer/pull/3355) Allow O/T AI orchs to run without `transcoder` flag.
+-   [#2968](https://github.com/livepeer/go-livepeer/pull/2968) Enhance payment processing log line for better processing by Loki.
+
+#### Transcoder
+
+- [#3359](https://github.com/livepeer/go-livepeer/pull/3359) Update LPMS to use ffmpeg H.264 parser
+
 ## v0.8.1
 
 - [#3279](https://github.com/livepeer/go-livepeer/pull/3279) Enable automatic worker image pulling.

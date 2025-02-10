@@ -205,6 +205,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 		}()
 		for {
+			clog.V(6).Infof(ctx, "Starting output rtmp")
 			if !params.inputStreamExists() {
 				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 				break
@@ -279,15 +280,35 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}()
 }
 
+const clearStreamDelay = 1 * time.Minute
+
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
 
+	// vars to check events periodically to ensure liveness
+	var (
+		eventCheckInterval = 10 * time.Second
+		maxEventGap        = 30 * time.Second
+		eventTicker        = time.NewTicker(eventCheckInterval)
+		eventsDone         = make(chan bool)
+		// remaining vars in this block must be protected by mutex
+		lastEventMu = &sync.Mutex{}
+		lastEvent   = time.Now()
+	)
+
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer StreamStatusStore.Clear(streamId)
+		defer time.AfterFunc(clearStreamDelay, func() {
+			StreamStatusStore.Clear(streamId)
+			GatewayStatus.Clear(streamId)
+		})
+		defer func() {
+			eventTicker.Stop()
+			eventsDone <- true
+		}()
 		const maxRetries = 5
 		const retryPause = 300 * time.Millisecond
 		retries := 0
@@ -345,6 +366,11 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			clog.V(8).Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
+			// record the event time
+			lastEventMu.Lock()
+			lastEvent = time.Now()
+			lastEventMu.Unlock()
+
 			eventType, ok := event["type"].(string)
 			if !ok {
 				eventType = "unknown"
@@ -379,6 +405,26 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)
+		}
+	}()
+
+	// Use events as a heartbeat of sorts:
+	// if no events arrive for too long, abort the job
+	go func() {
+		for {
+			select {
+			case <-eventTicker.C:
+				lastEventMu.Lock()
+				eventTime := lastEvent
+				lastEventMu.Unlock()
+				if time.Now().Sub(eventTime) > maxEventGap {
+					params.liveParams.stopPipeline(errors.New("timeout waiting for events"))
+					eventTicker.Stop()
+					return
+				}
+			case <-eventsDone:
+				return
+			}
 		}
 	}()
 }
@@ -427,8 +473,10 @@ func (s *SlowOrchChecker) GetCount() int {
 	return s.segmentCount
 }
 
-func LiveErrorEventSender(ctx context.Context, event map[string]string) func(err error) {
+func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
+		GatewayStatus.Store(streamID, map[string]interface{}{"last_error": err.Error()})
+
 		ev := maps.Clone(event)
 		ev["capability"] = clog.GetVal(ctx, "capability")
 		ev["message"] = err.Error()

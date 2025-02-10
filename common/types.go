@@ -86,6 +86,7 @@ func FromRemoteInfos(infos []*net.OrchestratorInfo) OrchestratorDescriptors {
 	return ods
 }
 
+// MarshalJSON ensures that URL is marshaled as a string.
 func (u *OrchestratorLocalInfo) MarshalJSON() ([]byte, error) {
 	type Alias OrchestratorLocalInfo
 	return json.Marshal(&struct {
@@ -95,6 +96,26 @@ func (u *OrchestratorLocalInfo) MarshalJSON() ([]byte, error) {
 		URL:   u.URL.String(),
 		Alias: (*Alias)(u),
 	})
+}
+
+// UnmarshalJSON ensures that URL string is unmarshaled as a URL.
+func (o *OrchestratorLocalInfo) UnmarshalJSON(data []byte) error {
+	type Alias OrchestratorLocalInfo
+	aux := &struct {
+		URL string `json:"Url"`
+		*Alias
+	}{
+		Alias: (*Alias)(o),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	parsedURL, err := url.Parse(aux.URL)
+	if err != nil {
+		return err
+	}
+	o.URL = parsedURL
+	return nil
 }
 
 type ScorePred = func(float32) bool

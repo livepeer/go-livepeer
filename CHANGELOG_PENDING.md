@@ -10,12 +10,8 @@
 
 #### Broadcaster
 
--   [#3321](https://github.com/livepeer/go-livepeer/pull/3321) Add orchestrator info on live AI monitoring events
-
 #### Orchestrator
-
--   [#3355](https://github.com/livepeer/go-livepeer/pull/3355) Allow O/T AI orchs to run without `transcoder` flag.
--   [#2968](https://github.com/livepeer/go-livepeer/pull/2968) Enhance payment processing log line for better processing by Loki.
+- [#3345](https://github.com/livepeer/go-livepeer/pull/3345) Move `ai-worker` code to a local package
 
 #### Transcoder
 
