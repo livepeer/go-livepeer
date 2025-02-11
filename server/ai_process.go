@@ -1463,6 +1463,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	}
 	capName := cap.String()
 	ctx = clog.AddVal(ctx, "capability", capName)
+	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
 	start := time.Now()
@@ -1497,6 +1498,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		if tries <= 4 {
+			time.Sleep(5 * time.Second)
+			continue
+		}
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
 			params.sessManager.Complete(ctx, sess)
