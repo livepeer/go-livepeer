@@ -27,7 +27,6 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const processingRetryTimeout = 2 * time.Second
 const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
 const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
@@ -1471,6 +1470,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp interface{}
 
+	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
