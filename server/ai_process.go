@@ -1498,10 +1498,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
-		if tries <= 4 {
-			time.Sleep(5 * time.Second)
-			continue
-		}
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
 			params.sessManager.Complete(ctx, sess)
