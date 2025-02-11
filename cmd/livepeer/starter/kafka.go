@@ -11,9 +11,9 @@ func startKafkaProducer(cfg LivepeerConfig) error {
 		return nil
 	}
 
-	var broadcasterEthAddress = ""
-	if cfg.EthAcctAddr != nil {
-		broadcasterEthAddress = *cfg.EthAcctAddr
+	var gatewayHost = ""
+	if cfg.GatewayHost != nil {
+		gatewayHost = *cfg.GatewayHost
 	}
 
 	return lpmon.InitKafkaProducer(
@@ -21,6 +21,6 @@ func startKafkaProducer(cfg LivepeerConfig) error {
 		*cfg.KafkaUsername,
 		*cfg.KafkaPassword,
 		*cfg.KafkaGatewayTopic,
-		broadcasterEthAddress,
+		gatewayHost,
 	)
 }
