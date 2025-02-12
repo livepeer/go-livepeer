@@ -551,10 +551,10 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
-func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
+		workerResp, err := orch.node.LiveVideoToVideo(ctx, requestID, streamID, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
 		} else {
@@ -1060,8 +1060,8 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	return n.AIWorker.TextToSpeech(ctx, req)
 }
 
-func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
-	return n.AIWorker.LiveVideoToVideo(ctx, req)
+func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+	return n.AIWorker.LiveVideoToVideo(ctx, requestID, streamID, req)
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
