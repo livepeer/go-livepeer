@@ -165,6 +165,7 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
+	AIProcessingRetryTimeout   *time.Duration
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -215,6 +216,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -320,15 +322,16 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry:      &defaultAIServiceRegistry,
-		AIWorker:               &defaultAIWorker,
-		AIModels:               &defaultAIModels,
-		AIModelsDir:            &defaultAIModelsDir,
-		AIRunnerImage:          &defaultAIRunnerImage,
-		AIRunnerImageOverrides: &defaultAIRunnerImageOverrides,
-		LiveAIAuthWebhookURL:   &defaultLiveAIAuthWebhookURL,
-		LivePaymentInterval:    &defaultLivePaymentInterval,
-		GatewayHost:            &defaultGatewayHost,
+		AIServiceRegistry:        &defaultAIServiceRegistry,
+		AIWorker:                 &defaultAIWorker,
+		AIModels:                 &defaultAIModels,
+		AIModelsDir:              &defaultAIModelsDir,
+		AIRunnerImage:            &defaultAIRunnerImage,
+		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
+		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:      &defaultLivePaymentInterval,
+		GatewayHost:              &defaultGatewayHost,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -513,6 +516,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)

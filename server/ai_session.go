@@ -165,7 +165,7 @@ type AISessionSelector struct {
 	os        drivers.OSSession
 }
 
-func NewAISessionSelector(cap core.Capability, modelID string, node *core.LivepeerNode, ttl time.Duration) (*AISessionSelector, error) {
+func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID string, node *core.LivepeerNode, ttl time.Duration) (*AISessionSelector, error) {
 	var stakeRdr stakeReader
 	if node.Eth != nil {
 		stakeRdr = &storeStakeReader{store: node.Database}
@@ -193,7 +193,7 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 		os:        drivers.NodeStorage.NewSession(strconv.Itoa(int(cap)) + "_" + modelID),
 	}
 
-	if err := sel.Refresh(context.Background()); err != nil {
+	if err := sel.Refresh(ctx); err != nil {
 		return nil, err
 	}
 
@@ -405,7 +405,7 @@ func (c *AISessionManager) getSelector(ctx context.Context, cap core.Capability,
 	if !ok {
 		// Create the selector
 		var err error
-		sel, err = NewAISessionSelector(cap, modelID, c.node, c.ttl)
+		sel, err = NewAISessionSelector(ctx, cap, modelID, c.node, c.ttl)
 		if err != nil {
 			return nil, err
 		}
