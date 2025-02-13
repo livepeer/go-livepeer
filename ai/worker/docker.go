@@ -24,6 +24,8 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/livepeer/go-livepeer/clog"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -150,16 +152,24 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 }
 
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	go func() {
+		for {
+			m.mu.Lock()
+			rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
+			m.mu.Unlock()
+			if err != nil {
+				retryWait := 60 * time.Second
+				clog.Errorf(ctx, "Error creating runner container, waiting %v and retrying, err=%v", retryWait, err)
+				time.Sleep(retryWait)
+				continue
+			}
 
-	rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
-	if err != nil {
-		return err
-	}
+			// Watch with a background context since we're not borrowing the container.
+			m.watchContainer(rc, context.Background())
 
-	// Watch with a background context since we're not borrowing the container.
-	go m.watchContainer(rc, context.Background())
+			log.Info("Container warmed", slog.String("container", rc.Name))
+		}
+	}()
 
 	return nil
 }
