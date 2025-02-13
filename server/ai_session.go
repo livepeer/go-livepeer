@@ -312,8 +312,8 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 			continue
 		}
 
-		// Should not be needed but suspended orchestrators seem to get back in the pool.
-		// TODO: Investigate why suspended orchestrators get back in the pool.
+		// We request 100 orchestrators in getSessions above so all Orchestrators are returned with refreshed information
+		// This keeps the suspended Orchestrators out of the pool until the selector is empty or 30 minutes has passed (refresh happens every 10 minutes)
 		if sel.suspender.Suspended(sess.Transcoder()) > 0 {
 			clog.V(common.DEBUG).Infof(ctx, "skipping suspended orchestrator=%s", sess.Transcoder())
 			continue
