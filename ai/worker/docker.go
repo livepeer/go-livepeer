@@ -163,7 +163,9 @@ func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID strin
 	go func() {
 		for {
 			// Watch with a background context since we're not borrowing the container.
-			m.watchContainer(rc, context.Background())
+			if rc != nil {
+				m.watchContainer(rc, context.Background())
+			}
 
 			m.mu.Lock()
 			rc, err = m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
