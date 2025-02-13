@@ -124,17 +124,14 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	delete(pool.sessMap, sess.Transcoder())
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
-	penalty := 0
 	// If this method is called assume that the orch should be suspended
 	// as well.  Since AISessionManager re-uses the pools the suspension
 	// penalty needs to consider the current suspender count to set the penalty
 	lastCount, ok := pool.suspender.list[sess.Transcoder()]
+	penalty := pool.suspender.count + pool.penalty
 	if ok {
-		penalty = pool.suspender.count - lastCount + pool.penalty
-	} else {
-		penalty = pool.suspender.count + pool.penalty
+		penalty -= lastCount
 	}
-
 	pool.suspender.suspend(sess.Transcoder(), penalty)
 }
 
@@ -228,19 +225,24 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersio
 	return caps
 }
 
+// selectorIsEmpty returns true if no orchestrators are in the warm or cold pools.
+func (sel *AISessionSelector) SelectorIsEmpty() bool {
+	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
+}
+
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	shouldRefreshSelector := func() bool {
-
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
+		// If the selector is empty, release all orchestrators from suspension and
+		// try refresh.
 		if sel.SelectorIsEmpty() {
-			// release all orchestrators from suspension and try refresh
-			// if there are no orchestrators in the pools
 			clog.Infof(ctx, "refreshing sessions, no orchestrators in pools")
 			for i := 0; i < sel.penalty; i++ {
 				sel.suspender.signalRefresh()
 			}
 		}
+
 		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
 		// 1/2 the total # of orchs that can be queried during discovery
 		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
@@ -275,10 +277,6 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	return nil
 }
 
-func (sel *AISessionSelector) SelectorIsEmpty() bool {
-	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
-}
-
 func (sel *AISessionSelector) Complete(sess *AISession) {
 	if sess.Warm {
 		sel.warmPool.Complete(sess.BroadcastSession)
@@ -307,7 +305,6 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 
 	var warmSessions []*BroadcastSession
 	var coldSessions []*BroadcastSession
-
 	for _, sess := range sessions {
 		// If the constraints are missing for this capability skip this session
 		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
@@ -315,12 +312,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 			continue
 		}
 
-		// this should not be needed, the GetOrchestrators checks for suspension but was seeing orchestrators get back into
-		// the pool that were suspended
+		// Should not be needed but suspended orchestrators seem to get back in the pool.
+		// TODO: Investigate why suspended orchestrators get back in the pool.
 		if sel.suspender.Suspended(sess.Transcoder()) > 0 {
-			clog.Infof(ctx, "skipping suspended orchestrator=%s", sess.Transcoder())
+			clog.V(common.DEBUG).Infof(ctx, "skipping suspended orchestrator=%s", sess.Transcoder())
 			continue
 		}
+
 		// If the constraint for the modelID are missing skip this session
 		modelConstraint, ok := constraints.Models[sel.modelID]
 		if !ok {
@@ -407,7 +405,7 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, err
 	}
 
-	clog.Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
+	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
 
 	return sess, nil
 }
