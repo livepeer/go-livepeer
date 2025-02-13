@@ -296,6 +296,88 @@ func getAvailableTranscodingOptionsHandler() http.Handler {
 	})
 }
 
+// poolOrchestrator contains information about an orchestrator in a pool.
+type poolOrchestrator struct {
+	Url          string  `json:"url"`
+	LatencyScore float64 `json:"latency_score"`
+	InFlight     int     `json:"in_flight"`
+}
+
+// aiPoolInfo contains information about an AI pool.
+type aiPoolInfo struct {
+	Size          int                `json:"size"`
+	InUse         int                `json:"in_use"`
+	Orchestrators []poolOrchestrator `json:"orchestrators"`
+}
+
+// suspendedInfo contains information about suspended orchestrators.
+type suspendedInfo struct {
+	List         map[string]int `json:"list"`
+	CurrentCount int            `json:"current_count"`
+}
+
+// aiOrchestratorPools contains information about all AI pools.
+type aiOrchestratorPools struct {
+	Cold        aiPoolInfo    `json:"cold"`
+	Warm        aiPoolInfo    `json:"warm"`
+	LastRefresh time.Time     `json:"last_refresh"`
+	Suspended   suspendedInfo `json:"suspended"`
+}
+
+// getAIOrchestratorPoolsInfoHandler returns information about AI orchestrator pools.
+func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		aiPoolsInfoResp := make(map[string]aiOrchestratorPools)
+
+		s.AISessionManager.mu.Lock()
+		defer s.AISessionManager.mu.Unlock()
+
+		// Return if no selectors are present.
+		if len(s.AISessionManager.selectors) == 0 {
+			glog.Warning("Orchestrator pools are not yet initialized")
+			respondJson(w, aiPoolsInfoResp)
+			return
+		}
+
+		// Loop through selectors and get pools info.
+		for cap, pool := range s.AISessionManager.selectors {
+			warmPool := aiPoolInfo{
+				Size:  pool.warmPool.Size(),
+				InUse: len(pool.warmPool.inUseSess),
+			}
+			for _, sess := range pool.warmPool.sessMap {
+				poolOrchestrator := poolOrchestrator{
+					Url:          sess.Transcoder(),
+					LatencyScore: sess.LatencyScore,
+					InFlight:     len(sess.SegsInFlight),
+				}
+				warmPool.Orchestrators = append(warmPool.Orchestrators, poolOrchestrator)
+			}
+
+			coldPool := aiPoolInfo{
+				Size:  pool.coldPool.Size(),
+				InUse: len(pool.coldPool.inUseSess),
+			}
+			for _, sess := range pool.coldPool.sessMap {
+				coldPool.Orchestrators = append(coldPool.Orchestrators, poolOrchestrator{
+					Url:          sess.Transcoder(),
+					LatencyScore: sess.LatencyScore,
+					InFlight:     len(sess.SegsInFlight),
+				})
+			}
+
+			aiPoolsInfoResp[cap] = aiOrchestratorPools{
+				Cold:        coldPool,
+				Warm:        warmPool,
+				LastRefresh: pool.lastRefreshTime,
+				Suspended:   suspendedInfo{List: pool.suspender.list, CurrentCount: pool.suspender.count},
+			}
+		}
+
+		respondJson(w, aiPoolsInfoResp)
+	})
+}
+
 // Rounds
 func currentRoundHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

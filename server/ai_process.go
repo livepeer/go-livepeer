@@ -1370,6 +1370,23 @@ func processImageToText(ctx context.Context, params aiRequestParams, req worker.
 	return txtResp, nil
 }
 
+// isRetryableError checks if the error is a transient error that can be retried.
+func isRetryableError(err error) bool {
+	transientErrorMessages := []string{
+		"insufficient capacity",      // Caused by limitation in our current implementation.
+		"invalid ticket sendernonce", // Caused by gateway nonce mismatch.
+		"ticketparams expired",       // Caused by ticket expiration.
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	for _, msg := range transientErrorMessages {
+		if strings.Contains(errMsg, msg) {
+			return true
+		}
+	}
+	return false
+}
+
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1519,6 +1536,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		// Don't suspend the session if the error is a transient error.
+		if isRetryableError(err) {
+			params.sessManager.Complete(ctx, sess)
+			continue
+		}
+
+		// Suspend the session on other errors.
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
 
