@@ -112,9 +112,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			od.RemoteInfo = info
-			od.LocalInfo.Latency = &latency
-			infoCh <- od
+			infoCh <- common.OrchestratorDescriptor{
+				LocalInfo: &common.OrchestratorLocalInfo{
+					URL:     od.LocalInfo.URL,
+					Score:   od.LocalInfo.Score,
+					Latency: &latency,
+				},
+				RemoteInfo: info,
+			}
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
