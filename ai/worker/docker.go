@@ -152,10 +152,21 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 }
 
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
+	m.mu.Lock()
+	rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	log.Info("Container warmed", slog.String("container", rc.Name))
+
 	go func() {
 		for {
+			// Watch with a background context since we're not borrowing the container.
+			m.watchContainer(rc, context.Background())
+
 			m.mu.Lock()
-			rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
+			rc, err = m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 			m.mu.Unlock()
 			if err != nil {
 				retryWait := 60 * time.Second
@@ -163,10 +174,6 @@ func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID strin
 				time.Sleep(retryWait)
 				continue
 			}
-
-			// Watch with a background context since we're not borrowing the container.
-			m.watchContainer(rc, context.Background())
-
 			log.Info("Container warmed", slog.String("container", rc.Name))
 		}
 	}()
