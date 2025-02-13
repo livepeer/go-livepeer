@@ -402,6 +402,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
+		sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
 		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
@@ -523,7 +524,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ls.cleanupLive(streamName)
 		}()
 
-		sendErrorEvent := LiveErrorEventSender(ctx, map[string]string{
+		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
 			"type":        "error",
 			"request_id":  requestID,
 			"stream_id":   streamID,
@@ -648,6 +649,12 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 		if !exists {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
+		}
+		gatewayStatus, exists := GatewayStatus.Get(streamId)
+		if exists {
+			for k, v := range gatewayStatus {
+				status["gateway_"+k] = v
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

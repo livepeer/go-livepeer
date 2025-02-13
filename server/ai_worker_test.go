@@ -609,7 +609,7 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	}
 }
 
-func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
 	a.Called++
 	if a.Err != nil {
 		return nil, a.Err

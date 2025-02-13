@@ -119,8 +119,9 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker        AI
-	AIWorkerManager *RemoteAIWorkerManager
+	AIWorker                  AI
+	AIWorkerManager           *RemoteAIWorkerManager
+	AIProcesssingRetryTimeout time.Duration
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
