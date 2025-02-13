@@ -1138,7 +1138,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	for _, addr := range addresses {
 		uri, _ := url.ParseRequestURI(addr)
-		assert.Contains(infos, common.OrchestratorLocalInfo{URL: uri})
+		assert.Contains(removeLatency(infos), common.OrchestratorLocalInfo{URL: uri, Latency: nil})
 	}
 
 	//  assert that list is not refreshed if lastRequest is more than 1 min ago and hash is the same
@@ -1158,7 +1158,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	for _, addr := range addresses {
 		uri, _ := url.ParseRequestURI(addr)
-		assert.Contains(infos, common.OrchestratorLocalInfo{URL: uri})
+		assert.Contains(removeLatency(infos), common.OrchestratorLocalInfo{URL: uri, Latency: nil})
 	}
 
 	// mock a change in webhook addresses
@@ -1181,7 +1181,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	for _, addr := range addresses {
 		uri, _ := url.ParseRequestURI(addr)
-		assert.NotContains(infos, common.OrchestratorLocalInfo{URL: uri})
+		assert.NotContains(removeLatency(infos), common.OrchestratorLocalInfo{URL: uri, Latency: nil})
 	}
 
 	//  assert that list is refreshed if lastRequest is longer than 1 min ago and hash is not the same
@@ -1201,7 +1201,7 @@ func TestNewWHOrchestratorPoolCache(t *testing.T) {
 
 	for _, addr := range addresses {
 		uri, _ := url.ParseRequestURI(addr)
-		assert.Contains(infos, common.OrchestratorLocalInfo{URL: uri})
+		assert.Contains(removeLatency(infos), common.OrchestratorLocalInfo{URL: uri, Latency: nil})
 	}
 }
 
@@ -1648,4 +1648,13 @@ func TestSetGetOrchestratorTimeout(t *testing.T) {
 	//confirm the timeout is now 1000ms
 	assert.Equal(poolCache.discoveryTimeout, 1000*time.Millisecond)
 
+}
+
+func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLocalInfo {
+	var res []common.OrchestratorLocalInfo
+	for _, i := range infos {
+		i.Latency = nil
+		res = append(res, i)
+	}
+	return res
 }
