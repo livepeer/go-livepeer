@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 
@@ -84,38 +83,6 @@ func Test_submitAudioToText(t *testing.T) {
 			}
 			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("submitAudioToText() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_isRetryableError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{
-			name: "insufficient capacity error",
-			err:  errors.New("Insufficient capacity"),
-			want: true,
-		},
-		{
-			name: "INSUFFICIENT capacity ERROR",
-			err:  errors.New("Insufficient capacity"),
-			want: true,
-		},
-		{
-			name: "non-retryable error",
-			err:  errors.New("some other error"),
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isRetryableError(tt.err); got != tt.want {
-				t.Errorf("isRetryableError() = %v, want %v", got, tt.want)
 			}
 		})
 	}

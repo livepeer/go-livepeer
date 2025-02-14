@@ -1370,23 +1370,6 @@ func processImageToText(ctx context.Context, params aiRequestParams, req worker.
 	return txtResp, nil
 }
 
-// isRetryableError checks if the error is a transient error that can be retried.
-func isRetryableError(err error) bool {
-	transientErrorMessages := []string{
-		"insufficient capacity",      // Caused by limitation in our current implementation.
-		"invalid ticket sendernonce", // Caused by gateway nonce mismatch.
-		"ticketparams expired",       // Caused by ticket expiration.
-	}
-
-	errMsg := strings.ToLower(err.Error())
-	for _, msg := range transientErrorMessages {
-		if strings.Contains(errMsg, msg) {
-			return true
-		}
-	}
-	return false
-}
-
 func processAIRequest(ctx context.Context, params aiRequestParams, req interface{}) (interface{}, error) {
 	var cap core.Capability
 	var modelID string
@@ -1534,12 +1517,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if err == nil {
 			params.sessManager.Complete(ctx, sess)
 			break
-		}
-
-		// Don't suspend the session if the error is a transient error.
-		if isRetryableError(err) {
-			params.sessManager.Complete(ctx, sess)
-			continue
 		}
 
 		// Suspend the session on other errors.
