@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -191,9 +192,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		var discoveryResults []map[string]string
 		for _, o := range ods {
 			discoveryResults = append(discoveryResults, map[string]string{
-				"address": hexutil.Encode(o.RemoteInfo.Address),
-				"url":     o.RemoteInfo.Transcoder,
-				"latency": o.LocalInfo.Latency.String(),
+				"address":    hexutil.Encode(o.RemoteInfo.Address),
+				"url":        o.RemoteInfo.Transcoder,
+				"latency_ms": strconv.FormatInt(o.LocalInfo.Latency.Milliseconds(), 10),
 			})
 		}
 		monitor.SendQueueEventAsync("discovery_results", discoveryResults)
