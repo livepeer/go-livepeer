@@ -123,8 +123,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 			return
 		}
+		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%q", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			clog.V(common.DEBUG).Infof(ctx, "err=%q", err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(ctx, od.LocalInfo.URL.String(), err.Error())
 			}
