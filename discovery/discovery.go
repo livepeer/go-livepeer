@@ -8,9 +8,11 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -108,14 +110,21 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
 		start := time.Now()
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, caps.ToNetCapabilities())
-		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, time.Since(start))
+		latency := time.Since(start)
+		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			od.RemoteInfo = info
-			infoCh <- od
+			infoCh <- common.OrchestratorDescriptor{
+				LocalInfo: &common.OrchestratorLocalInfo{
+					URL:     od.LocalInfo.URL,
+					Score:   od.LocalInfo.Score,
+					Latency: &latency,
+				},
+				RemoteInfo: info,
+			}
 			return
 		}
+		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%q", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			clog.V(common.DEBUG).Infof(ctx, "err=%q", err)
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(ctx, od.LocalInfo.URL.String(), err.Error())
 			}
@@ -179,6 +188,17 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 	}
 
+	if monitor.Enabled && len(ods) > 0 {
+		var discoveryResults []map[string]string
+		for _, o := range ods {
+			discoveryResults = append(discoveryResults, map[string]string{
+				"address":    hexutil.Encode(o.RemoteInfo.Address),
+				"url":        o.RemoteInfo.Transcoder,
+				"latency_ms": strconv.FormatInt(o.LocalInfo.Latency.Milliseconds(), 10),
+			})
+		}
+		monitor.SendQueueEventAsync("discovery_results", discoveryResults)
+	}
 	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
 		len(ods), nbResp, len(linfos), timedOut)
 	return ods, nil
