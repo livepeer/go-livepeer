@@ -115,6 +115,13 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	}
 
 	pool.selector.Add(uniqueSessions)
+
+	//add all sessions to knownSessions so we do not prefer Orchestrators
+	//selected early.  LatencyScores of 0 is default and will be sorted to
+	//top of heap so will be selected first
+	for _, sess := range uniqueSessions {
+		pool.selector.Complete(sess)
+	}
 }
 
 func (pool *AISessionPool) Remove(sess *BroadcastSession) {
@@ -264,6 +271,25 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		}
 	}
 
+	//Add randomness to selector for warm pool. AISessionSelectors are reused for all reqeusts
+	//so the Orchestrators selected early are preferred in the MinLSSelector.  This adds the
+	//randomness back into the Orchestrator selection when the entire Orchestrator pool capacity
+	//is not saturated.
+	selAlgo := sel.node.SelectionAlgorithm.(ProbabilitySelectionAlgorithm)
+	if selAlgo.RandWeight > 0 && len(sel.warmPool.sessMap) > 0 {
+		// Generate a random float between 0 and 1
+		randomFloat := rand.Float64()
+		if randomFloat < selAlgo.RandWeight {
+			randSelected := rand.Intn(len(sel.warmPool.sessMap))
+			clog.V(common.DEBUG).Infof(ctx, "selecting random orchestrator randWeight: %v, randFloat: %v, randSelected: %v of %v", selAlgo.RandWeight, randomFloat, randSelected, len(sel.warmPool.sessMap))
+			for _, sess := range sel.warmPool.sessMap {
+				randSelected -= 1
+				if randSelected <= 0 {
+					return &AISession{BroadcastSession: sess, Cap: sel.cap, ModelID: sel.modelID, Warm: true}
+				}
+			}
+		}
+	}
 	sess := sel.warmPool.Select(ctx)
 	if sess != nil {
 		return &AISession{BroadcastSession: sess, Cap: sel.cap, ModelID: sel.modelID, Warm: true}
@@ -297,7 +323,8 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	// If we try to add new sessions to the pool the suspender
 	// should treat this as a refresh
 	sel.suspender.signalRefresh()
-
+	sel.coldPool.selector.Clear() //reset known sessions
+	sel.warmPool.selector.Clear() //reset known sessions
 	sessions, err := sel.getSessions(ctx)
 	if err != nil {
 		return err
@@ -394,6 +421,12 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 	sel, err := c.getSelector(ctx, cap, modelID)
 	if err != nil {
 		return nil, err
+	}
+
+	// add randomness to selection to spread work around
+	selAlgo := c.node.SelectionAlgorithm.(ProbabilitySelectionAlgorithm)
+	if selAlgo.RandWeight > 0 {
+
 	}
 
 	sess := sel.Select(ctx)
