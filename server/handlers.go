@@ -305,9 +305,10 @@ type poolOrchestrator struct {
 
 // aiPoolInfo contains information about an AI pool.
 type aiPoolInfo struct {
-	Size          int                `json:"size"`
-	InUse         int                `json:"in_use"`
-	Orchestrators []poolOrchestrator `json:"orchestrators"`
+	Size          int                           `json:"size"`
+	InUse         int                           `json:"in_use"`
+	Orchestrators []poolOrchestrator            `json:"orchestrators"`
+	OnHold        map[string][]poolOrchestrator `json:"on_hold"`
 }
 
 // suspendedInfo contains information about suspended orchestrators.
@@ -342,8 +343,9 @@ func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
 		// Loop through selectors and get pools info.
 		for cap, pool := range s.AISessionManager.selectors {
 			warmPool := aiPoolInfo{
-				Size:  pool.warmPool.Size(),
-				InUse: len(pool.warmPool.inUseSess),
+				Size:   pool.warmPool.Size(),
+				InUse:  len(pool.warmPool.inUseSess),
+				OnHold: make(map[string][]poolOrchestrator),
 			}
 			for _, sess := range pool.warmPool.sessMap {
 				poolOrchestrator := poolOrchestrator{
@@ -352,6 +354,16 @@ func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
 					InFlight:     len(sess.SegsInFlight),
 				}
 				warmPool.Orchestrators = append(warmPool.Orchestrators, poolOrchestrator)
+			}
+			for id, sessions := range pool.warmPool.sessionsOnHold {
+				for _, sess := range sessions {
+					poolOrchestrator := poolOrchestrator{
+						Url:          sess.Transcoder(),
+						LatencyScore: sess.LatencyScore,
+						InFlight:     len(sess.SegsInFlight),
+					}
+					warmPool.OnHold[id] = append(warmPool.OnHold[id], poolOrchestrator)
+				}
 			}
 
 			coldPool := aiPoolInfo{
@@ -365,7 +377,16 @@ func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
 					InFlight:     len(sess.SegsInFlight),
 				})
 			}
-
+			for id, sessions := range pool.coldPool.sessionsOnHold {
+				for _, sess := range sessions {
+					poolOrchestrator := poolOrchestrator{
+						Url:          sess.Transcoder(),
+						LatencyScore: sess.LatencyScore,
+						InFlight:     len(sess.SegsInFlight),
+					}
+					coldPool.OnHold[id] = append(coldPool.OnHold[id], poolOrchestrator)
+				}
+			}
 			aiPoolsInfoResp[cap] = aiOrchestratorPools{
 				Cold:        coldPool,
 				Warm:        warmPool,
