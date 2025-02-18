@@ -201,82 +201,49 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 
 	// Studio Output ffmpeg process
-	go func() {
-		defer func() {
-			r.Close()
-			if rec := recover(); rec != nil {
-				// panicked, so shut down the stream and handle it
-				err, ok := rec.(error)
-				if !ok {
-					err = errors.New("unknown error")
-				}
-				clog.Errorf(ctx, "LPMS panic err=%v", err)
-				params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
-			}
-		}()
-		for {
-			clog.V(6).Infof(ctx, "Starting output rtmp")
-			if !params.inputStreamExists() {
-				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
-				break
-			}
-
-			cmd := exec.Command("ffmpeg",
-				"-i", "pipe:0",
-				"-c:a", "copy",
-				"-c:v", "copy",
-				"-f", "flv",
-				params.liveParams.outputRTMPURL,
-			)
-			cmd.Stdin = r
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				clog.Errorf(ctx, "Error sending RTMP out: %v", err)
-				clog.Infof(ctx, "Process output: %s", output)
-				return
-			}
-			time.Sleep(5 * time.Second)
-		}
-	}()
+	go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 
 	// MediaMTX Output ffmpeg process
-	go func() {
-		defer func() {
-			rMediaMTX.Close()
-			if rec := recover(); rec != nil {
-				// panicked, so shut down the stream and handle it
-				err, ok := rec.(error)
-				if !ok {
-					err = errors.New("unknown error")
-				}
-				clog.Errorf(ctx, "LPMS panic err=%v", err)
-				params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
-			}
-		}()
-		for {
-			clog.V(6).Infof(ctx, "Starting MediaMTX output rtmp")
-			if !params.inputStreamExists() {
-				clog.Errorf(ctx, "Stopping MediaMTX output rtmp stream, input stream does not exist.")
-				break
-			}
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
+}
 
-			cmd := exec.Command("ffmpeg",
-				"-i", "pipe:0",
-				"-c:a", "copy",
-				"-c:v", "copy",
-				"-f", "flv",
-				params.liveParams.mediaMTXOutputRTMPURL,
-			)
-			cmd.Stdin = rMediaMTX
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				clog.Errorf(ctx, "Error sending MediaMTX RTMP out: %v", err)
-				// return
+func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params aiRequestParams) {
+	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
+	defer func() {
+		r.Close()
+		if rec := recover(); rec != nil {
+			// panicked, so shut down the stream and handle it
+			err, ok := rec.(error)
+			if !ok {
+				err = errors.New("unknown error")
 			}
-			clog.Infof(ctx, "Process output: %s", output)
-			time.Sleep(5 * time.Second)
+			clog.Errorf(ctx, "LPMS panic err=%v", err)
+			params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
 		}
 	}()
+	for {
+		clog.V(6).Infof(ctx, "Starting output rtmp")
+		if !params.inputStreamExists() {
+			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
+			break
+		}
+
+		cmd := exec.Command("ffmpeg",
+			"-i", "pipe:0",
+			"-c:a", "copy",
+			"-c:v", "copy",
+			"-f", "flv",
+			outputUrl,
+		)
+		cmd.Stdin = r
+		output, err := cmd.CombinedOutput()
+		clog.Infof(ctx, "Process output: %s", output)
+		if err != nil {
+			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func copySegment(segment *http.Response, w io.Writer) (int64, error) {
