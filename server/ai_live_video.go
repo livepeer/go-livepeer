@@ -123,6 +123,34 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
+type multiWriter struct {
+	ctx         context.Context
+	writers     []io.Writer
+	isErrLogged bool
+}
+
+func (t *multiWriter) Write(p []byte) (n int, err error) {
+	success := false
+	for _, w := range t.writers {
+		bytesWritten, err := w.Write(p)
+		if err != nil {
+			if !t.isErrLogged {
+				clog.Errorf(t.ctx, "multiWriter error %v", err)
+				t.isErrLogged = true
+			}
+		} else {
+			success = true
+			n = bytesWritten
+		}
+	}
+	if !success {
+		// all writes failed, return the error
+		return 0, err
+	}
+
+	return n, nil
+}
+
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
@@ -140,7 +168,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
-	multiWriter := io.MultiWriter(w, wMediaMTX)
+	multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
 
 	// read segments from trickle subscription
 	go func() {
