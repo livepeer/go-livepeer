@@ -8,9 +8,11 @@ import (
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -272,6 +274,8 @@ func (sel *AISessionSelector) Remove(sess *AISession) {
 }
 
 func (sel *AISessionSelector) Refresh(ctx context.Context) error {
+	oldBalances, oldSenderSessions := sel.getBalances()
+
 	sessions, err := sel.getSessions(ctx)
 	if err != nil {
 		return err
@@ -292,6 +296,9 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 			continue
 		}
 
+		// update session to persist payment balances
+		updateSessionForAI(sess, sel.cap, sel.modelID, sel.node.Balances, oldBalances, oldSenderSessions)
+
 		if modelConstraint.Warm {
 			warmSessions = append(warmSessions, sess)
 		} else {
@@ -305,6 +312,24 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 	sel.lastRefreshTime = time.Now()
 
 	return nil
+}
+
+func (sel *AISessionSelector) getBalances() (map[string]Balance, map[string]pm.Sender) {
+	balances := make(map[string]Balance)
+	senders := make(map[string]pm.Sender)
+	for _, sess := range sel.warmPool.sessMap {
+		balances[sess.Transcoder()] = sess.Balance
+		senders[sess.Transcoder()] = sess.Sender
+	}
+
+	for _, sess := range sel.coldPool.sessMap {
+		if _, ok := balances[sess.Transcoder()]; !ok {
+			balances[sess.Transcoder()] = sess.Balance
+			senders[sess.Transcoder()] = sess.Sender
+		}
+	}
+
+	return balances, senders
 }
 
 func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSession, error) {
@@ -367,9 +392,19 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, nil
 	}
 
-	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession); err != nil {
+	//send a temp session to be refreshed
+	// updateSession in broadcast.go updates the orchestrator OS and ticket params.
+	// it also updates the pm.Sender session using ticket params and the Balance using the auth token.
+	// we want to persist these to new
+	newSess := *sess.BroadcastSession
+	newSess.PMSessionID = strconv.Itoa(int(cap)) + "_" + modelID + "_" + "temp"
+	newSess.Sender.StartSessionByID(*pmTicketParams(newSess.OrchestratorInfo.TicketParams), newSess.PMSessionID)
+	if err := refreshSessionIfNeeded(ctx, &newSess); err != nil {
 		return nil, err
 	}
+	sess.BroadcastSession.OrchestratorInfo = newSess.OrchestratorInfo
+	sess.Sender.UpdateSessionByID(*pmTicketParams(sess.OrchestratorInfo.TicketParams), sess.PMSessionID)
+	//updateSessionForAI(sess.BroadcastSession, cap, modelID, c.node.Balances)
 
 	return sess, nil
 }
@@ -414,4 +449,29 @@ func (c *AISessionManager) getSelector(ctx context.Context, cap core.Capability,
 	}
 
 	return sel, nil
+}
+
+func updateSessionForAI(sess *BroadcastSession, cap core.Capability, modelID string, balances *core.AddressBalances, oldBalances map[string]Balance, oldSenderSessions map[string]pm.Sender) {
+	pipelineSessionId := strconv.Itoa(int(cap)) + "_" + modelID
+	transcoderUrl := sess.Transcoder()
+	//clean up other session
+	if sess.PMSessionID != pipelineSessionId {
+		sess.CleanupSession(sess.PMSessionID)
+	}
+	// override PMSessionID to track tickets per pipeline/model
+	sess.lock.Lock()
+	defer sess.lock.Unlock()
+	sess.PMSessionID = strconv.Itoa(int(cap)) + "_" + modelID
+	// save balance between refreshes
+	if oldBalance, ok := oldBalances[transcoderUrl]; ok {
+		sess.Balance = oldBalance
+	} else {
+		sess.Balance = core.NewBalance(ethcommon.BytesToAddress(sess.OrchestratorInfo.TicketParams.Recipient), core.ManifestID(strconv.Itoa(int(cap))+"_"+modelID), balances)
+	}
+	// save sender sessions between refreshes
+	if oldSenderSession, ok := oldSenderSessions[transcoderUrl]; ok {
+		sess.Sender = oldSenderSession
+	} else {
+		sess.Sender.UpdateSessionByID(*pmTicketParams(sess.OrchestratorInfo.TicketParams), sess.PMSessionID)
+	}
 }
