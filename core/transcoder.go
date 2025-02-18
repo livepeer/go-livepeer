@@ -247,7 +247,7 @@ func testAccelTranscode(device string, tf func(device string) TranscoderSession,
 	}
 	outputProduced = len(td.Segments) > 0
 	outputValid = td.Pixels > 0
-	return outputProduced, outputValid, err
+	return outputProduced, outputValid, nil
 }
 
 // Test which capabilities transcoder supports
@@ -325,7 +325,7 @@ func testSoftwareTranscode(tmpdir string, fname string, profile ffmpeg.VideoProf
 	}
 	outputProduced = len(td.Segments) > 0
 	outputValid = td.Pixels > 0
-	return outputProduced, outputValid, err
+	return outputProduced, outputValid, nil
 }
 
 func TestSoftwareTranscoderCapabilities(tmpdir string) (caps []Capability, fatalError error) {
