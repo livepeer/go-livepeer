@@ -111,6 +111,7 @@ func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *htt
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			requestID:   requestID,
 		}
 
 		var req I
@@ -172,6 +173,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			requestID:   requestID,
 		}
 
 		if !async {
@@ -280,6 +282,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			requestID:   requestID,
 		}
 
 		start := time.Now()
@@ -554,6 +557,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
+			requestID:   requestID,
 
 			liveParams: liveRequestParams{
 				segmentReader:          ssr,

@@ -25,21 +25,23 @@ type AISession struct {
 }
 
 type AISessionPool struct {
-	selector  BroadcastSessionsSelector
-	sessMap   map[string]*BroadcastSession
-	inUseSess []*BroadcastSession
-	suspender *suspender
-	penalty   int
-	mu        sync.RWMutex
+	selector       BroadcastSessionsSelector
+	sessMap        map[string]*BroadcastSession
+	inUseSess      []*BroadcastSession
+	sessionsOnHold map[string][]*BroadcastSession
+	suspender      *suspender
+	penalty        int
+	mu             sync.RWMutex
 }
 
 func NewAISessionPool(selector BroadcastSessionsSelector, suspender *suspender, penalty int) *AISessionPool {
 	return &AISessionPool{
-		selector:  selector,
-		sessMap:   make(map[string]*BroadcastSession),
-		suspender: suspender,
-		penalty:   penalty,
-		mu:        sync.RWMutex{},
+		selector:       selector,
+		sessMap:        make(map[string]*BroadcastSession),
+		sessionsOnHold: make(map[string][]*BroadcastSession),
+		suspender:      suspender,
+		penalty:        penalty,
+		mu:             sync.RWMutex{},
 	}
 }
 
@@ -133,6 +135,31 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 		penalty -= lastCount
 	}
 	pool.suspender.suspend(sess.Transcoder(), penalty)
+}
+
+func (pool *AISessionPool) PutSessionOnHold(id string, sess *BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	var sessionList []*BroadcastSession
+	holdList, ok := pool.sessionsOnHold[id]
+	if ok {
+		sessionList = holdList
+	}
+	pool.sessionsOnHold[id] = append(sessionList, sess)
+
+	delete(pool.sessMap, sess.Transcoder())
+	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
+}
+
+func (pool *AISessionPool) ReleaseSessionsOnHold(id string) {
+	sessions, ok := pool.sessionsOnHold[id]
+	if !ok {
+		return
+	}
+
+	pool.Add(sessions)
+	delete(pool.sessionsOnHold, id)
 }
 
 func (pool *AISessionPool) Size() int {
@@ -245,7 +272,8 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 
 		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
 		// 1/2 the total # of orchs that can be queried during discovery
-		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
+		size := sel.warmPool.Size() + sel.coldPool.Size()
+		if size < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
 			return true
 		}
 
@@ -291,6 +319,30 @@ func (sel *AISessionSelector) Remove(sess *AISession) {
 	} else {
 		sel.coldPool.Remove(sess.BroadcastSession)
 	}
+}
+
+func (sel *AISessionSelector) PutSessionOnHold(id string, sess *AISession) {
+	// start cleanup func on first session on hold for request
+	_, warmPoolCleanupStarted := sel.warmPool.sessionsOnHold[id]
+	_, coldPoolCleanupStarted := sel.coldPool.sessionsOnHold[id]
+	if !warmPoolCleanupStarted && !coldPoolCleanupStarted {
+		go func(id string, sel *AISessionSelector) {
+			time.Sleep(sel.node.AIProcesssingRetryTimeout)
+			sel.ReleaseSessionsOnHold(id)
+		}(id, sel)
+	}
+
+	// put session on hold
+	if sess.Warm {
+		sel.warmPool.PutSessionOnHold(id, sess.BroadcastSession)
+	} else {
+		sel.coldPool.PutSessionOnHold(id, sess.BroadcastSession)
+	}
+}
+
+func (sel *AISessionSelector) ReleaseSessionsOnHold(id string) {
+	sel.warmPool.ReleaseSessionsOnHold(id)
+	sel.coldPool.ReleaseSessionsOnHold(id)
 }
 
 func (sel *AISessionSelector) Refresh(ctx context.Context) error {
@@ -417,6 +469,17 @@ func (c *AISessionManager) Remove(ctx context.Context, sess *AISession) error {
 	}
 
 	sel.Remove(sess)
+
+	return nil
+}
+
+func (c *AISessionManager) PutSessionOnHold(ctx context.Context, id string, sess *AISession) error {
+	sel, err := c.getSelector(ctx, sess.Cap, sess.ModelID)
+	if err != nil {
+		return err
+	}
+
+	sel.PutSessionOnHold(id, sess)
 
 	return nil
 }

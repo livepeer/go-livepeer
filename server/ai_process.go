@@ -83,6 +83,7 @@ type aiRequestParams struct {
 	node        *core.LivepeerNode
 	os          drivers.OSSession
 	sessManager *AISessionManager
+	requestID   string
 
 	liveParams liveRequestParams
 }
@@ -1520,6 +1521,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		// Don't suspend the session if the error is a transient error.
+		if isRetryableError(err) {
+			params.sessManager.PutSessionOnHold(ctx, params.requestID, sess)
+			continue
+		}
+
 		// Suspend the session on other errors.
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
@@ -1541,6 +1548,25 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
+}
+
+// isRetryableError checks if the error is a transient error that can be retried.
+var isRetryableError = retryableError
+
+func retryableError(err error) bool {
+	transientErrorMessages := []string{
+		"insufficient capacity",      // Caused by limitation in our current implementation.
+		"invalid ticket sendernonce", // Caused by gateway nonce mismatch.
+		"ticketparams expired",       // Caused by ticket expiration.
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	for _, msg := range transientErrorMessages {
+		if strings.Contains(errMsg, msg) {
+			return true
+		}
+	}
+	return false
 }
 
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {
