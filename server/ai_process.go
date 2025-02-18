@@ -99,6 +99,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
 	outputRTMPURL string
+	mediaMTXOutputRTMPURL string
 	stream        string
 	requestID     string
 	streamID      string
