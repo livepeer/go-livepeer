@@ -204,7 +204,30 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 		return nil, err
 	}
 
+	// Periodically refresh sessions for Live Video to Video in order to minimize the necessity of refreshing sessions
+	// when the AI process is started
+	if cap == core.Capability_LiveVideoToVideo {
+		startPeriodicRefresh(sel)
+	}
+
 	return sel, nil
+}
+
+func startPeriodicRefresh(sel *AISessionSelector) {
+	go func() {
+		// Refresh and 80% or tll to avoid ever getting ttl applied
+		refreshInterval := time.Duration(0.8 * float64(sel.ttl))
+		ticker := time.NewTicker(refreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := sel.Refresh(context.Background()); err != nil {
+					clog.Infof(context.Background(), "Error refreshing AISessionSelector err=%v", err)
+				}
+			}
+		}
+	}()
 }
 
 // newAICapabilities creates a new capabilities object with
@@ -232,6 +255,11 @@ func (sel *AISessionSelector) SelectorIsEmpty() bool {
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	shouldRefreshSelector := func() bool {
+		sel.warmPool.mu.Lock()
+		sel.coldPool.mu.Lock()
+
+		defer sel.coldPool.mu.Unlock()
+		defer sel.warmPool.mu.Unlock()
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
 		// If the selector is empty, release all orchestrators from suspension and
@@ -332,10 +360,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 		}
 	}
 
+	sel.warmPool.mu.Lock()
+	sel.coldPool.mu.Lock()
+	defer sel.coldPool.mu.Unlock()
+	defer sel.warmPool.mu.Unlock()
 	sel.warmPool.Add(warmSessions)
 	sel.coldPool.Add(coldSessions)
 	sel.initialPoolSize = len(warmSessions) + len(coldSessions) + len(sel.suspender.list)
-
 	sel.lastRefreshTime = time.Now()
 
 	return nil
