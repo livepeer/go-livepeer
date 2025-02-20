@@ -115,13 +115,6 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	}
 
 	pool.selector.Add(uniqueSessions)
-
-	//add all sessions to knownSessions so we do not prefer Orchestrators
-	//selected early.  LatencyScores of 0 is default and will be sorted to
-	//top of heap so will be selected first
-	for _, sess := range uniqueSessions {
-		pool.selector.Complete(sess)
-	}
 }
 
 func (pool *AISessionPool) Remove(sess *BroadcastSession) {
@@ -193,8 +186,8 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	minLS := 0.0
 	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
-	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender, penalty)
-	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender, penalty)
+	warmPool := NewAISessionPool(NewAIMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender, penalty)
+	coldPool := NewAISessionPool(NewAIMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender, penalty)
 	sel := &AISessionSelector{
 		warmPool:  warmPool,
 		coldPool:  coldPool,
@@ -271,25 +264,6 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		}
 	}
 
-	//Add randomness to selector for warm pool. AISessionSelectors are reused for all reqeusts
-	//so the Orchestrators selected early are preferred in the MinLSSelector.  This adds the
-	//randomness back into the Orchestrator selection when the entire Orchestrator pool capacity
-	//is not saturated.
-	selAlgo := sel.node.SelectionAlgorithm.(ProbabilitySelectionAlgorithm)
-	if selAlgo.RandWeight > 0 && len(sel.warmPool.sessMap) > 0 {
-		// Generate a random float between 0 and 1
-		randomFloat := rand.Float64()
-		if randomFloat < selAlgo.RandWeight {
-			randSelected := rand.Intn(len(sel.warmPool.sessMap))
-			clog.V(common.DEBUG).Infof(ctx, "selecting random orchestrator randWeight: %v, randFloat: %v, randSelected: %v of %v", selAlgo.RandWeight, randomFloat, randSelected, len(sel.warmPool.sessMap))
-			for _, sess := range sel.warmPool.sessMap {
-				randSelected -= 1
-				if randSelected <= 0 {
-					return &AISession{BroadcastSession: sess, Cap: sel.cap, ModelID: sel.modelID, Warm: true}
-				}
-			}
-		}
-	}
 	sess := sel.warmPool.Select(ctx)
 	if sess != nil {
 		return &AISession{BroadcastSession: sess, Cap: sel.cap, ModelID: sel.modelID, Warm: true}
