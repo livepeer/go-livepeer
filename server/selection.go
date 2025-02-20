@@ -125,18 +125,14 @@ func (s *Selector) sortByInitialLatency() {
 	})
 }
 
-// Select returns the session with the lowest latency score if it is good enough.
-// Otherwise, a session without a latency score yet is returned
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
 	return s.selectUnknownSession(ctx)
 }
 
-// Size returns the number of sessions stored by the selector
 func (s *Selector) Size() int {
 	return len(s.unknownSessions)
 }
 
-// Clear resets the selector's state
 func (s *Selector) Clear() {
 	s.unknownSessions = nil
 	s.stakeRdr = nil
