@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -250,13 +251,15 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 		}
 	}()
 	for {
-		clog.V(6).Infof(ctx, "Starting output rtmp")
+		clog.V(6).Infof(ctx, "Starting output rtmp to %s", outputUrl)
 		if !params.inputStreamExists() {
 			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 			break
 		}
 
 		cmd := exec.Command("ffmpeg",
+			"-loglevel", "debug",
+			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
 			"-c:a", "copy",
 			"-c:v", "copy",
@@ -264,8 +267,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 			outputUrl,
 		)
 		cmd.Stdin = r
-		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process output: %s", output)
+		stdout, err := cmd.StderrPipe()
+		if err != nil {
+			clog.Errorf(ctx, "Error getting stdout pipe %v", err)
+		}
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				clog.Infof(ctx, "ffmpeg output:%s", scanner.Text())
+			}
+		}()
+		cmd.Start()
+		err = cmd.Wait()
 		if err != nil {
 			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
 			return
