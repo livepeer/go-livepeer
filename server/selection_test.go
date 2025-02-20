@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
@@ -155,6 +156,86 @@ func TestSessHeap(t *testing.T) {
 	assert.Equal(heap.Pop(h).(*BroadcastSession), sess1)
 	assert.Equal(heap.Pop(h).(*BroadcastSession), sess2)
 	assert.Zero(h.Len())
+}
+
+func TestSelector_Select(t *testing.T) {
+	assert := assert.New(t)
+
+	// given
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sessions := []*BroadcastSession{
+		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
+		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
+		{PMSessionID: "session-3", InitialLatency: 600 * time.Millisecond},
+	}
+	sel.Add(sessions)
+
+	// when
+	sess1 := sel.Select(context.Background())
+	sess2 := sel.Select(context.Background())
+	sess3 := sel.Select(context.Background())
+
+	// then
+	assert.Equal("session-2", sess1.PMSessionID)
+	assert.Equal("session-1", sess2.PMSessionID)
+	assert.Equal("session-3", sess3.PMSessionID)
+}
+
+func TestSelector_CompleteAndSelect(t *testing.T) {
+	assert := assert.New(t)
+
+	// given
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sessions := []*BroadcastSession{
+		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
+		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
+		{PMSessionID: "session-3", InitialLatency: 600 * time.Millisecond},
+	}
+	sel.Add(sessions)
+
+	// when
+	sess1 := sel.Select(context.Background())
+	sel.Complete(sess1)
+	sess2 := sel.Select(context.Background())
+	sess3 := sel.Select(context.Background())
+	sel.Complete(sess3)
+	sel.Complete(sess2)
+	sess4 := sel.Select(context.Background())
+
+	// then
+	assert.Equal("session-2", sess1.PMSessionID)
+	assert.Equal("session-2", sess2.PMSessionID)
+	assert.Equal("session-1", sess3.PMSessionID)
+	assert.Equal("session-2", sess4.PMSessionID)
+}
+
+func TestSelector_Size(t *testing.T) {
+	assert := assert.New(t)
+
+	// given
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sessions := []*BroadcastSession{
+		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
+		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
+		{PMSessionID: "session-3", InitialLatency: 600 * time.Millisecond},
+	}
+	sel.Add(sessions)
+
+	// when & then
+	assert.Equal(3, sel.Size())
+	sess1 := sel.Select(context.Background())
+	assert.Equal(2, sel.Size())
+	sel.Complete(sess1)
+	assert.Equal(3, sel.Size())
+	sess2 := sel.Select(context.Background())
+	sess3 := sel.Select(context.Background())
+	assert.Equal(1, sel.Size())
+	sel.Complete(sess3)
+	sel.Complete(sess2)
+	assert.Equal(3, sel.Size())
+	sel.Clear()
+	assert.Equal(0, sel.Size())
+	assert.Nil(sel.Select(context.Background()))
 }
 
 func TestMinLSSelector(t *testing.T) {
