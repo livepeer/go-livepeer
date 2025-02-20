@@ -109,8 +109,6 @@ type AIAuthRequest struct {
 
 	// Gateway host
 	GatewayHost string `json:"gateway_host"`
-
-	// TODO not sure what params we need yet
 }
 
 // Contains the configuration parameters for this AI job
