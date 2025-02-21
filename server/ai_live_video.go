@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -154,7 +155,7 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	r, w, err := os.Pipe()
+	_, w, err := os.Pipe()
 	if err != nil {
 		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%s %w", url, err))
 		return
@@ -168,7 +169,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
-	multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
+	// multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
 
 	// read segments from trickle subscription
 	go func() {
@@ -215,7 +216,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, multiWriter)
+			n, err := copySegment(segment, wMediaMTX, seq)
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -229,7 +230,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 
 	// Studio Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	// go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 
 	// MediaMTX Output ffmpeg process
 	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
@@ -250,13 +251,16 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 		}
 	}()
 	for {
-		clog.V(6).Infof(ctx, "Starting output rtmp")
+		clog.V(6).Infof(ctx, "Starting output rtmp to %s", outputUrl)
 		if !params.inputStreamExists() {
 			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 			break
 		}
 
 		cmd := exec.Command("ffmpeg",
+			"-loglevel", "debug",
+			"-analyzeduration", "2500000", // 2.5 seconds
+			"-skip_estimate_duration_from_pts", "true",
 			"-i", "pipe:0",
 			"-c:a", "copy",
 			"-c:v", "copy",
@@ -264,8 +268,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 			outputUrl,
 		)
 		cmd.Stdin = r
-		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process output: %s", output)
+		stdout, err := cmd.StderrPipe()
+		if err != nil {
+			clog.Errorf(ctx, "Error getting stdout pipe %v", err)
+		}
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				clog.Infof(ctx, "ffmpeg output:%s", scanner.Text())
+			}
+		}()
+		cmd.Start()
+		err = cmd.Wait()
 		if err != nil {
 			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
 			return
@@ -274,9 +288,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 	}
 }
 
-func copySegment(segment *http.Response, w io.Writer) (int64, error) {
+func copySegment(segment *http.Response, w io.Writer, nb int) (int64, error) {
 	defer segment.Body.Close()
-	return io.Copy(w, segment.Body)
+	var r io.Reader = segment.Body
+	if nb < 10 {
+		outputfile, err := os.Create(fmt.Sprintf("/tmp/seg-%d.ts", nb))
+		if err != nil {
+			clog.Errorf(context.Background(), "Error creating first segment file: %v", err)
+		} else {
+			r = io.TeeReader(segment.Body, outputfile)
+		}
+	}
+	return io.Copy(w, r)
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {

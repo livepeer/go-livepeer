@@ -77,6 +77,7 @@ func (mc *MediaMTXClient) KickInputConnection(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to kick connection: %w", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("kick connection failed with status code: %d body: %s", resp.StatusCode, body)
@@ -100,6 +101,7 @@ func (mc *MediaMTXClient) StreamExists() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to get stream: %w", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
 		return false, fmt.Errorf("get stream failed with status code: %d body: %s", resp.StatusCode, body)
