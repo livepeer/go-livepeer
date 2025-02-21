@@ -336,8 +336,8 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 	resetsessions()
 	sel.removeUnknownSession(0)
 	assert.Len(sel.sessions, 2)
-	assert.Equal("baz", string(sel.sessions[0].Params.ManifestID))
-	assert.Equal("bar", string(sel.sessions[1].Params.ManifestID))
+	assert.Equal("bar", string(sel.sessions[0].Params.ManifestID))
+	assert.Equal("baz", string(sel.sessions[1].Params.ManifestID))
 
 	// Test remove from middle of list
 	resetsessions()
