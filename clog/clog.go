@@ -7,6 +7,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -257,4 +259,32 @@ func PublicCloneCtx(originalCtx context.Context, publicCtx context.Context, publ
 		cmap.mu.RUnlock()
 	}
 	return context.WithValue(publicCtx, clogContextKey, publicCmap)
+}
+
+// slog implementation enabling us to reuse the clog context in a slog logger
+type SlogHandler struct {
+	slog.Handler
+}
+
+func (h *SlogHandler) Handle(ctx context.Context, record slog.Record) error {
+	cmap, _ := ctx.Value(clogContextKey).(*values)
+	if cmap == nil {
+		return h.Handler.Handle(ctx, record)
+	}
+	cmap.mu.RLock()
+	defer cmap.mu.RUnlock()
+	for key, val := range cmap.vals {
+		record.AddAttrs(slog.String(key, val))
+	}
+
+	return h.Handler.Handle(ctx, record)
+}
+
+func init() {
+	baseHandler := slog.NewTextHandler(os.Stderr, nil)
+	customHandler := &SlogHandler{
+		Handler: baseHandler,
+	}
+	logger := slog.New(customHandler)
+	slog.SetDefault(logger)
 }
