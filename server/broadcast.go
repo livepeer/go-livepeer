@@ -920,6 +920,10 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 		if od.LocalInfo != nil {
 			oScore = od.LocalInfo.Score
 		}
+		var initialLatency time.Duration
+		if od.LocalInfo != nil && od.LocalInfo.Latency != nil {
+			initialLatency = *od.LocalInfo.Latency
+		}
 		session := &BroadcastSession{
 			Broadcaster:       core.NewBroadcaster(n),
 			Params:            params,
@@ -934,6 +938,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			lock:              &sync.RWMutex{},
 			OrchestratorScore: oScore,
 			InitialPrice:      od.RemoteInfo.PriceInfo,
+			InitialLatency:    initialLatency,
 		}
 
 		sessions = append(sessions, session)
