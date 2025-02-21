@@ -126,7 +126,9 @@ func (s *Selector) sortByInitialLatency() {
 }
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
-	return s.selectUnknownSession(ctx)
+	sess := s.selectUnknownSession(ctx)
+	s.sortByInitialLatency()
+	return sess
 }
 
 func (s *Selector) Size() int {
@@ -267,9 +269,7 @@ func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 }
 
 func (s *Selector) removeUnknownSession(i int) {
-	n := len(s.sessions)
-	s.sessions[n-1], s.sessions[i] = s.sessions[i], s.sessions[n-1]
-	s.sessions = s.sessions[:n-1]
+	s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
