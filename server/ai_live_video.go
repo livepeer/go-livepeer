@@ -216,7 +216,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, wMediaMTX)
+			n, err := copySegment(segment, wMediaMTX, seq)
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -287,9 +287,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 	}
 }
 
-func copySegment(segment *http.Response, w io.Writer) (int64, error) {
+func copySegment(segment *http.Response, w io.Writer, nb int) (int64, error) {
 	defer segment.Body.Close()
-	return io.Copy(w, segment.Body)
+	var r io.Reader = segment.Body
+	if nb < 10 {
+		outputfile, err := os.Create(fmt.Sprintf("/tmp/seg-%d.ts", nb))
+		if err != nil {
+			clog.Errorf(context.Background(), "Error creating first segment file: %v", err)
+		} else {
+			r = io.TeeReader(segment.Body, outputfile)
+		}
+	}
+	return io.Copy(w, r)
 }
 
 func startControlPublish(control *url.URL, params aiRequestParams) {
