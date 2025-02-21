@@ -114,7 +114,8 @@ type LivepeerServer struct {
 	ExposeCurrentManifest   bool
 	recordingsAuthResponses *cache.Cache
 
-	AISessionManager *AISessionManager
+	AISessionManager  *AISessionManager
+	AISessionByStream map[string]*AISession
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`

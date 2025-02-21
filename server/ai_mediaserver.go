@@ -566,6 +566,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				pipelineID:             pipelineID,
 				stopPipeline:           stopPipeline,
 				sendErrorEvent:         sendErrorEvent,
+				aiSessionByStream:      ls.AISessionByStream,
 			},
 		}
 
@@ -683,6 +684,13 @@ func (ls *LivepeerServer) cleanupLive(stream string) {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
 		pub.StopControl()
+	}
+	ls.LivepeerNode.LiveMu.Lock()
+	sess, ok := ls.AISessionByStream[stream]
+	delete(ls.AISessionByStream, stream)
+	ls.LivepeerNode.LiveMu.Unlock()
+	if ok && sess != nil {
+		ls.AISessionManager.Complete(context.Background(), sess)
 	}
 }
 
