@@ -55,6 +55,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	slowOrchChecker := &SlowOrchChecker{}
 
+	firstSegment := true
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -97,6 +99,17 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
+					if firstSegment {
+						firstSegment = false
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_send_first_ingest_segment",
+							"timestamp":   time.Now().Unix(),
+							"stream_id":   params.liveParams.streamID,
+							"pipeline_id": params.liveParams.pipelineID,
+							"request_id":  params.liveParams.requestID,
+							"stream":      params.liveParams.stream,
+						})
+					}
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -222,6 +235,14 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			if firstSegment {
 				firstSegment = false
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_receive_first_processed_segment",
+					"timestamp":   time.Now().Unix(),
+					"stream_id":   params.liveParams.streamID,
+					"pipeline_id": params.liveParams.pipelineID,
+					"request_id":  params.liveParams.requestID,
+					"stream":      params.liveParams.stream,
+				})
 				onFistSegment()
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
