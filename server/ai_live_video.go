@@ -260,6 +260,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 		cmd := exec.Command("ffmpeg",
 			"-loglevel", "debug",
 			"-analyzeduration", "2500000", // 2.5 seconds
+			"-skip_estimate_duration_from_pts", "true",
 			"-i", "pipe:0",
 			"-c:a", "copy",
 			"-c:v", "copy",
