@@ -256,60 +256,60 @@ func TestMinLSSelector(t *testing.T) {
 	sel.Add(sessions)
 	assert.Equal(sel.Size(), 3)
 	for _, sess := range sessions {
-		assert.Contains(sel.unknownSessions, sess)
+		assert.Contains(sel.sessions, sess)
 	}
 
-	// Select from unknownSessions
+	// Select from sessions
 	sess1 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 2)
+	assert.Equal(len(sel.sessions), 2)
 
 	// Set sess1.LatencyScore to not be good enough
 	sess1.LatencyScore = 1.1
 	sel.Complete(sess1)
 	assert.Equal(sel.Size(), 3)
-	assert.Equal(len(sel.unknownSessions), 2)
+	assert.Equal(len(sel.sessions), 2)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
-	// Select from unknownSessions
+	// Select from sessions
 	sess2 := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(len(sel.sessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
 
 	// Set sess2.LatencyScore to be good enough
 	sess2.LatencyScore = .9
 	sel.Complete(sess2)
 	assert.Equal(sel.Size(), 3)
-	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(len(sel.sessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 2)
 
 	// Select from knownSessions
 	knownSess := sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 1)
+	assert.Equal(len(sel.sessions), 1)
 	assert.Equal(sel.knownSessions.Len(), 1)
 	assert.Equal(knownSess, sess2)
 
 	// Set knownSess.LatencyScore to not be good enough
 	knownSess.LatencyScore = 1.1
 	sel.Complete(knownSess)
-	// Clear unknownSessions
+	// Clear sessions
 	sess := sel.Select(context.TODO())
 	sess.LatencyScore = 2.1
 	sel.Complete(sess)
-	assert.Equal(len(sel.unknownSessions), 0)
+	assert.Equal(len(sel.sessions), 0)
 	assert.Equal(sel.knownSessions.Len(), 3)
 
 	// Select from knownSessions
 	knownSess = sel.Select(context.TODO())
 	assert.Equal(sel.Size(), 2)
-	assert.Equal(len(sel.unknownSessions), 0)
+	assert.Equal(len(sel.sessions), 0)
 	assert.Equal(sel.knownSessions.Len(), 2)
 
 	sel.Clear()
 	assert.Zero(sel.Size())
-	assert.Nil(sel.unknownSessions)
+	assert.Nil(sel.sessions)
 	assert.Zero(sel.knownSessions.Len())
 	assert.Nil(sel.stakeRdr)
 }
@@ -326,56 +326,56 @@ func TestMinLSSelector_RemoveUnknownSession(t *testing.T) {
 		{Params: &core.StreamParameters{ManifestID: "baz"}},
 	}
 
-	resetUnknownSessions := func() {
-		// Make a copy of the original slice so we can reset unknownSessions to the original slice
-		sel.unknownSessions = make([]*BroadcastSession, len(sessions))
-		copy(sel.unknownSessions, sessions)
+	resetsessions := func() {
+		// Make a copy of the original slice so we can reset sessions to the original slice
+		sel.sessions = make([]*BroadcastSession, len(sessions))
+		copy(sel.sessions, sessions)
 	}
 
 	// Test remove from front of list
-	resetUnknownSessions()
+	resetsessions()
 	sel.removeUnknownSession(0)
-	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("baz", string(sel.unknownSessions[0].Params.ManifestID))
-	assert.Equal("bar", string(sel.unknownSessions[1].Params.ManifestID))
+	assert.Len(sel.sessions, 2)
+	assert.Equal("baz", string(sel.sessions[0].Params.ManifestID))
+	assert.Equal("bar", string(sel.sessions[1].Params.ManifestID))
 
 	// Test remove from middle of list
-	resetUnknownSessions()
+	resetsessions()
 	sel.removeUnknownSession(1)
-	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("foo", string(sel.unknownSessions[0].Params.ManifestID))
-	assert.Equal("baz", string(sel.unknownSessions[1].Params.ManifestID))
+	assert.Len(sel.sessions, 2)
+	assert.Equal("foo", string(sel.sessions[0].Params.ManifestID))
+	assert.Equal("baz", string(sel.sessions[1].Params.ManifestID))
 
 	// Test remove from back of list
-	resetUnknownSessions()
+	resetsessions()
 	sel.removeUnknownSession(2)
-	assert.Len(sel.unknownSessions, 2)
-	assert.Equal("foo", string(sel.unknownSessions[0].Params.ManifestID))
-	assert.Equal("bar", string(sel.unknownSessions[1].Params.ManifestID))
+	assert.Len(sel.sessions, 2)
+	assert.Equal("foo", string(sel.sessions[0].Params.ManifestID))
+	assert.Equal("bar", string(sel.sessions[1].Params.ManifestID))
 
 	// Test remove when list length = 1
-	sel.unknownSessions = []*BroadcastSession{{}}
+	sel.sessions = []*BroadcastSession{{}}
 	sel.removeUnknownSession(0)
-	assert.Empty(sel.unknownSessions)
+	assert.Empty(sel.sessions)
 }
 
 func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 
 	tests := []struct {
-		name            string
-		unknownSessions []*BroadcastSession
-		stakes          map[ethcommon.Address]int64
-		perfScores      map[ethcommon.Address]float64
-		want            *BroadcastSession
+		name       string
+		sessions   []*BroadcastSession
+		stakes     map[ethcommon.Address]int64
+		perfScores map[ethcommon.Address]float64
+		want       *BroadcastSession
 	}{
 		{
-			name:            "No unknown sessions",
-			unknownSessions: []*BroadcastSession{},
-			want:            nil,
+			name:     "No unknown sessions",
+			sessions: []*BroadcastSession{},
+			want:     nil,
 		},
 		{
 			name: "Select lowest price",
-			unknownSessions: []*BroadcastSession{
+			sessions: []*BroadcastSession{
 				sessionWithPrice("0x0000000000000000000000000000000000000001", 1000, 1),
 				sessionWithPrice("0x0000000000000000000000000000000000000002", 500, 1),
 			},
@@ -383,7 +383,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 		},
 		{
 			name: "Select highest stake",
-			unknownSessions: []*BroadcastSession{
+			sessions: []*BroadcastSession{
 				session("0x0000000000000000000000000000000000000001"),
 				session("0x0000000000000000000000000000000000000002"),
 			},
@@ -395,7 +395,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 		},
 		{
 			name: "Select highest performance score",
-			unknownSessions: []*BroadcastSession{
+			sessions: []*BroadcastSession{
 				session("0x0000000000000000000000000000000000000001"),
 				session("0x0000000000000000000000000000000000000002"),
 			},
@@ -419,7 +419,7 @@ func TestMinLSSelector_SelectUnknownSession(t *testing.T) {
 				perfScore = &common.PerfScore{Scores: tt.perfScores}
 			}
 			sel := NewMinLSSelector(stakeRdr, 1.0, selAlg, perfScore, nil)
-			sel.Add(tt.unknownSessions)
+			sel.Add(tt.sessions)
 
 			sess := sel.selectUnknownSession(context.TODO())
 
@@ -459,8 +459,8 @@ func TestMinLSSelector_SelectUnknownSession_NilStakeReader(t *testing.T) {
 	sel.Add(sessions)
 
 	i := 0
-	// Check that we select sessions based on the order of unknownSessions and that the size of
-	// unknownSessions decreases with each selection
+	// Check that we select sessions based on the order of sessions and that the size of
+	// sessions decreases with each selection
 	for sel.Size() > 0 {
 		sess := sel.selectUnknownSession(context.TODO())
 		assert.Same(t, sess, sessions[i])
