@@ -226,7 +226,7 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 
 func startPeriodicRefresh(sel *AISessionSelector) {
 	go func() {
-		// Refresh and 80% or tll to avoid ever getting ttl applied
+		// Refresh at 80% of tll to avoid ever getting ttl applied
 		refreshInterval := time.Duration(0.8 * float64(sel.ttl))
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
