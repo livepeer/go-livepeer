@@ -227,7 +227,7 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 func startPeriodicRefresh(sel *AISessionSelector) {
 	go func() {
 		// Refresh at 80% of tll to avoid ever getting ttl applied
-		refreshInterval := time.Duration(0.8 * float64(sel.ttl))
+		refreshInterval := 1 * time.Minute
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
 		for {
@@ -261,16 +261,15 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersio
 
 // selectorIsEmpty returns true if no orchestrators are in the warm or cold pools.
 func (sel *AISessionSelector) SelectorIsEmpty() bool {
+	sel.warmPool.mu.Lock()
+	sel.coldPool.mu.Lock()
+	defer sel.coldPool.mu.Unlock()
+	defer sel.warmPool.mu.Unlock()
 	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
 }
 
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	shouldRefreshSelector := func() bool {
-		sel.warmPool.mu.Lock()
-		sel.coldPool.mu.Lock()
-
-		defer sel.coldPool.mu.Unlock()
-		defer sel.warmPool.mu.Unlock()
 		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
 
 		// If the selector is empty, release all orchestrators from suspension and
@@ -289,6 +288,10 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		}
 
 		// Refresh if the selector has expired
+		sel.warmPool.mu.Lock()
+		sel.coldPool.mu.Lock()
+		defer sel.coldPool.mu.Unlock()
+		defer sel.warmPool.mu.Unlock()
 		if time.Now().After(sel.lastRefreshTime.Add(sel.ttl)) {
 			return true
 		}
@@ -371,12 +374,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 		}
 	}
 
+	sel.warmPool.Add(warmSessions)
+	sel.coldPool.Add(coldSessions)
+
 	sel.warmPool.mu.Lock()
 	sel.coldPool.mu.Lock()
 	defer sel.coldPool.mu.Unlock()
 	defer sel.warmPool.mu.Unlock()
-	sel.warmPool.Add(warmSessions)
-	sel.coldPool.Add(coldSessions)
 	sel.initialPoolSize = len(warmSessions) + len(coldSessions) + len(sel.suspender.list)
 	sel.lastRefreshTime = time.Now()
 
