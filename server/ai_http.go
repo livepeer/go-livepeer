@@ -108,9 +108,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "orchestrator_receive_stream_request",
-			"timestamp":   time.Now().Unix(),
+			"timestamp":   time.Now().UnixMilli(),
 			"stream_id":   streamID,
 			"request_id":  requestID,
+			"pipeline_id": "",
 			"orchestrator_info": map[string]interface{}{
 				"address": h.orchestrator.Address().Hex(),
 				"url":     h.orchestrator.ServiceURI().String(),

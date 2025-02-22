@@ -388,7 +388,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		streamRequestTime := time.Now().Unix()
+		streamRequestTime := time.Now().UnixMilli()
 
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
@@ -512,10 +512,12 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			"type":        "gateway_receive_stream_request",
 			"timestamp":   streamRequestTime,
 			"stream_id":   streamID,
-			"pipeline":    pipeline,
 			"pipeline_id": pipelineID,
 			"request_id":  requestID,
-			"stream":      streamName,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
 		})
 
 		// Count `ai_live_attempts` after successful parameters validation

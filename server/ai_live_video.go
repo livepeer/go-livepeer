@@ -103,11 +103,14 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 						firstSegment = false
 						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 							"type":        "gateway_send_first_ingest_segment",
-							"timestamp":   time.Now().Unix(),
+							"timestamp":   time.Now().UnixMilli(),
 							"stream_id":   params.liveParams.streamID,
 							"pipeline_id": params.liveParams.pipelineID,
 							"request_id":  params.liveParams.requestID,
-							"stream":      params.liveParams.stream,
+							"orchestrator_info": map[string]interface{}{
+								"address": sess.Address(),
+								"url":     sess.Transcoder(),
+							},
 						})
 					}
 					return
@@ -235,14 +238,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			if firstSegment {
 				firstSegment = false
-				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-					"type":        "gateway_receive_first_processed_segment",
-					"timestamp":   time.Now().Unix(),
-					"stream_id":   params.liveParams.streamID,
-					"pipeline_id": params.liveParams.pipelineID,
-					"request_id":  params.liveParams.requestID,
-					"stream":      params.liveParams.stream,
-				})
 				onFistSegment()
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
@@ -467,6 +462,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 
 				StreamStatusStore.Store(streamId, event)
+			}
+			// If the event type starts with "runner", it's a stream_trace event
+			if strings.HasPrefix(eventType, "runner") {
+				queueEventType = "stream_trace"
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)
