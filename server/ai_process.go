@@ -1522,7 +1522,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		// Don't suspend the session if the error is a transient error.
-		if isRetryableError(err) || (isNoCapacityErr(err) && cap != core.Capability_LiveVideoToVideo) {
+		if isRetryableError(err) || (isNoCapacityError(err) && cap != core.Capability_LiveVideoToVideo) {
 			retryableSessions = append(retryableSessions, sess)
 			continue
 		}
@@ -1570,7 +1570,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func isNoCapacityErr(err error) bool {
+func isNoCapacityError(err error) bool {
 	transientErrorMessages := []string{
 		"insufficient capacity", // Caused by limitation in our current implementation.
 	}
