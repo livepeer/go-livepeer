@@ -94,32 +94,46 @@ func (r *storeStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Addr
 type Selector struct {
 	sessions []*BroadcastSession
 
-	stakeRdr           stakeReader
-	selectionAlgorithm common.SelectionAlgorithm
-	perfScore          *common.PerfScore
-	capabilities       common.CapabilityComparator
+	stakeRdr                stakeReader
+	selectionAlgorithm      common.SelectionAlgorithm
+	perfScore               *common.PerfScore
+	capabilities            common.CapabilityComparator
+	useInitialLatencyToSort bool
 }
 
-func NewSelector(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *Selector {
+func NewSelector(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator, useInitialLatencyToSort bool) *Selector {
 	return &Selector{
-		stakeRdr:           stakeRdr,
-		selectionAlgorithm: selectionAlgorithm,
-		perfScore:          perfScore,
-		capabilities:       capabilities,
+		stakeRdr:                stakeRdr,
+		selectionAlgorithm:      selectionAlgorithm,
+		perfScore:               perfScore,
+		capabilities:            capabilities,
+		useInitialLatencyToSort: useInitialLatencyToSort,
 	}
 }
 
 func (s *Selector) Add(sessions []*BroadcastSession) {
 	s.sessions = append(s.sessions, sessions...)
-	s.sortByInitialLatency()
+	s.sortByLatency()
 }
 
 func (s *Selector) Complete(sess *BroadcastSession) {
 	s.sessions = append(s.sessions, sess)
-	s.sortByInitialLatency()
+	s.sortByLatency()
 }
 
-func (s *Selector) sortByInitialLatency() {
+func (s *Selector) sortByLatency() {
+	if s.useInitialLatencyToSort {
+		sort.Slice(s.sessions, func(i, j int) bool {
+			return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
+		})
+	} else {
+		sort.Slice(s.sessions, func(i, j int) bool {
+			return s.sessions[i].LatencyScore < s.sessions[j].LatencyScore
+		})
+	}
+}
+
+func (s *Selector) sortByCurrentLatency() {
 	sort.Slice(s.sessions, func(i, j int) bool {
 		return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
 	})
@@ -127,7 +141,7 @@ func (s *Selector) sortByInitialLatency() {
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
 	sess := s.selectUnknownSession(ctx)
-	s.sortByInitialLatency()
+	s.sortByLatency()
 	return sess
 }
 
