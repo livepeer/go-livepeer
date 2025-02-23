@@ -133,12 +133,6 @@ func (s *Selector) sortByLatency() {
 	}
 }
 
-func (s *Selector) sortByCurrentLatency() {
-	sort.Slice(s.sessions, func(i, j int) bool {
-		return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
-	})
-}
-
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
 	sess := s.selectUnknownSession(ctx)
 	s.sortByLatency()
