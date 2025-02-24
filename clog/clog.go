@@ -7,6 +7,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,13 +54,15 @@ func init() {
 }
 
 type values struct {
-	mu   sync.RWMutex
-	vals map[string]string
+	mu        sync.RWMutex
+	keysOrder []string
+	vals      map[string]string
 }
 
 func newValues() *values {
 	return &values{
-		vals: make(map[string]string),
+		vals:      make(map[string]string),
+		keysOrder: []string{},
 	}
 }
 
@@ -71,6 +75,7 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RLock()
 		for k, v := range cmap.vals {
 			newCmap.vals[k] = v
+			newCmap.keysOrder = append(newCmap.keysOrder, k)
 		}
 		cmap.mu.RUnlock()
 	}
@@ -109,6 +114,10 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 		ctx = context.WithValue(ctx, clogContextKey, cmap)
 	}
 	cmap.mu.Lock()
+	// add to keysOrder only if the key is not already present to avoid duplicate fields
+	if _, ok := cmap.vals[key]; !ok {
+		cmap.keysOrder = append(cmap.keysOrder, key)
+	}
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
 	return ctx
@@ -257,4 +266,51 @@ func PublicCloneCtx(originalCtx context.Context, publicCtx context.Context, publ
 		cmap.mu.RUnlock()
 	}
 	return context.WithValue(publicCtx, clogContextKey, publicCmap)
+}
+
+// slog implementation enabling us to reuse the clog context in a slog logger
+type SlogHandler struct {
+	slog.Handler
+}
+
+func (h *SlogHandler) Handle(ctx context.Context, record slog.Record) error {
+	cmap, _ := ctx.Value(clogContextKey).(*values)
+	if cmap == nil {
+		return h.Handler.Handle(ctx, record)
+	}
+
+	// Create a new log record with reordered fields
+	newRecord := slog.NewRecord(record.Time, record.Level, "", record.PC)
+
+	cmap.mu.RLock()
+	defer cmap.mu.RUnlock()
+	for _, key := range cmap.keysOrder {
+		newRecord.AddAttrs(slog.String(key, cmap.vals[key]))
+	}
+	// Extract inline attributes (from `Info(msg, key, value)`)
+	record.Attrs(func(attr slog.Attr) bool {
+		if _, ok := cmap.vals[attr.Key]; !ok { // skip duplicate fields
+			newRecord.AddAttrs(attr)
+		}
+		return true
+	})
+	newRecord.AddAttrs(slog.String("message", record.Message))
+
+	return h.Handler.Handle(ctx, newRecord)
+}
+
+func init() {
+	customHandler := &SlogHandler{
+		Handler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			AddSource: true,
+			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+				if a.Key == "msg" { // remove default msg attribute so that we can shift the message to the end of the line
+					return slog.Attr{}
+				}
+				return a
+			},
+		}),
+	}
+	logger := slog.New(customHandler)
+	slog.SetDefault(logger)
 }
