@@ -123,6 +123,7 @@ func (s *Selector) sortByInitialLatency() {
 	sort.Slice(s.sessions, func(i, j int) bool {
 		return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
 	})
+	s.debugLog()
 }
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
@@ -270,6 +271,14 @@ func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
 
 func (s *Selector) removeUnknownSession(i int) {
 	s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+}
+
+func (s *Selector) debugLog() {
+	var orchestrators []string
+	for _, sess := range s.sessions {
+		orchestrators = append(orchestrators, sess.OrchestratorInfo.Transcoder)
+	}
+	clog.Infof(context.Background(), "Orchestrators in Selector: %v", orchestrators)
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
