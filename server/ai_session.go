@@ -105,8 +105,9 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
-		if _, ok := pool.sessMap[sess.Transcoder()]; ok {
-			// Skip the session if it is already tracked by sessMap
+		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
+			// For existing sessions we only update OrchestratorInfo
+			existingSess.OrchestratorInfo = sess.OrchestratorInfo
 			continue
 		}
 
