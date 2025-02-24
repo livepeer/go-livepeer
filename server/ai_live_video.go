@@ -55,6 +55,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	slowOrchChecker := &SlowOrchChecker{}
 
+	firstSegment := true
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -97,6 +99,20 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
+					if firstSegment {
+						firstSegment = false
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_send_first_ingest_segment",
+							"timestamp":   time.Now().UnixMilli(),
+							"stream_id":   params.liveParams.streamID,
+							"pipeline_id": params.liveParams.pipelineID,
+							"request_id":  params.liveParams.requestID,
+							"orchestrator_info": map[string]interface{}{
+								"address": sess.Address(),
+								"url":     sess.Transcoder(),
+							},
+						})
+					}
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -447,6 +463,10 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 
 				StreamStatusStore.Store(streamId, event)
+			}
+			// If the event type starts with "runner", it's a stream_trace event
+			if strings.HasPrefix(eventType, "runner") {
+				queueEventType = "stream_trace"
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)
