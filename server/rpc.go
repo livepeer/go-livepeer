@@ -139,6 +139,8 @@ type BroadcastSession struct {
 	CleanupSession   sessionsCleanup
 	Balance          Balance
 	InitialPrice     *net.PriceInfo
+
+	InitialLatency time.Duration
 }
 
 func (bs *BroadcastSession) Transcoder() string {

@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"math/big"
+	"sort"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/clog"
@@ -89,19 +90,63 @@ func (r *storeStakeReader) Stakes(addrs []ethcommon.Address) (map[ethcommon.Addr
 	return stakes, nil
 }
 
-// MinLSSelector selects the next BroadcastSession with the lowest latency score if it is good enough.
-// Otherwise, it selects a session that does not have a latency score yet
-// MinLSSelector is not concurrency safe so the caller is responsible for ensuring safety for concurrent method calls
-type MinLSSelector struct {
-	unknownSessions []*BroadcastSession
-	knownSessions   *sessHeap
+// Selector is the default selector which always selects the session with the lowest initial latency.
+type Selector struct {
+	sessions []*BroadcastSession
 
 	stakeRdr           stakeReader
 	selectionAlgorithm common.SelectionAlgorithm
 	perfScore          *common.PerfScore
 	capabilities       common.CapabilityComparator
+}
 
-	minLS float64
+func NewSelector(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *Selector {
+	return &Selector{
+		stakeRdr:           stakeRdr,
+		selectionAlgorithm: selectionAlgorithm,
+		perfScore:          perfScore,
+		capabilities:       capabilities,
+	}
+}
+
+func (s *Selector) Add(sessions []*BroadcastSession) {
+	s.sessions = append(s.sessions, sessions...)
+	s.sortByInitialLatency()
+}
+
+func (s *Selector) Complete(sess *BroadcastSession) {
+	s.sessions = append(s.sessions, sess)
+	s.sortByInitialLatency()
+}
+
+func (s *Selector) sortByInitialLatency() {
+	sort.Slice(s.sessions, func(i, j int) bool {
+		return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
+	})
+}
+
+func (s *Selector) Select(ctx context.Context) *BroadcastSession {
+	sess := s.selectUnknownSession(ctx)
+	s.sortByInitialLatency()
+	return sess
+}
+
+func (s *Selector) Size() int {
+	return len(s.sessions)
+}
+
+func (s *Selector) Clear() {
+	s.sessions = nil
+	s.stakeRdr = nil
+}
+
+// MinLSSelector selects the next BroadcastSession with the lowest latency score if it is good enough.
+// Otherwise, it selects a session that does not have a latency score yet
+// MinLSSelector is not concurrency safe so the caller is responsible for ensuring safety for concurrent method calls
+type MinLSSelector struct {
+	knownSessions *sessHeap
+	minLS         float64
+	Selector
 }
 
 // NewMinLSSelector returns an instance of MinLSSelector configured with a good enough latency score
@@ -110,18 +155,20 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 	heap.Init(knownSessions)
 
 	return &MinLSSelector{
-		knownSessions:      knownSessions,
-		stakeRdr:           stakeRdr,
-		selectionAlgorithm: selectionAlgorithm,
-		perfScore:          perfScore,
-		capabilities:       capabilities,
-		minLS:              minLS,
+		knownSessions: knownSessions,
+		minLS:         minLS,
+		Selector: Selector{
+			stakeRdr:           stakeRdr,
+			selectionAlgorithm: selectionAlgorithm,
+			perfScore:          perfScore,
+			capabilities:       capabilities,
+		},
 	}
 }
 
 // Add adds the sessions to the selector's list of sessions without a latency score
 func (s *MinLSSelector) Add(sessions []*BroadcastSession) {
-	s.unknownSessions = append(s.unknownSessions, sessions...)
+	s.sessions = append(s.sessions, sessions...)
 }
 
 // Complete adds the session to the selector's list sessions with a latency score
@@ -138,7 +185,7 @@ func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 	}
 
 	minSess := sess.(*BroadcastSession)
-	if minSess.LatencyScore > s.minLS && len(s.unknownSessions) > 0 {
+	if minSess.LatencyScore > s.minLS && len(s.sessions) > 0 {
 		return s.selectUnknownSession(ctx)
 	}
 
@@ -147,33 +194,33 @@ func (s *MinLSSelector) Select(ctx context.Context) *BroadcastSession {
 
 // Size returns the number of sessions stored by the selector
 func (s *MinLSSelector) Size() int {
-	return len(s.unknownSessions) + s.knownSessions.Len()
+	return len(s.sessions) + s.knownSessions.Len()
 }
 
 // Clear resets the selector's state
 func (s *MinLSSelector) Clear() {
-	s.unknownSessions = nil
+	s.sessions = nil
 	s.knownSessions = &sessHeap{}
 	s.stakeRdr = nil
 }
 
 // Use selection algorithm to select from unknownSessions
-func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSession {
-	if len(s.unknownSessions) == 0 {
+func (s *Selector) selectUnknownSession(ctx context.Context) *BroadcastSession {
+	if len(s.sessions) == 0 {
 		return nil
 	}
 
 	if s.stakeRdr == nil {
 		// Sessions are selected based on the order of unknownSessions in off-chain mode
-		sess := s.unknownSessions[0]
-		s.unknownSessions = s.unknownSessions[1:]
+		sess := s.sessions[0]
+		s.sessions = s.sessions[1:]
 		return sess
 	}
 
 	var addrs []ethcommon.Address
 	prices := map[ethcommon.Address]*big.Rat{}
 	addrCount := make(map[ethcommon.Address]int)
-	for _, sess := range s.unknownSessions {
+	for _, sess := range s.sessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
 			continue
 		}
@@ -207,7 +254,7 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 
 	selected := s.selectionAlgorithm.Select(ctx, addrs, stakes, maxPrice, prices, perfScores)
 
-	for i, sess := range s.unknownSessions {
+	for i, sess := range s.sessions {
 		if sess.OrchestratorInfo.GetTicketParams() == nil {
 			continue
 		}
@@ -221,10 +268,8 @@ func (s *MinLSSelector) selectUnknownSession(ctx context.Context) *BroadcastSess
 	return nil
 }
 
-func (s *MinLSSelector) removeUnknownSession(i int) {
-	n := len(s.unknownSessions)
-	s.unknownSessions[n-1], s.unknownSessions[i] = s.unknownSessions[i], s.unknownSessions[n-1]
-	s.unknownSessions = s.unknownSessions[:n-1]
+func (s *Selector) removeUnknownSession(i int) {
+	s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
 }
 
 // LIFOSelector selects the next BroadcastSession in LIFO order
