@@ -551,10 +551,10 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	return res.Results, nil
 }
 
-func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID, gatewayRequestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
-		workerResp, err := orch.node.LiveVideoToVideo(ctx, requestID, streamID, req)
+		workerResp, err := orch.node.LiveVideoToVideo(ctx, gatewayRequestID, streamID, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
 		} else {
