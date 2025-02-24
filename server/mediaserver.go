@@ -114,7 +114,8 @@ type LivepeerServer struct {
 	ExposeCurrentManifest   bool
 	recordingsAuthResponses *cache.Cache
 
-	AISessionManager *AISessionManager
+	AISessionManager  *AISessionManager
+	AISessionByStream map[string]*AISession
 
 	// Thread sensitive fields. All accesses to the
 	// following fields should be protected by `connectionLock`
@@ -194,6 +195,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		internalManifests:       make(map[core.ManifestID]core.ManifestID),
 		recordingsAuthResponses: cache.New(time.Hour, 2*time.Hour),
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
+		AISessionByStream:       make(map[string]*AISession),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,

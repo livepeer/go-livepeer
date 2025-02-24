@@ -112,6 +112,8 @@ type liveRequestParams struct {
 
 	// Report an error event
 	sendErrorEvent func(error)
+
+	aiSessionByStream map[string]*AISession
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1516,7 +1518,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
-			params.sessManager.Complete(ctx, sess)
+			if cap == core.Capability_LiveVideoToVideo {
+				// For Live Video to Video, the request initiates the session usage, so we should
+				// not complete the session at this point, it will be completed when streaming stops.
+				params.node.LiveMu.Lock()
+				params.liveParams.aiSessionByStream[params.liveParams.stream] = sess
+				params.node.LiveMu.Unlock()
+			} else {
+				params.sessManager.Complete(ctx, sess)
+			}
 			break
 		}
 
