@@ -108,6 +108,7 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
 			// For existing sessions we only update OrchestratorInfo
 			existingSess.OrchestratorInfo = sess.OrchestratorInfo
+			existingSess.InitialLatency = sess.InitialLatency
 			continue
 		}
 
