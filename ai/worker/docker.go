@@ -518,6 +518,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 
 		rc.RLock()
 		borrowCtx := rc.BorrowCtx
+		if borrowCtx == nil {
+			borrowCtx = context.Background()
+		}
 		rc.RUnlock()
 
 		select {
