@@ -261,10 +261,6 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersio
 
 // selectorIsEmpty returns true if no orchestrators are in the warm or cold pools.
 func (sel *AISessionSelector) SelectorIsEmpty() bool {
-	sel.warmPool.mu.Lock()
-	sel.coldPool.mu.Lock()
-	defer sel.coldPool.mu.Unlock()
-	defer sel.warmPool.mu.Unlock()
 	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
 }
 
