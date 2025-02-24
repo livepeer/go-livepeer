@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/deepmap/oapi-codegen/v2/pkg/securityprovider"
@@ -21,6 +22,9 @@ type RunnerContainer struct {
 	Name     string
 	Client   *ClientWithResponses
 	Hardware *HardwareInformation
+
+	BorrowCtx context.Context
+	sync.RWMutex
 }
 
 type RunnerEndpoint struct {
