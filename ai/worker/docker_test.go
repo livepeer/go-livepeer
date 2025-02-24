@@ -741,10 +741,17 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockServer.AssertExpectations(t)
 		defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
+		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
+			Return(200, "application/json", `{"status":"OK"}`)
+
 		borrowCtx, cancel := context.WithCancel(context.Background())
 		rc.BorrowCtx = borrowCtx
 
-		go dockerManager.watchContainer(rc)
+		watchingCtx, stopWatching := context.WithCancel(context.Background())
+		go func() {
+			dockerManager.watchContainer(rc)
+			stopWatching()
+		}()
 		cancel()                          // Cancel the context.
 		time.Sleep(50 * time.Millisecond) // Ensure the ticker triggers.
 
@@ -752,7 +759,25 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		_, exists := dockerManager.containers[rc.Name]
 		require.True(t, exists)
 
-		mockServer.AssertNotCalled(t, "ServeHTTP", "GET", "/health", mock.Anything)
+		// Watch should keep running
+		require.Nil(t, watchingCtx.Err())
+
+		// Borrow the container again
+		borrowCtx, cancel = context.WithCancel(context.Background())
+		delete(dockerManager.containers, rc.Name)
+		rc.Lock()
+		rc.BorrowCtx = borrowCtx
+		rc.Unlock()
+
+		cancel()                          // Cancel the borrow context
+		time.Sleep(50 * time.Millisecond) // Ensure the ticker triggers.
+
+		// Verify that the container was returned.
+		_, exists = dockerManager.containers[rc.Name]
+		require.True(t, exists)
+
+		// Watch should still keep running
+		require.Nil(t, watchingCtx.Err())
 	})
 
 	notHealthyTestCases := []struct {
