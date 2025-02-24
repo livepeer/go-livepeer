@@ -433,7 +433,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = mediaMTXOutputURL
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
