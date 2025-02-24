@@ -229,8 +229,8 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 func startPeriodicRefresh(sel *AISessionSelector) {
 	clog.Infof(context.Background(), "Starting periodic refresh for Live Video to Video")
 	go func() {
-		// 6 min to avoid Ticket Params Expired and to avoid getting TTL
-		refreshInterval := 6 * time.Minute
+		// 5 min to avoid Ticket Params Expired and to avoid getting TTL
+		refreshInterval := 5 * time.Minute
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()
 		for {
