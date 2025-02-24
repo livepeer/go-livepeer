@@ -348,6 +348,14 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		gpuOpts.Set("device=" + gpu)
 	}
 
+	restartPolicy := container.RestartPolicy{
+		Name:              "on-failure",
+		MaximumRetryCount: 3,
+	}
+	if keepWarm {
+		restartPolicy = container.RestartPolicy{Name: "always"}
+	}
+
 	hostConfig := &container.HostConfig{
 		Resources: container.Resources{
 			DeviceRequests: gpuOpts.Value(),
@@ -367,7 +375,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 				},
 			},
 		},
-		AutoRemove: true,
+		RestartPolicy: restartPolicy,
+		AutoRemove:    true,
 	}
 
 	resp, err := m.dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
