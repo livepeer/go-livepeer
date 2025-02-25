@@ -410,7 +410,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			var eventWrapper struct {
 				QueueEventType string                 `json:"queue_event_type"`
-				Event         map[string]interface{} `json:"event"`
+				Event          map[string]interface{} `json:"event"`
 			}
 			if err := json.Unmarshal(body, &eventWrapper); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
