@@ -421,7 +421,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			event := eventWrapper.Event
 			queueEventType := eventWrapper.QueueEventType
 			if event == nil {
-				// If no "event" field found, treat the entire body as the event
+				// revert this once push to prod -- If no "event" field found, treat the entire body as the event
 				event = make(map[string]interface{})
 				if err := json.Unmarshal(body, &event); err != nil {
 					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
