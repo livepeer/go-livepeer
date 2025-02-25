@@ -1097,18 +1097,18 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		delayMs := time.Since(startTime).Milliseconds()
 		if monitor.Enabled {
 			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_receive_first_processed_segment",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   params.liveParams.streamID,
+				"pipeline_id": params.liveParams.pipelineID,
+				"request_id":  params.liveParams.requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": sess.Address(),
+					"url":     sess.Transcoder(),
+				},
+			})
 		}
-		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-			"type":        "gateway_receive_first_processed_segment",
-			"timestamp":   time.Now().UnixMilli(),
-			"stream_id":   params.liveParams.streamID,
-			"pipeline_id": params.liveParams.pipelineID,
-			"request_id":  params.liveParams.requestID,
-			"orchestrator_info": map[string]interface{}{
-				"address": sess.Address(),
-				"url":     sess.Transcoder(),
-			},
-		})
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 
 	})

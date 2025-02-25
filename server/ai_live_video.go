@@ -99,7 +99,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
-					if firstSegment {
+					if monitor.Enabled && firstSegment {
 						firstSegment = false
 						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 							"type":        "gateway_send_first_ingest_segment",
@@ -408,12 +408,16 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var event map[string]interface{}
-			if err := json.Unmarshal(body, &event); err != nil {
+			var eventWrapper struct {
+				QueueEventType string                 `json:"queue_event_type"`
+				Event         map[string]interface{} `json:"event"`
+			}
+			if err := json.Unmarshal(body, &eventWrapper); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
+			event := eventWrapper.Event
 			event["stream_id"] = streamId
 			event["request_id"] = params.liveParams.requestID
 			event["pipeline_id"] = params.liveParams.pipelineID
@@ -437,7 +441,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
-			queueEventType := "ai_stream_events"
+			queueEventType := eventWrapper.QueueEventType
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
@@ -462,10 +466,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 
 				StreamStatusStore.Store(streamId, event)
-			}
-			// If the event type starts with "runner", it's a stream_trace event
-			if strings.HasPrefix(eventType, "runner") {
-				queueEventType = "stream_trace"
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)

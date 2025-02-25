@@ -106,17 +106,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
-		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-			"type":        "orchestrator_receive_stream_request",
-			"timestamp":   time.Now().UnixMilli(),
-			"stream_id":   streamID,
-			"request_id":  requestID,
-			"pipeline_id": "",
-			"orchestrator_info": map[string]interface{}{
-				"address": h.orchestrator.Address().Hex(),
-				"url":     h.orchestrator.ServiceURI().String(),
-			},
-		})
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
