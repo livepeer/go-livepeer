@@ -112,6 +112,7 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 			existingSess.OrchestratorInfo = sess.OrchestratorInfo
 			existingSess.InitialLatency = sess.InitialLatency
 			existingSess.InitialPrice = sess.InitialPrice
+			existingSess.PMSessionID = sess.PMSessionID
 			continue
 		}
 
