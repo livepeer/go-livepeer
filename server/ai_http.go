@@ -106,7 +106,6 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
-
 		var req worker.GenLiveVideoToVideoJSONRequestBody
 		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
