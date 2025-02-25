@@ -27,16 +27,20 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
-const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
-const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
-const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
-const defaultAudioToTextModelID = "openai/whisper-large-v3"
-const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
-const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
-const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
-const defaultLiveVideoToVideoModelID = "noop"
-const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
+const (
+	defaultTextToImageModelID      = "stabilityai/sdxl-turbo"
+	defaultImageToImageModelID     = "stabilityai/sdxl-turbo"
+	defaultImageToVideoModelID     = "stabilityai/stable-video-diffusion-img2vid-xt"
+	defaultUpscaleModelID          = "stabilityai/stable-diffusion-x4-upscaler"
+	defaultAudioToTextModelID      = "openai/whisper-large-v3"
+	defaultLLMModelID              = "meta-llama/llama-3.1-8B-Instruct"
+	defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+	defaultImageToTextModelID      = "Salesforce/blip-image-captioning-large"
+	defaultLiveVideoToVideoModelID = "noop"
+	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
+
+	maxTries = 20
+)
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -1492,7 +1496,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	defer cancel()
 
 	tries := 0
-	for {
+	for tries < maxTries {
 		select {
 		case <-cctx.Done():
 			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
