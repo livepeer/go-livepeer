@@ -506,6 +506,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
+		// Clear any previous gateway status
+		GatewayStatus.Clear(streamID)
+
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
 		if monitor.Enabled {
@@ -649,15 +652,16 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 
 		// Get status for specific stream
 		status, exists := StreamStatusStore.Get(streamId)
-		if !exists {
+		gatewayStatus, gatewayExists := GatewayStatus.Get(streamId)
+		if !exists && !gatewayExists {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
-		gatewayStatus, exists := GatewayStatus.Get(streamId)
-		if exists {
-			for k, v := range gatewayStatus {
-				status["gateway_"+k] = v
+		if gatewayExists {
+			if status == nil {
+				status = make(map[string]any)
 			}
+			status["gateway_status"] = gatewayStatus
 		}
 
 		w.Header().Set("Content-Type", "application/json")
