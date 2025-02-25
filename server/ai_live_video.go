@@ -419,6 +419,17 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 
 			event := eventWrapper.Event
+			queueEventType := eventWrapper.QueueEventType
+			if event == nil {
+				// If no "event" field found, treat the entire body as the event
+				event = make(map[string]interface{})
+				if err := json.Unmarshal(body, &event); err != nil {
+					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
+					continue
+				}
+				queueEventType = "ai_stream_events"
+			}
+
 			event["stream_id"] = streamId
 			event["request_id"] = params.liveParams.requestID
 			event["pipeline_id"] = params.liveParams.pipelineID
@@ -442,7 +453,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
-			queueEventType := eventWrapper.QueueEventType
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
