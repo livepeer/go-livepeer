@@ -126,9 +126,28 @@ func (s *Selector) sortByInitialLatency() {
 }
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
+	availableOrchestrators := toOrchestrators(s.sessions)
 	sess := s.selectUnknownSession(ctx)
+	clog.V(common.DEBUG).Infof(ctx, "Selected orchestrator %s from available list: %v", toOrchestrator(sess), availableOrchestrators)
+
 	s.sortByInitialLatency()
+
 	return sess
+}
+
+func toOrchestrators(sessions []*BroadcastSession) []string {
+	orchestrators := make([]string, len(sessions))
+	for i, sess := range sessions {
+		orchestrators[i] = toOrchestrator(sess)
+	}
+	return orchestrators
+}
+
+func toOrchestrator(sess *BroadcastSession) string {
+	if sess != nil && sess.OrchestratorInfo != nil {
+		return sess.OrchestratorInfo.Transcoder
+	}
+	return ""
 }
 
 func (s *Selector) Size() int {
