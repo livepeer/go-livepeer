@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"math"
-	"math/big"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -107,8 +106,7 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
 		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
-			clog.Infof(context.Background(), "#### updating existing session (ptr=%p) for Orchestrator=%s, new expiration block=%d", existingSess, sess.OrchestratorInfo.Transcoder, new(big.Int).SetBytes(sess.OrchestratorInfo.TicketParams.ExpirationBlock).Int64())
-			// For existing sessions we only update OrchestratorInfo
+			// For existing sessions we only update its fields
 			existingSess.OrchestratorInfo = sess.OrchestratorInfo
 			existingSess.InitialLatency = sess.InitialLatency
 			existingSess.InitialPrice = sess.InitialPrice
@@ -233,7 +231,7 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 func startPeriodicRefresh(sel *AISessionSelector) {
 	clog.Infof(context.Background(), "Starting periodic refresh for Live Video to Video")
 	go func() {
-		// 5 min to avoid Ticket Params Expired and to avoid getting TTL
+		// 6 min to avoid Ticket Params Expired and to avoid getting TTL
 		refreshInterval := 6 * time.Minute
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()

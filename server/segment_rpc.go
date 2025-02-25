@@ -827,7 +827,6 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 	}
 
 	if numTickets > 0 {
-		clog.Infof(ctx, "##### Creating new payment - sess ptr=%p", sess)
 		batch, err := sess.Sender.CreateTicketBatch(sess.PMSessionID, numTickets)
 		if err != nil {
 			return "", err

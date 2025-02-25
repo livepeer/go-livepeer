@@ -1,9 +1,7 @@
 package pm
 
 import (
-	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/clog"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -169,7 +167,6 @@ func (s *sender) validateTicketParams(ticketParams *TicketParams, numTickets int
 
 	currentBuffer := new(big.Int).Sub(ticketParams.ExpirationBlock, latestL1Block).Int64()
 	if currentBuffer <= paramsExpiryBuffer {
-		clog.Infof(context.Background(), "##### EXPIRED, latestL1Block=%v, expirationBlock=%v", latestL1Block.Int64(), ticketParams.ExpirationBlock.Int64())
 		return ErrTicketParamsExpired
 	}
 
