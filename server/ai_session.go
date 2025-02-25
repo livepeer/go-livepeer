@@ -186,8 +186,19 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	minLS := 0.0
 	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
-	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender, penalty)
-	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender, penalty)
+	var warmSel, coldSel BroadcastSessionsSelector
+	if cap == core.Capability_LiveVideoToVideo {
+		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
+		// We always select a fresh session which has the lowest initial latency
+		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+	} else {
+		warmSel = NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+	}
+
+	warmPool := NewAISessionPool(warmSel, suspender, penalty)
+	coldPool := NewAISessionPool(coldSel, suspender, penalty)
 	sel := &AISessionSelector{
 		warmPool:  warmPool,
 		coldPool:  coldPool,
