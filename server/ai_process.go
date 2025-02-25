@@ -1569,35 +1569,22 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 // isRetryableError checks if the error is a transient error that can be retried.
 func isRetryableError(err error) bool {
-	transientErrorMessages := []string{
-		"invalid ticket sendernonce", // Caused by gateway nonce mismatch.
-		"ticketparams expired",       // Caused by ticket expiration.
-	}
-
-	errMsg := strings.ToLower(err.Error())
-	for _, msg := range transientErrorMessages {
-		if strings.Contains(errMsg, msg) {
-			return true
-		}
-	}
-	return false
+	return errContainsMsg(err, "invalid ticket sendernonce", "ticketparams expired")
 }
 
 func isNoCapacityError(err error) bool {
-	transientErrorMessages := []string{
-		"insufficient capacity", // Caused by limitation in our current implementation.
-	}
+	return errContainsMsg(err, "insufficient capacity")
+}
 
+func errContainsMsg(err error, msgs ...string) bool {
 	errMsg := strings.ToLower(err.Error())
-	for _, msg := range transientErrorMessages {
+	for _, msg := range msgs {
 		if strings.Contains(errMsg, msg) {
 			return true
 		}
 	}
-
 	return false
 }
-
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {
 	// genSegCreds expects a stream.HLSSegment so in order to reuse it here we pass a dummy object
 	segCreds, err := genSegCreds(sess.BroadcastSession, &stream.HLSSegment{}, nil, false)
