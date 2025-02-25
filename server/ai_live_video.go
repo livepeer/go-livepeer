@@ -55,8 +55,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	slowOrchChecker := &SlowOrchChecker{}
 
-	firstSegment := true
-
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -99,20 +97,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
-					if monitor.Enabled && firstSegment {
-						firstSegment = false
-						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-							"type":        "gateway_send_first_ingest_segment",
-							"timestamp":   time.Now().UnixMilli(),
-							"stream_id":   params.liveParams.streamID,
-							"pipeline_id": params.liveParams.pipelineID,
-							"request_id":  params.liveParams.requestID,
-							"orchestrator_info": map[string]interface{}{
-								"address": sess.Address(),
-								"url":     sess.Transcoder(),
-							},
-						})
-					}
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -409,16 +393,12 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var eventWrapper struct {
-				QueueEventType string                 `json:"queue_event_type"`
-				Event          map[string]interface{} `json:"event"`
-			}
-			if err := json.Unmarshal(body, &eventWrapper); err != nil {
+			var event map[string]interface{}
+			if err := json.Unmarshal(body, &event); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
-			event := eventWrapper.Event
 			event["stream_id"] = streamId
 			event["request_id"] = params.liveParams.requestID
 			event["pipeline_id"] = params.liveParams.pipelineID
@@ -442,7 +422,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
-			queueEventType := eventWrapper.QueueEventType
+			queueEventType := "ai_stream_events"
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
