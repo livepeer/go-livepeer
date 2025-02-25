@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"math"
+	"math/big"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -106,6 +107,7 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
 		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
+			clog.Infof(context.Background(), "#### updating existing sessions for Orchestrator=%s, new expiration block=%d", sess.OrchestratorInfo.Transcoder, new(big.Int).SetBytes(sess.OrchestratorInfo.TicketParams.ExpirationBlock).Int64())
 			// For existing sessions we only update OrchestratorInfo
 			existingSess.OrchestratorInfo = sess.OrchestratorInfo
 			existingSess.InitialLatency = sess.InitialLatency
