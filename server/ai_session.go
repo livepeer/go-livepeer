@@ -105,8 +105,12 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
-		if _, ok := pool.sessMap[sess.Transcoder()]; ok {
-			// Skip the session if it is already tracked by sessMap
+		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
+			// For existing sessions we only update its fields
+			existingSess.OrchestratorInfo = sess.OrchestratorInfo
+			existingSess.InitialLatency = sess.InitialLatency
+			existingSess.InitialPrice = sess.InitialPrice
+			existingSess.PMSessionID = sess.PMSessionID
 			continue
 		}
 
@@ -215,7 +219,33 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 		return nil, err
 	}
 
+	// Periodically refresh sessions for Live Video to Video in order to minimize the necessity of refreshing sessions
+	// when the AI process is started
+	if cap == core.Capability_LiveVideoToVideo {
+		startPeriodicRefresh(sel)
+	}
+
 	return sel, nil
+}
+
+func startPeriodicRefresh(sel *AISessionSelector) {
+	clog.Infof(context.Background(), "Starting periodic refresh for Live Video to Video")
+	go func() {
+		// 6 min to avoid Ticket Params Expired and to avoid getting TTL
+		refreshInterval := 6 * time.Minute
+		ticker := time.NewTicker(refreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
+				if err := sel.Refresh(ctx); err != nil {
+					clog.Infof(context.Background(), "Error refreshing AISessionSelector err=%v", err)
+				}
+				cancel()
+			}
+		}
+	}()
 }
 
 // newAICapabilities creates a new capabilities object with
@@ -261,6 +291,10 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		}
 
 		// Refresh if the selector has expired
+		sel.warmPool.mu.Lock()
+		sel.coldPool.mu.Lock()
+		defer sel.coldPool.mu.Unlock()
+		defer sel.warmPool.mu.Unlock()
 		if time.Now().After(sel.lastRefreshTime.Add(sel.ttl)) {
 			return true
 		}
@@ -345,8 +379,12 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 
 	sel.warmPool.Add(warmSessions)
 	sel.coldPool.Add(coldSessions)
-	sel.initialPoolSize = len(warmSessions) + len(coldSessions) + len(sel.suspender.list)
 
+	sel.warmPool.mu.Lock()
+	sel.coldPool.mu.Lock()
+	defer sel.coldPool.mu.Unlock()
+	defer sel.warmPool.mu.Unlock()
+	sel.initialPoolSize = len(warmSessions) + len(coldSessions) + len(sel.suspender.list)
 	sel.lastRefreshTime = time.Now()
 
 	return nil
