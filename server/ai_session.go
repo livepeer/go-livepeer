@@ -236,9 +236,11 @@ func startPeriodicRefresh(sel *AISessionSelector) {
 		for {
 			select {
 			case <-ticker.C:
-				if err := sel.Refresh(context.Background()); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
+				if err := sel.Refresh(ctx); err != nil {
 					clog.Infof(context.Background(), "Error refreshing AISessionSelector err=%v", err)
 				}
+				cancel()
 			}
 		}
 	}()
