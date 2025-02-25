@@ -44,6 +44,9 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 
 	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
 
+	// TODO processSegments needs to also be re-invoked after each retry;
+	//      processes that don't immediately fail are not fully retryable otherwise
+	//
 	// create first named pipe to preempt races between ffmpeg and processSegments
 	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
@@ -69,8 +72,12 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
+		if retryCount > 0 {
+			time.Sleep(5 * time.Second)
+		}
 		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
+			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", in,
 			"-c:a", "copy",
 			"-c:v", "copy",
@@ -79,11 +86,10 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
+			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
 			break
 		}
 		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
-		time.Sleep(5 * time.Second)
 		retryCount++
 	}
 	completionSignal <- true

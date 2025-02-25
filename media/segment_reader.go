@@ -23,6 +23,7 @@ func (r *EOSReader) Clone() CloneableReader {
 type SwitchableSegmentReader struct {
 	mu     sync.RWMutex
 	reader SegmentHandler
+	seg    CloneableReader
 }
 
 func NewSwitchableSegmentReader() *SwitchableSegmentReader {
@@ -35,12 +36,18 @@ func (sr *SwitchableSegmentReader) SwitchReader(newReader SegmentHandler) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	sr.reader = newReader
+	if sr.seg != nil {
+		// immediately send the current segment instead of waiting for the next one
+		// clone since current segment may have already been partially consumed
+		sr.reader(sr.seg.Clone())
+	}
 }
 
 func (sr *SwitchableSegmentReader) Read(reader CloneableReader) {
-	sr.mu.RLock()
-	defer sr.mu.RUnlock()
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
 	sr.reader(reader)
+	sr.seg = reader
 }
 
 func (sr *SwitchableSegmentReader) Close() {
