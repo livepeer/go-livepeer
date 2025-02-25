@@ -36,10 +36,11 @@ type RunnerContainerConfig struct {
 	ContainerImageID string
 
 	// For managed containers only
-	ID               string
-	GPU              string
-	KeepWarm         bool
-	containerTimeout time.Duration
+	ID                string
+	GPU               string
+	KeepWarm          bool
+	OptimizationFlags OptimizationFlags
+	containerTimeout  time.Duration
 }
 
 // Create global references to functions to allow for mocking in tests.
