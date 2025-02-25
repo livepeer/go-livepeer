@@ -388,6 +388,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
+		streamRequestTime := time.Now().UnixMilli()
+
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
@@ -508,6 +510,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
+
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_receive_stream_request",
+			"timestamp":   streamRequestTime,
+			"stream_id":   streamID,
+			"pipeline_id": pipelineID,
+			"request_id":  requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
 
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
