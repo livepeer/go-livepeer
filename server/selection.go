@@ -128,6 +128,7 @@ func (s *Selector) sortByInitialLatency() {
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
 	availableOrchestrators := toOrchestrators(s.sessions)
 	sess := s.selectUnknownSession(ctx)
+	clog.Infof(ctx, "##### sess ptr %p", sess)
 	clog.V(common.DEBUG).Infof(ctx, "Selected orchestrator %s from available list: %v", toOrchestrator(sess), availableOrchestrators)
 
 	s.sortByInitialLatency()
