@@ -388,6 +388,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
+		streamRequestTime := time.Now().UnixMilli()
+
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
@@ -433,7 +435,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
-			outputURL = mediaMTXOutputURL
+			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
 
 		// convention to avoid re-subscribing to our own streams
@@ -505,6 +507,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_receive_stream_request",
+			"timestamp":   streamRequestTime,
+			"stream_id":   streamID,
+			"pipeline_id": pipelineID,
+			"request_id":  requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
 
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
