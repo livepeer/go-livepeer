@@ -36,27 +36,27 @@ type MediaSegmenter struct {
 }
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
-	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
-	completionSignal := make(chan bool, 1)
-	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
-
-	// TODO processSegments needs to also be re-invoked after each retry;
-	//      processes that don't immediately fail are not fully retryable otherwise
-	//
-	// create first named pipe to preempt races between ffmpeg and processSegments
-	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
-	go func() {
-		defer wg.Done()
-		defer procCancel()
-		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
-	}()
-
 	retryCount := 0
 	for {
+		outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
+		completionSignal := make(chan bool, 1)
+		procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+
+		clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
+
+		// TODO processSegments needs to also be re-invoked after each retry;
+		//      processes that don't immediately fail are not fully retryable otherwise
+		//
+		// create first named pipe to preempt races between ffmpeg and processSegments
+		createNamedPipe(fmt.Sprintf(outFilePattern, 0))
+		go func() {
+			defer wg.Done()
+			defer procCancel()
+			processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
+		}()
+
 		err := backoff.Retry(func() error {
 			streamExists, err := ms.MediaMTXClient.StreamExists()
 			if err != nil {
@@ -87,14 +87,14 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
-			break
+		} else {
+			clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
 		}
-		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
+		completionSignal <- true
+		clog.Infof(ctx, "sent completion signal, now waiting")
+		wg.Wait()
 		retryCount++
 	}
-	completionSignal <- true
-	clog.Infof(ctx, "sent completion signal, now waiting")
-	wg.Wait()
 }
 
 func newExponentialBackOff() *backoff.ExponentialBackOff {
@@ -252,6 +252,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 		currentSegment = file
 		mu.Unlock()
 
+		clog.Infof(ctx, "read segment %s", pipeName)
 		// Handle the reading process
 		readSegment(ctx, segmentHandler, file, pipeName)
 
@@ -260,6 +261,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 
 		// Clean up the current pipe after reading
 		cleanUpPipe(pipeName)
+		clog.Infof(ctx, "Cleaned up pipe %s", pipeName)
 
 		mu.Lock()
 		if isComplete {
