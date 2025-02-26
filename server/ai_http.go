@@ -102,7 +102,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		gatewayRequestID := r.Header.Get("requestID")
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "orch_request_id", requestID)
-		ctx = clog.AddVal(ctx, "request_id", gatewayRequestID) // use this as the common request_id across all apps for easy log filtering
+		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
