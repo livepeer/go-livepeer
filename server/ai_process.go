@@ -1516,8 +1516,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 				if monitor.Enabled {
 					monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
 				}
-			} else {
-				err = fmt.Errorf("context cancelled: %v", err)
 			}
 			return nil, &ServiceUnavailableError{err: err}
 		default:
