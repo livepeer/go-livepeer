@@ -153,13 +153,10 @@ func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID strin
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
+	_, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 	if err != nil {
 		return err
 	}
-
-	// Watch with a background context since we're not borrowing the container.
-	go m.watchContainer(rc, context.Background())
 
 	return nil
 }
@@ -200,19 +197,25 @@ func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*
 		}
 	}
 
-	// Remove container so it is unavailable until Return() is called
+	// Remove container and set the BorrowCtx so it is unavailable until returnContainer() is called by watchContainer()
 	delete(m.containers, rc.Name)
-	// watch container to return when request completed
-	go m.watchContainer(rc, ctx)
+	rc.Lock()
+	rc.BorrowCtx = ctx
+	rc.Unlock()
 
 	return rc, nil
 }
 
 // returnContainer returns a container to the pool so it can be reused. It is called automatically by watchContainer
-// when the context used to borrow the container is done.
+// when the BorrowCtx of the container is done or the container is IDLE.
 func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	rc.Lock()
+	rc.BorrowCtx = nil
+	rc.Unlock()
+
 	m.containers[rc.Name] = rc
 }
 
@@ -348,6 +351,14 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		gpuOpts.Set("device=" + gpu)
 	}
 
+	restartPolicy := container.RestartPolicy{
+		Name:              "on-failure",
+		MaximumRetryCount: 3,
+	}
+	if keepWarm {
+		restartPolicy = container.RestartPolicy{Name: "always"}
+	}
+
 	hostConfig := &container.HostConfig{
 		Resources: container.Resources{
 			DeviceRequests: gpuOpts.Value(),
@@ -367,7 +378,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 				},
 			},
 		},
-		AutoRemove: true,
+		RestartPolicy: restartPolicy,
 	}
 
 	resp, err := m.dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
@@ -420,6 +431,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 
 	m.containers[containerName] = rc
 	m.gpuContainers[gpu] = containerName
+
+	go m.watchContainer(rc)
 
 	return rc, nil
 }
@@ -479,7 +492,7 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 // watchContainer monitors a container's running state and automatically cleans
 // up the internal state when the container stops. It will also monitor the
 // borrowCtx to return the container to the pool when it is done.
-func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Context) {
+func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("Panic in container watch routine",
@@ -509,10 +522,19 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Co
 			return
 		}
 
+		rc.RLock()
+		// The BorrowCtx is set when the container has been borrowed for a request/stream. If it is not set (nil) it means
+		// that it's not currently borrowed, so we don't need to wait for it to be done (hence using the background context).
+		borrowCtx := rc.BorrowCtx
+		if borrowCtx == nil {
+			borrowCtx = context.Background()
+		}
+		rc.RUnlock()
+
 		select {
 		case <-borrowCtx.Done():
 			m.returnContainer(rc)
-			return
+			continue
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), containerWatchInterval)
 			health, err := rc.Client.HealthWithResponse(ctx)
@@ -543,7 +565,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Co
 				if time.Since(startTime) > pipelineStartGracePeriod {
 					slog.Info("Container is idle, returning to pool", slog.String("container", rc.Name))
 					m.returnContainer(rc)
-					return
+					continue
 				}
 				fallthrough
 			case OK:

@@ -13,7 +13,7 @@ Listens for inference requests from the Livepeer AI subnet and routes them to th
 
 - Docker Manager (./docker.go):
 
-Manages AI runner containers.
+Manages AI runner containers. For a state diagram showing the lifecycle of a container, see the /doc/worker.md file.
 
 [AI runner containers]: https://github.com/livepeer/ai-runner
 */

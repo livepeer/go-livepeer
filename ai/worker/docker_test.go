@@ -741,9 +741,17 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockServer.AssertExpectations(t)
 		defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
-		borrowCtx, cancel := context.WithCancel(context.Background())
+		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
+			Return(200, "application/json", `{"status":"OK"}`)
 
-		go dockerManager.watchContainer(rc, borrowCtx)
+		borrowCtx, cancel := context.WithCancel(context.Background())
+		rc.BorrowCtx = borrowCtx
+
+		watchingCtx, stopWatching := context.WithCancel(context.Background())
+		go func() {
+			dockerManager.watchContainer(rc)
+			stopWatching()
+		}()
 		cancel()                          // Cancel the context.
 		time.Sleep(50 * time.Millisecond) // Ensure the ticker triggers.
 
@@ -751,7 +759,25 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		_, exists := dockerManager.containers[rc.Name]
 		require.True(t, exists)
 
-		mockServer.AssertNotCalled(t, "ServeHTTP", "GET", "/health", mock.Anything)
+		// Watch should keep running
+		require.Nil(t, watchingCtx.Err())
+
+		// Borrow the container again
+		borrowCtx, cancel = context.WithCancel(context.Background())
+		delete(dockerManager.containers, rc.Name)
+		rc.Lock()
+		rc.BorrowCtx = borrowCtx
+		rc.Unlock()
+
+		cancel()                          // Cancel the borrow context
+		time.Sleep(50 * time.Millisecond) // Ensure the ticker triggers.
+
+		// Verify that the container was returned.
+		_, exists = dockerManager.containers[rc.Name]
+		require.True(t, exists)
+
+		// Watch should still keep running
+		require.Nil(t, watchingCtx.Err())
 	})
 
 	notHealthyTestCases := []struct {
@@ -818,8 +844,6 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			defer mockDockerClient.AssertExpectations(t)
 			defer mockServer.AssertExpectations(t)
 
-			borrowCtx := context.Background()
-
 			tt.mockServerSetup(mockServer)
 
 			// Mock destroyContainer to verify it is called.
@@ -829,7 +853,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				dockerManager.watchContainer(rc, borrowCtx)
+				dockerManager.watchContainer(rc)
 			}()
 			select {
 			case <-done:
@@ -852,14 +876,12 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockDockerClient.AssertExpectations(t)
 		defer mockServer.AssertExpectations(t)
 
-		borrowCtx := context.Background()
-
 		// Must fail twice before the watch routine gives up on it
 		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
 			Return(200, "application/json", `{"status":"ERROR"}`).
 			Times(4) // 4 calls during the grace period (first call only after 10ms)
 
-		go dockerManager.watchContainer(rc, borrowCtx)
+		go dockerManager.watchContainer(rc)
 		time.Sleep(40 * time.Millisecond) // Almost the entire grace period
 
 		// Make sure container wasn't destroyed yet
@@ -885,8 +907,6 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockServer.AssertExpectations(t)
 		defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
-		borrowCtx := context.Background()
-
 		// Schedule:
 		// - Return IDLE for the first 3 times during grace period (should not return)
 		// - Then OK for the next 5 times (stayin' alive)
@@ -908,7 +928,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 				time.Sleep(dur)
 			}
 		}
-		go dockerManager.watchContainer(rc, borrowCtx)
+		go dockerManager.watchContainer(rc)
 		sleepUntil(30 * time.Millisecond) // Almost the entire grace period
 
 		// Verify that the container was not returned yet.
