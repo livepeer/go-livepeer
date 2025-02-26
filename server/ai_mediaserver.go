@@ -69,7 +69,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
 		},
 		ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
-			slog.ErrorContext(context.Background(), "oapi validation error", "statusCode", statusCode, "message", message)
+			clog.Errorf(context.Background(), "oapi validation error statusCode=%v message=%v", statusCode, message)
 		},
 	}
 	oapiReqValidator := middleware.OapiRequestValidatorWithOptions(swagger, opts)
@@ -166,7 +166,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			async = true
 		}
 
-		slog.DebugContext(ctx, "Received ImageToVideo request", "imageSize", req.Image.FileSize(), "model_id", *req.ModelId, "async", async)
+		clog.V(common.VERBOSE).Infof(ctx, "Received ImageToVideo request imageSize=%v model_id=%v async=%v", req.Image.FileSize(), *req.ModelId, async)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -194,7 +194,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			}
 
 			took := time.Since(start)
-			slog.InfoContext(ctx, "Processed ImageToVideo request", "imageSize", req.Image.FileSize(), "model_id", *req.ModelId, "took", took)
+			clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -214,7 +214,7 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			return
 		}
 
-		slog.InfoContext(ctx, "Saved ImageToVideo request", "path", requestID, "path", path)
+		clog.Infof(ctx, "Saved ImageToVideo request path=%v", requestID, path)
 
 		cctx := clog.Clone(context.Background(), ctx)
 		go func(ctx context.Context) {
@@ -223,26 +223,26 @@ func (ls *LivepeerServer) ImageToVideo() http.Handler {
 			var data bytes.Buffer
 			resp, err := processImageToVideo(ctx, params, req)
 			if err != nil {
-				slog.ErrorContext(ctx, "Error processing ImageToVideo request", "err", err)
+				clog.Errorf(ctx, "Error processing ImageToVideo request err=%v", err)
 
 				handleAPIError(ctx, &data, err, http.StatusInternalServerError)
 			} else {
 				took := time.Since(start)
-				slog.InfoContext(ctx, "Processed ImageToVideo request", "imageSize", req.Image.FileSize(), "model_id", *req.ModelId, "took", took)
+				clog.Infof(ctx, "Processed ImageToVideo request imageSize=%v model_id=%v took=%v", req.Image.FileSize(), *req.ModelId, took)
 
 				if err := json.NewEncoder(&data).Encode(resp); err != nil {
-					slog.ErrorContext(ctx, "Error JSON encoding ImageToVideo response", "err", err)
+					clog.Errorf(ctx, "Error JSON encoding ImageToVideo response err=%v", err)
 					return
 				}
 			}
 
 			path, err := params.os.SaveData(ctx, "result.json", bytes.NewReader(data.Bytes()), nil, 0)
 			if err != nil {
-				slog.ErrorContext(ctx, "Error saving ImageToVideo result to object store", "err", err)
+				clog.Errorf(ctx, "Error saving ImageToVideo result to object store err=%v", err)
 				return
 			}
 
-			slog.InfoContext(ctx, "Saved ImageToVideo result", "path", path)
+			clog.Infof(ctx, "Saved ImageToVideo result path=%v", path)
 		}(cctx)
 
 		resp := &ImageToVideoResponseAsync{
@@ -274,7 +274,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 			return
 		}
 
-		slog.DebugContext(ctx, "Received LLM request", "model_id", *req.Model, "stream", *req.Stream)
+		clog.V(common.VERBOSE).Infof(ctx, "Received LLM request model_id=%v stream=%v", *req.Model, *req.Stream)
 
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
@@ -295,7 +295,7 @@ func (ls *LivepeerServer) LLM() http.Handler {
 		}
 
 		took := time.Since(start)
-		slog.DebugContext(ctx, "Processed LLM request", "model_id", *req.Model, "took", took)
+		clog.V(common.VERBOSE).Infof(ctx, "Processed LLM request model_id=%v took=%v", *req.Model, took)
 
 		if streamChan, ok := resp.(chan *worker.LLMResponse); ok {
 			// Handle streaming response (SSE)
@@ -383,7 +383,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx := r.Context()
 		streamName := r.PathValue("stream")
 		if streamName == "" {
-			slog.ErrorContext(ctx, "Missing stream name")
+			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
@@ -391,21 +391,21 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
-			slog.ErrorContext(ctx, "Missing source_id")
+			clog.Errorf(ctx, "Missing source_id")
 			http.Error(w, "Missing source_id", http.StatusBadRequest)
 			return
 		}
 		ctx = clog.AddVal(ctx, "source_id", sourceID)
 		sourceType := r.FormValue("source_type")
 		if sourceType == "" {
-			slog.ErrorContext(ctx, "Missing source_type")
+			clog.Errorf(ctx, "Missing source_type")
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
 		sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
 		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
-			slog.ErrorContext(ctx, "Invalid source type", "source_type", sourceType)
+			clog.Errorf(ctx, "Invalid source type %s", sourceType)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -413,7 +413,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		remoteHost, err := getRemoteHost(r.RemoteAddr)
 		if err != nil {
-			slog.ErrorContext(ctx, "Could not find callback host", "err", err.Error())
+			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
 			http.Error(w, "Could not find callback host", http.StatusBadRequest)
 			return
 		}
@@ -422,7 +422,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		queryParams := r.FormValue("query")
 		qp, err := url.ParseQuery(queryParams)
 		if err != nil {
-			slog.ErrorContext(ctx, "invalid query params", "err", err)
+			clog.Errorf(ctx, "invalid query params, err=%w", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -451,7 +451,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
-				slog.ErrorContext(ctx, "Invalid pipeline params", "err", err)
+				clog.Errorf(ctx, "Invalid pipeline params: %s", err)
 				http.Error(w, "Invalid model params", http.StatusBadRequest)
 				return
 			}
@@ -469,9 +469,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
 				if kickErr != nil {
-					slog.ErrorContext(ctx, "failed to kick input connection", "err", kickErr.Error())
+					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
 				}
-				slog.ErrorContext(ctx, "Live AI auth failed", "err", err.Error())
+				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
@@ -504,7 +504,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
-		slog.InfoContext(ctx, "Received live video AI request", "stream", streamName, "pipelineParams", pipelineParams)
+		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
@@ -540,13 +540,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err == nil {
 				return
 			}
-			slog.ErrorContext(ctx, "Live video pipeline stopping", "err", err)
+			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
 
 			sendErrorEvent(err)
 
 			err = mediaMTXClient.KickInputConnection(ctx)
 			if err != nil {
-				slog.ErrorContext(ctx, "Failed to kick input connection", "err", err)
+				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 			}
 		}
 
@@ -662,7 +662,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(status); err != nil {
-			slog.ErrorContext(ctx, "Failed to encode stream status", "err", err)
+			clog.Errorf(ctx, "Failed to encode stream status err=%v", err)
 			http.Error(w, "Failed to encode status", http.StatusInternalServerError)
 			return
 		}
@@ -749,11 +749,11 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 		cmd.Stdout = &outputBuf
 		cmd.Stderr = &outputBuf
 
-		slog.InfoContext(ctx, "Starting smoke test", "ingestURL", ingestURL, "duration", duration)
+		clog.Infof(ctx, "Starting smoke test for %s duration %s", ingestURL, duration)
 
 		if err := cmd.Start(); err != nil {
 			cancel()
-			slog.ErrorContext(ctx, "Smoke test failed to start ffmpeg", "err", err, "command", "\nffmpeg "+strings.Join(params, " "))
+			clog.Errorf(ctx, "Smoke test failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
 			http.Error(w, "Failed to start stream", http.StatusInternalServerError)
 			return
 		}
@@ -762,11 +762,11 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 			defer cancel()
 			_ = backoff.Retry(func() error {
 				if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
-					slog.ErrorContext(ctx, "Smoke test failed to run ffmpeg", "err", err, "exit_code", state.ExitCode(), "command", "\nffmpeg "+strings.Join(params, " "))
-					slog.ErrorContext(ctx, "Smoke test ffmpeg output", "output", outputBuf.String())
+					clog.Errorf(ctx, "Smoke test failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
+					clog.Errorf(ctx, "Smoke test ffmpeg output:\n%s\n", outputBuf.String())
 					return fmt.Errorf("ffmpeg failed")
 				}
-				slog.InfoContext(ctx, "Smoke test finished successfully", "ingestURL", ingestURL)
+				clog.Infof(ctx, "Smoke test finished successfully for %s", ingestURL)
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
 		}()

@@ -29,7 +29,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
-		slog.ErrorContext(ctx, "Error publishing trickle", "err", err)
+		clog.Infof(ctx, "error publishing trickle. err=%s", err)
 		params.liveParams.stopPipeline(fmt.Errorf("Error publishing trickle %w", err))
 		return
 	}
@@ -50,7 +50,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		}
 		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 	} else {
-		slog.WarnContext(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
+		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
 	slowOrchChecker := &SlowOrchChecker{}
@@ -59,14 +59,14 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
 			if err := publisher.Close(); err != nil {
-				slog.ErrorContext(ctx, "Error closing trickle publisher", "err", err)
+				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
 		if atMax {
-			slog.InfoContext(ctx, "Orchestrator is slow - terminating")
+			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
 			cancel()
 			return
@@ -79,17 +79,17 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				r = paymentProcessor.process(reader)
 			}
 
-			slog.DebugContext(ctx, "Trickle publish writing data", "seq", seq)
+			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
 			segment, err := publisher.Next()
 			if err != nil {
-				slog.ErrorContext(ctx, "Error getting next publish handle; dropping segment", "err", err)
+				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
 				params.liveParams.sendErrorEvent(fmt.Errorf("Missing next handle %v", err))
 				return
 			}
 			for {
 				currentSeq := slowOrchChecker.GetCount()
 				if seq != currentSeq {
-					slog.InfoContext(ctx, "Next segment has already started; skipping this one", "seq", seq, "currentSeq", currentSeq)
+					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
 					segment.Close()
 					return
@@ -100,7 +100,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
-					slog.InfoContext(ctx, "Stream no longer exists on orchestrator; terminating")
+					clog.Infof(ctx, "Stream no longer exists on orchestrator; terminating")
 					params.liveParams.stopPipeline(fmt.Errorf("Stream does not exist"))
 					return
 				}
@@ -108,19 +108,19 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				// and the next segment has not yet started
 				// otherwise drop
 				if n > 0 {
-					slog.ErrorContext(ctx, "Error publishing segment; dropping remainder", "wrote", n, "err", err)
+					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
 					segment.Close()
 					return
 				}
-				slog.ErrorContext(ctx, "Error publishing segment before writing; retrying", "err", err)
+				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
 				// Clone in case read head was incremented somewhere, which cloning ressets
 				r = reader.Clone()
 				time.Sleep(250 * time.Millisecond)
 			}
 		}(thisSeq)
 	})
-	slog.InfoContext(ctx, "trickle pub")
+	clog.Infof(ctx, "trickle pub")
 }
 
 type multiWriter struct {
@@ -135,7 +135,7 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 		bytesWritten, err := w.Write(p)
 		if err != nil {
 			if !t.isErrLogged {
-				slog.ErrorContext(t.ctx, "multiWriter error", "err", err)
+				clog.Errorf(t.ctx, "multiWriter error %v", err)
 				t.isErrLogged = true
 			}
 		} else {
@@ -183,11 +183,11 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		const maxRetries = 5
 		for {
 			if !params.inputStreamExists() {
-				slog.InfoContext(ctx, "Trickle subscribe stopping, input stream does not exist.")
+				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
 			var segment *http.Response
-			slog.DebugContext(ctx, "Trickle subscribe read data await")
+			clog.V(8).Infof(ctx, "trickle subscribe read data await")
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
@@ -201,7 +201,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				}
 				// TODO if not EOS then signal a new orchestrator is needed
 				err = fmt.Errorf("trickle subscribe error reading: %w", err)
-				slog.ErrorContext(ctx, "Trickle subscribe error reading", "err", err)
+				clog.Infof(ctx, "%s", err)
 				if retries > maxRetries {
 					params.liveParams.stopPipeline(err)
 					return
@@ -213,7 +213,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			retries = 0
 			seq := trickle.GetSeq(segment)
-			slog.DebugContext(ctx, "Trickle subscribe read data received", "seq", seq)
+			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
 			n, err := copySegment(segment, multiWriter)
 			if err != nil {
@@ -224,7 +224,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				firstSegment = false
 				onFistSegment()
 			}
-			slog.DebugContext(ctx, "Trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)))
+			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
 
@@ -245,14 +245,14 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 			if !ok {
 				err = errors.New("unknown error")
 			}
-			slog.ErrorContext(ctx, "LPMS panic", "err", err)
+			clog.Errorf(ctx, "LPMS panic err=%v", err)
 			params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
 		}
 	}()
 	for {
-		slog.DebugContext(ctx, "Starting output rtmp")
+		clog.V(6).Infof(ctx, "Starting output rtmp")
 		if !params.inputStreamExists() {
-			slog.ErrorContext(ctx, "Stopping output rtmp stream, input stream does not exist.")
+			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 			break
 		}
 
@@ -265,9 +265,9 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 		)
 		cmd.Stdin = r
 		output, err := cmd.CombinedOutput()
-		slog.InfoContext(ctx, "Process output", "output", string(output))
+		clog.Infof(ctx, "Process output: %s", output)
 		if err != nil {
-			slog.ErrorContext(ctx, "Error sending RTMP out", "err", err)
+			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
 			return
 		}
 		time.Sleep(5 * time.Second)
@@ -342,7 +342,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		lastEvent   = time.Now()
 	)
 
-	slog.InfoContext(ctx, "Starting event subscription for URL", "url", url.String())
+	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
 		defer time.AfterFunc(clearStreamDelay, func() {
@@ -357,14 +357,14 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		const retryPause = 300 * time.Millisecond
 		retries := 0
 		for {
-			slog.InfoContext(ctx, "Reading from event subscription for URL", "url", url.String())
+			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
 			segment, err := subscriber.Read()
 			if err == nil {
 				retries = 0
 			} else {
 				// handle errors from event read
 				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-					slog.InfoContext(ctx, "Stopping subscription due to", "err", err)
+					clog.Infof(ctx, "Stopping subscription due to %s", err)
 					return
 				}
 				var seqErr *trickle.SequenceNonexistent
@@ -373,12 +373,12 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 					subscriber.SetSeq(seqErr.Latest)
 				}
 				if retries > maxRetries {
-					slog.InfoContext(ctx, "Too many errors reading events; stopping subscription err=%v", err)
+					clog.Infof(ctx, "Too many errors reading events; stopping subscription err=%v", err)
 					err = fmt.Errorf("Error reading subscription: %w", err)
 					params.liveParams.stopPipeline(err)
 					return
 				}
-				slog.InfoContext(ctx, "Error reading events subscription", "err", err, "retry", retries)
+				clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
 				retries++
 				time.Sleep(retryPause)
 				continue
@@ -388,13 +388,13 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			segment.Body.Close()
 
 			if err != nil {
-				slog.InfoContext(ctx, "Error reading events subscription body", "err", err)
+				clog.Infof(ctx, "Error reading events subscription body: %s", err)
 				continue
 			}
 
 			var event map[string]interface{}
 			if err := json.Unmarshal(body, &event); err != nil {
-				slog.InfoContext(ctx, "Failed to parse JSON from events subscription", "err", err)
+				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
 			}
 
@@ -408,7 +408,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 			}
 
-			slog.DebugContext(ctx, "Received event for stream", "stream", stream, "event", event)
+			clog.V(8).Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
 			// record the event time
 			lastEventMu.Lock()
@@ -418,7 +418,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			eventType, ok := event["type"].(string)
 			if !ok {
 				eventType = "unknown"
-				slog.WarnContext(ctx, "Received event without a type", "stream", stream, "event", event)
+				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
 			queueEventType := "ai_stream_events"
