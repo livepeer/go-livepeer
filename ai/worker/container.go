@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/deepmap/oapi-codegen/v2/pkg/securityprovider"
@@ -21,6 +22,9 @@ type RunnerContainer struct {
 	Name     string
 	Client   *ClientWithResponses
 	Hardware *HardwareInformation
+
+	BorrowCtx context.Context
+	sync.RWMutex
 }
 
 type RunnerEndpoint struct {
@@ -36,10 +40,11 @@ type RunnerContainerConfig struct {
 	ContainerImageID string
 
 	// For managed containers only
-	ID               string
-	GPU              string
-	KeepWarm         bool
-	containerTimeout time.Duration
+	ID                string
+	GPU               string
+	KeepWarm          bool
+	OptimizationFlags OptimizationFlags
+	containerTimeout  time.Duration
 }
 
 // Create global references to functions to allow for mocking in tests.
