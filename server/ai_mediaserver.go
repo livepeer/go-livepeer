@@ -523,7 +523,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
-			ls.cleanupLive(streamName)
+			ls.cleanupLive(ctx, streamName)
 		}()
 
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
@@ -669,7 +669,8 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) cleanupLive(stream string) {
+func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
+	clog.Infof(ctx, "Live video pipeline finished")
 	ls.LivepeerNode.LiveMu.Lock()
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)

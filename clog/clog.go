@@ -52,13 +52,15 @@ func init() {
 }
 
 type values struct {
-	mu   sync.RWMutex
-	vals map[string]string
+	mu        sync.RWMutex
+	keysOrder []string
+	vals      map[string]string
 }
 
 func newValues() *values {
 	return &values{
-		vals: make(map[string]string),
+		vals:      make(map[string]string),
+		keysOrder: []string{},
 	}
 }
 
@@ -71,6 +73,7 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RLock()
 		for k, v := range cmap.vals {
 			newCmap.vals[k] = v
+			newCmap.keysOrder = append(newCmap.keysOrder, k)
 		}
 		cmap.mu.RUnlock()
 	}
@@ -109,6 +112,10 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 		ctx = context.WithValue(ctx, clogContextKey, cmap)
 	}
 	cmap.mu.Lock()
+	// add to keysOrder only if the key is not already present to avoid duplicate fields
+	if _, ok := cmap.vals[key]; !ok {
+		cmap.keysOrder = append(cmap.keysOrder, key)
+	}
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
 	return ctx
