@@ -1510,9 +1510,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	for tries < maxTries {
 		select {
 		case <-cctx.Done():
-			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
-			if monitor.Enabled {
-				monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
+			err := cctx.Err()
+			if errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
+				if monitor.Enabled {
+					monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
+				}
 			}
 			return nil, &ServiceUnavailableError{err: err}
 		default:
