@@ -1534,14 +1534,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		// Don't suspend the session if the error is a transient error.
 		if isRetryableError(err) {
-			if cap == core.Capability_LiveVideoToVideo {
-				params.sessManager.Complete(ctx, sess)
-				continue
-			} else {
-				//keep session out of selection on this request for batch AI jobs
-				retryableSessions = append(retryableSessions, sess)
-				continue
-			}
+			params.sessManager.Complete(ctx, sess)
+			continue
 		}
 
 		//for batch AI add session to be used on next request, for live-video-to-video suspend the session until next refresh
