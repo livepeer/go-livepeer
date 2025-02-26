@@ -54,15 +54,13 @@ func init() {
 }
 
 type values struct {
-	mu        sync.RWMutex
-	keysOrder []string
-	vals      map[string]string
+	mu   sync.RWMutex
+	vals map[string]string
 }
 
 func newValues() *values {
 	return &values{
-		vals:      make(map[string]string),
-		keysOrder: []string{},
+		vals: make(map[string]string),
 	}
 }
 
@@ -75,7 +73,6 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RLock()
 		for k, v := range cmap.vals {
 			newCmap.vals[k] = v
-			newCmap.keysOrder = append(newCmap.keysOrder, k)
 		}
 		cmap.mu.RUnlock()
 	}
@@ -114,10 +111,6 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 		ctx = context.WithValue(ctx, clogContextKey, cmap)
 	}
 	cmap.mu.Lock()
-	// add to keysOrder only if the key is not already present to avoid duplicate fields
-	if _, ok := cmap.vals[key]; !ok {
-		cmap.keysOrder = append(cmap.keysOrder, key)
-	}
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
 	return ctx
@@ -278,38 +271,19 @@ func (h *SlogHandler) Handle(ctx context.Context, record slog.Record) error {
 	if cmap == nil {
 		return h.Handler.Handle(ctx, record)
 	}
-
-	// Create a new log record with reordered fields
-	newRecord := slog.NewRecord(record.Time, record.Level, "", record.PC)
-
 	cmap.mu.RLock()
 	defer cmap.mu.RUnlock()
-	for _, key := range cmap.keysOrder {
-		newRecord.AddAttrs(slog.String(key, cmap.vals[key]))
+	for key, val := range cmap.vals {
+		record.AddAttrs(slog.String(key, val))
 	}
-	// Extract inline attributes (from `Info(msg, key, value)`)
-	record.Attrs(func(attr slog.Attr) bool {
-		if _, ok := cmap.vals[attr.Key]; !ok { // skip duplicate fields
-			newRecord.AddAttrs(attr)
-		}
-		return true
-	})
-	newRecord.AddAttrs(slog.String("message", record.Message))
 
-	return h.Handler.Handle(ctx, newRecord)
+	return h.Handler.Handle(ctx, record)
 }
 
 func init() {
+	baseHandler := slog.NewTextHandler(os.Stderr, nil)
 	customHandler := &SlogHandler{
-		Handler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			AddSource: true,
-			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == "msg" { // remove default msg attribute so that we can shift the message to the end of the line
-					return slog.Attr{}
-				}
-				return a
-			},
-		}),
+		Handler: baseHandler,
 	}
 	logger := slog.New(customHandler)
 	slog.SetDefault(logger)
