@@ -512,6 +512,13 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 		if failures >= maxHealthCheckFailures && time.Since(startTime) > pipelineStartGracePeriod {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
+			if rc.KeepWarm {
+				slog.Info("Container was kept warm, restarting", slog.String("container", rc.Name))
+				err := m.Warm(context.Background(), rc.Pipeline, rc.ModelID, rc.OptimizationFlags)
+				if err != nil {
+					slog.Error("Error restarting warm container", slog.String("container", rc.Name), slog.String("error", err.Error()))
+				}
+			}
 			return
 		}
 
