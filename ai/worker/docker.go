@@ -379,7 +379,6 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			},
 		},
 		RestartPolicy: restartPolicy,
-		AutoRemove:    true,
 	}
 
 	resp, err := m.dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
