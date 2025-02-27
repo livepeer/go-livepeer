@@ -191,14 +191,12 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	if cap == core.Capability_LiveVideoToVideo {
 		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
 		// We always select a fresh session which has the lowest initial latency
-		useInitialLatencyToSort := true
-		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps, useInitialLatencyToSort)
-		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps, useInitialLatencyToSort)
+		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
 	} else {
-		//sort sessions based on current latency score
-		useInitialLatencyToSort := false
-		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps, useInitialLatencyToSort)
-		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps, useInitialLatencyToSort)
+		// sort sessions based on current latency score
+		warmSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
 	}
 
 	warmPool := NewAISessionPool(warmSel, suspender, penalty)
