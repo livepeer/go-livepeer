@@ -554,7 +554,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err == nil {
 				return
 			}
-			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
+			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 
 			sendErrorEvent(err)
 
