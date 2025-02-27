@@ -102,7 +102,7 @@ type Selector struct {
 }
 
 func NewSelector(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *Selector {
-	// By default, sort by intial latency
+	// By default, sort by initial latency
 	sortCompFunc := func(sess1, sess2 *BroadcastSession) bool {
 		return sess1.InitialLatency < sess2.InitialLatency
 	}
