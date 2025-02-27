@@ -1507,6 +1507,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	defer cancel()
 
 	tries := 0
+	var retryableSessions []*AISession
 	for tries < maxTries {
 		select {
 		case <-cctx.Done():
@@ -1538,6 +1539,18 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		// Don't suspend the session if the error is a transient error.
+		if isRetryableError(err) {
+			params.sessManager.Complete(ctx, sess)
+			continue
+		}
+
+		//for batch AI add session to be used on next request, for live-video-to-video suspend the session until next refresh
+		if isNoCapacityError(err) && cap != core.Capability_LiveVideoToVideo {
+			retryableSessions = append(retryableSessions, sess)
+			continue
+		}
+
 		// Suspend the session on other errors.
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
@@ -1551,6 +1564,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 	}
 
+	//add retryable sessions back to selector
+	for _, sess := range retryableSessions {
+		params.sessManager.Complete(ctx, sess)
+	}
+
 	if resp == nil {
 		errMsg := "no orchestrators available"
 		if monitor.Enabled {
@@ -1561,6 +1579,24 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	return resp, nil
 }
 
+// isRetryableError checks if the error is a transient error that can be retried.
+func isRetryableError(err error) bool {
+	return errContainsMsg(err, "invalid ticket sendernonce", "ticketparams expired")
+}
+
+func isNoCapacityError(err error) bool {
+	return errContainsMsg(err, "insufficient capacity")
+}
+
+func errContainsMsg(err error, msgs ...string) bool {
+	errMsg := strings.ToLower(err.Error())
+	for _, msg := range msgs {
+		if strings.Contains(errMsg, msg) {
+			return true
+		}
+	}
+	return false
+}
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {
 	// genSegCreds expects a stream.HLSSegment so in order to reuse it here we pass a dummy object
 	segCreds, err := genSegCreds(sess.BroadcastSession, &stream.HLSSegment{}, nil, false)

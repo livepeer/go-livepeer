@@ -258,7 +258,7 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 
 	// TODO: This can be removed if we optimize the selection algorithm.
 	// Currently, using CreateContainer errors only can cause orchestrator reselection.
-	if !m.isImageAvailable(ctx, pipeline, modelID) {
+	if pipeline != "live-video-to-video" && !m.isImageAvailable(ctx, pipeline, modelID) {
 		return false
 	}
 

@@ -98,40 +98,57 @@ type Selector struct {
 	selectionAlgorithm common.SelectionAlgorithm
 	perfScore          *common.PerfScore
 	capabilities       common.CapabilityComparator
+	sortCompFunc       func(sess1, sess2 *BroadcastSession) bool
 }
 
 func NewSelector(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *Selector {
+	// By default, sort by initial latency
+	sortCompFunc := func(sess1, sess2 *BroadcastSession) bool {
+		return sess1.InitialLatency < sess2.InitialLatency
+	}
 	return &Selector{
 		stakeRdr:           stakeRdr,
 		selectionAlgorithm: selectionAlgorithm,
 		perfScore:          perfScore,
 		capabilities:       capabilities,
+		sortCompFunc:       sortCompFunc,
+	}
+}
+
+func NewSelectorOrderByLatencyScore(stakeRdr stakeReader, selectionAlgorithm common.SelectionAlgorithm, perfScore *common.PerfScore, capabilities common.CapabilityComparator) *Selector {
+	sortCompFunc := func(sess1, sess2 *BroadcastSession) bool {
+		return sess1.LatencyScore < sess2.LatencyScore
+	}
+	return &Selector{
+		stakeRdr:           stakeRdr,
+		selectionAlgorithm: selectionAlgorithm,
+		perfScore:          perfScore,
+		capabilities:       capabilities,
+		sortCompFunc:       sortCompFunc,
 	}
 }
 
 func (s *Selector) Add(sessions []*BroadcastSession) {
 	s.sessions = append(s.sessions, sessions...)
-	s.sortByInitialLatency()
+	s.sort()
 }
 
 func (s *Selector) Complete(sess *BroadcastSession) {
 	s.sessions = append(s.sessions, sess)
-	s.sortByInitialLatency()
+	s.sort()
 }
 
-func (s *Selector) sortByInitialLatency() {
+func (s *Selector) sort() {
 	sort.Slice(s.sessions, func(i, j int) bool {
-		return s.sessions[i].InitialLatency < s.sessions[j].InitialLatency
+		return s.sortCompFunc(s.sessions[i], s.sessions[j])
 	})
 }
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
 	availableOrchestrators := toOrchestrators(s.sessions)
 	sess := s.selectUnknownSession(ctx)
+	s.sort()
 	clog.V(common.DEBUG).Infof(ctx, "Selected orchestrator %s from available list: %v", toOrchestrator(sess), availableOrchestrators)
-
-	s.sortByInitialLatency()
-
 	return sess
 }
 

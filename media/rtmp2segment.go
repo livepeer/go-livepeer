@@ -77,7 +77,6 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		}
 		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
-			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", in,
 			"-c:a", "copy",
 			"-c:v", "copy",

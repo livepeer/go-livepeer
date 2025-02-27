@@ -508,6 +508,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
+		// Clear any previous gateway status
+		GatewayStatus.Clear(streamID)
+
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
 			"timestamp":   streamRequestTime,
@@ -537,7 +540,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
-			ls.cleanupLive(streamName)
+			ls.cleanupLive(ctx, streamName)
 		}()
 
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
@@ -554,7 +557,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err == nil {
 				return
 			}
-			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
+			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 
 			sendErrorEvent(err)
 
@@ -663,15 +666,16 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 
 		// Get status for specific stream
 		status, exists := StreamStatusStore.Get(streamId)
-		if !exists {
+		gatewayStatus, gatewayExists := GatewayStatus.Get(streamId)
+		if !exists && !gatewayExists {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
-		gatewayStatus, exists := GatewayStatus.Get(streamId)
-		if exists {
-			for k, v := range gatewayStatus {
-				status["gateway_"+k] = v
+		if gatewayExists {
+			if status == nil {
+				status = make(map[string]any)
 			}
+			status["gateway_status"] = gatewayStatus
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -683,7 +687,8 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) cleanupLive(stream string) {
+func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
+	clog.Infof(ctx, "Live video pipeline finished")
 	ls.LivepeerNode.LiveMu.Lock()
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
