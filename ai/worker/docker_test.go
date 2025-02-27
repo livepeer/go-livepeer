@@ -928,6 +928,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 				time.Sleep(dur)
 			}
 		}
+		rc.BorrowCtx = context.Background() // Simulate a borrow of the container
 		go dockerManager.watchContainer(rc)
 		sleepUntil(30 * time.Millisecond) // Almost the entire grace period
 
