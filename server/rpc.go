@@ -374,19 +374,22 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 }
 
 func checkLiveVideoToVideoCapacity(orch Orchestrator, caps *net.Capabilities) interface{} {
-	if caps.Constraints != nil && caps.Constraints.PerCapability != nil {
-		if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
-			pipeline := "live-video-to-video"
-			for modelID := range liveCap.GetModels() {
-				if orch.CheckAICapacity(pipeline, modelID) {
-					// It has capacity for at least one of the requested models
-					return nil
-				}
-			}
-			// No capacity for any requested model
-			return core.ErrOrchCap
-		}
+	if caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
 	}
+
+	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
+		pipeline := "live-video-to-video"
+		for modelID := range liveCap.GetModels() {
+			if orch.CheckAICapacity(pipeline, modelID) {
+				// It has capacity for at least one of the requested models
+				return nil
+			}
+		}
+		// No capacity for any requested model
+		return core.ErrOrchCap
+	}
+	// For no constraints or AI Jobs (non live-video-to-video), we don't want to check capacity
 	return nil
 }
 
