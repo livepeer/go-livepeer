@@ -97,7 +97,7 @@ func TestResToTranscodeData(t *testing.T) {
 	_, err = resToTranscodeData(context.TODO(), res, opts)
 	assert.EqualError(err, "open badfile: no such file or directory")
 
-	// Test error after a successful read
+	// Test error after a successsful read
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 3)}
 	tempDir := t.TempDir()
 
@@ -116,7 +116,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.True(fileDNE(file1.Name()))
 	assert.False(fileDNE(file2.Name()))
 
-	// Test success for 1 output file
+	// Test successs for 1 output file
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 1)}
 	res.Encoded[0].Pixels = 100
 
@@ -127,7 +127,7 @@ func TestResToTranscodeData(t *testing.T) {
 	assert.Equal(int64(100), tData.Segments[0].Pixels)
 	assert.True(fileDNE(file2.Name()))
 
-	// Test succes for 2 output files
+	// Test success for 2 output files
 	res = &ffmpeg.TranscodeResults{Encoded: make([]ffmpeg.MediaInfo, 2)}
 	res.Encoded[0].Pixels = 200
 	res.Encoded[1].Pixels = 300
