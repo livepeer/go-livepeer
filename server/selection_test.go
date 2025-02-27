@@ -162,7 +162,7 @@ func TestSelector_Select(t *testing.T) {
 	assert := assert.New(t)
 
 	// given
-	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil, true)
 	sessions := []*BroadcastSession{
 		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
 		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
@@ -185,7 +185,7 @@ func TestSelector_CompleteAndSelect(t *testing.T) {
 	assert := assert.New(t)
 
 	// given
-	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil, true)
 	sessions := []*BroadcastSession{
 		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
 		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
@@ -213,7 +213,7 @@ func TestSelector_Size(t *testing.T) {
 	assert := assert.New(t)
 
 	// given
-	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil)
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil, true)
 	sessions := []*BroadcastSession{
 		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
 		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
@@ -236,6 +236,35 @@ func TestSelector_Size(t *testing.T) {
 	sel.Clear()
 	assert.Equal(0, sel.Size())
 	assert.Nil(sel.Select(context.Background()))
+}
+
+func TestSelector_SortByLatency(t *testing.T) {
+	assert := assert.New(t)
+
+	// sort by initial latency
+	sel := NewSelector(nil, stubSelectionAlgorithm{}, nil, nil, true)
+	sessions := []*BroadcastSession{
+		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond},
+		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond},
+		{PMSessionID: "session-3", InitialLatency: 600 * time.Millisecond},
+	}
+	sel.Add(sessions)
+
+	assert.Equal("session-2", sel.sessions[0].PMSessionID)
+	assert.Equal("session-1", sel.sessions[1].PMSessionID)
+	assert.Equal("session-3", sel.sessions[2].PMSessionID)
+
+	// sort by initial latency
+	sel = NewSelector(nil, stubSelectionAlgorithm{}, nil, nil, false)
+	sessions = []*BroadcastSession{
+		{PMSessionID: "session-1", InitialLatency: 400 * time.Millisecond, LatencyScore: 0.001},
+		{PMSessionID: "session-2", InitialLatency: 200 * time.Millisecond, LatencyScore: 0.01},
+		{PMSessionID: "session-3", InitialLatency: 600 * time.Millisecond, LatencyScore: 0.08},
+	}
+	sel.Add(sessions)
+	assert.Equal("session-1", sel.sessions[0].PMSessionID)
+	assert.Equal("session-2", sel.sessions[1].PMSessionID)
+	assert.Equal("session-3", sel.sessions[2].PMSessionID)
 }
 
 func TestMinLSSelector(t *testing.T) {

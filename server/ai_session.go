@@ -185,20 +185,20 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	warmCaps := newAICapabilities(cap, modelID, true, node.Capabilities.MinVersionConstraint())
 	coldCaps := newAICapabilities(cap, modelID, false, node.Capabilities.MinVersionConstraint())
 
-	// The latency score in this context is just the latency of the last completed request for a session
-	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
-	minLS := 0.0
 	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
 	var warmSel, coldSel BroadcastSessionsSelector
 	if cap == core.Capability_LiveVideoToVideo {
 		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
 		// We always select a fresh session which has the lowest initial latency
-		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
-		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		useInitialLatencyToSort := true
+		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps, useInitialLatencyToSort)
+		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps, useInitialLatencyToSort)
 	} else {
-		warmSel = NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
-		coldSel = NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		//sort sessions based on current latency score
+		useInitialLatencyToSort := false
+		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps, useInitialLatencyToSort)
+		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps, useInitialLatencyToSort)
 	}
 
 	warmPool := NewAISessionPool(warmSel, suspender, penalty)
