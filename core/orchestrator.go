@@ -1087,7 +1087,7 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 				return nil, ErrNoTranscodersAvailable
 			}
 
-			// Assinging transcoder to session for future use
+			// Assigning transcoder to session for future use
 			rtm.streamSessions[sessionId] = currentTranscoder
 			currentTranscoder.load++
 			sort.Sort(byLoadFactor(rtm.remoteTranscoders))
