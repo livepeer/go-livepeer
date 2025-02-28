@@ -533,7 +533,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
@@ -599,7 +599,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -643,7 +643,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -687,7 +687,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -723,7 +723,7 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 		return orch.node.AudioToText(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	audioBytes, err := req.Audio.Bytes()
 	if err != nil {
 		return nil, err
@@ -759,7 +759,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 		return orch.node.SegmentAnything2(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -824,7 +824,7 @@ func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req
 		return orch.node.ImageToText(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imageBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -868,7 +868,7 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-speech", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err

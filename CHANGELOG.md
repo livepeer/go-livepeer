@@ -353,7 +353,7 @@ None
 
 #### Broadcaster
 
-- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Re-use a session as long as it passes the latency score threshold check (@yondonfu)
+- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Reuse a session as long as it passes the latency score threshold check (@yondonfu)
 
 #### Orchestrator
 - [#2639](https://github.com/livepeer/go-livepeer/pull/2639) Increase IdleTimeout for HTTP connections (@leszko)
@@ -963,7 +963,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 - [#1845](https://github.com/livepeer/go-livepeer/pull/1845) Staking actions with hints (@kyriediculous)
 - [#1873](https://github.com/livepeer/go-livepeer/pull/1873) Increase TicketParams expiration to 10 blocks (@kyriediculous)
-- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Re-use remote transcoders for a stream sessions (@reubenr0d)
+- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Reuse remote transcoders for a stream sessions (@reubenr0d)
 
 #### Transcoder
 
