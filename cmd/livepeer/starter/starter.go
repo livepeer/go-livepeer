@@ -1203,6 +1203,11 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			gpus = []string{"emulated-0", "emulated-1"}
 		}
 
+		// Record the total number of GPUs (physical and emulated)
+		if lpmon.Enabled {
+			lpmon.AITotalGPUs(len(gpus))
+		}
+
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
 			var err error

@@ -194,19 +194,20 @@ type (
 		mSegmentClassProb    *stats.Float64Measure
 		mSceneClassification *stats.Int64Measure
 
-		// Metrics for AI jobs
-		mAIModelsRequested      *stats.Int64Measure
-		mAIRequestLatencyScore  *stats.Float64Measure
-		mAIRequestPrice         *stats.Float64Measure
-		mAIRequestError         *stats.Int64Measure
-		mAIResultDownloaded     *stats.Int64Measure
-		mAIResultDownloadTime   *stats.Float64Measure
-		mAIResultUploaded       *stats.Int64Measure
-		mAIResultUploadTime     *stats.Float64Measure
-		mAIResultSaveFailed     *stats.Int64Measure
-		mAICurrentLivePipelines *stats.Int64Measure
-		mAIFirstSegmentDelay    *stats.Int64Measure
-		mAILiveAttempts         *stats.Int64Measure
+	// Metrics for AI jobs
+	mAIModelsRequested      *stats.Int64Measure
+	mAIRequestLatencyScore  *stats.Float64Measure
+	mAIRequestPrice         *stats.Float64Measure
+	mAIRequestError         *stats.Int64Measure
+	mAIResultDownloaded     *stats.Int64Measure
+	mAIResultDownloadTime   *stats.Float64Measure
+	mAIResultUploaded       *stats.Int64Measure
+	mAIResultUploadTime     *stats.Float64Measure
+	mAIResultSaveFailed     *stats.Int64Measure
+	mAICurrentLivePipelines *stats.Int64Measure
+	mAIFirstSegmentDelay    *stats.Int64Measure
+	mAILiveAttempts         *stats.Int64Measure
+	mAITotalGPUs            *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -379,6 +380,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
+	census.mAITotalGPUs = stats.Int64("ai_total_gpus", "Total number of GPUs (physical and emulated) available for AI processing", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -999,6 +1001,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Description: "AI Live stream attempted",
 			TagKeys:     baseTags,
 			Aggregation: view.Count(),
+		},
+		{
+			Name:        "ai_total_gpus",
+			Measure:     census.mAITotalGPUs,
+			Description: "Total number of GPUs (physical and emulated) available for AI processing",
+			TagKeys:     append([]tag.Key{}, baseTags...),
+			Aggregation: view.LastValue(),
 		},
 	}
 
@@ -1921,6 +1930,11 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 
 func AICurrentLiveSessions(currentPipelines int) {
 	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(currentPipelines)))
+}
+
+// AITotalGPUs updates the total number of GPUs (physical and emulated) available for AI processing
+func AITotalGPUs(gpuCount int) {
+	stats.Record(census.ctx, census.mAITotalGPUs.M(int64(gpuCount)))
 }
 
 // AIJobProcessed records orchestrator AI job processing metrics.
