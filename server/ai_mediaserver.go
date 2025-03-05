@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -87,10 +88,15 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
+	whipServer := media.NewWHIPServer()
+
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/whip", ls.CreateWhip(whipServer))
+	ls.HTTPMux.Handle("HEAD /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusMethodNotAllowed))
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
 
 	// Stream status
@@ -687,6 +693,154 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	})
 }
 
+func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// two main sequential parts here
+		//
+		// WHIP : stream setup, await tracks
+		// Others: auth, selection, job setup
+		// Run them in parallel
+
+		corsHeaders(w, r.Method)
+
+		ctx := r.Context()
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+		streamName := r.PathValue("stream")
+		if streamName == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "stream", streamName)
+
+		ssr := media.NewSwitchableSegmentReader()
+
+		// prevent context cancellation error in selection due to whip completing first
+		// so use this to block whip request until selection is complete TODO improve
+		selectionComplete := make(chan bool, 1)
+
+		whipConn := media.NewWHIPConnection()
+
+		go func() {
+			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
+			if internalOutputHost == "" {
+				internalOutputHost = "rtmp://localhost/"
+			}
+			mediamtxOutputURL := internalOutputHost + streamName + "-out"
+			outputURL := ""
+			streamID := ""
+			pipelineID := ""
+			pipeline := ""
+			pipelineParams := make(map[string]interface{})
+			sourceTypeStr := "livepeer-whip"
+			queryParams := r.URL.Query().Encode()
+
+			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
+
+			if LiveAIAuthWebhookURL != nil {
+				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+					Stream:      streamName,
+					Type:        sourceTypeStr,
+					QueryParams: queryParams,
+					GatewayHost: ls.LivepeerNode.GatewayHost,
+				})
+				if err != nil {
+					whipConn.Close()
+					clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+					http.Error(w, "Forbidden", http.StatusForbidden)
+					return
+				}
+
+				if authResp.RTMPOutputURL != "" {
+					outputURL = authResp.RTMPOutputURL
+				}
+
+				if authResp.Pipeline != "" {
+					pipeline = authResp.Pipeline
+				}
+
+				if len(authResp.paramsMap) > 0 {
+					if _, ok := authResp.paramsMap["prompt"]; !ok && pipeline == "comfyui" {
+						pipelineParams = map[string]interface{}{"prompt": authResp.paramsMap}
+					} else {
+						pipelineParams = authResp.paramsMap
+					}
+				}
+
+				if authResp.StreamID != "" {
+					streamID = authResp.StreamID
+					ctx = clog.AddVal(ctx, "stream_id", streamID)
+				}
+
+				if authResp.PipelineID != "" {
+					pipelineID = authResp.PipelineID
+				}
+			}
+
+			sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
+				"type":        "error",
+				"request_id":  requestID,
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"pipeline":    pipeline,
+			})
+			stopPipeline := func(err error) {
+				if err == nil {
+					return
+				}
+				clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
+				sendErrorEvent(err)
+				whipConn.Close()
+			}
+
+			params := aiRequestParams{
+				node:        ls.LivepeerNode,
+				os:          drivers.NodeStorage.NewSession(requestID),
+				sessManager: ls.AISessionManager,
+
+				liveParams: liveRequestParams{
+					segmentReader:          ssr,
+					outputRTMPURL:          outputURL,
+					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
+					stream:                 streamName,
+					paymentProcessInterval: ls.livePaymentInterval,
+					requestID:              requestID,
+					streamID:               streamID,
+					pipelineID:             pipelineID,
+					stopPipeline:           stopPipeline,
+					sendErrorEvent:         sendErrorEvent,
+				},
+			}
+
+			req := worker.GenLiveVideoToVideoJSONRequestBody{
+				ModelId: &pipeline,
+				Params:  &pipelineParams,
+			}
+			_, err := processAIRequest(ctx, params, req)
+			if err != nil {
+				stopPipeline(err)
+			}
+			selectionComplete <- true
+			whipConn.AwaitClose()
+			ssr.Close()
+			ls.cleanupLive(ctx, streamName)
+			clog.Info(ctx, "Live cleaned up")
+		}()
+
+		conn := server.CreateWHIP(ctx, ssr, w, r)
+		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
+		// prevent context cancellation error due to whip request completing early
+		<-selectionComplete
+	})
+}
+
+func (ls *LivepeerServer) WithCode(code int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		corsHeaders(w, r.Method)
+		w.WriteHeader(code)
+	})
+}
+
 func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 	clog.Infof(ctx, "Live video pipeline finished")
 	ls.LivepeerNode.LiveMu.Lock()
@@ -702,6 +856,17 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
 		pub.StopControl()
+	}
+}
+
+func corsHeaders(w http.ResponseWriter, reqMethod string) {
+	if os.Getenv("LIVE_AI_ALLOW_CORS") == "" { // TODO cli arg
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if reqMethod == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST")
 	}
 }
 
