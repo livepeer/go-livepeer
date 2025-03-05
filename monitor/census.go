@@ -194,20 +194,20 @@ type (
 		mSegmentClassProb    *stats.Float64Measure
 		mSceneClassification *stats.Int64Measure
 
-	// Metrics for AI jobs
-	mAIModelsRequested      *stats.Int64Measure
-	mAIRequestLatencyScore  *stats.Float64Measure
-	mAIRequestPrice         *stats.Float64Measure
-	mAIRequestError         *stats.Int64Measure
-	mAIResultDownloaded     *stats.Int64Measure
-	mAIResultDownloadTime   *stats.Float64Measure
-	mAIResultUploaded       *stats.Int64Measure
-	mAIResultUploadTime     *stats.Float64Measure
-	mAIResultSaveFailed     *stats.Int64Measure
-	mAICurrentLivePipelines *stats.Int64Measure
-	mAIFirstSegmentDelay    *stats.Int64Measure
-	mAILiveAttempts         *stats.Int64Measure
-	mAITotalGPUs            *stats.Int64Measure
+		// Metrics for AI jobs
+		mAIModelsRequested      *stats.Int64Measure
+		mAIRequestLatencyScore  *stats.Float64Measure
+		mAIRequestPrice         *stats.Float64Measure
+		mAIRequestError         *stats.Int64Measure
+		mAIResultDownloaded     *stats.Int64Measure
+		mAIResultDownloadTime   *stats.Float64Measure
+		mAIResultUploaded       *stats.Int64Measure
+		mAIResultUploadTime     *stats.Float64Measure
+		mAIResultSaveFailed     *stats.Int64Measure
+		mAICurrentLivePipelines *stats.Int64Measure
+		mAIFirstSegmentDelay    *stats.Int64Measure
+		mAILiveAttempts         *stats.Int64Measure
+		mAITotalGPUs            *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
