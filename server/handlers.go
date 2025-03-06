@@ -324,7 +324,7 @@ type aiOrchestratorPools struct {
 	Suspended   suspendedInfo `json:"suspended"`
 }
 
-// getAIOrchestratorPoolsInfoHandler returns information about AI orchestrator pools.
+// getAIPoolsInfoHandler returns information about AI orchestrator pools.
 func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		aiPoolsInfoResp := make(map[string]aiOrchestratorPools)
