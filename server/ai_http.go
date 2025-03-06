@@ -228,12 +228,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
-			ModelId:      req.ModelId,
-			PublishUrl:   publishUrlOverwrite,
-			SubscribeUrl: subscribeUrlOverwrite,
-			EventsUrl:    &eventsUrlOverwrite,
-			ControlUrl:   &controlUrlOverwrite,
-			Params:       req.Params,
+			ModelId:          req.ModelId,
+			PublishUrl:       publishUrlOverwrite,
+			SubscribeUrl:     subscribeUrlOverwrite,
+			EventsUrl:        &eventsUrlOverwrite,
+			ControlUrl:       &controlUrlOverwrite,
+			Params:           req.Params,
+			GatewayRequestId: &gatewayRequestID,
+			StreamId:         &streamID,
 		}
 
 		// Send request to the worker
@@ -258,6 +260,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
+			RequestId:    &requestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)

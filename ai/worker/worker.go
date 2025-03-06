@@ -611,12 +611,13 @@ func (w *Worker) LiveVideoToVideo(ctx context.Context, requestID, streamID strin
 		return nil, err
 	}
 
+	// this can be removed once https://github.com/livepeer/ai-runner/pull/442 is deployed
 	setHeaders := func(ctx context.Context, req *http.Request) error {
 		req.Header.Set("requestID", requestID)
 		req.Header.Set("streamID", streamID)
 		return nil
 	}
-	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
+	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, nil, req, setHeaders)
 	if err != nil {
 		return nil, err
 	}
