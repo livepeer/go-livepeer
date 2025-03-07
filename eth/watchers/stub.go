@@ -396,6 +396,6 @@ func (s *stubOrchestratorStore) SelectOrchs(filter *common.DBOrchFilter) ([]*com
 		return []*common.DBOrch{}, s.selectErr
 	}
 	return []*common.DBOrch{
-		common.NewDBOrch(s.ethereumAddr, s.serviceURI, 0, s.activationRound, s.deactivationRound, s.stake, s.remoteInfo),
+		common.NewDBOrch(s.ethereumAddr, s.serviceURI, 0, s.activationRound, s.deactivationRound, s.stake),
 	}, nil
 }

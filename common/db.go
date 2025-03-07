@@ -51,7 +51,6 @@ type DBOrch struct {
 	ActivationRound   int64
 	DeactivationRound int64
 	Stake             int64 // Stored as a fixed point number
-	RemoteInfo        string
 }
 
 // DBUnbondingLock is the type binding for a row result from the unbondingLocks table
@@ -90,8 +89,7 @@ var schema = `
 		pricePerPixel int64,
 		activationRound int64,
 		deactivationRound int64,
-		stake int64,
-		remoteInfo STRING DEFAULT '{}'
+		stake int64
 	);
 
 	CREATE TABLE IF NOT EXISTS unbondingLocks (
@@ -135,7 +133,7 @@ var schema = `
 	CREATE INDEX IF NOT EXISTS idx_blockheaders_number ON blockheaders(number);
 `
 
-func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64, stake int64, remoteInfo string) *DBOrch {
+func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, activationRound int64, deactivationRound int64, stake int64) *DBOrch {
 	return &DBOrch{
 		ServiceURI:        serviceURI,
 		EthereumAddr:      ethereumAddr,
@@ -143,7 +141,6 @@ func NewDBOrch(ethereumAddr string, serviceURI string, pricePerPixel int64, acti
 		ActivationRound:   activationRound,
 		DeactivationRound: deactivationRound,
 		Stake:             stake,
-		RemoteInfo:        remoteInfo,
 	}
 }
 
@@ -184,26 +181,6 @@ func InitDB(dbPath string) (*DB, error) {
 		glog.Error("Database too new")
 		d.Close()
 		return nil, ErrDBTooNew
-	} else if dbVersion < LivepeerDBVersion {
-		// Upgrade stepwise up to the correct version using the migration
-		// procedure for each version
-		if dbVersion == 1 && LivepeerDBVersion == 2 {
-			glog.Info("Upgrading DB from version 1 to 2")
-			// Add remoteInfo column to orchestrators table
-			_, err = db.Exec("ALTER TABLE orchestrators ADD COLUMN remoteInfo STRING default '{}'")
-			if err != nil {
-				glog.Error("Error adding remoteInfo column to orchestrators table ", err)
-				d.Close()
-				return nil, err
-			}
-			//update the db version
-			_, err = db.Exec("INSERT OR REPLACE INTO kv(key, value) VALUES('dbVersion', '2')")
-			if err != nil {
-				glog.Error("Error updating DB version to 2 ", err)
-				d.Close()
-				return nil, err
-			}
-		}
 	} else if dbVersion == LivepeerDBVersion {
 		// all good; nothing to do
 	}
@@ -228,8 +205,8 @@ func InitDB(dbPath string) (*DB, error) {
 
 	// updateOrch prepared statement
 	stmt, err = db.Prepare(`
-	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, remoteInfo, createdAt)
-	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, :stake, :remoteInfo, datetime())
+	INSERT INTO orchestrators(updatedAt, ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, createdAt)
+	VALUES(datetime(), :ethereumAddr, :serviceURI, :pricePerPixel, :activationRound, :deactivationRound, :stake, datetime())
 	ON CONFLICT(ethereumAddr) DO UPDATE SET
 	updatedAt = excluded.updatedAt,
 	serviceURI =
@@ -251,11 +228,7 @@ func InitDB(dbPath string) (*DB, error) {
 	stake =
 		CASE WHEN excluded.stake == 0
 		THEN orchestrators.stake
-		ELSE excluded.stake END,
-	remoteInfo =
-		CASE WHEN trim(excluded.remoteInfo) == ""
-		THEN orchestrators.remoteInfo
-		ELSE trim(excluded.remoteInfo) END
+		ELSE excluded.stake END
 	`)
 	if err != nil {
 		glog.Error("Unable to prepare updateOrch ", err)
@@ -517,7 +490,6 @@ func (db *DB) UpdateOrch(orch *DBOrch) error {
 		sql.Named("activationRound", orch.ActivationRound),
 		sql.Named("deactivationRound", orch.DeactivationRound),
 		sql.Named("stake", orch.Stake),
-		sql.Named("remoteInfo", orch.RemoteInfo),
 	)
 
 	if err != nil {
@@ -547,14 +519,13 @@ func (db *DB) SelectOrchs(filter *DBOrchFilter) ([]*DBOrch, error) {
 			activationRound   int64
 			deactivationRound int64
 			stake             int64
-			remoteInfo        string
 		)
-		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound, &stake, &remoteInfo); err != nil {
+		if err := rows.Scan(&serviceURI, &ethereumAddr, &pricePerPixel, &activationRound, &deactivationRound, &stake); err != nil {
 			glog.Error("db: Unable to fetch orchestrator ", err)
 			continue
 		}
 
-		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound, stake, remoteInfo))
+		orchs = append(orchs, NewDBOrch(serviceURI, ethereumAddr, pricePerPixel, activationRound, deactivationRound, stake))
 	}
 	return orchs, nil
 }
@@ -833,7 +804,7 @@ func (db *DB) WinningTicketCount(sender ethcommon.Address, minCreationRound int6
 }
 
 func buildSelectOrchsQuery(filter *DBOrchFilter) (string, error) {
-	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake, remoteInfo FROM orchestrators "
+	query := "SELECT ethereumAddr, serviceURI, pricePerPixel, activationRound, deactivationRound, stake FROM orchestrators "
 	fil, err := buildFilterOrchsQuery(filter)
 	if err != nil {
 		return "", err

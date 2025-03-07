@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -318,9 +317,6 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
-
-		infoStr, err := json.Marshal(info)
-		dbOrch.RemoteInfo = string(infoStr)
 
 		//add response to network capabilities
 		dbo.node.NetworkCapabilities = append(dbo.node.NetworkCapabilities, info)
