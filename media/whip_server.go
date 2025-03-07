@@ -37,17 +37,7 @@ import (
 
 const keyframeInterval = 2 * time.Second // TODO make configurable?
 
-// Resource represents a single WHIP "resource" — essentially a PeerConnection
-// and associated metadata (ETag, etc.).
-type Resource struct {
-	PeerConnection *webrtc.PeerConnection
-	ETag           string
-	Cancel         context.CancelFunc // to stop the resource gracefully
-}
-
 var (
-	resourceStore = make(map[string]*Resource)
-	storeLock     sync.RWMutex
 	allowedCodecs func(*webrtc.API)
 	interceptors  func(*webrtc.API)
 	settings      func(*webrtc.API)
@@ -124,9 +114,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		}
 	})
 
-	// Setup a cancelable context for this resource to demonstrate cleanup
-	_, cancel := context.WithCancel(ctx)
-
 	// Setup the remote description (the incoming offer)
 	sdpOffer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
@@ -135,7 +122,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	if err := peerConnection.SetRemoteDescription(sdpOffer); err != nil {
 		http.Error(w, fmt.Sprintf("SetRemoteDescription failed: %v", err), http.StatusInternalServerError)
 		mediaState.Close()
-		cancel()
 		return mediaState
 	}
 
@@ -144,7 +130,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	if err != nil {
 		http.Error(w, fmt.Sprintf("CreateAnswer failed: %v", err), http.StatusInternalServerError)
 		mediaState.Close()
-		cancel()
 		return mediaState
 	}
 
@@ -153,7 +138,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	if err = peerConnection.SetLocalDescription(answer); err != nil {
 		http.Error(w, fmt.Sprintf("SetLocalDescription failed: %v", err), http.StatusInternalServerError)
 		mediaState.Close()
-		cancel()
 		return mediaState
 	}
 	// Wait for ICE gathering if you want the full candidate set in the SDP
@@ -164,15 +148,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// Create a resource ID and ETag
 	resourceID := generateID()
 	etag := generateETag()
-
-	// Store the resource
-	storeLock.Lock()
-	resourceStore[resourceID] = &Resource{
-		PeerConnection: peerConnection,
-		ETag:           etag,
-		Cancel:         cancel,
-	}
-	storeLock.Unlock()
 
 	// Respond with 201 Created
 	resourceURL := fmt.Sprintf("%s/%s", getRequestURL(r), resourceID)
@@ -196,12 +171,10 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		audioTrack, videoTrack, err := gatherIncomingTracks(ctx, peerConnection, trackCh)
 		if err != nil {
 			clog.Info(ctx, "error gathering tracks", "took", time.Since(gatherStartTime), "err", err)
-			cancel()
 			return
 		}
 		if videoTrack == nil {
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
-			cancel()
 			return
 		}
 		tracks := []*webrtc.TrackRemote{videoTrack}
