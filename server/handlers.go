@@ -18,12 +18,14 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -264,6 +266,136 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 			respond400(w, "Node must be gateway node to set max price per capability")
 			return
 		}
+	})
+}
+
+type networkCapabilities struct {
+	CapabilitiesNames map[core.Capability]string `json:"capabilities_names"`
+	Orchestrators     []orchNetworkCapabilities  `json:"orchestrators"`
+}
+type orchNetworkCapabilities struct {
+	Address            string                       `json:"address"`
+	LocalAddress       string                       `json:"local_address"`
+	OrchURI            string                       `json:"orch_uri"`
+	ServiceURI         string                       `json:"service_uri"`
+	Capabilities       *net.Capabilities            `json:"capabilities"`
+	CapabilitiesPrices []*net.PriceInfo             `json:"capabilities_prices"`
+	Hardware           []worker.HardwareInformation `json:"hardware"`
+}
+
+func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthClient, db *common.DB) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			curRound, err := client.CurrentRound()
+			if err != nil {
+				respond500(w, fmt.Sprintf("could not query current round: %v", err))
+			}
+			orchs, err := db.SelectOrchs(
+				&common.DBOrchFilter{
+					CurrentRound:   curRound,
+					UpdatedLastDay: true,
+				},
+			)
+
+			var orchInfos []orchNetworkCapabilities
+
+			for _, o := range orchs {
+				var info net.OrchestratorInfo
+				json.Unmarshal([]byte(o.RemoteInfo), &info)
+				if info.TicketParams == nil {
+					glog.Infof("Orchestrator has no ticket params, skipping %v", info.GetTranscoder())
+					continue
+				}
+				address := ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex()
+				localAddress := ethcommon.BytesToAddress(info.Address).Hex()
+				var hdw []worker.HardwareInformation
+				json.Unmarshal(info.Hardware, &hdw)
+
+				onc := orchNetworkCapabilities{
+					Address:            address,
+					LocalAddress:       localAddress,
+					OrchURI:            info.GetTranscoder(),
+					ServiceURI:         o.ServiceURI,
+					Capabilities:       info.Capabilities,
+					CapabilitiesPrices: info.CapabilitiesPrices,
+					Hardware:           hdw,
+				}
+				orchInfos = append(orchInfos, onc)
+			}
+
+			networkCapabilities := &networkCapabilities{
+				CapabilitiesNames: core.CapabilityNameLookup,
+				Orchestrators:     orchInfos,
+			}
+
+			respondJson(w, networkCapabilities)
+		} else {
+			respond400(w, "Node must be gateway node to get network capabilities")
+			return
+		}
+	})
+}
+
+type orchInfoResponse struct {
+	Status           string                `json:"status"`
+	TookMs           int64                 `json:"took_ms"`
+	OrchestratorInfo *net.OrchestratorInfo `json:"orchestrator_info"`
+}
+
+func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			b := core.NewBroadcaster(s.LivepeerNode)
+			b_sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
+			if err != nil {
+				respond500(w, "could not create sig")
+			}
+
+			//send GetOrchestrator request
+			orch_url := r.Header.Get("Url")
+
+			if orch_url != "" {
+				url, err := url.ParseRequestURI(orch_url)
+				if err != nil {
+					respond400(w, "could not parse url")
+				}
+
+				var resp orchInfoResponse
+				client, conn, err := startOrchestratorClient(context.Background(), url)
+				defer conn.Close()
+				if conn != nil && err == nil {
+					req := &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: b_sig, Capabilities: nil}
+					start := time.Now()
+					orch_info, err := client.GetOrchestrator(context.Background(), req)
+					if err != nil {
+						resp.Status = "failed"
+						resp.TookMs = time.Since(start).Milliseconds()
+						resp.OrchestratorInfo = nil
+
+						respondJson(w, resp)
+						return
+					}
+					//parse net.OrchestratorInfo to json
+					resp.Status = "success"
+					resp.TookMs = time.Since(start).Milliseconds()
+					resp.OrchestratorInfo = orch_info
+
+					//send orchestrator info received
+					respondJson(w, resp)
+					return
+				} else {
+					respond500(w, "getorchestrator request failed: "+err.Error())
+					return
+				}
+			} else {
+				respond400(w, "url not provided")
+				return
+			}
+		} else {
+			respond400(w, "not broadcaster node")
+			return
+		}
+
 	})
 }
 
