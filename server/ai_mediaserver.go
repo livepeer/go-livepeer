@@ -88,16 +88,20 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/image-to-text", oapiReqValidator(aiMediaServerHandle(ls, multipartDecoder[worker.GenImageToTextMultipartRequestBody], processImageToText)))
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
-	whipServer := media.NewWHIPServer()
-
 	// This is called by the media server when the stream is ready
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
-	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/whip", ls.CreateWhip(whipServer))
-	ls.HTTPMux.Handle("HEAD /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusMethodNotAllowed))
-	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
+
+	// Configure WHIP ingest only if an addr is specified.
+	// TODO use a proper cli flag
+	if os.Getenv("LIVE_AI_WHIP_ADDR") != "" {
+		whipServer := media.NewWHIPServer()
+		ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/whip", ls.CreateWhip(whipServer))
+		ls.HTTPMux.Handle("HEAD /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusMethodNotAllowed))
+		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
+	}
 
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
