@@ -74,8 +74,8 @@ func TestServeAIWorker(t *testing.T) {
 
 	//connect worker with hardware information
 	strm1 := &StubAIWorkerServer{}
-	hdwDetail := worker.HardwareDetail{Id: "gpu-1", Name: "gpu name", Major: 8, Minor: 9, MemoryFree: 1, MemoryTotal: 10}
-	hdwInfo := make(map[string]worker.HardwareDetail)
+	hdwDetail := worker.GPUComputeInfo{Id: "gpu-1", Name: "gpu name", Major: 8, Minor: 9, MemoryFree: 1, MemoryTotal: 10}
+	hdwInfo := make(map[string]worker.GPUComputeInfo)
 	hdwInfo["0"] = hdwDetail
 	hdw := worker.HardwareInformation{Pipeline: "livepeer-pipeline", ModelId: "livepeer/model1", GpuInfo: hdwInfo}
 	var hdwList []worker.HardwareInformation

@@ -420,7 +420,7 @@ func newMockAIOrchestratorServer() *httptest.Server {
 	n, _ := core.NewLivepeerNode(&eth.StubClient{}, "./tmp", nil)
 	n.NodeType = core.OrchestratorNode
 	n.AIWorkerManager = core.NewRemoteAIWorkerManager()
-	s, _ := NewLivepeerServer("127.0.0.1:1938", n, true, "")
+	s, _ := NewLivepeerServer(context.TODO(), "127.0.0.1:1938", n, true, "")
 	mux := s.cliWebServerHandlers("addr")
 	srv := httptest.NewServer(mux)
 	return srv
