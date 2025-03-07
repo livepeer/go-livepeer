@@ -282,7 +282,7 @@ type orchNetworkCapabilities struct {
 	Hardware           []*net.HardwareInformation `json:"hardware"`
 }
 
-func (s *LivepeerServer) getNetworkCapabilitiesHandler2() http.Handler {
+func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.LivepeerNode.NodeType == core.BroadcasterNode {
 			var orchNetwork []orchNetworkCapabilities
@@ -317,57 +317,6 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler2() http.Handler {
 
 			respondJson(w, networkCapabilities)
 			return
-		} else {
-			respond400(w, "Node must be gateway node to get network capabilities")
-			return
-		}
-	})
-}
-
-func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthClient, db *common.DB) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.NodeType == core.BroadcasterNode {
-			curRound, err := client.CurrentRound()
-			if err != nil {
-				respond500(w, fmt.Sprintf("could not query current round: %v", err))
-			}
-			orchs, err := db.SelectOrchs(
-				&common.DBOrchFilter{
-					CurrentRound:   curRound,
-					UpdatedLastDay: true,
-				},
-			)
-
-			var orchInfos []orchNetworkCapabilities
-
-			for _, o := range orchs {
-				var info net.OrchestratorInfo
-				json.Unmarshal([]byte(o.RemoteInfo), &info)
-				if info.TicketParams == nil {
-					glog.Infof("Orchestrator has no ticket params, skipping %v", info.GetTranscoder())
-					continue
-				}
-				address := ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex()
-				localAddress := ethcommon.BytesToAddress(info.Address).Hex()
-
-				onc := orchNetworkCapabilities{
-					Address:            address,
-					LocalAddress:       localAddress,
-					OrchURI:            info.GetTranscoder(),
-					ServiceURI:         o.ServiceURI,
-					Capabilities:       info.Capabilities,
-					CapabilitiesPrices: info.CapabilitiesPrices,
-					Hardware:           info.GetHardware(),
-				}
-				orchInfos = append(orchInfos, onc)
-			}
-
-			networkCapabilities := &networkCapabilities{
-				CapabilitiesNames: core.CapabilityNameLookup,
-				Orchestrators:     orchInfos,
-			}
-
-			respondJson(w, networkCapabilities)
 		} else {
 			respond400(w, "Node must be gateway node to get network capabilities")
 			return

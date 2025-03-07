@@ -16,11 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/livepeer/go-livepeer/ai/worker"
-	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
 	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -396,41 +395,23 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	assert := assert.New(t)
 
-	client := &eth.MockClient{}
-	currentRound := big.NewInt(7)
-	client.On("CurrentRound").Return(currentRound, nil)
-
-	dbh, dbraw, err := common.TempDB(t)
-	assert.Nil(err)
-	defer dbh.Close()
-	defer dbraw.Close()
 	// setup orchestrator remote info to include in db
 	var capPrices []*lpnet.PriceInfo
 	capPrice := &lpnet.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
 	capPrices = append(capPrices, capPrice)
-	wkrHdw := `
-	[
-	  {
-	   "pipeline": "32",
-	   "model_id": "livepeer/model1",
-	   "gpu_info": {
-	     "0": {
-		   "id": "gpu-2",
-		   "name": "gpu-name",
-		   "major": 8,
-		   "minor": 9
-		 }
-	   }
-	  }
-	]
-	`
-	var wkrHardware []worker.HardwareInformation
-	err = json.Unmarshal([]byte(wkrHdw), &wkrHardware)
-	assert.Nil(err)
-	netHdw := workerHardwareToNetWorkerHardware(wkrHardware)
-
-	assert.Greater(len(netHdw), 0)
-
+	wkrHdw := net.HardwareInformation{
+		Pipeline: "32",
+		ModelId:  "livepeer/model1",
+		GpuInfo:  make(map[string]*lpnet.GPUComputeInfo),
+	}
+	wkrHdw.GpuInfo["0"] = &lpnet.GPUComputeInfo{
+		Id:    "gpu-2",
+		Name:  "gpu-name",
+		Major: 8,
+		Minor: 9,
+	}
+	var hdwList []*lpnet.HardwareInformation
+	hdwList = append(hdwList, &wkrHdw)
 	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, "")
 	orchAddress := pm.RandAddress()
 	orchInfo := &lpnet.OrchestratorInfo{
@@ -439,38 +420,31 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 		PriceInfo:          &lpnet.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		CapabilitiesPrices: capPrices,
 		TicketParams:       &lpnet.TicketParams{Recipient: orchAddress.Bytes()},
-		Hardware:           netHdw,
+		Hardware:           hdwList,
 		Capabilities:       caps.ToNetCapabilities(),
 	}
-	remoteInfo, err := json.Marshal(orchInfo)
-	//setup orch to add to db
-	orch := &common.DBOrch{
-		EthereumAddr:      orchAddress.Hex(),
-		ServiceURI:        "127.0.0.1:8936",
-		PricePerPixel:     1,
-		ActivationRound:   0,
-		DeactivationRound: 1000,
-		RemoteInfo:        string(remoteInfo),
-	}
-	err = dbh.UpdateOrch(orch)
-	assert.Nil(err)
 
 	s := stubServer()
 	s.LivepeerNode.NodeType = core.BroadcasterNode
+	//add orchInfo to network capabilities
+	s.LivepeerNode.NetworkCapabilities = append(s.LivepeerNode.NetworkCapabilities, orchInfo)
 
-	handler := s.getNetworkCapabilitiesHandler(client, dbh)
+	handler := s.getNetworkCapabilitiesHandler()
 
 	status, body := post(handler)
 
 	assert.Equal(http.StatusOK, status)
 	var networkCaps networkCapabilities
-	err = json.Unmarshal([]byte(body), &networkCaps)
+	err := json.Unmarshal([]byte(body), &networkCaps)
+	assert.Nil(err)
 
 	assert.Equal(networkCaps.CapabilitiesNames[core.Capability_AudioToText], core.CapabilityNameLookup[core.Capability_AudioToText])
-	assert.Equal(networkCaps.Orchestrators[0].Address, orch.EthereumAddr)
-	assert.Equal(networkCaps.Orchestrators[0].LocalAddress, orch.EthereumAddr)
+	assert.Equal(networkCaps.Orchestrators[0].Address, ethcommon.BytesToAddress(orchInfo.TicketParams.Recipient).Hex())
+	assert.Equal(networkCaps.Orchestrators[0].LocalAddress, ethcommon.BytesToAddress(orchInfo.Address).Hex())
 	assert.Equal(networkCaps.Orchestrators[0].CapabilitiesPrices, capPrices)
 	assert.Len(networkCaps.Orchestrators[0].Hardware, 1)
+	assert.Equal(networkCaps.Orchestrators[0].Hardware[0].Pipeline, wkrHdw.Pipeline)
+	assert.Equal(networkCaps.Orchestrators[0].Hardware[0].GpuInfo["0"].Id, wkrHdw.GpuInfo["0"].Id)
 }
 
 func TestGetBroadcastConfigHandler(t *testing.T) {
