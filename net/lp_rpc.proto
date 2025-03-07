@@ -165,7 +165,7 @@ message OrchestratorInfo {
   AuthToken auth_token = 6;
 
   // Information on Orchestrator hardware
-  bytes hardware = 7;
+  repeated HardwareInformation hardware = 7;
 
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
@@ -405,7 +405,7 @@ message RegisterAIWorkerRequest {
     Capabilities capabilities = 2;
 
     // AIWorker hardware info
-    bytes hardware = 3;
+    repeated HardwareInformation hardware = 3;
 }
 
 // Data included by the gateway when submitting a AI job.
@@ -489,4 +489,37 @@ message Payment {
 
   // O's last known price
   PriceInfo expected_price = 5;
+}
+
+// GPU information used by worker on network
+message GPUComputeInfo {
+  // unique id
+  string id = 1;
+
+  // gpu name
+  string name = 2;
+
+  // compute version supported - major
+  uint32 major = 4;
+
+  // compute version supported - minor
+  uint32 minor = 5;
+
+  // GPU memory free
+  int64 memory_free = 6;
+
+  // GPU memory total
+  int64 memory_total = 7;
+}
+
+// Hardware information for worker on network
+message HardwareInformation {
+    // pipeline hardware supports
+    string pipeline = 1;
+    
+    // model_id hardware supports
+    string model_id = 2;
+
+    // hardware for pipeline and model_id
+    map<string, GPUComputeInfo> gpu_info = 3;
 }
