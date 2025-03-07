@@ -96,6 +96,12 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	}, nil
 }
 
+func (rc *RunnerContainer) IsBorrowed() bool {
+	rc.RLock()
+	defer rc.RUnlock()
+	return rc.BorrowCtx != nil
+}
+
 func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
