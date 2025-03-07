@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
@@ -138,7 +139,8 @@ type LivepeerNode struct {
 	AutoAdjustPrice    bool
 	AutoSessionLimit   bool
 	// Broadcaster public fields
-	Sender pm.Sender
+	Sender              pm.Sender
+	NetworkCapabilities []*net.OrchestratorInfo // OrchestratorInfo includes additional information on discovery requests
 
 	// Thread safety for config fields
 	mu             sync.RWMutex
@@ -308,4 +310,8 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	defer n.TranscoderManager.RTmutex.Unlock()
 	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
 	return totalCapacity
+}
+
+func (n *LivepeerNode) GetNetworkCapabilities() []*net.OrchestratorInfo {
+	return n.NetworkCapabilities
 }

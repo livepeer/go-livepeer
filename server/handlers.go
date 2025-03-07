@@ -274,13 +274,55 @@ type networkCapabilities struct {
 	Orchestrators     []orchNetworkCapabilities  `json:"orchestrators"`
 }
 type orchNetworkCapabilities struct {
-	Address            string                       `json:"address"`
-	LocalAddress       string                       `json:"local_address"`
-	OrchURI            string                       `json:"orch_uri"`
-	ServiceURI         string                       `json:"service_uri"`
-	Capabilities       *net.Capabilities            `json:"capabilities"`
-	CapabilitiesPrices []*net.PriceInfo             `json:"capabilities_prices"`
-	Hardware           []worker.HardwareInformation `json:"hardware"`
+	Address            string                     `json:"address"`
+	LocalAddress       string                     `json:"local_address"`
+	OrchURI            string                     `json:"orch_uri"`
+	ServiceURI         string                     `json:"service_uri"`
+	Capabilities       *net.Capabilities          `json:"capabilities"`
+	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
+	Hardware           []*net.HardwareInformation `json:"hardware"`
+}
+
+func (s *LivepeerServer) getNetworkCapabilitiesHandler2() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+			var orchNetwork []orchNetworkCapabilities
+			orchInfos := s.LivepeerNode.GetNetworkCapabilities()
+			if orchInfos == nil {
+				respond500(w, "network capabilities not available")
+			}
+
+			for _, info := range orchInfos {
+				if info.TicketParams == nil {
+					glog.Infof("Orchestrator has no ticket params, skipping %v", info.GetTranscoder())
+					continue
+				}
+				address := ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex()
+				localAddress := ethcommon.BytesToAddress(info.Address).Hex()
+
+				onc := orchNetworkCapabilities{
+					Address:            address,
+					LocalAddress:       localAddress,
+					OrchURI:            info.GetTranscoder(),
+					Capabilities:       info.Capabilities,
+					CapabilitiesPrices: info.CapabilitiesPrices,
+					Hardware:           info.GetHardware(),
+				}
+				orchNetwork = append(orchNetwork, onc)
+			}
+
+			networkCapabilities := &networkCapabilities{
+				CapabilitiesNames: core.CapabilityNameLookup,
+				Orchestrators:     orchNetwork,
+			}
+
+			respondJson(w, networkCapabilities)
+			return
+		} else {
+			respond400(w, "Node must be gateway node to get network capabilities")
+			return
+		}
+	})
 }
 
 func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthClient, db *common.DB) http.Handler {

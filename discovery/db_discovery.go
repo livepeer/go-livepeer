@@ -38,6 +38,7 @@ type DBOrchestratorPoolCache struct {
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
+	node                  *core.LivepeerNode
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -53,6 +54,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		bcast:                 core.NewBroadcaster(node),
 		orchBlacklist:         orchBlacklist,
 		discoveryTimeout:      discoveryTimeout,
+		node:                  node,
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -257,6 +259,10 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 }
 
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
+	//reset network capabilities
+	clear(dbo.node.NetworkCapabilities)
+
+	//load orchestratros from db
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			CurrentRound: dbo.rm.LastInitializedRound(),
@@ -315,6 +321,9 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 
 		infoStr, err := json.Marshal(info)
 		dbOrch.RemoteInfo = string(infoStr)
+
+		//add response to network capabilities
+		dbo.node.NetworkCapabilities = append(dbo.node.NetworkCapabilities, info)
 
 		resc <- dbOrch
 	}
