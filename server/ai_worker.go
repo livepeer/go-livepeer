@@ -110,12 +110,7 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) 
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	hdw, err := json.Marshal(n.AIWorker.HardwareInformation())
-	if err != nil {
-		glog.Error("Could not marshal hardware information ", err)
-		return err
-	}
-
+	hdw := workerHardwareToNetWorkerHardware(n.AIWorker.HardwareInformation())
 	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps, Hardware: hdw})
 	if err := checkAIWorkerError(err); err != nil {
 		glog.Error("Could not register aiworker to orchestrator ", err)

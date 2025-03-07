@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
@@ -423,6 +424,13 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	  }
 	]
 	`
+	var wkrHardware []worker.HardwareInformation
+	err = json.Unmarshal([]byte(wkrHdw), &wkrHardware)
+	assert.Nil(err)
+	netHdw := workerHardwareToNetWorkerHardware(wkrHardware)
+
+	assert.Greater(len(netHdw), 0)
+
 	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, "")
 	orchAddress := pm.RandAddress()
 	orchInfo := &lpnet.OrchestratorInfo{
@@ -431,7 +439,7 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 		PriceInfo:          &lpnet.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
 		CapabilitiesPrices: capPrices,
 		TicketParams:       &lpnet.TicketParams{Recipient: orchAddress.Bytes()},
-		Hardware:           []byte(wkrHdw),
+		Hardware:           netHdw,
 		Capabilities:       caps.ToNetCapabilities(),
 	}
 	remoteInfo, err := json.Marshal(orchInfo)

@@ -18,7 +18,6 @@ import (
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -350,8 +349,6 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthCli
 				}
 				address := ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex()
 				localAddress := ethcommon.BytesToAddress(info.Address).Hex()
-				var hdw []worker.HardwareInformation
-				json.Unmarshal(info.Hardware, &hdw)
 
 				onc := orchNetworkCapabilities{
 					Address:            address,
@@ -360,7 +357,7 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler(client eth.LivepeerEthCli
 					ServiceURI:         o.ServiceURI,
 					Capabilities:       info.Capabilities,
 					CapabilitiesPrices: info.CapabilitiesPrices,
-					Hardware:           hdw,
+					Hardware:           info.GetHardware(),
 				}
 				orchInfos = append(orchInfos, onc)
 			}

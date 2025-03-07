@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,14 +73,13 @@ func TestServeAIWorker(t *testing.T) {
 
 	//connect worker with hardware information
 	strm1 := &StubAIWorkerServer{}
-	hdwDetail := worker.GPUComputeInfo{Id: "gpu-1", Name: "gpu name", Major: 8, Minor: 9, MemoryFree: 1, MemoryTotal: 10}
-	hdwInfo := make(map[string]worker.GPUComputeInfo)
-	hdwInfo["0"] = hdwDetail
-	hdw := worker.HardwareInformation{Pipeline: "livepeer-pipeline", ModelId: "livepeer/model1", GpuInfo: hdwInfo}
-	var hdwList []worker.HardwareInformation
-	hdwList = append(hdwList, hdw)
-	hdwJson, _ := json.Marshal(hdwList)
-	go n.serveAIWorker(strm1, netCaps, hdwJson)
+	hdwDetail := net.GPUComputeInfo{Id: "gpu-1", Name: "gpu name", Major: 8, Minor: 9, MemoryFree: 1, MemoryTotal: 10}
+	hdwInfo := make(map[string]*net.GPUComputeInfo)
+	hdwInfo["0"] = &hdwDetail
+	hdw := net.HardwareInformation{Pipeline: "livepeer-pipeline", ModelId: "livepeer/model1", GpuInfo: hdwInfo}
+	var netHdwList []*net.HardwareInformation
+	netHdwList = append(netHdwList, &hdw)
+	go n.serveAIWorker(strm1, netCaps, netHdwList)
 	time.Sleep(1 * time.Second)
 
 	wkr, ok = n.AIWorkerManager.liveAIWorkers[strm1]
@@ -91,7 +89,8 @@ func TestServeAIWorker(t *testing.T) {
 
 	//confirm worker attached and has hardware information
 	assert.Len(t, n.AIWorkerManager.liveAIWorkers, 1)
-	assert.Equal(t, hdwList, n.AIWorkerManager.liveAIWorkers[strm1].hardware)
+	wkrHdw := hardwareInformationFromNetHardware(netHdwList)
+	assert.Equal(t, wkrHdw, n.AIWorkerManager.liveAIWorkers[strm1].hardware)
 
 	// test shutdown
 	wkr.eof <- struct{}{}

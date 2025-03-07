@@ -56,7 +56,7 @@ type Orchestrator interface {
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation)
 	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
@@ -449,9 +449,9 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	authToken := orch.AuthToken(sessionID, expiration)
 
-	var workerHardware []byte
+	var workerHardware []*net.HardwareInformation
 	if caps == nil {
-		workerHardware, _ = json.Marshal(orch.WorkerHardware())
+		workerHardware = workerHardwareToNetWorkerHardware(orch.WorkerHardware())
 	}
 
 	tr := net.OrchestratorInfo{
@@ -628,4 +628,19 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		CalcPerceptualHash: segData.CalcPerceptualHash,
 		SegmentParameters:  &segPar,
 	}, nil
+}
+
+func workerHardwareToNetWorkerHardware(orchHdw []worker.HardwareInformation) []*net.HardwareInformation {
+	var workerHardware []byte
+	workerHardware, err := json.Marshal(orchHdw)
+	if err != nil {
+		return []*net.HardwareInformation{}
+	}
+	var netWorkerHardware []*net.HardwareInformation
+	err = json.Unmarshal(workerHardware, &netWorkerHardware)
+	if err != nil {
+		return []*net.HardwareInformation{}
+	}
+
+	return netWorkerHardware
 }

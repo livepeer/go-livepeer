@@ -89,13 +89,14 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	}
 }
 
-func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte) {
+func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 	orch.node.serveAIWorker(stream, capabilities, hardware)
 }
 
-func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte) {
+func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 	from := common.GetConnectionAddr(stream.Context())
 	wkrCaps := CapabilitiesFromNetCapabilities(capabilities)
+	wkrHdw := hardwareInformationFromNetHardware(hardware)
 	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
 		glog.Infof("Worker compatible, connecting worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
 		n.Capabilities.AddCapacity(wkrCaps)
@@ -103,14 +104,8 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 		defer n.Capabilities.RemoveCapacity(wkrCaps)
 		defer n.RemoveAICapabilities(wkrCaps)
 
-		var hdw []worker.HardwareInformation
-		err := json.Unmarshal(hardware, &hdw)
-		if err != nil {
-			glog.Errorf("Error parsing hardware info for worker=%s err=%q", from, err)
-		}
-
 		// Manage blocks while AI worker is connected
-		n.AIWorkerManager.Manage(stream, capabilities, hdw)
+		n.AIWorkerManager.Manage(stream, capabilities, wkrHdw)
 		glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
 	} else {
 		glog.Errorf("worker %s not connected, version not compatible", from)
@@ -1196,4 +1191,19 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%q", tr.Err)
 	}
 	return &tr
+}
+
+func hardwareInformationFromNetHardware(hdw []*net.HardwareInformation) []worker.HardwareInformation {
+	var netWorkerHardware []byte
+	netWorkerHardware, err := json.Marshal(hdw)
+	if err != nil {
+		return []worker.HardwareInformation{}
+	}
+	var workerHardware []worker.HardwareInformation
+	err = json.Unmarshal(netWorkerHardware, &workerHardware)
+	if err != nil {
+		return []worker.HardwareInformation{}
+	}
+
+	return workerHardware
 }

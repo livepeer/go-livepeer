@@ -245,7 +245,7 @@ func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
 }
-func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte) {
+func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -1492,7 +1492,7 @@ func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
 }
-func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []byte) {
+func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
