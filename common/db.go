@@ -69,7 +69,7 @@ type DBOrchFilter struct {
 	UpdatedLastDay bool
 }
 
-var LivepeerDBVersion = 2
+var LivepeerDBVersion = 1
 
 var ErrDBTooNew = errors.New("DB Too New")
 
