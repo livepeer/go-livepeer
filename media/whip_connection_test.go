@@ -225,7 +225,7 @@ func TestAwaitClose(t *testing.T) {
 			assert.Fail(t, "AwaitClose did not return after peer was closed")
 		}
 	})
-	
+
 	// Test case 3: Multiple goroutines awaiting closure
 	t.Run("MultipleAwaiters", func(t *testing.T) {
 		conn := NewWHIPConnection()
@@ -237,7 +237,7 @@ func TestAwaitClose(t *testing.T) {
 		// Start multiple goroutines that will await closure
 		const numGoroutines = 12
 		done := make(chan bool, numGoroutines)
-		
+
 		for i := 0; i < numGoroutines; i++ {
 			go func() {
 				conn.AwaitClose()
@@ -262,7 +262,7 @@ func TestAwaitClose(t *testing.T) {
 			}
 		}
 	})
-	
+
 	// Test case 4: Awaiting after already closed
 	t.Run("AwaitAfterClosed", func(t *testing.T) {
 		conn := NewWHIPConnection()
@@ -271,7 +271,7 @@ func TestAwaitClose(t *testing.T) {
 
 		conn.SetWHIPConnection(mediaState)
 		mediaState.Close() // Close immediately
-		
+
 		// This should return immediately
 		done := make(chan bool)
 		go func() {
@@ -286,34 +286,34 @@ func TestAwaitClose(t *testing.T) {
 			assert.Fail(t, "AwaitClose did not return immediately for already closed peer")
 		}
 	})
-	
+
 	// Test case 5: Delayed peer connection setup before closing
 	t.Run("DelayedPeerSetupBeforeClose", func(t *testing.T) {
 		conn := NewWHIPConnection()
-		
+
 		// Start multiple goroutines that will await closure
 		const numGoroutines = 12
 		done := make(chan bool, numGoroutines)
-		
+
 		for i := 0; i < numGoroutines; i++ {
 			go func() {
 				conn.AwaitClose()
 				done <- true
 			}()
 		}
-		
+
 		// Set up peer connection after a delay
 		go func() {
 			time.Sleep(50 * time.Millisecond)
 			mockPC := NewMockPC()
 			mediaState := NewMediaState(mockPC)
 			conn.SetWHIPConnection(mediaState)
-			
+
 			// Then close it after another delay
 			time.Sleep(50 * time.Millisecond)
 			mediaState.Close()
 		}()
-		
+
 		// All goroutines should be notified
 		for i := 0; i < numGoroutines; i++ {
 			select {
@@ -325,18 +325,18 @@ func TestAwaitClose(t *testing.T) {
 			}
 		}
 	})
-	
+
 	// Test case 6: Close without setting peer connection
 	t.Run("CloseWithoutPeer", func(t *testing.T) {
 		conn := NewWHIPConnection()
-		
+
 		// Start a goroutine that will await closure
 		done := make(chan bool)
 		go func() {
 			conn.AwaitClose()
 			done <- true
 		}()
-		
+
 		// Close the connection without setting a peer
 		go func() {
 			time.Sleep(100 * time.Millisecond)
@@ -345,7 +345,7 @@ func TestAwaitClose(t *testing.T) {
 			conn.cond.Broadcast()
 			conn.mu.Unlock()
 		}()
-		
+
 		select {
 		case <-done:
 			// Test passed
@@ -353,14 +353,14 @@ func TestAwaitClose(t *testing.T) {
 			assert.Fail(t, "AwaitClose did not return when connection was closed without a peer")
 		}
 	})
-	
+
 	// Test case 7: Null peer connection
 	t.Run("NullPeerConnection", func(t *testing.T) {
 		conn := NewWHIPConnection()
 		mediaState := NewMediaState(nil) // Null peer connection
-		
+
 		conn.SetWHIPConnection(mediaState)
-		
+
 		// This should not panic
 		require.NotPanics(t, func() {
 			// Start a goroutine that will await closure
@@ -369,10 +369,10 @@ func TestAwaitClose(t *testing.T) {
 				conn.AwaitClose()
 				done <- true
 			}()
-			
+
 			// Close the media state
 			mediaState.Close()
-			
+
 			select {
 			case <-done:
 				// Test passed
