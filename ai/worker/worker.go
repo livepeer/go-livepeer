@@ -666,6 +666,7 @@ func (w *Worker) EnsureImageAvailable(ctx context.Context, pipeline string, mode
 
 func (w *Worker) Warm(ctx context.Context, pipeline string, modelID string, endpoint RunnerEndpoint, optimizationFlags OptimizationFlags) error {
 	if endpoint.URL == "" {
+		w.manager.Warm(ctx, pipeline, modelID, optimizationFlags)
 		return w.manager.Warm(ctx, pipeline, modelID, optimizationFlags)
 	}
 
