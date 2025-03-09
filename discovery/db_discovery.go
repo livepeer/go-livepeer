@@ -259,7 +259,7 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	//reset network capabilities
-	clear(dbo.node.NetworkCapabilities)
+	dbo.node.ResetNetworkCapabilities()
 
 	//load orchestratros from db
 	orchs, err := dbo.store.SelectOrchs(
@@ -319,7 +319,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 
 		//add response to network capabilities
-		dbo.node.NetworkCapabilities = append(dbo.node.NetworkCapabilities, info)
+		dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info))
 
 		resc <- dbOrch
 	}
@@ -392,5 +392,20 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 			CreationRound:          params.ExpirationParams.GetCreationRound(),
 			CreationRoundBlockHash: ethcommon.BytesToHash(params.ExpirationParams.GetCreationRoundBlockHash()),
 		},
+	}
+}
+
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *core.OrchNetworkCapabilities {
+	if info == nil {
+		return nil
+	}
+
+	return &core.OrchNetworkCapabilities{
+		Address:            ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
+		LocalAddress:       ethcommon.BytesToAddress(info.Address).Hex(),
+		OrchURI:            info.Transcoder,
+		Capabilities:       info.Capabilities,
+		Hardware:           info.Hardware,
+		CapabilitiesPrices: info.CapabilitiesPrices,
 	}
 }

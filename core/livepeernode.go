@@ -110,6 +110,19 @@ func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *Auto
 	return menu.PriceForModelID(modelID)
 }
 
+type NetworkCapabilities struct {
+	Orchestrators []*OrchNetworkCapabilities `json:"orchestrators"`
+}
+type OrchNetworkCapabilities struct {
+	Address            string                     `json:"address"`
+	LocalAddress       string                     `json:"local_address"`
+	OrchURI            string                     `json:"orch_uri"`
+	ServiceURI         string                     `json:"service_uri"`
+	Capabilities       *net.Capabilities          `json:"capabilities"`
+	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
+	Hardware           []*net.HardwareInformation `json:"hardware"`
+}
+
 // LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
@@ -140,7 +153,7 @@ type LivepeerNode struct {
 	AutoSessionLimit   bool
 	// Broadcaster public fields
 	Sender              pm.Sender
-	NetworkCapabilities []*net.OrchestratorInfo // OrchestratorInfo includes additional information on discovery requests
+	NetworkCapabilities NetworkCapabilities
 
 	// Thread safety for config fields
 	mu             sync.RWMutex
@@ -312,6 +325,20 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	return totalCapacity
 }
 
-func (n *LivepeerNode) GetNetworkCapabilities() []*net.OrchestratorInfo {
-	return n.NetworkCapabilities
+func (n *LivepeerNode) ResetNetworkCapabilities() {
+	clear(n.NetworkCapabilities.Orchestrators)
+}
+
+func (n *LivepeerNode) AddNetworkCapabilities(orch *OrchNetworkCapabilities) error {
+	if orch == nil {
+		return errors.New("OrchestratorInfo is nil")
+	}
+
+	n.NetworkCapabilities.Orchestrators = append(n.NetworkCapabilities.Orchestrators, orch)
+
+	return nil
+}
+
+func (n *LivepeerNode) GetNetworkCapabilities() []*OrchNetworkCapabilities {
+	return n.NetworkCapabilities.Orchestrators
 }
