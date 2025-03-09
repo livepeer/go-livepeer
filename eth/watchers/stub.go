@@ -373,7 +373,6 @@ type stubOrchestratorStore struct {
 	serviceURI        string
 	ethereumAddr      string
 	stake             int64
-	remoteInfo        string
 	selectErr         error
 	updateErr         error
 }
