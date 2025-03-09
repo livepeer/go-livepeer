@@ -24,7 +24,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/pkg/errors"
@@ -293,69 +292,6 @@ func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
 			respond400(w, "Node must be gateway node to get network capabilities")
 			return
 		}
-	})
-}
-
-type orchInfoResponse struct {
-	Status           string                `json:"status"`
-	TookMs           int64                 `json:"took_ms"`
-	OrchestratorInfo *net.OrchestratorInfo `json:"orchestrator_info"`
-}
-
-func (s *LivepeerServer) getOrchestratorInfoHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.LivepeerNode.NodeType == core.BroadcasterNode {
-			b := core.NewBroadcaster(s.LivepeerNode)
-			b_sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
-			if err != nil {
-				respond500(w, "could not create sig")
-			}
-
-			//send GetOrchestrator request
-			orch_url := r.Header.Get("Url")
-
-			if orch_url != "" {
-				url, err := url.ParseRequestURI(orch_url)
-				if err != nil {
-					respond400(w, "could not parse url")
-				}
-
-				var resp orchInfoResponse
-				client, conn, err := startOrchestratorClient(context.Background(), url)
-				defer conn.Close()
-				if conn != nil && err == nil {
-					req := &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: b_sig, Capabilities: nil}
-					start := time.Now()
-					orch_info, err := client.GetOrchestrator(context.Background(), req)
-					if err != nil {
-						resp.Status = "failed"
-						resp.TookMs = time.Since(start).Milliseconds()
-						resp.OrchestratorInfo = nil
-
-						respondJson(w, resp)
-						return
-					}
-					//parse net.OrchestratorInfo to json
-					resp.Status = "success"
-					resp.TookMs = time.Since(start).Milliseconds()
-					resp.OrchestratorInfo = orch_info
-
-					//send orchestrator info received
-					respondJson(w, resp)
-					return
-				} else {
-					respond500(w, "getorchestrator request failed: "+err.Error())
-					return
-				}
-			} else {
-				respond400(w, "url not provided")
-				return
-			}
-		} else {
-			respond400(w, "not broadcaster node")
-			return
-		}
-
 	})
 }
 
