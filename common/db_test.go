@@ -334,15 +334,6 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
 	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
 	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
-
-	updatedOrch, err = dbh.SelectOrchs(nil)
-	assert.Len(updatedOrch, 1)
-	assert.NoError(err)
-	assert.Equal(updatedOrch[0].ServiceURI, serviceURIUpdate.ServiceURI)
-	assert.Equal(updatedOrch[0].ActivationRound, activationRoundUpdate.ActivationRound)
-	assert.Equal(updatedOrch[0].DeactivationRound, deactivationRoundUpdate.DeactivationRound)
-	assert.Equal(updatedOrch[0].PricePerPixel, priceUpdate.PricePerPixel)
-	assert.Equal(updatedOrch[0].Stake, stakeUpdate.Stake)
 }
 
 func TestSelectUpdateOrchs_AddingMultipleRows_NoError(t *testing.T) {
