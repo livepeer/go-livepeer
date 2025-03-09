@@ -181,6 +181,9 @@ func InitDB(dbPath string) (*DB, error) {
 		glog.Error("Database too new")
 		d.Close()
 		return nil, ErrDBTooNew
+	} else if dbVersion < LivepeerDBVersion {
+		// Upgrade stepwise up to the correct version using the migration
+		// procedure for each version
 	} else if dbVersion == LivepeerDBVersion {
 		// all good; nothing to do
 	}
