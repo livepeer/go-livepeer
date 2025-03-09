@@ -8,7 +8,7 @@ service Orchestrator {
 
   // Called by the broadcaster to request transcoder info from an orchestrator.
   rpc GetOrchestrator(OrchestratorRequest) returns (OrchestratorInfo);
- rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
+  rpc EndTranscodingSession(EndTranscodingSessionRequest) returns (EndTranscodingSessionResponse);
   rpc Ping(PingPong) returns (PingPong);
 }
 
