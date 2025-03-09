@@ -319,7 +319,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 
 		//add response to network capabilities
-		dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info))
+		dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info, dbOrch))
 
 		resc <- dbOrch
 	}
@@ -395,17 +395,20 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 	}
 }
 
-func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *core.OrchNetworkCapabilities {
-	if info == nil {
-		return nil
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *common.DBOrch) *core.OrchNetworkCapabilities {
+	orch := &core.OrchNetworkCapabilities{
+		Address:    dbOrch.EthereumAddr,
+		ServiceURI: dbOrch.ServiceURI,
 	}
 
-	return &core.OrchNetworkCapabilities{
-		Address:            ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
-		LocalAddress:       ethcommon.BytesToAddress(info.Address).Hex(),
-		OrchURI:            info.Transcoder,
-		Capabilities:       info.Capabilities,
-		Hardware:           info.Hardware,
-		CapabilitiesPrices: info.CapabilitiesPrices,
+	// add orch operating information if available
+	if info != nil {
+		orch.LocalAddress = ethcommon.BytesToAddress(info.Address).Hex()
+		orch.OrchURI = info.GetTranscoder()
+		orch.Capabilities = info.GetCapabilities()
+		orch.Hardware = info.GetHardware()
+		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
 	}
+
+	return orch
 }
