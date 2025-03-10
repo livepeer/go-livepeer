@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
@@ -414,33 +415,33 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	hdwList = append(hdwList, &wkrHdw)
 	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, "")
 	orchAddress := pm.RandAddress()
-	orchInfo := &lpnet.OrchestratorInfo{
-		Address:            orchAddress.Bytes(),
-		Transcoder:         "http://transcoder.uri:5555",
-		PriceInfo:          &lpnet.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
-		CapabilitiesPrices: capPrices,
-		TicketParams:       &lpnet.TicketParams{Recipient: orchAddress.Bytes()},
-		Hardware:           hdwList,
+	orchNetworkCaps := &common.OrchNetworkCapabilities{
+		Address:            orchAddress.Hex(),
+		LocalAddress:       orchAddress.Hex(),
+		ServiceURI:         "http://transcoder.uri:5555",
+		OrchURI:            "http://transcoder.uri:3333",
 		Capabilities:       caps.ToNetCapabilities(),
+		CapabilitiesPrices: capPrices,
+		Hardware:           hdwList,
 	}
 
 	s := stubServer()
 	s.LivepeerNode.NodeType = core.BroadcasterNode
 	//add orchInfo to network capabilities
-	s.LivepeerNode.NetworkCapabilities = append(s.LivepeerNode.NetworkCapabilities, orchInfo)
+	s.LivepeerNode.AddNetworkCapabilities(orchNetworkCaps)
 
 	handler := s.getNetworkCapabilitiesHandler()
 
 	status, body := post(handler)
 
 	assert.Equal(http.StatusOK, status)
-	var networkCaps networkCapabilities
+	var networkCaps networkCapabilitiesResponse
 	err := json.Unmarshal([]byte(body), &networkCaps)
 	assert.Nil(err)
 
 	assert.Equal(networkCaps.CapabilitiesNames[core.Capability_AudioToText], core.CapabilityNameLookup[core.Capability_AudioToText])
-	assert.Equal(networkCaps.Orchestrators[0].Address, ethcommon.BytesToAddress(orchInfo.TicketParams.Recipient).Hex())
-	assert.Equal(networkCaps.Orchestrators[0].LocalAddress, ethcommon.BytesToAddress(orchInfo.Address).Hex())
+	assert.Equal(networkCaps.Orchestrators[0].Address, orchAddress.Hex())
+	assert.Equal(networkCaps.Orchestrators[0].LocalAddress, orchAddress.Hex())
 	assert.Equal(networkCaps.Orchestrators[0].CapabilitiesPrices, capPrices)
 	assert.Len(networkCaps.Orchestrators[0].Hardware, 1)
 	assert.Equal(networkCaps.Orchestrators[0].Hardware[0].Pipeline, wkrHdw.Pipeline)

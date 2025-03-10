@@ -395,8 +395,8 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 	}
 }
 
-func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *common.DBOrch) *core.OrchNetworkCapabilities {
-	orch := &core.OrchNetworkCapabilities{
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *common.DBOrch) *common.OrchNetworkCapabilities {
+	orch := &common.OrchNetworkCapabilities{
 		Address:    dbOrch.EthereumAddr,
 		ServiceURI: dbOrch.ServiceURI,
 	}

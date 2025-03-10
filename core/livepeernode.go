@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
@@ -110,19 +109,6 @@ func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *Auto
 	return menu.PriceForModelID(modelID)
 }
 
-type NetworkCapabilities struct {
-	Orchestrators []*OrchNetworkCapabilities `json:"orchestrators"`
-}
-type OrchNetworkCapabilities struct {
-	Address            string                     `json:"address"`
-	LocalAddress       string                     `json:"local_address"`
-	OrchURI            string                     `json:"orch_uri"`
-	ServiceURI         string                     `json:"service_uri"`
-	Capabilities       *net.Capabilities          `json:"capabilities"`
-	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
-	Hardware           []*net.HardwareInformation `json:"hardware"`
-}
-
 // LivepeerNode handles videos going in and coming out of the Livepeer network.
 type LivepeerNode struct {
 
@@ -153,7 +139,7 @@ type LivepeerNode struct {
 	AutoSessionLimit   bool
 	// Broadcaster public fields
 	Sender              pm.Sender
-	NetworkCapabilities NetworkCapabilities
+	NetworkCapabilities common.NetworkCapabilities
 
 	// Thread safety for config fields
 	mu             sync.RWMutex
@@ -329,7 +315,7 @@ func (n *LivepeerNode) ResetNetworkCapabilities() {
 	clear(n.NetworkCapabilities.Orchestrators)
 }
 
-func (n *LivepeerNode) AddNetworkCapabilities(orch *OrchNetworkCapabilities) error {
+func (n *LivepeerNode) AddNetworkCapabilities(orch *common.OrchNetworkCapabilities) error {
 	if orch == nil {
 		return errors.New("OrchestratorInfo is nil")
 	}
@@ -339,6 +325,6 @@ func (n *LivepeerNode) AddNetworkCapabilities(orch *OrchNetworkCapabilities) err
 	return nil
 }
 
-func (n *LivepeerNode) GetNetworkCapabilities() []*OrchNetworkCapabilities {
+func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilities {
 	return n.NetworkCapabilities.Orchestrators
 }

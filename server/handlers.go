@@ -268,8 +268,8 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 }
 
 type networkCapabilitiesResponse struct {
-	CapabilitiesNames map[core.Capability]string      `json:"capabilities_names"`
-	Orchestrators     []*core.OrchNetworkCapabilities `json:"orchestrators"`
+	CapabilitiesNames map[core.Capability]string        `json:"capabilities_names"`
+	Orchestrators     []*common.OrchNetworkCapabilities `json:"orchestrators"`
 }
 
 func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
