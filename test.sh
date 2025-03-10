@@ -24,6 +24,10 @@ go test -run TestSelectSession_ -race
 go test -run RegisterConnection -race
 cd ..
 
+cd media
+go test -race
+cd ..
+
 ./test_args.sh
 
 printf "\n\nAll Tests Passed\n\n"
