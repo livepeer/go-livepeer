@@ -887,6 +887,7 @@ func TestServeSegment_ProcessPaymentError(t *testing.T) {
 	orch.On("PriceInfo", mock.Anything).Return(&net.PriceInfo{}, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(&net.TicketParams{}, nil)
 	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 
 	s := &BroadcastSession{
 		Broadcaster: stubBroadcaster2(),

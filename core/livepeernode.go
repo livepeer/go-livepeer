@@ -138,13 +138,13 @@ type LivepeerNode struct {
 	AutoAdjustPrice    bool
 	AutoSessionLimit   bool
 	// Broadcaster public fields
-	Sender              pm.Sender
-	NetworkCapabilities common.NetworkCapabilities
+	Sender pm.Sender
 
 	// Thread safety for config fields
-	mu             sync.RWMutex
-	StorageConfigs map[string]*transcodeConfig
-	storageMutex   *sync.RWMutex
+	mu                  sync.RWMutex
+	StorageConfigs      map[string]*transcodeConfig
+	storageMutex        *sync.RWMutex
+	NetworkCapabilities common.NetworkCapabilities
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
@@ -312,19 +312,29 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 }
 
 func (n *LivepeerNode) ResetNetworkCapabilities() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	clear(n.NetworkCapabilities.Orchestrators)
 }
 
 func (n *LivepeerNode) AddNetworkCapabilities(orch *common.OrchNetworkCapabilities) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	if orch == nil {
 		return errors.New("OrchestratorInfo is nil")
 	}
 
 	n.NetworkCapabilities.Orchestrators = append(n.NetworkCapabilities.Orchestrators, orch)
 
+	if lpmon.Enabled {
+
+	}
+
 	return nil
 }
 
 func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilities {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	return n.NetworkCapabilities.Orchestrators
 }

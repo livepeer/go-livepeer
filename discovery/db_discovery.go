@@ -261,7 +261,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	//reset network capabilities
 	dbo.node.ResetNetworkCapabilities()
 
-	//load orchestratros from db
+	//load orchestrators from db
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			CurrentRound: dbo.rm.LastInitializedRound(),
@@ -319,7 +319,10 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 
 		//add response to network capabilities
-		dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info, dbOrch))
+		err = dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info, dbOrch))
+		if err != nil {
+			glog.Error("Error adding Orchestrator to network capabilities: ", err)
+		}
 
 		resc <- dbOrch
 	}
