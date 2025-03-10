@@ -158,6 +158,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			} else {
 				heap.Push(suspendedInfos, &suspension{od.RemoteInfo, &od, penalty})
 			}
+
 			nbResp++
 		case <-errCh:
 			nbResp++
