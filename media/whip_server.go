@@ -31,8 +31,6 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// TODO check behavior when runner is DOWN
-
 // TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
 
 const keyframeInterval = 2 * time.Second // TODO make configurable?

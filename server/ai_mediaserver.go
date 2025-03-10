@@ -708,7 +708,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		streamRequestTime := time.Now().UnixMilli()
 		corsHeaders(w, r.Method)
 
-		ctx := r.Context()
+		// NB: deliberately not using r.Context since ctx will outlive the request
+		ctx := context.Background()
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 		streamName := r.PathValue("stream")
@@ -719,10 +720,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		ctx = clog.AddVal(ctx, "stream", streamName)
 
 		ssr := media.NewSwitchableSegmentReader()
-
-		// prevent context cancellation error in selection due to whip completing first
-		// so use this to block whip request until selection is complete TODO improve
-		selectionComplete := make(chan bool, 1)
 
 		whipConn := media.NewWHIPConnection()
 
@@ -846,7 +843,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			if err != nil {
 				stopPipeline(err)
 			}
-			selectionComplete <- true
 			whipConn.AwaitClose()
 			ssr.Close()
 			ls.cleanupLive(ctx, streamName)
@@ -855,8 +851,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 		conn := server.CreateWHIP(ctx, ssr, w, r)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
-		// prevent context cancellation error due to whip request completing early
-		<-selectionComplete
 	})
 }
 
