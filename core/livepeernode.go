@@ -327,7 +327,7 @@ func (n *LivepeerNode) AddNetworkCapabilities(orch *common.OrchNetworkCapabiliti
 	n.NetworkCapabilities.Orchestrators = append(n.NetworkCapabilities.Orchestrators, orch)
 
 	if lpmon.Enabled {
-
+		lpmon.SendQueueEventAsync("network_capabilities", orch)
 	}
 
 	return nil
