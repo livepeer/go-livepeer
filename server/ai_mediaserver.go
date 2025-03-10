@@ -705,6 +705,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		// Others: auth, selection, job setup
 		// Run them in parallel
 
+		streamRequestTime := time.Now().UnixMilli()
 		corsHeaders(w, r.Method)
 
 		ctx := r.Context()
@@ -795,6 +796,27 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 				sendErrorEvent(err)
 				whipConn.Close()
+			}
+
+			clog.Info(ctx, "Received live video AI request", "pipelineParams", pipelineParams)
+
+			// Clear any previous gateway status
+			GatewayStatus.Clear(streamID)
+
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_receive_stream_request",
+				"timestamp":   streamRequestTime,
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
+
+			if monitor.Enabled {
+				monitor.AILiveVideoAttempt()
 			}
 
 			params := aiRequestParams{
