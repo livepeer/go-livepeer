@@ -438,6 +438,7 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 }
 
 func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, modelID string) (*AISession, error) {
+	clog.V(common.DEBUG).Infof(ctx, "selecting orchestrator for modelID=%s", modelID)
 	sel, err := c.getSelector(ctx, cap, modelID)
 	if err != nil {
 		return nil, err
