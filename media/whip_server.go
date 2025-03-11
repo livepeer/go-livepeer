@@ -525,74 +525,7 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 			PayloadType:        105,
 		},
 
-		// TODO verify 42e01f won't produle bframes
-		/*
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					webrtc.MimeTypeH264, 90000, 0,
-					"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-					videoRTCPFeedback,
-				},
-				PayloadType: 106,
-			},
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{webrtc.MimeTypeRTX, 90000, 0, "apt=106", nil},
-				PayloadType:        107,
-			},
-
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					webrtc.MimeTypeH264, 90000, 0,
-					"level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
-					videoRTCPFeedback,
-				},
-				PayloadType: 108,
-			},
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{webrtc.MimeTypeRTX, 90000, 0, "apt=108", nil},
-				PayloadType:        109,
-			},
-
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					webrtc.MimeTypeH264, 90000, 0,
-					"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f",
-					videoRTCPFeedback,
-				},
-				PayloadType: 127,
-			},
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{webrtc.MimeTypeRTX, 90000, 0, "apt=127", nil},
-				PayloadType:        125,
-			},
-
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					webrtc.MimeTypeH264,
-					90000, 0,
-					"level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=4d001f",
-					videoRTCPFeedback,
-				},
-				PayloadType: 39,
-			},
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{webrtc.MimeTypeRTX, 90000, 0, "apt=39", nil},
-				PayloadType:        40,
-			},
-
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{
-					webrtc.MimeTypeH264, 90000, 0,
-					"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=64001f",
-					videoRTCPFeedback,
-				},
-				PayloadType: 112,
-			},
-			{
-				RTPCodecCapability: webrtc.RTPCodecCapability{webrtc.MimeTypeRTX, 90000, 0, "apt=112", nil},
-				PayloadType:        113,
-			},
-		*/
+		// TODO verify other H.264 profile-level-id such as 42e01f won't produle bframes
 	} {
 		if err := m.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
 			// this should really never happen
