@@ -175,7 +175,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
 			return
 		}
-		tracks := []*webrtc.TrackRemote{videoTrack}
+		tracks := []RTPTrack{videoTrack}
 		if audioTrack != nil {
 			tracks = append(tracks, audioTrack)
 		}
@@ -188,7 +188,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleRTP(ctx, segmenter, timeDecoder, track)
+				handleRTP(ctx, segmenter, timeDecoder, track.(*webrtc.TrackRemote))
 			}()
 		}
 		gatherDuration := time.Since(gatherStartTime)

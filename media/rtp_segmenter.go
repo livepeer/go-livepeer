@@ -10,6 +10,10 @@ import (
 
 // converts from rtp to segmented mpeg2ts
 
+type RTPTrack interface {
+	Codec() webrtc.RTPCodecParameters
+}
+
 type RTPSegmenter struct {
 	mu           sync.RWMutex
 	mediaWriter  *MediaWriter
@@ -20,6 +24,8 @@ type RTPSegmenter struct {
 	videoQueue   []*videoPacket
 	hasAudio     bool
 	hasVideo     bool
+	maxQueueSize int   // Maximum number of packets to buffer per queue
+	tsWatermark  int64 // Timestamp of the last written packet
 }
 
 type audioPacket struct {
@@ -35,15 +41,16 @@ type videoPacket struct {
 }
 
 type trackWriter struct {
-	rtpTrack    *webrtc.TrackRemote
+	rtpTrack    RTPTrack
 	mpegtsTrack *mpegts.Track
 	writeAudio  func(pts int64, data [][]byte) error
 	writeVideo  func(pts, dts int64, data [][]byte) error
 }
 
-func NewRTPSegmenter(tracks []*webrtc.TrackRemote, ssr *SwitchableSegmentReader) *RTPSegmenter {
+func NewRTPSegmenter(tracks []RTPTrack, ssr *SwitchableSegmentReader) *RTPSegmenter {
 	s := &RTPSegmenter{
-		ssr: ssr,
+		ssr:          ssr,
+		maxQueueSize: 20,
 	}
 	s.tracks = s.setupTracks(tracks)
 	return s
@@ -67,24 +74,43 @@ func (s *RTPSegmenter) StartSegment(startTs int64) {
 	s.ssr.Read(writer.MakeReader())
 	s.mediaWriter = writer
 }
-func (s *RTPSegmenter) WriteVideo(source *webrtc.TrackRemote, pts, dts int64, au [][]byte) error {
+func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, t := range s.tracks {
 		if t.rtpTrack == source {
+			// Check if packet is too old (below low watermark)
+			if s.tsWatermark > 0 && dts < s.tsWatermark {
+				// Packet is too old, discard it
+				// TODO increment some metric for this connection?
+				return nil
+			}
+
+			// Add new packet
 			s.videoQueue = append(s.videoQueue, &videoPacket{t, pts, dts, au})
+
 			return s.interleaveAndWrite()
 		}
 	}
 	return errors.New("no matching video track found")
 }
-func (s *RTPSegmenter) WriteAudio(source *webrtc.TrackRemote, pts int64, au [][]byte) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *RTPSegmenter) WriteAudio(source RTPTrack, pts int64, au [][]byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, t := range s.tracks {
 		if t.rtpTrack == source {
 			rescaledPts := multiplyAndDivide(pts, 90000, int64(source.Codec().ClockRate))
+
+			// Check if packet is too old (below low watermark)
+			if s.tsWatermark > 0 && rescaledPts < s.tsWatermark {
+				// Packet is too old, discard it
+				// TODO increment some metric for this connection?
+				return nil
+			}
+
+			// Add new packet
 			s.audioQueue = append(s.audioQueue, &audioPacket{t, rescaledPts, au})
+
 			return s.interleaveAndWrite()
 		}
 	}
@@ -93,6 +119,7 @@ func (s *RTPSegmenter) WriteAudio(source *webrtc.TrackRemote, pts int64, au [][]
 func (s *RTPSegmenter) CloseSegment() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.flushQueues(0)
 	if s.mediaWriter != nil {
 		s.mediaWriter.Close()
 	}
@@ -103,7 +130,7 @@ func (s *RTPSegmenter) IsReady() bool {
 	return s.mediaWriter != nil
 }
 
-func (s *RTPSegmenter) setupTracks(rtpTracks []*webrtc.TrackRemote) []*trackWriter {
+func (s *RTPSegmenter) setupTracks(rtpTracks []RTPTrack) []*trackWriter {
 	tracks := []*trackWriter{}
 	for _, t := range rtpTracks {
 		codec := t.Codec()
@@ -133,21 +160,52 @@ func (s *RTPSegmenter) interleaveAndWrite() error {
 		// so flush immediately
 		s.flushQueues(0)
 	}
+
 	for len(s.audioQueue) > 0 && len(s.videoQueue) > 0 {
+		var timestamp int64
 		if s.videoQueue[0].dts <= s.audioQueue[0].pts {
 			vp := s.videoQueue[0]
 			s.videoQueue = s.videoQueue[1:]
+			timestamp = vp.dts
 			if err := vp.track.writeVideo(vp.pts, vp.dts, vp.data); err != nil {
 				return err
 			}
 		} else {
 			ap := s.audioQueue[0]
 			s.audioQueue = s.audioQueue[1:]
+			timestamp = ap.pts
 			if err := ap.track.writeAudio(ap.pts, ap.data); err != nil {
 				return err
 			}
 		}
+
+		// Update low watermark with the timestamp of the packet we just wrote
+		s.tsWatermark = timestamp
 	}
+
+	// Check queue sizes and flush oldest packets if needed
+	for len(s.videoQueue) > s.maxQueueSize {
+		// Flush out the oldest packet
+		vp := s.videoQueue[0]
+		s.videoQueue = s.videoQueue[1:]
+		if err := vp.track.writeVideo(vp.pts, vp.dts, vp.data); err != nil {
+			return err
+		}
+		// Update watermark
+		s.tsWatermark = vp.dts
+	}
+
+	for len(s.audioQueue) > s.maxQueueSize {
+		// Flush out the oldest packet
+		ap := s.audioQueue[0]
+		s.audioQueue = s.audioQueue[1:]
+		if err := ap.track.writeAudio(ap.pts, ap.data); err != nil {
+			return err
+		}
+		// Update watermark
+		s.tsWatermark = ap.pts
+	}
+
 	return nil
 }
 
@@ -163,6 +221,8 @@ func (s *RTPSegmenter) flushQueues(stopTs int64) error {
 		if err := vp.track.writeVideo(vp.pts, vp.dts, vp.data); err != nil {
 			return err
 		}
+		// Update low watermark
+		s.tsWatermark = vp.dts
 	}
 	for len(s.audioQueue) > 0 {
 		ap := s.audioQueue[0]
@@ -173,6 +233,8 @@ func (s *RTPSegmenter) flushQueues(stopTs int64) error {
 		if err := ap.track.writeAudio(ap.pts, ap.data); err != nil {
 			return err
 		}
+		// Update low watermark
+		s.tsWatermark = ap.pts
 	}
 	return nil
 }
