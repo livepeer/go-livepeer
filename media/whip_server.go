@@ -57,7 +57,7 @@ func generateETag() string {
 
 // ICE server configuration.
 // TODO make this configurable
-var webrtcConfig = webrtc.Configuration{
+var WebrtcConfig = webrtc.Configuration{
 	ICEServers: []webrtc.ICEServer{
 		{URLs: []string{"stun:stun.l.google.com:19302"}},
 	},
@@ -87,7 +87,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	defer r.Body.Close()
 
 	// Create a new PeerConnection
-	peerConnection, err := s.api.NewPeerConnection(webrtcConfig)
+	peerConnection, err := s.api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
@@ -152,7 +152,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	w.Header().Set("Content-Type", "application/sdp")
 	w.Header().Set("Location", resourceURL)
 	w.Header().Set("ETag", etag)
-	w.Header()["Link"] = genLinkHeaders(webrtcConfig.ICEServers)
+	w.Header()["Link"] = GenICELinkHeaders(WebrtcConfig.ICEServers)
 	w.WriteHeader(http.StatusCreated)
 
 	// Write the full SDP answer
@@ -425,7 +425,7 @@ func splitH264NALUs(buf []byte) ([][]byte, error) {
 	return parts, nil
 }
 
-func genLinkHeaders(iceServers []webrtc.ICEServer) []string {
+func GenICELinkHeaders(iceServers []webrtc.ICEServer) []string {
 	// https://github.com/bluenviron/mediamtx/blob/4dfe274239a5a37198ce108250ae8db04f34cc3e/internal/protocols/whip/link_header.go#L24-L37
 	ret := make([]string, len(iceServers))
 
