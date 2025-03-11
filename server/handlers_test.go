@@ -1276,8 +1276,93 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"0"},
 	}
 	handler = voteHandler(client)
-	status, body = postForm(handler, form)
+	status, _ = postForm(handler, form)
 	assert.Equal(http.StatusOK, status)
+}
+
+func TestProposalVoteHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{StubClient: &eth.StubClient{}}
+	tx := ethtypes.NewTx(&ethtypes.LegacyTx{})
+
+	// Test missing client
+	handler := proposalVoteHandler(nil)
+	status, body := post(handler)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
+
+	// Test invalid proposal ID
+	form := url.Values{
+		"proposalID": {"foo"},
+		"support":    {"1"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("proposalID is not a valid integer value", body)
+
+	// Test invalid support value (non-integer)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"foo"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("support is not a valid integer value", body)
+
+	// Test invalid support value (out of range)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"3"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("invalid support", body)
+
+	// Test ProposalVote() error
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+	}
+	err := errors.New("voting error")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(nil, err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to submit proposal vote transaction err=%q", err), body)
+
+	// Test CheckTx() error
+	err = errors.New("unable to mine tx")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to mine proposal vote transaction err=%q", err), body)
+
+	// Test ProposalVote() success
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVote", big.NewInt(1), uint8(1))
+
+	// Test ProposalVoteWithReason() success
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+		"reason":     {"Test reason"},
+	}
+	client.On("ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason").Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason")
 }
 
 // Tickets
