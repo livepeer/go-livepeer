@@ -175,6 +175,10 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
 			return
 		}
+		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
+			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
+			return
+		}
 		tracks := []RTPTrack{videoTrack}
 		if audioTrack != nil {
 			tracks = append(tracks, audioTrack)
