@@ -2,9 +2,11 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -841,4 +843,24 @@ func TestParseAIModelConfigs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHardwareInformationFromNetHardware(t *testing.T) {
+	netHdwDetail := net.GPUComputeInfo{Id: "gpu-1", Name: "gpu name", Major: 8, Minor: 9, MemoryFree: 1, MemoryTotal: 10}
+	netHdwInfo := make(map[string]*net.GPUComputeInfo)
+	netHdwInfo["0"] = &netHdwDetail
+	netHdw := net.HardwareInformation{Pipeline: "livepeer-pipeline", ModelId: "livepeer/model1", GpuInfo: netHdwInfo}
+	var netHdwList []*net.HardwareInformation
+	netHdwList = append(netHdwList, &netHdw)
+	//create []worker.HardwareInformation
+	hdwList := hardwareInformationFromNetHardware(netHdwList)
+
+	netHdwJson, _ := json.Marshal(netHdwList)
+	hdwJson, _ := json.Marshal(hdwList)
+
+	var hdw1, hdw2 interface{}
+	json.Unmarshal(netHdwJson, &hdw1)
+	json.Unmarshal(hdwJson, &hdw2)
+	assert.True(t, reflect.DeepEqual(hdw1, hdw2))
+
 }
