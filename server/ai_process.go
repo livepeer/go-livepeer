@@ -1545,8 +1545,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		//for batch AI add session to be used on next request, for live-video-to-video suspend the session until next refresh
-		if isNoCapacityError(err) && cap != core.Capability_LiveVideoToVideo {
+		// when no capacity error is received, retry with another session, but do not suspend the session
+		if isNoCapacityError(err) {
 			retryableSessions = append(retryableSessions, sess)
 			continue
 		}
