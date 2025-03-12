@@ -749,7 +749,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				if err != nil {
 					whipConn.Close()
 					clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
-					http.Error(w, "Forbidden", http.StatusForbidden)
 					return
 				}
 
