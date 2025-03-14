@@ -97,9 +97,10 @@ var _ DockerClient = (*docker.Client)(nil)
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
 type DockerManager struct {
-	gpus      []string
-	modelDir  string
-	overrides ImageOverrides
+	gpus        []string
+	modelDir    string
+	overrides   ImageOverrides
+	verboseLogs bool
 
 	dockerClient DockerClient
 	// gpu ID => container name
@@ -109,7 +110,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
 	if err := removeExistingContainers(ctx, client); err != nil {
 		cancel()
@@ -121,6 +122,7 @@ func NewDockerManager(overrides ImageOverrides, gpus []string, modelDir string, 
 		gpus:          gpus,
 		modelDir:      modelDir,
 		overrides:     overrides,
+		verboseLogs:   verboseLogs,
 		dockerClient:  client,
 		gpuContainers: make(map[string]string),
 		containers:    make(map[string]*RunnerContainer),
@@ -330,6 +332,9 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 	for key, value := range optimizationFlags {
 		envVars = append(envVars, key+"="+value.String())
+	}
+	if m.verboseLogs {
+		envVars = append(envVars, "VERBOSE_LOGS=true")
 	}
 
 	containerConfig := &container.Config{
