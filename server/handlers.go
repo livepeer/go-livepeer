@@ -267,6 +267,34 @@ func (s *LivepeerServer) setMaxPriceForCapability() http.Handler {
 	})
 }
 
+type networkCapabilitiesResponse struct {
+	CapabilitiesNames map[core.Capability]string        `json:"capabilities_names"`
+	Orchestrators     []*common.OrchNetworkCapabilities `json:"orchestrators"`
+}
+
+func (s *LivepeerServer) getNetworkCapabilitiesHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.LivepeerNode.NodeType == core.BroadcasterNode {
+
+			orchNetworkCaps := s.LivepeerNode.GetNetworkCapabilities()
+			if orchNetworkCaps == nil {
+				respond500(w, "network capabilities not available")
+			}
+
+			networkCapabilities := &networkCapabilitiesResponse{
+				CapabilitiesNames: core.CapabilityNameLookup,
+				Orchestrators:     orchNetworkCaps,
+			}
+
+			respondJson(w, networkCapabilities)
+			return
+		} else {
+			respond400(w, "Node must be gateway node to get network capabilities")
+			return
+		}
+	})
+}
+
 func getBroadcastConfigHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var pNames []string

@@ -20,7 +20,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 1 * time.Hour
+var cacheRefreshInterval = 25 * time.Minute
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
@@ -37,6 +37,7 @@ type DBOrchestratorPoolCache struct {
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
+	node                  *core.LivepeerNode
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -52,6 +53,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		bcast:                 core.NewBroadcaster(node),
 		orchBlacklist:         orchBlacklist,
 		discoveryTimeout:      discoveryTimeout,
+		node:                  node,
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -256,6 +258,10 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 }
 
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
+	//reset network capabilities
+	dbo.node.ResetNetworkCapabilities()
+
+	//load orchestrators from db
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
 			CurrentRound: dbo.rm.LastInitializedRound(),
@@ -311,6 +317,13 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- err
 			return
 		}
+
+		//add response to network capabilities
+		err = dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info, dbOrch))
+		if err != nil {
+			glog.Error("Error adding Orchestrator to network capabilities: ", err)
+		}
+
 		resc <- dbOrch
 	}
 
@@ -383,4 +396,22 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 			CreationRoundBlockHash: ethcommon.BytesToHash(params.ExpirationParams.GetCreationRoundBlockHash()),
 		},
 	}
+}
+
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *common.DBOrch) *common.OrchNetworkCapabilities {
+	orch := &common.OrchNetworkCapabilities{
+		Address:    dbOrch.EthereumAddr,
+		ServiceURI: dbOrch.ServiceURI,
+	}
+
+	// add orch operating information if available
+	if info != nil {
+		orch.LocalAddress = ethcommon.BytesToAddress(info.Address).Hex()
+		orch.OrchURI = info.GetTranscoder()
+		orch.Capabilities = info.GetCapabilities()
+		orch.Hardware = info.GetHardware()
+		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
+	}
+
+	return orch
 }

@@ -637,3 +637,8 @@ func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string
 	a.Called++
 	return nil
 }
+
+func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
+	a.Called++
+	return []worker.HardwareInformation{}
+}
