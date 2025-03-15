@@ -97,13 +97,12 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		streamID := r.Header.Get("streamID")
-		requestID := r.Header.Get("requestID")
 
-		if requestID == "" {
-			requestID = string(core.RandomManifestID())
-		}
-		ctx = clog.AddVal(ctx, "request_id", requestID)
+		streamID := r.Header.Get("streamID")
+		gatewayRequestID := r.Header.Get("requestID")
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "orch_request_id", requestID)
+		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
@@ -229,16 +228,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
-			ModelId:      req.ModelId,
-			PublishUrl:   publishUrlOverwrite,
-			SubscribeUrl: subscribeUrlOverwrite,
-			EventsUrl:    &eventsUrlOverwrite,
-			ControlUrl:   &controlUrlOverwrite,
-			Params:       req.Params,
+			ModelId:          req.ModelId,
+			PublishUrl:       publishUrlOverwrite,
+			SubscribeUrl:     subscribeUrlOverwrite,
+			EventsUrl:        &eventsUrlOverwrite,
+			ControlUrl:       &controlUrlOverwrite,
+			Params:           req.Params,
+			GatewayRequestId: &gatewayRequestID,
+			StreamId:         &streamID,
 		}
 
 		// Send request to the worker
-		_, err = orch.LiveVideoToVideo(ctx, requestID, streamID, workerReq)
+		_, err = orch.LiveVideoToVideo(ctx, requestID, gatewayRequestID, streamID, workerReq)
 		if err != nil {
 			if monitor.Enabled {
 				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
@@ -259,6 +260,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
+			RequestId:    &requestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
