@@ -75,7 +75,7 @@ func NewAddressBalances(ttl time.Duration) *AddressBalances {
 	}
 }
 
-// Credit adds an an amount to the balance for an address' ManifestID
+// Credit adds an amount to the balance for an address' ManifestID
 func (a *AddressBalances) Credit(addr ethcommon.Address, id ManifestID, amount *big.Rat) {
 	a.balancesForAddr(addr).Credit(id, amount)
 }
@@ -142,7 +142,7 @@ func NewBalances(ttl time.Duration) *Balances {
 	}
 }
 
-// Credit adds an an amount to the balance for a ManifestID
+// Credit adds an amount to the balance for a ManifestID
 func (b *Balances) Credit(id ManifestID, amount *big.Rat) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()

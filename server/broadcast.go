@@ -1479,7 +1479,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess.lock.RUnlock()
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
-	// the the segments' OS location will be overwritten.
+	// the segments' OS location will be overwritten.
 	// Cache the segments so we can restore them in OS if necessary.
 	params := &verification.Params{
 		ManifestID:   sess.Params.ManifestID,
