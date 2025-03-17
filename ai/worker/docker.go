@@ -334,7 +334,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		envVars = append(envVars, key+"="+value.String())
 	}
 	if m.verboseLogs {
-		envVars = append(envVars, "VERBOSE_LOGGING=true")
+		envVars = append(envVars, "VERBOSE_LOGGING=1")
 	}
 
 	containerConfig := &container.Config{
