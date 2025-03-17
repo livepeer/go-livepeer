@@ -87,7 +87,7 @@ jobs:
             type=raw,value=stable,enable=${{ startsWith(github.event.ref, 'refs/tags/v') && github.event.base_ref == 'refs/heads/master' }}
 
       - name: Build and push livepeer docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
@@ -176,7 +176,7 @@ jobs:
 
       - name: Build and push livepeer builder
         if: ${{ steps.match-tag.outputs.match != '' }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           build-args: |
             BUILD_TAGS=${{ steps.build-tag.outputs.build-tags }}
