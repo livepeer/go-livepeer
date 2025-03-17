@@ -1545,6 +1545,18 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
+		// when the ticket nonce is invalid
+		// for Live Video to Video, swap to different Orchestrator, for others just retry the same Orchestrator
+		if isInvalidTicketSenderNonce(err) {
+			if cap == core.Capability_LiveVideoToVideo {
+				retryableSessions = append(retryableSessions, sess)
+				continue
+			} else {
+				params.sessManager.Complete(ctx, sess)
+				continue
+			}
+		}
+
 		// when no capacity error is received, retry with another session, but do not suspend the session
 		if isNoCapacityError(err) {
 			retryableSessions = append(retryableSessions, sess)
@@ -1581,7 +1593,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 // isRetryableError checks if the error is a transient error that can be retried.
 func isRetryableError(err error) bool {
-	return errContainsMsg(err, "invalid ticket sendernonce", "ticketparams expired")
+	return errContainsMsg(err, "ticketparams expired")
+}
+
+func isInvalidTicketSenderNonce(err error) bool {
+	return errContainsMsg(err, "invalid ticket sendernonce")
 }
 
 func isNoCapacityError(err error) bool {
