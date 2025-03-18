@@ -440,13 +440,23 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
-
-		mediaMTXOutputURL := fmt.Sprintf("rtmp://%s/aiWebrtc/%s-out", remoteHost, streamName)
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
 			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
+
+		// Currently for webrtc we need to add a path prefix due to the ingress setup
+		mediaMTXStreamPrefix := r.PathValue("prefix")
+		if mediaMTXStreamPrefix != "" {
+			mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
+		}
+		mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName)
+		mediaMTXRtmpURL := r.FormValue("rtmp_url")
+		if mediaMTXRtmpURL != "" {
+			mediaMTXInputURL = mediaMTXRtmpURL
+		}
+		mediaMTXOutputURL := mediaMTXInputURL + "-out"
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -542,13 +552,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Kick off the RTMP pull and segmentation as soon as possible
 		ssr := media.NewSwitchableSegmentReader()
 		go func() {
-			// Currently for webrtc we need to add a path prefix due to the ingress setup
-			mediaMTXStreamPrefix := r.PathValue("prefix")
-			if mediaMTXStreamPrefix != "" {
-				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
-			}
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
+			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(ctx, streamName)
 		}()
