@@ -1545,16 +1545,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		// when the ticket nonce is invalid
-		// for Live Video to Video, swap to different Orchestrator, for others just retry the same Orchestrator
+		// when the ticket nonce is invalid, swap to a different Orchestrator
 		if isInvalidTicketSenderNonce(err) {
-			if cap == core.Capability_LiveVideoToVideo {
+			if cap != core.Capability_LiveVideoToVideo {
 				retryableSessions = append(retryableSessions, sess)
-				continue
-			} else {
-				params.sessManager.Complete(ctx, sess)
-				continue
 			}
+			continue
 		}
 
 		// when no capacity error is received, retry with another session, but do not suspend the session
