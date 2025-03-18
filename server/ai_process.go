@@ -1545,6 +1545,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
+		// when the ticket nonce is invalid, swap to a different Orchestrator, do not suspend the Orchestrator,
+		// but also don't get it back into the pool until the next sessions refresh
+		if isInvalidTicketSenderNonce(err) {
+			continue
+		}
+
 		// when no capacity error is received, retry with another session, but do not suspend the session
 		if isNoCapacityError(err) {
 			retryableSessions = append(retryableSessions, sess)
@@ -1581,7 +1587,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 // isRetryableError checks if the error is a transient error that can be retried.
 func isRetryableError(err error) bool {
-	return errContainsMsg(err, "invalid ticket sendernonce", "ticketparams expired")
+	return errContainsMsg(err, "ticketparams expired")
+}
+
+func isInvalidTicketSenderNonce(err error) bool {
+	return errContainsMsg(err, "invalid ticket sendernonce")
 }
 
 func isNoCapacityError(err error) bool {
