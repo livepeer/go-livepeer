@@ -452,12 +452,11 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 		}
 		mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName)
-		mediaMTXOutputURL := fmt.Sprintf("rtmp://%s/aiWebrtc/%s-out", remoteHost, streamName)
 		mediaMTXRtmpURL := r.FormValue("rtmp_url")
 		if mediaMTXRtmpURL != "" {
 			mediaMTXInputURL = mediaMTXRtmpURL
-			mediaMTXOutputURL = mediaMTXRtmpURL + "-out"
 		}
+		mediaMTXOutputURL := mediaMTXInputURL + "-out"
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
