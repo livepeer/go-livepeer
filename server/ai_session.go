@@ -193,6 +193,8 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 		// We always select a fresh session which has the lowest initial latency
 		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
 		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		// we don't use penalties for not in Realtime Video AI
+		penalty = 0
 	} else {
 		// sort sessions based on current latency score
 		warmSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
