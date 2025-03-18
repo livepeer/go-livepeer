@@ -440,13 +440,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
-
-		mediaMTXOutputURL := fmt.Sprintf("rtmp://%s/aiWebrtc/%s-out", remoteHost, streamName)
 		if outputURL == "" {
 			// re-publish to ourselves for now
 			// Not sure if we want this to be permanent
 			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
 		}
+
+		rtmpPort := r.FormValue("rtmpPort")
+		if rtmpPort == "" {
+			rtmpPort = "1935"
+		}
+		mediaMTXOutputURL := fmt.Sprintf("rtmp://%s:%s/aiWebrtc/%s-out", remoteHost, rtmpPort, streamName)
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -548,7 +552,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 			}
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
+			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s:%s/%s%s", remoteHost, rtmpPort, mediaMTXStreamPrefix, streamName), ssr.Read)
 			ssr.Close()
 			ls.cleanupLive(ctx, streamName)
 		}()
