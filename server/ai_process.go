@@ -1545,11 +1545,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		// when the ticket nonce is invalid, swap to a different Orchestrator
+		// when the ticket nonce is invalid, swap to a different Orchestrator, do not suspend the Orchestrator,
+		// but also don't get it back into the pool until the next sessions refresh
 		if isInvalidTicketSenderNonce(err) {
-			if cap != core.Capability_LiveVideoToVideo {
-				retryableSessions = append(retryableSessions, sess)
-			}
 			continue
 		}
 
