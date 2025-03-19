@@ -1,12 +1,35 @@
 # Changelog
 
-## V0.8.3
+## v0.8.4
 
 ### Features ⚒
 
 #### General
 
--   [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+- [#3411](https://github.com/livepeer/go-livepeer/pull/3411) Increase ticket params expiration from 10 (~2 min) to 40 (~8 min) (@leszko)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Broadcaster
+- [#3393](https://github.com/livepeer/go-livepeer/pull/3393) Improve AI Session Selection (@ad-astra-video)
+- [#3402](https://github.com/livepeer/go-livepeer/pull/3402) Add Min Initial Latency Selector (@leszko)
+
+#### Orchestrator
+
+- [#3345](https://github.com/livepeer/go-livepeer/pull/3345) Move `ai-worker` code to a local package
+- [#3399](https://github.com/livepeer/go-livepeer/pull/3399) Restart warm containers when they crash (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
+- [#3275](https://github.com/livepeer/go-livepeer/pull/3275) - Provide AI orchestrators with a way to vote on active proposal through the CLI.
+
+## V0.8.3
+
+### Features ⚒
+
+#### General
+- [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
 
 #### Orchestrator
 
