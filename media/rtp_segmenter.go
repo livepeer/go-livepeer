@@ -3,6 +3,7 @@ package media
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/bluenviron/mediacommon/v2/pkg/formats/mpegts"
 	"github.com/pion/webrtc/v4"
@@ -26,6 +27,10 @@ type RTPSegmenter struct {
 	hasVideo     bool
 	maxQueueSize int   // Maximum number of packets to buffer per queue
 	tsWatermark  int64 // Timestamp of the last written packet
+
+	segStartTs   int64         // timestamp of the current segment
+	segStartTime time.Time     // wall clock of when the current segment started
+	minSegDur    time.Duration // minimum segment duration
 }
 
 type audioPacket struct {
@@ -47,10 +52,11 @@ type trackWriter struct {
 	writeVideo  func(pts, dts int64, data [][]byte) error
 }
 
-func NewRTPSegmenter(tracks []RTPTrack, ssr *SwitchableSegmentReader) *RTPSegmenter {
+func NewRTPSegmenter(tracks []RTPTrack, ssr *SwitchableSegmentReader, segDur time.Duration) *RTPSegmenter {
 	s := &RTPSegmenter{
 		ssr:          ssr,
 		maxQueueSize: 20,
+		minSegDur:    segDur,
 	}
 	s.tracks = s.setupTracks(tracks)
 	return s
@@ -73,7 +79,28 @@ func (s *RTPSegmenter) StartSegment(startTs int64) {
 	s.mpegtsWriter = mpegts.NewWriter(writer, newTracks)
 	s.ssr.Read(writer.MakeReader())
 	s.mediaWriter = writer
+	s.segStartTs = startTs
+	s.segStartTime = time.Now()
 }
+
+func (s *RTPSegmenter) ShouldStartSegment(pts int64, tb uint32) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.segStartTime.IsZero() {
+		return true
+	}
+	// Enforce minimum real (wall-clock) time
+	if time.Since(s.segStartTime) < s.minSegDur {
+		return false
+	}
+	// Enforce minimum PTS time
+	needed := int64(s.minSegDur.Seconds() * float64(tb))
+	if (pts - s.segStartTs) < needed {
+		return false
+	}
+	return true
+}
+
 func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
