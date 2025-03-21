@@ -183,9 +183,16 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		if audioTrack != nil {
 			tracks = append(tracks, audioTrack)
 		}
+		minSegDur := 1 * time.Second
+		segDurEnv := os.Getenv("LIVE_AI_MIN_SEG_DUR")
+		if segDurEnv != "" {
+			if parsed, err := time.ParseDuration(segDurEnv); err == nil {
+				minSegDur = parsed
+			}
+		}
 		trackCodecs := make([]string, len(tracks))
 		timeDecoder := rtptime.NewGlobalDecoder2()
-		segmenter := NewRTPSegmenter(tracks, ssr)
+		segmenter := NewRTPSegmenter(tracks, ssr, minSegDur)
 		var wg sync.WaitGroup // to wait for all tracks to complete
 		for i, track := range tracks {
 			trackCodecs[i] = track.Codec().MimeType
@@ -286,7 +293,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 
 			idr := h264.IsRandomAccess(au)
-			if idr {
+			if idr && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
 				segmenter.StartSegment(dts)
 			}
 
