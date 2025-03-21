@@ -115,6 +115,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							},
 						})
 					}
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
