@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +97,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
@@ -560,4 +562,26 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 		ev["message"] = err.Error()
 		monitor.SendQueueEventAsync("ai_stream_events", ev)
 	}
+}
+
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
+	if seq > 10 {
+		return
+	}
+	go func() {
+		reader := r.Clone()
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		file, err := os.Create(p)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not create segment file for logging", err)
+			return
+		}
+		defer file.Close()
+		_, err = io.Copy(file, reader)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not log segment", err)
+			return
+		}
+	}()
 }
