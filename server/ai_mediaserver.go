@@ -554,7 +554,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
-			ssr.Close()
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),
@@ -566,6 +565,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					"url":     "",
 				},
 			})
+			ssr.Close()
 			ls.cleanupLive(ctx, streamName)
 		}()
 
