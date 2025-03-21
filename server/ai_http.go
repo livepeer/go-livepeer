@@ -216,7 +216,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				}
 				reader := segment.Reader
 				if paymentProcessor != nil {
-					reader = paymentProcessor.process(segment.Reader)
+					reader = paymentProcessor.process(ctx, segment.Reader)
 				}
 				io.Copy(io.Discard, reader)
 			}
