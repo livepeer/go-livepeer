@@ -3,6 +3,7 @@ package media
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestRTPSegmenterQueueLimit(t *testing.T) {
 
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr)
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
 	seg.StartSegment(0)
 
 	// Override maxQueueSize for testing
@@ -81,7 +82,7 @@ func TestRTPSegmenterQueueLimit(t *testing.T) {
 func TestRTPSegmenterVideoOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr)
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, 0)
 
 	// Verify we have video but no audio
 	require.True(seg.hasVideo)
@@ -107,7 +108,7 @@ func TestRTPSegmenterVideoOnly(t *testing.T) {
 func TestRTPSegmenterAudioOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{audioTrack}, ssr)
+	seg := NewRTPSegmenter([]RTPTrack{audioTrack}, ssr, 0)
 
 	// Verify we have audio but no video
 	require.True(seg.hasAudio)
@@ -133,7 +134,7 @@ func TestRTPSegmenterAudioOnly(t *testing.T) {
 func TestRTPSegmenterConcurrency(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr)
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
 
 	// Start a segment
 	seg.StartSegment(0)
@@ -179,7 +180,7 @@ func TestRTPSegmenterConcurrency(t *testing.T) {
 func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
-	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr)
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
 
 	// Start a segment
 	seg.StartSegment(0)
@@ -227,4 +228,58 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	require.Len(seg.videoQueue, 1)
 	// Verify low watermark is updated
 	require.Equal(int64(7000), seg.videoQueue[0].pts)
+}
+
+func TestRTPSegmenterMinSegmentDurationWallClock(t *testing.T) {
+	require := require.New(t)
+
+	ssr := NewSwitchableSegmentReader()
+	// Use a short minSegDur so we don't slow tests too much
+	minSegDur := 100 * time.Millisecond
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, minSegDur)
+
+	// Initially no segment
+	require.False(seg.IsReady(), "No active segment yet")
+
+	// Start an initial segment
+	seg.StartSegment(0)
+	require.True(seg.IsReady(), "Segment should be started")
+
+	// Immediately check if we should start a new segment
+	// Not enough wall time has passed
+	shouldStart := seg.ShouldStartSegment(1, 1) // ~1 second in 1hz timescale
+	require.False(shouldStart, "Should not start new segment (wall-clock < minDur)")
+
+	// Wait less than the minSegDur, ensure we still don't start
+	time.Sleep(minSegDur / 2)
+	shouldStart = seg.ShouldStartSegment(2, 1) // ~2 seconds
+	require.False(shouldStart, "Still under the wall-clock limit")
+
+	// Wait enough time, then we can start a new segment
+	time.Sleep(minSegDur / 2)
+	shouldStart = seg.ShouldStartSegment(3, 1) // ~3 seconds PTS
+	require.True(shouldStart, "Segment should have started")
+}
+
+func TestRTPSegmenterMinSegmentDurationPTS(t *testing.T) {
+	require := require.New(t)
+	ssr := NewSwitchableSegmentReader()
+
+	// 1 second min
+	minSegDur := 10 * time.Millisecond
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, minSegDur)
+
+	// Start initial segment at pts=0
+	seg.StartSegment(0)
+	require.True(seg.IsReady(), "Segment should be active")
+
+	// Even if we wait in real clock, if PTS is still less than 1s, no new segment
+	time.Sleep(minSegDur)
+	require.False(seg.ShouldStartSegment(9, 1000)) // 9ms < 10ms minSegDur
+	require.True(seg.ShouldStartSegment(10, 1000)) // 10ms == minSegDur
+
+	seg.StartSegment(12)
+	time.Sleep(minSegDur)                                  // because we also check the wall clock
+	require.False(seg.ShouldStartSegment(20, 1000), "PTS") // 20ms < 22ms (12ms start + 10ms  minSegDur)
+	require.True(seg.ShouldStartSegment(23, 1000), "PTS")  // 23ms > 22ms
 }
