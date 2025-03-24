@@ -401,6 +401,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		streamRequestTime := time.Now().UnixMilli()
 
 		ctx = clog.AddVal(ctx, "stream", streamName)
+		ctx = clog.AddVal(ctx, "whip", "mediamtx")
 		sourceID := r.FormValue("source_id")
 		if sourceID == "" {
 			clog.Errorf(ctx, "Missing source_id")
@@ -723,6 +724,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			return
 		}
 		ctx = clog.AddVal(ctx, "stream", streamName)
+		ctx = clog.AddVal(ctx, "whip", "gateway")
 
 		ssr := media.NewSwitchableSegmentReader()
 
