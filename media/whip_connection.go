@@ -26,7 +26,14 @@ func NewWHIPConnection() *WHIPConnection {
 func (w *WHIPConnection) SetWHIPConnection(p *MediaState) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.peer = p
+	// immediately close if the peer is nil
+	if p == nil {
+		w.closed = true
+	}
+	// don't overwrite existing peers
+	if w.peer == nil {
+		w.peer = p
+	}
 	w.cond.Broadcast()
 }
 
@@ -48,15 +55,17 @@ func (w *WHIPConnection) AwaitClose() {
 }
 
 func (w *WHIPConnection) Close() {
-	p := w.getWHIPConnection()
-	if p == nil {
-		return
-	}
-	p.Close()
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	// set closed = true so getWHIPConnection returns immediately
+	// if we don't already have a peer - avoids a deadlock
 	w.closed = true
 	w.cond.Broadcast()
+	w.mu.Unlock()
+
+	p := w.getWHIPConnection()
+	if p != nil {
+		p.Close()
+	}
 }
 
 type WHIPPeerConnection interface {
