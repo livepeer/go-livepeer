@@ -1062,7 +1062,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
+	reqParams := worker.GenLiveVideoToVideoParams{RequestID: &params.liveParams.requestID, StreamID: &params.liveParams.streamID}
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, &reqParams, req, setHeaders)
 	if err != nil {
 		return nil, err
 	}
