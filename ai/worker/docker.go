@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/livepeer/go-livepeer/monitor"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -154,6 +155,7 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
 
 	_, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 	if err != nil {
@@ -180,6 +182,8 @@ func (m *DockerManager) Stop(ctx context.Context) error {
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
+
 	var rc *RunnerContainer
 	var err error
 
@@ -213,6 +217,7 @@ func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*
 func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
 
 	rc.Lock()
 	rc.BorrowCtx = nil
@@ -250,6 +255,7 @@ func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string,
 func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
 
 	// Check if unused managed container exists for the requested model.
 	for _, rc := range m.containers {
@@ -488,6 +494,7 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 	if !locked {
 		m.mu.Lock()
 		defer m.mu.Unlock()
+		defer m.monitorInUse()
 	}
 	delete(m.gpuContainers, rc.GPU)
 	delete(m.containers, rc.Name)
@@ -670,6 +677,12 @@ tickerLoop:
 	}
 
 	return nil
+}
+
+func (m *DockerManager) monitorInUse() {
+	if monitor.Enabled {
+		monitor.AIContainersInUse(len(m.containers))
+	}
 }
 
 func portOffset(gpu string) string {
