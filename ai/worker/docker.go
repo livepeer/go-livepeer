@@ -681,7 +681,7 @@ tickerLoop:
 
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
-		monitor.AIContainersInUse(len(m.containers))
+		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
 	}
 }
 
