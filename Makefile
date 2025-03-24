@@ -104,7 +104,7 @@ ai_worker_codegen:
 	go run github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@v2.2.0 \
 		-package worker \
 		-generate types,client,chi-server,spec \
-		https://raw.githubusercontent.com/livepeer/ai-worker/$(REF)/runner/openapi.yaml \
+		https://raw.githubusercontent.com/livepeer/ai-runner/$(REF)/runner/openapi.yaml \
 		| awk '!/WARNING/' > ai/worker/runner.gen.go
 
 livepeer:
