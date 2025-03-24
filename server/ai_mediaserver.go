@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -886,7 +885,11 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 }
 
 func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
-	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), maps.Keys(pipelines))
+	var streams []string
+	for k := range pipelines {
+		streams = append(streams, k)
+	}
+	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
 }
 
 func corsHeaders(w http.ResponseWriter, reqMethod string) {
