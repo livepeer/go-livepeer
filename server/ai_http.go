@@ -239,7 +239,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		// Send request to the worker
-		_, err = orch.LiveVideoToVideo(ctx, requestID, gatewayRequestID, streamID, workerReq)
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
 		if err != nil {
 			if monitor.Enabled {
 				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
