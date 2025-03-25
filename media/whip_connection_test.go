@@ -130,14 +130,8 @@ func TestGetWHIPConnection(t *testing.T) {
 	// Test case 2: When connection is closed before peer is set
 	t.Run("ConnectionClosedBeforePeerSet", func(t *testing.T) {
 		conn := NewWHIPConnection()
-
-		// Mark as closed
-		conn.mu.Lock()
-		conn.closed = true
-		conn.mu.Unlock()
-
+		conn.Close()
 		result := conn.getWHIPConnection()
-
 		if result != nil {
 			t.Error("Expected getWHIPConnection to return nil when closed")
 		}
@@ -168,10 +162,7 @@ func TestGetWHIPConnection(t *testing.T) {
 		// Start a goroutine that will close the connection after a short delay
 		go func() {
 			time.Sleep(100 * time.Millisecond)
-			conn.mu.Lock()
-			conn.closed = true
-			conn.cond.Broadcast()
-			conn.mu.Unlock()
+			conn.Close()
 		}()
 
 		// This should block until the connection is closed
@@ -187,9 +178,7 @@ func TestAwaitClose(t *testing.T) {
 		conn := NewWHIPConnection()
 
 		// Mark as closed to avoid blocking
-		conn.mu.Lock()
-		conn.closed = true
-		conn.mu.Unlock()
+		conn.Close()
 
 		// This should return immediately without error
 		conn.AwaitClose()
@@ -340,10 +329,7 @@ func TestAwaitClose(t *testing.T) {
 		// Close the connection without setting a peer
 		go func() {
 			time.Sleep(100 * time.Millisecond)
-			conn.mu.Lock()
-			conn.closed = true
-			conn.cond.Broadcast()
-			conn.mu.Unlock()
+			conn.Close()
 		}()
 
 		select {
@@ -381,17 +367,36 @@ func TestAwaitClose(t *testing.T) {
 			}
 		})
 	})
+
+	// Test case 7: Null mediastate
+	t.Run("NullMediaState", func(t *testing.T) {
+		conn := NewWHIPConnection()
+		conn.SetWHIPConnection(nil)
+
+		// This should not panic
+		require.NotPanics(t, func() {
+			// Start a goroutine that will await closure
+			done := make(chan bool)
+			go func() {
+				conn.AwaitClose()
+				done <- true
+			}()
+
+			select {
+			case <-done:
+				// Test passed
+			case <-time.After(500 * time.Millisecond):
+				assert.Fail(t, "AwaitClose did not return for null peer connection")
+			}
+		})
+	})
+
 }
 
 func TestClose(t *testing.T) {
 	// Test case 1: When peer is nil
 	t.Run("NilPeer", func(t *testing.T) {
 		conn := NewWHIPConnection()
-
-		// Mark as closed to avoid blocking
-		conn.mu.Lock()
-		conn.closed = true
-		conn.mu.Unlock()
 
 		// This should return immediately without error
 		conn.Close()
@@ -467,17 +472,7 @@ func TestConcurrentOperations(t *testing.T) {
 	// Start multiple goroutines that perform operations concurrently
 	const numGoroutines = 10
 	var wg sync.WaitGroup
-	wg.Add(numGoroutines * 3)
-
-	// Some goroutines set the peer
-	for i := 0; i < numGoroutines; i++ {
-		go func(i int) {
-			defer wg.Done()
-			mockPC := NewMockPC()
-			mediaState := NewMediaState(mockPC)
-			conn.SetWHIPConnection(mediaState)
-		}(i)
-	}
+	wg.Add(numGoroutines * 4)
 
 	// Some goroutines get the peer
 	for i := 0; i < numGoroutines; i++ {
@@ -491,12 +486,41 @@ func TestConcurrentOperations(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(i int) {
 			defer wg.Done()
+			conn.AwaitClose()
+		}(i)
+	}
+
+	// Some goroutines set the peer
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			mockPC := NewMockPC()
+			mediaState := NewMediaState(mockPC)
+			conn.SetWHIPConnection(mediaState)
+		}(i)
+	}
+
+	// Some goroutines close the connection
+	for i := 0; i < numGoroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
 			conn.Close()
 		}(i)
 	}
 
-	// Wait for all goroutines to complete
-	require.NotPanics(t, func() {
-		wg.Wait()
-	}, "Concurrent operations should not cause deadlocks or panics")
+	doneCh := make(chan bool)
+	go func() {
+		require.NotPanics(t, func() {
+			wg.Wait()
+		}, "Concurrent operations should not cause deadlocks or panics")
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
+	// Test passed
+	case <-time.After(500 * time.Millisecond):
+		assert.Fail(t, "Goroutines did not complete on time")
+	}
+
 }
