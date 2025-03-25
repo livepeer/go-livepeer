@@ -872,10 +872,11 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 	ls.LivepeerNode.LiveMu.Lock()
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
-	ls.LivepeerNode.LiveMu.Unlock()
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
+		logCurrentLiveSessions(ls.LivepeerNode.LivePipelines)
 	}
+	ls.LivepeerNode.LiveMu.Unlock()
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
@@ -883,6 +884,14 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 		}
 		pub.StopControl()
 	}
+}
+
+func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+	var streams []string
+	for k := range pipelines {
+		streams = append(streams, k)
+	}
+	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
 }
 
 func corsHeaders(w http.ResponseWriter, reqMethod string) {
