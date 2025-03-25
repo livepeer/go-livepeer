@@ -95,6 +95,8 @@ func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
 		return false
 	}
+	a.node.LiveMu.Lock()
+	defer a.node.LiveMu.Unlock()
 	_, ok := a.node.LivePipelines[a.liveParams.stream]
 	return ok
 }
