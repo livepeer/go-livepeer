@@ -390,7 +390,9 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 // @Router /live/video-to-video/{stream}/start [get]
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		// Create fresh context instead of using r.Context() since ctx will outlive the request
+		ctx := context.Background()
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
@@ -870,10 +872,11 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 	ls.LivepeerNode.LiveMu.Lock()
 	pub, ok := ls.LivepeerNode.LivePipelines[stream]
 	delete(ls.LivepeerNode.LivePipelines, stream)
-	ls.LivepeerNode.LiveMu.Unlock()
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
+		logCurrentLiveSessions(ls.LivepeerNode.LivePipelines)
 	}
+	ls.LivepeerNode.LiveMu.Unlock()
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
@@ -881,6 +884,14 @@ func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
 		}
 		pub.StopControl()
 	}
+}
+
+func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+	var streams []string
+	for k := range pipelines {
+		streams = append(streams, k)
+	}
+	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
 }
 
 func corsHeaders(w http.ResponseWriter, reqMethod string) {
