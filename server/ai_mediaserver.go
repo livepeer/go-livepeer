@@ -390,7 +390,9 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 // @Router /live/video-to-video/{stream}/start [get]
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		// Create fresh context instead of using r.Context() since ctx will outlive the request
+		ctx := context.Background()
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
