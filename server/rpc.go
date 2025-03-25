@@ -139,6 +139,8 @@ type BroadcastSession struct {
 	CleanupSession   sessionsCleanup
 	Balance          Balance
 	InitialPrice     *net.PriceInfo
+
+	InitialLatency time.Duration
 }
 
 func (bs *BroadcastSession) Transcoder() string {
@@ -365,7 +367,30 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
 	}
 
+	if err := checkLiveVideoToVideoCapacity(orch, req.Capabilities); err != nil {
+		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
+	}
 	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
+}
+
+func checkLiveVideoToVideoCapacity(orch Orchestrator, caps *net.Capabilities) interface{} {
+	if caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+
+	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
+		pipeline := "live-video-to-video"
+		for modelID := range liveCap.GetModels() {
+			if orch.CheckAICapacity(pipeline, modelID) {
+				// It has capacity for at least one of the requested models
+				return nil
+			}
+		}
+		// No capacity for any requested model
+		return core.ErrOrchCap
+	}
+	// For no constraints or AI Jobs (non live-video-to-video), we don't want to check capacity
+	return nil
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {

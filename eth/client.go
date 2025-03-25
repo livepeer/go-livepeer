@@ -12,6 +12,7 @@ package eth
 //go:generate abigen --abi protocol/abi/Minter.json --pkg contracts --type Minter --out contracts/minter.go
 //go:generate abigen --abi protocol/abi/LivepeerTokenFaucet.json --pkg contracts --type LivepeerTokenFaucet --out contracts/livepeerTokenFaucet.go
 //go:generate abigen --abi protocol/abi/Poll.json --pkg contracts --type Poll --out contracts/poll.go
+//go:generate abigen --abi protocol/abi/LivepeerGovernor.json --pkg contracts --type Governor --out contracts/LivepeerGovernor.go
 import (
 	"context"
 	"fmt"
@@ -113,6 +114,8 @@ type LivepeerEthClient interface {
 
 	// Governance
 	Vote(ethcommon.Address, *big.Int) (*types.Transaction, error)
+	ProposalVote(*big.Int, uint8) (*types.Transaction, error)
+	ProposalVoteWithReason(*big.Int, uint8, string) (*types.Transaction, error)
 
 	// Helpers
 	ContractAddresses() map[string]ethcommon.Address
@@ -130,15 +133,16 @@ type client struct {
 	transOpts      bind.TransactOpts
 	transOptsMu    sync.RWMutex
 
-	controllerAddr      ethcommon.Address
-	tokenAddr           ethcommon.Address
-	serviceRegistryAddr ethcommon.Address
-	bondingManagerAddr  ethcommon.Address
-	ticketBrokerAddr    ethcommon.Address
-	roundsManagerAddr   ethcommon.Address
-	minterAddr          ethcommon.Address
-	verifierAddr        ethcommon.Address
-	faucetAddr          ethcommon.Address
+	controllerAddr       ethcommon.Address
+	tokenAddr            ethcommon.Address
+	serviceRegistryAddr  ethcommon.Address
+	bondingManagerAddr   ethcommon.Address
+	ticketBrokerAddr     ethcommon.Address
+	roundsManagerAddr    ethcommon.Address
+	minterAddr           ethcommon.Address
+	verifierAddr         ethcommon.Address
+	faucetAddr           ethcommon.Address
+	livepeerGovernorAddr ethcommon.Address
 
 	// Contracts
 	controller          *contracts.Controller
@@ -149,6 +153,7 @@ type client struct {
 	roundsManager       *contracts.RoundsManager
 	minter              *contracts.Minter
 	livepeerTokenFaucet *contracts.LivepeerTokenFaucet
+	livepeerGovernor    *contracts.Governor
 
 	// for L1 contracts backwards-compatibility
 	l1BondingManager *contracts.L1BondingManager
@@ -324,6 +329,23 @@ func (c *client) setContracts(opts *bind.TransactOpts) error {
 	c.livepeerTokenFaucet = faucet
 
 	glog.V(common.SHORT).Infof("LivepeerTokenFaucet: %v", c.faucetAddr.Hex())
+
+	livepeerGovernorAddr, err := c.GetContract(crypto.Keccak256Hash([]byte("LivepeerGovernor")))
+	if err != nil {
+		glog.Errorf("Error getting Governor address: %v", err)
+		return err
+	}
+
+	c.livepeerGovernorAddr = livepeerGovernorAddr
+
+	governor, err := contracts.NewGovernor(livepeerGovernorAddr, c.backend)
+	if err != nil {
+		glog.Errorf("Error creating Governor binding: %v", err)
+		return err
+	}
+	c.livepeerGovernor = governor
+
+	glog.V(common.SHORT).Infof("LivepeerGovernor: %v", c.livepeerGovernorAddr.Hex())
 
 	return nil
 }
@@ -988,6 +1010,14 @@ func (c *client) Vote(pollAddr ethcommon.Address, choiceID *big.Int) (*types.Tra
 
 	opts := c.transactOpts()
 	return poll.Vote(opts, choiceID)
+}
+
+func (c *client) ProposalVote(proposalId *big.Int, support uint8) (*types.Transaction, error) {
+	return c.livepeerGovernor.CastVote(c.transactOpts(), proposalId, support)
+}
+
+func (c *client) ProposalVoteWithReason(proposalId *big.Int, support uint8, reason string) (*types.Transaction, error) {
+	return c.livepeerGovernor.CastVoteWithReason(c.transactOpts(), proposalId, support, reason)
 }
 
 func (c *client) Reward() (*types.Transaction, error) {

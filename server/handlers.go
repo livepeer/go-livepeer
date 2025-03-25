@@ -324,7 +324,7 @@ type aiOrchestratorPools struct {
 	Suspended   suspendedInfo `json:"suspended"`
 }
 
-// getAIOrchestratorPoolsInfoHandler returns information about AI orchestrator pools.
+// getAIPoolsInfoHandler returns information about AI orchestrator pools.
 func (s *LivepeerServer) getAIPoolsInfoHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		aiPoolsInfoResp := make(map[string]aiOrchestratorPools)
@@ -1356,6 +1356,50 @@ func voteHandler(client eth.LivepeerEthClient) http.Handler {
 
 		if err := client.CheckTx(tx); err != nil {
 			respond500(w, fmt.Sprintf("unable to mine vote transaction err=%q", err))
+			return
+		}
+
+		respondOk(w, tx.Hash().Bytes())
+	}))
+}
+
+func proposalVoteHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proposalIDStr := r.FormValue("proposalID")
+		proposalID, ok := new(big.Int).SetString(proposalIDStr, 10)
+		if !ok {
+			respond500(w, "proposalID is not a valid integer value")
+			return
+		}
+
+		supportStr := r.FormValue("support")
+		support, ok := new(big.Int).SetString(supportStr, 10)
+		if !ok {
+			respond500(w, "support is not a valid integer value")
+			return
+		}
+		if !types.ProposalVoteChoice(int(support.Int64())).IsValid() {
+			respond500(w, "invalid support")
+			return
+		}
+
+		reason := r.FormValue("reason")
+
+		// submit tx
+		var tx *ethtypes.Transaction
+		var err error
+		if reason != "" {
+			tx, err = client.ProposalVoteWithReason(proposalID, uint8(support.Uint64()), reason)
+		} else {
+			tx, err = client.ProposalVote(proposalID, uint8(support.Uint64()))
+		}
+		if err != nil {
+			respond500(w, fmt.Sprintf("unable to submit proposal vote transaction err=%q", err))
+			return
+		}
+
+		if err := client.CheckTx(tx); err != nil {
+			respond500(w, fmt.Sprintf("unable to mine proposal vote transaction err=%q", err))
 			return
 		}
 

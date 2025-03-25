@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	slowOrchChecker := &SlowOrchChecker{}
 
+	firstSegment := true
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -76,7 +79,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
-				r = paymentProcessor.process(reader)
+				r = paymentProcessor.process(ctx, reader)
 			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
@@ -94,9 +97,25 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
+					if monitor.Enabled && firstSegment {
+						firstSegment = false
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_send_first_ingest_segment",
+							"timestamp":   time.Now().UnixMilli(),
+							"stream_id":   params.liveParams.streamID,
+							"pipeline_id": params.liveParams.pipelineID,
+							"request_id":  params.liveParams.requestID,
+							"orchestrator_info": map[string]interface{}{
+								"address": sess.Address(),
+								"url":     sess.Transcoder(),
+							},
+						})
+					}
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -257,6 +276,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 		}
 
 		cmd := exec.Command("ffmpeg",
+			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
 			"-c:a", "copy",
 			"-c:v", "copy",
@@ -302,6 +322,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
+		logCurrentLiveSessions(params.node.LivePipelines)
 	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
@@ -392,10 +413,25 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var event map[string]interface{}
-			if err := json.Unmarshal(body, &event); err != nil {
+			var eventWrapper struct {
+				QueueEventType string                 `json:"queue_event_type"`
+				Event          map[string]interface{} `json:"event"`
+			}
+			if err := json.Unmarshal(body, &eventWrapper); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
+			}
+
+			event := eventWrapper.Event
+			queueEventType := eventWrapper.QueueEventType
+			if event == nil {
+				// revert this once push to prod -- If no "event" field found, treat the entire body as the event
+				event = make(map[string]interface{})
+				if err := json.Unmarshal(body, &event); err != nil {
+					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
+					continue
+				}
+				queueEventType = "ai_stream_events"
 			}
 
 			event["stream_id"] = streamId
@@ -421,7 +457,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
-			queueEventType := "ai_stream_events"
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
@@ -519,11 +554,36 @@ func (s *SlowOrchChecker) GetCount() int {
 
 func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
-		GatewayStatus.Store(streamID, map[string]interface{}{"last_error": err.Error()})
+		GatewayStatus.Store(streamID, map[string]interface{}{
+			"last_error":      err.Error(),
+			"last_error_time": time.Now().UnixMilli(),
+		})
 
 		ev := maps.Clone(event)
 		ev["capability"] = clog.GetVal(ctx, "capability")
 		ev["message"] = err.Error()
 		monitor.SendQueueEventAsync("ai_stream_events", ev)
 	}
+}
+
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
+	if seq > 10 {
+		return
+	}
+	go func() {
+		reader := r.Clone()
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		file, err := os.Create(p)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not create segment file for logging", err)
+			return
+		}
+		defer file.Close()
+		_, err = io.Copy(file, reader)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not log segment", err)
+			return
+		}
+	}()
 }

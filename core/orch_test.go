@@ -400,7 +400,7 @@ func TestRemoveFromRemoteTranscoders(t *testing.T) {
 	remoteTranscoderList = append(remoteTranscoderList, tr...)
 	assert.Len(remoteTranscoderList, 5)
 
-	// Remove transcoder froms head of the list
+	// Remove transcoder forms head of the list
 	remoteTranscoderList = removeFromRemoteTranscoders(tr[0], remoteTranscoderList)
 	assert.Equal(remoteTranscoderList[0], tr[1])
 	assert.Equal(remoteTranscoderList[1], tr[2])

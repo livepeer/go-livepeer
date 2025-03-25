@@ -165,6 +165,7 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
+	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
@@ -216,6 +217,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
@@ -327,6 +329,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
+		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
@@ -1235,7 +1238,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return

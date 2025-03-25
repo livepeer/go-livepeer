@@ -204,6 +204,7 @@ type (
 		mAIResultUploaded       *stats.Int64Measure
 		mAIResultUploadTime     *stats.Float64Measure
 		mAIResultSaveFailed     *stats.Int64Measure
+		mAIContainersInUse      *stats.Int64Measure
 		mAICurrentLivePipelines *stats.Int64Measure
 		mAIFirstSegmentDelay    *stats.Int64Measure
 		mAILiveAttempts         *stats.Int64Measure
@@ -376,6 +377,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultUploaded = stats.Int64("ai_result_uploaded_total", "AIResultUploaded", "tot")
 	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
+	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
@@ -980,6 +982,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.Distribution(0, .10, .20, .50, .100, .150, .200, .500, .1000, .5000, 10.000),
 		},
 		{
+			Name:        "ai_container_in_use",
+			Measure:     census.mAIContainersInUse,
+			Description: "Number of containers currently used for AI processing",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
 			Name:        "ai_current_live_pipelines",
 			Measure:     census.mAICurrentLivePipelines,
 			Description: "Number of live AI pipelines currently running",
@@ -1033,6 +1042,7 @@ func InitCensus(nodeType NodeType, version string) {
 	stats.Record(census.ctx, census.mWinningTicketsRecv.M(int64(0)))
 	stats.Record(census.ctx, census.mCurrentSessions.M(int64(0)))
 	stats.Record(census.ctx, census.mValueRedeemed.M(float64(0)))
+	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(0)))
 	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(0)))
 }
 
@@ -1917,6 +1927,10 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 	if err := stats.RecordWithTags(census.ctx, tags, census.mAIRequestError.M(1)); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
+}
+
+func AIContainersInUse(currentContainersInUse int) {
+	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(currentContainersInUse)))
 }
 
 func AICurrentLiveSessions(currentPipelines int) {

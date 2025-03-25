@@ -98,7 +98,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ProfileH264Baseline:        "H264 Baseline profile",
 	Capability_ProfileH264Main:            "H264 Main profile",
 	Capability_ProfileH264High:            "H264 High profile",
-	Capability_ProfileH264ConstrainedHigh: "H264 Constained High profile",
+	Capability_ProfileH264ConstrainedHigh: "H264 Constrained, Contained High profile",
 	Capability_GOP:                        "GOP",
 	Capability_AuthToken:                  "Auth token",
 	Capability_MPEG7VideoSignature:        "MPEG7 signature",
