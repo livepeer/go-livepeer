@@ -497,6 +497,9 @@ func submitImageToVideo(ctx context.Context, params aiRequestParams, sess *AISes
 		*req.Width = 1024
 	}
 	frames := int64(25)
+	if req.NumFrames != nil {
+		frames = int64(*req.NumFrames)
+	}
 
 	outPixels := int64(*req.Height) * int64(*req.Width) * frames
 	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, outPixels)

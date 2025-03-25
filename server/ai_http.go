@@ -401,8 +401,10 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		if v.Width != nil {
 			width = int64(*v.Width)
 		}
-		// The # of frames outputted by stable-video-diffusion-img2vid-xt models
 		frames := int64(25)
+		if v.NumFrames != nil {
+			frames = int64(*v.NumFrames)
+		}
 
 		outPixels = height * width * int64(frames)
 	case worker.GenAudioToTextMultipartRequestBody:
