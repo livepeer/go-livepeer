@@ -556,6 +556,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_ingest_stream_closed",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
 			ssr.Close()
 			ls.cleanupLive(ctx, streamName)
 		}()
@@ -817,6 +828,25 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					"url":     "",
 				},
 			})
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						clog.Errorf(ctx, "Panic in stream close event routine: %s", r)
+					}
+				}()
+				whipConn.AwaitClose()
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_ingest_stream_closed",
+					"timestamp":   time.Now().UnixMilli(),
+					"stream_id":   streamID,
+					"pipeline_id": pipelineID,
+					"request_id":  requestID,
+					"orchestrator_info": map[string]interface{}{
+						"address": "",
+						"url":     "",
+					},
+				})
+			}()
 
 			if monitor.Enabled {
 				monitor.AILiveVideoAttempt()
