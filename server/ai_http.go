@@ -97,20 +97,25 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		streamID := r.Header.Get("streamID")
-		requestID := r.Header.Get("requestID")
 
-		if requestID == "" {
-			requestID = string(core.RandomManifestID())
-		}
-		ctx = clog.AddVal(ctx, "request_id", requestID)
-		ctx = clog.AddVal(ctx, "stream_id", streamID)
+		streamID := r.Header.Get("streamID")
+		gatewayRequestID := r.Header.Get("requestID")
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "orch_request_id", requestID)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
-		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+		if err := jsonDecoder(&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if req.GatewayRequestId != nil && *req.GatewayRequestId != "" {
+			gatewayRequestID = *req.GatewayRequestId
+		}
+		if req.StreamId != nil && *req.StreamId != "" {
+			streamID = *req.StreamId
+		}
+		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		orch := h.orchestrator
 		pipeline := "live-video-to-video"
@@ -229,16 +234,18 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
-			ModelId:      req.ModelId,
-			PublishUrl:   publishUrlOverwrite,
-			SubscribeUrl: subscribeUrlOverwrite,
-			EventsUrl:    &eventsUrlOverwrite,
-			ControlUrl:   &controlUrlOverwrite,
-			Params:       req.Params,
+			ModelId:          req.ModelId,
+			PublishUrl:       publishUrlOverwrite,
+			SubscribeUrl:     subscribeUrlOverwrite,
+			EventsUrl:        &eventsUrlOverwrite,
+			ControlUrl:       &controlUrlOverwrite,
+			Params:           req.Params,
+			GatewayRequestId: &gatewayRequestID,
+			StreamId:         &streamID,
 		}
 
 		// Send request to the worker
-		_, err = orch.LiveVideoToVideo(ctx, requestID, streamID, workerReq)
+		_, err = orch.LiveVideoToVideo(ctx, requestID, workerReq)
 		if err != nil {
 			if monitor.Enabled {
 				monitor.AIProcessingError(err.Error(), pipeline, modelID, ethcommon.Address{}.String())
@@ -259,6 +266,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
+			RequestId:    &requestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
