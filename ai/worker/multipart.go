@@ -157,7 +157,21 @@ func NewImageToVideoMultipartWriter(w io.Writer, req GenImageToVideoMultipartReq
 			return nil, err
 		}
 	}
-
+	if req.Prompt != nil {
+		if err := mw.WriteField("prompt", *req.Prompt); err != nil {
+			return nil, err
+		}
+	}
+	if req.NegativePrompt != nil {
+		if err := mw.WriteField("negative_prompt", *req.NegativePrompt); err != nil {
+			return nil, err
+		}
+	}
+	if req.NumFrames != nil {
+		if err := mw.WriteField("num_frames", strconv.Itoa(*req.NumFrames)); err != nil {
+			return nil, err
+		}
+	}
 	if err := mw.Close(); err != nil {
 		return nil, err
 	}
