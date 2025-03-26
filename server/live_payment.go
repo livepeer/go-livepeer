@@ -60,7 +60,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	}
 	sess := segmentInfo.sess
 
-	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
+	if err := refreshSessionIfNeeded(ctx, sess, true); err != nil {
 		return err
 	}
 	sess.lock.Lock()
