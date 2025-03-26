@@ -122,6 +122,7 @@ func (c *TricklePublisher) Close() error {
 	if err != nil {
 		return err
 	}
+	// Use a new client for a fresh connection
 	resp, err := httpClient().Do(req)
 	if err != nil {
 		return err
@@ -254,6 +255,9 @@ func (p *pendingPost) Close() error {
 	if err != nil {
 		return err
 	}
+	// Since this method typically gets invoked when
+	// there is a problem sending the segment, use a
+	// new client for a fresh connection just in case
 	resp, err := httpClient().Do(req)
 	if err != nil {
 		return err
