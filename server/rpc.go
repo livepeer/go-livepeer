@@ -143,6 +143,11 @@ type BroadcastSession struct {
 	InitialLatency time.Duration
 }
 
+type GetOrchestratorInfoParams struct {
+	Caps                *net.Capabilities
+	IgnoreCapacityCheck bool
+}
+
 func (bs *BroadcastSession) Transcoder() string {
 	bs.lock.RLock()
 	defer bs.lock.RUnlock()
@@ -289,14 +294,14 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 }
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
-func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(ctx, orchestratorServer)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	req, err := genOrchestratorReq(bcast, caps)
+	req, err := genOrchestratorReq(bcast, params)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Could not get orchestrator orch=%v", orchestratorServer)
@@ -340,12 +345,12 @@ func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.Orchestrato
 	return c, conn, nil
 }
 
-func genOrchestratorReq(b common.Broadcaster, caps *net.Capabilities) (*net.OrchestratorRequest, error) {
+func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
 	}
-	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: caps}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
@@ -367,14 +372,15 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
 	}
 
-	if err := checkLiveVideoToVideoCapacity(orch, req.Capabilities); err != nil {
+	if err := checkLiveVideoToVideoCapacity(orch, req); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
 	}
 	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
 }
 
-func checkLiveVideoToVideoCapacity(orch Orchestrator, caps *net.Capabilities) interface{} {
-	if caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorRequest) interface{} {
+	caps := req.Capabilities
+	if req.IgnoreCapacityCheck || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
 		return nil
 	}
 
