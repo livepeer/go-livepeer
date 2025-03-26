@@ -249,7 +249,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				// We assume that after receiving 3 segments, the runner started successfully
 				// and we should be able to start the playback
 				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-					"type":        "gateway_receive_few_processed_segment",
+					"type":        "gateway_receive_few_processed_segments",
 					"timestamp":   time.Now().UnixMilli(),
 					"stream_id":   params.liveParams.streamID,
 					"pipeline_id": params.liveParams.pipelineID,
