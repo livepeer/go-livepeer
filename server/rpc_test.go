@@ -249,7 +249,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b, nil)
+	req, err := genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -281,7 +281,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b, nil)
+	_, err = genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
