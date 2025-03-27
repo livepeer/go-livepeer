@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -257,8 +258,12 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
 	ethAddr := sender.String()
 
+	//Orchestrators can have two prices for capability/model id
+	//if a price is set for a specific eth address, it will override the default price
 	defaultPrices := orch.node.GetCapsPrices("default")
 	gatewayPrices := orch.node.GetCapsPrices(ethAddr)
+
+	capPricesMap := make(map[string]*net.PriceInfo)
 
 	var capPrices []*net.PriceInfo
 	if defaultPrices != nil {
@@ -272,13 +277,13 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
 					continue
 				}
-
-				capPrices = append(capPrices, &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID})
+				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
 			}
 		}
 	}
 
-	//update to price for gateway if applicable
+	//add gateway specific prices or replace default price if set
 	if gatewayPrices != nil {
 		for cap, price := range *gatewayPrices {
 			for modelID, priceInfo := range price.modelPrices {
@@ -287,25 +292,18 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 				}
 				priceInt64, err := common.PriceToInt64(priceInfo.Value())
 				if err != nil {
-					glog.Errorf("error converting %v price for capability %v to int64 err=%w", ethAddr, CapabilityNameLookup[cap], err)
+					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
 					continue
 				}
-
-				//update default price to gateway price if exists, add price if default price is not set
-				capPriceUpdated := false
-				for idx, price := range capPrices {
-					if price.Capability == uint32(cap) && price.Constraint == modelID {
-						capPrices[idx] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
-						capPriceUpdated = true
-						break
-					}
-				}
-				//new price if not updates, add to list of prices
-				if !capPriceUpdated {
-					capPrices = append(capPrices, &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID})
-				}
+				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
 			}
 		}
+	}
+
+	//create list of prices
+	for _, price := range capPricesMap {
+		capPrices = append(capPrices, price)
 	}
 
 	return capPrices, nil
