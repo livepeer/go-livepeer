@@ -227,7 +227,7 @@ func (r *stubOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 	return nil, nil
 }
 
-func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 
@@ -256,7 +256,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b, nil)
+	req, err := genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -288,7 +288,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b, nil)
+	_, err = genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -1474,7 +1474,7 @@ func (r *mockOrchestrator) ImageToText(ctx context.Context, requestID string, re
 func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
+func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
 func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {

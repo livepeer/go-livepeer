@@ -53,6 +53,9 @@ message OrchestratorRequest {
 
   // Features and constraints required by the broadcaster
   Capabilities capabilities = 3;
+
+  // Don't throw error in case of missing capacity, used for refreshing session when we don't need to check capacity
+  bool ignoreCapacityCheck = 4;
 }
 
 /*

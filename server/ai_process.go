@@ -95,6 +95,8 @@ func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
 		return false
 	}
+	a.node.LiveMu.RLock()
+	defer a.node.LiveMu.RUnlock()
 	_, ok := a.node.LivePipelines[a.liveParams.stream]
 	return ok
 }
@@ -1062,7 +1064,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, nil, req, setHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,7 +1099,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 
 	startControlPublish(control, params)
 	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, func() {
+	startTrickleSubscribe(ctx, sub, params, sess, func() {
 		delayMs := time.Since(startTime).Milliseconds()
 		if monitor.Enabled {
 			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
@@ -1545,8 +1547,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		//for batch AI add session to be used on next request, for live-video-to-video suspend the session until next refresh
-		if isNoCapacityError(err) && cap != core.Capability_LiveVideoToVideo {
+		// when no capacity error is received, retry with another session, but do not suspend the session
+		if (isInvalidTicketSenderNonce(err) || isNoCapacityError(err)) && cap != core.Capability_LiveVideoToVideo {
 			retryableSessions = append(retryableSessions, sess)
 			continue
 		}
@@ -1581,7 +1583,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 // isRetryableError checks if the error is a transient error that can be retried.
 func isRetryableError(err error) bool {
-	return errContainsMsg(err, "invalid ticket sendernonce", "ticketparams expired")
+	return errContainsMsg(err, "ticketparams expired")
+}
+
+func isInvalidTicketSenderNonce(err error) bool {
+	return errContainsMsg(err, "invalid ticket sendernonce")
 }
 
 func isNoCapacityError(err error) bool {

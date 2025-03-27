@@ -16,6 +16,7 @@ import (
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
+	"github.com/livepeer/go-livepeer/server"
 
 	"github.com/golang/glog"
 )
@@ -287,7 +288,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- fmt.Errorf("skipping orch=%v, URI not set", dbOrch.EthereumAddr)
 			return
 		}
-		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, nil)
+		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{})
 		if err != nil {
 			errc <- err
 			return

@@ -193,6 +193,48 @@ func infof(ctx context.Context, lastErr bool, publicLog bool, format string, arg
 	}
 }
 
+// Info logs a message with key-value pairs in a slog-like style.
+// Example: Info(ctx, "hello", "key1", value1, "key2", value2)
+// This will log: "hello key1=value1 key2=value2"
+func Info(ctx context.Context, msg string, keyvals ...interface{}) {
+	if len(keyvals)%2 != 0 {
+		keyvals = append(keyvals[:len(keyvals)-1], "MISSING", keyvals[len(keyvals)-1])
+	}
+
+	var sb strings.Builder
+	sb.WriteString(msg)
+
+	for i := 0; i < len(keyvals); i += 2 {
+		key, ok := keyvals[i].(string)
+		if !ok {
+			key = fmt.Sprintf("%v", keyvals[i])
+		}
+
+		sb.WriteString(" ")
+		sb.WriteString(key)
+		sb.WriteString("=")
+
+		val := keyvals[i+1]
+		switch v := val.(type) {
+		case string:
+			sb.WriteString(v)
+		case fmt.Stringer:
+			sb.WriteString(v.String())
+		default:
+			sb.WriteString(fmt.Sprintf("%v", v))
+		}
+	}
+
+	Infof(ctx, "%s", sb.String())
+}
+
+// V returns a Verbose instance for conditional logging at the specified level
+func (v Verbose) Info(ctx context.Context, msg string, keyvals ...interface{}) {
+	if v {
+		Info(ctx, msg, keyvals...)
+	}
+}
+
 func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	if ctx == nil {
 		return

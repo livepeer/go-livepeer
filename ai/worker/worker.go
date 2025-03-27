@@ -51,13 +51,13 @@ type Worker struct {
 	mu                 *sync.Mutex
 }
 
-func NewWorker(imageOverrides ImageOverrides, gpus []string, modelDir string) (*Worker, error) {
+func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string) (*Worker, error) {
 	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
 
-	manager, err := NewDockerManager(imageOverrides, gpus, modelDir, dockerClient)
+	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, dockerClient)
 	if err != nil {
 		return nil, err
 	}
@@ -604,19 +604,14 @@ func (w *Worker) TextToSpeech(ctx context.Context, req GenTextToSpeechJSONReques
 	return resp.JSON200, nil
 }
 
-func (w *Worker) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req GenLiveVideoToVideoJSONRequestBody) (*LiveVideoToVideoResponse, error) {
+func (w *Worker) LiveVideoToVideo(ctx context.Context, req GenLiveVideoToVideoJSONRequestBody) (*LiveVideoToVideoResponse, error) {
 	// Live video containers keep running after the initial request, so we use a background context to borrow the container.
 	c, err := w.borrowContainer(context.Background(), "live-video-to-video", *req.ModelId)
 	if err != nil {
 		return nil, err
 	}
 
-	setHeaders := func(ctx context.Context, req *http.Request) error {
-		req.Header.Set("requestID", requestID)
-		req.Header.Set("streamID", streamID)
-		return nil
-	}
-	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
+	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, nil, req)
 	if err != nil {
 		return nil, err
 	}

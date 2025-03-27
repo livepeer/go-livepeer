@@ -706,7 +706,7 @@ func (a *stubAIWorker) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 	return &worker.AudioResponse{Audio: worker.MediaURL{Url: "http://example.com/audio.wav"}}, nil
 }
 
-func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, requestID, streamID string, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
+func (a *stubAIWorker) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
 	return &worker.LiveVideoToVideoResponse{}, nil
 }
 

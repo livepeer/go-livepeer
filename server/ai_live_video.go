@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -78,7 +79,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
-				r = paymentProcessor.process(reader)
+				r = paymentProcessor.process(ctx, reader)
 			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
@@ -96,6 +97,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
@@ -113,6 +115,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							},
 						})
 					}
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -167,7 +170,7 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, onFistSegment func()) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -190,6 +193,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		var err error
 		firstSegment := true
+		var segmentsReceived int64
 
 		defer w.Close()
 		defer wMediaMTX.Close()
@@ -239,6 +243,23 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if firstSegment {
 				firstSegment = false
 				onFistSegment()
+			}
+			segmentsReceived += 1
+			if segmentsReceived == 3 && monitor.Enabled {
+				// We assume that after receiving 3 segments, the runner started successfully
+				// and we should be able to start the playback
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_receive_few_processed_segments",
+					"timestamp":   time.Now().UnixMilli(),
+					"stream_id":   params.liveParams.streamID,
+					"pipeline_id": params.liveParams.pipelineID,
+					"request_id":  params.liveParams.requestID,
+					"orchestrator_info": map[string]interface{}{
+						"address": sess.Address(),
+						"url":     sess.Transcoder(),
+					},
+				})
+
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
@@ -319,6 +340,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
+		logCurrentLiveSessions(params.node.LivePipelines)
 	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
@@ -560,4 +582,26 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 		ev["message"] = err.Error()
 		monitor.SendQueueEventAsync("ai_stream_events", ev)
 	}
+}
+
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
+	if seq > 10 {
+		return
+	}
+	go func() {
+		reader := r.Clone()
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		file, err := os.Create(p)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not create segment file for logging", err)
+			return
+		}
+		defer file.Close()
+		_, err = io.Copy(file, reader)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not log segment", err)
+			return
+		}
+	}()
 }

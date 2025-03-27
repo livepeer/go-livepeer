@@ -2,7 +2,6 @@ package trickle
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +27,7 @@ const preconnectRefreshTimeout = 20 * time.Second
 
 // TrickleSubscriber represents a trickle streaming reader that always fetches from index -1
 type TrickleSubscriber struct {
+	client     *http.Client
 	url        string
 	mu         sync.Mutex     // Mutex to manage concurrent access
 	pendingGet *http.Response // Pre-initialized GET request
@@ -41,8 +41,9 @@ type TrickleSubscriber struct {
 func NewTrickleSubscriber(url string) *TrickleSubscriber {
 	// No preconnect needed here; it will be handled by the first Read call.
 	return &TrickleSubscriber{
-		url: url,
-		idx: -1, // shortcut for 'latest'
+		client: httpClient(),
+		url:    url,
+		idx:    -1, // shortcut for 'latest'
 	}
 }
 
@@ -93,10 +94,7 @@ func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error)
 	}
 
 	// Execute the GET request
-	resp, err := (&http.Client{Transport: &http.Transport{
-		DisableKeepAlives: true,
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
-	}}).Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to complete GET for next segment: %w", err)
 	}
