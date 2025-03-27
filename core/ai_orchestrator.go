@@ -1197,11 +1197,13 @@ func hardwareInformationFromNetHardware(hdw []*net.HardwareInformation) []worker
 	var netWorkerHardware []byte
 	netWorkerHardware, err := json.Marshal(hdw)
 	if err != nil {
+		glog.Errorf("Error converting hardware information to json: %v", err)
 		return []worker.HardwareInformation{}
 	}
 	var workerHardware []worker.HardwareInformation
 	err = json.Unmarshal(netWorkerHardware, &workerHardware)
 	if err != nil {
+		glog.Errorf("Error converting hardware information: %v", err)
 		return []worker.HardwareInformation{}
 	}
 

@@ -634,11 +634,13 @@ func workerHardwareToNetWorkerHardware(orchHdw []worker.HardwareInformation) []*
 	var workerHardware []byte
 	workerHardware, err := json.Marshal(orchHdw)
 	if err != nil {
+		glog.Errorf("Error converting hardware information to json: %v", err)
 		return []*net.HardwareInformation{}
 	}
 	var netWorkerHardware []*net.HardwareInformation
 	err = json.Unmarshal(workerHardware, &netWorkerHardware)
 	if err != nil {
+		glog.Errorf("Error converting hardware information: %v", err)
 		return []*net.HardwareInformation{}
 	}
 
