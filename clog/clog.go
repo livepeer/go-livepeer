@@ -225,7 +225,7 @@ func Info(ctx context.Context, msg string, keyvals ...interface{}) {
 		}
 	}
 
-	Infof(ctx, "%s", sb.String())
+	infof(ctx, false, false, sb.String())
 }
 
 // V returns a Verbose instance for conditional logging at the specified level
