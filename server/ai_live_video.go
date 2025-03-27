@@ -170,7 +170,7 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, onFistSegment func()) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -193,6 +193,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	go func() {
 		var err error
 		firstSegment := true
+		var segmentsReceived int64
 
 		defer w.Close()
 		defer wMediaMTX.Close()
@@ -242,6 +243,23 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			if firstSegment {
 				firstSegment = false
 				onFistSegment()
+			}
+			segmentsReceived += 1
+			if segmentsReceived == 3 && monitor.Enabled {
+				// We assume that after receiving 3 segments, the runner started successfully
+				// and we should be able to start the playback
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_receive_few_processed_segments",
+					"timestamp":   time.Now().UnixMilli(),
+					"stream_id":   params.liveParams.streamID,
+					"pipeline_id": params.liveParams.pipelineID,
+					"request_id":  params.liveParams.requestID,
+					"orchestrator_info": map[string]interface{}{
+						"address": sess.Address(),
+						"url":     sess.Transcoder(),
+					},
+				})
+
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}

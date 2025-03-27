@@ -1099,7 +1099,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 
 	startControlPublish(control, params)
 	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, func() {
+	startTrickleSubscribe(ctx, sub, params, sess, func() {
 		delayMs := time.Since(startTime).Milliseconds()
 		if monitor.Enabled {
 			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
