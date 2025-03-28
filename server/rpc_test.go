@@ -227,8 +227,8 @@ func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 	return nil, nil
 }
 
-func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
@@ -1432,8 +1432,8 @@ func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 
