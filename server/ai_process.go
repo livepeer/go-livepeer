@@ -1054,17 +1054,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	setHeaders := func(ctx context.Context, req *http.Request) error {
-		if err := paymentHeaders(ctx, req); err != nil {
-			return err
-		}
-		req.Header.Set("requestID", params.liveParams.requestID)
-		req.Header.Set("streamID", params.liveParams.streamID)
-		return nil
-	}
-
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, nil, req, setHeaders)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, nil, req, paymentHeaders)
 	if err != nil {
 		return nil, err
 	}
