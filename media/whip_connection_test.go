@@ -39,7 +39,7 @@ func TestMediaState(t *testing.T) {
 		state := NewMediaState(mockPC)
 
 		assert.Equal(t, mockPC, state.pc, "Closer should be set correctly")
-		assert.NotNil(t, state.closeCh, "CloseCh should be initialized")
+		assert.NotNil(t, state.cond, "Cond should be initialized")
 	})
 
 	t.Run("Close", func(t *testing.T) {
@@ -90,6 +90,143 @@ func TestMediaState(t *testing.T) {
 		case <-time.After(500 * time.Millisecond):
 			assert.Fail(t, "AwaitClose did not return after Close was called")
 		}
+	})
+}
+
+func TestNewMediaStateError(t *testing.T) {
+	t.Run("CreatesAlreadyClosedState", func(t *testing.T) {
+		testErr := errors.New("test error")
+		state := NewMediaStateError(testErr)
+
+		// The state should be immediately closed.
+		assert.True(t, state.closed, "MediaState should be closed immediately when created with error")
+
+		// The state should store the passed-in error properly.
+		assert.Equal(t, testErr, state.err, "MediaState should have the error passed at creation")
+
+		// Ensure calling Close again does not overwrite the error or reopen the state.
+		state.Close()
+		assert.True(t, state.closed, "MediaState must remain closed after subsequent Close")
+		assert.Equal(t, testErr, state.err, "Error should remain unchanged after subsequent Close")
+
+		// Ensure calling CloseError again does not overwrite the error or reopen the state.
+		state.CloseError(errors.New("another error"))
+		assert.True(t, state.closed, "MediaState must remain closed after subsequent Close")
+		assert.Equal(t, testErr, state.err, "Error should remain unchanged after subsequent Close")
+
+		// pc should be nil since we passed nil to NewMediaState.
+		assert.Nil(t, state.pc, "PeerConnection should be nil for NewMediaStateError")
+	})
+
+	t.Run("AwaitCloseReturnsError", func(t *testing.T) {
+		testErr := errors.New("another test error")
+		state := NewMediaStateError(testErr)
+
+		// AwaitClose should return immediately with the stored error, since it's already closed.
+		returnedErr := state.AwaitClose()
+		assert.Equal(t, testErr, returnedErr, "AwaitClose should return the stored error when closed immediately")
+	})
+
+	t.Run("ConcurrentAwaitCloseReturnsError", func(t *testing.T) {
+		testErr := errors.New("another test error")
+		state := NewMediaStateError(testErr)
+		conn := NewWHIPConnection()
+		conn.SetWHIPConnection(state)
+
+		// AwaitClose should return immediately with the stored error, since it's already closed.
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				returnedErr := conn.AwaitClose()
+				assert.Equal(t, testErr, returnedErr, "AwaitClose should return the stored error when closed immediately")
+			}()
+		}
+		assert.True(t, wgWait(&wg), "timed out waiting for closes")
+	})
+}
+
+func TestMediaStateCloseError(t *testing.T) {
+	t.Run("ClosesPCIfNotAlreadyClosed", func(t *testing.T) {
+		mockPC := NewMockPC()
+		state := NewMediaState(mockPC)
+
+		err := errors.New("some error")
+		state.CloseError(err)
+
+		assert.True(t, state.closed, "State should be marked closed")
+		assert.Equal(t, err, state.err, "State should hold the provided error")
+		assert.True(t, mockPC.WasCloseCalled(), "Close should be called on the peer connection")
+	})
+
+	t.Run("WhipConnectionNoDoubleCloseOnSubsequentCalls", func(t *testing.T) {
+		mockPC := NewMockPC()
+		state := NewMediaState(mockPC)
+		conn := NewWHIPConnection()
+		err1 := errors.New("first error")
+
+		conn.SetWHIPConnection(state)
+		state.CloseError(err1)
+		assert.True(t, mockPC.WasCloseCalled(), "Peer connection should be closed the first time")
+		assert.Equal(t, err1, conn.AwaitClose(), "Error should match the first provided error")
+
+		// Reset the closeCalled
+		mockPC.closeCalled = false
+		err2 := errors.New("second error")
+		state.CloseError(err2)
+
+		assert.False(t, mockPC.WasCloseCalled(), "Peer connection should not be closed again")
+		assert.Equal(t, err1, conn.AwaitClose(), "Error should remain the original error after subsequent calls")
+
+		// Close via WHIP
+		conn.Close()
+		assert.False(t, mockPC.WasCloseCalled(), "Peer connection should not be closed again")
+		assert.Equal(t, err1, conn.AwaitClose(), "Error should remain the original error after subsequent calls")
+	})
+
+	t.Run("WHIPConnectionConcurrentCloseError", func(t *testing.T) {
+		mockPC := NewMockPC()
+		state := NewMediaState(mockPC)
+		conn := NewWHIPConnection()
+
+		var wg sync.WaitGroup
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := conn.AwaitClose()
+				assert.Error(t, err, "concurrent error")
+			}()
+		}
+		time.Sleep(100 * time.Millisecond)
+		conn.SetWHIPConnection(state)
+		for i := 0; i < 100; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				state.CloseError(errors.New("concurrent error"))
+			}()
+		}
+		assert.True(t, wgWait(&wg), "close errors timed out")
+
+		// After concurrent CloseError calls, the peer should be closed exactly once
+		assert.True(t, state.closed, "State should be marked closed")
+		assert.True(t, mockPC.WasCloseCalled(), "Peer connection must have been closed")
+		assert.Error(t, state.err, "concurrent error")
+	})
+
+	t.Run("RetainsFirstError", func(t *testing.T) {
+		mockPC := NewMockPC()
+		state := NewMediaState(mockPC)
+
+		err1 := errors.New("first error")
+		err2 := errors.New("second error")
+
+		state.CloseError(err1)
+		state.CloseError(err2)
+
+		assert.Equal(t, err1, state.err, "Should retain the first passed-in error")
 	})
 }
 
@@ -486,7 +623,7 @@ func TestConcurrentOperations(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(i int) {
 			defer wg.Done()
-			conn.AwaitClose()
+			assert.Nil(t, conn.AwaitClose(), "expcted await close to not return an error")
 		}(i)
 	}
 
