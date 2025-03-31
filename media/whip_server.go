@@ -183,11 +183,14 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			for {
 				statsReport := peerConnection.GetStats()
 
+				clog.Info(ctx, "checking whip stats")
 				// Print stats
 				for statsID, stat := range statsReport {
 					clog.Infof(ctx, "whip stats ID: %s\n", statsID)
 
 					switch s := stat.(type) {
+					case *webrtc.SCTPTransportStats:
+						clog.Info(ctx, "whip Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent, "bytes received", s.BytesReceived)
 					case *webrtc.ICECandidatePairStats:
 						clog.Info(ctx, "whip Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent)
 					case *webrtc.InboundRTPStreamStats:
