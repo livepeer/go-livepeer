@@ -467,12 +467,6 @@ type VideoResponse struct {
 	Frames [][]Media `json:"frames"`
 }
 
-// GenLiveVideoToVideoParams defines parameters for GenLiveVideoToVideo.
-type GenLiveVideoToVideoParams struct {
-	RequestID *string `json:"requestID,omitempty"`
-	StreamID  *string `json:"streamID,omitempty"`
-}
-
 // GenAudioToTextMultipartRequestBody defines body for GenAudioToText for multipart/form-data ContentType.
 type GenAudioToTextMultipartRequestBody = BodyGenAudioToText
 
@@ -660,9 +654,9 @@ type ClientInterface interface {
 	GenImageToVideoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GenLiveVideoToVideoWithBody request with any body
-	GenLiveVideoToVideoWithBody(ctx context.Context, params *GenLiveVideoToVideoParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GenLiveVideoToVideoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	GenLiveVideoToVideo(ctx context.Context, params *GenLiveVideoToVideoParams, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GenLiveVideoToVideo(ctx context.Context, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GenLLMWithBody request with any body
 	GenLLMWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -770,8 +764,8 @@ func (c *Client) GenImageToVideoWithBody(ctx context.Context, contentType string
 	return c.Client.Do(req)
 }
 
-func (c *Client) GenLiveVideoToVideoWithBody(ctx context.Context, params *GenLiveVideoToVideoParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGenLiveVideoToVideoRequestWithBody(c.Server, params, contentType, body)
+func (c *Client) GenLiveVideoToVideoWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGenLiveVideoToVideoRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -782,8 +776,8 @@ func (c *Client) GenLiveVideoToVideoWithBody(ctx context.Context, params *GenLiv
 	return c.Client.Do(req)
 }
 
-func (c *Client) GenLiveVideoToVideo(ctx context.Context, params *GenLiveVideoToVideoParams, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGenLiveVideoToVideoRequest(c.Server, params, body)
+func (c *Client) GenLiveVideoToVideo(ctx context.Context, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGenLiveVideoToVideoRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1088,18 +1082,18 @@ func NewGenImageToVideoRequestWithBody(server string, contentType string, body i
 }
 
 // NewGenLiveVideoToVideoRequest calls the generic GenLiveVideoToVideo builder with application/json body
-func NewGenLiveVideoToVideoRequest(server string, params *GenLiveVideoToVideoParams, body GenLiveVideoToVideoJSONRequestBody) (*http.Request, error) {
+func NewGenLiveVideoToVideoRequest(server string, body GenLiveVideoToVideoJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewGenLiveVideoToVideoRequestWithBody(server, params, "application/json", bodyReader)
+	return NewGenLiveVideoToVideoRequestWithBody(server, "application/json", bodyReader)
 }
 
 // NewGenLiveVideoToVideoRequestWithBody generates requests for GenLiveVideoToVideo with any type of body
-func NewGenLiveVideoToVideoRequestWithBody(server string, params *GenLiveVideoToVideoParams, contentType string, body io.Reader) (*http.Request, error) {
+func NewGenLiveVideoToVideoRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1123,32 +1117,6 @@ func NewGenLiveVideoToVideoRequestWithBody(server string, params *GenLiveVideoTo
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		if params.RequestID != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithLocation("simple", false, "requestID", runtime.ParamLocationHeader, *params.RequestID)
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("requestID", headerParam0)
-		}
-
-		if params.StreamID != nil {
-			var headerParam1 string
-
-			headerParam1, err = runtime.StyleParamWithLocation("simple", false, "streamID", runtime.ParamLocationHeader, *params.StreamID)
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("streamID", headerParam1)
-		}
-
-	}
 
 	return req, nil
 }
@@ -1396,9 +1364,9 @@ type ClientWithResponsesInterface interface {
 	GenImageToVideoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenImageToVideoResponse, error)
 
 	// GenLiveVideoToVideoWithBodyWithResponse request with any body
-	GenLiveVideoToVideoWithBodyWithResponse(ctx context.Context, params *GenLiveVideoToVideoParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error)
+	GenLiveVideoToVideoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error)
 
-	GenLiveVideoToVideoWithResponse(ctx context.Context, params *GenLiveVideoToVideoParams, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error)
+	GenLiveVideoToVideoWithResponse(ctx context.Context, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error)
 
 	// GenLLMWithBodyWithResponse request with any body
 	GenLLMWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenLLMResponse, error)
@@ -1815,16 +1783,16 @@ func (c *ClientWithResponses) GenImageToVideoWithBodyWithResponse(ctx context.Co
 }
 
 // GenLiveVideoToVideoWithBodyWithResponse request with arbitrary body returning *GenLiveVideoToVideoResponse
-func (c *ClientWithResponses) GenLiveVideoToVideoWithBodyWithResponse(ctx context.Context, params *GenLiveVideoToVideoParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error) {
-	rsp, err := c.GenLiveVideoToVideoWithBody(ctx, params, contentType, body, reqEditors...)
+func (c *ClientWithResponses) GenLiveVideoToVideoWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error) {
+	rsp, err := c.GenLiveVideoToVideoWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseGenLiveVideoToVideoResponse(rsp)
 }
 
-func (c *ClientWithResponses) GenLiveVideoToVideoWithResponse(ctx context.Context, params *GenLiveVideoToVideoParams, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error) {
-	rsp, err := c.GenLiveVideoToVideo(ctx, params, body, reqEditors...)
+func (c *ClientWithResponses) GenLiveVideoToVideoWithResponse(ctx context.Context, body GenLiveVideoToVideoJSONRequestBody, reqEditors ...RequestEditorFn) (*GenLiveVideoToVideoResponse, error) {
+	rsp, err := c.GenLiveVideoToVideo(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -2564,7 +2532,7 @@ type ServerInterface interface {
 	GenImageToVideo(w http.ResponseWriter, r *http.Request)
 	// Live Video To Video
 	// (POST /live-video-to-video)
-	GenLiveVideoToVideo(w http.ResponseWriter, r *http.Request, params GenLiveVideoToVideoParams)
+	GenLiveVideoToVideo(w http.ResponseWriter, r *http.Request)
 	// LLM
 	// (POST /llm)
 	GenLLM(w http.ResponseWriter, r *http.Request)
@@ -2630,7 +2598,7 @@ func (_ Unimplemented) GenImageToVideo(w http.ResponseWriter, r *http.Request) {
 
 // Live Video To Video
 // (POST /live-video-to-video)
-func (_ Unimplemented) GenLiveVideoToVideo(w http.ResponseWriter, r *http.Request, params GenLiveVideoToVideoParams) {
+func (_ Unimplemented) GenLiveVideoToVideo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2790,55 +2758,10 @@ func (siw *ServerInterfaceWrapper) GenImageToVideo(w http.ResponseWriter, r *htt
 func (siw *ServerInterfaceWrapper) GenLiveVideoToVideo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var err error
-
 	ctx = context.WithValue(ctx, HTTPBearerScopes, []string{})
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GenLiveVideoToVideoParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "requestID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("requestID")]; found {
-		var RequestID string
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "requestID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "requestID", valueList[0], &RequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestID", Err: err})
-			return
-		}
-
-		params.RequestID = &RequestID
-
-	}
-
-	// ------------- Optional header parameter "streamID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("streamID")]; found {
-		var StreamID string
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "streamID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "streamID", valueList[0], &StreamID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "streamID", Err: err})
-			return
-		}
-
-		params.StreamID = &StreamID
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GenLiveVideoToVideo(w, r, params)
+		siw.Handler.GenLiveVideoToVideo(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3093,90 +3016,90 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 var swaggerSpec = []string{
 
 	"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",
-	"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",
+	"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",
+	"AP//3tegrJl7AAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

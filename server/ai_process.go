@@ -1055,7 +1055,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, nil, req, paymentHeaders)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, paymentHeaders)
 	if err != nil {
 		return nil, err
 	}
