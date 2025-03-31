@@ -278,7 +278,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 					continue
 				}
 				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
-				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
 			}
 		}
 	}
@@ -296,7 +296,7 @@ func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*ne
 					continue
 				}
 				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
-				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: 1, Capability: uint32(cap), Constraint: modelID}
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
 			}
 		}
 	}
