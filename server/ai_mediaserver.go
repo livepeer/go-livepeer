@@ -838,6 +838,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					}
 				}()
 				whipConn.AwaitClose()
+
+				clog.Info(ctx, "CLOSED HEREEERR")
 				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 					"type":        "gateway_ingest_stream_closed",
 					"timestamp":   time.Now().UnixMilli(),

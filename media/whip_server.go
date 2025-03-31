@@ -69,7 +69,6 @@ type WHIPServer struct {
 
 // handleCreate implements the POST that creates a new resource.
 func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request) *MediaState {
-
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -175,10 +174,25 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
 			return
 		}
+		clog.V(5).Info(ctx, "gathered tracks", "took", time.Since(gatherStartTime), "audio", audioTrack != nil, "video", videoTrack != nil)
 		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
 			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
 			return
 		}
+
+		go func() {
+			for {
+				statsReport := peerConnection.GetStats()
+
+				// Print stats
+				for statsID, stat := range statsReport {
+					clog.Infof(ctx, "ID: %s Raw Stats Data: %+v\n", statsID, stat)
+				}
+
+				time.Sleep(time.Second * 5)
+			}
+		}()
+
 		tracks := []RTPTrack{videoTrack}
 		if audioTrack != nil {
 			tracks = append(tracks, audioTrack)
@@ -373,7 +387,6 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 			}
 		}
 	}
-	return audioTrack, videoTrack, nil
 }
 
 func getMediaDescriptionByType(sdp sdp.SessionDescription, mediaType string) *sdp.MediaDescription {
@@ -573,7 +586,9 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 
 func NewWHIPServer() *WHIPServer {
 	allowedCodecs, interceptors, settings = genParams()
-	return &WHIPServer{webrtc.NewAPI(allowedCodecs, interceptors, settings)}
+	return &WHIPServer{
+		api: webrtc.NewAPI(allowedCodecs, interceptors, settings),
+	}
 }
 
 type IncomingTrack struct {
