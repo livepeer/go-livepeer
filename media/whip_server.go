@@ -174,7 +174,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
 			return
 		}
-		clog.V(5).Info(ctx, "gathered tracks", "took", time.Since(gatherStartTime), "audio", audioTrack != nil, "video", videoTrack != nil)
 		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
 			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
 			return
@@ -186,7 +185,18 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 				// Print stats
 				for statsID, stat := range statsReport {
-					clog.Infof(ctx, "ID: %s Raw Stats Data: %+v\n", statsID, stat)
+					clog.Infof(ctx, "whip stats ID: %s\n", statsID)
+
+					switch s := stat.(type) {
+					case *webrtc.ICECandidatePairStats:
+						clog.Info(ctx, "whip Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent)
+					case *webrtc.InboundRTPStreamStats:
+						clog.Info(ctx, "whip Inbound RTP", "ID", s.ID, "bytes received", s.BytesReceived, "jitter", s.Jitter)
+					case *webrtc.OutboundRTPStreamStats:
+						clog.Info(ctx, "whip Outbound RTP", "ID", s.ID, "bytes sent", s.BytesSent)
+						//default:
+						//fmt.Println("Unknown stat type")
+					}
 				}
 
 				time.Sleep(time.Second * 5)
