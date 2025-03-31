@@ -259,9 +259,6 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 }
 
 func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
-	//reset network capabilities
-	dbo.node.ResetNetworkCapabilities()
-
 	//load orchestrators from db
 	orchs, err := dbo.store.SelectOrchs(
 		&common.DBOrchFilter{
@@ -276,6 +273,8 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+
+	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
 
 	getOrchInfo := func(dbOrch *common.DBOrch) {
 		uri, err := parseURI(dbOrch.ServiceURI)
@@ -320,7 +319,8 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 
 		//add response to network capabilities
-		err = dbo.node.AddNetworkCapabilities(orchInfoToOrchNetworkCapabilities(info, dbOrch))
+		orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(info, dbOrch))
+
 		if err != nil {
 			glog.Error("Error adding Orchestrator to network capabilities: ", err)
 		}
@@ -351,6 +351,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 	}
 
+	dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
 	return nil
 }
 

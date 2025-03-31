@@ -310,23 +310,14 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	return totalCapacity
 }
 
-func (n *LivepeerNode) ResetNetworkCapabilities() {
+func (n *LivepeerNode) UpdateNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	n.NetworkCapabilities.Orchestrators = n.NetworkCapabilities.Orchestrators[:0]
-}
 
-func (n *LivepeerNode) AddNetworkCapabilities(orch *common.OrchNetworkCapabilities) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if orch == nil {
-		return errors.New("OrchestratorInfo is nil")
-	}
-
-	n.NetworkCapabilities.Orchestrators = append(n.NetworkCapabilities.Orchestrators, orch)
+	n.NetworkCapabilities.Orchestrators = orchNetworkCapabilities
 
 	if lpmon.Enabled {
-		lpmon.SendQueueEventAsync("network_capabilities", orch)
+		lpmon.SendQueueEventAsync("network_capabilities", orchNetworkCapabilities)
 	}
 
 	return nil
