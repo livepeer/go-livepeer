@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +99,37 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
+
+		go func() {
+			for {
+				time.Sleep(time.Second * 5)
+				statsReport := peerConnection.GetStats()
+
+				clog.Info(ctx, "checking whip stats")
+				// Print stats
+				for statsID, stat := range statsReport {
+
+					switch s := stat.(type) {
+					case webrtc.RemoteInboundRTPStreamStats:
+						clog.Info(ctx, "whip transport stats", "ID", s.ID, "jitter", s.Jitter)
+					case webrtc.TransportStats:
+						clog.Info(ctx, "whip transport stats", "ID", s.ID, "bytes sent", s.BytesSent, "bytes received", s.BytesReceived)
+					case webrtc.ICECandidatePairStats:
+						clog.Info(ctx, "whip ice Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent)
+					case webrtc.ICECandidateStats:
+						clog.Info(ctx, "whip ice Candidate", "ID", s.ID, "IP", s.IP)
+					case webrtc.InboundRTPStreamStats:
+						clog.Info(ctx, "whip Inbound RTP", "ID", s.ID, "bytes received", s.BytesReceived, "jitter", s.Jitter)
+					case webrtc.OutboundRTPStreamStats:
+						clog.Info(ctx, "whip Outbound RTP", "ID", s.ID, "bytes sent", s.BytesSent)
+					default:
+						clog.Info(ctx, "whip stats", "ID", statsID, "type", reflect.TypeOf(stat))
+					}
+				}
+
+			}
+		}()
+
 		trackCh <- track
 	})
 
@@ -183,33 +215,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
-
-		go func() {
-			for {
-				statsReport := peerConnection.GetStats()
-
-				clog.Info(ctx, "checking whip stats")
-				// Print stats
-				for statsID, stat := range statsReport {
-					clog.Infof(ctx, "whip stats ID: %s\n", statsID)
-
-					switch s := stat.(type) {
-					case *webrtc.SCTPTransportStats:
-						clog.Info(ctx, "whip Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent, "bytes received", s.BytesReceived)
-					case *webrtc.ICECandidatePairStats:
-						clog.Info(ctx, "whip Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent)
-					case *webrtc.InboundRTPStreamStats:
-						clog.Info(ctx, "whip Inbound RTP", "ID", s.ID, "bytes received", s.BytesReceived, "jitter", s.Jitter)
-					case *webrtc.OutboundRTPStreamStats:
-						clog.Info(ctx, "whip Outbound RTP", "ID", s.ID, "bytes sent", s.BytesSent)
-						//default:
-						//fmt.Println("Unknown stat type")
-					}
-				}
-
-				time.Sleep(time.Second * 5)
-			}
-		}()
 
 		tracks := []RTPTrack{videoTrack}
 		if audioTrack != nil {
