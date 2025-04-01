@@ -569,7 +569,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				},
 			})
 			ssr.Close()
-			ls.cleanupLive(ctx, streamName)
+			cleanupLive(ctx, ls.LivepeerNode, streamName)
 		}()
 
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
@@ -594,6 +594,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 			}
+			cleanupLive(ctx, ls.LivepeerNode, streamName)
 		}
 
 		params := aiRequestParams{
@@ -884,7 +885,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			whipConn.AwaitClose()
 			ssr.Close()
-			ls.cleanupLive(ctx, streamName)
+			cleanupLive(ctx, ls.LivepeerNode, streamName)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -900,16 +901,16 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) cleanupLive(ctx context.Context, stream string) {
+func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	clog.Infof(ctx, "Live video pipeline finished")
-	ls.LivepeerNode.LiveMu.Lock()
-	pub, ok := ls.LivepeerNode.LivePipelines[stream]
-	delete(ls.LivepeerNode.LivePipelines, stream)
+	node.LiveMu.Lock()
+	pub, ok := node.LivePipelines[stream]
+	delete(node.LivePipelines, stream)
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
-		logCurrentLiveSessions(ls.LivepeerNode.LivePipelines)
+		monitor.AICurrentLiveSessions(len(node.LivePipelines))
+		logCurrentLiveSessions(node.LivePipelines)
 	}
-	ls.LivepeerNode.LiveMu.Unlock()
+	node.LiveMu.Unlock()
 
 	if ok && pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
