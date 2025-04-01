@@ -13,13 +13,13 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/bluenviron/gortsplib/v4/pkg/rtpreorderer"
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
@@ -69,7 +69,7 @@ type WHIPServer struct {
 }
 
 // handleCreate implements the POST that creates a new resource.
-func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request) *MediaState {
+func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request, streamName string) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -99,37 +99,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
-
-		go func() {
-			for {
-				time.Sleep(time.Second * 5)
-				statsReport := peerConnection.GetStats()
-
-				clog.Info(ctx, "checking whip stats")
-				// Print stats
-				for statsID, stat := range statsReport {
-
-					switch s := stat.(type) {
-					case webrtc.RemoteInboundRTPStreamStats:
-						clog.Info(ctx, "whip transport stats", "ID", s.ID, "jitter", s.Jitter)
-					case webrtc.TransportStats:
-						clog.Info(ctx, "whip transport stats", "ID", s.ID, "bytes sent", s.BytesSent, "bytes received", s.BytesReceived)
-					case webrtc.ICECandidatePairStats:
-						clog.Info(ctx, "whip ice Candidate Pair", "ID", s.ID, "bytes sent", s.BytesSent)
-					case webrtc.ICECandidateStats:
-						clog.Info(ctx, "whip ice Candidate", "ID", s.ID, "IP", s.IP)
-					case webrtc.InboundRTPStreamStats:
-						clog.Info(ctx, "whip Inbound RTP", "ID", s.ID, "bytes received", s.BytesReceived, "jitter", s.Jitter)
-					case webrtc.OutboundRTPStreamStats:
-						clog.Info(ctx, "whip Outbound RTP", "ID", s.ID, "bytes sent", s.BytesSent)
-					default:
-						clog.Info(ctx, "whip stats", "ID", statsID, "type", reflect.TypeOf(stat))
-					}
-				}
-
-			}
-		}()
-
 		trackCh <- track
 	})
 
@@ -215,7 +184,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
-
 		tracks := []RTPTrack{videoTrack}
 		if audioTrack != nil {
 			tracks = append(tracks, audioTrack)
@@ -241,6 +209,34 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		}
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
+
+		go func() {
+			// Periodically check whip stats and write logs and metrics
+			for !mediaState.IsClosed() {
+				time.Sleep(time.Second * 5)
+				statsReport := peerConnection.GetStats()
+
+				for _, stat := range statsReport {
+					switch s := stat.(type) {
+					case webrtc.TransportStats:
+						if monitor.Enabled {
+							monitor.AIWhipTransportBytesReceived(streamName, int64(s.BytesReceived))
+							monitor.AIWhipTransportBytesSent(streamName, int64(s.BytesSent))
+							monitor.AIWhipTransportPacketsReceived(streamName, int64(s.PacketsReceived))
+							monitor.AIWhipTransportPacketsSent(streamName, int64(s.PacketsSent))
+						}
+						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
+					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
+					case webrtc.RemoteInboundRTPStreamStats:
+						clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
+					case webrtc.InboundRTPStreamStats:
+						clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
+					}
+				}
+
+			}
+		}()
+
 		wg.Wait()
 		segmenter.CloseSegment()
 		mediaState.Close()

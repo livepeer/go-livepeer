@@ -891,7 +891,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
-		conn := server.CreateWHIP(ctx, ssr, w, r)
+		conn := server.CreateWHIP(ctx, ssr, w, r, streamName)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
 }
