@@ -74,14 +74,14 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
 		http.Error(w, "Unsupported Media Type, expected application/sdp", http.StatusUnsupportedMediaType)
-		return nil
+		return NewMediaStateError(errors.New("unsupported media type"))
 	}
 
 	// Read the SDP offer
 	offerBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error reading offer", http.StatusBadRequest)
-		return nil
+		return NewMediaStateError(errors.New("error reading offer"))
 	}
 	defer r.Body.Close()
 
@@ -90,7 +90,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
-		return nil
+		return NewMediaStateError(errors.New("failed to create peerconnection"))
 	}
 	mediaState := NewMediaState(peerConnection)
 
@@ -105,7 +105,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		clog.Info(ctx, "ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
-			peerConnection.Close()
+			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
 			// Business logic when PeerConnection done
 		}
@@ -117,24 +117,27 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		SDP:  string(offerBytes),
 	}
 	if err := peerConnection.SetRemoteDescription(sdpOffer); err != nil {
-		http.Error(w, fmt.Sprintf("SetRemoteDescription failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("SetRemoteDescription failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 
 	// Create the answer
 	answer, err := peerConnection.CreateAnswer(nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("CreateAnswer failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("CreateAnswer failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 
 	// Gather ICE candidates and set local description
 	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
 	if err = peerConnection.SetLocalDescription(answer); err != nil {
-		http.Error(w, fmt.Sprintf("SetLocalDescription failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("SetLocalDescription failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 	// Wait for ICE gathering if you want the full candidate set in the SDP
@@ -164,18 +167,20 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 	// wait for audio or video
 	go func() {
-		defer mediaState.Close()
 		audioTrack, videoTrack, err := gatherIncomingTracks(ctx, peerConnection, trackCh)
 		if err != nil {
 			clog.Info(ctx, "error gathering tracks", "took", time.Since(gatherStartTime), "err", err)
+			mediaState.CloseError(fmt.Errorf("error gathering tracks: %w", err))
 			return
 		}
 		if videoTrack == nil {
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
+			mediaState.CloseError(errors.New("missing video"))
 			return
 		}
 		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
 			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
+			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
 
@@ -233,6 +238,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
 		wg.Wait()
 		segmenter.CloseSegment()
+		mediaState.Close()
 	}()
 	return mediaState
 }
