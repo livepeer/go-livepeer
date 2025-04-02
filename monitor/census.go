@@ -1026,28 +1026,28 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mAIWhipTransportBytesReceived,
 			Description: "Number of bytes received on a WHIP connection",
 			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
-			Aggregation: view.Sum(),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_bytes_sent",
 			Measure:     census.mAIWhipTransportBytesSent,
 			Description: "Number of bytes sent on a WHIP connection",
 			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
-			Aggregation: view.Sum(),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_packets_received",
 			Measure:     census.mAIWhipTransportPacketsReceived,
 			Description: "Number of packets received on a WHIP connection",
 			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
-			Aggregation: view.Sum(),
+			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_packets_sent",
 			Measure:     census.mAIWhipTransportPacketsSent,
 			Description: "Number of packets sent on a WHIP connection",
 			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
-			Aggregation: view.Sum(),
+			Aggregation: view.LastValue(),
 		},
 	}
 
