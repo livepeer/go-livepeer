@@ -1067,7 +1067,7 @@ func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.
 func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, urls []string, inProfile ffmpeg.VideoProfile, outProfile ffmpeg.VideoProfile) *TranscodeResult {
 	ctx = clog.AddOrchSessionID(ctx, sessionID)
-
+	clog.V(common.DEBUG).Infof(ctx, "Transcoding frames sessionID=%v frames=%d", sessionID, len(urls))
 	var fnamep *string
 	terr := func(err error) *TranscodeResult {
 		if fnamep != nil {
