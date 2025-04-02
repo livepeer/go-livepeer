@@ -1600,6 +1600,68 @@ func TestPriceInfo_TxMultiplierError_ReturnsError(t *testing.T) {
 	assert.EqualError(t, err, expError.Error())
 }
 
+func TestAllCapsPriceInfo(t *testing.T) {
+	n, _ := NewLivepeerNode(nil, "", nil)
+	n.SetBasePrice("default", NewFixedPrice(big.NewRat(1, 1)))
+	recipient := new(pm.MockRecipient)
+	n.Recipient = recipient
+
+	orch := NewOrchestrator(n, nil)
+
+	//set prices
+	addr1 := "0x1000000000000000000000000000000000000000"
+	addr2 := "0x2000000000000000000000000000000000000000"
+
+	price1 := big.NewRat(1, 1)
+	price2 := big.NewRat(2, 1)
+	price3 := big.NewRat(3, 1)
+	n.SetBasePriceForCap("default", Capability_TextToImage, "default", NewFixedPrice(price1))
+	n.SetBasePriceForCap(addr1, Capability_TextToImage, "default", NewFixedPrice(price2))
+	n.SetBasePriceForCap(addr2, Capability_ImageToImage, "default", NewFixedPrice(price3))
+
+	prices, err := orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr1))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 1)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price set for specific gateway addr1 should override the default price
+			assert.Equal(t, price.PricePerUnit, price2.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			t.Error("should not get ImageToImage price")
+		}
+	}
+
+	//test addr2 gets default TextToImage price and specific ImageToImage price
+	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr2))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 2)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price should be the default price
+			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			assert.Equal(t, price.PricePerUnit, price3.Num().Int64())
+		}
+	}
+
+	//test addr3 gets only the default TextToImage price
+	addr3 := "0x3000000000000000000000000000000000000000"
+	prices, err = orch.GetCapabilitiesPrices(ethcommon.HexToAddress(addr3))
+	assert.Nil(t, err)
+	assert.Len(t, prices, 1)
+	for _, price := range prices {
+		switch price.Capability {
+		case uint32(Capability_TextToImage):
+			//price should be the default price
+			assert.Equal(t, price.PricePerUnit, price1.Num().Int64())
+		case uint32(Capability_ImageToImage):
+			t.Error("should not get ImageToImage price")
+		}
+	}
+}
+
 func TestDebitFees(t *testing.T) {
 	n, _ := NewLivepeerNode(nil, "", nil)
 	n.Balances = NewAddressBalances(5 * time.Second)

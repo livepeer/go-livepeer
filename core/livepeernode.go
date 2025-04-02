@@ -142,9 +142,10 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Thread safety for config fields
-	mu             sync.RWMutex
-	StorageConfigs map[string]*transcodeConfig
-	storageMutex   *sync.RWMutex
+	mu                  sync.RWMutex
+	StorageConfigs      map[string]*transcodeConfig
+	storageMutex        *sync.RWMutex
+	NetworkCapabilities common.NetworkCapabilities
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
@@ -267,6 +268,19 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 	}
 
 	return nil
+}
+
+func (n *LivepeerNode) GetCapsPrices(b_eth_addr string) *CapabilityPrices {
+	addr := strings.ToLower(b_eth_addr)
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	prices, ok := n.priceInfoForCaps[addr]
+	if !ok {
+		return nil
+	}
+
+	return &prices
 }
 
 // SetMaxFaceValue sets the faceValue upper limit for tickets received
@@ -392,4 +406,23 @@ func (n *LivepeerNode) UpdateTranscoderSecret(secret string, active bool) {
 	}
 
 	n.Database.UpdateTranscoderSecret(secret, active)
+}
+
+func (n *LivepeerNode) UpdateNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.NetworkCapabilities.Orchestrators = orchNetworkCapabilities
+
+	if lpmon.Enabled {
+		lpmon.SendQueueEventAsync("network_capabilities", orchNetworkCapabilities)
+	}
+
+	return nil
+}
+
+func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilities {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.NetworkCapabilities.Orchestrators
 }
