@@ -908,6 +908,11 @@ func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	clog.Infof(ctx, "Live video pipeline finished")
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
+	if !ok {
+	    // already cleaned up
+	    node.LiveMy.Unlock()
+	    return
+	}
 	delete(node.LivePipelines, stream)
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(node.LivePipelines))
