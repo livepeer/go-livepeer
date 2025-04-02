@@ -237,7 +237,7 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 }
 
 func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) error {
-	if err := dbo.cacheDBOrchs(); err != nil {
+	if err := dbo.cacheOrchInfos(); err != nil {
 		return err
 	}
 
@@ -248,7 +248,7 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := dbo.cacheDBOrchs(); err != nil {
+				if err := dbo.cacheOrchInfos(); err != nil {
 					glog.Errorf("unable to poll orchestrator info: %v", err)
 				}
 			}
@@ -258,16 +258,10 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 	return nil
 }
 
-func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
-	//load orchestrators from db
-	orchs, err := dbo.store.SelectOrchs(
-		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
-	}
+func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
+	//get list of orchestrators to poll info for.  If -orchAddr or -orchWebhookUrl is used it will
+	//limit the set of orchestrators polled to those specified.
+	orchs := dbo.node.OrchestratorPool.GetInfos()
 
 	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
 	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
@@ -276,15 +270,15 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 
 	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
 
-	getOrchInfo := func(dbOrch *common.DBOrch) {
-		uri, err := parseURI(dbOrch.ServiceURI)
+	getOrchInfo := func(orch common.OrchestratorLocalInfo) {
+		uri, err := parseURI(orch.URL.String())
 		if err != nil {
 			errc <- err
 			return
 		}
 		// Do not connect if URI host is not set
 		if uri.Host == "" {
-			errc <- fmt.Errorf("skipping orch=%v, URI not set", dbOrch.EthereumAddr)
+			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
 		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{})
@@ -311,6 +305,9 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			errc <- fmt.Errorf("missing price info orch=%v", info.GetTranscoder())
 			return
 		}
+		dbOrch := &common.DBOrch{
+			EthereumAddr: ethcommon.BytesToAddress(info.Address).Hex(),
+		}
 
 		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
 		if err != nil {
@@ -319,7 +316,7 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 		}
 
 		//add response to network capabilities
-		orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(info, dbOrch))
+		orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(info))
 
 		if err != nil {
 			glog.Error("Error adding Orchestrator to network capabilities: ", err)
@@ -330,9 +327,6 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 
 	numOrchs := 0
 	for _, orch := range orchs {
-		if orch == nil {
-			continue
-		}
 		numOrchs++
 		go getOrchInfo(orch)
 	}
@@ -400,11 +394,8 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 	}
 }
 
-func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *common.DBOrch) *common.OrchNetworkCapabilities {
-	orch := &common.OrchNetworkCapabilities{
-		Address:    dbOrch.EthereumAddr,
-		ServiceURI: dbOrch.ServiceURI,
-	}
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchNetworkCapabilities {
+	var orch *common.OrchNetworkCapabilities
 
 	// add orch operating information if available
 	if info != nil {
@@ -413,6 +404,9 @@ func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo, dbOrch *commo
 		orch.Capabilities = info.GetCapabilities()
 		orch.Hardware = info.GetHardware()
 		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
+		if info.GetTicketParams() != nil {
+			orch.Address = string(ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex())
+		}
 	}
 
 	return orch
