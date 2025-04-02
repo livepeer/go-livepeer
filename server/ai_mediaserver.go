@@ -909,9 +909,9 @@ func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
 	if !ok {
-	    // already cleaned up
-	    node.LiveMy.Unlock()
-	    return
+		// already cleaned up
+		node.LiveMu.Unlock()
+		return
 	}
 	delete(node.LivePipelines, stream)
 	if monitor.Enabled {
@@ -920,7 +920,7 @@ func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	}
 	node.LiveMu.Unlock()
 
-	if ok && pub != nil && pub.ControlPub != nil {
+	if pub != nil && pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
