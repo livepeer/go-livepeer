@@ -1456,6 +1456,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		// Set up orchestrator discovery
+		if *cfg.OrchWebhookURL != "" {
+			whurl, err := validateURL(*cfg.OrchWebhookURL)
+			if err != nil {
+				glog.Exit("Error setting orch webhook URL ", err)
+			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+		} else if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		}
+
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
 		// caching/polling from the logic for fetching orchestrators during discovery
@@ -1467,19 +1479,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
-			n.OrchestratorPool = dbOrchPoolCache
-		}
-
-		// Set up orchestrator discovery
-		if *cfg.OrchWebhookURL != "" {
-			whurl, err := validateURL(*cfg.OrchWebhookURL)
-			if err != nil {
-				glog.Exit("Error setting orch webhook URL ", err)
+			//if orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache as orchestrator pool
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
 			}
-			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
-		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		if n.OrchestratorPool == nil {

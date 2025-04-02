@@ -267,6 +267,9 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 		orchs = dbo.node.OrchestratorPool.GetInfos()
 		glog.Infof("Using orchestrator pool with %d orchestrators", len(orchs))
 	} else {
+		// Orchestrator pool set to use DBOrchestratorPoolCache after initial polling
+		// of OrchestratorInfo runs.  Fall back to using DB orchestrators from the registered
+		// orchestrators in the DB.
 		dbOrchs, err := dbo.store.SelectOrchs(
 			&common.DBOrchFilter{
 				CurrentRound: dbo.rm.LastInitializedRound(),
