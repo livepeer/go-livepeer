@@ -287,7 +287,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.kModelName = tag.MustNewKey("model_name")
 	census.kPipeline = tag.MustNewKey("pipeline")
-	census.kAIStreamName = tag.MustNewKey("ai_stream_name")
+	census.kAIStreamName = tag.MustNewKey("ai_stream_name") // TODO change to stream ID
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Exit("Error creating context", err)
