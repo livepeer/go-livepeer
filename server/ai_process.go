@@ -1088,7 +1088,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(control, params)
+	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, sess)
 	startTrickleSubscribe(ctx, sub, params, sess, func() {
 		delayMs := time.Since(startTime).Milliseconds()
