@@ -840,19 +840,22 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				}()
 				err := whipConn.AwaitClose()
 				if err != nil {
-					sendErrorEvent(err)
+					if errors.Is(err, media.ICEDisconnect) {
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_ingest_stream_closed",
+							"timestamp":   time.Now().UnixMilli(),
+							"stream_id":   streamID,
+							"pipeline_id": pipelineID,
+							"request_id":  requestID,
+							"orchestrator_info": map[string]interface{}{
+								"address": "",
+								"url":     "",
+							},
+						})
+					} else {
+						sendErrorEvent(err)
+					}
 				}
-				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-					"type":        "gateway_ingest_stream_closed",
-					"timestamp":   time.Now().UnixMilli(),
-					"stream_id":   streamID,
-					"pipeline_id": pipelineID,
-					"request_id":  requestID,
-					"orchestrator_info": map[string]interface{}{
-						"address": "",
-						"url":     "",
-					},
-				})
 			}()
 
 			if monitor.Enabled {

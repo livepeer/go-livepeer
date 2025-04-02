@@ -39,6 +39,8 @@ var (
 	allowedCodecs func(*webrtc.API)
 	interceptors  func(*webrtc.API)
 	settings      func(*webrtc.API)
+
+	ICEDisconnect = errors.New("ICE connection state closed")
 )
 
 // Generate a random ID for new resources
@@ -108,7 +110,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
-			// Business logic when PeerConnection done
+			mediaState.CloseError(ICEDisconnect)
 		}
 	})
 
