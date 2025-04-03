@@ -222,7 +222,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 	require.Nil(err)
 
 	// Check that serverGetOrchInfo returns early and the orchestrator isn't updated
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 	orchs, err := dbh.SelectOrchs(&common.DBOrchFilter{})
 	assert.Nil(err)
 	assert.Len(orchs, 1)
@@ -277,12 +277,12 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 
 	// priceInfo.PixelsPerUnit = 0
 	// Check that this does not trigger a division by zero
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 
 	// priceInfo = nil
 	// Check that this does not trigger a nil pointer error
 	priceInfo = nil
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 }
 
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
@@ -302,9 +302,10 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Address:    pm.RandBytes(20),
-			Transcoder: expTranscoder,
-			PriceInfo:  expPriceInfo,
+			Address:      pm.RandBytes(20),
+			Transcoder:   expTranscoder,
+			PriceInfo:    expPriceInfo,
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
 		}, nil
 	}
 
@@ -344,6 +345,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(3)
 
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	dbOrchs, err := dbh.SelectOrchs(nil)
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
 	orchs, _ := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
@@ -352,8 +354,9 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		assert.Equal(o.RemoteInfo.Transcoder, expTranscoder)
 	}
 
+	time.Sleep(5 * time.Millisecond)
 	// ensuring orchs exist in DB
-	dbOrchs, err := pool.store.SelectOrchs(nil)
+	dbOrchs, err = pool.store.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(dbOrchs, 3)
 	for _, o := range dbOrchs {

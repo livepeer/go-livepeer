@@ -335,18 +335,18 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			errc <- fmt.Errorf("missing price info orch=%v", info.GetTranscoder())
 			return
 		}
-		dbOrch := &common.DBOrch{
-			EthereumAddr: ethcommon.BytesToAddress(info.Address).Hex(),
-		}
 
-		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
-		if err != nil {
-			errc <- err
-			return
-		}
+		var dbOrch *common.DBOrch
+		if info.GetTicketParams() != nil {
+			dbOrch = &common.DBOrch{
+				EthereumAddr: ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
+			}
 
-		if err != nil {
-			glog.Error("Error adding Orchestrator to network capabilities: ", err)
+			dbOrch.PricePerPixel, err = common.PriceToFixed(price)
+			if err != nil {
+				errc <- err
+				return
+			}
 		}
 
 		resc <- orchPollingInfo{orchInfo: info, dbOrch: dbOrch}
@@ -365,8 +365,10 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			//add response to network capabilities
 			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo))
 			//update db with response
-			if err := dbo.store.UpdateOrch(res.dbOrch); err != nil {
-				glog.Error("Error updating Orchestrator in DB: ", err)
+			if res.dbOrch != nil {
+				if err := dbo.store.UpdateOrch(res.dbOrch); err != nil {
+					glog.Error("Error updating Orchestrator in DB: ", err)
+				}
 			}
 		case err := <-errc:
 			glog.Errorln(err)
