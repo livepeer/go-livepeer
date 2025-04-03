@@ -126,3 +126,9 @@ func (m *MediaState) AwaitClose() error {
 	}
 	return m.err
 }
+
+func (m *MediaState) IsClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
+}
