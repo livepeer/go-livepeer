@@ -117,7 +117,6 @@ type (
 		kFVErrorType                  tag.Key
 		kPipeline                     tag.Key
 		kModelName                    tag.Key
-		kAIStreamName                 tag.Key
 		mSegmentSourceAppeared        *stats.Int64Measure
 		mSegmentEmerged               *stats.Int64Measure
 		mSegmentEmergedUnprocessed    *stats.Int64Measure
@@ -287,7 +286,6 @@ func InitCensus(nodeType NodeType, version string) {
 	census.kSegClassName = tag.MustNewKey("seg_class_name")
 	census.kModelName = tag.MustNewKey("model_name")
 	census.kPipeline = tag.MustNewKey("pipeline")
-	census.kAIStreamName = tag.MustNewKey("ai_stream_name") // TODO change to stream ID
 	census.ctx, err = tag.New(ctx, tag.Insert(census.kNodeType, string(nodeType)), tag.Insert(census.kNodeID, NodeID))
 	if err != nil {
 		glog.Exit("Error creating context", err)
@@ -1025,28 +1023,28 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_whip_transport_bytes_received",
 			Measure:     census.mAIWhipTransportBytesReceived,
 			Description: "Number of bytes received on a WHIP connection",
-			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_bytes_sent",
 			Measure:     census.mAIWhipTransportBytesSent,
 			Description: "Number of bytes sent on a WHIP connection",
-			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_packets_received",
 			Measure:     census.mAIWhipTransportPacketsReceived,
 			Description: "Number of packets received on a WHIP connection",
-			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_whip_transport_packets_sent",
 			Measure:     census.mAIWhipTransportPacketsSent,
 			Description: "Number of packets sent on a WHIP connection",
-			TagKeys:     append([]tag.Key{census.kAIStreamName}, baseTags...),
+			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
 	}
@@ -1977,32 +1975,20 @@ func AICurrentLiveSessions(currentPipelines int) {
 	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(currentPipelines)))
 }
 
-func AIWhipTransportBytesReceived(streamName string, bytes int64) {
-	tags := []tag.Mutator{tag.Insert(census.kAIStreamName, streamName)}
-	if err := stats.RecordWithTags(census.ctx, tags, census.mAIWhipTransportBytesReceived.M(bytes)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
+func AIWhipTransportBytesReceived(bytes int64) {
+	stats.Record(census.ctx, census.mAIWhipTransportBytesReceived.M(bytes))
 }
 
-func AIWhipTransportBytesSent(streamName string, bytes int64) {
-	tags := []tag.Mutator{tag.Insert(census.kAIStreamName, streamName)}
-	if err := stats.RecordWithTags(census.ctx, tags, census.mAIWhipTransportBytesSent.M(bytes)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
+func AIWhipTransportBytesSent(bytes int64) {
+	stats.Record(census.ctx, census.mAIWhipTransportBytesSent.M(bytes))
 }
 
-func AIWhipTransportPacketsReceived(streamName string, packets int64) {
-	tags := []tag.Mutator{tag.Insert(census.kAIStreamName, streamName)}
-	if err := stats.RecordWithTags(census.ctx, tags, census.mAIWhipTransportPacketsReceived.M(packets)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
+func AIWhipTransportPacketsReceived(packets int64) {
+	stats.Record(census.ctx, census.mAIWhipTransportPacketsReceived.M(packets))
 }
 
-func AIWhipTransportPacketsSent(streamName string, packets int64) {
-	tags := []tag.Mutator{tag.Insert(census.kAIStreamName, streamName)}
-	if err := stats.RecordWithTags(census.ctx, tags, census.mAIWhipTransportPacketsSent.M(packets)); err != nil {
-		glog.Errorf("Error recording metrics err=%q", err)
-	}
+func AIWhipTransportPacketsSent(packets int64) {
+	stats.Record(census.ctx, census.mAIWhipTransportPacketsSent.M(packets))
 }
 
 // AIJobProcessed records orchestrator AI job processing metrics.

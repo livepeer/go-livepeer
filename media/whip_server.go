@@ -69,7 +69,7 @@ type WHIPServer struct {
 }
 
 // handleCreate implements the POST that creates a new resource.
-func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request, streamName string) *MediaState {
+func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -220,10 +220,10 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 					switch s := stat.(type) {
 					case webrtc.TransportStats:
 						if monitor.Enabled {
-							monitor.AIWhipTransportBytesReceived(streamName, int64(s.BytesReceived))
-							monitor.AIWhipTransportBytesSent(streamName, int64(s.BytesSent))
-							monitor.AIWhipTransportPacketsReceived(streamName, int64(s.PacketsReceived))
-							monitor.AIWhipTransportPacketsSent(streamName, int64(s.PacketsSent))
+							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
+							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
+							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
+							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
 						}
 						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
 					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
