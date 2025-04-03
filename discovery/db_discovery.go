@@ -21,7 +21,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 1 * time.Hour
+var cacheRefreshInterval = 25 * time.Minute
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
@@ -38,6 +38,7 @@ type DBOrchestratorPoolCache struct {
 	bcast                 common.Broadcaster
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
+	node                  *core.LivepeerNode
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -53,6 +54,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		bcast:                 core.NewBroadcaster(node),
 		orchBlacklist:         orchBlacklist,
 		discoveryTimeout:      discoveryTimeout,
+		node:                  node,
 	}
 
 	if err := dbo.cacheTranscoderPool(); err != nil {
@@ -235,7 +237,8 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 }
 
 func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) error {
-	if err := dbo.cacheDBOrchs(); err != nil {
+	if err := dbo.cacheOrchInfos(); err != nil {
+		glog.Errorf("unable to poll orchestrator info: %v", err)
 		return err
 	}
 
@@ -246,7 +249,7 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := dbo.cacheDBOrchs(); err != nil {
+				if err := dbo.cacheOrchInfos(); err != nil {
 					glog.Errorf("unable to poll orchestrator info: %v", err)
 				}
 			}
@@ -256,30 +259,56 @@ func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) er
 	return nil
 }
 
-func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
-	orchs, err := dbo.store.SelectOrchs(
-		&common.DBOrchFilter{
-			CurrentRound: dbo.rm.LastInitializedRound(),
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
+	//get list of orchestrators to poll info for.  If -orchAddr or -orchWebhookUrl is used it will
+	//limit the set of orchestrators polled to those specified.
+	var orchs []common.OrchestratorLocalInfo
+	if dbo.node.OrchestratorPool != nil {
+		orchs = dbo.node.OrchestratorPool.GetInfos()
+		glog.Infof("Using orchestrator pool with %d orchestrators", len(orchs))
+	} else {
+		// Orchestrator pool set to use DBOrchestratorPoolCache after initial polling
+		// of OrchestratorInfo runs.  Fall back to using DB orchestrators from the registered
+		// orchestrators in the DB.
+		dbOrchs, err := dbo.store.SelectOrchs(
+			&common.DBOrchFilter{
+				CurrentRound: dbo.rm.LastInitializedRound(),
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("could not retrieve orchestrators from DB: %v", err)
+		}
+
+		for _, o := range dbOrchs {
+			url, err := parseURI(o.ServiceURI)
+			if err != nil {
+				continue
+			}
+			orchs = append(orchs, common.OrchestratorLocalInfo{URL: url})
+		}
+
+		glog.Infof("Using DB orchestrator pool with %d orchestrators", len(orchs))
 	}
 
-	resc, errc := make(chan *common.DBOrch, len(orchs)), make(chan error, len(orchs))
+	type orchPollingInfo struct {
+		orchInfo *net.OrchestratorInfo
+		dbOrch   *common.DBOrch
+	}
+
+	resc, errc := make(chan orchPollingInfo, len(orchs)), make(chan error, len(orchs))
 	timeout := getOrchestratorTimeoutLoop // Needs to be same or longer than GRPCConnectTimeout in server/rpc.go
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	getOrchInfo := func(dbOrch *common.DBOrch) {
-		uri, err := parseURI(dbOrch.ServiceURI)
+	getOrchInfo := func(orch common.OrchestratorLocalInfo) {
+		uri, err := parseURI(orch.URL.String())
 		if err != nil {
 			errc <- err
 			return
 		}
 		// Do not connect if URI host is not set
 		if uri.Host == "" {
-			errc <- fmt.Errorf("skipping orch=%v, URI not set", dbOrch.EthereumAddr)
+			errc <- fmt.Errorf("skipping orch=%v, URI not set", orch.URL.String())
 			return
 		}
 		info, err := serverGetOrchInfo(ctx, dbo.bcast, uri, server.GetOrchestratorInfoParams{})
@@ -307,36 +336,49 @@ func (dbo *DBOrchestratorPoolCache) cacheDBOrchs() error {
 			return
 		}
 
-		dbOrch.PricePerPixel, err = common.PriceToFixed(price)
-		if err != nil {
-			errc <- err
-			return
+		var dbOrch *common.DBOrch
+		if info.GetTicketParams() != nil {
+			dbOrch = &common.DBOrch{
+				EthereumAddr: ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex(),
+			}
+
+			dbOrch.PricePerPixel, err = common.PriceToFixed(price)
+			if err != nil {
+				errc <- err
+				return
+			}
 		}
-		resc <- dbOrch
+
+		resc <- orchPollingInfo{orchInfo: info, dbOrch: dbOrch}
 	}
 
 	numOrchs := 0
 	for _, orch := range orchs {
-		if orch == nil {
-			continue
-		}
 		numOrchs++
 		go getOrchInfo(orch)
 	}
 
+	var orchNetworkCapabilities []*common.OrchNetworkCapabilities
 	for i := 0; i < numOrchs; i++ {
 		select {
 		case res := <-resc:
-			if err := dbo.store.UpdateOrch(res); err != nil {
-				glog.Error("Error updating Orchestrator in DB: ", err)
+			//add response to network capabilities
+			orchNetworkCapabilities = append(orchNetworkCapabilities, orchInfoToOrchNetworkCapabilities(res.orchInfo))
+			//update db with response
+			if res.dbOrch != nil {
+				if err := dbo.store.UpdateOrch(res.dbOrch); err != nil {
+					glog.Error("Error updating Orchestrator in DB: ", err)
+				}
 			}
 		case err := <-errc:
 			glog.Errorln(err)
 		case <-ctx.Done():
 			glog.Infof("Done fetching orch info for orchestrators, context timeout (fetched: %v out of %v)", i, numOrchs)
-			return nil
+			i = numOrchs //exit loop
 		}
 	}
+	//save network capabilities in LivepeerNode
+	dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
 
 	return nil
 }
@@ -384,4 +426,22 @@ func pmTicketParams(params *net.TicketParams) *pm.TicketParams {
 			CreationRoundBlockHash: ethcommon.BytesToHash(params.ExpirationParams.GetCreationRoundBlockHash()),
 		},
 	}
+}
+
+func orchInfoToOrchNetworkCapabilities(info *net.OrchestratorInfo) *common.OrchNetworkCapabilities {
+	var orch common.OrchNetworkCapabilities
+
+	// add orch operating information if available
+	if info != nil {
+		orch.LocalAddress = ethcommon.BytesToAddress(info.GetAddress()).Hex()
+		orch.OrchURI = info.GetTranscoder()
+		orch.Capabilities = info.GetCapabilities()
+		orch.Hardware = info.GetHardware()
+		orch.CapabilitiesPrices = info.GetCapabilitiesPrices()
+		if info.GetTicketParams() != nil {
+			orch.Address = string(ethcommon.BytesToAddress(info.TicketParams.Recipient).Hex())
+		}
+	}
+
+	return &orch
 }

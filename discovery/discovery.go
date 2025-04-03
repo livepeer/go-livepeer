@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
+	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
@@ -33,6 +34,7 @@ type orchestratorPool struct {
 	bcast            common.Broadcaster
 	orchBlacklist    []string
 	discoveryTimeout time.Duration
+	node             core.LivepeerNode
 }
 
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
@@ -158,6 +160,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			} else {
 				heap.Push(suspendedInfos, &suspension{od.RemoteInfo, &od, penalty})
 			}
+
 			nbResp++
 		case <-errCh:
 			nbResp++
@@ -216,4 +219,8 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 		}
 	}
 	return size
+}
+
+func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {
+
 }
