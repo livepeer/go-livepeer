@@ -46,12 +46,12 @@ func (w *WHIPConnection) getWHIPConnection() *MediaState {
 	return w.peer
 }
 
-func (w *WHIPConnection) AwaitClose() {
+func (w *WHIPConnection) AwaitClose() error {
 	p := w.getWHIPConnection()
 	if p == nil {
-		return
+		return nil
 	}
-	p.AwaitClose()
+	return p.AwaitClose()
 }
 
 func (w *WHIPConnection) Close() {
@@ -74,30 +74,61 @@ type WHIPPeerConnection interface {
 
 // MediaState manages the lifecycle of a media connection
 type MediaState struct {
-	pc      WHIPPeerConnection
-	closeCh chan bool
-	once    sync.Once
+	pc     WHIPPeerConnection
+	mu     *sync.Mutex
+	cond   *sync.Cond
+	closed bool
+	err    error
 }
 
 // NewMediaState creates a new MediaState with the given peerconnection
 func NewMediaState(pc WHIPPeerConnection) *MediaState {
+	mu := &sync.Mutex{}
 	return &MediaState{
-		pc:      pc,
-		closeCh: make(chan bool),
+		pc:   pc,
+		mu:   mu,
+		cond: sync.NewCond(mu),
 	}
+}
+
+// Returns a mediastate that is already closed with an error
+func NewMediaStateError(err error) *MediaState {
+	m := NewMediaState(nil)
+	m.CloseError(err)
+	return m
 }
 
 // Close closes the underlying connection and signals any waiters
 func (m *MediaState) Close() {
-	m.once.Do(func() {
-		if m.pc != nil {
-			m.pc.Close()
-		}
-		close(m.closeCh)
-	})
+	m.CloseError(nil)
+}
+
+func (m *MediaState) CloseError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
+	if m.pc != nil {
+		m.pc.Close()
+	}
+	m.closed = true
+	m.err = err
+	m.cond.Broadcast()
 }
 
 // AwaitClose blocks until the connection is closed
-func (m *MediaState) AwaitClose() {
-	<-m.closeCh
+func (m *MediaState) AwaitClose() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for !m.closed {
+		m.cond.Wait()
+	}
+	return m.err
+}
+
+func (m *MediaState) IsClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
 }

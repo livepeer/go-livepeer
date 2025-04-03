@@ -133,7 +133,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					return
 				}
 				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
-				// Clone in case read head was incremented somewhere, which cloning ressets
+				// Clone in case read head was incremented somewhere, which cloning resets
 				r = reader.Clone()
 				time.Sleep(250 * time.Millisecond)
 			}
@@ -317,7 +317,7 @@ func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 	return io.Copy(w, segment.Body)
 }
 
-func startControlPublish(control *url.URL, params aiRequestParams) {
+func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
@@ -357,6 +357,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
+				cleanupLive(ctx, params.node, stream)
 				return
 			}
 		}

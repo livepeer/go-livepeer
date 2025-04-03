@@ -1054,17 +1054,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
-	setHeaders := func(ctx context.Context, req *http.Request) error {
-		if err := paymentHeaders(ctx, req); err != nil {
-			return err
-		}
-		req.Header.Set("requestID", params.liveParams.requestID)
-		req.Header.Set("streamID", params.liveParams.streamID)
-		return nil
-	}
-
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, nil, req, setHeaders)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, paymentHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1097,7 +1088,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(control, params)
+	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, sess)
 	startTrickleSubscribe(ctx, sub, params, sess, func() {
 		delayMs := time.Since(startTime).Milliseconds()

@@ -611,7 +611,7 @@ func (w *Worker) LiveVideoToVideo(ctx context.Context, req GenLiveVideoToVideoJS
 		return nil, err
 	}
 
-	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, nil, req)
+	resp, err := c.Client.GenLiveVideoToVideoWithResponse(ctx, req)
 	if err != nil {
 		return nil, err
 	}

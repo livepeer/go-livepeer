@@ -270,7 +270,7 @@ func TestSelectUpdateOrchs_AddingUpdatingRow_NoError(t *testing.T) {
 	assert.Equal(updatedOrch[0].PricePerPixel, orchUpdate.PricePerPixel)
 	assert.Equal(updatedOrch[0].Stake, orchUpdate.Stake)
 
-	// udpating only pricePerPixel
+	// updating only pricePerPixel
 	priceUpdate := &DBOrch{
 		EthereumAddr:  orchAddress,
 		PricePerPixel: 99,

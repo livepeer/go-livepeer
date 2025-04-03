@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/monitor"
 
 	"github.com/bluenviron/gortsplib/v4/pkg/rtpreorderer"
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
@@ -69,20 +70,19 @@ type WHIPServer struct {
 
 // handleCreate implements the POST that creates a new resource.
 func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request) *MediaState {
-
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
 		http.Error(w, "Unsupported Media Type, expected application/sdp", http.StatusUnsupportedMediaType)
-		return nil
+		return NewMediaStateError(errors.New("unsupported media type"))
 	}
 
 	// Read the SDP offer
 	offerBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error reading offer", http.StatusBadRequest)
-		return nil
+		return NewMediaStateError(errors.New("error reading offer"))
 	}
 	defer r.Body.Close()
 
@@ -91,7 +91,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
-		return nil
+		return NewMediaStateError(errors.New("failed to create peerconnection"))
 	}
 	mediaState := NewMediaState(peerConnection)
 
@@ -106,7 +106,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		clog.Info(ctx, "ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
-			peerConnection.Close()
+			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
 			// Business logic when PeerConnection done
 		}
@@ -118,24 +118,27 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		SDP:  string(offerBytes),
 	}
 	if err := peerConnection.SetRemoteDescription(sdpOffer); err != nil {
-		http.Error(w, fmt.Sprintf("SetRemoteDescription failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("SetRemoteDescription failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 
 	// Create the answer
 	answer, err := peerConnection.CreateAnswer(nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("CreateAnswer failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("CreateAnswer failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 
 	// Gather ICE candidates and set local description
 	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
 	if err = peerConnection.SetLocalDescription(answer); err != nil {
-		http.Error(w, fmt.Sprintf("SetLocalDescription failed: %v", err), http.StatusInternalServerError)
-		mediaState.Close()
+		e := fmt.Sprintf("SetLocalDescription failed: %v", err)
+		http.Error(w, e, http.StatusInternalServerError)
+		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
 	// Wait for ICE gathering if you want the full candidate set in the SDP
@@ -165,18 +168,20 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 	// wait for audio or video
 	go func() {
-		defer mediaState.Close()
 		audioTrack, videoTrack, err := gatherIncomingTracks(ctx, peerConnection, trackCh)
 		if err != nil {
 			clog.Info(ctx, "error gathering tracks", "took", time.Since(gatherStartTime), "err", err)
+			mediaState.CloseError(fmt.Errorf("error gathering tracks: %w", err))
 			return
 		}
 		if videoTrack == nil {
 			clog.Info(ctx, "no video! disconnecting", "took", time.Since(gatherStartTime))
+			mediaState.CloseError(errors.New("missing video"))
 			return
 		}
 		if videoTrack.Codec().MimeType != webrtc.MimeTypeH264 {
 			clog.Info(ctx, "Expected H.264 video", "mime", videoTrack.Codec().MimeType)
+			mediaState.CloseError(errors.New("non-h264 video"))
 			return
 		}
 		tracks := []RTPTrack{videoTrack}
@@ -204,8 +209,37 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		}
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
+
+		go func() {
+			// Periodically check whip stats and write logs and metrics
+			for !mediaState.IsClosed() {
+				time.Sleep(time.Second * 5)
+				statsReport := peerConnection.GetStats()
+
+				for _, stat := range statsReport {
+					switch s := stat.(type) {
+					case webrtc.TransportStats:
+						if monitor.Enabled {
+							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
+							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
+							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
+							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
+						}
+						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
+					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
+					case webrtc.RemoteInboundRTPStreamStats:
+						clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
+					case webrtc.InboundRTPStreamStats:
+						clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
+					}
+				}
+
+			}
+		}()
+
 		wg.Wait()
 		segmenter.CloseSegment()
+		mediaState.Close()
 	}()
 	return mediaState
 }
@@ -373,7 +407,6 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 			}
 		}
 	}
-	return audioTrack, videoTrack, nil
 }
 
 func getMediaDescriptionByType(sdp sdp.SessionDescription, mediaType string) *sdp.MediaDescription {
@@ -573,7 +606,9 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 
 func NewWHIPServer() *WHIPServer {
 	allowedCodecs, interceptors, settings = genParams()
-	return &WHIPServer{webrtc.NewAPI(allowedCodecs, interceptors, settings)}
+	return &WHIPServer{
+		api: webrtc.NewAPI(allowedCodecs, interceptors, settings),
+	}
 }
 
 type IncomingTrack struct {

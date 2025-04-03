@@ -629,7 +629,7 @@ func (c *client) Bond(amount *big.Int, to ethcommon.Address) (*types.Transaction
 			return nil, err
 		}
 
-		// Only substract the delegator's pending stake from the old delegate since 'amount' is newly added stake
+		// Only subtract the delegator's pending stake from the old delegate since 'amount' is newly added stake
 		oldHints = simulateTranscoderPoolUpdate(delegator.DelegateAddress, new(big.Int).Sub(totalBonded, delegatorTotalStake), transcoders, isFull)
 	}
 
