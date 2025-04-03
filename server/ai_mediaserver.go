@@ -617,10 +617,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
-			ModelId:          &pipeline,
-			Params:           &pipelineParams,
-			GatewayRequestId: &requestID,
-			StreamId:         &streamID,
+			ModelId: &pipeline,
+			Params:  &pipelineParams,
 		}
 		_, err = processAIRequest(ctx, params, req)
 		if err != nil {
