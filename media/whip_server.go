@@ -26,6 +26,7 @@ import (
 	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
+	"github.com/pion/interceptor/pkg/stats"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/sdp/v3"
@@ -65,7 +66,9 @@ var WebrtcConfig = webrtc.Configuration{
 }
 
 type WHIPServer struct {
-	api *webrtc.API
+	api          *webrtc.API
+	statsGetters chan stats.Getter
+	mu           sync.Mutex
 }
 
 // handleCreate implements the POST that creates a new resource.
@@ -86,24 +89,60 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	}
 	defer r.Body.Close()
 
+	// lock while we create the peer connection and wait to receive the stats getter via the statsInterceptorFactory
+	s.mu.Lock()
 	// Create a new PeerConnection
 	peerConnection, err := s.api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
+		s.mu.Unlock()
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
 		return NewMediaStateError(errors.New("failed to create peerconnection"))
 	}
+	statsGetter := <-s.statsGetters
+	s.mu.Unlock()
+
 	mediaState := NewMediaState(peerConnection)
 
 	// OnTrack callback: handle incoming media
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
+		go func() {
+			// Periodically check whip stats and write logs and metrics
+			for !mediaState.IsClosed() {
+				trackStats := statsGetter.Get(uint32(track.SSRC()))
+				if trackStats == nil {
+					clog.Info(ctx, "whip trackStats was nil")
+				} else {
+					clog.Info(ctx, "whip InboundRTPStreamStats", "jitter", trackStats.InboundRTPStreamStats.Jitter, "packets_lost", trackStats.InboundRTPStreamStats.PacketsLost, "rtt", trackStats.RemoteInboundRTPStreamStats.RoundTripTime) // TODO more stats
+					// TODO prometheus metric for jitter, packets lost etc
+				}
+
+				statsReport := peerConnection.GetStats()
+
+				for _, stat := range statsReport {
+					switch s := stat.(type) {
+					case webrtc.TransportStats:
+						if monitor.Enabled {
+							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
+							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
+							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
+							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
+						}
+						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent)
+					}
+				}
+				time.Sleep(time.Second * 5)
+			}
+		}()
+
+		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC(), "kind", track.Kind())
 		trackCh <- track
 	})
 
 	// PeerConnection state management
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+		// TODO prometheus metrics for connections states
 		clog.Info(ctx, "ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
@@ -209,33 +248,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		}
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
-
-		go func() {
-			// Periodically check whip stats and write logs and metrics
-			for !mediaState.IsClosed() {
-				time.Sleep(time.Second * 5)
-				statsReport := peerConnection.GetStats()
-
-				for _, stat := range statsReport {
-					switch s := stat.(type) {
-					case webrtc.TransportStats:
-						if monitor.Enabled {
-							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
-							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
-							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
-							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
-						}
-						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
-					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
-					case webrtc.RemoteInboundRTPStreamStats:
-						clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
-					case webrtc.InboundRTPStreamStats:
-						clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
-					}
-				}
-
-			}
-		}()
 
 		wg.Wait()
 		segmenter.CloseSegment()
@@ -518,7 +530,7 @@ func getUDPListenerAddr() (*net.UDPAddr, error) {
 	return udpAddr, nil
 }
 
-func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
+func genParams(statsGetters chan stats.Getter) (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 	// Taken from Pion default codecs, but limited to to Opus and H.264
 
 	m := &webrtc.MediaEngine{}
@@ -575,9 +587,20 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 	ic := &interceptor.Registry{}
 	intervalPliFactory, err := intervalpli.NewReceiverInterceptor(intervalpli.GeneratorInterval(keyframeInterval))
 	if err != nil {
-		log.Fatal("could not register pli intercetpr")
+		log.Fatal("could not register pli interceptor", err)
 	}
 	ic.Add(intervalPliFactory)
+
+	statsInterceptorFactory, err := stats.NewInterceptor()
+	if err != nil {
+		log.Fatal("could not register stats interceptor", err)
+	}
+	ic.Add(statsInterceptorFactory)
+
+	statsInterceptorFactory.OnNewPeerConnection(func(id string, g stats.Getter) {
+		statsGetters <- g
+	})
+
 	err = webrtc.RegisterDefaultInterceptors(m, ic)
 	if err != nil {
 		// this should really never happen
@@ -605,9 +628,14 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 }
 
 func NewWHIPServer() *WHIPServer {
-	allowedCodecs, interceptors, settings = genParams()
+	// we should only need space for one getter in the channel, we lock on WHIPServer.mu for each peer connection
+	// created and wait to receive the getter via this channel (so one connection at a time)
+	statsGetters := make(chan stats.Getter, 1)
+
+	allowedCodecs, interceptors, settings = genParams(statsGetters)
 	return &WHIPServer{
-		api: webrtc.NewAPI(allowedCodecs, interceptors, settings),
+		api:          webrtc.NewAPI(allowedCodecs, interceptors, settings),
+		statsGetters: statsGetters,
 	}
 }
 
