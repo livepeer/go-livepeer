@@ -129,7 +129,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
 							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
 						}
-						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
+						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent)
 					}
 				}
 				time.Sleep(time.Second * 5)
