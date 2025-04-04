@@ -114,7 +114,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 				if trackStats == nil {
 					clog.Info(ctx, "whip trackStats was nil")
 				} else {
-					clog.Info(ctx, "whip InboundRTPStreamStats", "jitter", trackStats.InboundRTPStreamStats.Jitter, "rtt", trackStats.RemoteInboundRTPStreamStats.RoundTripTime) // TODO more stats
+					clog.Info(ctx, "whip InboundRTPStreamStats", "jitter", trackStats.InboundRTPStreamStats.Jitter, "packets_lost", trackStats.InboundRTPStreamStats.PacketsLost, "rtt", trackStats.RemoteInboundRTPStreamStats.RoundTripTime) // TODO more stats
 					// TODO prometheus metric for jitter, packets lost etc
 				}
 
