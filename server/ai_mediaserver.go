@@ -813,7 +813,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				}
 				clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 				sendErrorEvent(err)
-				whipConn.Close()
+				//whipConn.Close()
 			}
 
 			clog.Info(ctx, "Received live video AI request", "pipelineParams", pipelineParams)
