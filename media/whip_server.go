@@ -99,28 +99,33 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 
-		receiver.Track()
-		//go func() {
-		//	for {
-		//		fmt.Println("trying to read rtcp")
-		//		rtcpPackets, _, rtcpErr := receiver.ReadRTCP()
-		//		if rtcpErr != nil {
-		//			fmt.Println("RTCP read error:", rtcpErr)
-		//			return
-		//		}
-		//		for _, pkt := range rtcpPackets {
-		//			fmt.Printf("Received RTCP packet: %T\n", pkt)
-		//		}
-		//	}
-		//}()
 		go func() {
-			// Print the stats for this individual track
-			for {
+			// Periodically check whip stats and write logs and metrics
+			for !mediaState.IsClosed() {
 				stats := statsGetter.Get(uint32(track.SSRC()))
 
 				fmt.Printf("Stats for: %s\n", track.Codec().MimeType)
 				fmt.Println(stats.InboundRTPStreamStats)
 
+				statsReport := peerConnection.GetStats()
+
+				for _, stat := range statsReport {
+					switch s := stat.(type) {
+					case webrtc.TransportStats:
+						if monitor.Enabled {
+							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
+							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
+							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
+							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
+						}
+						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
+					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
+					case webrtc.RemoteInboundRTPStreamStats:
+						clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
+					case webrtc.InboundRTPStreamStats:
+						clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
+					}
+				}
 				time.Sleep(time.Second * 5)
 			}
 		}()
@@ -136,55 +141,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			mediaState.CloseError(errors.New("ICE connection state failed"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
 			// Business logic when PeerConnection done
-		} else if connectionState == webrtc.ICEConnectionStateConnected {
-			go func() {
-				// Periodically check whip stats and write logs and metrics
-				for !mediaState.IsClosed() {
-					//for _, recc := range peerConnection.GetReceivers() {
-					//	fmt.Printf("Receiver: Track Kind: %s, Track ID: %s\n", recc.Track().Kind(), recc.Track().ID())
-					//	fmt.Printf("Track SSRC: %d\n", recc.Track().SSRC())
-					//	fmt.Printf("Transport: %+v\n", recc.Transport())
-					//}
-
-					time.Sleep(time.Second * 5)
-					statsReport := peerConnection.GetStats()
-
-					for _, stat := range statsReport {
-						switch s := stat.(type) {
-						case webrtc.TransportStats:
-							if monitor.Enabled {
-								monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
-								monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
-								monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
-								monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
-							}
-							clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
-						// not seeing these showing up currently, but hopefully we can fix whatever is causing that
-						case webrtc.RemoteInboundRTPStreamStats:
-							clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
-						case webrtc.InboundRTPStreamStats:
-							clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
-						}
-
-						if outboundStats, ok := stat.(*webrtc.OutboundRTPStreamStats); ok {
-							fmt.Printf("Outbound RTP - Packets Sent: %d\n", outboundStats.PacketsSent)
-						}
-
-						// Checking for Inbound RTP Stats (received packets)
-						if inboundStats, ok := stat.(*webrtc.InboundRTPStreamStats); ok {
-							fmt.Printf("Inbound RTP - Packets Received: %d\n", inboundStats.PacketsReceived)
-						}
-					}
-
-					//for _, trans := range peerConnection.GetTransceivers() {
-					//	recv := trans.Receiver()
-					//	if recv != nil {
-					//		fmt.Printf("!!YO Receiver: kind=%s, transport=%+v\n", recv.Track().Kind(), recv.Transport())
-					//	}
-					//}
-
-				}
-			}()
 		}
 	})
 
