@@ -840,8 +840,10 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				}()
 				err := whipConn.AwaitClose()
 				if err != nil {
-					sendErrorEvent(err)
+					// For now, set a "whip disconnected" event"
+					err = errors.New("whip disconnected")
 				}
+				sendErrorEvent(err)
 				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 					"type":        "gateway_ingest_stream_closed",
 					"timestamp":   time.Now().UnixMilli(),
