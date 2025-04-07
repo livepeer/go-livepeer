@@ -222,7 +222,7 @@ func TestNewDBOrchestorPoolCache_NoEthAddress(t *testing.T) {
 	require.Nil(err)
 
 	// Check that serverGetOrchInfo returns early and the orchestrator isn't updated
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 	orchs, err := dbh.SelectOrchs(&common.DBOrchFilter{})
 	assert.Nil(err)
 	assert.Len(orchs, 1)
@@ -277,12 +277,12 @@ func TestNewDBOrchestratorPoolCache_InvalidPrices(t *testing.T) {
 
 	// priceInfo.PixelsPerUnit = 0
 	// Check that this does not trigger a division by zero
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 
 	// priceInfo = nil
 	// Check that this does not trigger a nil pointer error
 	priceInfo = nil
-	assert.Nil(pool.cacheDBOrchs())
+	assert.Nil(pool.cacheOrchInfos())
 }
 
 func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t *testing.T) {
@@ -302,9 +302,10 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Address:    pm.RandBytes(20),
-			Transcoder: expTranscoder,
-			PriceInfo:  expPriceInfo,
+			Address:      pm.RandBytes(20),
+			Transcoder:   expTranscoder,
+			PriceInfo:    expPriceInfo,
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
 		}, nil
 	}
 
@@ -344,6 +345,7 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 	sender.On("ValidateTicketParams", mock.Anything).Return(nil).Times(3)
 
 	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	dbOrchs, err := dbh.SelectOrchs(nil)
 	require.NoError(err)
 	assert.Equal(pool.Size(), 3)
 	orchs, _ := pool.GetOrchestrators(context.TODO(), pool.Size(), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
@@ -352,8 +354,9 @@ func TestNewDBOrchestratorPoolCache_GivenListOfOrchs_CreatesPoolCacheCorrectly(t
 		assert.Equal(o.RemoteInfo.Transcoder, expTranscoder)
 	}
 
+	time.Sleep(5 * time.Millisecond)
 	// ensuring orchs exist in DB
-	dbOrchs, err := pool.store.SelectOrchs(nil)
+	dbOrchs, err = pool.store.SelectOrchs(nil)
 	require.Nil(err)
 	assert.Len(dbOrchs, 3)
 	for _, o := range dbOrchs {
@@ -454,25 +457,6 @@ func TestNewDBOrchestratorPoolCache_TestURLs_Empty(t *testing.T) {
 }
 
 func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
-	addr := pm.RandBytes(20)
-	cachedOrchInfo := &net.OrchestratorInfo{
-		Address:    addr,
-		Transcoder: "transcoderFromTest",
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  999,
-			PixelsPerUnit: 1,
-		},
-	}
-	polledOrchInfo := &net.OrchestratorInfo{
-		Address:    addr,
-		Transcoder: "transcoderFromTest",
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  1,
-			PixelsPerUnit: 1,
-		},
-	}
-	returnInfo := cachedOrchInfo
-
 	var mu sync.Mutex
 	callCount := 0
 	first := true
@@ -492,7 +476,19 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 			first = false
 		}
 		callCount++
-		return returnInfo, nil
+		pricePerUnit, _ := strconv.Atoi(orchestratorServer.Port())
+		if callCount > 3 {
+			pricePerUnit = pricePerUnit + 1
+		}
+		return &net.OrchestratorInfo{
+			Address:    pm.RandBytes(20),
+			Transcoder: "transcoderFromTest",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  int64(pricePerUnit),
+				PixelsPerUnit: 1,
+			},
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
+		}, nil
 	}
 
 	dbh, dbraw, err := common.TempDB(t)
@@ -507,12 +503,14 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	orchestrators := StubOrchestrators(addresses)
 
 	testOrchs := make([]orchTest, 0)
-	expPrice, _ := common.PriceToFixed(big.NewRat(999, 1))
 	for _, o := range orchestrators {
+		url, _ := parseURI(o.ServiceURI)
+		expPrice, _ := strconv.Atoi(url.Port())
+		expPricePerUnit, _ := common.PriceToFixed(big.NewRat(int64(expPrice), 1))
 		to := orchTest{
 			EthereumAddr:  o.Address.String(),
 			ServiceURI:    o.ServiceURI,
-			PricePerPixel: expPrice,
+			PricePerPixel: expPricePerUnit,
 		}
 		testOrchs = append(testOrchs, to)
 	}
@@ -531,7 +529,7 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 	origCacheRefreshInterval := cacheRefreshInterval
 	cacheRefreshInterval = 200 * time.Millisecond
 	defer func() { cacheRefreshInterval = origCacheRefreshInterval }()
-	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 500*time.Millisecond)
+	pool, err := NewDBOrchestratorPoolCache(ctx, node, &stubRoundsManager{}, []string{}, 700*time.Millisecond)
 	require.NoError(err)
 
 	// Ensure orchestrators exist in DB
@@ -544,23 +542,28 @@ func TestNewDBOrchestorPoolCache_PollOrchestratorInfo(t *testing.T) {
 		require.Contains(testOrchs, test)
 	}
 
+	//wait for pool to poll orchestrators again (after discoveryTimeout of 500ms)
 	// reset callCount to 0 which is now 3 after calling CacheTranscoderPool()
+	//wait for pool timeout
 	mu.Lock()
-	callCount = 0
-	returnInfo = polledOrchInfo
 	mu.Unlock()
 	time.Sleep(1100 * time.Millisecond)
+	//check DB data for new prices
+	// serverGetOrchInfo returns price of 1 higher if callCount > 3
 	dbOrchs, err = pool.store.SelectOrchs(nil)
 	require.Nil(err)
 	require.Len(dbOrchs, 3)
-	expPrice, _ = common.PriceToFixed(big.NewRat(1, 1))
+
 	for _, o := range dbOrchs {
-		assert.Equal(o.PricePerPixel, expPrice)
+		url, _ := parseURI(o.ServiceURI)
+		expPrice, _ := strconv.Atoi(url.Port())
+		expPricePerUnit, _ := common.PriceToFixed(big.NewRat(int64(expPrice+1), 1))
+		assert.Equal(o.PricePerPixel, expPricePerUnit)
 	}
 	// called serverGetOrchInfo 1100 / 200 * 3 = 15 times
 	mu.Lock()
-	assert.GreaterOrEqual(callCount, 14)
-	assert.LessOrEqual(callCount, 16)
+	assert.GreaterOrEqual(callCount, 17)
+	assert.LessOrEqual(callCount, 19)
 	mu.Unlock()
 }
 
@@ -642,9 +645,10 @@ func TestCachedPool_AllOrchestratorsTooExpensive_ReturnsAllOrchestrators(t *test
 		}
 		mu.Unlock()
 		return &net.OrchestratorInfo{
-			Address:    pm.RandBytes(20),
-			Transcoder: expTranscoder,
-			PriceInfo:  expPriceInfo,
+			Address:      pm.RandBytes(20),
+			Transcoder:   expTranscoder,
+			PriceInfo:    expPriceInfo,
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
 		}, nil
 	}
 	addresses := []string{}
@@ -734,6 +738,9 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
+			TicketParams: &net.TicketParams{
+				Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes(),
+			},
 		}, nil
 	}
 
@@ -807,22 +814,8 @@ func TestCachedPool_GetOrchestrators_MaxBroadcastPriceNotSet(t *testing.T) {
 
 func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.T) {
 	// Test setup
-	goodTranscoder := &net.OrchestratorInfo{
-		Address:    pm.RandBytes(20),
-		Transcoder: "goodPriceTranscoder",
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  1,
-			PixelsPerUnit: 1,
-		},
-	}
-	badTranscoder := &net.OrchestratorInfo{
-		Address:    pm.RandBytes(20),
-		Transcoder: "badPriceTranscoder",
-		PriceInfo: &net.PriceInfo{
-			PricePerUnit:  999,
-			PixelsPerUnit: 1,
-		},
-	}
+	addr1 := pm.RandBytes(20)
+	addr2 := pm.RandBytes(20)
 
 	server.BroadcastCfg.SetMaxPrice(core.NewFixedPrice(big.NewRat(10, 1)))
 	gmp := runtime.GOMAXPROCS(50)
@@ -838,9 +831,27 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 		mu.Unlock()
 		if i, _ := strconv.Atoi(orchestratorServer.Port()); i > 8960 {
 			// Return valid pricing
+			goodTranscoder := &net.OrchestratorInfo{
+				Address:    addr1,
+				Transcoder: "goodPriceTranscoder",
+				PriceInfo: &net.PriceInfo{
+					PricePerUnit:  1,
+					PixelsPerUnit: 1,
+				},
+				TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
+			}
 			return goodTranscoder, nil
 		}
 		// Return invalid pricing
+		badTranscoder := &net.OrchestratorInfo{
+			Address:    addr2,
+			Transcoder: "badPriceTranscoder",
+			PriceInfo: &net.PriceInfo{
+				PricePerUnit:  999,
+				PixelsPerUnit: 1,
+			},
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
+		}
 		return badTranscoder, nil
 	}
 	addresses := []string{}
@@ -910,6 +921,7 @@ func TestCachedPool_N_OrchestratorsGoodPricing_ReturnsNOrchestrators(t *testing.
 	}
 
 	oinfos, err := pool.GetOrchestrators(context.TODO(), len(orchestrators), newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	time.Sleep(10 * time.Millisecond)
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(oinfos, 50)
@@ -936,7 +948,7 @@ func TestCachedPool_GetOrchestrators_TicketParamsValidation(t *testing.T) {
 		return &net.OrchestratorInfo{
 			Address:      pm.RandBytes(20),
 			Transcoder:   "transcoder",
-			TicketParams: &net.TicketParams{},
+			TicketParams: &net.TicketParams{Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes()},
 			PriceInfo: &net.PriceInfo{
 				PricePerUnit:  999,
 				PixelsPerUnit: 1,
@@ -1017,6 +1029,9 @@ func TestCachedPool_GetOrchestrators_OnlyActiveOrchestrators(t *testing.T) {
 			Address:    pm.RandBytes(20),
 			Transcoder: expTranscoder,
 			PriceInfo:  expPriceInfo,
+			TicketParams: &net.TicketParams{
+				Recipient: ethcommon.BytesToAddress([]byte(orchestratorServer.String())).Bytes(),
+			},
 		}, nil
 	}
 
