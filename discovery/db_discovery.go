@@ -57,16 +57,32 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 		node:                  node,
 	}
 
-	if err := dbo.cacheTranscoderPool(); err != nil {
-		return nil, err
+	cacheOrchestrators := func() error {
+		if err := dbo.cacheTranscoderPool(); err != nil {
+			return err
+		}
+
+		if err := dbo.cacheOrchestratorStake(); err != nil {
+			return err
+		}
+
+		if err := dbo.pollOrchestratorInfo(ctx); err != nil {
+			return err
+		}
+		return nil
 	}
 
-	if err := dbo.cacheOrchestratorStake(); err != nil {
-		return nil, err
-	}
-
-	if err := dbo.pollOrchestratorInfo(ctx); err != nil {
-		return nil, err
+	if node.OrchestratorPool != nil {
+		// We already have Orchestrator Pool, so we're fine caching in the background and not delay the startup
+		go func() {
+			err := cacheOrchestrators()
+			if err != nil {
+				clog.Errorf(context.Background(), "Error caching orchestrators: %v", err)
+			}
+		}()
+	} else {
+		// We don't have yet Orchestrator Pool, so we need to fetch it synchronously here
+		return dbo, cacheOrchestrators()
 	}
 
 	return dbo, nil
