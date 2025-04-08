@@ -233,6 +233,8 @@ func TestSelector_Size(t *testing.T) {
 	sel.Complete(sess3)
 	sel.Complete(sess2)
 	assert.Equal(3, sel.Size())
+	sel.Remove(sess2)
+	assert.Equal(2, sel.Size())
 	sel.Clear()
 	assert.Equal(0, sel.Size())
 	assert.Nil(sel.Select(context.Background()))
@@ -275,9 +277,10 @@ func TestMinLSSelector(t *testing.T) {
 	sel := NewMinLSSelector(nil, 1.0, stubSelectionAlgorithm{}, nil, nil)
 	assert.Zero(sel.Size())
 
+	oneSess := &BroadcastSession{}
 	sessions := []*BroadcastSession{
 		{},
-		{},
+		oneSess,
 		{},
 	}
 
@@ -289,6 +292,11 @@ func TestMinLSSelector(t *testing.T) {
 	for _, sess := range sessions {
 		assert.Contains(sel.sessions, sess)
 	}
+
+	// Remove session
+	sel.Remove(oneSess)
+	assert.Equal(2, sel.Size())
+	sel.Add([]*BroadcastSession{oneSess})
 
 	// Select from sessions
 	sess1 := sel.Select(context.TODO())
