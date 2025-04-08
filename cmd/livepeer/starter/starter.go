@@ -1203,7 +1203,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		} else {
 			glog.Warningf("!!! No GPU discovered, using CPU for AIWorker !!!")
 			// Create 2 fake GPU instances, intended for the local non-GPU setup
-			gpus = []string{"emulated-0", "emulated-1"}
+			gpus = []string{"emulated-0"}
 		}
 
 		modelsDir := *cfg.AIModelsDir
