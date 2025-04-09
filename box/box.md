@@ -1,6 +1,6 @@
 # Realtime Video AI in a Box
 
-## Requierements
+## Requirements
 - go-livepeer compilation configuration (executing `make` should succeed)
 - [mediamtx](https://github.com/bluenviron/mediamtx) is installed (executing `mediamtx` should succeed)
 - [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed)
