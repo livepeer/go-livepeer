@@ -130,7 +130,7 @@ swagger:
 
 # Command to run Livepeer Realtime AI Video in a Box
 .PHONY: box
-box: livepeer
+box: livepeer box-runner
 	./box/box.sh
 
 .PHONY: box-gateway
