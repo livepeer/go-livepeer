@@ -442,11 +442,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
-		if outputURL == "" {
-			// re-publish to ourselves for now
-			// Not sure if we want this to be permanent
-			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
-		}
 
 		// Currently for webrtc we need to add a path prefix due to the ingress setup
 		mediaMTXStreamPrefix := r.PathValue("prefix")
