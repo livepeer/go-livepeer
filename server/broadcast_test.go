@@ -259,7 +259,7 @@ func (s *stubSelector) Complete(sess *BroadcastSession)          {}
 func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
 func (s *stubSelector) Size() int                                { return s.size }
 func (s *stubSelector) Clear()                                   {}
-func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
+func (s *stubSelector) Remove(session *BroadcastSession)         {}
 
 func TestStopSessionErrors(t *testing.T) {
 

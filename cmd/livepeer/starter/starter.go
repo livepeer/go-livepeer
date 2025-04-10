@@ -644,6 +644,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
 	}
 
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
+		}
+	}
+
 	watcherErr := make(chan error)
 	serviceErr := make(chan error)
 	var timeWatcher *watchers.TimeWatcher
@@ -1687,13 +1694,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
-		}
-	}
-
-	// Start Kafka producer
-	if *cfg.Monitor {
-		if err := startKafkaProducer(cfg); err != nil {
-			exit("Error while starting Kafka producer", err)
 		}
 	}
 
