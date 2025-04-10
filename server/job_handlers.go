@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -47,7 +49,7 @@ type JobRequest struct {
 	Request       string    `json:"request"`
 	Parameters    string    `json:"parameters"`
 	Capability    string    `json:"capability"`
-	CapabilityUrl string    `json:"capabilityUrl"` //this i set when verified orch as capability
+	CapabilityUrl string    `json:"capabilityUrl"` //this is set when verified orch as capability
 	Token         *JobToken `json:"token"`
 	Sig           string    `json:"sig"`
 	Timeout       int       `json:"timeoutSeconds"`
@@ -161,8 +163,9 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 
 	remoteAddr := getRemoteAddr(r)
-	ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+	ctx := clog.AddVal(r.Context(), "client_ip", remoteAddr)
 
+	// get payment information
 	payment, err := getPayment(r.Header.Get(paymentHeader))
 	if err != nil {
 		clog.Errorf(ctx, "Could not parse payment")
@@ -176,6 +179,9 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	// check the prompt sig from the request
 	job := r.Header.Get(jobRequestHdr)
 	jobReq, ctx, err := verifyJobCreds(ctx, orch, job, sender)
+	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
+	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
+
 	if err != nil {
 		if err == errZeroCapacity {
 			clog.Errorf(ctx, "No capacity available for capability err=%q", err)
@@ -188,19 +194,39 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if payment.TicketParams == nil {
+		//no payment included, confirm if balance remains
+		if !h.orchestrator.SufficientBalance(sender, core.ManifestID(jobReq.Capability)) {
+			clog.Errorf(ctx, "Insufficient balance for request")
+			http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
+			return
+		}
+	}
+
 	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobReq.ID)); err != nil {
-		clog.Errorf(ctx, "error processing payment: %v", err)
+		clog.Errorf(ctx, "error processing payment err=%q", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing id=%v sender=%v ip=%v", jobReq.ID, sender.Hex(), remoteAddr)
-	extReq := []byte(fmt.Sprintf(`{"request":%v, "parameters":%v}`, jobReq.Request, jobReq.Parameters))
-	req, err := http.NewRequestWithContext(ctx, "POST", jobReq.CapabilityUrl, bytes.NewBuffer(extReq))
+	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing", remoteAddr)
+	newHeader := r.Header.Clone()
+	for k, _ := range newHeader {
+		if strings.Contains(k, "Livepeer") {
+			newHeader.Del(k)
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", jobReq.CapabilityUrl, r.Body)
+	if err != nil {
+		clog.Errorf(ctx, "Unable to create request err=%v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+	req.Header = newHeader
 
+	start := time.Now()
 	resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout)*time.Second)
 	if err != nil || resp.StatusCode > 399 {
-		clog.Errorf(ctx, "job not able to be processed err=%v, external_capabilitites=%v", err.Error(), jobReq.Capability)
+		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 
 		if err == context.DeadlineExceeded {
 			orch.ExternalCapabilities().RemoveCapability(jobReq.Capability)
@@ -208,12 +234,27 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 		orch.FreeExternalCapacity(jobReq.Capability)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-
 		return
 	}
+	took := time.Since(start)
+	// Debit the fee for the total time processed
+	h.orchestrator.DebitFees(sender, core.ManifestID(jobReq.Capability), payment.GetExpectedPrice(), int64(took.Seconds()))
+	senderBalance := h.orchestrator.Balance(sender, core.ManifestID(jobReq.Capability))
+	if senderBalance == nil {
+		senderBalance = big.NewRat(0, 0)
+	}
+	senderBalAmt, _ := common.PriceToInt64(senderBalance)
+
+	clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", took)
+
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
-
+	if err != nil {
+		clog.Errorf(ctx, "Unable to read response err=%v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Livepeer-Payment-Balance", senderBalAmt.FloatString(0))
 	w.Write(data)
 
 }
