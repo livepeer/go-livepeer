@@ -839,7 +839,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					}
 				}()
 				err := whipConn.AwaitClose()
-				if err != nil {
+				if err == nil {
 					// For now, set a "whip disconnected" event"
 					err = errors.New("whip disconnected")
 				}
