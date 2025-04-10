@@ -41,12 +41,21 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
+	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
+
+	// TODO processSegments needs to also be re-invoked after each retry;
+	//      processes that don't immediately fail are not fully retryable otherwise
+	//
+	// create first named pipe to preempt races between ffmpeg and processSegments
+	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
 		defer procCancel()
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
+	retryCount := 0
 	for {
 		err := backoff.Retry(func() error {
 			streamExists, err := ms.MediaMTXClient.StreamExists()
@@ -63,7 +72,10 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
-		clog.Infof(ctx, "Starting segmentation. in=%s", in)
+		if retryCount > 0 {
+			time.Sleep(5 * time.Second)
+		}
+		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
 		cmd := exec.CommandContext(procCtx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
@@ -73,11 +85,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
+			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
 			break
 		}
-		clog.Infof(ctx, "Segmentation ffmpeg output: %s", output)
-		time.Sleep(5 * time.Second)
+		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
+		retryCount++
 	}
 	completionSignal <- true
 	clog.Infof(ctx, "sent completion signal, now waiting")
@@ -216,7 +228,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 	}()
 
 	pipeNum := 0
-	createNamedPipe(fmt.Sprintf(outFilePattern, pipeNum))
+	// first named pipe should have been created already
 
 	for {
 		pipeName := fmt.Sprintf(outFilePattern, pipeNum)

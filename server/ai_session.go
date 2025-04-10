@@ -29,14 +29,16 @@ type AISessionPool struct {
 	sessMap   map[string]*BroadcastSession
 	inUseSess []*BroadcastSession
 	suspender *suspender
+	penalty   int
 	mu        sync.RWMutex
 }
 
-func NewAISessionPool(selector BroadcastSessionsSelector, suspender *suspender) *AISessionPool {
+func NewAISessionPool(selector BroadcastSessionsSelector, suspender *suspender, penalty int) *AISessionPool {
 	return &AISessionPool{
 		selector:  selector,
 		sessMap:   make(map[string]*BroadcastSession),
 		suspender: suspender,
+		penalty:   penalty,
 		mu:        sync.RWMutex{},
 	}
 }
@@ -101,14 +103,14 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	// If we try to add new sessions to the pool the suspender
-	// should treat this as a refresh
-	pool.suspender.signalRefresh()
-
 	var uniqueSessions []*BroadcastSession
 	for _, sess := range sessions {
-		if _, ok := pool.sessMap[sess.Transcoder()]; ok {
-			// Skip the session if it is already tracked by sessMap
+		if existingSess, ok := pool.sessMap[sess.Transcoder()]; ok {
+			// For existing sessions we only update its fields
+			existingSess.OrchestratorInfo = sess.OrchestratorInfo
+			existingSess.InitialLatency = sess.InitialLatency
+			existingSess.InitialPrice = sess.InitialPrice
+			existingSess.PMSessionID = sess.PMSessionID
 			continue
 		}
 
@@ -119,6 +121,29 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	pool.selector.Add(uniqueSessions)
 }
 
+// Clear clears the session that does not exist in newSessions
+func (pool *AISessionPool) Clear(newSessions []*BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	// Clear the sessions that are not in newSessions
+	for k, _ := range pool.sessMap {
+		toRemove := true
+		for _, sess := range newSessions {
+			if k == sess.Transcoder() {
+				// This session is in the new sessions list
+				toRemove = false
+				break
+			}
+		}
+		if toRemove {
+			pool.selector.Remove(pool.sessMap[k])
+			delete(pool.sessMap, k)
+		}
+	}
+
+}
+
 func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -126,10 +151,14 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	delete(pool.sessMap, sess.Transcoder())
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
-	// Magic number for now
-	penalty := 3
 	// If this method is called assume that the orch should be suspended
-	// as well
+	// as well.  Since AISessionManager re-uses the pools the suspension
+	// penalty needs to consider the current suspender count to set the penalty
+	lastCount, ok := pool.suspender.list[sess.Transcoder()]
+	penalty := pool.suspender.count + pool.penalty
+	if ok {
+		penalty -= lastCount
+	}
 	pool.suspender.suspend(sess.Transcoder(), penalty)
 }
 
@@ -156,16 +185,19 @@ type AISessionSelector struct {
 	// The time until the pools should be refreshed with orchs from discovery
 	ttl             time.Duration
 	lastRefreshTime time.Time
+	initialPoolSize int
+	autoClear       bool
 
 	cap     core.Capability
 	modelID string
 
 	node      *core.LivepeerNode
 	suspender *suspender
+	penalty   int
 	os        drivers.OSSession
 }
 
-func NewAISessionSelector(cap core.Capability, modelID string, node *core.LivepeerNode, ttl time.Duration) (*AISessionSelector, error) {
+func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID string, node *core.LivepeerNode, ttl time.Duration) (*AISessionSelector, error) {
 	var stakeRdr stakeReader
 	if node.Eth != nil {
 		stakeRdr = &storeStakeReader{store: node.Database}
@@ -177,11 +209,27 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 	warmCaps := newAICapabilities(cap, modelID, true, node.Capabilities.MinVersionConstraint())
 	coldCaps := newAICapabilities(cap, modelID, false, node.Capabilities.MinVersionConstraint())
 
-	// The latency score in this context is just the latency of the last completed request for a session
-	// The "good enough" latency score is set to 0.0 so the selector will always select unknown sessions first
-	minLS := 0.0
-	warmPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps), suspender)
-	coldPool := NewAISessionPool(NewMinLSSelector(stakeRdr, minLS, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps), suspender)
+	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
+	penalty := 3
+	var warmSel, coldSel BroadcastSessionsSelector
+	var autoClear bool
+	if cap == core.Capability_LiveVideoToVideo {
+		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
+		// We always select a fresh session which has the lowest initial latency
+		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		// we don't use penalties for not in Realtime Video AI
+		penalty = 0
+		// Automatically clear the session pool from old sessions during the discovery
+		autoClear = true
+	} else {
+		// sort sessions based on current latency score
+		warmSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+	}
+
+	warmPool := NewAISessionPool(warmSel, suspender, penalty)
+	coldPool := NewAISessionPool(coldSel, suspender, penalty)
 	sel := &AISessionSelector{
 		warmPool:  warmPool,
 		coldPool:  coldPool,
@@ -190,14 +238,42 @@ func NewAISessionSelector(cap core.Capability, modelID string, node *core.Livepe
 		modelID:   modelID,
 		node:      node,
 		suspender: suspender,
+		penalty:   penalty,
 		os:        drivers.NodeStorage.NewSession(strconv.Itoa(int(cap)) + "_" + modelID),
+		autoClear: autoClear,
 	}
 
-	if err := sel.Refresh(context.Background()); err != nil {
+	if err := sel.Refresh(ctx); err != nil {
 		return nil, err
 	}
 
+	// Periodically refresh sessions for Live Video to Video in order to minimize the necessity of refreshing sessions
+	// when the AI process is started
+	if cap == core.Capability_LiveVideoToVideo {
+		startPeriodicRefresh(sel)
+	}
+
 	return sel, nil
+}
+
+func startPeriodicRefresh(sel *AISessionSelector) {
+	clog.Infof(context.Background(), "Starting periodic refresh for Live Video to Video")
+	go func() {
+		// 6 min to avoid Ticket Params Expired and to avoid getting TTL
+		refreshInterval := 6 * time.Minute
+		ticker := time.NewTicker(refreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
+				if err := sel.Refresh(ctx); err != nil {
+					clog.Infof(context.Background(), "Error refreshing AISessionSelector err=%v", err)
+				}
+				cancel()
+			}
+		}
+	}()
 }
 
 // newAICapabilities creates a new capabilities object with
@@ -218,16 +294,35 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersio
 	return caps
 }
 
+// SelectorIsEmpty returns true if no orchestrators are in the warm or cold pools.
+func (sel *AISessionSelector) SelectorIsEmpty() bool {
+	return sel.warmPool.Size() == 0 && sel.coldPool.Size() == 0
+}
+
 func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 	shouldRefreshSelector := func() bool {
+		discoveryPoolSize := int(math.Min(float64(sel.node.OrchestratorPool.Size()), float64(sel.initialPoolSize)))
+
+		// If the selector is empty, release all orchestrators from suspension and
+		// try refresh.
+		if sel.SelectorIsEmpty() {
+			clog.Infof(ctx, "refreshing sessions, no orchestrators in pools")
+			for i := 0; i < sel.penalty; i++ {
+				sel.suspender.signalRefresh()
+			}
+		}
+
 		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
 		// 1/2 the total # of orchs that can be queried during discovery
-		discoveryPoolSize := sel.node.OrchestratorPool.Size()
 		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
 			return true
 		}
 
 		// Refresh if the selector has expired
+		sel.warmPool.mu.Lock()
+		sel.coldPool.mu.Lock()
+		defer sel.coldPool.mu.Unlock()
+		defer sel.warmPool.mu.Unlock()
 		if time.Now().After(sel.lastRefreshTime.Add(sel.ttl)) {
 			return true
 		}
@@ -272,6 +367,10 @@ func (sel *AISessionSelector) Remove(sess *AISession) {
 }
 
 func (sel *AISessionSelector) Refresh(ctx context.Context) error {
+	// If we try to add new sessions to the pool the suspender
+	// should treat this as a refresh
+	sel.suspender.signalRefresh()
+
 	sessions, err := sel.getSessions(ctx)
 	if err != nil {
 		return err
@@ -283,6 +382,13 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 		// If the constraints are missing for this capability skip this session
 		constraints, ok := sess.OrchestratorInfo.Capabilities.Constraints.PerCapability[uint32(sel.cap)]
 		if !ok {
+			continue
+		}
+
+		// We request 100 orchestrators in getSessions above so all Orchestrators are returned with refreshed information
+		// This keeps the suspended Orchestrators out of the pool until the selector is empty or 30 minutes has passed (refresh happens every 10 minutes)
+		if sel.suspender.Suspended(sess.Transcoder()) > 0 {
+			clog.V(common.DEBUG).Infof(ctx, "skipping suspended orchestrator=%s", sess.Transcoder())
 			continue
 		}
 
@@ -301,7 +407,16 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 
 	sel.warmPool.Add(warmSessions)
 	sel.coldPool.Add(coldSessions)
+	if sel.autoClear {
+		sel.warmPool.Clear(warmSessions)
+		sel.coldPool.Clear(coldSessions)
+	}
 
+	sel.warmPool.mu.Lock()
+	sel.coldPool.mu.Lock()
+	defer sel.coldPool.mu.Unlock()
+	defer sel.warmPool.mu.Unlock()
+	sel.initialPoolSize = len(warmSessions) + len(coldSessions) + len(sel.suspender.list)
 	sel.lastRefreshTime = time.Now()
 
 	return nil
@@ -357,6 +472,7 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 }
 
 func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, modelID string) (*AISession, error) {
+	clog.V(common.DEBUG).Infof(ctx, "selecting orchestrator for modelID=%s", modelID)
 	sel, err := c.getSelector(ctx, cap, modelID)
 	if err != nil {
 		return nil, err
@@ -367,9 +483,11 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 		return nil, nil
 	}
 
-	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession); err != nil {
+	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession, false); err != nil {
 		return nil, err
 	}
+
+	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s", sess.Transcoder())
 
 	return sess, nil
 }
@@ -405,7 +523,7 @@ func (c *AISessionManager) getSelector(ctx context.Context, cap core.Capability,
 	if !ok {
 		// Create the selector
 		var err error
-		sel, err = NewAISessionSelector(cap, modelID, c.node, c.ttl)
+		sel, err = NewAISessionSelector(ctx, cap, modelID, c.node, c.ttl)
 		if err != nil {
 			return nil, err
 		}

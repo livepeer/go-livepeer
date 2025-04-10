@@ -259,7 +259,7 @@ func (s *stubSelector) Complete(sess *BroadcastSession)          {}
 func (s *stubSelector) Select(context.Context) *BroadcastSession { return s.sess }
 func (s *stubSelector) Size() int                                { return s.size }
 func (s *stubSelector) Clear()                                   {}
-func (s *stubSelector) Remove(session *BroadcastSession) bool    { return false }
+func (s *stubSelector) Remove(session *BroadcastSession)         {}
 
 func TestStopSessionErrors(t *testing.T) {
 
@@ -385,7 +385,7 @@ func TestSelectSession_MultipleInFlight2(t *testing.T) {
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
 	orchInfoCalled := 0
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		orchInfoCalled++
 		return successOrchInfoUpdate, nil
 	}
@@ -605,7 +605,7 @@ func TestTranscodeSegment_RefreshSession(t *testing.T) {
 	oldGetOrchestratorInfoRPC := getOrchestratorInfoRPC
 	defer func() { getOrchestratorInfoRPC = oldGetOrchestratorInfoRPC }()
 
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
 
@@ -1501,23 +1501,23 @@ func TestRefreshSession(t *testing.T) {
 
 	// trigger parse URL error
 	sess := StubBroadcastSession(string(rune(0x7f)))
-	err := refreshSession(context.TODO(), sess)
+	err := refreshSession(context.TODO(), sess, false)
 	assert.Error(err)
 	assert.Contains(err.Error(), "invalid control character in URL")
 
 	// trigger getOrchestratorInfo error
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return nil, errors.New("some error")
 	}
 	sess = StubBroadcastSession("foo")
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.EqualError(err, "some error")
 
 	// trigger update
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		return successOrchInfoUpdate, nil
 	}
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.Nil(err)
 	assert.Equal(sess.OrchestratorInfo, successOrchInfoUpdate)
 
@@ -1525,7 +1525,7 @@ func TestRefreshSession(t *testing.T) {
 	oldRefreshTimeout := refreshTimeout
 	defer func() { refreshTimeout = oldRefreshTimeout }()
 	refreshTimeout = 10 * time.Millisecond
-	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+	getOrchestratorInfoRPC = func(ctx context.Context, bcast common.Broadcaster, serv *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		// Wait until the refreshTimeout has elapsed
 		select {
 		case <-ctx.Done():
@@ -1535,7 +1535,7 @@ func TestRefreshSession(t *testing.T) {
 
 		return nil, errors.New("context timeout")
 	}
-	err = refreshSession(context.TODO(), sess)
+	err = refreshSession(context.TODO(), sess, false)
 	assert.EqualError(err, "context timeout")
 }
 

@@ -27,17 +27,20 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const processingRetryTimeout = 2 * time.Second
-const defaultTextToImageModelID = "stabilityai/sdxl-turbo"
-const defaultImageToImageModelID = "stabilityai/sdxl-turbo"
-const defaultImageToVideoModelID = "stabilityai/stable-video-diffusion-img2vid-xt"
-const defaultUpscaleModelID = "stabilityai/stable-diffusion-x4-upscaler"
-const defaultAudioToTextModelID = "openai/whisper-large-v3"
-const defaultLLMModelID = "meta-llama/llama-3.1-8B-Instruct"
-const defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
-const defaultImageToTextModelID = "Salesforce/blip-image-captioning-large"
-const defaultLiveVideoToVideoModelID = "noop"
-const defaultTextToSpeechModelID = "parler-tts/parler-tts-large-v1"
+const (
+	defaultTextToImageModelID      = "stabilityai/sdxl-turbo"
+	defaultImageToImageModelID     = "stabilityai/sdxl-turbo"
+	defaultImageToVideoModelID     = "stabilityai/stable-video-diffusion-img2vid-xt"
+	defaultUpscaleModelID          = "stabilityai/stable-diffusion-x4-upscaler"
+	defaultAudioToTextModelID      = "openai/whisper-large-v3"
+	defaultLLMModelID              = "meta-llama/llama-3.1-8B-Instruct"
+	defaultSegmentAnything2ModelID = "facebook/sam2-hiera-large"
+	defaultImageToTextModelID      = "Salesforce/blip-image-captioning-large"
+	defaultLiveVideoToVideoModelID = "noop"
+	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
+
+	maxTries = 20
+)
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
 
@@ -92,18 +95,21 @@ func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
 		return false
 	}
+	a.node.LiveMu.RLock()
+	defer a.node.LiveMu.RUnlock()
 	_, ok := a.node.LivePipelines[a.liveParams.stream]
 	return ok
 }
 
 // For live video pipelines
 type liveRequestParams struct {
-	segmentReader *media.SwitchableSegmentReader
-	outputRTMPURL string
-	stream        string
-	requestID     string
-	streamID      string
-	pipelineID    string
+	segmentReader         *media.SwitchableSegmentReader
+	outputRTMPURL         string
+	mediaMTXOutputRTMPURL string
+	stream                string
+	requestID             string
+	streamID              string
+	pipelineID            string
 
 	paymentProcessInterval time.Duration
 
@@ -1039,11 +1045,17 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		}
 		return nil, err
 	}
-	setHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
+	paymentHeaders, balUpdate, err := prepareAIPayment(ctx, sess, initPixelsToPay)
+	if err != nil {
+		if monitor.Enabled {
+			monitor.AIRequestError(err.Error(), "LiveVideoToVideo", *req.ModelId, sess.OrchestratorInfo)
+		}
+		return nil, err
+	}
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, setHeaders)
+	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, paymentHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,12 +1088,23 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(control, params)
+	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, func() {
+	startTrickleSubscribe(ctx, sub, params, sess, func() {
 		delayMs := time.Since(startTime).Milliseconds()
 		if monitor.Enabled {
 			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_receive_first_processed_segment",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   params.liveParams.streamID,
+				"pipeline_id": params.liveParams.pipelineID,
+				"request_id":  params.liveParams.requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": sess.Address(),
+					"url":     sess.Transcoder(),
+				},
+			})
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 
@@ -1464,6 +1487,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	}
 	capName := cap.String()
 	ctx = clog.AddVal(ctx, "capability", capName)
+	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
 	start := time.Now()
@@ -1471,16 +1495,21 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp interface{}
 
+	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
 	tries := 0
-	for {
+	var retryableSessions []*AISession
+	for tries < maxTries {
 		select {
 		case <-cctx.Done():
-			err := fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
-			if monitor.Enabled {
-				monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
+			err := cctx.Err()
+			if errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
+				if monitor.Enabled {
+					monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
+				}
 			}
 			return nil, &ServiceUnavailableError{err: err}
 		default:
@@ -1503,6 +1532,19 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		// Don't suspend the session if the error is a transient error.
+		if isRetryableError(err) {
+			params.sessManager.Complete(ctx, sess)
+			continue
+		}
+
+		// when no capacity error is received, retry with another session, but do not suspend the session
+		if (isInvalidTicketSenderNonce(err) || isNoCapacityError(err)) && cap != core.Capability_LiveVideoToVideo {
+			retryableSessions = append(retryableSessions, sess)
+			continue
+		}
+
+		// Suspend the session on other errors.
 		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
 
@@ -1515,6 +1557,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 	}
 
+	//add retryable sessions back to selector
+	for _, sess := range retryableSessions {
+		params.sessManager.Complete(ctx, sess)
+	}
+
 	if resp == nil {
 		errMsg := "no orchestrators available"
 		if monitor.Enabled {
@@ -1525,6 +1572,28 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	return resp, nil
 }
 
+// isRetryableError checks if the error is a transient error that can be retried.
+func isRetryableError(err error) bool {
+	return errContainsMsg(err, "ticketparams expired")
+}
+
+func isInvalidTicketSenderNonce(err error) bool {
+	return errContainsMsg(err, "invalid ticket sendernonce")
+}
+
+func isNoCapacityError(err error) bool {
+	return errContainsMsg(err, "insufficient capacity")
+}
+
+func errContainsMsg(err error, msgs ...string) bool {
+	errMsg := strings.ToLower(err.Error())
+	for _, msg := range msgs {
+		if strings.Contains(errMsg, msg) {
+			return true
+		}
+	}
+	return false
+}
 func prepareAIPayment(ctx context.Context, sess *AISession, outPixels int64) (worker.RequestEditorFn, *BalanceUpdate, error) {
 	// genSegCreds expects a stream.HLSSegment so in order to reuse it here we pass a dummy object
 	segCreds, err := genSegCreds(sess.BroadcastSession, &stream.HLSSegment{}, nil, false)

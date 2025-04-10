@@ -38,6 +38,7 @@ type RemoteAIWorker struct {
 	manager      *RemoteAIWorkerManager
 	stream       net.AIWorker_RegisterAIWorkerServer
 	capabilities *Capabilities
+	hardware     []worker.HardwareInformation
 	eof          chan struct{}
 	addr         string
 }
@@ -64,13 +65,14 @@ type RemoteAIWorkerManager struct {
 	requestSessions map[string]*RemoteAIWorker
 }
 
-func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities) *RemoteAIWorker {
+func NewRemoteAIWorker(m *RemoteAIWorkerManager, stream net.AIWorker_RegisterAIWorkerServer, caps *Capabilities, hardware []worker.HardwareInformation) *RemoteAIWorker {
 	return &RemoteAIWorker{
 		manager:      m,
 		stream:       stream,
 		eof:          make(chan struct{}, 1),
 		addr:         common.GetConnectionAddr(stream.Context()),
 		capabilities: caps,
+		hardware:     hardware,
 	}
 }
 
@@ -87,13 +89,14 @@ func NewRemoteAIWorkerManager() *RemoteAIWorkerManager {
 	}
 }
 
-func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
-	orch.node.serveAIWorker(stream, capabilities)
+func (orch *orchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
+	orch.node.serveAIWorker(stream, capabilities, hardware)
 }
 
-func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 	from := common.GetConnectionAddr(stream.Context())
 	wkrCaps := CapabilitiesFromNetCapabilities(capabilities)
+	wkrHdw := hardwareInformationFromNetHardware(hardware)
 	if n.Capabilities.LivepeerVersionCompatibleWith(capabilities) {
 		glog.Infof("Worker compatible, connecting worker_version=%s orchestrator_version=%s worker_addr=%s", capabilities.Version, n.Capabilities.constraints.minVersion, from)
 		n.Capabilities.AddCapacity(wkrCaps)
@@ -102,7 +105,7 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 		defer n.RemoveAICapabilities(wkrCaps)
 
 		// Manage blocks while AI worker is connected
-		n.AIWorkerManager.Manage(stream, capabilities)
+		n.AIWorkerManager.Manage(stream, capabilities, wkrHdw)
 		glog.V(common.DEBUG).Infof("Closing aiworker=%s channel", from)
 	} else {
 		glog.Errorf("worker %s not connected, version not compatible", from)
@@ -110,9 +113,10 @@ func (n *LivepeerNode) serveAIWorker(stream net.AIWorker_RegisterAIWorkerServer,
 }
 
 // Manage adds aiworker to list of live aiworkers. Doesn't return until aiworker disconnects
-func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (rwm *RemoteAIWorkerManager) Manage(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []worker.HardwareInformation) {
 	from := common.GetConnectionAddr(stream.Context())
-	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities))
+
+	aiworker := NewRemoteAIWorker(rwm, stream, CapabilitiesFromNetCapabilities(capabilities), hardware)
 	go func() {
 		ctx := stream.Context()
 		<-ctx.Done()
@@ -432,6 +436,20 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<
 
 }
 
+func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
+	if orch.node.AIWorker != nil {
+		return orch.node.AIWorker.HardwareInformation()
+	} else {
+		// return combined hardware information from all live remote workers from information provided by workers
+		// when connecting to orchestrator. Does not reach out for real-time information.
+		var wkrHdw []worker.HardwareInformation
+		for _, worker := range orch.node.AIWorkerManager.liveAIWorkers {
+			wkrHdw = append(wkrHdw, worker.hardware...)
+		}
+		return wkrHdw
+	}
+}
+
 func (orch *orchestrator) AIResults(tcID int64, res *RemoteAIWorkerResult) {
 	orch.node.AIWorkerManager.aiResults(tcID, res)
 }
@@ -559,7 +577,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-image", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
@@ -627,7 +645,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -672,7 +690,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -717,7 +735,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -753,7 +771,7 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 		return orch.node.AudioToText(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	audioBytes, err := req.Audio.Bytes()
 	if err != nil {
 		return nil, err
@@ -789,7 +807,7 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 		return orch.node.SegmentAnything2(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imgBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -854,7 +872,7 @@ func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req
 		return orch.node.ImageToText(ctx, req)
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	imageBytes, err := req.Image.Bytes()
 	if err != nil {
 		return nil, err
@@ -899,7 +917,7 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 		}
 	}
 
-	// remote ai worker proceses job
+	// remote ai worker processes job
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "text-to-speech", *req.ModelId, "", AIJobRequestData{Request: req})
 	if err != nil {
 		return nil, err
@@ -1204,4 +1222,21 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 		clog.Errorf(ctx, "Unable to sign hash of transcoded segment hashes err=%q", tr.Err)
 	}
 	return &tr
+}
+
+func hardwareInformationFromNetHardware(hdw []*net.HardwareInformation) []worker.HardwareInformation {
+	var netWorkerHardware []byte
+	netWorkerHardware, err := json.Marshal(hdw)
+	if err != nil {
+		glog.Errorf("Error converting hardware information to json: %v", err)
+		return []worker.HardwareInformation{}
+	}
+	var workerHardware []worker.HardwareInformation
+	err = json.Unmarshal(netWorkerHardware, &workerHardware)
+	if err != nil {
+		glog.Errorf("Error converting hardware information: %v", err)
+		return []worker.HardwareInformation{}
+	}
+
+	return workerHardware
 }

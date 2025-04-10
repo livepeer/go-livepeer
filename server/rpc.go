@@ -56,12 +56,13 @@ type Orchestrator interface {
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
-	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities)
+	ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation)
 	AIResults(job int64, res *core.RemoteAIWorkerResult)
 	ProcessPayment(ctx context.Context, payment net.Payment, manifestID core.ManifestID) error
 	TicketParams(sender ethcommon.Address, priceInfo *net.PriceInfo) (*net.TicketParams, error)
 	PriceInfo(sender ethcommon.Address, manifestID core.ManifestID) (*net.PriceInfo, error)
 	PriceInfoForCaps(sender ethcommon.Address, manifestID core.ManifestID, caps *net.Capabilities) (*net.PriceInfo, error)
+	GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error)
 	SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool
 	DebitFees(addr ethcommon.Address, manifestID core.ManifestID, price *net.PriceInfo, pixels int64)
 	Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat
@@ -69,6 +70,7 @@ type Orchestrator interface {
 	AuthToken(sessionID string, expiration int64) *net.AuthToken
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
+	WorkerHardware() []worker.HardwareInformation
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
@@ -139,6 +141,13 @@ type BroadcastSession struct {
 	CleanupSession   sessionsCleanup
 	Balance          Balance
 	InitialPrice     *net.PriceInfo
+
+	InitialLatency time.Duration
+}
+
+type GetOrchestratorInfoParams struct {
+	Caps                *net.Capabilities
+	IgnoreCapacityCheck bool
 }
 
 func (bs *BroadcastSession) Transcoder() string {
@@ -287,14 +296,14 @@ func ping(context context.Context, req *net.PingPong, orch Orchestrator) (*net.P
 }
 
 // GetOrchestratorInfo - the broadcaster calls GetOrchestratorInfo which invokes GetOrchestrator on the orchestrator
-func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
+func GetOrchestratorInfo(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 	c, conn, err := startOrchestratorClient(ctx, orchestratorServer)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	req, err := genOrchestratorReq(bcast, caps)
+	req, err := genOrchestratorReq(bcast, params)
 	r, err := c.GetOrchestrator(ctx, req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Could not get orchestrator orch=%v", orchestratorServer)
@@ -338,12 +347,12 @@ func startOrchestratorClient(ctx context.Context, uri *url.URL) (net.Orchestrato
 	return c, conn, nil
 }
 
-func genOrchestratorReq(b common.Broadcaster, caps *net.Capabilities) (*net.OrchestratorRequest, error) {
+func genOrchestratorReq(b common.Broadcaster, params GetOrchestratorInfoParams) (*net.OrchestratorRequest, error) {
 	sig, err := b.Sign([]byte(fmt.Sprintf("%v", b.Address().Hex())))
 	if err != nil {
 		return nil, err
 	}
-	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: caps}, nil
+	return &net.OrchestratorRequest{Address: b.Address().Bytes(), Sig: sig, Capabilities: params.Caps, IgnoreCapacityCheck: params.IgnoreCapacityCheck}, nil
 }
 
 func genEndSessionRequest(sess *BroadcastSession) (*net.EndTranscodingSessionRequest, error) {
@@ -365,7 +374,31 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
 	}
 
+	if err := checkLiveVideoToVideoCapacity(orch, req); err != nil {
+		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
+	}
 	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
+}
+
+func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorRequest) interface{} {
+	caps := req.Capabilities
+	if req.IgnoreCapacityCheck || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+
+	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
+		pipeline := "live-video-to-video"
+		for modelID := range liveCap.GetModels() {
+			if orch.CheckAICapacity(pipeline, modelID) {
+				// It has capacity for at least one of the requested models
+				return nil
+			}
+		}
+		// No capacity for any requested model
+		return core.ErrOrchCap
+	}
+	// For no constraints or AI Jobs (non live-video-to-video), we don't want to check capacity
+	return nil
 }
 
 func endTranscodingSession(node *core.LivepeerNode, orch Orchestrator, req *net.EndTranscodingSessionRequest) (*net.EndTranscodingSessionResponse, error) {
@@ -393,8 +426,13 @@ func orchestratorInfo(orch Orchestrator, addr ethcommon.Address, serviceURI stri
 
 func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, serviceURI string, manifestID core.ManifestID, caps *net.Capabilities) (*net.OrchestratorInfo, error) {
 	var priceInfo *net.PriceInfo
+	var capsPrices []*net.PriceInfo
+	var err error
 	if caps == nil {
-		var err error
+		//get capability prices
+		capsPrices, err = orch.GetCapabilitiesPrices(addr)
+
+		//get base price
 		priceInfo, err = getPriceInfo(orch, addr, manifestID)
 		if err != nil {
 			return nil, err
@@ -417,13 +455,20 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	expiration := time.Now().Add(authTokenValidPeriod).Unix()
 	authToken := orch.AuthToken(sessionID, expiration)
 
+	var workerHardware []*net.HardwareInformation
+	if caps == nil {
+		workerHardware = workerHardwareToNetWorkerHardware(orch.WorkerHardware())
+	}
+
 	tr := net.OrchestratorInfo{
-		Transcoder:   serviceURI,
-		TicketParams: params,
-		PriceInfo:    priceInfo,
-		Address:      orch.Address().Bytes(),
-		Capabilities: orch.Capabilities(),
-		AuthToken:    authToken,
+		Transcoder:         serviceURI,
+		TicketParams:       params,
+		PriceInfo:          priceInfo,
+		Address:            orch.Address().Bytes(),
+		Capabilities:       orch.Capabilities(),
+		AuthToken:          authToken,
+		Hardware:           workerHardware,
+		CapabilitiesPrices: capsPrices,
 	}
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)
@@ -589,4 +634,21 @@ func coreSegMetadata(segData *net.SegData) (*core.SegTranscodingMetadata, error)
 		CalcPerceptualHash: segData.CalcPerceptualHash,
 		SegmentParameters:  &segPar,
 	}, nil
+}
+
+func workerHardwareToNetWorkerHardware(orchHdw []worker.HardwareInformation) []*net.HardwareInformation {
+	var workerHardware []byte
+	workerHardware, err := json.Marshal(orchHdw)
+	if err != nil {
+		glog.Errorf("Error converting hardware information to json: %v", err)
+		return []*net.HardwareInformation{}
+	}
+	var netWorkerHardware []*net.HardwareInformation
+	err = json.Unmarshal(workerHardware, &netWorkerHardware)
+	if err != nil {
+		glog.Errorf("Error converting hardware information: %v", err)
+		return []*net.HardwareInformation{}
+	}
+
+	return netWorkerHardware
 }

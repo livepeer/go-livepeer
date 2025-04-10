@@ -9,7 +9,7 @@ import (
 func (w *wizard) transferTokens() {
 	fmt.Printf("Current LPT balance: %v\n", w.getTokenBalance())
 
-	fmt.Printf("Enter receipient address (in hex i.e. 0xfoo) - ")
+	fmt.Printf("Enter recipient address (in hex i.e. 0xfoo) - ")
 	to := w.readString()
 
 	amount := w.readBigInt("Enter amount")

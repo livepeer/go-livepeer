@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +56,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	slowOrchChecker := &SlowOrchChecker{}
 
+	firstSegment := true
+
 	params.liveParams.segmentReader.SwitchReader(func(reader media.CloneableReader) {
 		// check for end of stream
 		if _, eos := reader.(*media.EOSReader); eos {
@@ -76,7 +79,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
 			if paymentProcessor != nil {
-				r = paymentProcessor.process(reader)
+				r = paymentProcessor.process(ctx, reader)
 			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
@@ -94,9 +97,25 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
+					if monitor.Enabled && firstSegment {
+						firstSegment = false
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_send_first_ingest_segment",
+							"timestamp":   time.Now().UnixMilli(),
+							"stream_id":   params.liveParams.streamID,
+							"pipeline_id": params.liveParams.pipelineID,
+							"request_id":  params.liveParams.requestID,
+							"orchestrator_info": map[string]interface{}{
+								"address": sess.Address(),
+								"url":     sess.Transcoder(),
+							},
+						})
+					}
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -114,7 +133,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					return
 				}
 				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
-				// Clone in case read head was incremented somewhere, which cloning ressets
+				// Clone in case read head was incremented somewhere, which cloning resets
 				r = reader.Clone()
 				time.Sleep(250 * time.Millisecond)
 			}
@@ -123,7 +142,35 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, onFistSegment func()) {
+type multiWriter struct {
+	ctx         context.Context
+	writers     []io.Writer
+	isErrLogged bool
+}
+
+func (t *multiWriter) Write(p []byte) (n int, err error) {
+	success := false
+	for _, w := range t.writers {
+		bytesWritten, err := w.Write(p)
+		if err != nil {
+			if !t.isErrLogged {
+				clog.Errorf(t.ctx, "multiWriter error %v", err)
+				t.isErrLogged = true
+			}
+		} else {
+			success = true
+			n = bytesWritten
+		}
+	}
+	if !success {
+		// all writes failed, return the error
+		return 0, err
+	}
+
+	return n, nil
+}
+
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -131,15 +178,25 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%s %w", url, err))
 		return
 	}
+	rMediaMTX, wMediaMTX, err := os.Pipe()
+	if err != nil {
+		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. url=%s %w", url, err))
+		return
+	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
+	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
+
+	multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
 
 	// read segments from trickle subscription
 	go func() {
 		var err error
 		firstSegment := true
+		var segmentsReceived int64
 
 		defer w.Close()
+		defer wMediaMTX.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
 		const retryPause = 300 * time.Millisecond
@@ -178,7 +235,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, w)
+			n, err := copySegment(segment, multiWriter)
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -187,47 +244,72 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				firstSegment = false
 				onFistSegment()
 			}
+			segmentsReceived += 1
+			if segmentsReceived == 3 && monitor.Enabled {
+				// We assume that after receiving 3 segments, the runner started successfully
+				// and we should be able to start the playback
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_receive_few_processed_segments",
+					"timestamp":   time.Now().UnixMilli(),
+					"stream_id":   params.liveParams.streamID,
+					"pipeline_id": params.liveParams.pipelineID,
+					"request_id":  params.liveParams.requestID,
+					"orchestrator_info": map[string]interface{}{
+						"address": sess.Address(),
+						"url":     sess.Transcoder(),
+					},
+				})
+
+			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
 
-	go func() {
-		defer func() {
-			r.Close()
-			if rec := recover(); rec != nil {
-				// panicked, so shut down the stream and handle it
-				err, ok := rec.(error)
-				if !ok {
-					err = errors.New("unknown error")
-				}
-				clog.Errorf(ctx, "LPMS panic err=%v", err)
-				params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
-			}
-		}()
-		for {
-			clog.V(6).Infof(ctx, "Starting output rtmp")
-			if !params.inputStreamExists() {
-				clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
-				break
-			}
+	// Studio Output ffmpeg process
+	go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 
-			cmd := exec.Command("ffmpeg",
-				"-i", "pipe:0",
-				"-c:a", "copy",
-				"-c:v", "copy",
-				"-f", "flv",
-				params.liveParams.outputRTMPURL,
-			)
-			cmd.Stdin = r
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				clog.Errorf(ctx, "Error sending RTMP out: %v", err)
-				clog.Infof(ctx, "Process output: %s", output)
-				return
+	// MediaMTX Output ffmpeg process
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
+}
+
+func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params aiRequestParams) {
+	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
+	defer func() {
+		r.Close()
+		if rec := recover(); rec != nil {
+			// panicked, so shut down the stream and handle it
+			err, ok := rec.(error)
+			if !ok {
+				err = errors.New("unknown error")
 			}
-			time.Sleep(5 * time.Second)
+			clog.Errorf(ctx, "LPMS panic err=%v", err)
+			params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
 		}
 	}()
+	for {
+		clog.V(6).Infof(ctx, "Starting output rtmp")
+		if !params.inputStreamExists() {
+			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
+			break
+		}
+
+		cmd := exec.Command("ffmpeg",
+			"-analyzeduration", "2500000", // 2.5 seconds
+			"-i", "pipe:0",
+			"-c:a", "copy",
+			"-c:v", "copy",
+			"-f", "flv",
+			outputUrl,
+		)
+		cmd.Stdin = r
+		output, err := cmd.CombinedOutput()
+		clog.Infof(ctx, "Process output: %s", output)
+		if err != nil {
+			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
+			return
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func copySegment(segment *http.Response, w io.Writer) (int64, error) {
@@ -235,7 +317,7 @@ func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 	return io.Copy(w, segment.Body)
 }
 
-func startControlPublish(control *url.URL, params aiRequestParams) {
+func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
@@ -258,6 +340,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 	}
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
+		logCurrentLiveSessions(params.node.LivePipelines)
 	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
@@ -274,6 +357,7 @@ func startControlPublish(control *url.URL, params aiRequestParams) {
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
+				cleanupLive(ctx, params.node, stream)
 				return
 			}
 		}
@@ -287,10 +371,28 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
 
+	// vars to check events periodically to ensure liveness
+	var (
+		eventCheckInterval = 10 * time.Second
+		maxEventGap        = 30 * time.Second
+		eventTicker        = time.NewTicker(eventCheckInterval)
+		eventsDone         = make(chan bool)
+		// remaining vars in this block must be protected by mutex
+		lastEventMu = &sync.Mutex{}
+		lastEvent   = time.Now()
+	)
+
 	clog.Infof(ctx, "Starting event subscription for URL: %s", url.String())
 
 	go func() {
-		defer time.AfterFunc(clearStreamDelay, func() { StreamStatusStore.Clear(streamId) })
+		defer time.AfterFunc(clearStreamDelay, func() {
+			StreamStatusStore.Clear(streamId)
+			GatewayStatus.Clear(streamId)
+		})
+		defer func() {
+			eventTicker.Stop()
+			eventsDone <- true
+		}()
 		const maxRetries = 5
 		const retryPause = 300 * time.Millisecond
 		retries := 0
@@ -330,10 +432,25 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				continue
 			}
 
-			var event map[string]interface{}
-			if err := json.Unmarshal(body, &event); err != nil {
+			var eventWrapper struct {
+				QueueEventType string                 `json:"queue_event_type"`
+				Event          map[string]interface{} `json:"event"`
+			}
+			if err := json.Unmarshal(body, &eventWrapper); err != nil {
 				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
 				continue
+			}
+
+			event := eventWrapper.Event
+			queueEventType := eventWrapper.QueueEventType
+			if event == nil {
+				// revert this once push to prod -- If no "event" field found, treat the entire body as the event
+				event = make(map[string]interface{})
+				if err := json.Unmarshal(body, &event); err != nil {
+					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
+					continue
+				}
+				queueEventType = "ai_stream_events"
 			}
 
 			event["stream_id"] = streamId
@@ -348,13 +465,17 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 			clog.V(8).Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
 
+			// record the event time
+			lastEventMu.Lock()
+			lastEvent = time.Now()
+			lastEventMu.Unlock()
+
 			eventType, ok := event["type"].(string)
 			if !ok {
 				eventType = "unknown"
 				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
 			}
 
-			queueEventType := "ai_stream_events"
 			if eventType == "status" {
 				queueEventType = "ai_stream_status"
 				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
@@ -382,6 +503,26 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 
 			monitor.SendQueueEventAsync(queueEventType, event)
+		}
+	}()
+
+	// Use events as a heartbeat of sorts:
+	// if no events arrive for too long, abort the job
+	go func() {
+		for {
+			select {
+			case <-eventTicker.C:
+				lastEventMu.Lock()
+				eventTime := lastEvent
+				lastEventMu.Unlock()
+				if time.Now().Sub(eventTime) > maxEventGap {
+					params.liveParams.stopPipeline(errors.New("timeout waiting for events"))
+					eventTicker.Stop()
+					return
+				}
+			case <-eventsDone:
+				return
+			}
 		}
 	}()
 }
@@ -430,11 +571,38 @@ func (s *SlowOrchChecker) GetCount() int {
 	return s.segmentCount
 }
 
-func LiveErrorEventSender(ctx context.Context, event map[string]string) func(err error) {
+func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
+		GatewayStatus.Store(streamID, map[string]interface{}{
+			"last_error":      err.Error(),
+			"last_error_time": time.Now().UnixMilli(),
+		})
+
 		ev := maps.Clone(event)
 		ev["capability"] = clog.GetVal(ctx, "capability")
 		ev["message"] = err.Error()
 		monitor.SendQueueEventAsync("ai_stream_events", ev)
 	}
+}
+
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
+	if seq > 10 {
+		return
+	}
+	go func() {
+		reader := r.Clone()
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		file, err := os.Create(p)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not create segment file for logging", err)
+			return
+		}
+		defer file.Close()
+		_, err = io.Copy(file, reader)
+		if err != nil {
+			clog.InfofErr(ctx, "Could not log segment", err)
+			return
+		}
+	}()
 }

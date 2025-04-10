@@ -53,6 +53,9 @@ message OrchestratorRequest {
 
   // Features and constraints required by the broadcaster
   Capabilities capabilities = 3;
+
+  // Don't throw error in case of missing capacity, used for refreshing session when we don't need to check capacity
+  bool ignoreCapacityCheck = 4;
 }
 
 /*
@@ -102,6 +105,12 @@ message PriceInfo {
   // Pixels covered in the price
   // Set price to 1 wei and pixelsPerUnit > 1 to have a smaller price granularity per pixel than 1 wei
   int64 pixelsPerUnit = 2;
+
+  // Capability price is for
+  uint32 capability = 3;
+
+  // constraint price is for
+  string constraint = 4;
 }
 
 message Capabilities {
@@ -134,8 +143,6 @@ message Capabilities {
 
       map<string, ModelConstraint> models = 1;
     }
-
-
 }
 
 // The orchestrator sends this in response to `GetOrchestrator`, containing
@@ -160,8 +167,14 @@ message OrchestratorInfo {
   // Data for transcoding authentication
   AuthToken auth_token = 6;
 
+  // Information on Orchestrator hardware
+  repeated HardwareInformation hardware = 7;
+
   // Orchestrator returns info about own input object storage, if it wants it to be used.
   repeated OSInfo storage = 32;
+
+  // prices for capabilities
+  repeated PriceInfo capabilities_prices = 33;
 }
 
 // Data for transcoding authentication that is included in the OrchestratorInfo message during discovery
@@ -393,6 +406,9 @@ message RegisterAIWorkerRequest {
 
     // AIWorker capabilities
     Capabilities capabilities = 2;
+
+    // AIWorker hardware info
+    repeated HardwareInformation hardware = 3;
 }
 
 // Data included by the gateway when submitting a AI job.
@@ -476,4 +492,37 @@ message Payment {
 
   // O's last known price
   PriceInfo expected_price = 5;
+}
+
+// GPU information used by worker on network
+message GPUComputeInfo {
+  // unique id
+  string id = 1;
+
+  // gpu name
+  string name = 2;
+
+  // compute version supported - major
+  uint32 major = 4;
+
+  // compute version supported - minor
+  uint32 minor = 5;
+
+  // GPU memory free
+  int64 memory_free = 6;
+
+  // GPU memory total
+  int64 memory_total = 7;
+}
+
+// Hardware information for worker on network
+message HardwareInformation {
+    // pipeline hardware supports
+    string pipeline = 1;
+    
+    // model_id hardware supports
+    string model_id = 2;
+
+    // hardware for pipeline and model_id
+    map<string, GPUComputeInfo> gpu_info = 3;
 }

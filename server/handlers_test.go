@@ -16,9 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	ethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/net"
+	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -390,6 +393,61 @@ func TestSetMaxPriceForCapabilityHandler_WrongInput(t *testing.T) {
 	assert.Equal(http.StatusBadRequest, status6)
 }
 
+func TestGetNetworkCapabilitiesHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	// setup orchestrator remote info to include in db
+	var capPrices []*lpnet.PriceInfo
+	capPrice := &lpnet.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
+	capPrices = append(capPrices, capPrice)
+	wkrHdw := net.HardwareInformation{
+		Pipeline: "32",
+		ModelId:  "livepeer/model1",
+		GpuInfo:  make(map[string]*lpnet.GPUComputeInfo),
+	}
+	wkrHdw.GpuInfo["0"] = &lpnet.GPUComputeInfo{
+		Id:    "gpu-2",
+		Name:  "gpu-name",
+		Major: 8,
+		Minor: 9,
+	}
+	var hdwList []*lpnet.HardwareInformation
+	hdwList = append(hdwList, &wkrHdw)
+	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, "")
+	orchAddress := pm.RandAddress()
+	var networkCaps []*common.OrchNetworkCapabilities
+	orchNetworkCaps := &common.OrchNetworkCapabilities{
+		Address:            orchAddress.Hex(),
+		LocalAddress:       orchAddress.Hex(),
+		OrchURI:            "http://transcoder.uri:3333",
+		Capabilities:       caps.ToNetCapabilities(),
+		CapabilitiesPrices: capPrices,
+		Hardware:           hdwList,
+	}
+	networkCaps = append(networkCaps, orchNetworkCaps)
+	s := stubServer()
+	s.LivepeerNode.NodeType = core.BroadcasterNode
+	//add orchInfo to network capabilities
+	s.LivepeerNode.UpdateNetworkCapabilities(networkCaps)
+
+	handler := s.getNetworkCapabilitiesHandler()
+
+	status, body := post(handler)
+
+	assert.Equal(http.StatusOK, status)
+	var networkCapsResp networkCapabilitiesResponse
+	err := json.Unmarshal([]byte(body), &networkCapsResp)
+	assert.Nil(err)
+
+	assert.Equal(networkCapsResp.CapabilitiesNames[core.Capability_AudioToText], core.CapabilityNameLookup[core.Capability_AudioToText])
+	assert.Equal(networkCapsResp.Orchestrators[0].Address, orchAddress.Hex())
+	assert.Equal(networkCapsResp.Orchestrators[0].LocalAddress, orchAddress.Hex())
+	assert.Equal(networkCapsResp.Orchestrators[0].CapabilitiesPrices, capPrices)
+	assert.Len(networkCapsResp.Orchestrators[0].Hardware, 1)
+	assert.Equal(networkCapsResp.Orchestrators[0].Hardware[0].Pipeline, wkrHdw.Pipeline)
+	assert.Equal(networkCapsResp.Orchestrators[0].Hardware[0].GpuInfo["0"].Id, wkrHdw.GpuInfo["0"].Id)
+}
+
 func TestGetBroadcastConfigHandler(t *testing.T) {
 	assert := assert.New(t)
 
@@ -553,6 +611,7 @@ func TestActivateOrchestratorHandler_CurrentRoundLockedError(t *testing.T) {
 	assert := assert.New(t)
 
 	server := stubServer()
+
 	client := &eth.MockClient{}
 	handler := server.activateOrchestratorHandler(client)
 
@@ -1217,8 +1276,93 @@ func TestVoteHandler(t *testing.T) {
 		"choiceID": {"0"},
 	}
 	handler = voteHandler(client)
-	status, body = postForm(handler, form)
+	status, _ = postForm(handler, form)
 	assert.Equal(http.StatusOK, status)
+}
+
+func TestProposalVoteHandler(t *testing.T) {
+	assert := assert.New(t)
+
+	client := &eth.MockClient{StubClient: &eth.StubClient{}}
+	tx := ethtypes.NewTx(&ethtypes.LegacyTx{})
+
+	// Test missing client
+	handler := proposalVoteHandler(nil)
+	status, body := post(handler)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("missing ETH client", body)
+
+	// Test invalid proposal ID
+	form := url.Values{
+		"proposalID": {"foo"},
+		"support":    {"1"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("proposalID is not a valid integer value", body)
+
+	// Test invalid support value (non-integer)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"foo"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("support is not a valid integer value", body)
+
+	// Test invalid support value (out of range)
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"3"},
+	}
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal("invalid support", body)
+
+	// Test ProposalVote() error
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+	}
+	err := errors.New("voting error")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(nil, err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to submit proposal vote transaction err=%q", err), body)
+
+	// Test CheckTx() error
+	err = errors.New("unable to mine tx")
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(err).Once()
+	handler = proposalVoteHandler(client)
+	status, body = postForm(handler, form)
+	assert.Equal(http.StatusInternalServerError, status)
+	assert.Equal(fmt.Sprintf("unable to mine proposal vote transaction err=%q", err), body)
+
+	// Test ProposalVote() success
+	client.On("ProposalVote", big.NewInt(1), uint8(1)).Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVote", big.NewInt(1), uint8(1))
+
+	// Test ProposalVoteWithReason() success
+	form = url.Values{
+		"proposalID": {"1"},
+		"support":    {"1"},
+		"reason":     {"Test reason"},
+	}
+	client.On("ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason").Return(tx, nil).Once()
+	client.On("CheckTx", mock.Anything).Return(nil).Once()
+	handler = proposalVoteHandler(client)
+	status, _ = postForm(handler, form)
+	assert.Equal(http.StatusOK, status)
+	client.AssertCalled(t, "ProposalVoteWithReason", big.NewInt(1), uint8(1), "Test reason")
 }
 
 // Tickets
@@ -1704,6 +1848,7 @@ func TestMustHaveDb_Success(t *testing.T) {
 	assert.Equal(http.StatusOK, status)
 	assert.Equal("success", body)
 }
+
 func TestSetServiceURI(t *testing.T) {
 	s := stubServer()
 	client := &eth.MockClient{}

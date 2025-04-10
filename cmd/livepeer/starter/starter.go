@@ -165,6 +165,8 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
+	AIVerboseLogs              *bool
+	AIProcessingRetryTimeout   *time.Duration
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -215,6 +217,8 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIVerboseLogs := false
+	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -320,15 +324,17 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry:      &defaultAIServiceRegistry,
-		AIWorker:               &defaultAIWorker,
-		AIModels:               &defaultAIModels,
-		AIModelsDir:            &defaultAIModelsDir,
-		AIRunnerImage:          &defaultAIRunnerImage,
-		AIRunnerImageOverrides: &defaultAIRunnerImageOverrides,
-		LiveAIAuthWebhookURL:   &defaultLiveAIAuthWebhookURL,
-		LivePaymentInterval:    &defaultLivePaymentInterval,
-		GatewayHost:            &defaultGatewayHost,
+		AIServiceRegistry:        &defaultAIServiceRegistry,
+		AIWorker:                 &defaultAIWorker,
+		AIModels:                 &defaultAIModels,
+		AIModelsDir:              &defaultAIModelsDir,
+		AIRunnerImage:            &defaultAIRunnerImage,
+		AIVerboseLogs:            &defaultAIVerboseLogs,
+		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
+		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:      &defaultLivePaymentInterval,
+		GatewayHost:              &defaultGatewayHost,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -513,6 +519,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
@@ -635,6 +642,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			nodeType = lpmon.AIWorker
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
+		}
 	}
 
 	watcherErr := make(chan error)
@@ -1231,7 +1245,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1449,6 +1463,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		// Set up orchestrator discovery
+		if *cfg.OrchWebhookURL != "" {
+			whurl, err := validateURL(*cfg.OrchWebhookURL)
+			if err != nil {
+				glog.Exit("Error setting orch webhook URL ", err)
+			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+		} else if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		}
+
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
 		// caching/polling from the logic for fetching orchestrators during discovery
@@ -1460,19 +1486,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
-			n.OrchestratorPool = dbOrchPoolCache
-		}
-
-		// Set up orchestrator discovery
-		if *cfg.OrchWebhookURL != "" {
-			whurl, err := validateURL(*cfg.OrchWebhookURL)
-			if err != nil {
-				glog.Exit("Error setting orch webhook URL ", err)
+			//if orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache as orchestrator pool
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
 			}
-			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
-		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1677,13 +1694,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
-		}
-	}
-
-	// Start Kafka producer
-	if *cfg.Monitor {
-		if err := startKafkaProducer(cfg); err != nil {
-			exit("Error while starting Kafka producer", err)
 		}
 	}
 

@@ -52,13 +52,15 @@ func init() {
 }
 
 type values struct {
-	mu   sync.RWMutex
-	vals map[string]string
+	mu        sync.RWMutex
+	keysOrder []string
+	vals      map[string]string
 }
 
 func newValues() *values {
 	return &values{
-		vals: make(map[string]string),
+		vals:      make(map[string]string),
+		keysOrder: []string{},
 	}
 }
 
@@ -71,6 +73,7 @@ func Clone(parentCtx, logCtx context.Context) context.Context {
 		cmap.mu.RLock()
 		for k, v := range cmap.vals {
 			newCmap.vals[k] = v
+			newCmap.keysOrder = append(newCmap.keysOrder, k)
 		}
 		cmap.mu.RUnlock()
 	}
@@ -109,6 +112,10 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 		ctx = context.WithValue(ctx, clogContextKey, cmap)
 	}
 	cmap.mu.Lock()
+	// add to keysOrder only if the key is not already present to avoid duplicate fields
+	if _, ok := cmap.vals[key]; !ok {
+		cmap.keysOrder = append(cmap.keysOrder, key)
+	}
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
 	return ctx
@@ -186,6 +193,48 @@ func infof(ctx context.Context, lastErr bool, publicLog bool, format string, arg
 	}
 }
 
+// Info logs a message with key-value pairs in a slog-like style.
+// Example: Info(ctx, "hello", "key1", value1, "key2", value2)
+// This will log: "hello key1=value1 key2=value2"
+func Info(ctx context.Context, msg string, keyvals ...interface{}) {
+	if len(keyvals)%2 != 0 {
+		keyvals = append(keyvals[:len(keyvals)-1], "MISSING", keyvals[len(keyvals)-1])
+	}
+
+	var sb strings.Builder
+	sb.WriteString(msg)
+
+	for i := 0; i < len(keyvals); i += 2 {
+		key, ok := keyvals[i].(string)
+		if !ok {
+			key = fmt.Sprintf("%v", keyvals[i])
+		}
+
+		sb.WriteString(" ")
+		sb.WriteString(key)
+		sb.WriteString("=")
+
+		val := keyvals[i+1]
+		switch v := val.(type) {
+		case string:
+			sb.WriteString(v)
+		case fmt.Stringer:
+			sb.WriteString(v.String())
+		default:
+			sb.WriteString(fmt.Sprintf("%v", v))
+		}
+	}
+
+	infof(ctx, false, false, sb.String())
+}
+
+// V returns a Verbose instance for conditional logging at the specified level
+func (v Verbose) Info(ctx context.Context, msg string, keyvals ...interface{}) {
+	if v {
+		Info(ctx, msg, keyvals...)
+	}
+}
+
 func messageFromContext(ctx context.Context, sb *strings.Builder) {
 	if ctx == nil {
 		return
@@ -203,11 +252,11 @@ func messageFromContext(ctx context.Context, sb *strings.Builder) {
 			sb.WriteString(" ")
 		}
 	}
-	for key, val := range cmap.vals {
+	for _, key := range cmap.keysOrder {
 		if _, ok := stdKeys[key]; !ok {
 			sb.WriteString(key)
 			sb.WriteString("=")
-			sb.WriteString(val)
+			sb.WriteString(cmap.vals[key])
 			sb.WriteString(" ")
 		}
 	}

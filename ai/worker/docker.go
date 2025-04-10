@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/livepeer/go-livepeer/monitor"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -97,9 +98,10 @@ var _ DockerClient = (*docker.Client)(nil)
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
 type DockerManager struct {
-	gpus      []string
-	modelDir  string
-	overrides ImageOverrides
+	gpus        []string
+	modelDir    string
+	overrides   ImageOverrides
+	verboseLogs bool
 
 	dockerClient DockerClient
 	// gpu ID => container name
@@ -109,7 +111,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
 	if err := removeExistingContainers(ctx, client); err != nil {
 		cancel()
@@ -121,6 +123,7 @@ func NewDockerManager(overrides ImageOverrides, gpus []string, modelDir string, 
 		gpus:          gpus,
 		modelDir:      modelDir,
 		overrides:     overrides,
+		verboseLogs:   verboseLogs,
 		dockerClient:  client,
 		gpuContainers: make(map[string]string),
 		containers:    make(map[string]*RunnerContainer),
@@ -152,14 +155,12 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
 
-	rc, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
+	_, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 	if err != nil {
 		return err
 	}
-
-	// Watch with a background context since we're not borrowing the container.
-	go m.watchContainer(rc, context.Background())
 
 	return nil
 }
@@ -181,6 +182,8 @@ func (m *DockerManager) Stop(ctx context.Context) error {
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
+
 	var rc *RunnerContainer
 	var err error
 
@@ -200,19 +203,26 @@ func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*
 		}
 	}
 
-	// Remove container so it is unavailable until Return() is called
+	// Remove container and set the BorrowCtx so it is unavailable until returnContainer() is called by watchContainer()
 	delete(m.containers, rc.Name)
-	// watch container to return when request completed
-	go m.watchContainer(rc, ctx)
+	rc.Lock()
+	rc.BorrowCtx = ctx
+	rc.Unlock()
 
 	return rc, nil
 }
 
 // returnContainer returns a container to the pool so it can be reused. It is called automatically by watchContainer
-// when the context used to borrow the container is done.
+// when the BorrowCtx of the container is done or the container is IDLE.
 func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
+
+	rc.Lock()
+	rc.BorrowCtx = nil
+	rc.Unlock()
+
 	m.containers[rc.Name] = rc
 }
 
@@ -245,6 +255,7 @@ func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string,
 func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	defer m.monitorInUse()
 
 	// Check if unused managed container exists for the requested model.
 	for _, rc := range m.containers {
@@ -255,7 +266,7 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 
 	// TODO: This can be removed if we optimize the selection algorithm.
 	// Currently, using CreateContainer errors only can cause orchestrator reselection.
-	if !m.isImageAvailable(ctx, pipeline, modelID) {
+	if pipeline != "live-video-to-video" && !m.isImageAvailable(ctx, pipeline, modelID) {
 		return false
 	}
 
@@ -328,6 +339,9 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	for key, value := range optimizationFlags {
 		envVars = append(envVars, key+"="+value.String())
 	}
+	if m.verboseLogs {
+		envVars = append(envVars, "VERBOSE_LOGGING=1")
+	}
 
 	containerConfig := &container.Config{
 		Image: containerImage,
@@ -346,6 +360,14 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	gpuOpts := opts.GpuOpts{}
 	if !isEmulatedGPU(gpu) {
 		gpuOpts.Set("device=" + gpu)
+	}
+
+	restartPolicy := container.RestartPolicy{
+		Name:              "on-failure",
+		MaximumRetryCount: 3,
+	}
+	if keepWarm {
+		restartPolicy = container.RestartPolicy{Name: "always"}
 	}
 
 	hostConfig := &container.HostConfig{
@@ -367,7 +389,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 				},
 			},
 		},
-		AutoRemove: true,
+		RestartPolicy: restartPolicy,
 	}
 
 	resp, err := m.dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
@@ -405,10 +427,11 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		Endpoint: RunnerEndpoint{
 			URL: "http://localhost:" + containerHostPort,
 		},
-		ID:               resp.ID,
-		GPU:              gpu,
-		KeepWarm:         keepWarm,
-		containerTimeout: runnerContainerTimeout,
+		ID:                resp.ID,
+		GPU:               gpu,
+		KeepWarm:          keepWarm,
+		OptimizationFlags: optimizationFlags,
+		containerTimeout:  runnerContainerTimeout,
 	}
 
 	rc, err := NewRunnerContainer(ctx, cfg, containerName)
@@ -419,6 +442,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 
 	m.containers[containerName] = rc
 	m.gpuContainers[gpu] = containerName
+
+	go m.watchContainer(rc)
 
 	return rc, nil
 }
@@ -469,6 +494,7 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 	if !locked {
 		m.mu.Lock()
 		defer m.mu.Unlock()
+		defer m.monitorInUse()
 	}
 	delete(m.gpuContainers, rc.GPU)
 	delete(m.containers, rc.Name)
@@ -478,7 +504,7 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 // watchContainer monitors a container's running state and automatically cleans
 // up the internal state when the container stops. It will also monitor the
 // borrowCtx to return the container to the pool when it is done.
-func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Context) {
+func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("Panic in container watch routine",
@@ -498,13 +524,31 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Co
 		if failures >= maxHealthCheckFailures && time.Since(startTime) > pipelineStartGracePeriod {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
+			if rc.KeepWarm {
+				slog.Info("Container was kept warm, restarting", slog.String("container", rc.Name))
+				err := m.Warm(context.Background(), rc.Pipeline, rc.ModelID, rc.OptimizationFlags)
+				if err != nil {
+					slog.Error("Error restarting warm container", slog.String("container", rc.Name), slog.String("error", err.Error()))
+				}
+			}
 			return
+		}
+
+		rc.RLock()
+		borrowCtx := rc.BorrowCtx
+		rc.RUnlock()
+
+		isBorrowed := borrowCtx != nil
+		// The BorrowCtx is set when the container has been borrowed for a request/stream. If it is not set (nil) it means
+		// that it's not currently borrowed, so we don't need to wait for it to be done (hence using the background context).
+		if borrowCtx == nil {
+			borrowCtx = context.Background()
 		}
 
 		select {
 		case <-borrowCtx.Done():
 			m.returnContainer(rc)
-			return
+			continue
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), containerWatchInterval)
 			health, err := rc.Client.HealthWithResponse(ctx)
@@ -532,10 +576,10 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer, borrowCtx context.Co
 			status := health.JSON200.Status
 			switch status {
 			case IDLE:
-				if time.Since(startTime) > pipelineStartGracePeriod {
+				if isBorrowed && time.Since(startTime) > pipelineStartGracePeriod {
 					slog.Info("Container is idle, returning to pool", slog.String("container", rc.Name))
 					m.returnContainer(rc)
-					return
+					continue
 				}
 				fallthrough
 			case OK:
@@ -633,6 +677,12 @@ tickerLoop:
 	}
 
 	return nil
+}
+
+func (m *DockerManager) monitorInUse() {
+	if monitor.Enabled {
+		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
+	}
 }
 
 func portOffset(gpu string) string {

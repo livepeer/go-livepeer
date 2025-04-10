@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"net/url"
 	"sync"
+	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/livepeer/go-livepeer/net"
@@ -58,8 +59,9 @@ const (
 )
 
 type OrchestratorLocalInfo struct {
-	URL   *url.URL `json:"Url"`
-	Score float32
+	URL     *url.URL `json:"Url"`
+	Score   float32
+	Latency *time.Duration
 }
 
 // combines B's local metadata about O with info received from this O
@@ -159,4 +161,16 @@ type OrchestratorStore interface {
 
 type RoundsManager interface {
 	LastInitializedRound() *big.Int
+}
+
+type NetworkCapabilities struct {
+	Orchestrators []*OrchNetworkCapabilities `json:"orchestrators"`
+}
+type OrchNetworkCapabilities struct {
+	Address            string                     `json:"address"`
+	LocalAddress       string                     `json:"local_address"`
+	OrchURI            string                     `json:"orch_uri"`
+	Capabilities       *net.Capabilities          `json:"capabilities"`
+	CapabilitiesPrices []*net.PriceInfo           `json:"capabilities_prices"`
+	Hardware           []*net.HardwareInformation `json:"hardware"`
 }

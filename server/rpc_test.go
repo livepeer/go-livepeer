@@ -142,6 +142,10 @@ func (r *stubOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.M
 	return r.priceInfo, nil
 }
 
+func (r *stubOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	return []*net.PriceInfo{}, nil
+}
+
 func (r *stubOrchestrator) SufficientBalance(addr ethcommon.Address, manifestID core.ManifestID) bool {
 	return true
 }
@@ -238,7 +242,10 @@ func (r *stubOrchestrator) CreateStorageForRequest(requestID string) error {
 func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
 	return drivers.NewMockOSSession(), true
 }
-func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
+	return []worker.HardwareInformation{}
+}
+func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
@@ -249,7 +256,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 	o := newStubOrchestrator()
 	b := stubBroadcaster2()
 
-	req, err := genOrchestratorReq(b, nil)
+	req, err := genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err != nil {
 		t.Error("Unable to create orchestrator req ", req)
 	}
@@ -281,7 +288,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 
 	// error signing
 	b.signErr = fmt.Errorf("Signing error")
-	_, err = genOrchestratorReq(b, nil)
+	_, err = genOrchestratorReq(b, GetOrchestratorInfoParams{})
 	if err == nil {
 		t.Error("Did not expect to generate a orchestrator request with invalid address")
 	}
@@ -866,6 +873,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsTranscoderURI(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -896,6 +904,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchTicketParams(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -969,6 +978,7 @@ func TestGetOrchestratorWebhookAuth_ReturnsOK(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(expectedParams, nil)
 	orch.On("PriceInfo", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -986,7 +996,7 @@ func TestGetOrchestrator_TicketParamsError(t *testing.T) {
 	expErr := errors.New("TicketParams error")
 	orch.On("PriceInfo", mock.Anything).Return(nil, nil)
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, expErr)
-
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -1007,6 +1017,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsOrchPriceInfo(t *testing.T) {
 	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
 	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
 	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert := assert.New(t)
@@ -1024,7 +1035,7 @@ func TestGetOrchestrator_PriceInfoError(t *testing.T) {
 	orch.On("ServiceURI").Return(url.Parse(uri))
 	orch.On("Address").Return(ethcommon.Address{})
 	orch.On("PriceInfo", mock.Anything).Return(nil, expErr)
-
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 	_, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
 	assert.EqualError(t, err, expErr.Error())
@@ -1049,6 +1060,7 @@ func TestGetOrchestrator_GivenValidSig_ReturnsAuthToken(t *testing.T) {
 	// when the mocked AuthToken is called. 1 second would need to elapse which should only really happen if the test
 	// is run in a really slow environment
 	orch.On("AuthToken", authToken.SessionId, authToken.Expiration).Return(authToken)
+	orch.On("GetCapabilitiesPrices", mock.Anything).Return([]*net.PriceInfo{}, nil)
 
 	oInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{})
 
@@ -1308,6 +1320,30 @@ func TestCoreNetSegData_RoundTrip_Duration(t *testing.T) {
 	})
 }
 
+func TestGetOrchestrator_NoCapabilitiesPrices_NoHardware(t *testing.T) {
+	orch := &mockOrchestrator{}
+	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
+	uri := "http://someuri.com"
+	expectedPrice := &net.PriceInfo{
+		PricePerUnit:  2,
+		PixelsPerUnit: 3,
+	}
+	caps := core.NewCapabilities(core.DefaultCapabilities(), core.MandatoryOCapabilities())
+
+	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
+	orch.On("ServiceURI").Return(url.Parse(uri))
+	orch.On("Address").Return(ethcommon.Address{})
+	orch.On("AuthToken", mock.Anything, mock.Anything).Return(&net.AuthToken{})
+	orch.On("PriceInfo", mock.Anything).Return(expectedPrice, nil)
+	orch.On("TicketParams", mock.Anything, mock.Anything).Return(nil, nil)
+
+	orchInfo, err := getOrchestrator(orch, &net.OrchestratorRequest{Capabilities: caps.ToNetCapabilities()})
+
+	assert.Nil(t, err)
+	assert.Nil(t, orchInfo.Hardware)
+	assert.Nil(t, orchInfo.CapabilitiesPrices)
+}
+
 type mockOrchestrator struct {
 	mock.Mock
 }
@@ -1370,6 +1406,15 @@ func (o *mockOrchestrator) PriceInfo(sender ethcommon.Address, manifestID core.M
 		return args.Get(0).(*net.PriceInfo), args.Error(1)
 	}
 	return nil, args.Error(1)
+}
+
+func (o *mockOrchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	args := o.Called(sender)
+	if args.Get(0) != nil {
+		return args.Get(0).([]*net.PriceInfo), nil
+	}
+
+	return []*net.PriceInfo{}, nil
 }
 
 func (o *mockOrchestrator) CheckCapacity(mid core.ManifestID) error {
@@ -1444,7 +1489,10 @@ func (r *mockOrchestrator) CreateStorageForRequest(requestID string) error {
 func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSession, bool) {
 	return drivers.NewMockOSSession(), true
 }
-func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities) {
+func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
+	return []worker.HardwareInformation{}
+}
+func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{

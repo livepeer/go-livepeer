@@ -71,7 +71,7 @@ jobs:
             type=raw,value=${{ github.event.pull_request.head.ref }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           platforms: linux/amd64
           push: true

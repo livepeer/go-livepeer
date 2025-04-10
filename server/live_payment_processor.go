@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/lpms/ffmpeg"
 	"io"
-	"log/slog"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/lpms/ffmpeg"
 )
 
 type LivePaymentProcessor struct {
@@ -55,9 +55,9 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 		for {
 			select {
 			case timestamp := <-p.processCh:
-				p.processOne(timestamp)
+				p.processOne(ctx, timestamp)
 			case <-ctx.Done():
-				slog.Info("Done processing payments for session")
+				clog.Info(ctx, "Done processing payments for session")
 				return
 			}
 
@@ -67,9 +67,9 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 		for {
 			select {
 			case seg := <-p.probeSegCh:
-				p.probeOne(seg)
+				p.probeOne(ctx, seg)
 			case <-ctx.Done():
-				slog.Info("Done probing segments for session")
+				clog.Info(ctx, "Done probing segments for session")
 				return
 			}
 
@@ -77,7 +77,7 @@ func (p *LivePaymentProcessor) start(ctx context.Context) {
 	}()
 }
 
-func (p *LivePaymentProcessor) processOne(timestamp time.Time) {
+func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Time) {
 	if p.shouldSkip(timestamp) {
 		return
 	}
@@ -89,11 +89,11 @@ func (p *LivePaymentProcessor) processOne(timestamp time.Time) {
 	pixelsPerSec := float64(info.Height) * float64(info.Width) * float64(info.FPS)
 	secSinceLastProcessed := timestamp.Sub(p.lastProcessedAt).Seconds()
 	pixelsSinceLastProcessed := pixelsPerSec * secSinceLastProcessed
-	clog.V(6).Infof(context.Background(), "Processing live payment: secSinceLastProcessed=%v, pixelsSinceLastProcessed=%v, height=%d, width=%d, FPS=%v", secSinceLastProcessed, pixelsSinceLastProcessed, info.Height, info.Width, info.FPS)
+	clog.V(6).Infof(ctx, "Processing live payment: secSinceLastProcessed=%v, pixelsSinceLastProcessed=%v, height=%d, width=%d, FPS=%v", secSinceLastProcessed, pixelsSinceLastProcessed, info.Height, info.Width, info.FPS)
 
 	err := p.processSegmentFunc(int64(pixelsSinceLastProcessed))
 	if err != nil {
-		slog.Error("Error processing payment", "err", err)
+		clog.InfofErr(ctx, "Error processing payment", err)
 		// Temporarily ignore failing payments, because they are not critical while we're using our own Os
 		// return
 	}
@@ -103,7 +103,7 @@ func (p *LivePaymentProcessor) processOne(timestamp time.Time) {
 	p.lastProcessedAt = timestamp
 }
 
-func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
+func (p *LivePaymentProcessor) process(ctx context.Context, reader io.Reader) io.Reader {
 	timestamp := time.Now()
 	if p.shouldSkip(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
@@ -112,7 +112,7 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 
 	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
-		slog.Error("Error creating pipe", "err", err)
+		clog.InfofErr(ctx, "Error creating pipe", err)
 		return reader
 	}
 
@@ -129,7 +129,7 @@ func (p *LivePaymentProcessor) process(reader io.Reader) io.Reader {
 		defer pipeReader.Close()
 		segData, err := io.ReadAll(pipeReader)
 		if err != nil {
-			slog.Error("Error reading segment data", "err", err)
+			clog.InfofErr(ctx, "Error reading segment data", err)
 			return
 		}
 
@@ -154,18 +154,18 @@ func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
 	return false
 }
 
-func (p *LivePaymentProcessor) probeOne(seg *segment) {
+func (p *LivePaymentProcessor) probeOne(ctx context.Context, seg *segment) {
 	if p.lastProbedAt.Add(p.interval).After(seg.timestamp) {
 		// We don't probe every segment, because it's too compute-expensive
 		return
 	}
 
-	info, err := probeSegment(seg)
+	info, err := probeSegment(ctx, seg)
 	if err != nil {
-		clog.Warningf(context.Background(), "Error probing segment, err=%v", err)
+		clog.Warningf(ctx, "Error probing segment, err=%v", err)
 		return
 	}
-	clog.V(6).Infof(context.Background(), "Probed segment: height=%d, width=%d, FPS=%v", info.Height, info.Width, info.FPS)
+	clog.V(6).Infof(ctx, "Probed segment: height=%d, width=%d, FPS=%v", info.Height, info.Width, info.FPS)
 
 	p.lastProbedSegInfoMu.Lock()
 	defer p.lastProbedSegInfoMu.Unlock()
@@ -173,7 +173,7 @@ func (p *LivePaymentProcessor) probeOne(seg *segment) {
 	p.lastProbedAt = seg.timestamp
 }
 
-func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
+func probeSegment(ctx context.Context, seg *segment) (ffmpeg.MediaFormatInfo, error) {
 	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
 		return ffmpeg.MediaFormatInfo{}, err
@@ -190,7 +190,7 @@ func probeSegment(seg *segment) (ffmpeg.MediaFormatInfo, error) {
 		return ffmpeg.MediaFormatInfo{}, err
 	}
 	if status != ffmpeg.CodecStatusOk {
-		slog.Error("Invalid CodecStatus while probing segment", "status", status)
+		clog.Info(ctx, "Invalid CodecStatus while probing segment", "status", status)
 		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
 	}
 
