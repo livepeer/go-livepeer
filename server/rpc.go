@@ -245,9 +245,9 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
 	//API for external jobs
-	lp.transRPC.HandleFunc("/processJob", lp.ProcessJob)
-	lp.transRPC.HandleFunc("/getToken", lp.GetJobToken)
-	lp.transRPC.HandleFunc("/registerCapability", lp.RegisterCapability)
+	lp.transRPC.HandleFunc("/process/request", lp.ProcessJob)
+	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
+	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
