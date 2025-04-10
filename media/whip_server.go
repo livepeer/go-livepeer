@@ -69,7 +69,7 @@ type WHIPServer struct {
 }
 
 // handleCreate implements the POST that creates a new resource.
-func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, w http.ResponseWriter, r *http.Request) *MediaState {
+func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -156,6 +156,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	w.Header().Set("Location", resourceURL)
 	w.Header().Set("ETag", etag)
 	w.Header()["Link"] = GenICELinkHeaders(WebrtcConfig.ICEServers)
+	w.Header().Set("Livepeer-Playback-URL", whepURL)
 	w.WriteHeader(http.StatusCreated)
 
 	// Write the full SDP answer
