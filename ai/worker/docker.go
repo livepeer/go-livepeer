@@ -452,6 +452,9 @@ func resolveGPU(gpu string) string {
 	if strings.HasPrefix(gpu, "stack-") {
 		return strings.Replace(gpu, "stack-", "", 1)
 	}
+	if strings.HasPrefix(gpu, "sstack-") {
+		return strings.Replace(gpu, "sstack-", "", 1)
+	}
 	return gpu
 }
 
@@ -701,7 +704,11 @@ func portOffset(gpu string) string {
 	}
 	if actualGpu != gpu {
 		// stacked
-		res = strings.Replace(res, "0", "1", 1)
+		if strings.HasPrefix(gpu, "sstack-") {
+			res = strings.Replace(res, "0", "2", 1)
+		} else {
+			res = strings.Replace(res, "0", "1", 1)
+		}
 	}
 	return res
 }

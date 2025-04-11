@@ -1213,6 +1213,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			gpus = []string{"emulated-0"}
 		}
 		gpus = append(gpus, fmt.Sprintf("stack-%s", gpus[0]))
+		gpus = append(gpus, fmt.Sprintf("sstack-%s", gpus[0]))
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
