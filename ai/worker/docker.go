@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -322,7 +324,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	// NOTE: We currently allow only one container per GPU for each pipeline.
-	containerHostPort := containerHostPorts[pipeline][:3] + portOffset(gpu)
+	containerHostPort := containerHostPorts[pipeline][:2] + portOffset(gpu)
 	containerName := dockerContainerName(pipeline, modelID, containerHostPort)
 	containerImage, err := m.getContainerImageName(pipeline, modelID)
 	if err != nil {
@@ -358,8 +360,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	gpuOpts := opts.GpuOpts{}
-	if !isEmulatedGPU(resolveGPU(gpu)) {
-		gpuOpts.Set("device=" + resolveGPU(gpu))
+	if !isEmulatedGPU(hwGPU(gpu)) {
+		gpuOpts.Set("device=" + hwGPU(gpu))
 	}
 
 	restartPolicy := container.RestartPolicy{
@@ -448,13 +450,18 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	return rc, nil
 }
 
-func resolveGPU(gpu string) string {
-	if strings.HasPrefix(gpu, "stack-") {
-		return strings.Replace(gpu, "stack-", "", 1)
+func hwGPU(gpu string) string {
+	if !strings.Contains(gpu, "colocated-") {
+		return gpu
 	}
-	if strings.HasPrefix(gpu, "sstack-") {
-		return strings.Replace(gpu, "sstack-", "", 1)
+
+	re := regexp.MustCompile(`colocated-\d+-(.*)`)
+	matches := re.FindStringSubmatch(gpu)
+	if len(matches) > 1 {
+		return matches[1]
 	}
+
+	clog.Warningf(context.Background(), "Invalid GPU name: %s", gpu)
 	return gpu
 }
 
@@ -696,20 +703,29 @@ func (m *DockerManager) monitorInUse() {
 }
 
 func portOffset(gpu string) string {
-	actualGpu := resolveGPU(gpu)
+	// last 2 digits of the port number
+	res := "00"
 
-	res := actualGpu
-	if isEmulatedGPU(actualGpu) {
-		res = strings.Replace(actualGpu, "emulated-", "", 1)
-	}
-	if actualGpu != gpu {
-		// stacked
-		if strings.HasPrefix(gpu, "sstack-") {
-			res = strings.Replace(res, "0", "2", 1)
+	// If colocated, update the first digit of the port
+	if strings.Contains(gpu, "colocated-") {
+		re := regexp.MustCompile(`colocated-(\d+)-(.*)`)
+		matches := re.FindStringSubmatch(gpu)
+		if len(matches) > 1 {
+			res = matches[1] + res[1:]
+			gpu = matches[2]
 		} else {
-			res = strings.Replace(res, "0", "1", 1)
+			clog.Warningf(context.Background(), "Invalid GPU name: %s", gpu)
 		}
 	}
+
+	// If emulated, remove the prefix
+	if isEmulatedGPU(gpu) {
+		gpu = strings.Replace(gpu, "emulated-", "", 1)
+	}
+
+	// Update second digit with the gpu number
+	res = res[:1] + gpu
+
 	return res
 }
 

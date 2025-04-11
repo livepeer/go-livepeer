@@ -167,6 +167,7 @@ type LivepeerConfig struct {
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
+	AIRunnerContainersPerGPU   *int
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -219,6 +220,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
+	defaultAIRunnerContainersPerGPU := 1
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -331,6 +333,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerImage:            &defaultAIRunnerImage,
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
@@ -1212,8 +1215,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Create 2 fake GPU instances, intended for the local non-GPU setup
 			gpus = []string{"emulated-0"}
 		}
-		gpus = append(gpus, fmt.Sprintf("stack-%s", gpus[0]))
-		gpus = append(gpus, fmt.Sprintf("sstack-%s", gpus[0]))
+
+		// Additional GPU entries to allow running multiple Runner Containers on the same GPU
+		var colocatedGpus []string
+		for i := 1; i < *cfg.AIRunnerContainersPerGPU; i++ {
+			for _, g := range gpus {
+				colocatedGpus = append(colocatedGpus, fmt.Sprintf("colocated-%d-%s", i, g))
+			}
+		}
+		gpus = append(gpus, colocatedGpus...)
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
