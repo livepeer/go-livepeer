@@ -1090,3 +1090,75 @@ func TestDockerWaitUntilRunning(t *testing.T) {
 		mockDockerClient.AssertExpectations(t)
 	})
 }
+
+func TestHwGPU(t *testing.T) {
+	tests := []struct {
+		name          string
+		gpu           string
+		expectedHwGPU string
+	}{
+		{
+			name:          "Standard GPU",
+			gpu:           "0",
+			expectedHwGPU: "0",
+		},
+		{
+			name:          "Emulated GPU",
+			gpu:           "emulated-0",
+			expectedHwGPU: "emulated-0",
+		},
+		{
+			name:          "Colocated GPU",
+			gpu:           "colocated-2-1",
+			expectedHwGPU: "1",
+		},
+		{
+			name:          "Colocated Emulated GPU",
+			gpu:           "colocated-1-emulated-0",
+			expectedHwGPU: "emulated-0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := hwGPU(tt.gpu)
+			require.Equal(t, tt.expectedHwGPU, res)
+		})
+	}
+}
+
+func TestPortOffset(t *testing.T) {
+	tests := []struct {
+		name               string
+		gpu                string
+		expectedPortOffset string
+	}{
+		{
+			name:               "Standard GPU",
+			gpu:                "0",
+			expectedPortOffset: "00",
+		},
+		{
+			name:               "Emulated GPU",
+			gpu:                "emulated-1",
+			expectedPortOffset: "01",
+		},
+		{
+			name:               "Colocated GPU",
+			gpu:                "colocated-2-1",
+			expectedPortOffset: "21",
+		},
+		{
+			name:               "Colocated Emulated GPU",
+			gpu:                "colocated-1-emulated-0",
+			expectedPortOffset: "10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := portOffset(tt.gpu)
+			require.Equal(t, tt.expectedPortOffset, res)
+		})
+	}
+}
