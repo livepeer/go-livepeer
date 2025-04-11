@@ -244,7 +244,7 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
-	//API for external jobs
+	//API for dynamic capabilities
 	lp.transRPC.HandleFunc("/process/request", lp.ProcessJob)
 	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
 	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)

@@ -42,6 +42,7 @@ type JobToken struct {
 	Expiration    int64             `json:"expiration"`
 	SenderAddress *JobSender        `json:"senderAddress,omitempty"`
 	TicketParams  *net.TicketParams `json:"ticketParams,omitempty"`
+	Balance       int64             `json:"balance,omitempty"`
 }
 
 type JobRequest struct {
@@ -123,11 +124,12 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if !orch.ExternalCapabilities().CompatibleWith(jobCapsHdr) {
+		jobToken = JobToken{Token: "", JobId: "", Expiration: 0, SenderAddress: nil, TicketParams: nil, Balance: 0}
+		//send response indicating not compatible
 		w.WriteHeader(http.StatusNoContent)
-		jobToken = JobToken{Token: "", JobId: "", Expiration: 0, SenderAddress: nil, TicketParams: nil}
 	} else {
 		senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)
-		jobId := core.RandomManifestID()
+		jobId := newJobId()
 
 		token := orch.AuthToken(string(jobId), time.Now().Add(authTokenValidPeriod).Unix())
 		jobPrice, err := orch.JobPriceInfo(senderAddr, core.RandomManifestID(), jobCapsHdr)
@@ -141,14 +143,26 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Could not get ticket params err=%v", err.Error()), http.StatusBadRequest)
 		}
 
+		capBal := orch.Balance(senderAddr, core.ManifestID(jobCapsHdr))
+		if capBal != nil {
+			capBal, err = common.PriceToInt64(capBal)
+			if err != nil {
+				clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
+				capBal = big.NewRat(0, 0)
+			}
+		} else {
+			capBal = big.NewRat(0, 0)
+		}
+
 		jobToken = JobToken{Token: base64.StdEncoding.EncodeToString(token.Token),
 			JobId:         token.SessionId,
 			Expiration:    token.Expiration,
 			SenderAddress: jobSenderAddr,
 			TicketParams:  ticketParams,
+			Balance:       capBal.Num().Int64(),
 		}
 
-		//send response
+		//send response indicating compatible
 		w.WriteHeader(http.StatusOK)
 	}
 
@@ -316,6 +330,6 @@ func verifyJobCreds(ctx context.Context, orch Orchestrator, jobCreds string, req
 	return &jobData, ctx, nil
 }
 
-func NewJobId() string {
+func newJobId() string {
 	return string(core.RandomManifestID())
 }

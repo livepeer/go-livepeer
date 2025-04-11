@@ -251,14 +251,17 @@ func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerSer
 func (r *stubOrchestrator) ExternalCapabilities() *core.ExternalCapabilities {
 	return nil
 }
-func (r *stubOrchestrator) CheckExternalCapacity(extCaps []string) error {
+func (r *stubOrchestrator) CheckExternalCapacity(extCaps string) error {
 	return r.sessCapErr
 }
-func (r *stubOrchestrator) FreeExternalCapacity(extCaps []string) error {
+func (r *stubOrchestrator) FreeExternalCapacity(extCaps string) error {
 	return nil
 }
-func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapabilities []string) (*net.PriceInfo, error) {
+func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {
 	return r.priceInfo, nil
+}
+func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
 }
 
 func stubBroadcaster2() *stubOrchestrator {
@@ -1511,14 +1514,17 @@ func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerSer
 func (o *mockOrchestrator) ExternalCapabilities() *core.ExternalCapabilities {
 	return nil
 }
-func (o *mockOrchestrator) CheckExternalCapacity(extCaps []string) error {
+func (o *mockOrchestrator) CheckExternalCapacity(extCaps string) error {
 	return nil
 }
-func (o *mockOrchestrator) FreeExternalCapacity(extCaps []string) error {
+func (o *mockOrchestrator) FreeExternalCapacity(extCaps string) error {
 	return nil
 }
-func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapabilities []string) (*net.PriceInfo, error) {
+func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, nil
+}
+func (o *mockOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
 }
 
 func defaultTicketParams() *net.TicketParams {
