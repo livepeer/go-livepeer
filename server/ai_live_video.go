@@ -173,11 +173,6 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	r, w, err := os.Pipe()
-	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%s %w", url, err))
-		return
-	}
 	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
 		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. url=%s %w", url, err))
@@ -187,15 +182,12 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
-	multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
-
 	// read segments from trickle subscription
 	go func() {
 		var err error
 		firstSegment := true
 		var segmentsReceived int64
 
-		defer w.Close()
 		defer wMediaMTX.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
@@ -235,7 +227,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, multiWriter)
+			n, err := copySegment(segment, wMediaMTX)
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -266,7 +258,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 
 	// Studio Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	// go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 
 	// MediaMTX Output ffmpeg process
 	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
