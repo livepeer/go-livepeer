@@ -121,6 +121,29 @@ func (pool *AISessionPool) Add(sessions []*BroadcastSession) {
 	pool.selector.Add(uniqueSessions)
 }
 
+// Clear clears the session that does not exist in newSessions
+func (pool *AISessionPool) Clear(newSessions []*BroadcastSession) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	// Clear the sessions that are not in newSessions
+	for k, _ := range pool.sessMap {
+		toRemove := true
+		for _, sess := range newSessions {
+			if k == sess.Transcoder() {
+				// This session is in the new sessions list
+				toRemove = false
+				break
+			}
+		}
+		if toRemove {
+			pool.selector.Remove(pool.sessMap[k])
+			delete(pool.sessMap, k)
+		}
+	}
+
+}
+
 func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -163,6 +186,7 @@ type AISessionSelector struct {
 	ttl             time.Duration
 	lastRefreshTime time.Time
 	initialPoolSize int
+	autoClear       bool
 
 	cap     core.Capability
 	modelID string
@@ -188,6 +212,7 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
 	var warmSel, coldSel BroadcastSessionsSelector
+	var autoClear bool
 	if cap == core.Capability_LiveVideoToVideo {
 		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
 		// We always select a fresh session which has the lowest initial latency
@@ -195,6 +220,8 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
 		// we don't use penalties for not in Realtime Video AI
 		penalty = 0
+		// Automatically clear the session pool from old sessions during the discovery
+		autoClear = true
 	} else {
 		// sort sessions based on current latency score
 		warmSel = NewSelectorOrderByLatencyScore(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
@@ -213,6 +240,7 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 		suspender: suspender,
 		penalty:   penalty,
 		os:        drivers.NodeStorage.NewSession(strconv.Itoa(int(cap)) + "_" + modelID),
+		autoClear: autoClear,
 	}
 
 	if err := sel.Refresh(ctx); err != nil {
@@ -379,6 +407,10 @@ func (sel *AISessionSelector) Refresh(ctx context.Context) error {
 
 	sel.warmPool.Add(warmSessions)
 	sel.coldPool.Add(coldSessions)
+	if sel.autoClear {
+		sel.warmPool.Clear(warmSessions)
+		sel.coldPool.Clear(coldSessions)
+	}
 
 	sel.warmPool.mu.Lock()
 	sel.coldPool.mu.Lock()

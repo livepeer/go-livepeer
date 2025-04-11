@@ -740,6 +740,12 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 		whipConn := media.NewWHIPConnection()
 
+		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+		if whepURL == "" {
+			whepURL = "http://localhost:8889/" // default mediamtx output
+		}
+		whepURL = whepURL + streamName + "-out/whep"
+
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
 			if internalOutputHost == "" {
@@ -834,7 +840,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					}
 				}()
 				err := whipConn.AwaitClose()
-				if err != nil {
+				if err == nil {
 					// For now, set a "whip disconnected" event"
 					err = errors.New("whip disconnected")
 				}
@@ -891,7 +897,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
-		conn := server.CreateWHIP(ctx, ssr, w, r)
+		conn := server.CreateWHIP(ctx, ssr, whepURL, w, r)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
 }

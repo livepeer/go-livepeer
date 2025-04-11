@@ -16,6 +16,7 @@ const SELECTOR_LATENCY_SCORE_THRESHOLD = 1.0
 // BroadcastSessionsSelector selects the next BroadcastSession to use
 type BroadcastSessionsSelector interface {
 	Add(sessions []*BroadcastSession)
+	Remove(sess *BroadcastSession)
 	Complete(sess *BroadcastSession)
 	Select(ctx context.Context) *BroadcastSession
 	Size() int
@@ -133,6 +134,10 @@ func (s *Selector) Add(sessions []*BroadcastSession) {
 	s.sort()
 }
 
+func (s *Selector) Remove(sess *BroadcastSession) {
+	s.sessions = removeSession(s.sessions, sess)
+}
+
 func (s *Selector) Complete(sess *BroadcastSession) {
 	s.sessions = append(s.sessions, sess)
 	s.sort()
@@ -206,6 +211,11 @@ func NewMinLSSelector(stakeRdr stakeReader, minLS float64, selectionAlgorithm co
 // Add adds the sessions to the selector's list of sessions without a latency score
 func (s *MinLSSelector) Add(sessions []*BroadcastSession) {
 	s.sessions = append(s.sessions, sessions...)
+}
+
+// Remove removes the session from the selector's list of sessions without a latency score
+func (s *MinLSSelector) Remove(sess *BroadcastSession) {
+	s.sessions = removeSession(s.sessions, sess)
 }
 
 // Complete adds the session to the selector's list sessions with a latency score
@@ -318,6 +328,11 @@ func (s *LIFOSelector) Add(sessions []*BroadcastSession) {
 	*s = append(sessions, *s...)
 }
 
+// Remove removes the session from the selector's list
+func (s *LIFOSelector) Remove(sess *BroadcastSession) {
+	*s = removeSession(*s, sess)
+}
+
 // Complete adds the session to the end of the selector's list
 func (s *LIFOSelector) Complete(sess *BroadcastSession) {
 	*s = append(*s, sess)
@@ -343,4 +358,13 @@ func (s *LIFOSelector) Size() int {
 // Clear resets the selector's state
 func (s *LIFOSelector) Clear() {
 	*s = nil
+}
+
+func removeSession(sessions []*BroadcastSession, sess *BroadcastSession) []*BroadcastSession {
+	for i, es := range sessions {
+		if es == sess {
+			return append(sessions[:i], sessions[i+1:]...)
+		}
+	}
+	return sessions
 }
