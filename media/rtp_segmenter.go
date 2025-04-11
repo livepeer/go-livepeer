@@ -13,6 +13,8 @@ import (
 
 type RTPTrack interface {
 	Codec() webrtc.RTPCodecParameters
+	Kind() webrtc.RTPCodecType
+	SSRC() webrtc.SSRC
 }
 
 type RTPSegmenter struct {

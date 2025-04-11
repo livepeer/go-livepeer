@@ -1,8 +1,12 @@
 package media
 
 import (
+	"errors"
 	"io"
 	"sync"
+
+	"github.com/pion/interceptor/pkg/stats"
+	"github.com/pion/webrtc/v4"
 )
 
 // use this to set peerconnection state when we need it
@@ -70,11 +74,24 @@ func (w *WHIPConnection) Close() {
 
 type WHIPPeerConnection interface {
 	io.Closer
+	GetStats() webrtc.StatsReport
+}
+
+type TrackStats struct {
+	Kind webrtc.RTPCodecType
+	*stats.Stats
+}
+
+type MediaStats struct {
+	PeerConnStats webrtc.StatsReport
+	TrackStats    []TrackStats
 }
 
 // MediaState manages the lifecycle of a media connection
 type MediaState struct {
 	pc     WHIPPeerConnection
+	getter stats.Getter
+	tracks []RTPTrack
 	mu     *sync.Mutex
 	cond   *sync.Cond
 	closed bool
@@ -89,6 +106,13 @@ func NewMediaState(pc WHIPPeerConnection) *MediaState {
 		mu:   mu,
 		cond: sync.NewCond(mu),
 	}
+}
+
+func (m *MediaState) SetTracks(getter stats.Getter, tracks []RTPTrack) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getter = getter
+	m.tracks = tracks
 }
 
 // Returns a mediastate that is already closed with an error
@@ -131,4 +155,37 @@ func (m *MediaState) IsClosed() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.closed
+}
+
+func (m *MediaState) Stats() (*MediaStats, error) {
+	m.mu.Lock()
+	if m.closed || m.pc == nil {
+		m.mu.Unlock()
+		return nil, errors.New("peerconnection closed")
+	}
+	var (
+		pc     = m.pc
+		getter = m.getter
+		tracks = m.tracks
+	)
+	m.mu.Unlock()
+	pcStats := pc.GetStats()
+	if getter == nil {
+		// tracks haven't been initialized yet
+		return &MediaStats{
+			PeerConnStats: pcStats,
+		}, nil
+	}
+	trackStats := make([]TrackStats, 0, len(tracks))
+	for _, t := range tracks {
+		s := getter.Get(uint32(t.SSRC()))
+		if s == nil {
+			continue
+		}
+		trackStats = append(trackStats, TrackStats{t.Kind(), s})
+	}
+	return &MediaStats{
+		PeerConnStats: pcStats,
+		TrackStats:    trackStats,
+	}, nil
 }
