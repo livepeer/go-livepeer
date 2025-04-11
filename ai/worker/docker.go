@@ -358,8 +358,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	gpuOpts := opts.GpuOpts{}
-	if !isEmulatedGPU(gpu) {
-		gpuOpts.Set("device=" + gpu)
+	if !isEmulatedGPU(resolveGPU(gpu)) {
+		gpuOpts.Set("device=" + resolveGPU(gpu))
 	}
 
 	restartPolicy := container.RestartPolicy{
@@ -446,6 +446,13 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	go m.watchContainer(rc)
 
 	return rc, nil
+}
+
+func resolveGPU(gpu string) string {
+	if strings.HasPrefix(gpu, "stack-") {
+		return strings.Replace(gpu, "stack-", "", 1)
+	}
+	return gpu
 }
 
 func (m *DockerManager) allocGPU(ctx context.Context) (string, error) {
@@ -686,10 +693,17 @@ func (m *DockerManager) monitorInUse() {
 }
 
 func portOffset(gpu string) string {
-	if isEmulatedGPU(gpu) {
-		return strings.Replace(gpu, "emulated-", "", 1)
+	actualGpu := resolveGPU(gpu)
+
+	res := actualGpu
+	if isEmulatedGPU(actualGpu) {
+		res = strings.Replace(actualGpu, "emulated-", "", 1)
 	}
-	return gpu
+	if actualGpu != gpu {
+		// stacked
+		res = strings.Replace(res, "0", "1", 1)
+	}
+	return res
 }
 
 func isEmulatedGPU(gpu string) bool {

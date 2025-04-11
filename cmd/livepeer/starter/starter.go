@@ -1212,6 +1212,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			// Create 2 fake GPU instances, intended for the local non-GPU setup
 			gpus = []string{"emulated-0"}
 		}
+		gpus = append(gpus, fmt.Sprintf("stack-%s", gpus[0]))
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {

@@ -3,5 +3,10 @@
     "model_id": "noop",
     "pipeline": "live-video-to-video",
     "warm": true
+  },
+  {
+    "model_id": "noop",
+    "pipeline": "live-video-to-video",
+    "warm": true
   }
 ]
