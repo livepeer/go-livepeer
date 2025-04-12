@@ -526,6 +526,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
+		// channel that blocks until after orch selection is complete
+		// avoids a race condition with closing the control channel
+		orchSelection := make(chan bool)
+
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
 
@@ -564,6 +568,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				},
 			})
 			ssr.Close()
+			<-orchSelection // wait for selection to complete
 			cleanupLive(ctx, ls.LivepeerNode, streamName)
 		}()
 
@@ -589,7 +594,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 			}
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
 		}
 
 		params := aiRequestParams{
@@ -621,6 +625,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if err != nil {
 			stopPipeline(err)
 		}
+		close(orchSelection)
 	})
 }
 
