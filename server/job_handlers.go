@@ -38,10 +38,10 @@ type JobSender struct {
 
 type JobToken struct {
 	Token         string            `json:"token"`
-	JobId         string            `json:"jobId"`
+	JobId         string            `json:"job_id"`
 	Expiration    int64             `json:"expiration"`
-	SenderAddress *JobSender        `json:"senderAddress,omitempty"`
-	TicketParams  *net.TicketParams `json:"ticketParams,omitempty"`
+	SenderAddress *JobSender        `json:"sender_address,omitempty"`
+	TicketParams  *net.TicketParams `json:"ticket_params,omitempty"`
 	Balance       int64             `json:"balance,omitempty"`
 }
 
@@ -50,10 +50,10 @@ type JobRequest struct {
 	Request       string    `json:"request"`
 	Parameters    string    `json:"parameters"`
 	Capability    string    `json:"capability"`
-	CapabilityUrl string    `json:"capabilityUrl"` //this is set when verified orch as capability
+	CapabilityUrl string    `json:"capability_url"` //this is set when verified orch as capability
 	Token         *JobToken `json:"token"`
 	Sig           string    `json:"sig"`
-	Timeout       int       `json:"timeoutSeconds"`
+	Timeout       int       `json:"timeout_seconds"`
 }
 
 func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
@@ -153,13 +153,21 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 		} else {
 			capBal = big.NewRat(0, 0)
 		}
+		//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
+		capBalInt, err := common.PriceToFixed(capBal)
+		if err != nil {
+			capBalInt = 0
+		} else {
+			// Remove the last three digits from capBalInt
+			capBalInt = capBalInt / 1000
+		}
 
 		jobToken = JobToken{Token: base64.StdEncoding.EncodeToString(token.Token),
 			JobId:         token.SessionId,
 			Expiration:    token.Expiration,
 			SenderAddress: jobSenderAddr,
 			TicketParams:  ticketParams,
-			Balance:       capBal.Num().Int64(),
+			Balance:       capBalInt,
 		}
 
 		//send response indicating compatible
@@ -253,11 +261,18 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	took := time.Since(start)
 	// Debit the fee for the total time processed
 	h.orchestrator.DebitFees(sender, core.ManifestID(jobReq.Capability), payment.GetExpectedPrice(), int64(took.Seconds()))
+
+	//check balance and return remaning balance in header of response
 	senderBalance := h.orchestrator.Balance(sender, core.ManifestID(jobReq.Capability))
 	if senderBalance == nil {
 		senderBalance = big.NewRat(0, 0)
 	}
 	senderBalAmt, _ := common.PriceToInt64(senderBalance)
+	if senderBalAmt.Cmp(big.NewRat(0, 0)) < 0 {
+		clog.Errorf(ctx, "Sender balance is negative, sender=%v capability=%v", sender.Hex(), jobReq.Capability)
+		http.Error(w, "Sender balance is negative", http.StatusPaymentRequired)
+		return
+	}
 
 	clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", took)
 
