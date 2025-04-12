@@ -97,8 +97,8 @@ func (a aiRequestParams) inputStreamExists() bool {
 	}
 	a.node.LiveMu.RLock()
 	defer a.node.LiveMu.RUnlock()
-	_, ok := a.node.LivePipelines[a.liveParams.stream]
-	return ok
+	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok && p.RequestID == a.liveParams.requestID
 }
 
 // For live video pipelines
