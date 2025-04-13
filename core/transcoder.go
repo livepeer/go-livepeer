@@ -45,6 +45,12 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	// Returns UnrecoverableError instead of panicking to gracefully notify orchestrator about transcoder's failure
 	defer recoverFromPanic(&retErr)
 
+	// Validate input duration
+	maxAllowedDuration := 30 * time.Second
+	if md.Duration.Seconds() > maxAllowedDuration.Seconds() || md.Duration.Seconds() <= 0 {
+		return nil, fmt.Errorf("invalid segment duration: %v seconds", md.Duration)
+	}
+
 	// Set up in / out config
 	in := &ffmpeg.TranscodeOptionsIn{
 		Fname:   md.Fname,
