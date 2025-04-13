@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/net"
@@ -318,4 +319,52 @@ func TestRecoverFromPanic_WithError(t *testing.T) {
 	err := f()
 
 	assert.Equal(NewUnrecoverableError(sampleErr), err)
+}
+
+func TestTranscode_DurationValidation(t *testing.T) {
+	transcoder := NewLocalTranscoder("/tmp")
+
+	testCases := []struct {
+		name        string
+		duration    time.Duration
+		expectedErr string
+	}{
+		{
+			name:        "Long Duration",
+			duration:    601 * time.Second, // 10 minutes and 1 second
+			expectedErr: "invalid segment duration",
+		},
+		{
+			name:        "Negative Duration",
+			duration:    -5 * time.Second, // Invalid duration
+			expectedErr: "invalid segment duration",
+		},
+		{
+			name:        "Zero Duration",
+			duration:    0, // Invalid duration
+			expectedErr: "invalid segment duration",
+		},
+		{
+			name:        "Valid Duration",
+			duration:    1 * time.Second, // 1 second
+			expectedErr: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			metadata := &SegTranscodingMetadata{
+				Fname:    "test.ts",
+				Duration: tc.duration,
+			}
+			_, err := transcoder.Transcode(context.TODO(), metadata)
+
+			if tc.expectedErr != "" {
+				assert.NotNil(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErr)
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
 }
