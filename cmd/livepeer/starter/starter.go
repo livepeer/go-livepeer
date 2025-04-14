@@ -170,6 +170,7 @@ type LivepeerConfig struct {
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersions        *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -223,6 +224,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
+	defaultAIMinRunnerVersions := "{}"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -336,6 +338,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
+		AIMinRunnerVersions:      &defaultAIMinRunnerVersions,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
