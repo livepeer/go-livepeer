@@ -450,7 +450,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 }
 
 func hwGPU(gpu string) string {
-	if !strings.Contains(gpu, "colocated-") {
+	if !strings.HasPrefix(gpu, "colocated-") {
 		return gpu
 	}
 
