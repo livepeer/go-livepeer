@@ -81,10 +81,12 @@ type Orchestrator interface {
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
-	ExternalCapabilities() *core.ExternalCapabilities
+	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
+	RemoveExternalCapability(extCapability string) error
 	GetUrlForCapability(extCapability string) string
-	CheckExternalCapacity(extCapability string) error
-	FreeExternalCapacity(extCapability string) error
+	CheckExternalCapabilityCapacity(extCapability string) bool
+	ReserveExternalCapabilityCapacity(extCapability string) error
+	FreeExternalCapabilityCapacity(extCapability string) error
 	JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapabiliy string) (*net.PriceInfo, error)
 }
 

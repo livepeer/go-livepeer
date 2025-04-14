@@ -29,7 +29,6 @@ const jobRequestHdr = "Livepeer-Job"
 const jobEthAddressHdr = "Livepeer-Job-Eth-Address"
 const jobCapabilityHdr = "Livepeer-Job-Capability"
 const jobPaymentHeaderHdr = "Livepeer-Job-Payment"
-const jobRegisterCapabilityHdr = "Livepeer-Job-Register-Capability"
 
 type JobSender struct {
 	Addr string `json:"addr"`
@@ -66,12 +65,18 @@ func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
 	auth := r.Header.Get("Authorization")
 	if auth != orch.TranscoderSecret() {
 		http.Error(w, "invalid authorization", http.StatusBadRequest)
+		return
 	}
-
-	extCap := r.Header.Get(jobRegisterCapabilityHdr)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	extCapSettings := string(body)
 	remoteAddr := getRemoteAddr(r)
 
-	cap, err := orch.ExternalCapabilities().RegisterCapability(extCap)
+	cap, err := orch.RegisterExternalCapability(extCapSettings)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
@@ -81,7 +86,7 @@ func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	}
 
-	clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v", remoteAddr, cap.Name, cap.Url.RequestURI())
+	clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v", remoteAddr, cap.Name, cap.Url)
 }
 
 func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
@@ -123,10 +128,10 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	if !orch.ExternalCapabilities().CompatibleWith(jobCapsHdr) {
+	if orch.CheckExternalCapabilityCapacity(jobCapsHdr) {
 		jobToken = JobToken{Token: "", JobId: "", Expiration: 0, SenderAddress: nil, TicketParams: nil, Balance: 0}
-		//send response indicating not compatible
-		w.WriteHeader(http.StatusNoContent)
+		//send response indicating no capacity available
+		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
 		senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)
 		jobId := newJobId()
@@ -199,6 +204,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	ctx = clog.AddVal(ctx, "sender", sender.Hex())
 
 	// check the prompt sig from the request
+	// returns error if no capacity
 	job := r.Header.Get(jobRequestHdr)
 	jobReq, ctx, err := verifyJobCreds(ctx, orch, job, sender)
 	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
@@ -251,10 +257,10 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 
 		if err == context.DeadlineExceeded {
-			orch.ExternalCapabilities().RemoveCapability(jobReq.Capability)
+			orch.RemoveExternalCapability(jobReq.Capability)
 		}
 
-		orch.FreeExternalCapacity(jobReq.Capability)
+		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -329,13 +335,7 @@ func verifyJobCreds(ctx context.Context, orch Orchestrator, jobCreds string, req
 		return nil, ctx, errors.New("expired auth token")
 	}
 
-	orchCaps := orch.ExternalCapabilities()
-	if !orchCaps.CompatibleWith(jobData.Capability) {
-		clog.Errorf(ctx, "Capability check failed")
-		return nil, ctx, errCapCompat
-	}
-
-	if err := orch.CheckExternalCapacity(jobData.Capability); err != nil {
+	if orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
 		clog.Errorf(ctx, "Cannot process job err=%q", err)
 		return nil, ctx, errZeroCapacity
 	}

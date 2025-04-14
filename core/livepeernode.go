@@ -342,7 +342,7 @@ func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, ex
 		senderEthAddress = "default"
 	}
 
-	n.jobPriceInfo[senderEthAddress].Capabilities[extCapability].Price = price
+	n.jobPriceInfo[senderEthAddress].Capabilities[extCapability].price = price
 }
 
 func (n *LivepeerNode) GetPriceForExternalCapability(senderEthAddress string, extCapability string) *big.Rat {
@@ -354,7 +354,7 @@ func (n *LivepeerNode) GetPriceForExternalCapability(senderEthAddress string, ex
 	}
 
 	if extCapInfo, ok := senderPrices.Capabilities[extCapability]; ok {
-		return extCapInfo.Price
+		return extCapInfo.price
 	}
 
 	return nil
@@ -371,11 +371,11 @@ func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability str
 	jobPrice := big.NewRat(0, 1)
 
 	if extCapInfo, ok := senderPrices.Capabilities[extCapability]; ok {
-		jobPrice = new(big.Rat).Add(extCapInfo.Price, jobPrice)
+		jobPrice = new(big.Rat).Add(extCapInfo.price, jobPrice)
 	} else {
 		//if price not set for sender fall back to default price
 		if extCapInfoDefault, ok := n.jobPriceInfo["default"].Capabilities[extCapability]; ok {
-			jobPrice = new(big.Rat).Add(extCapInfoDefault.Price, jobPrice)
+			jobPrice = new(big.Rat).Add(extCapInfoDefault.price, jobPrice)
 		}
 	}
 

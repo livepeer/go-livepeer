@@ -248,13 +248,19 @@ func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
-func (r *stubOrchestrator) ExternalCapabilities() *core.ExternalCapabilities {
+func (r *stubOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) RemoveExternalCapability(extCapability string) error {
 	return nil
 }
-func (r *stubOrchestrator) CheckExternalCapacity(extCaps string) error {
-	return r.sessCapErr
+func (r *stubOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
+	return true
 }
-func (r *stubOrchestrator) FreeExternalCapacity(extCaps string) error {
+func (r *stubOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (r *stubOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
 	return nil
 }
 func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {
@@ -1511,13 +1517,19 @@ func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
-func (o *mockOrchestrator) ExternalCapabilities() *core.ExternalCapabilities {
+func (o *mockOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (o *mockOrchestrator) RemoveExternalCapability(extCapability string) error {
 	return nil
 }
-func (o *mockOrchestrator) CheckExternalCapacity(extCaps string) error {
+func (o *mockOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
+	return true
+}
+func (o *mockOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
 	return nil
 }
-func (o *mockOrchestrator) FreeExternalCapacity(extCaps string) error {
+func (o *mockOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
 	return nil
 }
 func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {

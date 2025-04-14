@@ -90,46 +90,66 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	return nil
 }
 
+func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings string) (*ExternalCapability, error) {
+	cap, err := orch.node.ExternalCapabilities.RegisterCapability(extCapabilitySettings)
+	if err != nil {
+		return nil, err
+	}
+
+	return cap, nil
+}
+
+func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {
+	orch.node.ExternalCapabilities.RemoveCapability(extCapability)
+	return nil
+}
+
 func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
-	for _, capability := range orch.ExternalCapabilities().Capabilities {
+	for _, capability := range orch.node.ExternalCapabilities.Capabilities {
 		if capability.Name == extCapability {
-			return capability.Url.RequestURI()
+			return capability.Url
 		}
 	}
 
 	return ""
 }
 
-func (orch *orchestrator) CheckExternalCapacity(extCapability string) error {
-	capJobCnt := orch.node.ExternalCapabilities.Capabilities[extCapability].Load
-	capMax := orch.node.ExternalCapabilities.Capabilities[extCapability].Capacity
-	if capJobCnt < capMax {
-		orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Lock()
-		defer orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Unlock()
-
-		orch.node.ExternalCapabilities.Capabilities[extCapability].Load++
+func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
+	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
+		return false
 	} else {
-		return ErrOrchCap
+		if cap.Load < cap.Capacity {
+			return true
+		} else {
+			return false
+		}
 	}
-
-	//all capabilities needed have capacity
-	return nil
 }
 
-func (orch *orchestrator) FreeExternalCapacity(extCapability string) error {
-	capJobCnt := orch.node.ExternalCapabilities.Capabilities[extCapability].Load
-	capMax := orch.node.ExternalCapabilities.Capabilities[extCapability].Capacity
-	if capJobCnt < capMax {
-		orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Lock()
-		defer orch.node.ExternalCapabilities.Capabilities[extCapability].mu.Unlock()
+func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string) error {
+	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
+	if ok {
+		cap.mu.Lock()
+		defer cap.mu.Unlock()
 
-		orch.node.ExternalCapabilities.Capabilities[extCapability].Load--
+		cap.Load++
+		return nil
 	} else {
-		return errors.New("could not free capacity")
+		return errors.New("external capability not found")
 	}
+}
 
-	//capacity released for capabilities
-	return nil
+func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) error {
+	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
+	if ok {
+		cap.mu.Lock()
+		defer cap.mu.Unlock()
+
+		cap.Load--
+		return nil
+	} else {
+		return errors.New("external capability not found")
+	}
 }
 
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
@@ -569,14 +589,6 @@ func (orch *orchestrator) Capabilities() *net.Capabilities {
 		return nil
 	}
 	return orch.node.Capabilities.ToNetCapabilities()
-}
-
-func (orch *orchestrator) ExternalCapabilities() *ExternalCapabilities {
-	if orch.node == nil {
-		return nil
-	} else {
-		return orch.node.ExternalCapabilities
-	}
 }
 
 func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
