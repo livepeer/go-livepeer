@@ -1290,14 +1290,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
 			}
 			if *cfg.AIWorker {
-				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
-				runnerVersion := lowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1, RunnerVersion: runnerVersion}
-				// External containers do auto-scale; default to 1 or use provided capacity.
-				if config.URL != "" && config.Capacity != 0 {
-					modelConstraint.Capacity = config.Capacity
-				}
-
 				// Ensure the AI worker has the image needed to serve the job.
 				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
 				if err != nil {
@@ -1313,6 +1305,14 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
 						return
 					}
+				}
+
+				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
+				runnerVersion := lowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1, RunnerVersion: runnerVersion}
+				// External containers do auto-scale; default to 1 or use provided capacity.
+				if config.URL != "" && config.Capacity != 0 {
+					modelConstraint.Capacity = config.Capacity
 				}
 
 				// Show warning if people set OptimizationFlags but not Warm.
