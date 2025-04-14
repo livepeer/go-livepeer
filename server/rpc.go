@@ -71,6 +71,7 @@ type Orchestrator interface {
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
+	WorkerVersion() []worker.Version
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)

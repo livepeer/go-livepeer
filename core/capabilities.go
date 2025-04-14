@@ -1,12 +1,14 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -15,8 +17,9 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm     bool
-	Capacity int
+	Warm          bool
+	Capacity      int
+	RunnerVersion string
 }
 
 type Capability int
@@ -298,8 +301,17 @@ func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
 			// c1 requires the model ID to be warm, but c2's model ID is not warm so it is incompatible
 			return false
 		}
+
+		if !isVersionCompatible(c1ModelConstraint.RunnerVersion, c2ModelConstraint.RunnerVersion) {
+			return false
+		}
 	}
 
+	return true
+}
+
+func isVersionCompatible(version string, version2 string) bool {
+	clog.Infof(context.Background(), "!!!!! version=%s, version2=%s", version, version2)
 	return true
 }
 
@@ -486,8 +498,9 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 			models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
 			for modelID, modelConstraint := range constraints.Models {
 				models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
-					Warm:     modelConstraint.Warm,
-					Capacity: uint32(modelConstraint.Capacity),
+					Warm:          modelConstraint.Warm,
+					Capacity:      uint32(modelConstraint.Capacity),
+					RunnerVersion: modelConstraint.RunnerVersion,
 				}
 			}
 

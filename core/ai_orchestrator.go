@@ -39,6 +39,7 @@ type RemoteAIWorker struct {
 	stream       net.AIWorker_RegisterAIWorkerServer
 	capabilities *Capabilities
 	hardware     []worker.HardwareInformation
+	version      []worker.Version
 	eof          chan struct{}
 	addr         string
 }
@@ -422,6 +423,18 @@ func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
 			wkrHdw = append(wkrHdw, worker.hardware...)
 		}
 		return wkrHdw
+	}
+}
+
+func (orch *orchestrator) WorkerVersion() []worker.Version {
+	if orch.node.AIWorker != nil {
+		return orch.node.AIWorker.Version()
+	} else {
+		var wkrVer []worker.Version
+		for _, worker := range orch.node.AIWorkerManager.liveAIWorkers {
+			wkrVer = append(wkrVer, worker.version...)
+		}
+		return wkrVer
 	}
 }
 
