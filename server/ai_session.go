@@ -434,7 +434,8 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 		sel.cap: {
 			Models: map[string]*core.ModelConstraint{
 				sel.modelID: {
-					Warm: false,
+					Warm:          false,
+					RunnerVersion: sel.node.Capabilities.MinRunnerVersionConstraint(sel.cap, sel.modelID),
 				},
 			},
 		},
