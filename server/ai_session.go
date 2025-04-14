@@ -206,8 +206,8 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	suspender := newSuspender()
 
 	// Create caps for selector to get maxPrice
-	warmCaps := newAICapabilities(cap, modelID, true, node.Capabilities.MinVersionConstraint())
-	coldCaps := newAICapabilities(cap, modelID, false, node.Capabilities.MinVersionConstraint())
+	warmCaps := newAICapabilities(cap, modelID, true, node.Capabilities)
+	coldCaps := newAICapabilities(cap, modelID, false, node.Capabilities)
 
 	// Session pool suspender starts at 0.  Suspension is 3 requests if there are errors from the orchestrator
 	penalty := 3
@@ -277,19 +277,24 @@ func startPeriodicRefresh(sel *AISessionSelector) {
 }
 
 // newAICapabilities creates a new capabilities object with
-func newAICapabilities(cap core.Capability, modelID string, warm bool, minVersion string) *core.Capabilities {
+func newAICapabilities(cap core.Capability, modelID string, warm bool, constraints *core.Capabilities) *core.Capabilities {
 	aiCaps := []core.Capability{cap}
 	capabilityConstraints := core.PerCapabilityConstraints{
 		cap: &core.CapabilityConstraints{
 			Models: map[string]*core.ModelConstraint{
-				modelID: {Warm: warm},
+				modelID: {
+					Warm:          warm,
+					RunnerVersion: constraints.MinRunnerVersionConstraint(cap, modelID),
+				},
 			},
 		},
 	}
 
+	clog.Infof(context.Background(), "!!!!! Selector: %s", constraints.MinRunnerVersionConstraint(cap, modelID))
+
 	caps := core.NewCapabilities(aiCaps, nil)
 	caps.SetPerCapabilityConstraints(capabilityConstraints)
-	caps.SetMinVersionConstraint(minVersion)
+	caps.SetMinVersionConstraint(constraints.MinVersionConstraint())
 
 	return caps
 }

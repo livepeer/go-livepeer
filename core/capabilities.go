@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -283,6 +284,38 @@ func (c1 PerCapabilityConstraints) CompatibleWith(c2 PerCapabilityConstraints) b
 	}
 
 	return true
+}
+
+func (c *PerCapabilityConstraints) SetRunnerVersion(cap Capability, modelId, version string) {
+	if c == nil {
+		return
+	}
+	eCap, ok := (*c)[cap]
+	if !ok {
+		eCap = &CapabilityConstraints{Models: make(ModelConstraints)}
+		(*c)[cap] = eCap
+	}
+	eModel, ok := eCap.Models[modelId]
+	if !ok {
+		eModel = &ModelConstraint{}
+		eCap.Models[modelId] = eModel
+	}
+	eModel.RunnerVersion = version
+}
+
+func (c *PerCapabilityConstraints) GetRunnerVersion(cap Capability, modelId string) string {
+	if c == nil {
+		return ""
+	}
+	eCap, ok := (*c)[cap]
+	if !ok {
+		return ""
+	}
+	eModel, ok := eCap.Models[modelId]
+	if !ok {
+		return ""
+	}
+	return eModel.RunnerVersion
 }
 
 func (c1 *CapabilityConstraints) CompatibleWith(c2 *CapabilityConstraints) bool {
@@ -775,4 +808,33 @@ func (bcast *Capabilities) MinVersionConstraint() string {
 		return bcast.constraints.minVersion
 	}
 	return ""
+}
+
+func (bcast *Capabilities) SetMinRunnerVersionConstraint(minVersionsJson string) {
+	// parse minVersionJson with this structure: [{"model_id": "noop", "pipeline": "live-video-to-video", "minVersion": "0.0.2"}]
+	type MinVersionEntry struct {
+		ModelID    string `json:"model_id"`
+		Pipeline   string `json:"pipeline"`
+		MinVersion string `json:"minVersion"`
+	}
+	var entries []MinVersionEntry
+	err := json.Unmarshal([]byte(minVersionsJson), &entries)
+	if err != nil {
+		clog.Errorf(context.Background(), "Cannot unmarshal minVersionJson: %v", err)
+		return
+	}
+	for _, e := range entries {
+		if e.ModelID == "" || e.Pipeline == "" || e.MinVersion == "" {
+			clog.Errorf(context.Background(), "Invalid minVersionJson entry: %v", e)
+			continue
+		}
+		// TODO: Generalize
+		if e.Pipeline == "live-video-to-video" {
+			bcast.constraints.perCapability.SetRunnerVersion(Capability_LiveVideoToVideo, e.ModelID, e.MinVersion)
+		}
+	}
+}
+
+func (bcast *Capabilities) MinRunnerVersionConstraint(cap Capability, modelID string) string {
+	return bcast.constraints.perCapability.GetRunnerVersion(cap, modelID)
 }

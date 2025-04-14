@@ -1602,6 +1602,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
+	if cfg.AIMinRunnerVersions != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersions)
+	}
 	if n.AIWorkerManager != nil {
 		// Set min version constraint to prevent incompatible workers.
 		n.Capabilities.SetMinVersionConstraint(core.LivepeerVersion)
