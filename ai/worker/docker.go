@@ -323,7 +323,6 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		return nil, err
 	}
 
-	// NOTE: We currently allow only one container per GPU for each pipeline.
 	containerHostPort := containerHostPorts[pipeline][:2] + portOffset(gpu)
 	containerName := dockerContainerName(pipeline, modelID, containerHostPort)
 	containerImage, err := m.getContainerImageName(pipeline, modelID)
