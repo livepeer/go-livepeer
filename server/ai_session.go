@@ -138,6 +138,7 @@ func (pool *AISessionPool) Clear(newSessions []*BroadcastSession) {
 		}
 		if toRemove {
 			pool.selector.Remove(pool.sessMap[k])
+			pool.inUseSess = removeSessionFromList(pool.inUseSess, pool.sessMap[k])
 			delete(pool.sessMap, k)
 		}
 	}
