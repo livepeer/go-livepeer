@@ -343,11 +343,6 @@ func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
 	return true
 }
 
-func isVersionCompatible(version string, version2 string) bool {
-	clog.Infof(context.Background(), "!!!!! version=%s, version2=%s", version, version2)
-	return true
-}
-
 type chromaDepth struct {
 	Chroma ffmpeg.ChromaSubsampling
 	Depth  ffmpeg.ColorDepthBits
@@ -457,27 +452,35 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 }
 
 func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities) bool {
-	if bcast == nil || orch == nil || bcast.constraints.minVersion == "" {
+	if bcast == nil || orch == nil {
 		// should not happen, but just in case, return true by default
 		return true
 	}
-	if orch.Version == "" || orch.Version == "undefined" {
-		// Orchestrator/Transcoder version is not set, so it's incompatible
+	return isVersionCompatible(bcast.constraints.minVersion, orch.Version)
+}
+
+func isVersionCompatible(minVersion, version string) bool {
+	if minVersion == "" {
+		// min version not defined in Gateway, any version is compatible
+		return true
+	}
+	if version == "" || version == "undefined" {
+		// Orchestrator/Transcoder/Runner version is not set, so it's incompatible
 		return false
 	}
 
-	minVer, err := semver.NewVersion(bcast.constraints.minVersion)
+	minVer, err := semver.NewVersion(minVersion)
 	if err != nil {
 		glog.Warningf("error while parsing minVersion: %v", err)
 		return true
 	}
-	ver, err := semver.NewVersion(orch.Version)
+	ver, err := semver.NewVersion(version)
 	if err != nil {
 		glog.Warningf("error while parsing version: %v", err)
 		return false
 	}
 
-	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	// Ignore prerelease versions as in go-livepeer/ai-runner we actually define post-release suffixes
 	minVerNoSuffix, _ := minVer.SetPrerelease("")
 	verNoSuffix, _ := ver.SetPrerelease("")
 
