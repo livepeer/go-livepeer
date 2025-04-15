@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -30,7 +29,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
-	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/discovery"
@@ -1311,7 +1309,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 
 				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
-				runnerVersion := lowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
+				runnerVersion := worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1, RunnerVersion: runnerVersion}
 				// External containers do auto-scale; default to 1 or use provided capacity.
 				if config.URL != "" && config.Capacity != 0 {
@@ -1758,27 +1756,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		srv.Shutdown(ctx)
 		return
 	}
-}
-
-func lowestVersion(versions []worker.Version, pipeline string, modelId string) string {
-	var res string
-	var lowest *semver.Version
-
-	for _, v := range versions {
-		if v.Pipeline != pipeline || v.ModelId != modelId {
-			continue
-		}
-		ver, err := semver.NewVersion(v.Version)
-		if err != nil {
-			clog.Warningf(context.Background(), "Invalid runner version '%s'", v)
-			continue
-		}
-		if lowest == nil || ver.LessThan(lowest) {
-			lowest = ver
-			res = v.Version
-		}
-	}
-	return res
 }
 
 func parseOrchAddrs(addrs string) []*url.URL {

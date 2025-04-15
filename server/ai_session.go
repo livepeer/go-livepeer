@@ -290,8 +290,6 @@ func newAICapabilities(cap core.Capability, modelID string, warm bool, constrain
 		},
 	}
 
-	clog.Infof(context.Background(), "!!!!! Selector: %s", constraints.MinRunnerVersionConstraint(cap, modelID))
-
 	caps := core.NewCapabilities(aiCaps, nil)
 	caps.SetPerCapabilityConstraints(capabilityConstraints)
 	caps.SetMinVersionConstraint(constraints.MinVersionConstraint())

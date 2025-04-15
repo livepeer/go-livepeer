@@ -526,7 +526,4 @@ message HardwareInformation {
 
     // hardware for pipeline and model_id
     map<string, GPUComputeInfo> gpu_info = 3;
-
-    // version of the runner
-    string runner_version = 4;
 }
