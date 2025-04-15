@@ -168,7 +168,7 @@ type LivepeerConfig struct {
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
-	AIMinRunnerVersions        *string
+	AIMinRunnerVersion         *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -222,7 +222,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
-	defaultAIMinRunnerVersions := "{}"
+	defaultAIMinRunnerVersion := "{}"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -336,7 +336,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
-		AIMinRunnerVersions:      &defaultAIMinRunnerVersions,
+		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
@@ -1600,8 +1600,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
-	if cfg.AIMinRunnerVersions != nil {
-		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersions)
+	if cfg.AIMinRunnerVersion != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
 	}
 	if n.AIWorkerManager != nil {
 		// Set min version constraint to prevent incompatible workers.
