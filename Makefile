@@ -150,7 +150,7 @@ box-runner:
 	set -x \
 	&& cd ../ai-runner/runner \
 	&& docker build -t livepeer/ai-runner:live-base -f docker/Dockerfile.live-base . \
-	&& docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop --build-arg VERSION=$$(bash ./print_version.sh) . \
+	&& docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop . \
 	&& docker stop live-video-to-video_noop_8900 || true
 
 .PHONY: box-stream
