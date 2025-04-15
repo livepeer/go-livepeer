@@ -47,7 +47,9 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	for {
+	maxTryCount := 20
+	for try := 1; try <= maxTryCount; try++ {
+		clog.V(common.DEBUG).Infof(ctx, "Selecting orchestrator, try=%d", try)
 		sess := pool.selector.Select(ctx)
 		if sess == nil {
 			sess = pool.selectInUse()
@@ -70,6 +72,8 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 
 		return sess
 	}
+	clog.Warningf(ctx, "Selecting orchestrator failed, max tries number reached")
+	return nil
 }
 
 func (pool *AISessionPool) Complete(sess *BroadcastSession) {
@@ -138,6 +142,7 @@ func (pool *AISessionPool) Clear(newSessions []*BroadcastSession) {
 		}
 		if toRemove {
 			pool.selector.Remove(pool.sessMap[k])
+			pool.inUseSess = removeSessionFromList(pool.inUseSess, pool.sessMap[k])
 			delete(pool.sessMap, k)
 		}
 	}
