@@ -150,7 +150,6 @@ func (s *Selector) sort() {
 }
 
 func (s *Selector) Select(ctx context.Context) *BroadcastSession {
-	clog.V(common.DEBUG).Infof(ctx, "Selecting orchestrator")
 	availableOrchestrators := toOrchestrators(s.sessions)
 	sess := s.selectUnknownSession(ctx)
 	s.sort()
