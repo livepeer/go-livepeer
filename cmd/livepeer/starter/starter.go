@@ -1216,14 +1216,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			gpus = []string{"emulated-0"}
 		}
 
-		// Additional GPU entries to allow running multiple Runner Containers on the same GPU
-		var colocatedGpus []string
-		for i := 1; i < *cfg.AIRunnerContainersPerGPU; i++ {
-			for _, g := range gpus {
-				colocatedGpus = append(colocatedGpus, fmt.Sprintf("colocated-%d-%s", i, g))
+		if *cfg.AIRunnerContainersPerGPU > 1 {
+			// Transform GPU entries to allow running multiple Runner Containers on the same GPU
+			var colocatedGpus []string
+			for i := range *cfg.AIRunnerContainersPerGPU {
+				for _, g := range gpus {
+					colocatedGpus = append(colocatedGpus, fmt.Sprintf("colocated-%d-%s", i, g))
+				}
 			}
+			gpus = colocatedGpus
 		}
-		gpus = append(gpus, colocatedGpus...)
 
 		modelsDir := *cfg.AIModelsDir
 		if modelsDir == "" {
