@@ -1,12 +1,13 @@
 #!/bin/bash
 
+PIPELINE=${PIPELINE:-noop}
 STREAM_KEY="my-stream"
 STREAM_ID="my-stream-id"
 RTMP_OUTPUT=${RTMP_OUTPUT:-""}
 
 case "$1" in
   start)
-    QUERY="pipeline=noop\&streamId=${STREAM_ID}"
+    QUERY="pipeline=${PIPELINE}\&streamId=${STREAM_ID}"
     if [ -n "$RTMP_OUTPUT" ]; then
       QUERY="${QUERY}\&rtmpOutput=${RTMP_OUTPUT}"
     fi

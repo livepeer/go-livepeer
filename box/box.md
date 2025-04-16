@@ -6,6 +6,13 @@
 - [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed)
 - Docker installed
 
+## Setup
+
+The box runs the `noop` pipeline by default, which doesn't need a GPU to function. If you want to run the `comfyui` pipeline instead, make sure you set the `PIPELINE` env in **all** your shell sessions:
+```bash
+export PIPELINE=comfyui
+```
+
 ## Usage
 
 1. Start everything with the following command
