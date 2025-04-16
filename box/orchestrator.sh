@@ -8,10 +8,19 @@ if [[ "$(uname)" == "Darwin" ]]; then
   DOCKER_HOST="host.docker.internal"
 fi
 
+NVIDIA=""
+AI_MODELS_DIR=""
+if [[ "$PIPELINE" != "noop" ]]; then
+  NVIDIA="all"
+  AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../../ai-runner/runner/models && pwd )"
+fi
+
 ./livepeer \
   -orchestrator \
   -aiWorker \
   -aiModels ./box/aiModels-${PIPELINE}.json \
+  -aiModelsDir $AI_MODELS_DIR \
+  -nvidia $NVIDIA \
   -serviceAddr localhost:8935 \
   -transcoder \
   -v 6 \
