@@ -149,7 +149,7 @@ type LivepeerNode struct {
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
-	jobPriceInfo     map[string]*ExternalCapabilities
+	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
 
@@ -174,8 +174,8 @@ type LivePipeline struct {
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
 func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*LivepeerNode, error) {
 	rand.Seed(time.Now().UnixNano())
-	extCapPrices := make(map[string]*ExternalCapabilities)
-	extCapPrices["default"] = NewExternalCapabilities()
+	extCapPrices := make(map[string]map[string]*big.Rat)
+	extCapPrices["default"] = make(map[string]*big.Rat)
 
 	return &LivepeerNode{
 		Eth:                  e,
@@ -337,26 +337,32 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 }
 
 func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {
-
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	//default price list initialized at startup
+	// check if the senderEthAddress is initialized if not default
 	if _, ok := n.jobPriceInfo[senderEthAddress]; !ok {
-		senderEthAddress = "default"
+		n.jobPriceInfo[senderEthAddress] = make(map[string]*big.Rat)
 	}
 
-	n.jobPriceInfo[senderEthAddress].Capabilities[extCapability].price = price
+	//set the price
+	senderPrices := n.jobPriceInfo[senderEthAddress]
+	senderPrices[extCapability] = price
+	glog.Infof("Set price for %s to %s", extCapability, price.FloatString(2))
 }
 
 func (n *LivepeerNode) GetPriceForExternalCapability(senderEthAddress string, extCapability string) *big.Rat {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	senderPrices, ok := n.jobPriceInfo[senderEthAddress]
-	if !ok {
-		senderPrices = n.jobPriceInfo["default"]
+	if ok {
+		extCapPriceInfo, ok := senderPrices[extCapability]
+		if ok {
+			return extCapPriceInfo
+		}
 	}
 
-	if extCapInfo, ok := senderPrices.Capabilities[extCapability]; ok {
-		return extCapInfo.price
-	}
-
+	//price is not set
 	return nil
 }
 
@@ -365,18 +371,13 @@ func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability str
 	defer n.mu.RUnlock()
 	senderPrices, ok := n.jobPriceInfo[senderEthAddress]
 	if !ok {
-		return nil
+		//default price list initialized at startup
+		senderPrices = n.jobPriceInfo["default"]
 	}
-
 	jobPrice := big.NewRat(0, 1)
 
-	if extCapInfo, ok := senderPrices.Capabilities[extCapability]; ok {
-		jobPrice = new(big.Rat).Add(extCapInfo.price, jobPrice)
-	} else {
-		//if price not set for sender fall back to default price
-		if extCapInfoDefault, ok := n.jobPriceInfo["default"].Capabilities[extCapability]; ok {
-			jobPrice = new(big.Rat).Add(extCapInfoDefault.price, jobPrice)
-		}
+	if extCapInfo, ok := senderPrices[extCapability]; ok {
+		jobPrice = extCapInfo
 	}
 
 	return jobPrice

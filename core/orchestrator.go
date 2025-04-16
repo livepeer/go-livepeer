@@ -96,6 +96,9 @@ func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings strin
 		return nil, err
 	}
 
+	//set the price for the capability
+	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
+
 	return cap, nil
 }
 
@@ -116,6 +119,7 @@ func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
 
 func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
 	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
+		glog.Infof("External capability %s not found", extCapability)
 		return false
 	} else {
 		if cap.Load < cap.Capacity {
@@ -433,7 +437,6 @@ func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobId ManifestI
 
 func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobId ManifestID, jobCapability string) (*big.Rat, error) {
 	basePrice := orch.node.GetPriceForJob(sender.Hex(), jobCapability)
-
 	// If there is already a fixed price for the given session, use this price
 	if jobId != "" {
 		if balances, ok := orch.node.Balances.balances[sender]; ok {

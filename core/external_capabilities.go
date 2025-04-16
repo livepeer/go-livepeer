@@ -17,7 +17,7 @@ type ExternalCapability struct {
 
 	price *big.Rat
 
-	mu   sync.Mutex
+	mu   sync.RWMutex
 	Load int `json:"load"`
 }
 
@@ -46,19 +46,27 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 	var extCap ExternalCapability
 	err := json.Unmarshal([]byte(extCapability), &extCap)
 	if err != nil {
-		if extCap.PriceScaling == 0 {
-			extCap.PriceScaling = 1
-		}
-		extCap.price = big.NewRat(extCap.PricePerUnit, extCap.PriceScaling)
-
-		if cap, ok := extCaps.Capabilities[extCap.Name]; ok {
-			cap.Url = extCap.Url
-			cap.Capacity += extCap.Capacity
-			cap.price = extCap.price
-		}
-
-		extCaps.Capabilities[extCap.Name] = &extCap
+		return nil, err
 	}
 
+	//ensure PriceScaling is not 0
+	if extCap.PriceScaling == 0 {
+		extCap.PriceScaling = 1
+	}
+	extCap.price = big.NewRat(extCap.PricePerUnit, extCap.PriceScaling)
+	if cap, ok := extCaps.Capabilities[extCap.Name]; ok {
+		cap.Url = extCap.Url
+		cap.Capacity = extCap.Capacity
+		cap.price = extCap.price
+	}
+
+	extCaps.Capabilities[extCap.Name] = &extCap
+
 	return &extCap, err
+}
+
+func (extCap *ExternalCapability) GetPrice() *big.Rat {
+	extCap.mu.RLock()
+	defer extCap.mu.RUnlock()
+	return big.NewRat(extCap.PricePerUnit, extCap.PriceScaling)
 }
