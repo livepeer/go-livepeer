@@ -13,6 +13,13 @@ The box runs the `noop` pipeline by default, which doesn't need a GPU to functio
 export PIPELINE=comfyui
 ```
 
+If you also want to send the inference output to an external RTMP endpoint, set the `RTMP_OUTPUT` env var:
+```bash
+export RTMP_OUTPUT=rtmp://rtmp.livepeer.com/live/$STREAM_KEY
+```
+
+This one is only required for the `box-stream` command.
+
 ## Usage
 
 1. Start everything with the following command
@@ -22,11 +29,6 @@ make box
 2. Start streaming
 ```bash
 make box-stream
-```
-
-To also send the output to an external RTMP endpoint, set the `RTMP_OUTPUT` env var when running the above command.
-```bash
-RTMP_OUTPUT=rtmp://rtmp.livepeer.com/live/$STREAM_KEY make box-stream
 ```
 
 3. Playback the stream
