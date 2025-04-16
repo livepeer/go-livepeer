@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -317,7 +318,9 @@ func getPayment(header string) (net.Payment, error) {
 	}
 	var payment net.Payment
 	if err := proto.Unmarshal(buf, &payment); err != nil {
-		return net.Payment{}, errors.Wrap(err, "protobuf unmarshal error")
+		if err := json.Unmarshal(buf, &payment); err != nil {
+			return net.Payment{}, errors.Wrap(err, "could not parse payment")
+		}
 	}
 
 	return payment, nil
