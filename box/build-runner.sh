@@ -13,9 +13,11 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/../../ai-runner/runner"
 
 docker build -t livepeer/ai-runner:live-base -f docker/Dockerfile.live-base .
-if [[ "$PIPELINE" == "comfyui" ]]; then
-  docker build -t livepeer/ai-runner:live-base-comfyui -f docker/Dockerfile.live-base-comfyui .
+if [ "${PIPELINE}" = "noop" ]; then
+    docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop .
+else
+    docker build -t livepeer/ai-runner:live-base-${PIPELINE} -f docker/Dockerfile.live-base-${PIPELINE} .
+    docker build -t livepeer/ai-runner:live-app-${PIPELINE} -f docker/Dockerfile.live-app__PIPELINE__ --build-arg PIPELINE=${PIPELINE} .
 fi
-docker build -t livepeer/ai-runner:live-app-$PIPELINE -f docker/Dockerfile.live-app-$PIPELINE .
 
 docker stop live-video-to-video_${PIPELINE}_8900 || true
