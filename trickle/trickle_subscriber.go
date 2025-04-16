@@ -132,17 +132,26 @@ func (c *TrickleSubscriber) preconnect() (*http.Response, error) {
 			respCh <- resp
 		}()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
 	runConnect(ctx)
 	for {
 		select {
 		case err := <-errCh:
+			cancel()
 			return nil, err
 		case resp := <-respCh:
+			cancel()
 			return resp, nil
 		case <-time.After(preconnectRefreshTimeout):
 			cancel()
 			ctx, cancel = context.WithCancel(context.Background())
+			defer cancel()
 			runConnect(ctx)
 		}
 	}
