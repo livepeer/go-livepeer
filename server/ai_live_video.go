@@ -266,7 +266,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 
 	// Studio Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	if params.liveParams.outputRTMPURL != "" {
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	}
 
 	// MediaMTX Output ffmpeg process
 	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
