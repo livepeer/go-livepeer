@@ -556,12 +556,6 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 		workerResp, err := orch.node.TextToImage(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "text-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
@@ -589,12 +583,6 @@ func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string
 		workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "live-video-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
@@ -622,12 +610,6 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 		workerResp, err := orch.node.ImageToImage(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "image-to-image", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
@@ -666,12 +648,6 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 		workerResp, err := orch.node.ImageToVideo(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "image-to-video", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
@@ -710,12 +686,6 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 		workerResp, err := orch.node.Upscale(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "upscale", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
@@ -752,7 +722,10 @@ func (orch *orchestrator) AudioToText(ctx context.Context, requestID string, req
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		// no file response to save, response is text sent back to gateway
-		return orch.node.AudioToText(ctx, req)
+		a2t, err := orch.node.AudioToText(ctx, req)
+		if err == nil {
+			return a2t, nil
+		}
 	}
 
 	// remote ai worker processes job
@@ -788,7 +761,10 @@ func (orch *orchestrator) SegmentAnything2(ctx context.Context, requestID string
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		// no file response to save, response is text sent back to gateway
-		return orch.node.SegmentAnything2(ctx, req)
+		sa, err := orch.node.SegmentAnything2(ctx, req)
+		if err == nil {
+			return sa, nil
+		}
 	}
 
 	// remote ai worker processes job
@@ -825,7 +801,10 @@ func (orch *orchestrator) LLM(ctx context.Context, requestID string, req worker.
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		// no file response to save, response is text sent back to gateway
-		return orch.node.AIWorker.LLM(ctx, req)
+		resp, err := orch.node.AIWorker.LLM(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
 	}
 
 	res, err := orch.node.AIWorkerManager.Process(ctx, requestID, "llm", *req.Model, "", AIJobRequestData{Request: req})
@@ -853,7 +832,10 @@ func (orch *orchestrator) ImageToText(ctx context.Context, requestID string, req
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		// no file response to save, response is text sent back to gateway
-		return orch.node.ImageToText(ctx, req)
+		i2t, err := orch.node.ImageToText(ctx, req)
+		if err == nil {
+			return i2t, nil
+		}
 	}
 
 	// remote ai worker processes job
@@ -891,12 +873,6 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 		workerResp, err := orch.node.TextToSpeech(ctx, req)
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
-		} else {
-			clog.Errorf(ctx, "Error processing with local ai worker err=%q", err)
-			if monitor.Enabled {
-				monitor.AIResultSaveError(ctx, "text-to-speech", *req.ModelId, string(monitor.SegmentUploadErrorUnknown))
-			}
-			return nil, err
 		}
 	}
 
