@@ -330,15 +330,17 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool, 1)
+	once := sync.Once{}
 	stop := func() {
-		ticker.Stop()
-		done <- true
+		once.Do(func() {
+			ticker.Stop()
+			done <- true
+		})
 	}
 
 	if control, exists := params.node.LivePipelines[stream]; exists {
 		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
-		control.StopControl()
-		// TODO close the user connection? this does not trigger a shutdown of the input
+		control.ControlPub.Close()
 		// TODO better solution than allowing existing streams to stomp over one another
 	}
 
