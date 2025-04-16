@@ -16,6 +16,12 @@ make box
 ```bash
 make box-stream
 ```
+
+To also send the output to an external RTMP endpoint, set the `RTMP_OUTPUT` env var when running the above command.
+```bash
+RTMP_OUTPUT=rtmp://rtmp.livepeer.com/live/$STREAM_KEY make box-stream
+```
+
 3. Playback the stream
 ```
 make box-playback
