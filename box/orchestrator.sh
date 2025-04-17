@@ -1,5 +1,6 @@
 #!/bin/bash
 
+DOCKER=${DOCKER:-false}
 PIPELINE=${PIPELINE:-noop}
 
 DOCKER_HOST="172.17.0.1"
@@ -9,20 +10,40 @@ if [[ "$(uname)" == "Darwin" ]]; then
 fi
 
 NVIDIA=""
-AI_MODELS_DIR=""
+AI_MODELS_DIR=${AI_MODELS_DIR:-}
 if [[ "$PIPELINE" != "noop" ]]; then
   NVIDIA="all"
-  AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../../ai-runner/runner/models && pwd )"
+  if [[ -z "$AI_MODELS_DIR" ]]; then
+      AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../runner/models && pwd )"
+  fi
 fi
 
-./livepeer \
-  -orchestrator \
-  -aiWorker \
-  -aiModels ./box/aiModels-${PIPELINE}.json \
-  -aiModelsDir $AI_MODELS_DIR \
-  -nvidia $NVIDIA \
-  -serviceAddr localhost:8935 \
-  -transcoder \
-  -v 6 \
-  -liveAITrickleHostForRunner "$DOCKER_HOST:8935" \
-  -monitor
+if [ "$DOCKER" = "false" ]; then
+  ./livepeer \
+    -orchestrator \
+    -aiWorker \
+    -aiModels ./box/aiModels-${PIPELINE}.json \
+    -aiModelsDir $AI_MODELS_DIR \
+    -nvidia $NVIDIA \
+    -serviceAddr localhost:8935 \
+    -transcoder \
+    -v 6 \
+    -liveAITrickleHostForRunner "$DOCKER_HOST:8935" \
+    -monitor
+else
+  docker run --rm --name orchestrator \
+    --network host \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v $(pwd)/box/${MODEL_JSON}:/opt/aiModels.json \
+    -v /opt/models:/opt/models \
+  livepeer/go-livepeer \
+    -orchestrator \
+    -aiWorker \
+    -aiModels /opt/aiModels.json \
+    -aiModelsDir /opt/models \
+    -serviceAddr 127.0.0.1:8935 \
+    -transcoder \
+    -v 6 \
+    -liveAITrickleHostForRunner '172.17.0.1:8935' \
+    -monitor
+fi
