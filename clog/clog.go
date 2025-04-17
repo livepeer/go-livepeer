@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"maps"
+
 	"github.com/golang/glog"
 )
 
@@ -106,11 +108,12 @@ func AddOrchSessionID(ctx context.Context, val string) context.Context {
 }
 
 func AddVal(ctx context.Context, key, val string) context.Context {
-	cmap, _ := ctx.Value(clogContextKey).(*values)
-	if cmap == nil {
-		cmap = newValues()
-		ctx = context.WithValue(ctx, clogContextKey, cmap)
+	cmap := newValues()
+	if currCmap, ok := ctx.Value(clogContextKey).(*values); ok {
+		maps.Copy(cmap.vals, currCmap.vals)
+		cmap.keysOrder = append(cmap.keysOrder, currCmap.keysOrder...)
 	}
+	// TODO: don't even need a lock anymore
 	cmap.mu.Lock()
 	// add to keysOrder only if the key is not already present to avoid duplicate fields
 	if _, ok := cmap.vals[key]; !ok {
@@ -118,7 +121,7 @@ func AddVal(ctx context.Context, key, val string) context.Context {
 	}
 	cmap.vals[key] = val
 	cmap.mu.Unlock()
-	return ctx
+	return context.WithValue(ctx, clogContextKey, cmap)
 }
 
 func GetManifestID(ctx context.Context) string {
