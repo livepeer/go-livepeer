@@ -9,11 +9,12 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-20.04
+    name: Prepare github release
+    runs-on: ubuntu-24.04
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: checkout
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_branch }}
