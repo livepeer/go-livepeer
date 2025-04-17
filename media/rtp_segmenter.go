@@ -2,6 +2,7 @@ package media
 
 import (
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -17,11 +18,17 @@ type RTPTrack interface {
 	SSRC() webrtc.SSRC
 }
 
+type MpegtsWriter interface {
+	WriteH264(*mpegts.Track, int64, int64, [][]byte) error
+	WriteOpus(*mpegts.Track, int64, [][]byte) error
+}
+
 type RTPSegmenter struct {
 	mu           sync.RWMutex
+	mpegtsInit   func(bw io.Writer, tracks []*mpegts.Track) MpegtsWriter
 	mediaWriter  *MediaWriter
 	tracks       []*trackWriter
-	mpegtsWriter *mpegts.Writer
+	mpegtsWriter MpegtsWriter
 	ssr          *SwitchableSegmentReader
 	audioQueue   []*audioPacket
 	videoQueue   []*videoPacket
@@ -30,6 +37,9 @@ type RTPSegmenter struct {
 	maxQueueSize int   // Maximum number of packets to buffer per queue
 	tsWatermark  int64 // Timestamp of the last written packet
 
+	started      bool          // whether the first segment has been started
+	nextStartTs  int64         // timestamp the next segment should start at
+	nextStartSet bool          // wheher nextStartTs has been (re-)set
 	segStartTs   int64         // timestamp of the current segment
 	segStartTime time.Time     // wall clock of when the current segment started
 	minSegDur    time.Duration // minimum segment duration
@@ -57,8 +67,9 @@ type trackWriter struct {
 func NewRTPSegmenter(tracks []RTPTrack, ssr *SwitchableSegmentReader, segDur time.Duration) *RTPSegmenter {
 	s := &RTPSegmenter{
 		ssr:          ssr,
-		maxQueueSize: 20,
+		maxQueueSize: 64,
 		minSegDur:    segDur,
+		mpegtsInit:   func(w io.Writer, t []*mpegts.Track) MpegtsWriter { return mpegts.NewWriter(w, t) },
 	}
 	s.tracks = s.setupTracks(tracks)
 	return s
@@ -68,8 +79,13 @@ func (s *RTPSegmenter) StartSegment(startTs int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Flush any pending packets < startTs
-	s.flushQueues(startTs)
+	s.nextStartTs = startTs
+	s.started = true
+	s.nextStartSet = true
+}
+
+func (s *RTPSegmenter) resetSegment() {
+	// Expects lock to already be held
 
 	// close any previous segment
 	if s.mediaWriter != nil {
@@ -78,11 +94,12 @@ func (s *RTPSegmenter) StartSegment(startTs int64) {
 	// re-create mpegts tracks; we dont want to reuse them
 	newTracks := resetMpegtsTracks(s.tracks)
 	writer := NewMediaWriter()
-	s.mpegtsWriter = mpegts.NewWriter(writer, newTracks)
+	s.mpegtsWriter = s.mpegtsInit(writer, newTracks)
 	s.ssr.Read(writer.MakeReader())
 	s.mediaWriter = writer
-	s.segStartTs = startTs
+	s.segStartTs = s.nextStartTs
 	s.segStartTime = time.Now()
+	s.nextStartSet = false
 }
 
 func (s *RTPSegmenter) ShouldStartSegment(pts int64, tb uint32) bool {
@@ -156,7 +173,7 @@ func (s *RTPSegmenter) CloseSegment() {
 func (s *RTPSegmenter) IsReady() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.mediaWriter != nil
+	return s.started
 }
 
 func (s *RTPSegmenter) setupTracks(rtpTracks []RTPTrack) []*trackWriter {
@@ -169,11 +186,17 @@ func (s *RTPSegmenter) setupTracks(rtpTracks []RTPTrack) []*trackWriter {
 		switch codec.MimeType {
 		case webrtc.MimeTypeH264:
 			cw.writeVideo = func(pts, dts int64, au [][]byte) error {
+				if s.nextStartSet && dts >= s.nextStartTs {
+					s.resetSegment()
+				}
 				return s.mpegtsWriter.WriteH264(cw.mpegtsTrack, pts, dts, au)
 			}
 			s.hasVideo = true
 		case webrtc.MimeTypeOpus:
 			cw.writeAudio = func(pts int64, data [][]byte) error {
+				if s.nextStartSet && pts >= s.nextStartTs {
+					s.resetSegment()
+				}
 				return s.mpegtsWriter.WriteOpus(cw.mpegtsTrack, pts, data)
 			}
 			s.hasAudio = true
