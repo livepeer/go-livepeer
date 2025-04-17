@@ -36,12 +36,11 @@ else
     --network host \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v ./box/aiModels-${PIPELINE}.json:/opt/aiModels.json \
-    -v /opt/models:/opt/models \
   livepeer/go-livepeer \
     -orchestrator \
     -aiWorker \
     -aiModels /opt/aiModels.json \
-    -aiModelsDir /opt/models \
+    ${AI_MODELS_DIR_FLAG} \
     -serviceAddr 127.0.0.1:8935 \
     -transcoder \
     -v 6 \
