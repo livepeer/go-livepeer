@@ -130,15 +130,28 @@ swagger:
 
 # Command to run Livepeer Realtime AI Video in a Box
 .PHONY: box
-box: livepeer box-runner
+box: box-rebuild
 	./box/box.sh
 
+.PHONY: box-rebuild
+box-rebuild:
+ifeq ($(strip ${REBUILD}),false)
+	@echo "Skipping rebuild of components"
+else
+		@$(MAKE) box-runner
+	ifeq ($(strip ${DOCKER}),true)
+		docker build -t livepeer/go-livepeer -f docker/Dockerfile .
+	else
+		@$(MAKE) livepeer
+	endif
+endif
+
 .PHONY: box-gateway
-box-gateway: livepeer
+box-gateway: box-rebuild
 	./box/gateway.sh
 
 .PHONY: box-orchestrator
-box-orchestrator: livepeer
+box-orchestrator: box-rebuild
 	./box/orchestrator.sh
 
 .PHONY: box-mediamtx
