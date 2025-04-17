@@ -18,7 +18,7 @@ concurrency:
 jobs:
   linux-build:
     name: Build binaries for ${{ matrix.target.GOOS }}-${{ matrix.target.type }}-${{ matrix.target.GOARCH }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     container:
       image: ${{ matrix.target.container }}
       env:
@@ -61,7 +61,7 @@ jobs:
           apt update && apt install -yqq git zip unzip zlib1g-dev zlib1g libzlcore-dev libz-mingw-w64-dev yasm
 
       - name: Check out code
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -163,7 +163,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
@@ -254,13 +254,13 @@ jobs:
     permissions:
       contents: "read"
       id-token: "write"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     needs:
       - macos-build
       - linux-build
     steps:
       - name: Check out code
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           # Check https://github.com/livepeer/go-livepeer/pull/1891
