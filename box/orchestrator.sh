@@ -12,10 +12,11 @@ fi
 NVIDIA=""
 AI_MODELS_DIR=${AI_MODELS_DIR:-}
 if [[ "$PIPELINE" != "noop" ]]; then
-  NVIDIA="all"
-  if [[ -z "$AI_MODELS_DIR" ]]; then
+  NVIDIA="-nvidia all"
+  if [[ "$AI_MODELS_DIR" = "" ]]; then
       AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../runner/models && pwd )"
   fi
+  AI_MODELS_DIR_FLAG="-aiModelsDir ${AI_MODELS_DIR}"
 fi
 
 if [ "$DOCKER" = "false" ]; then
@@ -23,8 +24,8 @@ if [ "$DOCKER" = "false" ]; then
     -orchestrator \
     -aiWorker \
     -aiModels ./box/aiModels-${PIPELINE}.json \
-    -aiModelsDir $AI_MODELS_DIR \
-    -nvidia $NVIDIA \
+    ${AI_MODELS_DIR_FLAG} \
+    ${NVIDIA} \
     -serviceAddr localhost:8935 \
     -transcoder \
     -v 6 \
