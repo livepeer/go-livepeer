@@ -52,18 +52,19 @@ export PIPELINE=comfyui
 ```bash
 cd ../ai-runner/runner
 ./dl_checkpoints.sh --tensorrt
+export MODEL_DIR=$(pwd)/models
 ```
 
-2Start everything with the following command
+2. Start everything with the following command
 ```bash
 make box
 ```
-3Start streaming
+3. Start streaming
 ```bash
 make box-stream
 ```
 
-4Playback the stream
+4. Playback the stream
 ```bash
 make box-playback
 ```
