@@ -35,7 +35,7 @@ else
   docker run --rm --name orchestrator \
     --network host \
     -v /var/run/docker.sock:/var/run/docker.sock \
-    -v $(pwd)/box/${MODEL_JSON}:/opt/aiModels.json \
+    -v ./box/aiModels-${PIPELINE}.json:/opt/aiModels.json \
     -v /opt/models:/opt/models \
   livepeer/go-livepeer \
     -orchestrator \
