@@ -147,11 +147,7 @@ box-mediamtx:
 
 .PHONY: box-runner
 box-runner:
-	set -x \
-	&& cd ../ai-runner/runner \
-	&& docker build -t livepeer/ai-runner:live-base -f docker/Dockerfile.live-base . \
-	&& docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop . \
-	&& docker stop live-video-to-video_noop_8900 || true
+	./box/build-runner.sh
 
 .PHONY: box-stream
 box-stream:
