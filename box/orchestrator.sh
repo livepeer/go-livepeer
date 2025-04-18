@@ -14,7 +14,7 @@ AI_MODELS_DIR=${AI_MODELS_DIR:-}
 if [[ "$PIPELINE" != "noop" ]]; then
   NVIDIA="-nvidia all"
   if [[ "$AI_MODELS_DIR" = "" ]]; then
-      AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../runner/models && pwd )"
+      AI_MODELS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && cd ../ai-runner/runner/models && pwd )"
   fi
   AI_MODELS_DIR_FLAG="-aiModelsDir ${AI_MODELS_DIR}"
 fi
