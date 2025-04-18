@@ -1,8 +1,9 @@
 #!/bin/bash
 
 PIPELINE=${PIPELINE:-noop}
-STREAM_KEY="my-stream"
-STREAM_ID="my-stream-id"
+IDX=${IDX:-0}
+STREAM_KEY="my-stream-${IDX}"
+STREAM_ID="my-stream-id-${IDX}"
 RTMP_OUTPUT=${RTMP_OUTPUT:-""}
 
 case "$1" in

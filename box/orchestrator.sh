@@ -20,6 +20,7 @@ fi
   -aiWorker \
   -aiModels ./box/aiModels-${PIPELINE}.json \
   -aiModelsDir $AI_MODELS_DIR \
+  -aiRunnerContainersPerGPU=4 \
   -nvidia $NVIDIA \
   -serviceAddr localhost:8935 \
   -transcoder \
