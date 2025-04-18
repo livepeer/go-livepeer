@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   block-fixup:
+    if: ${{ github.ref_name != 'master' }}
     name: Block merge if non-linear git history detected
     runs-on: ubuntu-24.04
     steps:
