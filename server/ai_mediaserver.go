@@ -764,6 +764,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
+			orchestrator := r.URL.Query().Get("orchestrator")
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
@@ -883,6 +884,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					pipelineID:             pipelineID,
 					stopPipeline:           stopPipeline,
 					sendErrorEvent:         sendErrorEvent,
+					orchestrator:           orchestrator,
 				},
 			}
 

@@ -110,6 +110,7 @@ type liveRequestParams struct {
 	requestID             string
 	streamID              string
 	pipelineID            string
+	orchestrator          string
 
 	paymentProcessInterval time.Duration
 
@@ -1517,6 +1518,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
+		if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
+			// user requested a specific orchestrator, so ignore all the others
+			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+			retryableSessions = append(retryableSessions, sess)
+			continue
+		}
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
