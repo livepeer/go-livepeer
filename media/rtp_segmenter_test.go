@@ -1,10 +1,13 @@
 package media
 
 import (
+	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/bluenviron/mediacommon/v2/pkg/formats/mpegts"
 	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/require"
 )
@@ -30,6 +33,33 @@ var (
 	videoTrack = &mockTrackRemote{codecType: webrtc.MimeTypeH264}
 	audioTrack = &mockTrackRemote{codecType: webrtc.MimeTypeOpus, channels: 2}
 )
+
+// Add this stub to capture writes
+type stubWriter struct {
+	writeVideo func(pts, dts int64, au [][]byte) error
+	writeAudio func(pts int64, au [][]byte) error
+}
+
+func (s *stubWriter) WriteH264(track *mpegts.Track, pts, dts int64, au [][]byte) error {
+	return s.writeVideo(pts, dts, au)
+}
+
+func (s *stubWriter) WriteOpus(track *mpegts.Track, pts int64, au [][]byte) error {
+	return s.writeAudio(pts, au)
+}
+
+func newStubTSWriter(w io.Writer, t []*mpegts.Track) MpegtsWriter {
+	return &stubWriter{
+		writeVideo: func(pts, dts int64, au [][]byte) error {
+			w.Write([]byte(fmt.Sprintf("V%d ", pts)))
+			return nil
+		},
+		writeAudio: func(pts int64, au [][]byte) error {
+			w.Write([]byte(fmt.Sprintf("A%d ", pts)))
+			return nil
+		},
+	}
+}
 
 func TestRTPSegmenterQueueLimit(t *testing.T) {
 
@@ -83,6 +113,11 @@ func TestRTPSegmenterVideoOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
 	seg := NewRTPSegmenter([]RTPTrack{videoTrack}, ssr, 0)
+	seg.mpegtsInit = newStubTSWriter
+	var segment CloneableReader
+	ssr.SwitchReader(func(reader CloneableReader) {
+		segment = reader
+	})
 
 	// Verify we have video but no audio
 	require.True(seg.hasVideo)
@@ -97,6 +132,13 @@ func TestRTPSegmenterVideoOnly(t *testing.T) {
 		require.NoError(seg.WriteVideo(videoTrack, ts, ts, [][]byte{[]byte{byte(i + 1), byte(i + 2), byte(i + 3)}}))
 		require.Equal(ts, seg.tsWatermark, "Watermark should match timestamp after packet %d", i)
 		require.Empty(seg.videoQueue, "Video queue should be empty after packet %d", i)
+		// Check output
+		expect := fmt.Sprintf("V%d ", ts)
+		out := make([]byte, len(expect))
+		n, err := io.ReadAtLeast(segment, out, len(out))
+		require.Nil(err)
+		require.Equal(len(expect), n)
+		require.Equal(expect, string(out))
 	}
 
 	// Test that writing to non-existent audio track returns an error
@@ -109,6 +151,11 @@ func TestRTPSegmenterAudioOnly(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
 	seg := NewRTPSegmenter([]RTPTrack{audioTrack}, ssr, 0)
+	seg.mpegtsInit = newStubTSWriter
+	var segment CloneableReader
+	ssr.SwitchReader(func(reader CloneableReader) {
+		segment = reader
+	})
 
 	// Verify we have audio but no video
 	require.True(seg.hasAudio)
@@ -123,6 +170,13 @@ func TestRTPSegmenterAudioOnly(t *testing.T) {
 		require.NoError(seg.WriteAudio(audioTrack, ts, [][]byte{[]byte{byte(1), byte(2), byte(3)}}))
 		require.Equal(ts, seg.tsWatermark, "Watermark should match timestamp after packet %d", i)
 		require.Empty(seg.audioQueue, "Audio queue should be empty after packet %d", i)
+		// Check output
+		expect := fmt.Sprintf("A%d ", ts)
+		out := make([]byte, len(expect))
+		n, err := io.ReadAtLeast(segment, out, len(out))
+		require.Nil(err)
+		require.Equal(len(expect), n)
+		require.Equal(expect, string(out))
 	}
 
 	// Test that writing to non-existent video track returns an error
@@ -181,6 +235,11 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	require := require.New(t)
 	ssr := NewSwitchableSegmentReader()
 	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+	seg.mpegtsInit = newStubTSWriter
+	var segment CloneableReader
+	ssr.SwitchReader(func(reader CloneableReader) {
+		segment = reader
+	})
 
 	// Start a segment
 	seg.StartSegment(0)
@@ -208,7 +267,7 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	require.Equal(int64(5000), seg.videoQueue[0].pts)
 	require.Empty(seg.audioQueue)
 
-	// Try to write a late audio packet - should be dropped
+	// Try to write a late audio packet - should be ok
 	require.NoError(seg.WriteAudio(audioTrack, 6000, [][]byte{[]byte{4, 5, 6}}))
 	require.Equal(int64(5000), seg.tsWatermark)
 	require.Empty(seg.videoQueue)
@@ -228,6 +287,13 @@ func TestRTPSegmenterLatePacketDropping(t *testing.T) {
 	require.Len(seg.videoQueue, 1)
 	// Verify low watermark is updated
 	require.Equal(int64(7000), seg.videoQueue[0].pts)
+
+	// Check output
+	seg.CloseSegment()
+	expected := "A2000 V5000 A6000 A6500 A6600 V7000 "
+	out, err := io.ReadAll(segment)
+	require.Nil(err)
+	require.Equal(expected, string(out))
 }
 
 func TestRTPSegmenterMinSegmentDurationWallClock(t *testing.T) {
@@ -244,6 +310,7 @@ func TestRTPSegmenterMinSegmentDurationWallClock(t *testing.T) {
 	// Start an initial segment
 	seg.StartSegment(0)
 	require.True(seg.IsReady(), "Segment should be started")
+	require.Nil(seg.WriteVideo(videoTrack, 0, 0, [][]byte{{0}}))
 
 	// Immediately check if we should start a new segment
 	// Not enough wall time has passed
@@ -272,6 +339,7 @@ func TestRTPSegmenterMinSegmentDurationPTS(t *testing.T) {
 	// Start initial segment at pts=0
 	seg.StartSegment(0)
 	require.True(seg.IsReady(), "Segment should be active")
+	require.Nil(seg.WriteVideo(videoTrack, 0, 0, [][]byte{{0}}))
 
 	// Even if we wait in real clock, if PTS is still less than 1s, no new segment
 	time.Sleep(minSegDur)
@@ -279,7 +347,110 @@ func TestRTPSegmenterMinSegmentDurationPTS(t *testing.T) {
 	require.True(seg.ShouldStartSegment(10, 1000)) // 10ms == minSegDur
 
 	seg.StartSegment(12)
+	require.Nil(seg.WriteVideo(videoTrack, 12, 12, [][]byte{{12}}))
 	time.Sleep(minSegDur)                                  // because we also check the wall clock
 	require.False(seg.ShouldStartSegment(20, 1000), "PTS") // 20ms < 22ms (12ms start + 10ms  minSegDur)
 	require.True(seg.ShouldStartSegment(23, 1000), "PTS")  // 23ms > 22ms
+}
+
+func TestRTPSegmenterMixedOrder(t *testing.T) {
+	require := require.New(t)
+	// Create a new segmenter using both a video and an audio track.
+	ssr := NewSwitchableSegmentReader()
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+
+	seg.mpegtsInit = newStubTSWriter
+
+	var segments []CloneableReader
+	ssr.SwitchReader(func(reader CloneableReader) {
+		segments = append(segments, reader)
+	})
+	writeVideo := func(ts int64) error { return seg.WriteVideo(videoTrack, ts, ts, [][]byte{{byte(ts)}}) }
+	writeAudio := func(ts int64) error { return seg.WriteAudio(audioTrack, ts, [][]byte{{byte(ts)}}) }
+
+	// Set an initial segment at timestamp 0 and override its writer with our stub.
+	seg.StartSegment(0)
+
+	// Write packets in the desired order.
+	require.NoError(writeVideo(0))
+	require.NoError(writeAudio(1))
+	require.NoError(writeVideo(3))
+	require.NoError(writeVideo(4))
+
+	// Start a new segment at timestamp 6.
+	seg.StartSegment(6)
+
+	// Write additional packets.
+	require.NoError(writeVideo(6))
+	// This audio packet (with timestamp 2) is lower than the current watermark and should be dropped.
+	require.NoError(writeAudio(2))
+	require.NoError(writeAudio(5))
+
+	// Flush any remaining queued packets.
+	seg.CloseSegment()
+
+	// Read first and second segments. add separator.
+	require.Len(segments, 2)
+	out1, err := io.ReadAll(segments[0])
+	require.Nil(err)
+	out2, err := io.ReadAll(segments[1])
+	require.Nil(err)
+	out := string(out1) + "/ " + string(out2)
+
+	// Check results.
+	expected := "V0 A1 A2 V3 V4 A5 / V6 "
+	require.Equal(expected, out)
+}
+
+func TestRTPSegmenterDropKeyframe(t *testing.T) {
+	require := require.New(t)
+	// Create a new segmenter using both a video and an audio track.
+	ssr := NewSwitchableSegmentReader()
+	seg := NewRTPSegmenter([]RTPTrack{videoTrack, audioTrack}, ssr, 0)
+
+	seg.mpegtsInit = newStubTSWriter
+	seg.maxQueueSize = 3
+
+	var segments []CloneableReader
+	ssr.SwitchReader(func(reader CloneableReader) {
+		segments = append(segments, reader)
+	})
+	writeVideo := func(ts int64) error { return seg.WriteVideo(videoTrack, ts, ts, [][]byte{{byte(ts)}}) }
+	writeAudio := func(ts int64) error { return seg.WriteAudio(audioTrack, ts, [][]byte{{byte(ts)}}) }
+
+	// Set an initial segment at timestamp 0 and override its writer with our stub.
+	seg.StartSegment(0)
+
+	// Write packets in the desired order.
+	require.NoError(writeVideo(0))
+	require.NoError(writeAudio(1))
+	require.NoError(writeAudio(3))
+	require.NoError(writeAudio(4))
+	require.NoError(writeAudio(5))
+	require.NoError(writeAudio(6))
+
+	seg.StartSegment(2)
+	require.NoError(writeVideo(2)) // dropped
+	require.NoError(writeAudio(8))
+	require.NoError(writeAudio(9))
+	require.NoError(writeAudio(10))
+	require.NoError(writeAudio(12))
+	require.NoError(writeAudio(13))
+	require.NoError(writeVideo(7)) // droppd
+	require.NoError(writeVideo(11))
+
+	// Flush any remaining queued packets.
+	seg.CloseSegment()
+
+	// Read first and second segments. add separator.
+	require.Len(segments, 2)
+	out1, err := io.ReadAll(segments[0])
+	require.Nil(err)
+	out2, err := io.ReadAll(segments[1])
+	require.Nil(err)
+	out := string(out1) + "/ " + string(out2)
+
+	// Check results.
+	expected := "V0 A1 A3 / A4 A5 A6 A8 A9 A10 V11 A12 A13 "
+	require.Equal(expected, out)
 }
