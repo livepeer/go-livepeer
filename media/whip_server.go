@@ -240,6 +240,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 	ro := rtpreorderer.New()
 	au := [][]byte{}
+	currentTS := uint32(0)
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {
@@ -248,7 +249,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 		}
 		pkts, lost := ro.Process(pkt)
 		if lost > 0 {
-			clog.Info(ctx, "RTP lost packets", "count", lost)
+			clog.Info(ctx, "RTP lost packets", "track", codec, "count", lost)
 		}
 		for _, p := range pkts {
 			if len(p.Payload) == 0 {
@@ -272,13 +273,22 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 			pts, ok := timeDecoder.Decode(incomingTrack, p)
 			if !ok {
-				clog.Info(ctx, "RTP: error decoding packet time")
+				clog.Info(ctx, "RTP: error decoding packet time", "track", codec)
 				continue
 			}
 			if isAudio {
 				segmenter.WriteAudio(track, pts, [][]byte{d})
 				continue
 			}
+
+			// h264 video from here on
+
+			if currentTS != p.Timestamp && len(au) > 0 {
+				// received a new frame, but previous frame was incomplete (lost marker bit)
+				clog.Info(ctx, "RTP: Previous frame was incomplete, discarding")
+				au = [][]byte{}
+			}
+			currentTS = p.Timestamp
 
 			nalus, err := splitH264NALUs(d)
 			if err != nil {
@@ -297,22 +307,24 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 				continue
 			}
 
-			dts, err := dtsExtractor.Extract(au, pts)
+			// Have a complete frame, so reset the AU
+			frameAU := au
+			au = [][]byte{}
+
+			dts, err := dtsExtractor.Extract(frameAU, pts)
 			if err != nil {
 				clog.Info(ctx, "RTP: error extracting DTS", "seq", p.SequenceNumber, "pkt-ts", p.Timestamp, "pts", pts, "err", err)
 				continue
 			}
 
-			idr := h264.IsRandomAccess(au)
+			idr := h264.IsRandomAccess(frameAU)
 			if idr && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
 				segmenter.StartSegment(dts)
 			}
 
 			if segmenter.IsReady() {
-				segmenter.WriteVideo(track, pts, dts, au)
+				segmenter.WriteVideo(track, pts, dts, frameAU)
 			}
-
-			au = [][]byte{}
 		}
 	}
 }

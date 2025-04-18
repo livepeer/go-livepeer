@@ -551,27 +551,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			monitor.AILiveVideoAttempt()
 		}
 
-		// Kick off the RTMP pull and segmentation as soon as possible
-		ssr := media.NewSwitchableSegmentReader()
-		go func() {
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_ingest_stream_closed",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   streamID,
-				"pipeline_id": pipelineID,
-				"request_id":  requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": "",
-					"url":     "",
-				},
-			})
-			ssr.Close()
-			<-orchSelection // wait for selection to complete
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
-		}()
-
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
 			"type":        "error",
 			"request_id":  requestID,
@@ -596,6 +575,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
+		ssr := media.NewSwitchableSegmentReader()
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -614,6 +594,26 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				sendErrorEvent:         sendErrorEvent,
 			},
 		}
+
+		// Kick off the RTMP pull and segmentation as soon as possible
+		go func() {
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_ingest_stream_closed",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
+			ssr.Close()
+			<-orchSelection // wait for selection to complete
+			cleanupControl(ctx, params)
+		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
 			ModelId:          &pipeline,
@@ -900,7 +900,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			whipConn.AwaitClose()
 			ssr.Close()
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
+			cleanupControl(ctx, params)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -916,8 +916,10 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
+func cleanupControl(ctx context.Context, params aiRequestParams) {
 	clog.Infof(ctx, "Live video pipeline finished")
+	stream := params.liveParams.stream
+	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
 	if !ok {
@@ -932,7 +934,7 @@ func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil {
+	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
