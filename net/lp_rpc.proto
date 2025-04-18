@@ -139,6 +139,7 @@ message Capabilities {
       message ModelConstraint {
         bool warm = 1;
         uint32 capacity = 2;
+        string runnerVersion = 3;
       }
 
       map<string, ModelConstraint> models = 1;
@@ -519,7 +520,7 @@ message GPUComputeInfo {
 message HardwareInformation {
     // pipeline hardware supports
     string pipeline = 1;
-    
+
     // model_id hardware supports
     string model_id = 2;
 

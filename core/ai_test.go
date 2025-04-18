@@ -730,6 +730,10 @@ func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
 	return nil
 }
 
+func (a *stubAIWorker) Version() []worker.Version {
+	return nil
+}
+
 type StubAIWorkerServer struct {
 	manager      *RemoteAIWorkerManager
 	SendError    error

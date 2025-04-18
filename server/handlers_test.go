@@ -413,7 +413,7 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	}
 	var hdwList []*lpnet.HardwareInformation
 	hdwList = append(hdwList, &wkrHdw)
-	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, "")
+	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, &core.Capabilities{})
 	orchAddress := pm.RandAddress()
 	var networkCaps []*common.OrchNetworkCapabilities
 	orchNetworkCaps := &common.OrchNetworkCapabilities{
