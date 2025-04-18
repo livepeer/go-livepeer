@@ -1,5 +1,9 @@
 # Realtime Video AI in a Box
 
+## Requirements
+- Docker is installed (executing `docker` should succeed)
+- [ffmpeg](https://ffmpeg.org/) is installed (executing `ffmpeg` and `ffplay` should succeed)
+
 ## Usage (Linux AMD64)
 
 ```
