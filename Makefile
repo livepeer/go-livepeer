@@ -138,7 +138,7 @@ box-rebuild:
 ifeq ($(strip ${REBUILD}),false)
 	@echo "Skipping rebuild of components"
 else
-		@$(MAKE) box-runner
+	@$(MAKE) box-runner
 	ifeq ($(strip ${DOCKER}),true)
 		docker build -t livepeer/go-livepeer -f docker/Dockerfile .
 	else
