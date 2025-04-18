@@ -359,7 +359,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
-				cleanupLive(ctx, params.node, stream)
 				return
 			}
 		}
