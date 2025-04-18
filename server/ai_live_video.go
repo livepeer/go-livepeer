@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -323,7 +322,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		slog.Info("error starting control publisher", "stream", stream, "err", err)
+		clog.InfofErr(ctx, "error starting control publisher", err)
 		return
 	}
 	params.node.LiveMu.Lock()
@@ -331,14 +330,24 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool, 1)
+	once := sync.Once{}
 	stop := func() {
-		ticker.Stop()
-		done <- true
+		once.Do(func() {
+			ticker.Stop()
+			done <- true
+		})
+	}
+
+	if control, exists := params.node.LivePipelines[stream]; exists {
+		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
+		control.ControlPub.Close()
+		// TODO better solution than allowing existing streams to stomp over one another
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		ControlPub:  controlPub,
 		StopControl: stop,
+		RequestID:   params.liveParams.requestID,
 	}
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
