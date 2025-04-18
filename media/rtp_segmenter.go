@@ -126,11 +126,11 @@ func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) 
 	for _, t := range s.tracks {
 		if t.rtpTrack == source {
 			// Check if packet is too old (below low watermark)
-			/*if s.tsWatermark > 0 && dts < s.tsWatermark {
+			if s.tsWatermark > 0 && dts < s.tsWatermark {
 				// Packet is too old, discard it
 				// TODO increment some metric for this connection?
-				return nil
-			}*/
+				//return nil
+			}
 
 			// Add new packet
 			s.videoQueue = append(s.videoQueue, &videoPacket{t, pts, dts, au})
@@ -148,11 +148,11 @@ func (s *RTPSegmenter) WriteAudio(source RTPTrack, pts int64, au [][]byte) error
 			rescaledPts := multiplyAndDivide(pts, 90000, int64(source.Codec().ClockRate))
 
 			// Check if packet is too old (below low watermark)
-			/*if s.tsWatermark > 0 && rescaledPts < s.tsWatermark {
+			if s.tsWatermark > 0 && rescaledPts < s.tsWatermark {
 				// Packet is too old, discard it
 				// TODO increment some metric for this connection?
-				return nil
-			}*/
+				//return nil
+			}
 
 			// Add new packet
 			s.audioQueue = append(s.audioQueue, &audioPacket{t, rescaledPts, au})
