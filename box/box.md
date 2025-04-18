@@ -56,7 +56,7 @@ export PIPELINE=comfyui
 ```bash
 cd ../ai-runner/runner
 ./dl_checkpoints.sh --tensorrt
-export MODEL_DIR=$(pwd)/models
+export AI_MODELS_DIR=$(pwd)/models
 ```
 
 2. Start everything with the following command
