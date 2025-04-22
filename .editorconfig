@@ -23,12 +23,12 @@ end_of_line = unset
 insert_final_newline = unset
 
 # Makefiles/Dockerfile/golang files
-[{Makefile,Dockerfile{,.cuda-base,.mediamtx},*.go}]
+[{go.mod,Makefile,Dockerfile{,.cuda-base,.mediamtx},*.go}]
 indent_style = tab
 indent_size = 8
 
 # YAML/JSON/sh Files
-[*.{yml,yaml,sh,json,bash}]
+[*.{yml,yaml,sh,json,bash,proto}]
 indent_size = 2
 
 [{server/handlers_test,eth/accountmanager_test}.go]
