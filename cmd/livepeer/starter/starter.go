@@ -205,7 +205,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultOrchPerfStatsURL := ""
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
-	defaultDiscoveryTimeout := 500 * time.Millisecond
+	defaultDiscoveryTimeout := 5000 * time.Millisecond
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
