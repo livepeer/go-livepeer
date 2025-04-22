@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -94,14 +94,16 @@ func main() {
 	}
 	if !goodToGo {
 		fmt.Println(`
-    Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder [nodeIndex]
-        It will create initialize eth account (on private testnet) to be used for broadcaster or transcoder
-        and will create shell script (run_broadcaster_ETHACC.sh or run_transcoder_ETHACC.sh) to run it.
-        Node index indicates how much to offset node's port. Orchestrator node's index by default is 1.
-        For example:
-        "devtool setup broadcaster" will create broadcaster with cli port 7935 and media port 8935
-        "devtool setup broadcaster 2" will create broadcaster with cli port 7937 and media port 8937
-        "devtool setup transcoder 3" will create transcoder with cli port 7938 and media port 8938`)
+Usage: go run cmd/devtool/devtool.go setup broadcaster|transcoder [nodeIndex]
+
+It will create initialize eth account (on private testnet) to be used for broadcaster or transcoder
+and will create shell script (` + "`run_broadcaster_ETHACC.sh` or `run_transcoder_ETHACC.sh`" + `) to run it.
+nodeIndex indicates how much to offset node's port. Orchestrator node's index by default is 1.
+
+EXAMPLES:
+	"devtool setup broadcaster"	will create broadcaster with cli port 7935 and media port 8935
+	"devtool setup broadcaster 2"	will create broadcaster with cli port 7937 and media port 8937
+	"devtool setup transcoder 3"	will create transcoder with cli port 7938 and media port 8938`)
 		return
 	}
 	nodeIndex := 0
@@ -120,7 +122,7 @@ func main() {
 
 	t := getNodeType(isBroadcaster)
 
-	tmp, err := ioutil.TempDir("", "livepeer")
+	tmp, err := os.MkdirTemp("", "livepeer")
 	if err != nil {
 		glog.Exitf("Can't create temporary directory: %v", err)
 	}
@@ -245,7 +247,7 @@ func writeScript(fName string, args ...string) {
 	script += "\n"
 
 	glog.Info(script)
-	err := ioutil.WriteFile(fName, []byte(script), 0755)
+	err := os.WriteFile(fName, []byte(script), 0755)
 	if err != nil {
 		glog.Warningf("Error writing run script %q: %v", fName, err)
 	}
@@ -263,7 +265,7 @@ func moveDir(src, dst string) error {
 	}
 	defer os.Chmod(dst, originalMode)
 
-	contents, err := ioutil.ReadDir(src)
+	contents, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
@@ -283,7 +285,7 @@ func moveDir(src, dst string) error {
 	return nil
 }
 
-func moveFile(src, dst string, info os.FileInfo) error {
+func moveFile(src, dst string, info fs.DirEntry) error {
 	if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
 		return err
 	}
@@ -294,7 +296,7 @@ func moveFile(src, dst string, info os.FileInfo) error {
 	}
 	defer f.Close()
 
-	if err = os.Chmod(f.Name(), info.Mode()); err != nil {
+	if err = os.Chmod(f.Name(), info.Type()); err != nil {
 		return err
 	}
 
