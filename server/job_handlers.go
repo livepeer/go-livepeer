@@ -3,6 +3,7 @@ package server
 //based on segment_rpc.go
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"time"
@@ -207,13 +209,15 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
+	taskId := core.RandomManifestID()
 	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
+	ctx = clog.AddVal(ctx, "worker_task_id", string(taskId))
 	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
 	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
 
 	jobId := jobReq.Capability + "-" + jobReq.ID
+	jobPrice := payment.GetExpectedPrice()
 	if payment.TicketParams == nil {
 		//no payment included, confirm if balance remains
 		if !h.orchestrator.SufficientBalance(sender, core.ManifestID(jobId)) {
@@ -229,6 +233,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clog.Infof(ctx, "balance after payment is %v", orch.Balance(sender, core.ManifestID(jobId)).FloatString(3))
 	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing")
 
 	// Read the original body
@@ -250,48 +255,159 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout)*time.Second)
-	if err != nil || (resp != nil && resp.StatusCode > 399) {
+	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 
 		if err == context.DeadlineExceeded {
 			orch.RemoveExternalCapability(jobReq.Capability)
 		}
 
+		chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+
+		http.Error(w, fmt.Sprintf("job not able to be processed err=%v", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	//non streaming response
+	if resp.Header.Get("Content-Type") != "text/event-stream" {
+		//release capacity for another request
 		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
 
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		clog.Errorf(ctx, "Unable to read response err=%v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			clog.Errorf(ctx, "Unable to read response err=%v", err)
+
+			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		//error response from worker but assume can retry and pass along error response and status code
+		if resp.StatusCode > 399 {
+			clog.Errorf(ctx, "error processing request err=%v ", string(data))
+
+			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+			//return error response from the worker
+			http.Error(w, string(data), resp.StatusCode)
+			return
+		}
+
+		chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", time.Since(start))
+		w.Write(data)
+		//request completed and returned a response
+
 		return
+	} else {
+		// Handle streaming response (SSE)
+		clog.Infof(ctx, "received streaming response")
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		//send payment balance back so client can determine if payment is needed
+		addPaymentBalanceHeader(w, orch, sender, jobId)
+
+		// Flush to ensure data is sent immediately
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			clog.Errorf(ctx, "streaming not supported")
+
+			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		// Read from upstream and forward to client
+		respChan := make(chan string, 100)
+		respCtx, _ := context.WithTimeout(ctx, 40*12*time.Second) //paramsExpirationBlock in pm package * 12 second block times
+		go func() {
+			defer resp.Body.Close()
+			defer close(respChan)
+			scanner := bufio.NewScanner(resp.Body)
+			//set a reasonable timeout to stop waiting for results
+
+			for scanner.Scan() {
+				select {
+				case <-respCtx.Done():
+					return
+				default:
+					respChan <- scanner.Text()
+				}
+			}
+		}()
+
+		//check for payment balance
+		pmtWatcher := time.NewTicker(5 * time.Second)
+		defer pmtWatcher.Stop()
+	proxyResp:
+		for {
+			select {
+			case <-pmtWatcher.C:
+				//check balance and end response if out of funds
+				h.orchestrator.DebitFees(sender, core.ManifestID(jobId), payment.GetExpectedPrice(), 5)
+				senderBalance := getPaymentBalance(orch, sender, jobId)
+				if senderBalance != nil {
+					if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
+						w.Write([]byte("event: insufficient balance\n"))
+						w.Write([]byte("data: [DONE]\n\n"))
+						flusher.Flush()
+						break proxyResp
+					}
+				}
+			case line := <-respChan:
+				w.Write([]byte(line + "\n"))
+				flusher.Flush()
+			case <-respCtx.Done():
+				break proxyResp
+			}
+		}
+
+		//release capacity for another request
+		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", time.Since(start))
 	}
-	took := time.Since(start)
+}
+
+func chargeForCompute(start time.Time, price *net.PriceInfo, w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
 	// Debit the fee for the total time processed
-	h.orchestrator.DebitFees(sender, core.ManifestID(jobId), payment.GetExpectedPrice(), int64(took.Seconds()))
+	took := time.Since(start)
+	orch.DebitFees(sender, core.ManifestID(jobId), price, int64(math.Ceil(took.Seconds())))
+	clog.V(common.SHORT).Infof(context.TODO(), "Job processed successfully took=%v", took)
+	addPaymentBalanceHeader(w, orch, sender, jobId)
+}
 
+func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
 	//check balance and return remaning balance in header of response
-	senderBalance := h.orchestrator.Balance(sender, core.ManifestID(jobId))
+	senderBalance := getPaymentBalance(orch, sender, jobId)
+	if senderBalance != nil {
+		senderBalAmt, err := common.PriceToInt64(senderBalance)
+		if err != nil {
+			senderBalAmt = big.NewRat(0, 1)
+		}
+		w.Header().Set("Livepeer-Payment-Balance", senderBalAmt.FloatString(0))
+	}
+	//no balance
+	w.Header().Set("Livepeer-Payment-Balance", "0")
+}
+
+func getPaymentBalance(orch Orchestrator, sender ethcommon.Address, jobId string) *big.Rat {
+	//check balance and return remaning balance in header of response
+	senderBalance := orch.Balance(sender, core.ManifestID(jobId))
 	if senderBalance == nil {
 		senderBalance = big.NewRat(0, 1)
 	}
-	senderBalAmt, _ := common.PriceToInt64(senderBalance)
-	if senderBalAmt.Cmp(big.NewRat(0, 1)) < 0 {
-		clog.Errorf(ctx, "Sender balance is negative")
-		http.Error(w, "Sender balance is negative", http.StatusPaymentRequired)
-		return
+	senderBalAmt, err := common.PriceToInt64(senderBalance)
+	if err != nil {
+		return big.NewRat(0, 1)
 	}
 
-	clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", took)
-
-	w.Header().Set("Livepeer-Payment-Balance", senderBalAmt.FloatString(0))
-	w.Write(data)
+	return senderBalAmt
 
 }
-
 func verifyTokenCreds(ctx context.Context, orch Orchestrator, tokenCreds string) (*JobSender, error) {
 	buf, err := base64.StdEncoding.DecodeString(tokenCreds)
 	if err != nil {
