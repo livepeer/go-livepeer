@@ -1030,7 +1030,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
+const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	startTime := time.Now()
