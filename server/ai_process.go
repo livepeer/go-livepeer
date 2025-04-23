@@ -132,21 +132,14 @@ func (p liveRequestParams) start(mid string) {
 }
 
 func (p liveRequestParams) stop(mid string, err error) {
-	select {
-	case <-p.initCompleted:
-		p.mu.Lock()
-		lastMid := p.lastMid
-		p.mu.Unlock()
-		if mid == lastMid {
-			p.stopPipeline(err)
-			select {
-			case <-p.initCompleted:
-				// Channel is already closed, do nothing
-			default:
-				close(p.initCompleted)
-			}
-		}
-	default:
+	<-p.initCompleted
+
+	p.mu.Lock()
+	lastMid := p.lastMid
+	p.mu.Unlock()
+
+	if mid == lastMid {
+		p.stopPipeline(err)
 	}
 }
 
@@ -1627,10 +1620,7 @@ func completeAIRequest(params aiRequestParams) {
 	if params.liveParams.initCompleted == nil {
 		return
 	}
-	select {
-	case params.liveParams.initCompleted <- struct{}{}:
-	default:
-	}
+	close(params.liveParams.initCompleted)
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.
