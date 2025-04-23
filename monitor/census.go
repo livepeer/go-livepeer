@@ -208,6 +208,7 @@ type (
 		mAICurrentLivePipelines *stats.Int64Measure
 		mAIFirstSegmentDelay    *stats.Int64Measure
 		mAILiveAttempts         *stats.Int64Measure
+		mAINumOrchs             *stats.Int64Measure
 
 		mAIWhipTransportBytesReceived   *stats.Int64Measure
 		mAIWhipTransportBytesSent       *stats.Int64Measure
@@ -386,6 +387,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
+	census.mAINumOrchs = stats.Int64("ai_orchestrators_available_total", "AI Live number of available orchestrators", "tot")
 
 	census.mAIWhipTransportBytesReceived = stats.Int64("ai_whip_transport_bytes_received", "Number of bytes received on a WHIP connection", "byte")
 	census.mAIWhipTransportBytesSent = stats.Int64("ai_whip_transport_bytes_sent", "Number of bytes sent on a WHIP connection", "byte")
@@ -1044,6 +1046,13 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_whip_transport_packets_sent",
 			Measure:     census.mAIWhipTransportPacketsSent,
 			Description: "Number of packets sent on a WHIP connection",
+			TagKeys:     baseTags,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "ai_orchestrators_available_total",
+			Measure:     census.mAINumOrchs,
+			Description: "AI Live number of available orchestrators",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
@@ -2071,6 +2080,17 @@ func AIFirstSegmentDelay(delayMs int64, orchInfo *lpnet.OrchestratorInfo) {
 
 func AILiveVideoAttempt() {
 	stats.Record(census.ctx, census.mAILiveAttempts.M(1))
+}
+
+func AINumOrchestrators(count int, modelName string) {
+	if !Enabled {
+		return
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, modelName)},
+		census.mAINumOrchs.M(int64(count))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 // Convert wei to gwei
