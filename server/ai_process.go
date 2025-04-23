@@ -1088,6 +1088,8 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, fmt.Errorf("invalid events URL: %w", err)
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+	firstSegmentReceived := make(chan struct{})
+	ctx, cancelCtx := context.WithCancel(ctx)
 
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, sess)
@@ -1108,10 +1110,18 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			})
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
+		firstSegmentReceived <- struct{}{}
 
 	})
 	startEventsSubscribe(ctx, events, params, sess)
-	return resp, nil
+	select {
+	case <-firstSegmentReceived:
+		return resp, nil
+	case <-time.After(params.node.AIStartupOrchSwapTimeout):
+		cancelCtx()
+		return nil, errors.New("timeout waiting for first segment")
+	}
+
 }
 
 // extractMid extracts the mid (manifest ID) from the publish URL
