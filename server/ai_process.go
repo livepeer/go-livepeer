@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -115,10 +116,38 @@ type liveRequestParams struct {
 	paymentProcessInterval time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	stopPipeline  func(error)
+	lastMid       string
+	initCompleted chan struct{}
+	mu            sync.Mutex
 
 	// Report an error event
 	sendErrorEvent func(error)
+}
+
+func (p liveRequestParams) start(mid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastMid = mid
+}
+
+func (p liveRequestParams) stop(mid string, err error) {
+	select {
+	case <-p.initCompleted:
+		p.mu.Lock()
+		lastMid := p.lastMid
+		p.mu.Unlock()
+		if mid == lastMid {
+			p.stopPipeline(err)
+			select {
+			case <-p.initCompleted:
+				// Channel is already closed, do nothing
+			default:
+				close(p.initCompleted)
+			}
+		}
+	default:
+	}
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1089,6 +1118,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 	firstSegmentReceived := make(chan struct{}, 1)
+	params.liveParams.start(extractMid(pub.Path))
 	ctx, cancelCtx := context.WithCancel(ctx)
 
 	startControlPublish(ctx, control, params)
@@ -1513,6 +1543,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
+	defer completeAIRequest(params)
 	tries := 0
 	var retryableSessions []*AISession
 	for tries < maxTries {
@@ -1590,6 +1621,16 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
+}
+
+func completeAIRequest(params aiRequestParams) {
+	if params.liveParams.initCompleted == nil {
+		return
+	}
+	select {
+	case params.liveParams.initCompleted <- struct{}{}:
+	default:
+	}
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.
