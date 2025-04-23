@@ -3,10 +3,10 @@
 DOCKER=${DOCKER:-false}
 PIPELINE=${PIPELINE:-noop}
 
-DOCKER_HOST="172.17.0.1"
+DOCKER_HOSTNAME="172.17.0.1"
 if [[ "$(uname)" == "Darwin" ]]; then
   # Docker on macOS has a special host address
-  DOCKER_HOST="host.docker.internal"
+  DOCKER_HOSTNAME="host.docker.internal"
 fi
 
 NVIDIA=""
@@ -29,7 +29,7 @@ if [ "$DOCKER" = "false" ]; then
     -serviceAddr localhost:8935 \
     -transcoder \
     -v 6 \
-    -liveAITrickleHostForRunner "$DOCKER_HOST:8935" \
+    -liveAITrickleHostForRunner "$DOCKER_HOSTNAME:8935" \
     -monitor
 else
   docker run --rm --name orchestrator \
