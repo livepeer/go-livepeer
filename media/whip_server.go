@@ -285,7 +285,18 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 			if currentTS != p.Timestamp && len(au) > 0 {
 				// received a new frame, but previous frame was incomplete (lost marker bit)
-				clog.Info(ctx, "RTP: Previous frame was incomplete, discarding")
+				clog.Info(ctx, "RTP: Previous frame was incomplete, sending anyway", "seq", p.SequenceNumber, "pts", pts)
+				dts, err := dtsExtractor.Extract(au, pts)
+				if err != nil {
+					clog.Info(ctx, "RTP: error extracting DTS", "seq", p.SequenceNumber, "pts", pts, "err", err)
+				} else {
+					if h264.IsRandomAccess(au) && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
+						segmenter.StartSegment(dts)
+					}
+					if segmenter.IsReady() {
+						segmenter.WriteVideo(track, pts, dts, au)
+					}
+				}
 				au = [][]byte{}
 			}
 			currentTS = p.Timestamp
