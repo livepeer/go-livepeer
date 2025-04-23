@@ -167,6 +167,7 @@ type LivepeerConfig struct {
 	AIRunnerImageOverrides     *string
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
+	AIStartupOrchSwapTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
@@ -220,6 +221,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
+	defaultAIStartupOrchSwapTimeout := 15 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
@@ -333,6 +335,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerImage:            &defaultAIRunnerImage,
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIStartupOrchSwapTimeout: &defaultAIStartupOrchSwapTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
@@ -523,6 +526,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
 	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
+	n.AIStartupOrchSwapTimeout = *cfg.AIStartupOrchSwapTimeout
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
