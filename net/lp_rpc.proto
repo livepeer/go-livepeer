@@ -172,6 +172,8 @@ message OrchestratorInfo {
   // Information on Orchestrator hardware
   repeated HardwareInformation hardware = 7;
 
+  string capacity = 8;
+
   // Orchestrator returns info about own input object storage, if it wants it to
   // be used.
   repeated OSInfo storage = 32;
