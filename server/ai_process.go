@@ -1110,7 +1110,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			})
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-		firstSegmentReceived <- struct{}{}
+		select {
+		case firstSegmentReceived <- struct{}{}:
+		default:
+		}
 
 	})
 	startEventsSubscribe(ctx, events, params, sess)
