@@ -1088,7 +1088,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, fmt.Errorf("invalid events URL: %w", err)
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
-	firstSegmentReceived := make(chan struct{})
+	firstSegmentReceived := make(chan struct{}, 1)
 	ctx, cancelCtx := context.WithCancel(ctx)
 
 	startControlPublish(ctx, control, params)
