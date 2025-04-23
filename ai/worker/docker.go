@@ -616,7 +616,7 @@ func removeExistingContainers(ctx context.Context, client DockerClient) error {
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	for _, c := range containers {
