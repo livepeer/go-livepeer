@@ -296,7 +296,7 @@ func moveFile(src, dst string, info fs.DirEntry) error {
 	}
 	defer f.Close()
 
-	if err = os.Chmod(f.Name(), info.Type()); err != nil {
+	if err = os.Chmod(f.Name(), os.ModePerm); err != nil {
 		return err
 	}
 
