@@ -698,7 +698,8 @@ tickerLoop:
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
 		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
-		monitor.AIContainersCount(len(m.gpus))
+		monitor.AIContainersIdle(len(m.containers))
+		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }
 
