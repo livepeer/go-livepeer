@@ -108,7 +108,7 @@ type DockerManager struct {
 	dockerClient DockerClient
 	// gpu ID => container name
 	gpuContainers map[string]string
-	// Map of available containers. container name => container
+	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
 }
@@ -698,7 +698,7 @@ tickerLoop:
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
 		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
-		monitor.AIContainersFree(len(m.containers))
+		monitor.AIContainersCount(len(m.gpus))
 	}
 }
 
