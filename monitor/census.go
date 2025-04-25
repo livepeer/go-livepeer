@@ -205,6 +205,8 @@ type (
 		mAIResultUploadTime     *stats.Float64Measure
 		mAIResultSaveFailed     *stats.Int64Measure
 		mAIContainersInUse      *stats.Int64Measure
+		mAIContainersIdle       *stats.Int64Measure
+		mAIGPUsIdle             *stats.Int64Measure
 		mAICurrentLivePipelines *stats.Int64Measure
 		mAIFirstSegmentDelay    *stats.Int64Measure
 		mAILiveAttempts         *stats.Int64Measure
@@ -384,6 +386,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
+	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
+	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
@@ -997,6 +1001,20 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_container_in_use",
 			Measure:     census.mAIContainersInUse,
 			Description: "Number of containers currently used for AI processing",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "ai_container_idle",
+			Measure:     census.mAIContainersIdle,
+			Description: "Number of containers currently available for AI processing",
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "ai_gpus_idle",
+			Measure:     census.mAIGPUsIdle,
+			Description: "Number of idle GPUs (with no configured container)",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
@@ -1978,6 +1996,14 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 
 func AIContainersInUse(currentContainersInUse int) {
 	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(currentContainersInUse)))
+}
+
+func AIContainersIdle(currentContainersIdle int) {
+	stats.Record(census.ctx, census.mAIContainersIdle.M(int64(currentContainersIdle)))
+}
+
+func AIGPUsIdle(currentGPUsIdle int) {
+	stats.Record(census.ctx, census.mAIGPUsIdle.M(int64(currentGPUsIdle)))
 }
 
 func AICurrentLiveSessions(currentPipelines int) {
