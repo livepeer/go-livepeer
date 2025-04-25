@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/pion/interceptor/pkg/stats"
 	"github.com/pion/webrtc/v4"
@@ -77,13 +78,23 @@ type WHIPPeerConnection interface {
 	GetStats() webrtc.StatsReport
 }
 
+type PeerConnStats struct {
+	ID              string
+	BytesReceived   uint64
+	BytesSent       uint64
+	PacketsReceived uint32
+	PacketsSent     uint32
+}
+
 type TrackStats struct {
-	Kind webrtc.RTPCodecType
-	*stats.Stats
+	Kind        webrtc.RTPCodecType
+	Jitter      float64
+	PacketsLost int64
+	RTT         time.Duration
 }
 
 type MediaStats struct {
-	PeerConnStats webrtc.StatsReport
+	PeerConnStats PeerConnStats
 	TrackStats    []TrackStats
 }
 
@@ -169,7 +180,21 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		tracks = m.tracks
 	)
 	m.mu.Unlock()
-	pcStats := pc.GetStats()
+	pcStatsReport := pc.GetStats()
+	var pcStats PeerConnStats
+	for _, stat := range pcStatsReport {
+		if s, ok := stat.(webrtc.TransportStats); ok {
+			pcStats = PeerConnStats{
+				ID:              s.ID,
+				BytesReceived:   s.BytesReceived,
+				BytesSent:       s.BytesSent,
+				PacketsReceived: s.PacketsReceived,
+				PacketsSent:     s.PacketsSent,
+			}
+			break
+		}
+	}
+
 	if getter == nil {
 		// tracks haven't been initialized yet
 		return &MediaStats{
@@ -182,7 +207,12 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		if s == nil {
 			continue
 		}
-		trackStats = append(trackStats, TrackStats{t.Kind(), s})
+		trackStats = append(trackStats, TrackStats{
+			Kind:        t.Kind(),
+			Jitter:      s.InboundRTPStreamStats.Jitter,
+			PacketsLost: s.InboundRTPStreamStats.PacketsLost,
+			RTT:         s.RemoteInboundRTPStreamStats.RoundTripTime,
+		})
 	}
 	return &MediaStats{
 		PeerConnStats: pcStats,

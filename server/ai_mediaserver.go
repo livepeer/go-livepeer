@@ -750,6 +750,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			whepURL = "http://localhost:8889/" // default mediamtx output
 		}
 		whepURL = whepURL + streamName + "-out/whep"
+		streamID := ""
+		pipelineID := ""
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -758,8 +760,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
 			outputURL := ""
-			streamID := ""
-			pipelineID := ""
 			pipeline := ""
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
@@ -904,7 +904,19 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
-		conn := server.CreateWHIP(ctx, ssr, whepURL, w, r)
+		conn := server.CreateWHIP(ctx, ssr, whepURL, w, r, func(stats *media.MediaStats) {
+			if streamID == "" || pipelineID == "" {
+				clog.V(common.DEBUG).Info(ctx, "ignoring whip stats, streamID or pipelineID not set yet")
+				return
+			}
+			monitor.SendQueueEventAsync("stream_ingest_metrics", map[string]interface{}{
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"stats":       stats,
+			})
+		})
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
 }

@@ -18,12 +18,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/monitor"
-
 	"github.com/bluenviron/gortsplib/v4/pkg/rtpreorderer"
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
 	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
+	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/interceptor/pkg/stats"
@@ -65,7 +64,7 @@ type WHIPServer struct {
 }
 
 // handleCreate implements the POST that creates a new resource.
-func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
+func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request, statsReceiver func(stats *MediaStats)) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -212,7 +211,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		statsContext, statsCancel := context.WithCancel(ctx)
 		defer statsCancel()
 		mediaState.SetTracks(*statsGetter, tracks)
-		go runStats(statsContext, mediaState)
+		go runStats(statsContext, mediaState, statsReceiver)
 
 		wg.Wait()
 		segmenter.CloseSegment()
@@ -465,7 +464,7 @@ func splitH264NALUs(buf []byte) ([][]byte, error) {
 	return parts, nil
 }
 
-func runStats(ctx context.Context, mediaState *MediaState) {
+func runStats(ctx context.Context, mediaState *MediaState, statsReceiver func(stats *MediaStats)) {
 	// Periodically check whip stats and write logs and metrics
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -478,22 +477,16 @@ func runStats(ctx context.Context, mediaState *MediaState) {
 			if err != nil {
 				return
 			}
-			for _, stat := range stats.PeerConnStats {
-				//slog.Info(fmt.Sprintf("%+v", stat))
-				switch s := stat.(type) {
-				case webrtc.TransportStats:
-					if monitor.Enabled {
-						monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
-						monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
-						monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
-						monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
-					}
-					clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
-				}
+			go statsReceiver(stats)
+			if monitor.Enabled {
+				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
+				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
+				monitor.AIWhipTransportPacketsReceived(int64(stats.PeerConnStats.PacketsReceived))
+				monitor.AIWhipTransportPacketsSent(int64(stats.PeerConnStats.PacketsSent))
 			}
+			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent, "packets_received", stats.PeerConnStats.PacketsReceived, "packets_sent", stats.PeerConnStats.PacketsSent)
 			for _, s := range stats.TrackStats {
-				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.InboundRTPStreamStats.Jitter, "packets_lost", s.InboundRTPStreamStats.PacketsLost, "rtt", s.RemoteInboundRTPStreamStats.RoundTripTime) // TODO more stats
-				// TODO prometheus metric for jitter, packets lost etc
+				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "rtt", s.RTT)
 			}
 		}
 	}
