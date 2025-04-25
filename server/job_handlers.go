@@ -160,10 +160,11 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 		//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
 		capBalInt, err := common.PriceToFixed(capBal)
 		if err != nil {
+			glog.Errorf("could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), jobCapsHdr, err.Error())
+			capBalInt = 0
+		} else {
 			// Remove the last three digits from capBalInt
 			capBalInt = capBalInt / 1000
-		} else {
-			capBalInt = 0
 		}
 
 		jobToken = JobToken{
@@ -199,7 +200,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check the prompt sig from the request
-	// returns error if no capacity
+	// confirms capacity available before processing payment info
 	job := r.Header.Get(jobRequestHdr)
 	jobReq, err := verifyJobCreds(ctx, orch, job)
 	if err != nil {
@@ -216,6 +217,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
 	taskId := core.RandomManifestID()
 	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
 	ctx = clog.AddVal(ctx, "worker_task_id", string(taskId))
@@ -223,22 +225,26 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
 
-	//jobId := jobReq.Capability + "-" + jobReq.ID
 	jobId := jobReq.Capability
 	jobPrice := payment.GetExpectedPrice()
 	if payment.TicketParams == nil {
 		//no payment included, confirm if balance remains
-		if !h.orchestrator.SufficientBalance(sender, core.ManifestID(jobId)) {
+		jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+		minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+		orchBal := orch.Balance(sender, core.ManifestID(jobId))
+		if orchBal.Cmp(minBal) < 0 {
 			clog.Errorf(ctx, "Insufficient balance for request")
 			http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
+			orch.FreeExternalCapabilityCapacity(jobReq.Capability)
 			return
 		}
-	}
-
-	if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
-		clog.Errorf(ctx, "error processing payment err=%q", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	} else {
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
+			clog.Errorf(ctx, "error processing payment err=%q", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+			return
+		}
 	}
 
 	clog.Infof(ctx, "balance after payment is %v", orch.Balance(sender, core.ManifestID(jobId)).FloatString(3))
@@ -310,7 +316,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 		chargeForCompute(start, jobPrice, orch, sender, jobId)
 		addPaymentBalanceHeader(w, orch, sender, jobId)
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", time.Since(start))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), orch.Balance(sender, core.ManifestID(jobId)).FloatString(3))
 		w.Write(data)
 		//request completed and returned a response
 
@@ -389,7 +395,7 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 
 		//release capacity for another request
 		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", time.Since(start))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), orch.Balance(sender, core.ManifestID(jobId)).FloatString(3))
 	}
 }
 
@@ -397,7 +403,6 @@ func chargeForCompute(start time.Time, price *net.PriceInfo, orch Orchestrator, 
 	// Debit the fee for the total time processed
 	took := time.Since(start)
 	orch.DebitFees(sender, core.ManifestID(jobId), price, int64(math.Ceil(took.Seconds())))
-	clog.V(common.SHORT).Infof(context.TODO(), "Job processed successfully took=%v", took)
 }
 
 func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
