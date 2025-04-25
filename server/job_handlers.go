@@ -9,11 +9,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -30,6 +32,8 @@ const jobRequestHdr = "Livepeer-Job"
 const jobEthAddressHdr = "Livepeer-Job-Eth-Address"
 const jobCapabilityHdr = "Livepeer-Job-Capability"
 const jobPaymentHeaderHdr = "Livepeer-Job-Payment"
+
+var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
 
 type JobSender struct {
 	Addr string `json:"addr"`
@@ -156,10 +160,10 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 		//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
 		capBalInt, err := common.PriceToFixed(capBal)
 		if err != nil {
-			capBalInt = 0
-		} else {
 			// Remove the last three digits from capBalInt
 			capBalInt = capBalInt / 1000
+		} else {
+			capBalInt = 0
 		}
 
 		jobToken = JobToken{
@@ -202,6 +206,9 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		if err == errZeroCapacity {
 			clog.Errorf(ctx, "No capacity available for capability err=%q", err)
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		} else if err == errNoTimeoutSet {
+			clog.Errorf(ctx, "Timeout not set in request err=%q", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 		} else {
 			clog.Errorf(ctx, "Could not verify job creds err=%q", err)
 			http.Error(w, err.Error(), http.StatusForbidden)
@@ -216,7 +223,8 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
 
-	jobId := jobReq.Capability + "-" + jobReq.ID
+	//jobId := jobReq.Capability + "-" + jobReq.ID
+	jobId := jobReq.Capability
 	jobPrice := payment.GetExpectedPrice()
 	if payment.TicketParams == nil {
 		//no payment included, confirm if balance remains
@@ -244,7 +252,12 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", jobReq.CapabilityUrl, bytes.NewBuffer(body))
+	workerRoute := jobReq.CapabilityUrl
+	workerResourceRoute := r.PathValue("workerResourceRoute")
+	if workerResourceRoute != "" {
+		workerRoute = workerRoute + "/" + workerResourceRoute
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, bytes.NewBuffer(body))
 	if err != nil {
 		clog.Errorf(ctx, "Unable to create request err=%v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -262,14 +275,14 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 			orch.RemoveExternalCapability(jobReq.Capability)
 		}
 
-		chargeForCompute(start, jobPrice, w, orch, sender, jobId)
-
+		chargeForCompute(start, jobPrice, orch, sender, jobId)
+		addPaymentBalanceHeader(w, orch, sender, jobId)
 		http.Error(w, fmt.Sprintf("job not able to be processed err=%v", err.Error()), http.StatusInternalServerError)
 		return
 	}
 
-	//non streaming response
-	if resp.Header.Get("Content-Type") != "text/event-stream" {
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		//non streaming response
 		//release capacity for another request
 		orch.FreeExternalCapabilityCapacity(jobReq.Capability)
 
@@ -278,8 +291,8 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			clog.Errorf(ctx, "Unable to read response err=%v", err)
 
-			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
-
+			chargeForCompute(start, jobPrice, orch, sender, jobId)
+			addPaymentBalanceHeader(w, orch, sender, jobId)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -288,13 +301,15 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode > 399 {
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 
-			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+			chargeForCompute(start, jobPrice, orch, sender, jobId)
+			addPaymentBalanceHeader(w, orch, sender, jobId)
 			//return error response from the worker
 			http.Error(w, string(data), resp.StatusCode)
 			return
 		}
 
-		chargeForCompute(start, jobPrice, w, orch, sender, jobId)
+		chargeForCompute(start, jobPrice, orch, sender, jobId)
+		addPaymentBalanceHeader(w, orch, sender, jobId)
 		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v", time.Since(start))
 		w.Write(data)
 		//request completed and returned a response
@@ -315,15 +330,17 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			clog.Errorf(ctx, "streaming not supported")
 
-			chargeForCompute(start, jobPrice, w, orch, sender, jobId)
-
+			chargeForCompute(start, jobPrice, orch, sender, jobId)
+			addPaymentBalanceHeader(w, orch, sender, jobId)
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
 
+		w.WriteHeader(http.StatusOK)
 		// Read from upstream and forward to client
 		respChan := make(chan string, 100)
-		respCtx, _ := context.WithTimeout(ctx, 40*12*time.Second) //paramsExpirationBlock in pm package * 12 second block times
+		respCtx, cancelResp := context.WithTimeout(ctx, 40*12*time.Second) //paramsExpirationBlock (40) in pm package * 12 second block times
+		defer cancelResp()
 		go func() {
 			defer resp.Body.Close()
 			defer close(respChan)
@@ -335,6 +352,10 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 				case <-respCtx.Done():
 					return
 				default:
+					line := scanner.Text()
+					if strings.Contains(line, "[DONE]") {
+						break
+					}
 					respChan <- scanner.Text()
 				}
 			}
@@ -372,12 +393,11 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func chargeForCompute(start time.Time, price *net.PriceInfo, w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
+func chargeForCompute(start time.Time, price *net.PriceInfo, orch Orchestrator, sender ethcommon.Address, jobId string) {
 	// Debit the fee for the total time processed
 	took := time.Since(start)
 	orch.DebitFees(sender, core.ManifestID(jobId), price, int64(math.Ceil(took.Seconds())))
 	clog.V(common.SHORT).Infof(context.TODO(), "Job processed successfully took=%v", took)
-	addPaymentBalanceHeader(w, orch, sender, jobId)
 }
 
 func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender ethcommon.Address, jobId string) {
@@ -386,10 +406,13 @@ func addPaymentBalanceHeader(w http.ResponseWriter, orch Orchestrator, sender et
 	if senderBalance != nil {
 		senderBalAmt, err := common.PriceToInt64(senderBalance)
 		if err != nil {
+			glog.Errorf("could not convert balance to int64 sender=%v jobId=%v err=%v", sender.Hex(), jobId, err.Error())
 			senderBalAmt = big.NewRat(0, 1)
 		}
 		w.Header().Set("Livepeer-Payment-Balance", senderBalAmt.FloatString(0))
+		return
 	}
+	glog.Infof("sender balance is nil")
 	//no balance
 	w.Header().Set("Livepeer-Payment-Balance", "0")
 }
@@ -455,6 +478,10 @@ func verifyJobCreds(ctx context.Context, orch Orchestrator, jobCreds string) (*J
 		return nil, err
 	}
 
+	if jobData.Timeout == 0 {
+		return nil, errNoTimeoutSet
+	}
+
 	sigHex := jobData.Sig
 	if len(jobData.Sig) > 130 {
 		sigHex = jobData.Sig[2:]
@@ -470,7 +497,6 @@ func verifyJobCreds(ctx context.Context, orch Orchestrator, jobCreds string) (*J
 	}
 
 	if orch.ReserveExternalCapabilityCapacity(jobData.Capability) != nil {
-		clog.Errorf(ctx, "Cannot process job err=%q", err)
 		return nil, errZeroCapacity
 	}
 
