@@ -59,6 +59,14 @@ func (w *WHIPConnection) AwaitClose() error {
 	return p.AwaitClose()
 }
 
+func (w *WHIPConnection) Stats() (*MediaStats, error) {
+	p := w.getWHIPConnection()
+	if p == nil {
+		return nil, nil
+	}
+	return p.Stats()
+}
+
 func (w *WHIPConnection) Close() {
 	w.mu.Lock()
 	// set closed = true so getWHIPConnection returns immediately

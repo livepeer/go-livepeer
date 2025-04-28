@@ -22,7 +22,6 @@ import (
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
 	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
 	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/interceptor/pkg/stats"
@@ -64,7 +63,7 @@ type WHIPServer struct {
 }
 
 // handleCreate implements the POST that creates a new resource.
-func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request, statsReceiver func(stats *MediaStats)) *MediaState {
+func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
@@ -208,10 +207,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
 
-		statsContext, statsCancel := context.WithCancel(ctx)
-		defer statsCancel()
 		mediaState.SetTracks(*statsGetter, tracks)
-		go runStats(statsContext, mediaState, statsReceiver)
 
 		wg.Wait()
 		segmenter.CloseSegment()
@@ -462,34 +458,6 @@ func splitH264NALUs(buf []byte) ([][]byte, error) {
 	}
 
 	return parts, nil
-}
-
-func runStats(ctx context.Context, mediaState *MediaState, statsReceiver func(stats *MediaStats)) {
-	// Periodically check whip stats and write logs and metrics
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			stats, err := mediaState.Stats()
-			if err != nil {
-				return
-			}
-			go statsReceiver(stats)
-			if monitor.Enabled {
-				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
-				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
-				monitor.AIWhipTransportPacketsReceived(int64(stats.PeerConnStats.PacketsReceived))
-				monitor.AIWhipTransportPacketsSent(int64(stats.PeerConnStats.PacketsSent))
-			}
-			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent, "packets_received", stats.PeerConnStats.PacketsReceived, "packets_sent", stats.PeerConnStats.PacketsSent)
-			for _, s := range stats.TrackStats {
-				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
-			}
-		}
-	}
 }
 
 func GenICELinkHeaders(iceServers []webrtc.ICEServer) []string {
