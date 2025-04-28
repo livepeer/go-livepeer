@@ -913,6 +913,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
 }
+
 func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID string, pipelineID string, requestID string) {
 	// Periodically check whip stats and write logs and metrics
 	ticker := time.NewTicker(5 * time.Second)
@@ -947,6 +948,7 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 		}
 	}
 }
+
 func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		corsHeaders(w, r.Method)
