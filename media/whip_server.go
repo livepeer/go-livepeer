@@ -486,7 +486,7 @@ func runStats(ctx context.Context, mediaState *MediaState, statsReceiver func(st
 			}
 			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent, "packets_received", stats.PeerConnStats.PacketsReceived, "packets_sent", stats.PeerConnStats.PacketsSent)
 			for _, s := range stats.TrackStats {
-				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "rtt", s.RTT)
+				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
 			}
 		}
 	}

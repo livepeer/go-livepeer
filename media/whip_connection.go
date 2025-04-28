@@ -87,10 +87,11 @@ type PeerConnStats struct {
 }
 
 type TrackStats struct {
-	Kind        webrtc.RTPCodecType
-	Jitter      float64
-	PacketsLost int64
-	RTT         time.Duration
+	Kind            webrtc.RTPCodecType
+	Jitter          float64
+	PacketsLost     int64
+	PacketsReceived uint64
+	RTT             time.Duration
 }
 
 type MediaStats struct {
@@ -208,10 +209,11 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			continue
 		}
 		trackStats = append(trackStats, TrackStats{
-			Kind:        t.Kind(),
-			Jitter:      s.InboundRTPStreamStats.Jitter,
-			PacketsLost: s.InboundRTPStreamStats.PacketsLost,
-			RTT:         s.RemoteInboundRTPStreamStats.RoundTripTime,
+			Kind:            t.Kind(),
+			Jitter:          s.InboundRTPStreamStats.Jitter,
+			PacketsLost:     s.InboundRTPStreamStats.PacketsLost,
+			PacketsReceived: s.InboundRTPStreamStats.PacketsReceived,
+			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
 		})
 	}
 	return &MediaStats{
