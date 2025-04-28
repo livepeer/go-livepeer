@@ -224,7 +224,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote) {
 	var frame rtp.Depacketizer
 	codec := track.Codec().MimeType
-	dtsExtractor := h264.NewDTSExtractor()
 	incomingTrack := &IncomingTrack{track: track}
 	isAudio := false
 	switch codec {
@@ -286,16 +285,11 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			if currentTS != p.Timestamp && len(au) > 0 {
 				// received a new frame, but previous frame was incomplete (lost marker bit)
 				clog.Info(ctx, "RTP: Previous frame was incomplete, sending anyway", "seq", p.SequenceNumber, "pts", pts)
-				dts, err := dtsExtractor.Extract(au, pts)
-				if err != nil {
-					clog.Info(ctx, "RTP: error extracting DTS", "seq", p.SequenceNumber, "pts", pts, "err", err)
-				} else {
-					if h264.IsRandomAccess(au) && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
-						segmenter.StartSegment(dts)
-					}
-					if segmenter.IsReady() {
-						segmenter.WriteVideo(track, pts, dts, au)
-					}
+				if h264.IsRandomAccess(au) && segmenter.ShouldStartSegment(pts, track.Codec().ClockRate) {
+					segmenter.StartSegment(pts)
+				}
+				if segmenter.IsReady() {
+					segmenter.WriteVideo(track, pts, pts, au)
 				}
 				au = [][]byte{}
 			}
@@ -310,6 +304,20 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 				clog.Info(ctx, "empty nalus", "len", len(d), "payload", len(p.Payload), "seq", p.SequenceNumber)
 				continue
 			}
+
+			for _, nalu := range nalus {
+				if len(nalu) <= 0 {
+					clog.Info(ctx, "empty nalu", "seq", p.SequenceNumber)
+					continue
+				}
+				/// check for sps / pps and ensure bframes are not allowed
+				if h264.NALUTypeSPS == h264.NALUType(nalu[0]&0x1F) {
+					if allowBFrames(nalu) {
+						clog.Info(ctx, "B-frames may be allowed; could lead to DTS/PTS mismatch", "seq", p.SequenceNumber, "pts", pts)
+					}
+				}
+			}
+
 			au = append(au, nalus...)
 
 			if !p.Marker {
@@ -322,11 +330,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			frameAU := au
 			au = [][]byte{}
 
-			dts, err := dtsExtractor.Extract(frameAU, pts)
-			if err != nil {
-				clog.Info(ctx, "RTP: error extracting DTS", "seq", p.SequenceNumber, "pkt-ts", p.Timestamp, "pts", pts, "err", err)
-				continue
-			}
+			dts := pts
 
 			idr := h264.IsRandomAccess(frameAU)
 			if idr && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
@@ -407,6 +411,56 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 			}
 		}
 	}
+}
+
+func allowBFrames(nalu []byte) bool {
+	sps := new(h264.SPS)
+	sps.Unmarshal(nalu)
+	if sps.VUI != nil && sps.VUI.BitstreamRestriction != nil {
+		return sps.VUI.BitstreamRestriction.MaxNumReorderFrames > 0
+	}
+	// Rec. ITU-T H.264 (08/21) Page 439
+	//
+	// When the max_num_reorder_frames syntax element is not present, the value of
+	// max_num_reorder_frames value shall be inferred as follows:
+	//
+	//  – If profile_idc is equal to 44, 86, 100, 110, 122, or 244 and constraint_set3_flag is
+	//    equal to 1, the value of  max_num_reorder_frames shall be inferred to be equal to 0.
+	//
+	// – Otherwise (profile_idc is not equal to 44, 86, 100, 110, 122, or 244 or
+	//   constraint_set3_flag is equal to 0), the value of max_num_reorder_frames shall be
+	//   inferred to be equal to MaxDpbFrames.
+	//
+	//
+	switch sps.ProfileIdc {
+	// baseline, constrained baseline and scalable-baseline profiles
+	// only contain I/P frames
+	// https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst/codectimestamper/gsth264timestamper.c?ref_type=heads#L278-305
+	case 66:
+		fallthrough
+	case 83:
+		return false
+	// per RFC
+	case 44:
+		fallthrough
+	case 86:
+		fallthrough
+	case 100:
+		fallthrough
+	case 110:
+		fallthrough
+	case 122:
+		fallthrough
+	case 244:
+		if sps.ConstraintSet3Flag {
+			// constraint_set3_flag may mean the -intra only profile.
+			return false
+		}
+	}
+	// TODO if an actual calculation is ever needed, figure MaxReorderFrames = MaxDpbFrames eg
+	// https://github.com/FFmpeg/FFmpeg/blob/c6364b711bad1fe2fbd90e5b2798f87080ddf5ea/libavcodec/h264_ps.c#L594-L595
+	// Assume true for now; diagnose any occurrences later
+	return true
 }
 
 func getMediaDescriptionByType(sdp sdp.SessionDescription, mediaType string) *sdp.MediaDescription {
