@@ -87,11 +87,9 @@ type WHIPPeerConnection interface {
 }
 
 type PeerConnStats struct {
-	ID              string
-	BytesReceived   uint64
-	BytesSent       uint64
-	PacketsReceived uint32
-	PacketsSent     uint32
+	ID            string
+	BytesReceived uint64
+	BytesSent     uint64
 }
 
 type TrackStats struct {
@@ -194,11 +192,9 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 	for _, stat := range pcStatsReport {
 		if s, ok := stat.(webrtc.TransportStats); ok {
 			pcStats = PeerConnStats{
-				ID:              s.ID,
-				BytesReceived:   s.BytesReceived,
-				BytesSent:       s.BytesSent,
-				PacketsReceived: s.PacketsReceived,
-				PacketsSent:     s.PacketsSent,
+				ID:            s.ID,
+				BytesReceived: s.BytesReceived,
+				BytesSent:     s.BytesSent,
 			}
 			break
 		}

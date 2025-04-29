@@ -931,10 +931,8 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 			if monitor.Enabled {
 				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
 				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
-				monitor.AIWhipTransportPacketsReceived(int64(stats.PeerConnStats.PacketsReceived))
-				monitor.AIWhipTransportPacketsSent(int64(stats.PeerConnStats.PacketsSent))
 			}
-			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent, "packets_received", stats.PeerConnStats.PacketsReceived, "packets_sent", stats.PeerConnStats.PacketsSent)
+			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent)
 			for _, s := range stats.TrackStats {
 				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
 			}
