@@ -2,23 +2,27 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 
 	"sync"
+
+	"github.com/golang/glog"
 )
 
 type ExternalCapability struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Url          string `json:"url"`
-	Capacity     int    `json:"capacity"`
-	PricePerUnit int64  `json:"price_per_unit"`
-	PriceScaling int64  `json:"price_scaling"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Url           string `json:"url"`
+	Capacity      int    `json:"capacity"`
+	PricePerUnit  int64  `json:"price_per_unit"`
+	PriceScaling  int64  `json:"price_scaling"`
+	PriceCurrency string `json:"currency"`
 
-	price *big.Rat
+	price *AutoConvertedPrice
 
 	mu   sync.RWMutex
-	Load int `json:"load"`
+	Load int
 }
 
 type ExternalCapabilities struct {
@@ -53,7 +57,13 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 	if extCap.PriceScaling == 0 {
 		extCap.PriceScaling = 1
 	}
-	extCap.price = big.NewRat(extCap.PricePerUnit, extCap.PriceScaling)
+	extCap.price, err = NewAutoConvertedPrice(extCap.PriceCurrency, big.NewRat(extCap.PricePerUnit, extCap.PriceScaling), func(price *big.Rat) {
+		glog.V(6).Infof("Capability %s price set to %s wei per compute unit", extCap.Name, price.FloatString(3))
+	})
+
+	if err != nil {
+		panic(fmt.Errorf("error converting price: %v", err))
+	}
 	if cap, ok := extCaps.Capabilities[extCap.Name]; ok {
 		cap.Url = extCap.Url
 		cap.Capacity = extCap.Capacity
@@ -68,5 +78,5 @@ func (extCaps *ExternalCapabilities) RegisterCapability(extCapability string) (*
 func (extCap *ExternalCapability) GetPrice() *big.Rat {
 	extCap.mu.RLock()
 	defer extCap.mu.RUnlock()
-	return big.NewRat(extCap.PricePerUnit, extCap.PriceScaling)
+	return extCap.price.Value()
 }
