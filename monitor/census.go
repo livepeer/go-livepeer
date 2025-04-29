@@ -212,10 +212,8 @@ type (
 		mAILiveAttempts         *stats.Int64Measure
 		mAINumOrchs             *stats.Int64Measure
 
-		mAIWhipTransportBytesReceived   *stats.Int64Measure
-		mAIWhipTransportBytesSent       *stats.Int64Measure
-		mAIWhipTransportPacketsReceived *stats.Int64Measure
-		mAIWhipTransportPacketsSent     *stats.Int64Measure
+		mAIWhipTransportBytesReceived *stats.Int64Measure
+		mAIWhipTransportBytesSent     *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -395,8 +393,6 @@ func InitCensus(nodeType NodeType, version string) {
 
 	census.mAIWhipTransportBytesReceived = stats.Int64("ai_whip_transport_bytes_received", "Number of bytes received on a WHIP connection", "byte")
 	census.mAIWhipTransportBytesSent = stats.Int64("ai_whip_transport_bytes_sent", "Number of bytes sent on a WHIP connection", "byte")
-	census.mAIWhipTransportPacketsReceived = stats.Int64("ai_whip_transport_packets_received", "Number of packets received on a WHIP connection", "tot")
-	census.mAIWhipTransportPacketsSent = stats.Int64("ai_whip_transport_packets_sent", "Number of packets sent on a WHIP connection", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -1050,20 +1046,6 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_whip_transport_bytes_sent",
 			Measure:     census.mAIWhipTransportBytesSent,
 			Description: "Number of bytes sent on a WHIP connection",
-			TagKeys:     baseTags,
-			Aggregation: view.LastValue(),
-		},
-		{
-			Name:        "ai_whip_transport_packets_received",
-			Measure:     census.mAIWhipTransportPacketsReceived,
-			Description: "Number of packets received on a WHIP connection",
-			TagKeys:     baseTags,
-			Aggregation: view.LastValue(),
-		},
-		{
-			Name:        "ai_whip_transport_packets_sent",
-			Measure:     census.mAIWhipTransportPacketsSent,
-			Description: "Number of packets sent on a WHIP connection",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
@@ -2016,14 +1998,6 @@ func AIWhipTransportBytesReceived(bytes int64) {
 
 func AIWhipTransportBytesSent(bytes int64) {
 	stats.Record(census.ctx, census.mAIWhipTransportBytesSent.M(bytes))
-}
-
-func AIWhipTransportPacketsReceived(packets int64) {
-	stats.Record(census.ctx, census.mAIWhipTransportPacketsReceived.M(packets))
-}
-
-func AIWhipTransportPacketsSent(packets int64) {
-	stats.Record(census.ctx, census.mAIWhipTransportPacketsSent.M(packets))
 }
 
 // AIJobProcessed records orchestrator AI job processing metrics.

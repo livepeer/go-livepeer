@@ -18,12 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/monitor"
-
 	"github.com/bluenviron/gortsplib/v4/pkg/rtpreorderer"
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
 	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/interceptor/pkg/stats"
@@ -209,10 +207,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
 
-		statsContext, statsCancel := context.WithCancel(ctx)
-		defer statsCancel()
 		mediaState.SetTracks(*statsGetter, tracks)
-		go runStats(statsContext, mediaState)
 
 		wg.Wait()
 		segmenter.CloseSegment()
@@ -463,40 +458,6 @@ func splitH264NALUs(buf []byte) ([][]byte, error) {
 	}
 
 	return parts, nil
-}
-
-func runStats(ctx context.Context, mediaState *MediaState) {
-	// Periodically check whip stats and write logs and metrics
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			stats, err := mediaState.Stats()
-			if err != nil {
-				return
-			}
-			for _, stat := range stats.PeerConnStats {
-				//slog.Info(fmt.Sprintf("%+v", stat))
-				switch s := stat.(type) {
-				case webrtc.TransportStats:
-					if monitor.Enabled {
-						monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
-						monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
-						monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
-						monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
-					}
-					clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
-				}
-			}
-			for _, s := range stats.TrackStats {
-				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Kind, "jitter", s.InboundRTPStreamStats.Jitter, "packets_lost", s.InboundRTPStreamStats.PacketsLost, "rtt", s.RemoteInboundRTPStreamStats.RoundTripTime) // TODO more stats
-				// TODO prometheus metric for jitter, packets lost etc
-			}
-		}
-	}
 }
 
 func GenICELinkHeaders(iceServers []webrtc.ICEServer) []string {
