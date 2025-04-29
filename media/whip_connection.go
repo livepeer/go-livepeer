@@ -62,7 +62,7 @@ func (w *WHIPConnection) AwaitClose() error {
 func (w *WHIPConnection) Stats() (*MediaStats, error) {
 	p := w.getWHIPConnection()
 	if p == nil {
-		return nil, nil
+		return nil, errors.New("whip connection was nil")
 	}
 	return p.Stats()
 }

@@ -925,7 +925,8 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 		case <-ticker.C:
 			stats, err := whipConn.Stats()
 			if err != nil {
-				return
+				clog.Errorf(ctx, "WHIP stats returned error: %s", err)
+				continue
 			}
 			if monitor.Enabled {
 				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
