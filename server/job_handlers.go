@@ -78,6 +78,9 @@ func (h *lphttp) GetJobTokens(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if h.node.NodeType != core.BroadcasterNode {
+		http.Error(w, "request not allowed", http.StatusBadRequest)
+	}
 
 	remoteAddr := getRemoteAddr(r)
 
@@ -88,9 +91,9 @@ func (h *lphttp) GetJobTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timeout, respTimeout := getOrchSearchTimeouts(r.Context(), r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
+	searchTimeout, respTimeout := getOrchSearchTimeouts(r.Context(), r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
 
-	tokens, err := getJobOrchestrators(r.Context(), h.node, jobCapsHdr, timeout, respTimeout)
+	tokens, err := getJobOrchestrators(r.Context(), h.node, jobCapsHdr, searchTimeout, respTimeout)
 	if err != nil {
 		glog.Infof("cannot get job tokens from orchestrators remoteAddr=%v err=%v ", err.Error(), remoteAddr)
 		http.Error(w, "Error getting job tokens from orchestrators", http.StatusBadRequest)
@@ -147,6 +150,10 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+
+	if h.node.NodeType != core.OrchestratorNode {
+		http.Error(w, "request not allowed", http.StatusBadRequest)
 	}
 
 	remoteAddr := getRemoteAddr(r)
@@ -791,7 +798,7 @@ func getPaymentBalance(orch Orchestrator, sender ethcommon.Address, jobId string
 	return senderBalAmt
 }
 
-func verifyTokenCreds(ctx context.Context, signer Signer, tokenCreds string) (*JobSender, error) {
+func verifyTokenCreds(ctx context.Context, orch Orchestrator, tokenCreds string) (*JobSender, error) {
 	buf, err := base64.StdEncoding.DecodeString(tokenCreds)
 	if err != nil {
 		glog.Error("Unable to base64-decode ", err)
@@ -815,7 +822,7 @@ func verifyTokenCreds(ctx context.Context, signer Signer, tokenCreds string) (*J
 		return nil, errSegSig
 	}
 
-	if !signer.VerifySig(ethcommon.HexToAddress(jobSender.Addr), jobSender.Addr, sigByte) {
+	if !orch.VerifySig(ethcommon.HexToAddress(jobSender.Addr), jobSender.Addr, sigByte) {
 		clog.Errorf(ctx, "Sig check failed")
 		return nil, errSegSig
 	}
