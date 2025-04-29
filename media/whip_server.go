@@ -281,6 +281,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 
 			// h264 video from here on
+			// https://datatracker.ietf.org/doc/html/rfc6184
 
 			if currentTS != p.Timestamp && len(au) > 0 {
 				// received a new frame, but previous frame was incomplete (lost marker bit)
