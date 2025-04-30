@@ -1545,9 +1545,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		// when no capacity error is received, retry with another session, but do not suspend the session
+		// when no capacity error is received, retry with another session
 		if isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
-			retryableSessions = append(retryableSessions, sess)
+			if cap == core.Capability_LiveVideoToVideo {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			} else {
+				// for non realtime video, get the session back to the pool as soon as the request completes
+				retryableSessions = append(retryableSessions, sess)
+			}
 			continue
 		}
 
