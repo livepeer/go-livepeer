@@ -1533,6 +1533,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 
+		if cap == core.Capability_LiveVideoToVideo {
+			ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+		}
 		resp, err = submitFn(ctx, params, sess)
 		if err == nil {
 			params.sessManager.Complete(ctx, sess)
