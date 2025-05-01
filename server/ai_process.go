@@ -39,7 +39,8 @@ const (
 	defaultLiveVideoToVideoModelID = "noop"
 	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
 
-	maxTries = 20
+	maxTries         = 20
+	maxSameSessTries = 2
 )
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
@@ -1500,7 +1501,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
-	tries := 0
+	tries, sameSessTries := 0, 0
 	var retryableSessions []*AISession
 	for tries < maxTries {
 		select {
@@ -1540,13 +1541,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		// Don't suspend the session if the error is a transient error.
-		if isRetryableError(err) {
+		sameSessTries++
+		if isRetryableError(err) && sameSessTries < maxSameSessTries {
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
+		sameSessTries = 0
 
-		// when no capacity error is received, retry with another session
-		if isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
+		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
 			if cap == core.Capability_LiveVideoToVideo {
 				// for live video, remove the session from the pool to avoid retrying it
 				params.sessManager.Remove(ctx, sess)
