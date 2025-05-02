@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -92,8 +93,16 @@ type PeerConnStats struct {
 	BytesSent     uint64
 }
 
+type TrackType struct {
+	webrtc.RTPCodecType
+}
+
+func (t TrackType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
 type TrackStats struct {
-	Kind            string
+	Type            TrackType
 	Jitter          float64
 	PacketsLost     int64
 	PacketsReceived uint64
@@ -213,7 +222,7 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			continue
 		}
 		trackStats = append(trackStats, TrackStats{
-			Kind:            t.Kind().String(),
+			Type:            TrackType{t.Kind()},
 			Jitter:          s.InboundRTPStreamStats.Jitter,
 			PacketsLost:     s.InboundRTPStreamStats.PacketsLost,
 			PacketsReceived: s.InboundRTPStreamStats.PacketsReceived,
