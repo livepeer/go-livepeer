@@ -159,6 +159,9 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 			name:      streamName,
 			mimeType:  mimeType,
 			writeTime: time.Now(),
+
+			// Start at -1 to indicate no write since indexing starts at 0
+			latestWrite: -1,
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
@@ -381,6 +384,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 			if totalRead == 0 {
 				s.mutex.Lock()
 				s.latestWrite = idx
+				s.writeTime = time.Now()
 				s.mutex.Unlock()
 			}
 			segment.writeData(buf[:n])
@@ -413,7 +417,7 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if idx == -1 {
-		if s.latestWrite <= 0 {
+		if s.latestWrite < 0 {
 			// no writes yet
 			idx = 0
 		} else {
@@ -421,7 +425,6 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 			idx = s.latestWrite + 1
 		}
 	}
-	s.writeTime = time.Now()
 	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
