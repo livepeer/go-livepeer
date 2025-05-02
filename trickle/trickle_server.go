@@ -378,6 +378,11 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
+			if totalRead == 0 {
+				s.mutex.Lock()
+				s.latestWrite = idx
+				s.mutex.Unlock()
+			}
 			segment.writeData(buf[:n])
 			if n == len(buf) && n < 1024*1024 { // 1 MB max
 				// filled the buffer, so double it for efficiency
@@ -408,9 +413,13 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if idx == -1 {
-		idx = s.latestWrite
-	} else {
-		s.latestWrite = idx
+		if s.latestWrite <= 0 {
+			// no writes yet
+			idx = 0
+		} else {
+			// set to next write
+			idx = s.latestWrite + 1
+		}
 	}
 	s.writeTime = time.Now()
 	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
