@@ -49,13 +49,13 @@ type Server struct {
 }
 
 type Stream struct {
-	mutex       sync.RWMutex
-	segments    []*Segment
-	latestWrite int
-	name        string
-	mimeType    string
-	writeTime   time.Time
-	closed      bool
+	mutex     sync.RWMutex
+	segments  []*Segment
+	name      string
+	mimeType  string
+	nextWrite int
+	writeTime time.Time
+	closed    bool
 }
 
 type Segment struct {
@@ -159,9 +159,6 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 			name:      streamName,
 			mimeType:  mimeType,
 			writeTime: time.Now(),
-
-			// Start at -1 to indicate no write since indexing starts at 0
-			latestWrite: -1,
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
@@ -383,7 +380,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 		if n > 0 {
 			if totalRead == 0 {
 				s.mutex.Lock()
-				s.latestWrite = idx
+				s.nextWrite = idx + 1
 				s.writeTime = time.Now()
 				s.mutex.Unlock()
 			}
@@ -417,15 +414,9 @@ func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if idx == -1 {
-		if s.latestWrite < 0 {
-			// no writes yet
-			idx = 0
-		} else {
-			// set to next write
-			idx = s.latestWrite + 1
-		}
+		idx = s.nextWrite
 	}
-	slog.Info("POST segment", "stream", s.name, "idx", idx, "latest", s.latestWrite)
+	slog.Info("POST segment", "stream", s.name, "idx", idx, "next", s.nextWrite)
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
 		if idx == segment.idx {
@@ -447,18 +438,18 @@ func (s *Stream) getForRead(idx int) (*Segment, int, bool) {
 		return seg != nil && seg.idx == i
 	}
 	if idx == -1 {
-		idx = s.latestWrite
+		idx = s.nextWrite
 	}
 	segmentPos := idx % maxSegmentsPerStream
 	segment := s.segments[segmentPos]
-	if !exists(segment, idx) && (idx == s.latestWrite+1 || (idx == 0 && s.latestWrite == 0)) {
+	if !exists(segment, idx) && (idx == s.nextWrite || (s.nextWrite == 0 && idx == 1)) {
 		// read request is just a little bit ahead of write head
 		segment = newSegment(idx)
 		s.segments[segmentPos] = segment
-		slog.Info("GET precreating", "stream", s.name, "idx", idx, "latest", s.latestWrite)
+		slog.Info("GET precreating", "stream", s.name, "idx", idx, "next", s.nextWrite)
 	}
-	slog.Info("GET segment", "stream", s.name, "idx", idx, "latest", s.latestWrite, "exists?", exists(segment, idx))
-	return segment, s.latestWrite, exists(segment, idx)
+	slog.Info("GET segment", "stream", s.name, "idx", idx, "next", s.nextWrite, "exists?", exists(segment, idx))
+	return segment, s.nextWrite, exists(segment, idx)
 }
 
 func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -529,7 +520,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 					// check if the channel was closed; sometimes we drop / skip a segment
 					s.mutex.RLock()
 					closed := s.closed
-					latestSeq := s.latestWrite
+					latestSeq := s.nextWrite
 					s.mutex.RUnlock()
 					w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(segment.idx))
 					if closed {
