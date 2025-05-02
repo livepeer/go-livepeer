@@ -184,6 +184,11 @@ func (m *MediaState) IsClosed() bool {
 	return m.closed
 }
 
+const (
+	videoTimeBase = 90_000
+	audioTimeBase = 48_000
+)
+
 func (m *MediaState) Stats() (*MediaStats, error) {
 	m.mu.Lock()
 	if m.closed || m.pc == nil {
@@ -221,9 +226,16 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		if s == nil {
 			continue
 		}
+		jitter := s.InboundRTPStreamStats.Jitter
+		switch t.Kind() {
+		case webrtc.RTPCodecTypeAudio:
+			jitter = jitter / audioTimeBase
+		case webrtc.RTPCodecTypeVideo:
+			jitter = jitter / videoTimeBase
+		}
 		trackStats = append(trackStats, TrackStats{
 			Type:            TrackType{t.Kind()},
-			Jitter:          s.InboundRTPStreamStats.Jitter,
+			Jitter:          jitter,
 			PacketsLost:     s.InboundRTPStreamStats.PacketsLost,
 			PacketsReceived: s.InboundRTPStreamStats.PacketsReceived,
 			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
