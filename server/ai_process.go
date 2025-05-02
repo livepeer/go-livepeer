@@ -40,7 +40,7 @@ const (
 	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
 
 	maxTries         = 20
-	maxSameSessTries = 2
+	maxSameSessTries = 3
 )
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
