@@ -438,7 +438,15 @@ func (s *Stream) getForRead(idx int) (*Segment, int, bool) {
 		return seg != nil && seg.idx == i
 	}
 	if idx == -1 {
+		// -1 == next write
 		idx = s.nextWrite
+	} else if idx == -2 {
+		// -2 == current write
+		if s.nextWrite > 0 {
+			idx = s.nextWrite - 1
+		} else {
+			idx = 0
+		}
 	}
 	segmentPos := idx % maxSegmentsPerStream
 	segment := s.segments[segmentPos]
