@@ -37,7 +37,8 @@ type MediaSegmenter struct {
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
-	completionSignal := make(chan bool, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // the context should be cancelled before the end of the function, this is just a sanity measure
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
@@ -47,12 +48,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	//      processes that don't immediately fail are not fully retryable otherwise
 	//
 	// create first named pipe to preempt races between ffmpeg and processSegments
-	ctx, cancel := context.WithCancel(ctx)
 	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
+		processSegments(ctx, segmentHandler, outFilePattern)
 	}()
 
 	retryCount := 0
@@ -91,7 +91,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
 		retryCount++
 	}
-	completionSignal <- true
+	cancel()
 	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
 }
@@ -204,7 +204,7 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 	}
 }
 
-func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFilePattern string, completionSignal <-chan bool) {
+func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFilePattern string) {
 
 	// things protected by the mutex mu
 	mu := &sync.Mutex{}
@@ -212,9 +212,9 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 	var currentSegment *os.File = nil
 	pipeCompletion := make(chan bool, 1)
 
-	// Start a goroutine to wait for the completion signal
+	// Start a goroutine to wait for the context to be cancelled
 	go func() {
-		<-completionSignal
+		<-ctx.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		if currentSegment != nil {
