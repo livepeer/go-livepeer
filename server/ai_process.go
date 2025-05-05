@@ -1501,7 +1501,8 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
-	tries, sameSessTries := 0, 0
+	tries := 0
+	sessTries := map[string]int{}
 	var retryableSessions []*AISession
 	for tries < maxTries {
 		select {
@@ -1529,6 +1530,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
 		}
+		sessTries[sess.Transcoder()]++
 
 		if sess == nil {
 			break
@@ -1541,12 +1543,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		// Don't suspend the session if the error is a transient error.
-		sameSessTries++
-		if isRetryableError(err) && sameSessTries < maxSameSessTries {
+
+		if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
-		sameSessTries = 0
 
 		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
 		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
