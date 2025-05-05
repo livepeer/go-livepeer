@@ -38,7 +38,6 @@ type MediaSegmenter struct {
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
 	completionSignal := make(chan bool, 1)
-	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
@@ -48,10 +47,11 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 	//      processes that don't immediately fail are not fully retryable otherwise
 	//
 	// create first named pipe to preempt races between ffmpeg and processSegments
+	ctx, cancel := context.WithCancel(ctx)
 	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
-		defer procCancel()
+		defer cancel()
 		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
 	}()
 
@@ -76,7 +76,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			time.Sleep(5 * time.Second)
 		}
 		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
-		cmd := exec.CommandContext(procCtx, "ffmpeg",
+		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
 			"-c:v", "copy",
