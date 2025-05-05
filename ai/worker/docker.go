@@ -108,7 +108,7 @@ type DockerManager struct {
 	dockerClient DockerClient
 	// gpu ID => container name
 	gpuContainers map[string]string
-	// container name => container
+	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
 }
@@ -616,7 +616,7 @@ func removeExistingContainers(ctx context.Context, client DockerClient) error {
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	for _, c := range containers {
@@ -698,6 +698,8 @@ tickerLoop:
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
 		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
+		monitor.AIContainersIdle(len(m.containers))
+		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }
 

@@ -97,8 +97,8 @@ func (a aiRequestParams) inputStreamExists() bool {
 	}
 	a.node.LiveMu.RLock()
 	defer a.node.LiveMu.RUnlock()
-	_, ok := a.node.LivePipelines[a.liveParams.stream]
-	return ok
+	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok && p.RequestID == a.liveParams.requestID
 }
 
 // For live video pipelines
@@ -110,6 +110,7 @@ type liveRequestParams struct {
 	requestID             string
 	streamID              string
 	pipelineID            string
+	orchestrator          string
 
 	paymentProcessInterval time.Duration
 
@@ -1517,6 +1518,12 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
+		if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
+			// user requested a specific orchestrator, so ignore all the others
+			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+			retryableSessions = append(retryableSessions, sess)
+			continue
+		}
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
@@ -1538,9 +1545,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			continue
 		}
 
-		// when no capacity error is received, retry with another session, but do not suspend the session
-		if (isInvalidTicketSenderNonce(err) || isNoCapacityError(err)) && cap != core.Capability_LiveVideoToVideo {
-			retryableSessions = append(retryableSessions, sess)
+		// when no capacity error is received, retry with another session
+		if isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+			if cap == core.Capability_LiveVideoToVideo {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			} else {
+				// for non realtime video, get the session back to the pool as soon as the request completes
+				retryableSessions = append(retryableSessions, sess)
+			}
 			continue
 		}
 

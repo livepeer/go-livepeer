@@ -11,6 +11,7 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 )
@@ -449,6 +450,8 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 
 	// Set numOrchs to the pool size so that discovery tries to find maximum # of compatible orchs within a timeout
 	numOrchs := sel.node.OrchestratorPool.Size()
+
+	monitor.AINumOrchestrators(numOrchs, sel.modelID)
 
 	// Use a dummy manifestID specific to the capability + modelID
 	// Typically, a manifestID would identify a stream

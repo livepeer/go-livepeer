@@ -18,14 +18,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/livepeer/go-livepeer/clog"
-	"github.com/livepeer/go-livepeer/monitor"
-
 	"github.com/bluenviron/gortsplib/v4/pkg/rtpreorderer"
 	"github.com/bluenviron/gortsplib/v4/pkg/rtptime"
 	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h264"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
+	"github.com/pion/interceptor/pkg/stats"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/sdp/v3"
@@ -35,12 +34,6 @@ import (
 // TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
 
 const keyframeInterval = 2 * time.Second // TODO make configurable?
-
-var (
-	allowedCodecs func(*webrtc.API)
-	interceptors  func(*webrtc.API)
-	settings      func(*webrtc.API)
-)
 
 // Generate a random ID for new resources
 func generateID() string {
@@ -65,7 +58,8 @@ var WebrtcConfig = webrtc.Configuration{
 }
 
 type WHIPServer struct {
-	api *webrtc.API
+	mediaEngine *webrtc.MediaEngine
+	settings    func(*webrtc.API)
 }
 
 // handleCreate implements the POST that creates a new resource.
@@ -87,7 +81,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	defer r.Body.Close()
 
 	// Create a new PeerConnection
-	peerConnection, err := s.api.NewPeerConnection(WebrtcConfig)
+	interceptors, statsGetter := genInterceptors(s.mediaEngine)
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(s.mediaEngine), interceptors, s.settings)
+	peerConnection, err := api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
@@ -211,32 +207,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		gatherDuration := time.Since(gatherStartTime)
 		clog.Infof(ctx, "Gathered %d tracks (%s) took=%v", len(trackCodecs), strings.Join(trackCodecs, ", "), gatherDuration)
 
-		go func() {
-			// Periodically check whip stats and write logs and metrics
-			for !mediaState.IsClosed() {
-				time.Sleep(time.Second * 5)
-				statsReport := peerConnection.GetStats()
-
-				for _, stat := range statsReport {
-					switch s := stat.(type) {
-					case webrtc.TransportStats:
-						if monitor.Enabled {
-							monitor.AIWhipTransportBytesReceived(int64(s.BytesReceived))
-							monitor.AIWhipTransportBytesSent(int64(s.BytesSent))
-							monitor.AIWhipTransportPacketsReceived(int64(s.PacketsReceived))
-							monitor.AIWhipTransportPacketsSent(int64(s.PacketsSent))
-						}
-						clog.Info(ctx, "whip TransportStats", "ID", s.ID, "bytes_received", s.BytesReceived, "bytes_sent", s.BytesSent, "packets_received", s.PacketsReceived, "packets_sent", s.PacketsSent, "dtls_state", s.DTLSState, "ice_state", s.ICEState)
-					// not seeing these showing up currently, but hopefully we can fix whatever is causing that
-					case webrtc.RemoteInboundRTPStreamStats:
-						clog.Info(ctx, "whip RemoteInboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost, "round_trip_time", s.RoundTripTime)
-					case webrtc.InboundRTPStreamStats:
-						clog.Info(ctx, "whip InboundRTPStreamStats", "ID", s.ID, "jitter", s.Jitter, "packets_lost", s.PacketsLost)
-					}
-				}
-
-			}
-		}()
+		mediaState.SetTracks(*statsGetter, tracks)
 
 		wg.Wait()
 		segmenter.CloseSegment()
@@ -248,7 +219,6 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote) {
 	var frame rtp.Depacketizer
 	codec := track.Codec().MimeType
-	dtsExtractor := h264.NewDTSExtractor()
 	incomingTrack := &IncomingTrack{track: track}
 	isAudio := false
 	switch codec {
@@ -264,6 +234,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 	ro := rtpreorderer.New()
 	au := [][]byte{}
+	currentTS := uint32(0)
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {
@@ -272,7 +243,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 		}
 		pkts, lost := ro.Process(pkt)
 		if lost > 0 {
-			clog.Info(ctx, "RTP lost packets", "count", lost)
+			clog.Info(ctx, "RTP lost packets", "track", codec, "count", lost)
 		}
 		for _, p := range pkts {
 			if len(p.Payload) == 0 {
@@ -296,13 +267,29 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 			pts, ok := timeDecoder.Decode(incomingTrack, p)
 			if !ok {
-				clog.Info(ctx, "RTP: error decoding packet time")
+				clog.Info(ctx, "RTP: error decoding packet time", "track", codec)
 				continue
 			}
 			if isAudio {
 				segmenter.WriteAudio(track, pts, [][]byte{d})
 				continue
 			}
+
+			// h264 video from here on
+			// https://datatracker.ietf.org/doc/html/rfc6184
+
+			if currentTS != p.Timestamp && len(au) > 0 {
+				// received a new frame, but previous frame was incomplete (lost marker bit)
+				clog.Info(ctx, "RTP: Previous frame was incomplete, sending anyway", "seq", p.SequenceNumber, "pts", pts)
+				if h264.IsRandomAccess(au) && segmenter.ShouldStartSegment(pts, track.Codec().ClockRate) {
+					segmenter.StartSegment(pts)
+				}
+				if segmenter.IsReady() {
+					segmenter.WriteVideo(track, pts, pts, au)
+				}
+				au = [][]byte{}
+			}
+			currentTS = p.Timestamp
 
 			nalus, err := splitH264NALUs(d)
 			if err != nil {
@@ -313,6 +300,20 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 				clog.Info(ctx, "empty nalus", "len", len(d), "payload", len(p.Payload), "seq", p.SequenceNumber)
 				continue
 			}
+
+			for _, nalu := range nalus {
+				if len(nalu) <= 0 {
+					clog.Info(ctx, "empty nalu", "seq", p.SequenceNumber)
+					continue
+				}
+				/// check for sps / pps and ensure bframes are not allowed
+				if h264.NALUTypeSPS == h264.NALUType(nalu[0]&0x1F) {
+					if allowBFrames(nalu) {
+						clog.Info(ctx, "B-frames may be allowed; could lead to DTS/PTS mismatch", "seq", p.SequenceNumber, "pts", pts)
+					}
+				}
+			}
+
 			au = append(au, nalus...)
 
 			if !p.Marker {
@@ -321,22 +322,20 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 				continue
 			}
 
-			dts, err := dtsExtractor.Extract(au, pts)
-			if err != nil {
-				clog.Info(ctx, "RTP: error extracting DTS", "seq", p.SequenceNumber, "pkt-ts", p.Timestamp, "pts", pts, "err", err)
-				continue
-			}
+			// Have a complete frame, so reset the AU
+			frameAU := au
+			au = [][]byte{}
 
-			idr := h264.IsRandomAccess(au)
+			dts := pts
+
+			idr := h264.IsRandomAccess(frameAU)
 			if idr && segmenter.ShouldStartSegment(dts, track.Codec().ClockRate) {
 				segmenter.StartSegment(dts)
 			}
 
 			if segmenter.IsReady() {
-				segmenter.WriteVideo(track, pts, dts, au)
+				segmenter.WriteVideo(track, pts, dts, frameAU)
 			}
-
-			au = [][]byte{}
 		}
 	}
 }
@@ -408,6 +407,56 @@ func gatherIncomingTracks(ctx context.Context, pc *webrtc.PeerConnection, trackC
 			}
 		}
 	}
+}
+
+func allowBFrames(nalu []byte) bool {
+	sps := new(h264.SPS)
+	sps.Unmarshal(nalu)
+	if sps.VUI != nil && sps.VUI.BitstreamRestriction != nil {
+		return sps.VUI.BitstreamRestriction.MaxNumReorderFrames > 0
+	}
+	// Rec. ITU-T H.264 (08/21) Page 439
+	//
+	// When the max_num_reorder_frames syntax element is not present, the value of
+	// max_num_reorder_frames value shall be inferred as follows:
+	//
+	//  – If profile_idc is equal to 44, 86, 100, 110, 122, or 244 and constraint_set3_flag is
+	//    equal to 1, the value of  max_num_reorder_frames shall be inferred to be equal to 0.
+	//
+	// – Otherwise (profile_idc is not equal to 44, 86, 100, 110, 122, or 244 or
+	//   constraint_set3_flag is equal to 0), the value of max_num_reorder_frames shall be
+	//   inferred to be equal to MaxDpbFrames.
+	//
+	//
+	switch sps.ProfileIdc {
+	// baseline, constrained baseline and scalable-baseline profiles
+	// only contain I/P frames
+	// https://gitlab.freedesktop.org/gstreamer/gstreamer/-/blob/main/subprojects/gst-plugins-bad/gst/codectimestamper/gsth264timestamper.c?ref_type=heads#L278-305
+	case 66:
+		fallthrough
+	case 83:
+		return false
+	// per RFC
+	case 44:
+		fallthrough
+	case 86:
+		fallthrough
+	case 100:
+		fallthrough
+	case 110:
+		fallthrough
+	case 122:
+		fallthrough
+	case 244:
+		if sps.ConstraintSet3Flag {
+			// constraint_set3_flag may mean the -intra only profile.
+			return false
+		}
+	}
+	// TODO if an actual calculation is ever needed, figure MaxReorderFrames = MaxDpbFrames eg
+	// https://github.com/FFmpeg/FFmpeg/blob/c6364b711bad1fe2fbd90e5b2798f87080ddf5ea/libavcodec/h264_ps.c#L594-L595
+	// Assume true for now; diagnose any occurrences later
+	return true
 }
 
 func getMediaDescriptionByType(sdp sdp.SessionDescription, mediaType string) *sdp.MediaDescription {
@@ -519,7 +568,7 @@ func getUDPListenerAddr() (*net.UDPAddr, error) {
 	return udpAddr, nil
 }
 
-func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
+func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	// Taken from Pion default codecs, but limited to to Opus and H.264
 
 	m := &webrtc.MediaEngine{}
@@ -573,17 +622,7 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 			log.Fatal("could not register default codecs", err)
 		}
 	}
-	ic := &interceptor.Registry{}
-	intervalPliFactory, err := intervalpli.NewReceiverInterceptor(intervalpli.GeneratorInterval(keyframeInterval))
-	if err != nil {
-		log.Fatal("could not register pli intercetpr")
-	}
-	ic.Add(intervalPliFactory)
-	err = webrtc.RegisterDefaultInterceptors(m, ic)
-	if err != nil {
-		// this should really never happen
-		log.Fatal("could not register default codecs", err)
-	}
+
 	se := webrtc.SettingEngine{}
 
 	// Get UDP listener address from environment or use default
@@ -602,13 +641,38 @@ func genParams() (func(*webrtc.API), func(*webrtc.API), func(*webrtc.API)) {
 	if natIP != "" {
 		se.SetNAT1To1IPs([]string{natIP}, webrtc.ICECandidateTypeHost)
 	}
-	return webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(ic), webrtc.WithSettingEngine(se)
+	return m, webrtc.WithSettingEngine(se)
+}
+
+func genInterceptors(m *webrtc.MediaEngine) (func(*webrtc.API), *stats.Getter) {
+	statsGetter := new(stats.Getter)
+	ic := &interceptor.Registry{}
+	intervalPliFactory, err := intervalpli.NewReceiverInterceptor(intervalpli.GeneratorInterval(keyframeInterval))
+	if err != nil {
+		log.Fatal("could not register pli intercetpr")
+	}
+	ic.Add(intervalPliFactory)
+	statsInterceptorFactory, err := stats.NewInterceptor()
+	if err != nil {
+		log.Fatal("could not register stats interceptor", err)
+	}
+	ic.Add(statsInterceptorFactory)
+	statsInterceptorFactory.OnNewPeerConnection(func(id string, g stats.Getter) {
+		*statsGetter = g
+	})
+	err = webrtc.RegisterDefaultInterceptors(m, ic)
+	if err != nil {
+		// this should really never happen
+		log.Fatal("could not register default codecs", err)
+	}
+	return webrtc.WithInterceptorRegistry(ic), statsGetter
 }
 
 func NewWHIPServer() *WHIPServer {
-	allowedCodecs, interceptors, settings = genParams()
+	mediaEngine, settings := genParams()
 	return &WHIPServer{
-		api: webrtc.NewAPI(allowedCodecs, interceptors, settings),
+		mediaEngine: mediaEngine,
+		settings:    settings,
 	}
 }
 

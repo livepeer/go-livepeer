@@ -526,6 +526,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
+		// channel that blocks until after orch selection is complete
+		// avoids a race condition with closing the control channel
+		orchSelection := make(chan bool)
+
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
 
@@ -546,26 +550,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if monitor.Enabled {
 			monitor.AILiveVideoAttempt()
 		}
-
-		// Kick off the RTMP pull and segmentation as soon as possible
-		ssr := media.NewSwitchableSegmentReader()
-		go func() {
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_ingest_stream_closed",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   streamID,
-				"pipeline_id": pipelineID,
-				"request_id":  requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": "",
-					"url":     "",
-				},
-			})
-			ssr.Close()
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
-		}()
 
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
 			"type":        "error",
@@ -589,9 +573,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			if err != nil {
 				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 			}
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
 		}
 
+		ssr := media.NewSwitchableSegmentReader()
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -611,6 +595,26 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		// Kick off the RTMP pull and segmentation as soon as possible
+		go func() {
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_ingest_stream_closed",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
+			ssr.Close()
+			<-orchSelection // wait for selection to complete
+			cleanupControl(ctx, params)
+		}()
+
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
 			ModelId:          &pipeline,
 			Params:           &pipelineParams,
@@ -621,6 +625,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		if err != nil {
 			stopPipeline(err)
 		}
+		close(orchSelection)
 	})
 }
 
@@ -759,6 +764,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
+			orchestrator := r.URL.Query().Get("orchestrator")
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
@@ -878,6 +884,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					pipelineID:             pipelineID,
 					stopPipeline:           stopPipeline,
 					sendErrorEvent:         sendErrorEvent,
+					orchestrator:           orchestrator,
 				},
 			}
 
@@ -891,15 +898,54 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			if err != nil {
 				stopPipeline(err)
 			}
+
+			statsContext, statsCancel := context.WithCancel(ctx)
+			defer statsCancel()
+			go runStats(statsContext, whipConn, streamID, pipelineID, requestID)
+
 			whipConn.AwaitClose()
 			ssr.Close()
-			cleanupLive(ctx, ls.LivepeerNode, streamName)
+			cleanupControl(ctx, params)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
 		conn := server.CreateWHIP(ctx, ssr, whepURL, w, r)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
+}
+
+func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID string, pipelineID string, requestID string) {
+	// Periodically check whip stats and write logs and metrics
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			stats, err := whipConn.Stats()
+			if err != nil {
+				clog.Errorf(ctx, "WHIP stats returned error: %s", err)
+				continue
+			}
+			if monitor.Enabled {
+				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
+				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
+			}
+			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent)
+			for _, s := range stats.TrackStats {
+				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Type, "jitter", fmt.Sprintf("%.3f", s.Jitter), "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
+			}
+
+			monitor.SendQueueEventAsync("stream_ingest_metrics", map[string]interface{}{
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"stats":       stats,
+			})
+		}
+	}
 }
 
 func (ls *LivepeerServer) WithCode(code int) http.Handler {
@@ -909,8 +955,10 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
+func cleanupControl(ctx context.Context, params aiRequestParams) {
 	clog.Infof(ctx, "Live video pipeline finished")
+	stream := params.liveParams.stream
+	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
 	if !ok {
@@ -925,7 +973,7 @@ func cleanupLive(ctx context.Context, node *core.LivepeerNode, stream string) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil {
+	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
