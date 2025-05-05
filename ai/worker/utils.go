@@ -20,10 +20,10 @@ func LowestVersion(versions []Version, pipeline string, modelId string) string {
 			clog.Warningf(context.Background(), "Invalid runner version '%s'", v)
 			continue
 		}
-		if lowest != nil && ver.LessThan(lowest) {
-			clog.Warningf(context.Background(), "Orchestrator has multiple versions set for the same pipeline and model ID. Using the lowest version: %s", ver)
-		}
 		if lowest == nil || ver.LessThan(lowest) {
+			if lowest != nil {
+				clog.Warningf(context.Background(), "Orchestrator has multiple versions set for the same pipeline and model ID. Using the lowest version: %s", ver)
+			}
 			lowest = ver
 			res = v.Version
 		}
