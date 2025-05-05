@@ -88,7 +88,7 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	} else {
 		hardware = hdw
 	}
-	runnerVersion := &Version{}
+	runnerVersion := &Version{Pipeline: cfg.Pipeline, ModelId: cfg.ModelID, Version: "0.0.0"}
 	version, err := client.VersionWithResponse(ctx)
 	if err == nil {
 		runnerVersion = version.JSON200
