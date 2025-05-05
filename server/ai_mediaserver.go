@@ -106,6 +106,10 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	//API for dynamic capabilities
+	ls.HTTPMux.Handle("/process/request/{workerResourceRoute}", ls.SubmitJob())
+	ls.HTTPMux.Handle("/process/tokens", ls.GetJobTokens())
+
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
 }

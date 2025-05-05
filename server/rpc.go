@@ -247,14 +247,8 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
 	//API for dynamic capabilities
-	//Gateway
-	lp.transRPC.HandleFunc("/process/tokens", lp.GetJobTokens)
-
-	//Gateway and Orchestrator
 	lp.transRPC.HandleFunc("/process/request/{workerResourceRoute}", lp.ProcessJob)
 	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
-
-	//Orchestrator
 	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
