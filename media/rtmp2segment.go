@@ -83,6 +83,7 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			"-f", "segment",
 			outFilePattern,
 		)
+		// Change Cancel function to send a SIGTERM instead of SIGKILL. Still send a SIGKILL after 5s (WaitDelay) if it's stuck.
 		cmd.Cancel = func() error {
 			return cmd.Process.Signal(syscall.SIGTERM)
 		}
