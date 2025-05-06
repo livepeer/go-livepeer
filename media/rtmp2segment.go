@@ -83,6 +83,10 @@ func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmen
 			"-f", "segment",
 			outFilePattern,
 		)
+		cmd.Cancel = func() error {
+			return cmd.Process.Signal(syscall.SIGTERM)
+		}
+		cmd.WaitDelay = 5 * time.Second
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
