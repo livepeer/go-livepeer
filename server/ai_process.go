@@ -1548,12 +1548,14 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		// Don't suspend the session if the error is a transient error.
 
 		if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
+			clog.Infof(ctx, "Error submitting request with retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
 
 		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
 		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+			clog.Infof(ctx, "Error submitting request with non-retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 			if cap == core.Capability_LiveVideoToVideo {
 				// for live video, remove the session from the pool to avoid retrying it
 				params.sessManager.Remove(ctx, sess)
