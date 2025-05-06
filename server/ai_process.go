@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -117,11 +116,8 @@ type liveRequestParams struct {
 	paymentProcessInterval time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline      func(error)
-	lastMid           string
-	pipelineCompleted chan struct{}
-	processing        chan struct{}
-	mu                sync.Mutex
+	stopPipeline func(error)
+	processing   chan struct{}
 
 	// Report an error event
 	sendErrorEvent func(error)
