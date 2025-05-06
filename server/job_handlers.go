@@ -250,7 +250,6 @@ func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	// Orchestrator node
 	processJob(ctx, h, w, r)
 }
@@ -337,8 +336,15 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			return
 		}
 
+		// Extract the worker resource route from the URL path
+		// The prefix is "/process/request/"
+		// if the request does not include the last / of the prefix no additional url path is added
 		workerRoute := orchToken.ServiceAddr + "/process/request"
-		workerResourceRoute := r.PathValue("workerResourceRoute")
+		prefix := "/process/request/"
+		workerResourceRoute := r.URL.Path
+		if strings.HasPrefix(workerResourceRoute, prefix) {
+			workerResourceRoute = workerResourceRoute[len(prefix):]
+		}
 		if workerResourceRoute != "" {
 			workerRoute = workerRoute + "/" + workerResourceRoute
 		}
@@ -539,11 +545,20 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	}
 	r.Body.Close()
 
+	// Extract the worker resource route from the URL path
+	// The prefix is "/process/request/"
+	// if the request does not include the last / of the prefix no additional url path is added
+	prefix := "/process/request/"
+	workerResourceRoute := r.URL.Path
+	if strings.HasPrefix(workerResourceRoute, prefix) {
+		workerResourceRoute = workerResourceRoute[len(prefix):]
+	}
+
 	workerRoute := jobReq.CapabilityUrl
-	workerResourceRoute := r.PathValue("workerResourceRoute")
 	if workerResourceRoute != "" {
 		workerRoute = workerRoute + "/" + workerResourceRoute
 	}
+
 	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, bytes.NewBuffer(body))
 	if err != nil {
 		clog.Errorf(ctx, "Unable to create request err=%v", err)
