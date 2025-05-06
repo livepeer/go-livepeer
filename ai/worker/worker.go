@@ -90,6 +90,10 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return hardware
 }
 
+func (w *Worker) GetCapacity() Capacity {
+	return w.manager.GetCapacity()
+}
+
 func (w *Worker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

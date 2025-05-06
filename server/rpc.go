@@ -53,7 +53,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
 	CheckAICapacity(pipeline, modelID string) bool
-	GetAICapacity(pipeline, modelID string) int
+	GetAICapacity() worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -461,6 +461,7 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 		workerHardware = workerHardwareToNetWorkerHardware(orch.WorkerHardware())
 	}
 
+	aiCapacity := orch.GetAICapacity()
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
 		TicketParams:       params,
@@ -470,7 +471,10 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 		AuthToken:          authToken,
 		Hardware:           workerHardware,
 		CapabilitiesPrices: capsPrices,
-		Capacity:           orch.GetAICapacity(),
+		AiCapacity: &net.AICapacity{
+			ContainersInUse: uint32(aiCapacity.ContainersInUse),
+			ContainersIdle:  uint32(aiCapacity.ContainersIdle),
+		},
 	}
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)

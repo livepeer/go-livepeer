@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -109,13 +110,15 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
+	var wg sync.WaitGroup
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
+		defer wg.Done()
 		start := time.Now()
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			clog.V(common.DEBUG).Info(ctx, "O capacity: ", info.Capacity)
+			clog.V(common.DEBUG).Info(ctx, "O capacity: ", "inuse", info.AiCapacity.ContainersInUse, "idle", info.AiCapacity.ContainersIdle)
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
 					URL:     od.LocalInfo.URL,
@@ -126,6 +129,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 			return
 		}
+
+		// publish metrics
+		// if timedout, publish "down" metric
 		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%q", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if monitor.Enabled {
@@ -146,8 +152,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
+		wg.Add(1)
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
 	}
+
+	go func() {
+		wg.Wait() // wait for all getOrchInfo calls to finish
+		cancel()
+	}()
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
 	timeout := o.discoveryTimeout
@@ -181,7 +193,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			timedOut = true
 		}
 	}
-	cancel()
 
 	// consider suspended orchestrators if we have an insufficient number of non-suspended ones
 	if len(ods) < numOrchestrators {

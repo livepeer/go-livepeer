@@ -172,7 +172,7 @@ message OrchestratorInfo {
   // Information on Orchestrator hardware
   repeated HardwareInformation hardware = 7;
 
-  string capacity = 8;
+  AICapacity ai_capacity = 8;
 
   // Orchestrator returns info about own input object storage, if it wants it to
   // be used.
@@ -536,4 +536,9 @@ message HardwareInformation {
 
   // hardware for pipeline and model_id
   map<string, GPUComputeInfo> gpu_info = 3;
+}
+
+message AICapacity {
+  uint32 containersInUse = 1;
+  uint32 containersIdle = 2;
 }
