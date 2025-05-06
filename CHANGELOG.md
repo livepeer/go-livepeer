@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.5
+
+### Features ⚒
+
+#### General
+
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+- Realtime Video AI in a Box (@leszko, @victorges)
+- [#3246](https://github.com/livepeer/go-livepeer/pull/3246) Add hardware info from Orchestrators and expand network information available (@ad-astra-video)
+
+#### Gateway
+- [#3492](https://github.com/livepeer/go-livepeer/pull/3492) Improve the Gateway startup time (@leszko)
+
+#### Orchestrator
+
+- [#3522](https://github.com/livepeer/go-livepeer/pull/3522) Update install_ffmpeg.sh scripts (@hjpotter92)
+- [#3547](https://github.com/livepeer/go-livepeer/pull/3547) Add a limit of retries on the same session (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
 ## v0.8.4
 
 ### Features ⚒
