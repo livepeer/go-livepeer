@@ -39,7 +39,8 @@ const (
 	defaultLiveVideoToVideoModelID = "noop"
 	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
 
-	maxTries = 20
+	maxTries         = 20
+	maxSameSessTries = 3
 )
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
@@ -1504,6 +1505,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	defer cancel()
 
 	tries := 0
+	sessTries := map[string]int{}
 	var retryableSessions []*AISession
 	for tries < maxTries {
 		select {
@@ -1521,19 +1523,19 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
+		if err != nil {
+			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
+			continue
+		}
+		if sess == nil {
+			break
+		}
+		sessTries[sess.Transcoder()]++
 		if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
 			// user requested a specific orchestrator, so ignore all the others
 			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
 			retryableSessions = append(retryableSessions, sess)
 			continue
-		}
-		if err != nil {
-			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
-			continue
-		}
-
-		if sess == nil {
-			break
 		}
 
 		resp, err = submitFn(ctx, params, sess)
@@ -1543,13 +1545,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		// Don't suspend the session if the error is a transient error.
-		if isRetryableError(err) {
+		if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
+			clog.Infof(ctx, "Error submitting request with retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
 
-		// when no capacity error is received, retry with another session
-		if isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
+		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+			clog.Infof(ctx, "Error submitting request with non-retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 			if cap == core.Capability_LiveVideoToVideo {
 				// for live video, remove the session from the pool to avoid retrying it
 				params.sessManager.Remove(ctx, sess)
