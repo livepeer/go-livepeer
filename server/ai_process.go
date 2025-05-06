@@ -1602,27 +1602,49 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	return resp, nil
 }
 
+type OrchestratorSwapper struct {
+	params      aiRequestParams
+	cap         core.Capability
+	lastSwapped *time.Time
+}
+
+func (os OrchestratorSwapper) swapOrchestrator() bool {
+	if !os.params.inputStreamExists() {
+		clog.Infof(context.Background(), "### No input stream, skipping orchestrator swap")
+		return false
+	}
+	// TODO: Change to some more complex condition, like 5 swaps in the last 5 min
+	minSwapInterval := 5 * time.Second
+	if os.lastSwapped != nil && os.lastSwapped.Add(minSwapInterval).After(time.Now()) {
+		clog.Infof(context.Background(), "### Too many swaps, skipping orchestrator swap")
+		// Too many swaps, something may be wrong with the input stream
+		return false
+	}
+	now := time.Now()
+	os.lastSwapped = &now
+	return true
+}
+
 func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn func(context.Context, aiRequestParams, *AISession) (interface{}, error), capName string, modelID string, cap core.Capability) {
 	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
-	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
-	defer cancel()
 
+	orchSwapper := &OrchestratorSwapper{params: params, cap: cap}
 	defer completeRealtimeVideo(params)
 	for {
-		if !swapOrchestrator(ctx, params, cap) {
-			// Do not swap orchestrator anymore
-			return
-		}
+		perOrchCtx, perOrchCancel := context.WithTimeout(ctx, processingRetryTimeout)
+		clog.Info(context.Background(), "### STARTING")
 		tries := 0
 		sessTries := map[string]int{}
 		params.liveParams.processing = make(chan struct{})
 		var retryableSessions []*AISession
 		var resp interface{}
 		for tries < maxTries {
+			clog.Info(context.Background(), "### STARTING PROCESSING")
 			select {
-			case <-cctx.Done():
-				err := cctx.Err()
+			case <-perOrchCtx.Done():
+				err := perOrchCtx.Err()
 				if errors.Is(err, context.DeadlineExceeded) {
+					clog.Info(context.Background(), "### DEADLINE")
 					err = fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
 					if monitor.Enabled {
 						monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
@@ -1634,6 +1656,7 @@ func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn 
 			default:
 			}
 
+			clog.Info(context.Background(), "### SELECTING ORCHESTRATOR")
 			tries++
 			sess, err := params.sessManager.Select(ctx, cap, modelID)
 			if err != nil {
@@ -1651,7 +1674,7 @@ func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn 
 				continue
 			}
 
-			resp, err = submitFn(ctx, params, sess)
+			resp, err = submitFn(perOrchCtx, params, sess)
 			if err == nil {
 				params.sessManager.Complete(ctx, sess)
 				break
@@ -1708,23 +1731,19 @@ func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn 
 			return
 		}
 		// Wait for a stream being processed by an O
+		clog.Info(context.Background(), "### PROCESSING")
 		<-params.liveParams.processing
+		perOrchCancel()
+		clog.Info(context.Background(), "### DONE PROCESSING")
 		// Done processing, swap O to another one
 
 		// TODO: Return error
 		//return resp, nil
+		if !orchSwapper.swapOrchestrator() {
+			// Do not swap orchestrator anymore
+			return
+		}
 	}
-}
-
-func swapOrchestrator(ctx context.Context, params aiRequestParams, capability core.Capability) bool {
-	// TODO: Implement condition for O Swapping
-	return true
-}
-
-func (p liveRequestParams) start(mid string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.lastMid = mid
 }
 
 func (p liveRequestParams) stop(err error) {
@@ -1737,11 +1756,8 @@ func (p liveRequestParams) stop(err error) {
 }
 
 func completeRealtimeVideo(params aiRequestParams) {
-	//if params.liveParams.pipelineCompleted == nil {
-	//	return
-	//}
-	//close(params.liveParams.pipelineCompleted)
-	params.liveParams.stopPipeline(nil)
+	clog.Infof(context.Background(), "### COMPLETE")
+	params.liveParams.stopPipeline(errors.New("completeRealtimeVideo"))
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.

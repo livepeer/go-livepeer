@@ -64,6 +64,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
+			params.liveParams.stop(fmt.Errorf("Trickle publisher closed"))
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
@@ -71,6 +72,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stop(fmt.Errorf("slow orchestrator"))
 			cancel()
+			params.liveParams.stop(fmt.Errorf("Orchestrator is slow"))
 			return
 			// TODO switch orchestrators
 		}
@@ -86,6 +88,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			if err != nil {
 				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
 				params.liveParams.sendErrorEvent(fmt.Errorf("Missing next handle %v", err))
+				params.liveParams.stop(fmt.Errorf("error getting next publish handle"))
 				return
 			}
 			for {
@@ -93,6 +96,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
+					params.liveParams.stop(fmt.Errorf("error getting next publish handle"))
 					segment.Close()
 					return
 				}
@@ -128,6 +132,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				if n > 0 {
 					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
 					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
+					params.liveParams.stop(fmt.Errorf("Error publishing segment"))
 					segment.Close()
 					return
 				}
@@ -136,6 +141,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				r = reader.Clone()
 				time.Sleep(250 * time.Millisecond)
 			}
+			params.liveParams.stop(fmt.Errorf("Done publish"))
 		}(thisSeq)
 	})
 	clog.Infof(ctx, "trickle pub")
@@ -203,6 +209,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		for {
 			if !params.inputStreamExists() {
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
+				params.liveParams.stop(errors.New("trickle subscribe stopping, input stream does not exist"))
 				break
 			}
 			var segment *http.Response
@@ -262,6 +269,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
+		params.liveParams.stop(errors.New("Trickle Subscribe Done"))
 	}()
 
 	// Studio Output ffmpeg process
@@ -356,6 +364,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
+		defer params.liveParams.stop(errors.New("ControlPublish stopped"))
 		for {
 			select {
 			case <-ticker.C:
