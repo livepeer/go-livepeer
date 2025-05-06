@@ -1500,6 +1500,11 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp interface{}
 
+	if cap == core.Capability_LiveVideoToVideo {
+		go processRealtimeVideo(ctx, params, submitFn, capName, modelID, cap)
+		return resp, nil
+	}
+
 	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
@@ -1590,6 +1595,105 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
+}
+
+func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn func(context.Context, aiRequestParams, *AISession) (interface{}, error), capName string, modelID string, cap core.Capability) {
+	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
+	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
+	defer cancel()
+
+	tries := 0
+	sessTries := map[string]int{}
+	var retryableSessions []*AISession
+	var resp interface{}
+	for tries < maxTries {
+		select {
+		case <-cctx.Done():
+			err := cctx.Err()
+			if errors.Is(err, context.DeadlineExceeded) {
+				err = fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
+				if monitor.Enabled {
+					monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
+				}
+			}
+			// TODO: Return error
+			//return nil, &ServiceUnavailableError{err: err}
+		default:
+		}
+
+		tries++
+		sess, err := params.sessManager.Select(ctx, cap, modelID)
+		if err != nil {
+			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
+			continue
+		}
+		if sess == nil {
+			break
+		}
+		sessTries[sess.Transcoder()]++
+		if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
+			// user requested a specific orchestrator, so ignore all the others
+			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+			retryableSessions = append(retryableSessions, sess)
+			continue
+		}
+
+		resp, err = submitFn(ctx, params, sess)
+		if err == nil {
+			params.sessManager.Complete(ctx, sess)
+			break
+		}
+
+		// Don't suspend the session if the error is a transient error.
+		if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
+			clog.Infof(ctx, "Error submitting request with retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
+			params.sessManager.Complete(ctx, sess)
+			continue
+		}
+
+		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
+		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+			clog.Infof(ctx, "Error submitting request with non-retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
+			if cap == core.Capability_LiveVideoToVideo {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			} else {
+				// for non realtime video, get the session back to the pool as soon as the request completes
+				retryableSessions = append(retryableSessions, sess)
+			}
+			continue
+		}
+
+		// Suspend the session on other errors.
+		clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
+		params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
+
+		if errors.Is(err, common.ErrAudioDurationCalculation) {
+			// TODO: Return error
+			//return nil, &BadRequestError{err}
+		}
+
+		if badRequestErr := parseBadRequestError(err); badRequestErr != nil {
+			// TODO: Return error
+			//return nil, badRequestErr
+		}
+	}
+
+	//add retryable sessions back to selector
+	for _, sess := range retryableSessions {
+		params.sessManager.Complete(ctx, sess)
+	}
+
+	if resp == nil {
+		errMsg := "no orchestrators available"
+		if monitor.Enabled {
+			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
+		}
+		// TODO: Return error
+		//return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
+	}
+	// TODO: Return error
+	//return resp, nil
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.
