@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -110,9 +109,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	var wg sync.WaitGroup
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
-		defer wg.Done()
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
+		defer cancel()
+
 		start := time.Now()
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
@@ -148,18 +148,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
-	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
-
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
-		wg.Add(1)
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
 	}
 
-	go func() {
-		wg.Wait() // wait for all getOrchInfo calls to finish
-		cancel()
-	}()
+	// use a timer to time out the entire get info loop below
+	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
+	defer cutoffTimer.Stop()
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
 	timeout := o.discoveryTimeout
@@ -189,7 +185,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				timeout = maxGetOrchestratorCutoffTimeout
 			}
 			clog.V(common.DEBUG).Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
-		case <-ctx.Done():
+		case <-cutoffTimer.C:
 			timedOut = true
 		}
 	}
