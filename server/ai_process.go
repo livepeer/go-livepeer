@@ -1591,11 +1591,6 @@ func (p liveRequestParams) stop(err error) {
 	}
 }
 
-func completeRealtimeVideo(params aiRequestParams) {
-	clog.Infof(context.Background(), "### COMPLETE")
-	params.liveParams.stopPipeline(errors.New("completeRealtimeVideo"))
-}
-
 // isRetryableError checks if the error is a transient error that can be retried.
 func isRetryableError(err error) bool {
 	return errContainsMsg(err, "ticketparams expired")

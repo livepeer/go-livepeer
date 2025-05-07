@@ -581,18 +581,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 
-			liveParams: &liveRequestParams{
-				segmentReader:          ssr,
-				outputRTMPURL:          outputURL,
-				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
-				stream:                 streamName,
-				paymentProcessInterval: ls.livePaymentInterval,
-				requestID:              requestID,
-				streamID:               streamID,
-				pipelineID:             pipelineID,
-				stopPipeline:           stopPipeline,
-				sendErrorEvent:         sendErrorEvent,
-			},
+			liveParams: &liveRequestParams{},
 		}
 
 		// Kick off the RTMP pull and segmentation as soon as possible
@@ -624,24 +613,45 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		orchSwapper := &OrchestratorSwapper{params: params}
 		go func() {
 			for {
+				params.liveParams = &liveRequestParams{
+					segmentReader:          ssr,
+					outputRTMPURL:          outputURL,
+					mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
+					stream:                 streamName,
+					paymentProcessInterval: ls.livePaymentInterval,
+					requestID:              requestID,
+					streamID:               streamID,
+					pipelineID:             pipelineID,
+					stopPipeline:           stopPipeline,
+					sendErrorEvent:         sendErrorEvent,
+					processing:             make(chan struct{}),
+				}
 				clog.Info(context.Background(), "### START")
+				perOrchCtx, perOrchCancel := context.WithCancel(ctx)
 				resp, err := processAIRequest(ctx, params, req)
 				if err != nil {
-					clog.Errorf(ctx, "Error processing AI Request: %s", err)
+					clog.Errorf(perOrchCtx, "Error processing AI Request: %s", err)
 					stopPipeline(err)
+					perOrchCancel()
 					return
 				}
 
 				clog.Info(context.Background(), "### STARTING PROCESSING")
-				params.liveParams.processing = make(chan struct{})
-				if err := startProcessing(ctx, params, resp); err != nil {
+				if err := startProcessing(perOrchCtx, params, resp); err != nil {
 					clog.Errorf(ctx, "Error starting processing: %s", err)
 					stopPipeline(err)
+					perOrchCancel()
 					return
 				}
 				clog.Info(context.Background(), "### PROCESSING")
-				close(orchSelection)
+				select {
+				case <-orchSelection:
+					// Channel is already closed
+				default:
+					close(orchSelection)
+				}
 				<-params.liveParams.processing
+				perOrchCancel()
 				clog.Info(context.Background(), "### DONE PROCESSING")
 
 				if !orchSwapper.swapOrchestrator() {

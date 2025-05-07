@@ -302,7 +302,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 			break
 		}
 
-		cmd := exec.Command("ffmpeg",
+		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
 			"-c:a", "copy",
