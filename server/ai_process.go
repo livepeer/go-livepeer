@@ -89,7 +89,7 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	liveParams liveRequestParams
+	liveParams *liveRequestParams
 }
 
 func (a aiRequestParams) inputStreamExists() bool {
@@ -121,6 +121,10 @@ type liveRequestParams struct {
 
 	// Report an error event
 	sendErrorEvent func(error)
+
+	// Passed from the orchestrator selection, ugly hack
+	sess      *AISession
+	startTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1035,7 +1039,10 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
-	startTime := time.Now()
+	// TODO: Return this
+	params.liveParams.sess = sess
+	params.liveParams.startTime = time.Now()
+	//startTime := time.Now()
 	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
 	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
 	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
@@ -1075,47 +1082,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, errors.New("control URL is missing")
 	}
 
-	host := sess.Transcoder()
-	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid publish URL: %w", err)
-	}
-	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
-	}
-	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid control URL: %w", err)
-	}
-	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid events URL: %w", err)
-	}
-	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
-
-	startControlPublish(ctx, control, params)
-	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, sess, func() {
-		delayMs := time.Since(startTime).Milliseconds()
-		if monitor.Enabled {
-			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_receive_first_processed_segment",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   params.liveParams.streamID,
-				"pipeline_id": params.liveParams.pipelineID,
-				"request_id":  params.liveParams.requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": sess.Address(),
-					"url":     sess.Transcoder(),
-				},
-			})
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-
-	})
-	startEventsSubscribe(ctx, events, params, sess)
 	return resp, nil
 }
 
@@ -1501,11 +1467,6 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 	var resp interface{}
 
-	if cap == core.Capability_LiveVideoToVideo {
-		go processRealtimeVideo(ctx, params, submitFn, capName, modelID, cap)
-		return resp, nil
-	}
-
 	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
@@ -1619,127 +1580,6 @@ func (os OrchestratorSwapper) swapOrchestrator() bool {
 	now := time.Now()
 	os.lastSwapped = &now
 	return true
-}
-
-func processRealtimeVideo(ctx context.Context, params aiRequestParams, submitFn func(context.Context, aiRequestParams, *AISession) (interface{}, error), capName string, modelID string, cap core.Capability) {
-	processingRetryTimeout := params.node.AIProcesssingRetryTimeout
-
-	orchSwapper := &OrchestratorSwapper{params: params, cap: cap}
-	defer completeRealtimeVideo(params)
-	for {
-		perOrchCtx, perOrchCancel := context.WithTimeout(ctx, processingRetryTimeout)
-		clog.Info(context.Background(), "### STARTING")
-		tries := 0
-		sessTries := map[string]int{}
-		params.liveParams.processing = make(chan struct{})
-		var retryableSessions []*AISession
-		var resp interface{}
-		for tries < maxTries {
-			clog.Info(context.Background(), "### STARTING PROCESSING")
-			select {
-			case <-perOrchCtx.Done():
-				err := perOrchCtx.Err()
-				if errors.Is(err, context.DeadlineExceeded) {
-					clog.Info(context.Background(), "### DEADLINE")
-					err = fmt.Errorf("no orchestrators available within %v timeout", processingRetryTimeout)
-					if monitor.Enabled {
-						monitor.AIRequestError(err.Error(), monitor.ToPipeline(capName), modelID, nil)
-					}
-				}
-				// TODO: Return error
-				//return nil, &ServiceUnavailableError{err: err}
-				return
-			default:
-			}
-
-			clog.Info(context.Background(), "### SELECTING ORCHESTRATOR")
-			tries++
-			sess, err := params.sessManager.Select(ctx, cap, modelID)
-			if err != nil {
-				clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
-				continue
-			}
-			if sess == nil {
-				break
-			}
-			sessTries[sess.Transcoder()]++
-			if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
-				// user requested a specific orchestrator, so ignore all the others
-				clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
-				retryableSessions = append(retryableSessions, sess)
-				continue
-			}
-
-			resp, err = submitFn(perOrchCtx, params, sess)
-			if err == nil {
-				params.sessManager.Complete(ctx, sess)
-				break
-			}
-
-			// Don't suspend the session if the error is a transient error.
-			if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
-				clog.Infof(ctx, "Error submitting request with retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
-				params.sessManager.Complete(ctx, sess)
-				continue
-			}
-
-			// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
-			if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
-				clog.Infof(ctx, "Error submitting request with non-retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
-				if cap == core.Capability_LiveVideoToVideo {
-					// for live video, remove the session from the pool to avoid retrying it
-					params.sessManager.Remove(ctx, sess)
-				} else {
-					// for non realtime video, get the session back to the pool as soon as the request completes
-					retryableSessions = append(retryableSessions, sess)
-				}
-				continue
-			}
-
-			// Suspend the session on other errors.
-			clog.Infof(ctx, "Error submitting request modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
-			params.sessManager.Remove(ctx, sess) //TODO: Improve session selection logic for live-video-to-video
-
-			if errors.Is(err, common.ErrAudioDurationCalculation) {
-				// TODO: Return error
-				//return nil, &BadRequestError{err}
-			}
-
-			if badRequestErr := parseBadRequestError(err); badRequestErr != nil {
-				// TODO: Return error
-				//return nil, badRequestErr
-			}
-			break
-		}
-
-		//add retryable sessions back to selector
-		for _, sess := range retryableSessions {
-			params.sessManager.Complete(ctx, sess)
-		}
-
-		if resp == nil {
-			errMsg := "no orchestrators available"
-			if monitor.Enabled {
-				monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
-			}
-			// TODO: Return error
-			//return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
-			return
-		}
-		// Wait for a stream being processed by an O
-		clog.Info(context.Background(), "### PROCESSING")
-		<-params.liveParams.processing
-		perOrchCancel()
-		clog.Info(context.Background(), "### DONE PROCESSING")
-		// Done processing, swap O to another one
-
-		// TODO: Return error
-		//return resp, nil
-		if !orchSwapper.swapOrchestrator() {
-			// Do not swap orchestrator anymore
-			return
-		}
-	}
 }
 
 func (p liveRequestParams) stop(err error) {
