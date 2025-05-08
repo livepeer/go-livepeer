@@ -621,69 +621,84 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		orchSwapper := &OrchestratorSwapper{params: params}
-		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
-			RequestID: params.liveParams.requestID,
-		}
-		go func() {
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			outputWriter := startOutput(ctx, params, mediaMTXOutputURL)
-			for {
-				params.liveParams = &liveRequestParams{
-					segmentReader:          ssr,
-					outputRTMPURL:          outputURL,
-					mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
-					stream:                 streamName,
-					paymentProcessInterval: ls.livePaymentInterval,
-					requestID:              requestID,
-					streamID:               streamID,
-					pipelineID:             pipelineID,
-					stopPipeline:           stopPipeline,
-					sendErrorEvent:         sendErrorEvent,
-					processing:             make(chan struct{}),
-					outputWriter:           outputWriter,
-				}
-				clog.Info(context.Background(), "### START")
-				perOrchCtx, perOrchCancel := context.WithCancel(ctx)
-				resp, err := processAIRequest(ctx, params, req)
-				if err != nil {
-					clog.Errorf(perOrchCtx, "Error processing AI Request: %s", err)
-					stopPipeline(err)
-					perOrchCancel()
-					return
-				}
-
-				clog.Info(context.Background(), "### STARTING PROCESSING")
-				if err := startProcessing(perOrchCtx, params, resp); err != nil {
-					clog.Errorf(ctx, "Error starting processing: %s", err)
-					stopPipeline(err)
-					perOrchCancel()
-					return
-				}
-
-				clog.Info(context.Background(), "### PROCESSING")
-				select {
-				case <-orchSelection:
-					// Channel is already closed
-				default:
-					close(orchSelection)
-				}
-				<-params.liveParams.processing
-				perOrchCancel()
-				clog.Info(context.Background(), "### DONE PROCESSING")
-
-				if !orchSwapper.swapOrchestrator() {
-					// Do not swap orchestrator anymore
-					return
-				}
-			}
-			params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
-		}()
+		startStream(params)
+		go processStream(ctx, params, req, orchSelection)
 	})
 }
 
-func startOutput(ctx context.Context, params aiRequestParams, mediaMTXOutputURL string) *multiWriter {
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody, orchSelection chan bool) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	orchSwapper := &orchestratorSwapper{params: params}
+	params.liveParams.outputWriter = startOutput(ctx, params)
+	for {
+		perOrchCtx, perOrchCancel := context.WithCancel(ctx)
+		params.liveParams = newParams(params.liveParams)
+
+		resp, err := processAIRequest(ctx, params, req)
+		if err != nil {
+			clog.Errorf(perOrchCtx, "Error processing AI Request: %s", err)
+			params.liveParams.stopPipeline(err)
+			perOrchCancel()
+			return
+		}
+
+		clog.Info(context.Background(), "### STARTING PROCESSING")
+		if err := startProcessing(perOrchCtx, params, resp); err != nil {
+			clog.Errorf(ctx, "Error starting processing: %s", err)
+			params.liveParams.stopPipeline(err)
+			perOrchCancel()
+			return
+		}
+
+		clog.Info(context.Background(), "### PROCESSING")
+		notifyOrchSelectionCompleted(orchSelection)
+		<-params.liveParams.processing
+		perOrchCancel()
+		clog.Info(context.Background(), "### DONE PROCESSING")
+
+		if !orchSwapper.shouldRetry() {
+			// Do not swap orchestrator anymore
+			break
+		}
+	}
+	params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
+}
+
+func notifyOrchSelectionCompleted(orchSelection chan bool) {
+	select {
+	case <-orchSelection:
+		// Channel is already closed
+	default:
+		close(orchSelection)
+	}
+}
+
+func newParams(params *liveRequestParams) *liveRequestParams {
+	return &liveRequestParams{
+		segmentReader:          params.segmentReader,
+		outputRTMPURL:          params.outputRTMPURL,
+		mediaMTXOutputRTMPURL:  params.mediaMTXOutputRTMPURL,
+		stream:                 params.stream,
+		paymentProcessInterval: params.paymentProcessInterval,
+		requestID:              params.requestID,
+		streamID:               params.streamID,
+		pipelineID:             params.pipelineID,
+		stopPipeline:           params.stopPipeline,
+		sendErrorEvent:         params.sendErrorEvent,
+		processing:             make(chan struct{}),
+		outputWriter:           params.outputWriter,
+	}
+}
+
+func startStream(params aiRequestParams) {
+	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+		RequestID: params.liveParams.requestID,
+	}
+}
+
+func startOutput(ctx context.Context, params aiRequestParams) *multiWriter {
 	var err error
 	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
@@ -700,7 +715,7 @@ func startOutput(ctx context.Context, params aiRequestParams, mediaMTXOutputURL 
 	if params.liveParams.outputRTMPURL != "" {
 		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 	}
-	go ffmpegOutput(ctx, mediaMTXOutputURL, rMediaMTX, params)
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
 	return mWriter
 }
 

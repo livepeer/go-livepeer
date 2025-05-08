@@ -25,6 +25,29 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
+type orchestratorSwapper struct {
+	params      aiRequestParams
+	cap         core.Capability
+	lastSwapped *time.Time
+}
+
+func (os orchestratorSwapper) shouldRetry() bool {
+	if !os.params.inputStreamExists() {
+		clog.Infof(context.Background(), "### No input stream, skipping orchestrator swap")
+		return false
+	}
+	// TODO: Change to some more complex condition, like 5 swaps in the last 5 min
+	minSwapInterval := 5 * time.Second
+	if os.lastSwapped != nil && os.lastSwapped.Add(minSwapInterval).After(time.Now()) {
+		clog.Infof(context.Background(), "### Too many swaps, skipping orchestrator swap")
+		// Too many swaps, something may be wrong with the input stream
+		return false
+	}
+	now := time.Now()
+	os.lastSwapped = &now
+	return true
+}
+
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
