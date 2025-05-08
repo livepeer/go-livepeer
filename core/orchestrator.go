@@ -419,12 +419,16 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 	}, nil
 }
 
-func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobId ManifestID, jobCapability string) (*net.PriceInfo, error) {
+func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
 	if orch.node == nil || orch.node.Recipient == nil {
-		return nil, nil
+		//return a price of zero for offhain mode
+		return &net.PriceInfo{
+			PricePerUnit:  0,
+			PixelsPerUnit: 1,
+		}, nil
 	}
 
-	jobPrice, err := orch.jobPriceInfo(sender, jobId, jobCapability)
+	jobPrice, err := orch.jobPriceInfo(sender, jobCapability)
 	if err != nil {
 		return nil, err
 	}
@@ -435,17 +439,8 @@ func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobId ManifestI
 	}, nil
 }
 
-func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobId ManifestID, jobCapability string) (*big.Rat, error) {
+func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobCapability string) (*big.Rat, error) {
 	basePrice := orch.node.GetPriceForJob(sender.Hex(), jobCapability)
-	// If there is already a fixed price for the given session, use this price
-	if jobId != "" {
-		if balances, ok := orch.node.Balances.balances[sender]; ok {
-			fixedPrice := balances.FixedPrice(ManifestID(jobId))
-			if fixedPrice != nil {
-				return fixedPrice, nil
-			}
-		}
-	}
 
 	if basePrice == nil {
 		basePrice = orch.node.GetPriceForJob("default", jobCapability)

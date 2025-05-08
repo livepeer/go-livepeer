@@ -263,7 +263,7 @@ func (r *stubOrchestrator) ReserveExternalCapabilityCapacity(extCap string) erro
 func (r *stubOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
 	return nil
 }
-func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {
+func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
 	return r.priceInfo, nil
 }
 func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
@@ -1532,7 +1532,7 @@ func (o *mockOrchestrator) ReserveExternalCapabilityCapacity(extCap string) erro
 func (o *mockOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
 	return nil
 }
-func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobId core.ManifestID, jobCapability string) (*net.PriceInfo, error) {
+func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
 	return &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, nil
 }
 func (o *mockOrchestrator) GetUrlForCapability(capability string) string {

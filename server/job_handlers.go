@@ -191,7 +191,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	} else {
 		senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)
 
-		jobPrice, err := orch.JobPriceInfo(senderAddr, core.RandomManifestID(), jobCapsHdr)
+		jobPrice, err := orch.JobPriceInfo(senderAddr, jobCapsHdr)
 		if err != nil {
 			statusCode := http.StatusBadRequest
 			if err.Error() == "insufficient sender reserve" {
@@ -430,8 +430,8 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			w.WriteHeader(http.StatusOK)
 			// Read from upstream and forward to client
 			respChan := make(chan string, 100)
-			respCtx, cancelResp := context.WithTimeout(ctx, time.Duration(jobReq.Timeout+10)) //include a small buffer to let Orchestrator close the connection on the timeout
-			defer cancelResp()
+			respCtx, _ := context.WithTimeout(ctx, time.Duration(jobReq.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
+
 			go func() {
 				defer resp.Body.Close()
 				defer close(respChan)
@@ -511,19 +511,31 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
 	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
-
 	jobId := jobReq.Capability
-	jobPrice := payment.GetExpectedPrice()
+
+	jobPrice, err := orch.JobPriceInfo(sender, jobReq.Capability)
+	if err != nil {
+		clog.Errorf(ctx, "could not get price err=%v", err.Error())
+		http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+
 	if payment.TicketParams == nil {
 		//no payment included, confirm if balance remains
 		jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-		minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
-		orchBal := orch.Balance(sender, core.ManifestID(jobId))
-		if orchBal.Cmp(minBal) < 0 {
-			clog.Errorf(ctx, "Insufficient balance for request")
-			http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
-			orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-			return
+		//if price is not 0, comfirm balance
+		if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+			minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+			orchBal := getPaymentBalance(orch, sender, jobId)
+
+			if orchBal.Cmp(minBal) < 0 {
+				clog.Errorf(ctx, "Insufficient balance for request")
+				http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
+				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+				return
+			}
 		}
 	} else {
 		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
@@ -534,7 +546,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		}
 	}
 
-	clog.Infof(ctx, "balance after payment is %v", orch.Balance(sender, core.ManifestID(jobId)).FloatString(3))
+	clog.Infof(ctx, "balance after payment is %v", getPaymentBalance(orch, sender, jobId).FloatString(0))
+
 	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing")
 
 	// Read the original body
@@ -639,11 +652,10 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
 		// Read from upstream and forward to client
 		respChan := make(chan string, 100)
-		respCtx, cancelResp := context.WithTimeout(ctx, time.Duration(jobReq.Timeout))
-		defer cancelResp()
+		respCtx, _ := context.WithTimeout(ctx, time.Duration(jobReq.Timeout)*time.Second)
+
 		go func() {
 			defer resp.Body.Close()
 			defer close(respChan)
@@ -692,11 +704,11 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 						break proxyResp
 					}
 				}
+			case <-respCtx.Done():
+				break proxyResp
 			case line := <-respChan:
 				w.Write([]byte(line + "\n"))
 				flusher.Flush()
-			case <-respCtx.Done():
-				break proxyResp
 			}
 		}
 
