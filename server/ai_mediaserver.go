@@ -644,7 +644,6 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			return
 		}
 
-		clog.Info(context.Background(), "### STARTING PROCESSING")
 		if err := startProcessing(perOrchCtx, params, resp); err != nil {
 			clog.Errorf(ctx, "Error starting processing: %s", err)
 			params.liveParams.stopPipeline(err)
@@ -652,16 +651,14 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			return
 		}
 
-		clog.Info(context.Background(), "### PROCESSING")
 		notifyOrchSelectionCompleted(orchSelection)
 		<-params.liveParams.processing
 		perOrchCancel()
-		clog.Info(context.Background(), "### DONE PROCESSING")
 
 		if !orchSwapper.shouldRetry() {
-			// Do not swap orchestrator anymore
 			break
 		}
+		clog.Infof(ctx, "Retrying stream with a different orchestrator")
 	}
 	params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
 }
