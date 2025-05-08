@@ -659,6 +659,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					return
 				}
 			}
+			params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
 		}()
 	})
 }
