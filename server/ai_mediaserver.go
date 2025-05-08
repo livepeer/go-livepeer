@@ -632,8 +632,8 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
 	}
-
 	orchSwapper := &orchestratorSwapper{params: params}
+
 	params.liveParams.outputWriter = startOutput(ctx, params)
 	for {
 		perOrchCtx, perOrchCancel := context.WithCancel(ctx)
