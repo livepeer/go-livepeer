@@ -1040,10 +1040,9 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
-	// TODO: Return this
+	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
 	params.liveParams.sess = sess
-	params.liveParams.startTime = time.Now()
-	//startTime := time.Now()
+
 	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
 	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
 	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.

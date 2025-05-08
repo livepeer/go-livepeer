@@ -689,6 +689,7 @@ func newParams(params *liveRequestParams) *liveRequestParams {
 		sendErrorEvent:         params.sendErrorEvent,
 		processing:             make(chan struct{}),
 		outputWriter:           params.outputWriter,
+		startTime:              time.Now(),
 	}
 }
 
