@@ -277,10 +277,10 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 	}()
 	for {
 		clog.V(6).Infof(ctx, "Starting output rtmp")
-		//if !params.inputStreamExists() {
-		//	clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
-		//	break
-		//}
+		if !params.inputStreamExists() {
+			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
+			break
+		}
 
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds
@@ -326,7 +326,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LivePipelines[stream]; exists {
+	if control, exists := params.node.LivePipelines[stream]; exists && control.ControlPub != nil && control.StopControl != nil {
 		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
 		control.ControlPub.Close()
 		// TODO better solution than allowing existing streams to stomp over one another

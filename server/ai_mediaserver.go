@@ -581,7 +581,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 
-			liveParams: &liveRequestParams{},
+			liveParams: &liveRequestParams{
+				segmentReader:          ssr,
+				outputRTMPURL:          outputURL,
+				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
+				stream:                 streamName,
+				paymentProcessInterval: ls.livePaymentInterval,
+				requestID:              requestID,
+				streamID:               streamID,
+				pipelineID:             pipelineID,
+				stopPipeline:           stopPipeline,
+				sendErrorEvent:         sendErrorEvent,
+			},
 		}
 
 		// Kick off the RTMP pull and segmentation as soon as possible
@@ -611,7 +622,12 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			StreamId:         &streamID,
 		}
 		orchSwapper := &OrchestratorSwapper{params: params}
+		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+			RequestID: params.liveParams.requestID,
+		}
 		go func() {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
 			outputWriter := startOutput(ctx, params, mediaMTXOutputURL)
 			for {
 				params.liveParams = &liveRequestParams{

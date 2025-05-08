@@ -118,6 +118,7 @@ type liveRequestParams struct {
 	// Stops the pipeline with an error. Also kicks the input
 	stopPipeline func(error)
 	processing   chan struct{}
+	outputWriter *multiWriter
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -1566,20 +1567,21 @@ type OrchestratorSwapper struct {
 }
 
 func (os OrchestratorSwapper) swapOrchestrator() bool {
-	if !os.params.inputStreamExists() {
-		clog.Infof(context.Background(), "### No input stream, skipping orchestrator swap")
-		return false
-	}
-	// TODO: Change to some more complex condition, like 5 swaps in the last 5 min
-	minSwapInterval := 5 * time.Second
-	if os.lastSwapped != nil && os.lastSwapped.Add(minSwapInterval).After(time.Now()) {
-		clog.Infof(context.Background(), "### Too many swaps, skipping orchestrator swap")
-		// Too many swaps, something may be wrong with the input stream
-		return false
-	}
-	now := time.Now()
-	os.lastSwapped = &now
 	return true
+	//if !os.params.inputStreamExists() {
+	//	clog.Infof(context.Background(), "### No input stream, skipping orchestrator swap")
+	//	return false
+	//}
+	//// TODO: Change to some more complex condition, like 5 swaps in the last 5 min
+	//minSwapInterval := 5 * time.Second
+	//if os.lastSwapped != nil && os.lastSwapped.Add(minSwapInterval).After(time.Now()) {
+	//	clog.Infof(context.Background(), "### Too many swaps, skipping orchestrator swap")
+	//	// Too many swaps, something may be wrong with the input stream
+	//	return false
+	//}
+	//now := time.Now()
+	//os.lastSwapped = &now
+	//return true
 }
 
 func (p liveRequestParams) stop(err error) {
