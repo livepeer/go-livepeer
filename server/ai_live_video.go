@@ -302,10 +302,10 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 	}()
 	for {
 		clog.V(6).Infof(ctx, "Starting output rtmp")
-		if !params.inputStreamExists() {
-			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
-			break
-		}
+		//if !params.inputStreamExists() {
+		//	clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
+		//	break
+		//}
 
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds

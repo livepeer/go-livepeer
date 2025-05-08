@@ -612,8 +612,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		orchSwapper := &OrchestratorSwapper{params: params}
 		go func() {
-			try := 0
-			startOutput(ctx, params)
+			startOutput(ctx, params, mediaMTXOutputURL)
 			for {
 				params.liveParams = &liveRequestParams{
 					segmentReader:          ssr,
@@ -645,10 +644,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					perOrchCancel()
 					return
 				}
-				if try == 0 {
-					go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, ReaderMediaMTX, params)
-				}
-				try++
+
 				clog.Info(context.Background(), "### PROCESSING")
 				select {
 				case <-orchSelection:
@@ -670,13 +666,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	})
 }
 
-func startOutput(ctx context.Context, params aiRequestParams) {
+func startOutput(ctx context.Context, params aiRequestParams, mediaMTXOutputURL string) {
 	var err error
 	ReaderMediaMTX, WriterMediaMTX, err = os.Pipe()
 	if err != nil {
 		params.liveParams.stop(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err))
 		return
 	}
+	go ffmpegOutput(ctx, mediaMTXOutputURL, ReaderMediaMTX, params)
 	//ReaderStandard, WriterStandard, err = os.Pipe()
 	//if err != nil {
 	//	params.liveParams.stop(fmt.Errorf("error getting pipe for trickle-ffmpeg. %w", err))
