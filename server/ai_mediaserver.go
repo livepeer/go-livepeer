@@ -621,7 +621,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		startStream(params)
 		go processStream(ctx, params, req, orchSelection)
 	})
 }
@@ -629,6 +628,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody, orchSelection chan bool) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+		RequestID: params.liveParams.requestID,
+	}
 
 	orchSwapper := &orchestratorSwapper{params: params}
 	params.liveParams.outputWriter = startOutput(ctx, params)
@@ -686,12 +689,6 @@ func newParams(params *liveRequestParams) *liveRequestParams {
 		sendErrorEvent:         params.sendErrorEvent,
 		processing:             make(chan struct{}),
 		outputWriter:           params.outputWriter,
-	}
-}
-
-func startStream(params aiRequestParams) {
-	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
-		RequestID: params.liveParams.requestID,
 	}
 }
 
