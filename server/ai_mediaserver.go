@@ -612,7 +612,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		orchSwapper := &OrchestratorSwapper{params: params}
 		go func() {
-			startOutput(ctx, params, mediaMTXOutputURL)
+			outputWriter := startOutput(ctx, params, mediaMTXOutputURL)
 			for {
 				params.liveParams = &liveRequestParams{
 					segmentReader:          ssr,
@@ -626,6 +626,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 					stopPipeline:           stopPipeline,
 					sendErrorEvent:         sendErrorEvent,
 					processing:             make(chan struct{}),
+					outputWriter:           outputWriter,
 				}
 				clog.Info(context.Background(), "### START")
 				perOrchCtx, perOrchCancel := context.WithCancel(ctx)
@@ -666,19 +667,25 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	})
 }
 
-func startOutput(ctx context.Context, params aiRequestParams, mediaMTXOutputURL string) {
+func startOutput(ctx context.Context, params aiRequestParams, mediaMTXOutputURL string) *multiWriter {
 	var err error
-	ReaderMediaMTX, WriterMediaMTX, err = os.Pipe()
+	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
 		params.liveParams.stop(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err))
-		return
+		return nil
 	}
-	go ffmpegOutput(ctx, mediaMTXOutputURL, ReaderMediaMTX, params)
-	//ReaderStandard, WriterStandard, err = os.Pipe()
-	//if err != nil {
-	//	params.liveParams.stop(fmt.Errorf("error getting pipe for trickle-ffmpeg. %w", err))
-	//	return
-	//}
+	r, w, err := os.Pipe()
+	if err != nil {
+		params.liveParams.stop(fmt.Errorf("error getting pipe for trickle-ffmpeg. %w", err))
+		return nil
+	}
+	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
+	// Studio Output ffmpeg process
+	if params.liveParams.outputRTMPURL != "" {
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	}
+	go ffmpegOutput(ctx, mediaMTXOutputURL, rMediaMTX, params)
+	return mWriter
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
