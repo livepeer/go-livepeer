@@ -198,6 +198,14 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+func (t *multiWriter) Close() {
+	for _, w := range t.writers {
+		if closer, ok := w.(io.Closer); ok {
+			closer.Close()
+		}
+	}
+}
+
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
@@ -211,8 +219,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		firstSegment := true
 		var segmentsReceived int64
 
-		//defer w.Close()
-		//defer WriterMediaMTX.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
 		const retryPause = 300 * time.Millisecond

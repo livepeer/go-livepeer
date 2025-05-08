@@ -664,6 +664,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 		clog.Infof(ctx, "Retrying stream with a different orchestrator")
 	}
 	params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
+	params.liveParams.outputWriter.Close()
 }
 
 func notifyOrchSelectionCompleted(orchSelection chan bool) {
