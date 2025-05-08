@@ -19,6 +19,9 @@ type WHIPConnection struct {
 	cond   *sync.Cond
 	peer   *MediaState
 	closed bool
+
+	// connection closed by us
+	kicked bool
 }
 
 func NewWHIPConnection() *WHIPConnection {
@@ -68,11 +71,18 @@ func (w *WHIPConnection) Stats() (*MediaStats, error) {
 	return p.Stats()
 }
 
+func (w *WHIPConnection) Kicked() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.kicked
+}
+
 func (w *WHIPConnection) Close() {
 	w.mu.Lock()
 	// set closed = true so getWHIPConnection returns immediately
 	// if we don't already have a peer - avoids a deadlock
 	w.closed = true
+	w.kicked = true
 	w.cond.Broadcast()
 	w.mu.Unlock()
 
