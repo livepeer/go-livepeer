@@ -668,7 +668,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 					if orchBal == nil {
 						orchBal = big.NewRat(0, 1)
 					}
-					respChan <- fmt.Sprintf("data: balance: %v\n\n", orchBal.FloatString(3))
+					respChan <- fmt.Sprintf("data: {\"balance\": %v}\n\n", orchBal.FloatString(3))
+					respChan <- "data: [DONE]\n\n"
 					return
 				default:
 					line := scanner.Text()
@@ -677,7 +678,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 						if orchBal == nil {
 							orchBal = big.NewRat(0, 1)
 						}
-						respChan <- fmt.Sprintf("data: balance: %v\n\n", orchBal.FloatString(3))
+						respChan <- fmt.Sprintf("data: {\"balance\": %v}\n\n", orchBal.FloatString(3))
+						respChan <- scanner.Text()
 						break
 					}
 					respChan <- scanner.Text()
@@ -698,7 +700,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 				if senderBalance != nil {
 					if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
 						w.Write([]byte("event: insufficient balance\n"))
-						w.Write([]byte("data: balance: 0\n\n"))
+						w.Write([]byte("data: {\"balance\": 0}\n\n"))
 						w.Write([]byte("data: [DONE]\n\n"))
 						flusher.Flush()
 						break proxyResp
