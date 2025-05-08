@@ -153,6 +153,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	w.Header().Set("ETag", etag)
 	w.Header()["Link"] = GenICELinkHeaders(WebrtcConfig.ICEServers)
 	w.Header().Set("Livepeer-Playback-URL", whepURL)
+	w.Header().Set("Access-Control-Expose-Headers", "Location, ETag, Link, Livepeer-Playback-URL")
 	w.WriteHeader(http.StatusCreated)
 
 	// Write the full SDP answer
