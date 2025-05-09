@@ -593,6 +593,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				streamID:               streamID,
 				pipelineID:             pipelineID,
 				stopPipeline:           stopPipeline,
+				initCompleted:          make(chan struct{}),
 				sendErrorEvent:         sendErrorEvent,
 			},
 		}
@@ -885,6 +886,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					streamID:               streamID,
 					pipelineID:             pipelineID,
 					stopPipeline:           stopPipeline,
+					initCompleted:          make(chan struct{}),
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
 				},

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -116,10 +117,31 @@ type liveRequestParams struct {
 	paymentProcessInterval time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	stopPipeline  func(error)
+	lastMid       string
+	initCompleted chan struct{}
+	mu            sync.Mutex
 
 	// Report an error event
 	sendErrorEvent func(error)
+}
+
+func (p liveRequestParams) start(mid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastMid = mid
+}
+
+func (p liveRequestParams) stop(mid string, err error) {
+	<-p.initCompleted
+
+	p.mu.Lock()
+	lastMid := p.lastMid
+	p.mu.Unlock()
+
+	if mid == lastMid {
+		p.stopPipeline(err)
+	}
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1092,6 +1114,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, fmt.Errorf("invalid events URL: %w", err)
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+	firstSegmentReceived := make(chan struct{}, 1)
+	params.liveParams.start(extractMid(pub.Path))
+	ctx, cancelCtx := context.WithCancel(ctx)
 
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, sess)
@@ -1112,10 +1137,21 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 			})
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
+		select {
+		case firstSegmentReceived <- struct{}{}:
+		default:
+		}
 
 	})
 	startEventsSubscribe(ctx, events, params, sess)
-	return resp, nil
+	select {
+	case <-firstSegmentReceived:
+		return resp, nil
+	case <-time.After(params.node.AIStartupOrchSwapTimeout):
+		cancelCtx()
+		return nil, errors.New("timeout waiting for first segment")
+	}
+
 }
 
 // extractMid extracts the mid (manifest ID) from the publish URL
@@ -1504,6 +1540,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	cctx, cancel := context.WithTimeout(ctx, processingRetryTimeout)
 	defer cancel()
 
+	defer completeAIRequest(params)
 	tries := 0
 	sessTries := map[string]int{}
 	var retryableSessions []*AISession
@@ -1590,6 +1627,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
+}
+
+func completeAIRequest(params aiRequestParams) {
+	if params.liveParams.initCompleted == nil {
+		return
+	}
+	close(params.liveParams.initCompleted)
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.
