@@ -695,10 +695,23 @@ tickerLoop:
 	return nil
 }
 
+type Capacity struct {
+	ContainersInUse int
+	ContainersIdle  int
+}
+
+func (m *DockerManager) GetCapacity() Capacity {
+	return Capacity{
+		ContainersInUse: len(m.gpuContainers) - len(m.containers),
+		ContainersIdle:  len(m.containers),
+	}
+}
+
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
-		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
-		monitor.AIContainersIdle(len(m.containers))
+		capacity := m.GetCapacity()
+		monitor.AIContainersInUse(capacity.ContainersInUse)
+		monitor.AIContainersIdle(capacity.ContainersIdle)
 		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }

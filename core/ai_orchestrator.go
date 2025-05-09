@@ -411,6 +411,10 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
 	}
 }
 
+func (orch *orchestrator) GetAICapacity() worker.Capacity {
+	return orch.node.AIWorker.GetCapacity()
+}
+
 func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
 	if orch.node.AIWorker != nil {
 		return orch.node.AIWorker.HardwareInformation()
