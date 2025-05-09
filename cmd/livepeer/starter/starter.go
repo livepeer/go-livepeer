@@ -1293,20 +1293,34 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
 			}
 			if *cfg.AIWorker {
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
+				modelsCount := 1
+				if config.Capacity != 0 {
+					if config.URL == "" {
+						// Use multiple same configs if External Container is not used and capacity is set
+						modelsCount = config.Capacity
+					} else {
+						// External containers do auto-scale; default to 1 or use provided capacity.
+						modelConstraint.Capacity = config.Capacity
+					}
+				}
+
 				// Ensure the AI worker has the image needed to serve the job.
 				err := n.AIWorker.EnsureImageAvailable(ctx, config.Pipeline, config.ModelID)
 				if err != nil {
 					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
 				}
 
-				if config.Warm || config.URL != "" {
-					// Register external container endpoint if URL is provided.
-					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				for i := 0; i < modelsCount; i++ {
+					if config.Warm || config.URL != "" {
+						// Register external container endpoint if URL is provided.
+						endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// Warm the AI worker container or register the endpoint.
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
-						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-						return
+						// Warm the AI worker container or register the endpoint.
+						if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+							glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+							return
+						}
 					}
 				}
 
