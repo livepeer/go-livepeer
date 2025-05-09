@@ -561,7 +561,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
+		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
 		stopPipeline := func(err error) {
+			defer cancelSegmenter()
 			if err == nil {
 				return
 			}
@@ -598,7 +600,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Kick off the RTMP pull and segmentation as soon as possible
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, mediaMTXInputURL, ssr.Read)
+			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),

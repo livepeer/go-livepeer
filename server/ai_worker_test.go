@@ -642,3 +642,8 @@ func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
 	a.Called++
 	return []worker.HardwareInformation{}
 }
+
+func (a *stubAIWorker) Version() []worker.Version {
+	a.Called++
+	return []worker.Version{}
+}

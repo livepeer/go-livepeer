@@ -22,6 +22,7 @@ type RunnerContainer struct {
 	Name     string
 	Client   *ClientWithResponses
 	Hardware *HardwareInformation
+	Version  *Version
 
 	BorrowCtx context.Context
 	sync.RWMutex
@@ -87,12 +88,18 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	} else {
 		hardware = hdw
 	}
+	runnerVersion := &Version{Pipeline: cfg.Pipeline, ModelId: cfg.ModelID, Version: "0.0.0"}
+	version, err := client.VersionWithResponse(ctx)
+	if err == nil {
+		runnerVersion = version.JSON200
+	}
 
 	return &RunnerContainer{
 		RunnerContainerConfig: cfg,
 		Name:                  name,
 		Client:                client,
 		Hardware:              hardware,
+		Version:               runnerVersion,
 	}, nil
 }
 
