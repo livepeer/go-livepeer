@@ -1298,9 +1298,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 						modelsCount = config.Capacity
 					} else {
 						// External containers do auto-scale; default to 1 or use provided capacity.
-						if config.URL != "" && config.Capacity != 0 {
-							modelConstraint.Capacity = config.Capacity
-						}
+						modelConstraint.Capacity = config.Capacity
 					}
 				}
 
