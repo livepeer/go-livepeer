@@ -222,7 +222,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
-	defaultAIMinRunnerVersion := "{}"
+	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -1325,12 +1325,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 
 				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
-				runnerVersion := worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1, RunnerVersion: runnerVersion}
-				// External containers do auto-scale; default to 1 or use provided capacity.
-				if config.URL != "" && config.Capacity != 0 {
-					modelConstraint.Capacity = config.Capacity
-				}
+				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
 
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {
