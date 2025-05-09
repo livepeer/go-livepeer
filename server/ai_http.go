@@ -219,11 +219,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					clog.Infof(ctx, "Error getting local trickle segment err=%v", err)
 					return
 				}
-				reader := segment.Reader
 				if paymentProcessor != nil {
-					reader = paymentProcessor.process(ctx, segment.Reader)
+					paymentProcessor.process(ctx, segment.Reader)
 				}
-				io.Copy(io.Discard, reader)
 			}
 		}()
 
