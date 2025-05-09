@@ -473,7 +473,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				}
 			}
 
-			clog.V(8).Infof(ctx, "Received event for stream=%s event=%+v", stream, event)
+			clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v", trickle.GetSeq(segment), event)
 
 			// record the event time
 			lastEventMu.Lock()
