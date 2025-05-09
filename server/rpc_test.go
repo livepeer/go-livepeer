@@ -245,7 +245,6 @@ func (r *stubOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
 }
-func (r *stubOrchestrator) WorkerVersion() []worker.Version { return []worker.Version{} }
 func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
 func stubBroadcaster2() *stubOrchestrator {
@@ -1492,9 +1491,6 @@ func (r *mockOrchestrator) GetStorageForRequest(requestID string) (drivers.OSSes
 }
 func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 	return []worker.HardwareInformation{}
-}
-func (r *mockOrchestrator) WorkerVersion() []worker.Version {
-	return []worker.Version{}
 }
 func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }

@@ -426,18 +426,6 @@ func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
 	}
 }
 
-func (orch *orchestrator) WorkerVersion() []worker.Version {
-	if orch.node.AIWorker != nil {
-		return orch.node.AIWorker.Version()
-	} else {
-		var wkrVer []worker.Version
-		for _, worker := range orch.node.AIWorkerManager.liveAIWorkers {
-			wkrVer = append(wkrVer, worker.version...)
-		}
-		return wkrVer
-	}
-}
-
 func (orch *orchestrator) AIResults(tcID int64, res *RemoteAIWorkerResult) {
 	orch.node.AIWorkerManager.aiResults(tcID, res)
 }
