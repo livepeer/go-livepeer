@@ -39,6 +39,7 @@ type RemoteAIWorker struct {
 	stream       net.AIWorker_RegisterAIWorkerServer
 	capabilities *Capabilities
 	hardware     []worker.HardwareInformation
+	version      []worker.Version
 	eof          chan struct{}
 	addr         string
 }

@@ -168,6 +168,7 @@ type LivepeerConfig struct {
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersion         *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -221,6 +222,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
+	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -334,6 +336,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
+		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
@@ -1321,6 +1324,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					}
 				}
 
+				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
+				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
+
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {
 					glog.Warningf("Model %v has 'optimization_flags' set without 'warm'. Optimization flags are currently only used for warm containers.", config.ModelID)
@@ -1604,6 +1610,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
+	}
+	if cfg.AIMinRunnerVersion != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
 	}
 	if n.AIWorkerManager != nil {
 		// Set min version constraint to prevent incompatible workers.
