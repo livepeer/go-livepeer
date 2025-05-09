@@ -89,7 +89,7 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	liveParams liveRequestParams
+	liveParams *liveRequestParams
 }
 
 func (a aiRequestParams) inputStreamExists() bool {
@@ -117,9 +117,15 @@ type liveRequestParams struct {
 
 	// Stops the pipeline with an error. Also kicks the input
 	stopPipeline func(error)
+	processing   chan struct{}
+	outputWriter *multiWriter
 
 	// Report an error event
 	sendErrorEvent func(error)
+
+	// Passed from the orchestrator selection, ugly hack
+	sess      *AISession
+	startTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1034,7 +1040,9 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
-	startTime := time.Now()
+	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
+	params.liveParams.sess = sess
+
 	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
 	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
 	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
@@ -1074,47 +1082,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, errors.New("control URL is missing")
 	}
 
-	host := sess.Transcoder()
-	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid publish URL: %w", err)
-	}
-	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
-	}
-	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid control URL: %w", err)
-	}
-	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid events URL: %w", err)
-	}
-	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
-
-	startControlPublish(ctx, control, params)
-	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, sess, func() {
-		delayMs := time.Since(startTime).Milliseconds()
-		if monitor.Enabled {
-			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_receive_first_processed_segment",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   params.liveParams.streamID,
-				"pipeline_id": params.liveParams.pipelineID,
-				"request_id":  params.liveParams.requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": sess.Address(),
-					"url":     sess.Transcoder(),
-				},
-			})
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-
-	})
-	startEventsSubscribe(ctx, events, params, sess)
 	return resp, nil
 }
 
@@ -1590,6 +1557,15 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
+}
+
+func (p liveRequestParams) stop(err error) {
+	select {
+	case <-p.processing:
+		// Channel is already closed
+	default:
+		close(p.processing)
+	}
 }
 
 // isRetryableError checks if the error is a transient error that can be retried.
