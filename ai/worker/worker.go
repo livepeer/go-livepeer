@@ -94,6 +94,27 @@ func (w *Worker) GetCapacity() Capacity {
 	return w.manager.GetCapacity()
 }
 
+func (w *Worker) Version() []Version {
+	var version []Version
+	for _, rc := range w.externalContainers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+
+	for _, rc := range w.manager.containers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+
+	return version
+}
+
 func (w *Worker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

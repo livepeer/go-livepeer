@@ -168,6 +168,7 @@ type LivepeerConfig struct {
 	AIVerboseLogs              *bool
 	AIProcessingRetryTimeout   *time.Duration
 	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersion         *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -221,6 +222,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIVerboseLogs := false
 	defaultAIProcessingRetryTimeout := 2 * time.Second
 	defaultAIRunnerContainersPerGPU := 1
+	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
@@ -334,6 +336,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIVerboseLogs:            &defaultAIVerboseLogs,
 		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
 		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
+		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
@@ -1291,9 +1294,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
-				// External containers do auto-scale; default to 1 or use provided capacity.
-				if config.URL != "" && config.Capacity != 0 {
-					modelConstraint.Capacity = config.Capacity
+				modelsCount := 1
+				if config.Capacity != 0 {
+					if config.URL == "" {
+						// Use multiple same configs if External Container is not used and capacity is set
+						modelsCount = config.Capacity
+					} else {
+						// External containers do auto-scale; default to 1 or use provided capacity.
+						modelConstraint.Capacity = config.Capacity
+					}
 				}
 
 				// Ensure the AI worker has the image needed to serve the job.
@@ -1302,16 +1311,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
 				}
 
-				if config.Warm || config.URL != "" {
-					// Register external container endpoint if URL is provided.
-					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				for i := 0; i < modelsCount; i++ {
+					if config.Warm || config.URL != "" {
+						// Register external container endpoint if URL is provided.
+						endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// Warm the AI worker container or register the endpoint.
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
-						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-						return
+						// Warm the AI worker container or register the endpoint.
+						if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+							glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+							return
+						}
 					}
 				}
+
+				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
+				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
 
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {
@@ -1596,6 +1610,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	n.Capabilities.SetPerCapabilityConstraints(capabilityConstraints)
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
+	}
+	if cfg.AIMinRunnerVersion != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
 	}
 	if n.AIWorkerManager != nil {
 		// Set min version constraint to prevent incompatible workers.

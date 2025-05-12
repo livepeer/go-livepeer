@@ -2490,7 +2490,8 @@ type Capabilities_CapabilityConstraints_ModelConstraint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Warm          bool                   `protobuf:"varint,1,opt,name=warm,proto3" json:"warm,omitempty"`
 	Capacity      uint32                 `protobuf:"varint,2,opt,name=capacity,proto3" json:"capacity,omitempty"`
-	CapacityInUse uint32                 `protobuf:"varint,3,opt,name=capacityInUse,proto3" json:"capacityInUse,omitempty"`
+	RunnerVersion string                 `protobuf:"bytes,3,opt,name=runnerVersion,proto3" json:"runnerVersion,omitempty"`
+	CapacityInUse uint32                 `protobuf:"varint,4,opt,name=capacityInUse,proto3" json:"capacityInUse,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2537,6 +2538,13 @@ func (x *Capabilities_CapabilityConstraints_ModelConstraint) GetCapacity() uint3
 		return x.Capacity
 	}
 	return 0
+}
+
+func (x *Capabilities_CapabilityConstraints_ModelConstraint) GetRunnerVersion() string {
+	if x != nil {
+		return x.RunnerVersion
+	}
+	return ""
 }
 
 func (x *Capabilities_CapabilityConstraints_ModelConstraint) GetCapacityInUse() uint32 {
@@ -2588,7 +2596,7 @@ const file_net_lp_rpc_proto_rawDesc = "" +
 	"capability\x12\x1e\n" +
 	"\n" +
 	"constraint\x18\x04 \x01(\tR\n" +
-	"constraint\"\xe2\x06\n" +
+	"constraint\"\x89\a\n" +
 	"\fCapabilities\x12\x1c\n" +
 	"\tbitstring\x18\x01 \x03(\x04R\tbitstring\x12 \n" +
 	"\vmandatories\x18\x02 \x03(\x04R\vmandatories\x12A\n" +
@@ -2607,13 +2615,14 @@ const file_net_lp_rpc_proto_rawDesc = "" +
 	"\rPerCapability\x18\x02 \x03(\v20.net.Capabilities.Constraints.PerCapabilityEntryR\rPerCapability\x1ai\n" +
 	"\x12PerCapabilityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12=\n" +
-	"\x05value\x18\x02 \x01(\v2'.net.Capabilities.CapabilityConstraintsR\x05value:\x028\x01\x1a\xc1\x02\n" +
+	"\x05value\x18\x02 \x01(\v2'.net.Capabilities.CapabilityConstraintsR\x05value:\x028\x01\x1a\xe8\x02\n" +
 	"\x15CapabilityConstraints\x12K\n" +
-	"\x06models\x18\x01 \x03(\v23.net.Capabilities.CapabilityConstraints.ModelsEntryR\x06models\x1ag\n" +
+	"\x06models\x18\x01 \x03(\v23.net.Capabilities.CapabilityConstraints.ModelsEntryR\x06models\x1a\x8d\x01\n" +
 	"\x0fModelConstraint\x12\x12\n" +
 	"\x04warm\x18\x01 \x01(\bR\x04warm\x12\x1a\n" +
 	"\bcapacity\x18\x02 \x01(\rR\bcapacity\x12$\n" +
-	"\rcapacityInUse\x18\x03 \x01(\rR\rcapacityInUse\x1ar\n" +
+	"\rrunnerVersion\x18\x03 \x01(\tR\rrunnerVersion\x12$\n" +
+	"\rcapacityInUse\x18\x04 \x01(\rR\rcapacityInUse\x1ar\n" +
 	"\vModelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12M\n" +
 	"\x05value\x18\x02 \x01(\v27.net.Capabilities.CapabilityConstraints.ModelConstraintR\x05value:\x028\x01\"\xb7\x03\n" +

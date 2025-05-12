@@ -141,7 +141,8 @@ message Capabilities {
     message ModelConstraint {
       bool warm = 1;
       uint32 capacity = 2;
-      uint32 capacityInUse = 3;
+      string runnerVersion = 3;
+      uint32 capacityInUse = 4;
     }
 
     map<string, ModelConstraint> models = 1;
