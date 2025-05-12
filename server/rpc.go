@@ -462,19 +462,18 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	}
 
 	aiCapacity := orch.GetAICapacity()
+	capabilities := orch.Capabilities()
+	capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["noop"].Capacity = uint32(aiCapacity.ContainersIdle)
+	capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["noop"].CapacityInUse = uint32(aiCapacity.ContainersInUse)
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),
-		Capabilities:       orch.Capabilities(),
+		Capabilities:       capabilities,
 		AuthToken:          authToken,
 		Hardware:           workerHardware,
 		CapabilitiesPrices: capsPrices,
-		AiCapacity: &net.AICapacity{
-			ContainersInUse: uint32(aiCapacity.ContainersInUse),
-			ContainersIdle:  uint32(aiCapacity.ContainersIdle),
-		},
 	}
 
 	os := drivers.NodeStorage.NewSession(authToken.SessionId)

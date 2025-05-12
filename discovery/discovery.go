@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"math"
 	"math/rand"
@@ -118,7 +119,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			clog.V(common.DEBUG).Info(ctx, "O capacity: ", "inuse", info.AiCapacity.ContainersInUse, "idle", info.AiCapacity.ContainersIdle)
+			bs, _ := json.Marshal(info.Capabilities)
+			clog.V(common.DEBUG).Info(ctx, "O capacity: ", "caps", string(bs))
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
 					URL:     od.LocalInfo.URL,
