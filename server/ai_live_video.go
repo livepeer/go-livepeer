@@ -26,25 +26,42 @@ import (
 )
 
 type orchestratorSwapper struct {
-	params      aiRequestParams
-	cap         core.Capability
-	lastSwapped *time.Time
+	params           aiRequestParams
+	cap              core.Capability
+	lastSwapped      time.Time
+	recentSwapsCount int
 }
 
-func (os orchestratorSwapper) shouldRetry() bool {
+func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
+	return &orchestratorSwapper{
+		params:           params,
+		lastSwapped:      time.Now(),
+		recentSwapsCount: 1,
+	}
+}
+
+func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	if !os.params.inputStreamExists() {
-		clog.Infof(context.Background(), "### No input stream, skipping orchestrator swap")
+		clog.Info(ctx, "No input stream, skipping orchestrator swap")
 		return false
 	}
-	// TODO: Change to some more complex condition, like 5 swaps in the last 5 min
-	minSwapInterval := 5 * time.Second
-	if os.lastSwapped != nil && os.lastSwapped.Add(minSwapInterval).After(time.Now()) {
-		clog.Infof(context.Background(), "### Too many swaps, skipping orchestrator swap")
-		// Too many swaps, something may be wrong with the input stream
+
+	// Stop if too many swaps, because there may be something wrong with the input stream
+	maxRecentSwapsCount := 3
+	if os.recentSwapsCount > maxRecentSwapsCount {
+		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
 		return false
 	}
-	now := time.Now()
-	os.lastSwapped = &now
+
+	// Measure how many swaps have been done recently to avoid to many swaps in a short time
+	recentSwapInterval := 3 * time.Minute
+	if os.lastSwapped.Add(recentSwapInterval).After(time.Now()) {
+		os.recentSwapsCount++
+	} else {
+		os.recentSwapsCount = 1
+	}
+
+	os.lastSwapped = time.Now()
 	return true
 }
 

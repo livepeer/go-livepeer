@@ -632,7 +632,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
 	}
-	orchSwapper := &orchestratorSwapper{params: params}
+	orchSwapper := NewOrchestratorSwapper(params)
 
 	params.liveParams.outputWriter = startOutput(ctx, params)
 	for {
@@ -658,7 +658,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 		<-params.liveParams.processing
 		perOrchCancel()
 
-		if !orchSwapper.shouldRetry() {
+		if !orchSwapper.shouldSwap(ctx) {
 			break
 		}
 		clog.Infof(ctx, "Retrying stream with a different orchestrator")
