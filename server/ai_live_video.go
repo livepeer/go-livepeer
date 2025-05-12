@@ -360,7 +360,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		clog.InfofErr(ctx, "error starting control publisher", err)
+		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
 	}
 	params.node.LiveMu.Lock()
@@ -387,7 +387,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		params.node.LivePipelines[stream].StopControl = stop
 		params.node.LivePipelines[stream].RequestID = params.liveParams.requestID
 	} else {
-		clog.Infof(ctx, "No control publisher found for stream %s", stream)
+		stopProcessing(ctx, params, fmt.Errorf("no control publisher found for stream %s", stream))
 		return
 	}
 
@@ -411,6 +411,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				}
 			// if there was another type of error, we'll just retry anyway
 			case <-done:
+				stopProcessing(ctx, params, fmt.Errorf("stopping control publisher"))
 				return
 			case <-ctx.Done():
 				stop()
