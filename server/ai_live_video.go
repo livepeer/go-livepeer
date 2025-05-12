@@ -267,6 +267,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 					err = fmt.Errorf("trickle subscribe error reading: %w", err)
 					clog.Infof(ctx, "%s", err)
 					if retries > maxRetries {
+						stopProcessing(ctx, params, errors.New("trickle subscribe stopping, retries exceeded"))
 						params.liveParams.stop()
 						return
 					}
