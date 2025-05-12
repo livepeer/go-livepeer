@@ -392,11 +392,15 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		// TODO better solution than allowing existing streams to stomp over one another
 	}
 
-	params.node.LivePipelines[stream] = &core.LivePipeline{
-		ControlPub:  controlPub,
-		StopControl: stop,
-		RequestID:   params.liveParams.requestID,
+	if params.node.LivePipelines[stream] != nil {
+		params.node.LivePipelines[stream].ControlPub = controlPub
+		params.node.LivePipelines[stream].StopControl = stop
+		params.node.LivePipelines[stream].RequestID = params.liveParams.requestID
+	} else {
+		clog.Infof(ctx, "No control publisher found for stream %s", stream)
+		return
 	}
+
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
 		logCurrentLiveSessions(params.node.LivePipelines)

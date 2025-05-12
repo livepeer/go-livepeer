@@ -528,7 +528,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// channel that blocks until after orch selection is complete
 		// avoids a race condition with closing the control channel
-		orchSelection := make(chan bool)
+		pipelineStarted := make(chan bool)
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
@@ -611,7 +611,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				},
 			})
 			ssr.Close()
-			<-orchSelection // wait for selection to complete
+			<-pipelineStarted // wait for selection to complete
 			cleanupControl(ctx, params)
 		}()
 
@@ -621,17 +621,22 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		go processStream(ctx, params, req, orchSelection)
+
+		params.node.LiveMu.Lock()
+		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+			RequestID: params.liveParams.requestID,
+		}
+		params.node.LiveMu.Unlock()
+		close(pipelineStarted)
+
+		go processStream(ctx, params, req)
 	})
 }
 
-func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody, orchSelection chan bool) {
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
-		RequestID: params.liveParams.requestID,
-	}
 	orchSwapper := NewOrchestratorSwapper(params)
 
 	params.liveParams.outputWriter = startOutput(ctx, params)
@@ -654,7 +659,6 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			return
 		}
 
-		notifyOrchSelectionCompleted(orchSelection)
 		<-params.liveParams.processing
 		perOrchCancel()
 
@@ -665,15 +669,6 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	}
 	params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
 	params.liveParams.outputWriter.Close()
-}
-
-func notifyOrchSelectionCompleted(orchSelection chan bool) {
-	select {
-	case <-orchSelection:
-		// Channel is already closed
-	default:
-		close(orchSelection)
-	}
 }
 
 func newParams(params *liveRequestParams) *liveRequestParams {
