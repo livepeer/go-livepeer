@@ -111,6 +111,7 @@ type liveRequestParams struct {
 	requestID             string
 	streamID              string
 	pipelineID            string
+	modelID               string
 	orchestrator          string
 
 	paymentProcessInterval time.Duration
@@ -1559,7 +1560,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	return resp, nil
 }
 
-func (p liveRequestParams) stop(err error) {
+func (p liveRequestParams) stop() {
 	select {
 	case <-p.processing:
 		// Channel is already closed

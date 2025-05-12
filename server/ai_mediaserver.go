@@ -590,6 +590,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
+				modelID:                pipeline,
 				stopPipeline:           stopPipeline,
 				sendErrorEvent:         sendErrorEvent,
 			},
@@ -681,6 +682,7 @@ func newParams(params *liveRequestParams) *liveRequestParams {
 		requestID:              params.requestID,
 		streamID:               params.streamID,
 		pipelineID:             params.pipelineID,
+		modelID:                params.modelID,
 		stopPipeline:           params.stopPipeline,
 		sendErrorEvent:         params.sendErrorEvent,
 		processing:             make(chan struct{}),
@@ -693,12 +695,12 @@ func startOutput(ctx context.Context, params aiRequestParams) *multiWriter {
 	var err error
 	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
-		params.liveParams.stop(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err))
+		params.liveParams.stop()
 		return nil
 	}
 	r, w, err := os.Pipe()
 	if err != nil {
-		params.liveParams.stop(fmt.Errorf("error getting pipe for trickle-ffmpeg. %w", err))
+		params.liveParams.stop()
 		return nil
 	}
 	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
@@ -732,9 +734,7 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(ctx, control, params)
-	startTricklePublish(ctx, pub, params, params.liveParams.sess)
-	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess, func() {
+	onFirstSegment := func() {
 		delayMs := time.Since(params.liveParams.startTime).Milliseconds()
 		if monitor.Enabled {
 			monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
@@ -752,7 +752,10 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 		}
 		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 
-	})
+	}
+	startControlPublish(ctx, control, params)
+	startTricklePublish(ctx, pub, params, params.liveParams.sess)
+	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess, onFirstSegment)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
 	return nil
 }
