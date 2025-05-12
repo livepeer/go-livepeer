@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1159,6 +1160,71 @@ func TestPortOffset(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			res := portOffset(tt.gpu)
 			require.Equal(t, tt.expectedPortOffset, res)
+		})
+	}
+}
+
+func TestDockerManager_GetCapacity(t *testing.T) {
+	c := &RunnerContainer{
+		RunnerContainerConfig: RunnerContainerConfig{ModelID: "comfyui"},
+	}
+	tests := []struct {
+		name          string
+		gpuContainers map[string]string
+		containers    map[string]*RunnerContainer
+		want          map[string]*Capacity
+	}{
+		{
+			name: "2 comfyui containers",
+			containers: map[string]*RunnerContainer{
+				"container1": c,
+				"container2": c,
+			},
+			gpuContainers: map[string]string{
+				"id1": "container1",
+				"id2": "container2",
+			},
+			want: map[string]*Capacity{
+				"comfyui": {ContainersInUse: 0, ContainersIdle: 2},
+			},
+		},
+		{
+			name: "1 comfyui container",
+			containers: map[string]*RunnerContainer{
+				"container1": c,
+			},
+			gpuContainers: map[string]string{
+				"id1": "container1",
+			},
+			want: map[string]*Capacity{
+				"comfyui": {ContainersInUse: 0, ContainersIdle: 1},
+			},
+		},
+		{
+			name: "2 idle 1 inuse",
+			containers: map[string]*RunnerContainer{
+				"container1": c,
+				"container2": c,
+			},
+			gpuContainers: map[string]string{
+				"id1": "container1",
+				"id2": "container2",
+				"id3": "container3",
+			},
+			want: map[string]*Capacity{
+				"comfyui": {ContainersInUse: 1, ContainersIdle: 2},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &DockerManager{
+				gpuContainers: tt.gpuContainers,
+				containers:    tt.containers,
+			}
+			if got := m.GetCapacity(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetCapacity() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

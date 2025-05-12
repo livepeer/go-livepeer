@@ -53,7 +53,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
 	CheckAICapacity(pipeline, modelID string) bool
-	GetAICapacity() worker.Capacity
+	GetLiveAICapacity() map[string]*worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -461,10 +461,15 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 		workerHardware = workerHardwareToNetWorkerHardware(orch.WorkerHardware())
 	}
 
-	aiCapacity := orch.GetAICapacity()
 	capabilities := orch.Capabilities()
-	capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["noop"].Capacity = uint32(aiCapacity.ContainersIdle)
-	capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["noop"].CapacityInUse = uint32(aiCapacity.ContainersInUse)
+	for modelID, aiCapacity := range orch.GetLiveAICapacity() {
+		if aiCapacity == nil {
+			continue
+		}
+		capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models[modelID].Capacity = uint32(aiCapacity.ContainersIdle)
+		capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models[modelID].CapacityInUse = uint32(aiCapacity.ContainersInUse)
+	}
+
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
 		TicketParams:       params,

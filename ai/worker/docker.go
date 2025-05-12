@@ -700,18 +700,37 @@ type Capacity struct {
 	ContainersIdle  int
 }
 
-func (m *DockerManager) GetCapacity() Capacity {
-	return Capacity{
-		ContainersInUse: len(m.gpuContainers) - len(m.containers),
-		ContainersIdle:  len(m.containers),
+// GetCapacity returns a map of modelID to capacity info
+func (m *DockerManager) GetCapacity() map[string]*Capacity {
+	capacity := make(map[string]*Capacity)
+	for _, c := range m.containers {
+		if capacity[c.ModelID] == nil {
+			capacity[c.ModelID] = &Capacity{}
+		}
+		capacity[c.ModelID].ContainersIdle++
 	}
+
+	// modelID to gpu container count
+	gpuContainerCount := make(map[string]int)
+	for _, containerName := range m.gpuContainers {
+		c, ok := m.containers[containerName] // TODO can't do this, m.containers only has idle containers
+		if !ok {
+			continue
+		}
+		gpuContainerCount[c.ModelID]++
+		if capacity[c.ModelID] == nil {
+			capacity[c.ModelID] = &Capacity{}
+		}
+		capacity[c.ModelID].ContainersInUse = gpuContainerCount[c.ModelID] - capacity[c.ModelID].ContainersIdle
+	}
+
+	return capacity
 }
 
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
-		capacity := m.GetCapacity()
-		monitor.AIContainersInUse(capacity.ContainersInUse)
-		monitor.AIContainersIdle(capacity.ContainersIdle)
+		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
+		monitor.AIContainersIdle(len(m.containers))
 		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }
