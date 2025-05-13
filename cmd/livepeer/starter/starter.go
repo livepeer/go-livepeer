@@ -225,7 +225,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
-	defaultLiveOutSegmentTimeout := 10 * time.Second
+	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
 
 	// Onchain:

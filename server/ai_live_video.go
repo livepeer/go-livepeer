@@ -354,8 +354,12 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 }
 
 func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Duration) (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+	}
 
 	// Create a buffer to store the data
 	buffer := &bytes.Buffer{}
