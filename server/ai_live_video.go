@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -234,7 +235,12 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, multiWriter)
+			var n int64
+			if params.liveParams.outSegmentTimeout > 0 {
+				n, err = copySegmentWithTimeout(segment, multiWriter, params.liveParams.outSegmentTimeout)
+			} else {
+				n, err = copySegment(segment, multiWriter)
+			}
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -316,6 +322,39 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 	defer segment.Body.Close()
 	return io.Copy(w, segment.Body)
+}
+
+func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Duration) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Create a buffer to store the data
+	// We don't copy directly into the writer to avoid partly written segments
+	buffer := &bytes.Buffer{}
+
+	// Use a channel to handle the copy operation with timeout
+	done := make(chan error, 1)
+	go func() {
+		defer segment.Body.Close()
+		_, err := io.Copy(buffer, segment.Body)
+		done <- err
+	}()
+
+	select {
+	case <-ctx.Done():
+		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
+	case err := <-done:
+		if err != nil {
+			return 0, fmt.Errorf("error reading from segment: %w", err)
+		}
+	}
+
+	// Write the buffered data to the writer
+	n, err := io.Copy(w, buffer)
+	if err != nil {
+		return n, fmt.Errorf("error writing to writer: %w", err)
+	}
+	return n, nil
 }
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
