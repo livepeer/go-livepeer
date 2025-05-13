@@ -118,7 +118,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			sendLiveAICapacityMetrics(info.Capabilities)
+			sendLiveAICapacityMetrics(info)
 
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
@@ -214,7 +214,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	return ods, nil
 }
 
-func sendLiveAICapacityMetrics(caps *net.Capabilities) {
+func sendLiveAICapacityMetrics(info *net.OrchestratorInfo) {
+	caps := info.Capabilities
 	if !monitor.Enabled {
 		return
 	}
@@ -226,9 +227,9 @@ func sendLiveAICapacityMetrics(caps *net.Capabilities) {
 		return
 	}
 
-	for _, model := range liveAI.Models {
-		monitor.AIContainersInUse(int(model.CapacityInUse))
-		monitor.AIContainersIdle(int(model.Capacity))
+	for modelID, model := range liveAI.Models {
+		monitor.AIContainersInUse(int(model.CapacityInUse), modelID, info.GetTranscoder())
+		monitor.AIContainersIdle(int(model.Capacity), modelID, info.GetTranscoder())
 	}
 }
 

@@ -714,8 +714,8 @@ func (m *DockerManager) GetCapacity() Capacity {
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
 		capacity := m.GetCapacity()
-		monitor.AIContainersInUse(capacity.ContainersInUse)
-		monitor.AIContainersIdle(capacity.ContainersIdle)
+		monitor.AIContainersInUse(capacity.ContainersInUse, "", "")
+		monitor.AIContainersIdle(capacity.ContainersIdle, "", "")
 		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }
