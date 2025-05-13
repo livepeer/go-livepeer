@@ -324,26 +324,28 @@ func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 }
 
 func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Duration) (int64, error) {
+	defer segment.Body.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Use a channel to handle the copy operation with timeout
-	done := make(chan interface{}, 1)
-	var n int64
-	var err error
+	type result struct {
+		n   int64
+		err error
+	}
+
+	resultChan := make(chan result, 1)
 	go func() {
-		defer segment.Body.Close()
-		n, err = io.Copy(w, segment.Body)
-		done <- struct{}{}
+		n, err := io.Copy(w, segment.Body)
+		resultChan <- result{n, err}
 	}()
 
 	select {
 	case <-ctx.Done():
 		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
-	case <-done:
+	case res := <-resultChan:
+		return res.n, res.err
 	}
-
-	return n, err
 }
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
