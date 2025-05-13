@@ -90,7 +90,7 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return hardware
 }
 
-func (w *Worker) GetLiveAICapacity() map[string]*Capacity {
+func (w *Worker) GetCapacity() Capacity {
 	return w.manager.GetCapacity()
 }
 
