@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -328,33 +327,23 @@ func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Du
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// Create a buffer to store the data
-	// We don't copy directly into the writer to avoid partly written segments
-	buffer := &bytes.Buffer{}
-
 	// Use a channel to handle the copy operation with timeout
-	done := make(chan error, 1)
+	done := make(chan interface{}, 1)
+	var n int64
+	var err error
 	go func() {
 		defer segment.Body.Close()
-		_, err := io.Copy(buffer, segment.Body)
-		done <- err
+		n, err = io.Copy(w, segment.Body)
+		done <- struct{}{}
 	}()
 
 	select {
 	case <-ctx.Done():
 		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
-	case err := <-done:
-		if err != nil {
-			return 0, fmt.Errorf("error reading from segment: %w", err)
-		}
+	case <-done:
 	}
 
-	// Write the buffered data to the writer
-	n, err := io.Copy(w, buffer)
-	if err != nil {
-		return n, fmt.Errorf("error writing to writer: %w", err)
-	}
-	return n, nil
+	return n, err
 }
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
