@@ -4,7 +4,6 @@ import (
 	"container/heap"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"math"
 	"math/rand"
@@ -119,8 +118,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			bs, _ := json.Marshal(info.Capabilities)
-			clog.V(common.DEBUG).Info(ctx, "O capacity: ", "caps", string(bs))
+			sendLiveAICapacityMetrics(info.Capabilities)
+
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
 					URL:     od.LocalInfo.URL,
@@ -132,8 +131,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			return
 		}
 
-		// publish metrics
-		// if timedout, publish "down" metric
 		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%v", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if monitor.Enabled {
@@ -215,6 +212,24 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
 		len(ods), nbResp, len(linfos), timedOut)
 	return ods, nil
+}
+
+func sendLiveAICapacityMetrics(caps *net.Capabilities) {
+	if !monitor.Enabled {
+		return
+	}
+	if caps == nil || caps.Capacities == nil || caps.Constraints.PerCapability == nil {
+		return
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return
+	}
+
+	for _, model := range liveAI.Models {
+		monitor.AIContainersInUse(int(model.CapacityInUse))
+		monitor.AIContainersIdle(int(model.Capacity))
+	}
 }
 
 func (o *orchestratorPool) Size() int {
