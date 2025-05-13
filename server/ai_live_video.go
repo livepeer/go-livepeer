@@ -63,6 +63,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			if err := publisher.Close(); err != nil {
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
+			params.liveParams.stopPipeline(fmt.Errorf("publisher is closed"))
 			cancel()
 			return
 		}
@@ -323,6 +324,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		clog.InfofErr(ctx, "error starting control publisher", err)
+		params.liveParams.stopPipeline(fmt.Errorf("error starting control publisher %w", err))
 		return
 	}
 	params.node.LiveMu.Lock()
@@ -368,6 +370,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
+				params.liveParams.stopPipeline(fmt.Errorf("control publish stopped %w", err))
 				return
 			}
 		}
