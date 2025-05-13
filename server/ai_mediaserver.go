@@ -528,7 +528,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// channel that blocks until after orch selection is complete
 		// avoids a race condition with closing the control channel
-		orchSelection := make(chan bool)
+		pipelineStarted := make(chan bool)
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
@@ -583,15 +583,17 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 
-			liveParams: liveRequestParams{
+			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				outputRTMPURL:          outputURL,
 				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
+				outSegmentTimeout:      ls.liveOutSegmentTimeout,
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
+				modelID:                pipeline,
 				stopPipeline:           stopPipeline,
 				sendErrorEvent:         sendErrorEvent,
 			},
@@ -613,7 +615,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				},
 			})
 			ssr.Close()
-			<-orchSelection // wait for selection to complete
+			<-pipelineStarted // wait for selection to complete
 			cleanupControl(ctx, params)
 		}()
 
@@ -623,12 +625,143 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		_, err = processAIRequest(ctx, params, req)
-		if err != nil {
-			stopPipeline(err)
+
+		params.node.LiveMu.Lock()
+		params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+			RequestID: params.liveParams.requestID,
 		}
-		close(orchSelection)
+		params.node.LiveMu.Unlock()
+		close(pipelineStarted)
+
+		go processStream(ctx, params, req)
 	})
+}
+
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	orchSwapper := NewOrchestratorSwapper(params)
+
+	params.liveParams.outputWriter = startOutput(ctx, params)
+	for {
+		perOrchCtx, perOrchCancel := context.WithCancel(ctx)
+		params.liveParams = newParams(params.liveParams)
+
+		resp, err := processAIRequest(ctx, params, req)
+		if err != nil {
+			clog.Errorf(perOrchCtx, "Error processing AI Request: %s", err)
+			params.liveParams.stopPipeline(err)
+			perOrchCancel()
+			return
+		}
+
+		if err := startProcessing(perOrchCtx, params, resp); err != nil {
+			clog.Errorf(ctx, "Error starting processing: %s", err)
+			params.liveParams.stopPipeline(err)
+			perOrchCancel()
+			return
+		}
+
+		<-params.liveParams.processing
+		perOrchCancel()
+
+		if !orchSwapper.shouldSwap(ctx) {
+			break
+		}
+		clog.Infof(ctx, "Retrying stream with a different orchestrator")
+	}
+	params.liveParams.stopPipeline(fmt.Errorf("Done processing"))
+	params.liveParams.outputWriter.Close()
+}
+
+func newParams(params *liveRequestParams) *liveRequestParams {
+	return &liveRequestParams{
+		segmentReader:          params.segmentReader,
+		outputRTMPURL:          params.outputRTMPURL,
+		mediaMTXOutputRTMPURL:  params.mediaMTXOutputRTMPURL,
+		stream:                 params.stream,
+		paymentProcessInterval: params.paymentProcessInterval,
+		outSegmentTimeout:      params.outSegmentTimeout,
+		requestID:              params.requestID,
+		streamID:               params.streamID,
+		pipelineID:             params.pipelineID,
+		modelID:                params.modelID,
+		stopPipeline:           params.stopPipeline,
+		sendErrorEvent:         params.sendErrorEvent,
+		processing:             make(chan struct{}),
+		outputWriter:           params.outputWriter,
+		startTime:              time.Now(),
+	}
+}
+
+func startOutput(ctx context.Context, params aiRequestParams) *multiWriter {
+	var err error
+	rMediaMTX, wMediaMTX, err := os.Pipe()
+	if err != nil {
+		params.liveParams.stop()
+		return nil
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		params.liveParams.stop()
+		return nil
+	}
+	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
+	// Studio Output ffmpeg process
+	if params.liveParams.outputRTMPURL != "" {
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	}
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
+	return mWriter
+}
+
+func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
+	resp := res.(*worker.GenLiveVideoToVideoResponse)
+
+	host := params.liveParams.sess.Transcoder()
+	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid publish URL: %w", err)
+	}
+	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid control URL: %w", err)
+	}
+	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid events URL: %w", err)
+	}
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+
+	onFirstSegment := func() {
+		delayMs := time.Since(params.liveParams.startTime).Milliseconds()
+		if monitor.Enabled {
+			monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_receive_first_processed_segment",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   params.liveParams.streamID,
+				"pipeline_id": params.liveParams.pipelineID,
+				"request_id":  params.liveParams.requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": params.liveParams.sess.Address(),
+					"url":     params.liveParams.sess.Transcoder(),
+				},
+			})
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
+
+	}
+	startControlPublish(ctx, control, params)
+	startTricklePublish(ctx, pub, params, params.liveParams.sess)
+	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess, onFirstSegment)
+	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+	return nil
 }
 
 func getRemoteHost(remoteAddr string) (string, error) {
@@ -875,7 +1008,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				os:          drivers.NodeStorage.NewSession(requestID),
 				sessManager: ls.AISessionManager,
 
-				liveParams: liveRequestParams{
+				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					outputRTMPURL:          outputURL,
 					mediaMTXOutputRTMPURL:  mediamtxOutputURL,

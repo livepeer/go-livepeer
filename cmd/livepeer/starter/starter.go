@@ -176,6 +176,7 @@ type LivepeerConfig struct {
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
 	LivePaymentInterval        *time.Duration
+	LiveOutSegmentTimeout      *time.Duration
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -226,6 +227,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
+	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
 
 	// Onchain:
@@ -340,6 +342,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
 		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
 		LivePaymentInterval:      &defaultLivePaymentInterval,
+		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
 
 		// Onchain:
@@ -1650,6 +1653,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
+	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}

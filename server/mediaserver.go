@@ -126,9 +126,10 @@ type LivepeerServer struct {
 	connectionLock    *sync.RWMutex
 	serverLock        *sync.RWMutex
 
-	mediaMTXApiPassword string
-	liveAIAuthApiKey    string
-	livePaymentInterval time.Duration
+	mediaMTXApiPassword   string
+	liveAIAuthApiKey      string
+	livePaymentInterval   time.Duration
+	liveOutSegmentTimeout time.Duration
 }
 
 func (s *LivepeerServer) SetContextFromUnitTest(c context.Context) {
@@ -197,6 +198,7 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
+		liveOutSegmentTimeout:   lpNode.LiveOutSegmentTimeout,
 	}
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
