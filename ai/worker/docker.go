@@ -700,6 +700,10 @@ type Capacity struct {
 	ContainersIdle  int
 }
 
+// GetCapacity returns the current number of containers in use and idle
+// It currently only supports a setup of a single model with the number of initial warm containers equalling max capacity.
+// For example for Live AI we use this setup, we configure the number of warm containers to equal the max capacity we want
+// to accept, all with the comfyui model.
 func (m *DockerManager) GetCapacity() Capacity {
 	return Capacity{
 		ContainersInUse: len(m.gpuContainers) - len(m.containers),
