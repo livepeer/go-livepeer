@@ -174,6 +174,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.LiveAIAuthApiKey = flag.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
 	cfg.LiveAIAuthWebhookURL = flag.String("liveAIAuthWebhookUrl", "", "Live AI RTMP authentication webhook URL")
 	cfg.LivePaymentInterval = flag.Duration("livePaymentInterval", *cfg.LivePaymentInterval, "Interval to pay process Gateway <> Orchestrator Payments for Live AI Video")
+	cfg.LiveOutSegmentTimeout = flag.Duration("liveOutSegmentTimeout", *cfg.LiveOutSegmentTimeout, "Timeout duration to wait the output segment to be available in the Live AI pipeline; defaults to no timeout")
 
 	// Onchain:
 	cfg.EthAcctAddr = flag.String("ethAcctAddr", *cfg.EthAcctAddr, "Existing Eth account address. For use when multiple ETH accounts exist in the keystore directory")

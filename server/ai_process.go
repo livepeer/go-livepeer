@@ -114,6 +114,7 @@ type liveRequestParams struct {
 	orchestrator          string
 
 	paymentProcessInterval time.Duration
+	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
 	stopPipeline func(error)
