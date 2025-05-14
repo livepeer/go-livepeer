@@ -205,13 +205,16 @@ func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*
 		}
 	}
 
+	m.borrowContainerLocked(ctx, rc)
+	return rc, nil
+}
+
+func (m *DockerManager) borrowContainerLocked(ctx context.Context, rc *RunnerContainer) {
 	// Remove container and set the BorrowCtx so it is unavailable until returnContainer() is called by watchContainer()
 	delete(m.containers, rc.Name)
 	rc.Lock()
 	rc.BorrowCtx = ctx
 	rc.Unlock()
-
-	return rc, nil
 }
 
 // returnContainer returns a container to the pool so it can be reused. It is called automatically by watchContainer
@@ -600,6 +603,15 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				fallthrough
 			case OK:
 				failures = 0
+				continue
+			case "LOADING":
+				failures = 0
+				if !isBorrowed {
+					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
+					m.mu.Lock()
+					m.borrowContainerLocked(context.Background(), rc)
+					m.mu.Unlock()
+				}
 				continue
 			case ERROR:
 				failures++
