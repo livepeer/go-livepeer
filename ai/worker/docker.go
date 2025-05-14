@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"regexp"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -621,11 +620,10 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				}
 				continue
 			case ERROR:
-				failures++
-				slog.Error("Container not healthy",
+				failures = maxHealthCheckFailures
+				slog.Error("Container returned ERROR state, restarting immediately",
 					slog.String("container", rc.Name),
-					slog.String("status", string(status)),
-					slog.String("failures", strconv.Itoa(failures)))
+					slog.String("status", string(status)))
 			default:
 				slog.Error("Unknown container status",
 					slog.String("container", rc.Name),
