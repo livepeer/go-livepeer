@@ -234,7 +234,12 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, multiWriter)
+			var n int64
+			if params.liveParams.outSegmentTimeout > 0 {
+				n, err = copySegmentWithTimeout(segment, multiWriter, params.liveParams.outSegmentTimeout)
+			} else {
+				n, err = copySegment(segment, multiWriter)
+			}
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -316,6 +321,31 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 func copySegment(segment *http.Response, w io.Writer) (int64, error) {
 	defer segment.Body.Close()
 	return io.Copy(w, segment.Body)
+}
+
+func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Duration) (int64, error) {
+	defer segment.Body.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	type result struct {
+		n   int64
+		err error
+	}
+
+	resultChan := make(chan result, 1)
+	go func() {
+		n, err := io.Copy(w, segment.Body)
+		resultChan <- result{n, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
+	case res := <-resultChan:
+		return res.n, res.err
+	}
 }
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
@@ -583,9 +613,9 @@ func (s *SlowOrchChecker) GetCount() int {
 
 func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
-		GatewayStatus.Store(streamID, map[string]interface{}{
-			"last_error":      err.Error(),
-			"last_error_time": time.Now().UnixMilli(),
+		GatewayStatus.StoreIfNotExists(streamID, "error", map[string]interface{}{
+			"error":      err.Error(),
+			"error_time": time.Now().UnixMilli(),
 		})
 
 		ev := maps.Clone(event)
