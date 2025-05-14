@@ -41,7 +41,8 @@ const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
 
 var containerWatchInterval = 5 * time.Second
-var pipelineStartGracePeriod = 60 * time.Second
+var healthcheckAvailableGracePeriod = 15 * time.Second
+var pipelineLoadGracePeriod = 180 * time.Second
 var maxHealthCheckFailures = 2
 
 // This only works right now on a single GPU because if there is another container
@@ -539,8 +540,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	slog.Info("Watching container", slog.String("container", rc.Name))
 	failures := 0
 	startTime := time.Now()
+	loadingStartTime := startTime
 	for {
-		if failures >= maxHealthCheckFailures && time.Since(startTime) > pipelineStartGracePeriod {
+		if failures >= maxHealthCheckFailures && time.Since(startTime) > healthcheckAvailableGracePeriod {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
 			if rc.KeepWarm {
@@ -595,7 +597,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			status := health.JSON200.Status
 			switch status {
 			case IDLE:
-				if isBorrowed && time.Since(startTime) > pipelineStartGracePeriod {
+				if isBorrowed {
 					slog.Info("Container is idle, returning to pool", slog.String("container", rc.Name))
 					m.returnContainer(rc)
 					continue
@@ -608,9 +610,14 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				failures = 0
 				if !isBorrowed {
 					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
+					loadingStartTime = time.Now()
 					m.mu.Lock()
 					m.borrowContainerLocked(context.Background(), rc)
 					m.mu.Unlock()
+				}
+				if loadingTime := time.Since(loadingStartTime); loadingTime > pipelineLoadGracePeriod {
+					failures++
+					slog.Error("Container is loading for too long", slog.String("container", rc.Name), slog.Duration("duration", loadingTime))
 				}
 				continue
 			case ERROR:

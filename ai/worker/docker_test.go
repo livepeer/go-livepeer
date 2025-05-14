@@ -708,11 +708,11 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 
 func TestDockerManager_watchContainer(t *testing.T) {
 	// Override the containerWatchInterval for testing purposes.
-	originalContainerWatchInterval, originalPipelineStartGracePeriod := containerWatchInterval, pipelineStartGracePeriod
+	originalContainerWatchInterval, originalHealthcheckAvailableGracePeriod := containerWatchInterval, healthcheckAvailableGracePeriod
 	containerWatchInterval = 10 * time.Millisecond
-	pipelineStartGracePeriod = 0
+	healthcheckAvailableGracePeriod = 0
 	defer func() {
-		containerWatchInterval, pipelineStartGracePeriod = originalContainerWatchInterval, originalPipelineStartGracePeriod
+		containerWatchInterval, healthcheckAvailableGracePeriod = originalContainerWatchInterval, originalHealthcheckAvailableGracePeriod
 	}()
 
 	setup := func() (*MockDockerClient, *DockerManager, *MockServer, *RunnerContainer) {
@@ -868,8 +868,8 @@ func TestDockerManager_watchContainer(t *testing.T) {
 	}
 
 	t.Run("RespectStartupGracePeriod", func(t *testing.T) {
-		pipelineStartGracePeriod = 50 * time.Millisecond
-		defer func() { pipelineStartGracePeriod = 0 }()
+		healthcheckAvailableGracePeriod = 50 * time.Millisecond
+		defer func() { healthcheckAvailableGracePeriod = 0 }()
 
 		mockDockerClient, dockerManager, mockServer, rc := setup()
 		defer mockServer.Close()
@@ -899,8 +899,8 @@ func TestDockerManager_watchContainer(t *testing.T) {
 	})
 
 	t.Run("ReturnContainerWhenIdle", func(t *testing.T) {
-		pipelineStartGracePeriod = 50 * time.Millisecond
-		defer func() { pipelineStartGracePeriod = 0 }()
+		healthcheckAvailableGracePeriod = 50 * time.Millisecond
+		defer func() { healthcheckAvailableGracePeriod = 0 }()
 
 		mockDockerClient, dockerManager, mockServer, rc := setup()
 		defer mockServer.Close()
