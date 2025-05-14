@@ -118,7 +118,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			sendLiveAICapacityMetrics(info)
+			reportLiveAICapacity(info)
 
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
@@ -214,7 +214,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	return ods, nil
 }
 
-func sendLiveAICapacityMetrics(info *net.OrchestratorInfo) {
+func reportLiveAICapacity(info *net.OrchestratorInfo) {
 	caps := info.Capabilities
 	if !monitor.Enabled {
 		return
