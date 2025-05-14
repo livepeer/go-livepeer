@@ -606,6 +606,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				failures = 0
 				continue
 			case "LOADING":
+				// TODO: Consider starting live containers as busy since they might take a while until the first healthcheck returns
 				failures = 0
 				if !isBorrowed {
 					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
