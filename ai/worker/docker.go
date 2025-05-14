@@ -601,12 +601,16 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			case OK:
 				failures = 0
 				continue
-			default:
+			case ERROR:
 				failures++
 				slog.Error("Container not healthy",
 					slog.String("container", rc.Name),
 					slog.String("status", string(status)),
 					slog.String("failures", strconv.Itoa(failures)))
+			default:
+				slog.Error("Unknown container status",
+					slog.String("container", rc.Name),
+					slog.String("status", string(status)))
 			}
 		}
 	}
