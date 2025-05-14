@@ -613,9 +613,9 @@ func (s *SlowOrchChecker) GetCount() int {
 
 func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
-		GatewayStatus.Store(streamID, map[string]interface{}{
-			"last_error":      err.Error(),
-			"last_error_time": time.Now().UnixMilli(),
+		GatewayStatus.StoreIfNotExists(streamID, "error", map[string]interface{}{
+			"error":      err.Error(),
+			"error_time": time.Now().UnixMilli(),
 		})
 
 		ev := maps.Clone(event)
