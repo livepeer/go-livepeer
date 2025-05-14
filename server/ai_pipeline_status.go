@@ -38,12 +38,12 @@ func (s *streamStatusStore) Get(streamID string) (map[string]interface{}, bool) 
 func (s *streamStatusStore) StoreIfNotExists(streamID string, key string, status map[string]interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	status, exists := s.store[streamID]
+	existing, exists := s.store[streamID]
 	if !exists {
 		s.storeKey(streamID, key, status)
 		return
 	}
-	if _, ok := status[key]; !ok {
+	if _, ok := existing[key]; !ok {
 		s.storeKey(streamID, key, status)
 	}
 }
