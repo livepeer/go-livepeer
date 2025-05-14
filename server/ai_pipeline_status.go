@@ -35,15 +35,28 @@ func (s *streamStatusStore) Get(streamID string) (map[string]interface{}, bool) 
 }
 
 // StoreIfNotExists stores a status only if the streamID doesn't already exist or keyToCheck does not exist on the status
-func (s *streamStatusStore) StoreIfNotExists(streamID string, keyToCheck string, status map[string]interface{}) {
+func (s *streamStatusStore) StoreIfNotExists(streamID string, key string, status map[string]interface{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status, exists := s.store[streamID]
 	if !exists {
-		s.store[streamID] = status
+		s.storeKey(streamID, key, status)
 		return
 	}
-	if _, ok := status[keyToCheck]; !ok {
-		s.store[streamID] = status
+	if _, ok := status[key]; !ok {
+		s.storeKey(streamID, key, status)
 	}
+}
+
+func (s *streamStatusStore) StoreKey(streamID, key string, status map[string]interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.storeKey(streamID, key, status)
+}
+
+func (s *streamStatusStore) storeKey(streamID, key string, status map[string]interface{}) {
+	if _, ok := s.store[streamID]; !ok {
+		s.store[streamID] = make(map[string]interface{})
+	}
+	s.store[streamID][key] = status
 }

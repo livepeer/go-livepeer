@@ -940,8 +940,8 @@ func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID stri
 			for _, s := range stats.TrackStats {
 				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Type, "jitter", fmt.Sprintf("%.3f", s.Jitter), "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
 			}
-			GatewayStatus.Store(streamID, map[string]interface{}{
-				"ingest_metrics": stats,
+			GatewayStatus.StoreKey(streamID, "ingest_metrics", map[string]interface{}{
+				"stats": stats,
 			})
 
 			monitor.SendQueueEventAsync("stream_ingest_metrics", map[string]interface{}{
