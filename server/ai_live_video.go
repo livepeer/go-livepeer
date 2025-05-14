@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -234,7 +235,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			n, err := copySegment(segment, multiWriter)
+			n, err := copySegment(segment, multiWriter, params.node.WorkDir, params.liveParams.requestID, seq)
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
@@ -313,9 +314,20 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params
 	}
 }
 
-func copySegment(segment *http.Response, w io.Writer) (int64, error) {
+func copySegment(segment *http.Response, w io.Writer, workDir string, requestID string, seq int) (int64, error) {
 	defer segment.Body.Close()
-	return io.Copy(w, segment.Body)
+	var r io.Reader = segment.Body
+	if seq < 10 {
+		p := filepath.Join(workDir, fmt.Sprintf("%s-out-%d.ts", requestID, seq))
+		file, err := os.Create(p)
+		if err != nil {
+			slog.Info("Could not create segment file for logging", "err", err)
+			return 0, err
+		}
+		defer file.Close()
+		r = io.TeeReader(segment.Body, file)
+	}
+	return io.Copy(w, r)
 }
 
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
