@@ -688,28 +688,9 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	onFirstSegment := func() {
-		delayMs := time.Since(params.liveParams.startTime).Milliseconds()
-		if monitor.Enabled {
-			monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_receive_first_processed_segment",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   params.liveParams.streamID,
-				"pipeline_id": params.liveParams.pipelineID,
-				"request_id":  params.liveParams.requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": params.liveParams.sess.Address(),
-					"url":     params.liveParams.sess.Transcoder(),
-				},
-			})
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-
-	}
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
-	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess, onFirstSegment)
+	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -169,7 +170,7 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	r, w, err := os.Pipe()
@@ -246,7 +247,22 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			}
 			if firstSegment {
 				firstSegment = false
-				onFistSegment()
+				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
+				if monitor.Enabled {
+					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+						"type":        "gateway_receive_first_processed_segment",
+						"timestamp":   time.Now().UnixMilli(),
+						"stream_id":   params.liveParams.streamID,
+						"pipeline_id": params.liveParams.pipelineID,
+						"request_id":  params.liveParams.requestID,
+						"orchestrator_info": map[string]interface{}{
+							"address": params.liveParams.sess.Address(),
+							"url":     params.liveParams.sess.Transcoder(),
+						},
+					})
+				}
+				clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 			}
 			segmentsReceived += 1
 			if segmentsReceived == 3 && monitor.Enabled {
