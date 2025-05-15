@@ -114,7 +114,9 @@ func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, poll
 		case <-ctx.Done():
 			return fmt.Errorf("timed out waiting for runner: %w", lastErr)
 		case <-ticker.C:
-			health, err := client.HealthWithResponse(ctx)
+			reqCtx, cancel := context.WithTimeout(ctx, healthcheckTimeout)
+			health, err := client.HealthWithResponse(reqCtx)
+			cancel()
 			if err != nil {
 				lastErr = err
 			} else if httpStatus := health.StatusCode(); httpStatus != http.StatusOK {

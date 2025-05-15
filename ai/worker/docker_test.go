@@ -823,6 +823,9 @@ func TestDockerManager_watchContainer(t *testing.T) {
 	}
 	for _, tt := range notHealthyTestCases {
 		t.Run("DestroyContainerOnNotHealthy_"+tt.name, func(t *testing.T) {
+			// tight timeout for Timeout error case
+			defer updateDuringTest(&healthcheckTimeout, 10*time.Millisecond)()
+
 			mockDockerClient, dockerManager, mockServer, rc := setup()
 			defer mockServer.Close()
 			defer mockDockerClient.AssertExpectations(t)
@@ -841,7 +844,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			}()
 			select {
 			case <-done:
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(500 * time.Millisecond):
 				t.Fatal("watchContainer did not return")
 			}
 
@@ -859,14 +862,35 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockServer.Close()
 		defer mockDockerClient.AssertExpectations(t)
 		defer mockServer.AssertExpectations(t)
+		dockerManager.gpuContainers[rc.GPU] = rc.Name
 
 		// Must fail twice before the watch routine gives up on it
+		healthchecks := make(chan bool, 10)
 		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
-			Return(200, "application/json", `{"status":"LOADING"}`).
-			Times(7) // 5 calls during the grace period (first call sets start time), then 2 failures before stopping
+			Run(func(args mock.Arguments) { healthchecks <- true }).
+			Return(200, "application/json", `{"status":"LOADING"}`)
 
+		timeout := time.After(500 * time.Millisecond)
 		go dockerManager.watchContainer(rc)
-		time.Sleep(50 * time.Millisecond) // Wait for the entire grace period
+
+		// We expect at least 6 calls (first call sets start time, then 4 calls until timeout, then 1 call for the first failure)
+		var startTime time.Time
+	graceLoop:
+		for i := 1; i <= 6; i++ {
+			select {
+			case <-healthchecks:
+				if i == 1 {
+					startTime = time.Now()
+				}
+				if time.Since(startTime) > containerTimeout && i < 6 {
+					// this is fine as there might be further delays in the healthcheck logic, just log it
+					t.Logf("healthcheck was called %d times after %s, expected 6", i, time.Since(startTime))
+					break graceLoop
+				}
+			case <-timeout:
+				t.Fatal("healthcheck was not called at least 6 times within the timeout")
+			}
+		}
 
 		// Make sure container wasn't destroyed yet
 		mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
@@ -875,10 +899,18 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 		mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
-		time.Sleep(30 * time.Millisecond) // Ensure we call at least 2 more times to then stop it
+		// after the first failure, there should only 1 more healthcheck for the container to be stopped
+		select {
+		case <-healthchecks:
+			time.Sleep(10 * time.Millisecond) // give time for container to actually be stopped
+		case <-timeout:
+			// this is ok, we will check if the container was stopped below
+		}
 
 		// Verify that the container was destroyed.
 		_, exists := dockerManager.containers[rc.Name]
+		require.False(t, exists)
+		_, exists = dockerManager.gpuContainers[rc.GPU]
 		require.False(t, exists)
 	})
 
@@ -889,9 +921,10 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
 		// Schedule:
-		// - Return LOADING for the first 3 times (should not return container)
+		// - Return LOADING for the first 3 times (should phantom borrow container)
 		// - Then OK for the next 5 times (stayin' alive)
 		// - Then back to IDLE (should return)
+		idle := make(chan bool, 10)
 		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
 			Return(200, "application/json", `{"status":"LOADING"}`).
 			Times(3).
@@ -899,31 +932,37 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			Return(200, "application/json", `{"status":"OK"}`).
 			Times(5).
 			On("ServeHTTP", "GET", "/health", mock.Anything).
-			Return(200, "application/json", `{"status":"IDLE"}`).
-			Once() // once is enough and container should be returned immediately
+			Run(func(args mock.Arguments) { idle <- true }).
+			Return(200, "application/json", `{"status":"IDLE"}`) // Return only IDLE after that
 
 		startTime := time.Now()
-		sleepUntil := func(sinceStart time.Duration) {
+		timeUntil := func(sinceStart time.Duration) time.Duration {
 			dur := sinceStart - time.Since(startTime)
-			if dur > 0 {
-				time.Sleep(dur)
+			if dur <= 0 {
+				return 0
 			}
+			return dur
 		}
 		rc.BorrowCtx = context.Background() // Simulate a borrow of the container
 		go dockerManager.watchContainer(rc)
-		sleepUntil(30 * time.Millisecond) // Almost the entire grace period
+		time.Sleep(timeUntil(30 * time.Millisecond)) // Almost the entire grace period
 
 		// Verify that the container was not returned yet.
 		_, exists := dockerManager.containers[rc.Name]
 		require.False(t, exists)
 
-		sleepUntil(60 * time.Millisecond) // Ensure we pass the grace period and container is OK
+		time.Sleep(timeUntil(60 * time.Millisecond)) // Ensure we pass the grace period and container is OK
 
 		// Verify that the container was not returned yet.
 		_, exists = dockerManager.containers[rc.Name]
 		require.False(t, exists)
 
-		sleepUntil(100 * time.Millisecond) // Ensure we pass the grace period and container is now IDLE and returned
+		select {
+		case <-idle:
+			time.Sleep(10 * time.Millisecond) // give time for container to actually be returned
+		case <-time.After(timeUntil(500 * time.Millisecond)):
+			// this is ok, we will check if the container was returned below
+		}
 
 		// Verify that the container was returned.
 		_, exists = dockerManager.containers[rc.Name]

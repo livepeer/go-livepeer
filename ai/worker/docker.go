@@ -40,6 +40,7 @@ const containerCreator = "ai-worker"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
+var healthcheckTimeout = 5 * time.Second
 var maxHealthCheckFailures = 2
 
 // This only works right now on a single GPU because if there is another container
@@ -572,7 +573,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			m.returnContainer(rc)
 			continue
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), containerWatchInterval)
+			ctx, cancel := context.WithTimeout(context.Background(), healthcheckTimeout)
 			health, err := rc.Client.HealthWithResponse(ctx)
 			cancel()
 
