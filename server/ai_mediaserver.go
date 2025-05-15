@@ -630,7 +630,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
-	params.liveParams.outputWriter = startOutput(ctx, params)
+	var err error
+	params.liveParams.outputWriter, err = startOutput(ctx, params)
+	if err != nil {
+		clog.Errorf(ctx, "Error creating output writer: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		clog.Errorf(ctx, "Error processing AI Request: %s", err)
@@ -645,17 +651,15 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	}
 }
 
-func startOutput(ctx context.Context, params aiRequestParams) *multiWriter {
+func startOutput(ctx context.Context, params aiRequestParams) (*multiWriter, error) {
 	var err error
 	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err))
-		return nil
+		return nil, fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err)
 	}
 	r, w, err := os.Pipe()
 	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err))
-		return nil
+		return nil, fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err)
 	}
 	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
 	// Studio Output ffmpeg process
@@ -663,7 +667,7 @@ func startOutput(ctx context.Context, params aiRequestParams) *multiWriter {
 		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
 	}
 	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
-	return mWriter
+	return mWriter, nil
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
