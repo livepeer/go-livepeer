@@ -173,21 +173,9 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	r, w, err := os.Pipe()
-	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%s %w", url, err))
-		return
-	}
-	rMediaMTX, wMediaMTX, err := os.Pipe()
-	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. url=%s %w", url, err))
-		return
-	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
-
-	multiWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
 
 	// read segments from trickle subscription
 	go func() {
@@ -195,8 +183,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		firstSegment := true
 		var segmentsReceived int64
 
-		defer w.Close()
-		defer wMediaMTX.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
 		const retryPause = 300 * time.Millisecond
@@ -237,9 +223,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 			var n int64
 			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(segment, multiWriter, params.liveParams.outSegmentTimeout)
+				n, err = copySegmentWithTimeout(segment, params.liveParams.outputWriter, params.liveParams.outSegmentTimeout)
 			} else {
-				n, err = copySegment(segment, multiWriter)
+				n, err = copySegment(segment, params.liveParams.outputWriter)
 			}
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
@@ -284,14 +270,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
-
-	// Studio Output ffmpeg process
-	if params.liveParams.outputRTMPURL != "" {
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
-	}
-
-	// MediaMTX Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params aiRequestParams) {

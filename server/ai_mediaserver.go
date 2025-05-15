@@ -644,7 +644,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 		return
 	}
 
-	if err := startProcessing(ctx, params, resp); err != nil {
+	if err = startProcessing(ctx, params, resp); err != nil {
 		clog.Errorf(ctx, "Error starting processing: %s", err)
 		params.liveParams.stopPipeline(err)
 		return
