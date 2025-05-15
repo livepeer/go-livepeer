@@ -170,6 +170,14 @@ func (t *multiWriter) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
+func (t *multiWriter) Close() {
+	for _, w := range t.writers {
+		if closer, ok := w.(io.Closer); ok {
+			closer.Close()
+		}
+	}
+}
+
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
@@ -179,6 +187,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 	// read segments from trickle subscription
 	go func() {
+		defer params.liveParams.outputWriter.Close()
+
 		var err error
 		firstSegment := true
 		var segmentsReceived int64
