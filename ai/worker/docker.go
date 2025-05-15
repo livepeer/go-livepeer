@@ -32,7 +32,7 @@ import (
 const containerModelDir = "/models"
 const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
-const containerTimeout = 2 * time.Minute
+const containerTimeout = 3 * time.Minute
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
@@ -40,8 +40,6 @@ const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
 
 var containerWatchInterval = 5 * time.Second
-var healthcheckAvailableGracePeriod = 15 * time.Second
-var pipelineLoadGracePeriod = 180 * time.Second
 var maxHealthCheckFailures = 2
 
 // This only works right now on a single GPU because if there is another container
@@ -538,10 +536,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 
 	slog.Info("Watching container", slog.String("container", rc.Name))
 	failures := 0
-	startTime := time.Now()
-	loadingStartTime := startTime
+	loadingStartTime := time.Now()
 	for {
-		if failures >= maxHealthCheckFailures && time.Since(startTime) > healthcheckAvailableGracePeriod {
+		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
 			if rc.KeepWarm {
@@ -605,8 +602,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			case OK:
 				failures = 0
 				continue
-			case "LOADING":
-				// TODO: Consider starting live containers as busy since they might take a while until the first healthcheck returns
+			case "LOADING": // TODO: Use enum when ai-runner SDK is updated
 				failures = 0
 				if !isBorrowed {
 					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
@@ -615,7 +611,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 					m.borrowContainerLocked(context.Background(), rc)
 					m.mu.Unlock()
 				}
-				if loadingTime := time.Since(loadingStartTime); loadingTime > pipelineLoadGracePeriod {
+				if loadingTime := time.Since(loadingStartTime); loadingTime > containerTimeout {
 					failures++
 					slog.Error("Container is loading for too long", slog.String("container", rc.Name), slog.Duration("duration", loadingTime))
 				}

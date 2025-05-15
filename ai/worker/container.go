@@ -2,8 +2,9 @@ package worker
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -107,19 +108,27 @@ func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, poll
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
-tickerLoop:
-	for range ticker.C {
+	var lastErr error
+	for {
 		select {
 		case <-ctx.Done():
-			return errors.New("timed out waiting for runner")
-		default:
-			if _, err := client.HealthWithResponse(ctx); err == nil {
-				break tickerLoop
+			return fmt.Errorf("timed out waiting for runner: %w", lastErr)
+		case <-ticker.C:
+			health, err := client.HealthWithResponse(ctx)
+			if err != nil {
+				lastErr = err
+			} else if httpStatus := health.StatusCode(); httpStatus != http.StatusOK {
+				lastErr = fmt.Errorf("health check failed with status code %d", httpStatus)
+			} else if st := health.JSON200.Status; st == "LOADING" { // TODO: Use enum when ai-runner SDK is updated
+				lastErr = fmt.Errorf("runner is still loading")
+			} else if st == ERROR {
+				return fmt.Errorf("runner is in error state")
+			} else {
+				// any other state means the container is ready
+				return nil
 			}
 		}
 	}
-
-	return nil
 }
 
 func getRunnerHardware(ctx context.Context, client *ClientWithResponses) (*HardwareInformation, error) {
