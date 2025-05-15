@@ -149,6 +149,7 @@ type multiWriter struct {
 }
 
 func (t *multiWriter) Write(p []byte) (n int, err error) {
+	return t.writers[1].Write(p)
 	success := false
 	for _, w := range t.writers {
 		bytesWritten, err := w.Write(p)
@@ -569,6 +570,16 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 		}
 	}()
+}
+
+func (a aiRequestParams) inputStreamExists() bool {
+	if a.node == nil {
+		return false
+	}
+	a.node.LiveMu.RLock()
+	defer a.node.LiveMu.RUnlock()
+	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok && p.RequestID == a.liveParams.requestID
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

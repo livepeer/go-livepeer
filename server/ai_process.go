@@ -92,16 +92,6 @@ type aiRequestParams struct {
 	liveParams *liveRequestParams
 }
 
-func (a aiRequestParams) inputStreamExists() bool {
-	if a.node == nil {
-		return false
-	}
-	a.node.LiveMu.RLock()
-	defer a.node.LiveMu.RUnlock()
-	p, ok := a.node.LivePipelines[a.liveParams.stream]
-	return ok && p.RequestID == a.liveParams.requestID
-}
-
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader         *media.SwitchableSegmentReader

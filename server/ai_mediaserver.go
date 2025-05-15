@@ -637,6 +637,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 		params.liveParams.stopPipeline(err)
 		return
 	}
+
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		clog.Errorf(ctx, "Error processing AI Request: %s", err)
@@ -652,7 +653,6 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 }
 
 func startOutput(ctx context.Context, params aiRequestParams) (*multiWriter, error) {
-	var err error
 	rMediaMTX, wMediaMTX, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err)
