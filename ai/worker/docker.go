@@ -32,13 +32,13 @@ import (
 const containerModelDir = "/models"
 const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
-const containerTimeout = 3 * time.Minute
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
 
+var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
 var maxHealthCheckFailures = 2
 
@@ -609,10 +609,11 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				failures = 0
 				continue
 			case "LOADING": // TODO: Use enum when ai-runner SDK is updated
-				failures = 0
 				if !isBorrowed {
 					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
+					failures = 0
 					loadingStartTime = time.Now()
+
 					m.mu.Lock()
 					m.borrowContainerLocked(context.Background(), rc)
 					m.mu.Unlock()
