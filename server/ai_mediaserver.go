@@ -593,6 +593,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
+				pipeline:               pipeline,
 				stopPipeline:           stopPipeline,
 				sendErrorEvent:         sendErrorEvent,
 			},

@@ -111,6 +111,7 @@ type liveRequestParams struct {
 	requestID             string
 	streamID              string
 	pipelineID            string
+	pipeline              string
 	orchestrator          string
 
 	paymentProcessInterval time.Duration

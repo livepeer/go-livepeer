@@ -70,6 +70,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
+			suspendOrchestrator(params)
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -139,6 +140,17 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		}(thisSeq)
 	})
 	clog.Infof(ctx, "trickle pub")
+}
+
+func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
+	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
+	if err != nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
+		return
+	}
+	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
+	penalty := 5
+	sel.suspender.suspend(params.liveParams.sess.Transcoder(), penalty)
 }
 
 type multiWriter struct {
@@ -241,6 +253,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				n, err = copySegment(segment, multiWriter)
 			}
 			if err != nil {
+				suspendOrchestrator(params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
