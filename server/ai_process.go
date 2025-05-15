@@ -1092,6 +1092,9 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	if err != nil {
 		return nil, fmt.Errorf("invalid events URL: %w", err)
 	}
+	if resp.JSON200.ManifestId != nil {
+		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
 	startControlPublish(ctx, control, params)
