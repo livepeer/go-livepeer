@@ -551,19 +551,24 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			return
 		}
 
-		rc.RLock()
-		borrowCtx := rc.BorrowCtx
-		rc.RUnlock()
+		borrowCtx := func() context.Context {
+			rc.RLock()
+			defer rc.RUnlock()
+			if rc.BorrowCtx == nil {
+				return nil
+			}
+			return rc.BorrowCtx
+		}
 
-		isBorrowed := borrowCtx != nil
+		var borrowDone <-chan struct{}
 		// The BorrowCtx is set when the container has been borrowed for a request/stream. If it is not set (nil) it means
-		// that it's not currently borrowed, so we don't need to wait for it to be done (hence using the background context).
-		if borrowCtx == nil {
-			borrowCtx = context.Background()
+		// that it's not currently borrowed, so we don't need to wait for it to be done (hence keeping the nil channel).
+		if bc := borrowCtx(); bc != nil {
+			borrowDone = bc.Done()
 		}
 
 		select {
-		case <-borrowCtx.Done():
+		case <-borrowDone:
 			m.returnContainer(rc)
 			continue
 		case <-ticker.C:
@@ -590,6 +595,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				slog.Any("JSON200", health.JSON200),
 				slog.String("body", string(health.Body)))
 
+			isBorrowed := borrowCtx() != nil
 			status := health.JSON200.Status
 			switch status {
 			case IDLE:
