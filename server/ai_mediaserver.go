@@ -615,7 +615,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			})
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
-			cleanupControl(ctx, params)
+			cleanupLivePipelines(ctx, params)
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -630,6 +630,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+	startLivePipelines(ctx, params)
+
 	var err error
 	params.liveParams.outputWriter, err = startOutput(ctx, params)
 	if err != nil {
@@ -974,7 +976,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			whipConn.AwaitClose()
 			ssr.Close()
-			cleanupControl(ctx, params)
+			cleanupLivePipelines(ctx, params)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -1024,7 +1026,16 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func cleanupControl(ctx context.Context, params aiRequestParams) {
+func startLivePipelines(ctx context.Context, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+
+	params.node.LivePipelines[params.liveParams.stream] = &core.LivePipeline{
+		RequestID: params.liveParams.requestID,
+	}
+}
+
+func cleanupLivePipelines(ctx context.Context, params aiRequestParams) {
 	clog.Infof(ctx, "Live video pipeline finished")
 	stream := params.liveParams.stream
 	node := params.node
