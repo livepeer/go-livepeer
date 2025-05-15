@@ -52,7 +52,7 @@ type RunnerContainerConfig struct {
 // Create global references to functions to allow for mocking in tests.
 var runnerWaitUntilReadyFunc = runnerWaitUntilReady
 
-func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name string) (*RunnerContainer, error) {
+func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name string) (rc *RunnerContainer, isLoading bool, err error) {
 	// Ensure that timeout is set to a non-zero value.
 	timeout := cfg.containerTimeout
 	if timeout == 0 {
@@ -63,7 +63,7 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	if cfg.Endpoint.Token != "" {
 		bearerTokenProvider, err := securityprovider.NewSecurityProviderBearerToken(cfg.Endpoint.Token)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		opts = append(opts, WithRequestEditorFn(bearerTokenProvider.Intercept))
@@ -71,13 +71,14 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 
 	client, err := NewClientWithResponses(cfg.Endpoint.URL, opts...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, cfg.containerTimeout)
 	defer cancel()
-	if err := runnerWaitUntilReadyFunc(cctx, client, pollingInterval); err != nil {
-		return nil, err
+	isLoading, err = runnerWaitUntilReadyFunc(cctx, client, pollingInterval)
+	if err != nil {
+		return nil, isLoading, err
 	}
 
 	var hardware *HardwareInformation
@@ -101,10 +102,10 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 		Client:                client,
 		Hardware:              hardware,
 		Version:               runnerVersion,
-	}, nil
+	}, isLoading, nil
 }
 
-func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
+func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (isLoading bool, err error) {
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
@@ -112,7 +113,7 @@ func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, poll
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for runner: %w", lastErr)
+			return false, fmt.Errorf("timed out waiting for runner: %w", lastErr)
 		case <-ticker.C:
 			reqCtx, cancel := context.WithTimeout(ctx, healthcheckTimeout)
 			health, err := client.HealthWithResponse(reqCtx)
@@ -121,13 +122,12 @@ func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, poll
 				lastErr = err
 			} else if httpStatus := health.StatusCode(); httpStatus != http.StatusOK {
 				lastErr = fmt.Errorf("health check failed with status code %d", httpStatus)
-			} else if st := health.JSON200.Status; st == "LOADING" { // TODO: Use enum when ai-runner SDK is updated
-				lastErr = fmt.Errorf("runner is still loading")
-			} else if st == ERROR {
-				return fmt.Errorf("runner is in error state")
+			} else if st := health.JSON200.Status; st == ERROR {
+				return false, fmt.Errorf("runner is in error state")
 			} else {
 				// any other state means the container is ready
-				return nil
+				isLoading = st == "LOADING" // TODO: Use enum when ai-runner SDK is updated
+				return isLoading, nil
 			}
 		}
 	}

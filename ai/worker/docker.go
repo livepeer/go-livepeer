@@ -437,7 +437,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		containerTimeout:  runnerContainerTimeout,
 	}
 
-	rc, err := NewRunnerContainer(ctx, cfg, containerName)
+	rc, isLoading, err := NewRunnerContainer(ctx, cfg, containerName)
 	if err != nil {
 		dockerRemoveContainer(m.dockerClient, resp.ID)
 		return nil, err
@@ -446,6 +446,12 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	m.containers[containerName] = rc
 	m.gpuContainers[gpu] = containerName
 
+	if keepWarm && isLoading {
+		// If the container is only being warmed up, we only want to add it to the pool when it is past the loading state.
+		// This will be done by the watchContainer() routine once the container returns IDLE on the healthcheck.
+		slog.Info("Warm container started on loading state, removing from pool on startup", slog.String("container", rc.Name))
+		m.borrowContainerLocked(context.Background(), rc)
+	}
 	go m.watchContainer(rc)
 
 	return rc, nil

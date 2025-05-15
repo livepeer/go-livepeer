@@ -211,8 +211,8 @@ func TestDockerManager_Warm(t *testing.T) {
 	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
 	})()
-	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
 	})()
 
 	mockDockerClient.On("ContainerCreate", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: containerID}, nil)
@@ -255,8 +255,8 @@ func TestDockerManager_Borrow(t *testing.T) {
 	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
 	})()
-	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
 	})()
 
 	mockDockerClient.On("ContainerCreate", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: containerID}, nil)
@@ -563,8 +563,8 @@ func TestDockerManager_createContainer(t *testing.T) {
 	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
 	})()
-	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
 	})()
 
 	// Mock allocGPU and getContainerImageName methods.
