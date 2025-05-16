@@ -66,11 +66,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			cancel()
 			return
 		}
-		thisSeq, atMax, sinceLastBeginSegment := slowOrchChecker.BeginSegment()
-		maxTimeToSendSegmentToPublisher := 5 * time.Second
-		if sinceLastBeginSegment > maxTimeToSendSegmentToPublisher {
-			clog.Warningf(ctx, "Sending segment to publisher took more than %v", maxTimeToSendSegmentToPublisher)
-		}
+		thisSeq, atMax := slowOrchChecker.BeginSegment()
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
@@ -575,10 +571,9 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 // Detect 'slow' orchs by keeping track of in-flight segments
 // Count the difference between segments produced and segments completed
 type SlowOrchChecker struct {
-	mu               sync.Mutex
-	segmentCount     int
-	completeCount    int
-	lastBeginSegment time.Time
+	mu            sync.Mutex
+	segmentCount  int
+	completeCount int
 }
 
 // Number of in flight segments to allow.
@@ -591,25 +586,18 @@ const maxInflightSegments = 3
 // whether the max number of inflight segments was hit.
 // Number of segments is not incremented if inflight max is hit.
 // If inflight max is hit, returns true, false otherwise.
-func (s *SlowOrchChecker) BeginSegment() (int, bool, time.Duration) {
+func (s *SlowOrchChecker) BeginSegment() (int, bool) {
 	// Returns `false` if there are multiple segments in-flight
 	// this means the orchestrator is slow reading them
 	// If all-OK, returns `true`
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	var sinceLastBeginSegment time.Duration
-	if !s.lastBeginSegment.IsZero() {
-		sinceLastBeginSegment = time.Since(s.lastBeginSegment)
-	}
-	s.lastBeginSegment = time.Now()
-
 	if s.segmentCount >= s.completeCount+maxInflightSegments {
 		// There is > 1 segment in flight ... orchestrator is slow reading
-		return s.segmentCount, true, sinceLastBeginSegment
+		return s.segmentCount, true
 	}
 	s.segmentCount += 1
-	return s.segmentCount, false, sinceLastBeginSegment
+	return s.segmentCount, false
 }
 
 func (s *SlowOrchChecker) EndSegment() {
