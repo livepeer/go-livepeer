@@ -110,11 +110,16 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		return caps.CompatibleWith(info.Capabilities)
 	}
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
+		defer cancel()
+
 		start := time.Now()
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
+			sendLiveAICapacityMetrics(info)
+
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
 					URL:     od.LocalInfo.URL,
@@ -125,6 +130,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 			return
 		}
+
 		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%v", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if monitor.Enabled {
@@ -141,12 +147,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
-	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
-
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
 	}
+
+	// use a timer to time out the entire get info loop below
+	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
+	defer cutoffTimer.Stop()
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
 	timeout := o.discoveryTimeout
@@ -176,11 +184,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				timeout = maxGetOrchestratorCutoffTimeout
 			}
 			clog.V(common.DEBUG).Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
-		case <-ctx.Done():
+		case <-cutoffTimer.C:
 			timedOut = true
 		}
 	}
-	cancel()
 
 	// consider suspended orchestrators if we have an insufficient number of non-suspended ones
 	if len(ods) < numOrchestrators {
@@ -205,6 +212,25 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
 		len(ods), nbResp, len(linfos), timedOut)
 	return ods, nil
+}
+
+func sendLiveAICapacityMetrics(info *net.OrchestratorInfo) {
+	caps := info.Capabilities
+	if !monitor.Enabled {
+		return
+	}
+	if caps == nil || caps.Capacities == nil || caps.Constraints.PerCapability == nil {
+		return
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return
+	}
+
+	for modelID, model := range liveAI.Models {
+		monitor.AIContainersInUse(int(model.CapacityInUse), modelID, info.GetTranscoder())
+		monitor.AIContainersIdle(int(model.Capacity), modelID, info.GetTranscoder())
+	}
 }
 
 func (o *orchestratorPool) Size() int {
