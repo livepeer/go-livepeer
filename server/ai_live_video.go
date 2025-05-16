@@ -372,9 +372,9 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if livePipeline, exists := params.node.LivePipelines[stream]; exists && livePipeline.ControlPub != nil {
-		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", livePipeline.RequestID)
-		livePipeline.ControlPub.Close()
+	if control, exists := params.node.LivePipelines[stream]; exists {
+		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
+		control.ControlPub.Close()
 		// TODO better solution than allowing existing streams to stomp over one another
 	}
 
