@@ -113,8 +113,6 @@ type liveRequestParams struct {
 	sendErrorEvent func(error)
 
 	// State for the stream processing
-	// outputWriter is the writer to write output segments
-	outputWriter *multiWriter
 	// startTime is the time when the first request is sent to the orchestrator
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack

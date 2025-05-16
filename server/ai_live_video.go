@@ -181,13 +181,19 @@ func (t *multiWriter) Close() {
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
+	outWriter, err := startOutput(ctx, params)
+	if err != nil {
+		clog.Errorf(ctx, "Error creating output writer: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
 	// read segments from trickle subscription
 	go func() {
-		defer params.liveParams.outputWriter.Close()
+		defer outWriter.Close()
 
 		var err error
 		firstSegment := true
@@ -233,9 +239,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 			var n int64
 			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(segment, params.liveParams.outputWriter, params.liveParams.outSegmentTimeout)
+				n, err = copySegmentWithTimeout(segment, outWriter, params.liveParams.outSegmentTimeout)
 			} else {
-				n, err = copySegment(segment, params.liveParams.outputWriter)
+				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))

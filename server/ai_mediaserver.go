@@ -630,14 +630,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
-	var err error
-	params.liveParams.outputWriter, err = startOutput(ctx, params)
-	if err != nil {
-		clog.Errorf(ctx, "Error creating output writer: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
-
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
 		clog.Errorf(ctx, "Error processing AI Request: %s", err)
