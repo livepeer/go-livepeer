@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -252,6 +253,60 @@ func (orch *orchestrator) TicketParams(sender ethcommon.Address, priceInfo *net.
 			CreationRoundBlockHash: params.ExpirationParams.CreationRoundBlockHash.Bytes(),
 		},
 	}, nil
+}
+
+func (orch *orchestrator) GetCapabilitiesPrices(sender ethcommon.Address) ([]*net.PriceInfo, error) {
+	ethAddr := sender.String()
+
+	//Orchestrators can have two prices for capability/model id
+	//if a price is set for a specific eth address, it will override the default price
+	defaultPrices := orch.node.GetCapsPrices("default")
+	gatewayPrices := orch.node.GetCapsPrices(ethAddr)
+
+	capPricesMap := make(map[string]*net.PriceInfo)
+
+	var capPrices []*net.PriceInfo
+	if defaultPrices != nil {
+		for cap, price := range *defaultPrices {
+			for modelID, priceInfo := range price.modelPrices {
+				if priceInfo == nil {
+					continue
+				}
+				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				if err != nil {
+					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
+					continue
+				}
+				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
+			}
+		}
+	}
+
+	//add gateway specific prices or replace default price if set
+	if gatewayPrices != nil {
+		for cap, price := range *gatewayPrices {
+			for modelID, priceInfo := range price.modelPrices {
+				if priceInfo == nil {
+					continue
+				}
+				priceInt64, err := common.PriceToInt64(priceInfo.Value())
+				if err != nil {
+					glog.Errorf("error converting %v price for capability %v to int64 err=%w", "default", CapabilityNameLookup[cap], err)
+					continue
+				}
+				capPriceName := strconv.Itoa(int(cap)) + "_" + modelID
+				capPricesMap[capPriceName] = &net.PriceInfo{PricePerUnit: priceInt64.Num().Int64(), PixelsPerUnit: priceInt64.Denom().Int64(), Capability: uint32(cap), Constraint: modelID}
+			}
+		}
+	}
+
+	//create list of prices
+	for _, price := range capPricesMap {
+		capPrices = append(capPrices, price)
+	}
+
+	return capPrices, nil
 }
 
 func (orch *orchestrator) PriceInfo(sender ethcommon.Address, manifestID ManifestID) (*net.PriceInfo, error) {
@@ -1087,7 +1142,7 @@ func (rtm *RemoteTranscoderManager) selectTranscoder(sessionId string, caps *Cap
 				return nil, ErrNoTranscodersAvailable
 			}
 
-			// Assinging transcoder to session for future use
+			// Assigning transcoder to session for future use
 			rtm.streamSessions[sessionId] = currentTranscoder
 			currentTranscoder.load++
 			sort.Sort(byLoadFactor(rtm.remoteTranscoders))

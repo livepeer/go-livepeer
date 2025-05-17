@@ -45,7 +45,7 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 	nextSeq := c.seq + 1
 	if _, exists = stream.getForWrite(nextSeq); exists {
 		c.mu.Unlock()
-		return errors.New("Next entry alredy exists in this sequence")
+		return errors.New("Next entry already exists in this sequence")
 	}
 	c.seq = nextSeq
 	c.mu.Unlock()

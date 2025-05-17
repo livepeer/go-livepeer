@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -53,6 +54,9 @@ const (
 	Complete   ImageToVideoStatus = "complete"
 )
 
+// @title Live Video-To-Video AI
+// @version 0.0.0
+
 func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	swagger, err := worker.GetSwagger()
 	if err != nil {
@@ -85,10 +89,19 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/text-to-speech", oapiReqValidator(aiMediaServerHandle(ls, jsonDecoder[worker.GenTextToSpeechJSONRequestBody], processTextToSpeech)))
 
 	// This is called by the media server when the stream is ready
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
+	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
 	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
+
+	// Configure WHIP ingest only if an addr is specified.
+	// TODO use a proper cli flag
+	if os.Getenv("LIVE_AI_WHIP_ADDR") != "" {
+		whipServer := media.NewWHIPServer()
+		ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/whip", ls.CreateWhip(whipServer))
+		ls.HTTPMux.Handle("HEAD /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusMethodNotAllowed))
+		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
+	}
 
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
@@ -367,15 +380,27 @@ func (ls *LivepeerServer) ImageToVideoResult() http.Handler {
 	})
 }
 
+// @Summary Start Live Video
+// @Accept multipart/form-data
+// @Param stream path string true "Stream Key"
+// @Param source_id formData string true "MediaMTX source ID, used for calls back to MediaMTX"
+// @Param source_type formData string true "MediaMTX specific source type (webrtcSession/rtmpConn)"
+// @Param query formData string true "Queryparams from the original ingest URL"
+// @Success 200
+// @Router /live/video-to-video/{stream}/start [get]
 func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
+		// Create fresh context instead of using r.Context() since ctx will outlive the request
+		ctx := context.Background()
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
 			http.Error(w, "Missing stream name", http.StatusBadRequest)
 			return
 		}
+
+		streamRequestTime := time.Now().UnixMilli()
 
 		ctx = clog.AddVal(ctx, "stream", streamName)
 		sourceID := r.FormValue("source_id")
@@ -391,6 +416,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			http.Error(w, "Missing source_type", http.StatusBadRequest)
 			return
 		}
+		sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
 		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
 		if err != nil {
 			clog.Errorf(ctx, "Invalid source type %s", sourceType)
@@ -416,11 +442,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		// If auth webhook is set and returns an output URL, this will be replaced
 		outputURL := qp.Get("rtmpOutput")
-		if outputURL == "" {
-			// re-publish to ourselves for now
-			// Not sure if we want this to be permanent
-			outputURL = fmt.Sprintf("rtmp://%s/%s-out", remoteHost, streamName)
+
+		// Currently for webrtc we need to add a path prefix due to the ingress setup
+		mediaMTXStreamPrefix := r.PathValue("prefix")
+		if mediaMTXStreamPrefix != "" {
+			mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
 		}
+		mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName)
+		mediaMTXRtmpURL := r.FormValue("rtmp_url")
+		if mediaMTXRtmpURL != "" {
+			mediaMTXInputURL = mediaMTXRtmpURL
+		}
+		mediaMTXOutputURL := mediaMTXInputURL + "-out"
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -433,7 +466,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
-		var streamID, pipelineID string
+		streamID := qp.Get("streamId")
+		var pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
 			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
@@ -492,27 +526,32 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
+		// channel that blocks until after orch selection is complete
+		// avoids a race condition with closing the control channel
+		orchSelection := make(chan bool)
+
+		// Clear any previous gateway status
+		GatewayStatus.Clear(streamID)
+
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_receive_stream_request",
+			"timestamp":   streamRequestTime,
+			"stream_id":   streamID,
+			"pipeline_id": pipelineID,
+			"request_id":  requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
+
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
 		if monitor.Enabled {
 			monitor.AILiveVideoAttempt()
 		}
 
-		// Kick off the RTMP pull and segmentation as soon as possible
-		ssr := media.NewSwitchableSegmentReader()
-		go func() {
-			// Currently for webrtc we need to add a path prefix due to the ingress setup
-			mediaMTXStreamPrefix := r.PathValue("prefix")
-			if mediaMTXStreamPrefix != "" {
-				mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
-			}
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(ctx, fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName), ssr.Read)
-			ssr.Close()
-			ls.cleanupLive(streamName)
-		}()
-
-		sendErrorEvent := LiveErrorEventSender(ctx, map[string]string{
+		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
 			"type":        "error",
 			"request_id":  requestID,
 			"stream_id":   streamID,
@@ -522,11 +561,13 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
+		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
 		stopPipeline := func(err error) {
+			defer cancelSegmenter()
 			if err == nil {
 				return
 			}
-			clog.Errorf(ctx, "Live video pipeline stopping: %s", err)
+			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 
 			sendErrorEvent(err)
 
@@ -536,6 +577,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
+		ssr := media.NewSwitchableSegmentReader()
 		params := aiRequestParams{
 			node:        ls.LivepeerNode,
 			os:          drivers.NodeStorage.NewSession(requestID),
@@ -544,8 +586,10 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			liveParams: liveRequestParams{
 				segmentReader:          ssr,
 				outputRTMPURL:          outputURL,
+				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
+				outSegmentTimeout:      ls.outSegmentTimeout,
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
@@ -554,14 +598,37 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		// Kick off the RTMP pull and segmentation as soon as possible
+		go func() {
+			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_ingest_stream_closed",
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
+			ssr.Close()
+			<-orchSelection // wait for selection to complete
+			cleanupControl(ctx, params)
+		}()
+
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
-			ModelId: &pipeline,
-			Params:  &pipelineParams,
+			ModelId:          &pipeline,
+			Params:           &pipelineParams,
+			GatewayRequestId: &requestID,
+			StreamId:         &streamID,
 		}
 		_, err = processAIRequest(ctx, params, req)
 		if err != nil {
 			stopPipeline(err)
 		}
+		close(orchSelection)
 	})
 }
 
@@ -576,6 +643,11 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	return split[0], nil
 }
 
+// @Summary Update Live Stream
+// @Param stream path string true "Stream Key"
+// @Param params body string true "update request"
+// @Success 200
+// @Router /live/video-to-video/{stream}/update [post]
 func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -612,6 +684,10 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 	})
 }
 
+// @Summary Get Live Stream Status
+// @Param stream path string true "Stream ID"
+// @Success 200
+// @Router /live/video-to-video/{stream}/status [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		streamId := r.PathValue("streamId")
@@ -625,9 +701,16 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 
 		// Get status for specific stream
 		status, exists := StreamStatusStore.Get(streamId)
-		if !exists {
+		gatewayStatus, gatewayExists := GatewayStatus.Get(streamId)
+		if !exists && !gatewayExists {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
+		}
+		if gatewayExists {
+			if status == nil {
+				status = make(map[string]any)
+			}
+			status["gateway_status"] = gatewayStatus
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -639,20 +722,291 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	})
 }
 
-func (ls *LivepeerServer) cleanupLive(stream string) {
-	ls.LivepeerNode.LiveMu.Lock()
-	pub, ok := ls.LivepeerNode.LivePipelines[stream]
-	delete(ls.LivepeerNode.LivePipelines, stream)
-	ls.LivepeerNode.LiveMu.Unlock()
-	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(ls.LivepeerNode.LivePipelines))
-	}
+func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// two main sequential parts here
+		//
+		// WHIP : stream setup, await tracks
+		// Others: auth, selection, job setup
+		// Run them in parallel
 
-	if ok && pub != nil && pub.ControlPub != nil {
+		streamRequestTime := time.Now().UnixMilli()
+		corsHeaders(w, r.Method)
+
+		// NB: deliberately not using r.Context since ctx will outlive the request
+		ctx := context.Background()
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+		streamName := r.PathValue("stream")
+		if streamName == "" {
+			http.Error(w, "Missing stream name", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "stream", streamName)
+
+		ssr := media.NewSwitchableSegmentReader()
+
+		whipConn := media.NewWHIPConnection()
+
+		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+		if whepURL == "" {
+			whepURL = "http://localhost:8889/" // default mediamtx output
+		}
+		whepURL = whepURL + streamName + "-out/whep"
+
+		go func() {
+			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
+			if internalOutputHost == "" {
+				internalOutputHost = "rtmp://localhost/"
+			}
+			mediamtxOutputURL := internalOutputHost + streamName + "-out"
+			outputURL := ""
+			streamID := ""
+			pipelineID := ""
+			pipeline := ""
+			pipelineParams := make(map[string]interface{})
+			sourceTypeStr := "livepeer-whip"
+			queryParams := r.URL.Query().Encode()
+			orchestrator := r.URL.Query().Get("orchestrator")
+
+			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
+
+			if LiveAIAuthWebhookURL != nil {
+				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+					Stream:      streamName,
+					Type:        sourceTypeStr,
+					QueryParams: queryParams,
+					GatewayHost: ls.LivepeerNode.GatewayHost,
+				})
+				if err != nil {
+					whipConn.Close()
+					clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+					return
+				}
+
+				if authResp.RTMPOutputURL != "" {
+					outputURL = authResp.RTMPOutputURL
+				}
+
+				if authResp.Pipeline != "" {
+					pipeline = authResp.Pipeline
+				}
+
+				if len(authResp.paramsMap) > 0 {
+					if _, ok := authResp.paramsMap["prompt"]; !ok && pipeline == "comfyui" {
+						pipelineParams = map[string]interface{}{"prompt": authResp.paramsMap}
+					} else {
+						pipelineParams = authResp.paramsMap
+					}
+				}
+
+				if authResp.StreamID != "" {
+					streamID = authResp.StreamID
+					ctx = clog.AddVal(ctx, "stream_id", streamID)
+				}
+
+				if authResp.PipelineID != "" {
+					pipelineID = authResp.PipelineID
+				}
+			}
+
+			sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
+				"type":        "error",
+				"request_id":  requestID,
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"pipeline":    pipeline,
+			})
+			stopPipeline := func(err error) {
+				if err == nil {
+					return
+				}
+				clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
+				sendErrorEvent(err)
+				whipConn.Close()
+			}
+
+			clog.Info(ctx, "Received live video AI request", "pipelineParams", pipelineParams)
+
+			// Clear any previous gateway status
+			GatewayStatus.Clear(streamID)
+
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "gateway_receive_stream_request",
+				"timestamp":   streamRequestTime,
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"orchestrator_info": map[string]interface{}{
+					"address": "",
+					"url":     "",
+				},
+			})
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						clog.Errorf(ctx, "Panic in stream close event routine: %s", r)
+					}
+				}()
+				err := whipConn.AwaitClose()
+				if err == nil {
+					// For now, set a "whip disconnected" event"
+					err = errors.New("whip disconnected")
+				}
+				sendErrorEvent(err)
+				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+					"type":        "gateway_ingest_stream_closed",
+					"timestamp":   time.Now().UnixMilli(),
+					"stream_id":   streamID,
+					"pipeline_id": pipelineID,
+					"request_id":  requestID,
+					"orchestrator_info": map[string]interface{}{
+						"address": "",
+						"url":     "",
+					},
+				})
+			}()
+
+			if monitor.Enabled {
+				monitor.AILiveVideoAttempt()
+			}
+
+			params := aiRequestParams{
+				node:        ls.LivepeerNode,
+				os:          drivers.NodeStorage.NewSession(requestID),
+				sessManager: ls.AISessionManager,
+
+				liveParams: liveRequestParams{
+					segmentReader:          ssr,
+					outputRTMPURL:          outputURL,
+					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
+					stream:                 streamName,
+					paymentProcessInterval: ls.livePaymentInterval,
+					outSegmentTimeout:      ls.outSegmentTimeout,
+					requestID:              requestID,
+					streamID:               streamID,
+					pipelineID:             pipelineID,
+					stopPipeline:           stopPipeline,
+					sendErrorEvent:         sendErrorEvent,
+					orchestrator:           orchestrator,
+				},
+			}
+
+			req := worker.GenLiveVideoToVideoJSONRequestBody{
+				ModelId:          &pipeline,
+				Params:           &pipelineParams,
+				GatewayRequestId: &requestID,
+				StreamId:         &streamID,
+			}
+			_, err := processAIRequest(ctx, params, req)
+			if err != nil {
+				stopPipeline(err)
+			}
+
+			statsContext, statsCancel := context.WithCancel(ctx)
+			defer statsCancel()
+			go runStats(statsContext, whipConn, streamID, pipelineID, requestID)
+
+			whipConn.AwaitClose()
+			ssr.Close()
+			cleanupControl(ctx, params)
+			clog.Info(ctx, "Live cleaned up")
+		}()
+
+		conn := server.CreateWHIP(ctx, ssr, whepURL, w, r)
+		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
+	})
+}
+
+func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID string, pipelineID string, requestID string) {
+	// Periodically check whip stats and write logs and metrics
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			stats, err := whipConn.Stats()
+			if err != nil {
+				clog.Errorf(ctx, "WHIP stats returned error: %s", err)
+				continue
+			}
+			if monitor.Enabled {
+				monitor.AIWhipTransportBytesReceived(int64(stats.PeerConnStats.BytesReceived))
+				monitor.AIWhipTransportBytesSent(int64(stats.PeerConnStats.BytesSent))
+			}
+			clog.Info(ctx, "whip TransportStats", "ID", stats.PeerConnStats.ID, "bytes_received", stats.PeerConnStats.BytesReceived, "bytes_sent", stats.PeerConnStats.BytesSent)
+			for _, s := range stats.TrackStats {
+				clog.Info(ctx, "whip InboundRTPStreamStats", "kind", s.Type, "jitter", fmt.Sprintf("%.3f", s.Jitter), "packets_lost", s.PacketsLost, "packets_received", s.PacketsReceived, "rtt", s.RTT)
+			}
+			GatewayStatus.StoreKey(streamID, "ingest_metrics", map[string]interface{}{
+				"stats": stats,
+			})
+
+			monitor.SendQueueEventAsync("stream_ingest_metrics", map[string]interface{}{
+				"timestamp":   time.Now().UnixMilli(),
+				"stream_id":   streamID,
+				"pipeline_id": pipelineID,
+				"request_id":  requestID,
+				"stats":       stats,
+			})
+		}
+	}
+}
+
+func (ls *LivepeerServer) WithCode(code int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		corsHeaders(w, r.Method)
+		w.WriteHeader(code)
+	})
+}
+
+func cleanupControl(ctx context.Context, params aiRequestParams) {
+	clog.Infof(ctx, "Live video pipeline finished")
+	stream := params.liveParams.stream
+	node := params.node
+	node.LiveMu.Lock()
+	pub, ok := node.LivePipelines[stream]
+	if !ok {
+		// already cleaned up
+		node.LiveMu.Unlock()
+		return
+	}
+	delete(node.LivePipelines, stream)
+	if monitor.Enabled {
+		monitor.AICurrentLiveSessions(len(node.LivePipelines))
+		logCurrentLiveSessions(node.LivePipelines)
+	}
+	node.LiveMu.Unlock()
+
+	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
 		pub.StopControl()
+	}
+}
+
+func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+	var streams []string
+	for k := range pipelines {
+		streams = append(streams, k)
+	}
+	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
+}
+
+func corsHeaders(w http.ResponseWriter, reqMethod string) {
+	if os.Getenv("LIVE_AI_ALLOW_CORS") == "" { // TODO cli arg
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if reqMethod == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST")
+		// Allows us send down a preferred STUN server without ICE restart
+		// https://datatracker.ietf.org/doc/html/draft-ietf-wish-whip-16#section-4.6
+		w.Header()["Link"] = media.GenICELinkHeaders(media.WebrtcConfig.ICEServers)
 	}
 }
 
@@ -664,6 +1018,10 @@ type smokeTestRequest struct {
 	DurationSecs int    `json:"duration_secs"`
 }
 
+// @Summary Start Smoke Test
+// @Param request body smokeTestRequest true "smoke test request"
+// @Success 200
+// @Router /live/video-to-video/smoketest [put]
 func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
@@ -719,7 +1077,7 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 
 		if err := cmd.Start(); err != nil {
 			cancel()
-			clog.Errorf(ctx, "failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
+			clog.Errorf(ctx, "Smoke test failed to start ffmpeg. Error: %s\nCommand: ffmpeg %s", err, strings.Join(params, " "))
 			http.Error(w, "Failed to start stream", http.StatusInternalServerError)
 			return
 		}
@@ -728,8 +1086,8 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 			defer cancel()
 			_ = backoff.Retry(func() error {
 				if state, err := cmd.Process.Wait(); err != nil || state.ExitCode() != 0 {
-					clog.Errorf(ctx, "failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
-					clog.Errorf(ctx, "ffmpeg output:\n%s\n", outputBuf.String())
+					clog.Errorf(ctx, "Smoke test failed to run ffmpeg. Exit Code: %d, Error: %s\nCommand: ffmpeg %s\n", state.ExitCode(), err, strings.Join(params, " "))
+					clog.Errorf(ctx, "Smoke test ffmpeg output:\n%s\n", outputBuf.String())
 					return fmt.Errorf("ffmpeg failed")
 				}
 				clog.Infof(ctx, "Smoke test finished successfully for %s", ingestURL)

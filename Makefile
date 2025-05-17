@@ -95,7 +95,17 @@ ifeq ($(BUILDOS),linux)
 endif
 
 
-.PHONY: livepeer livepeer_bench livepeer_cli livepeer_router docker
+.PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router docker swagger
+
+# Git reference to download the OpenAPI spec from, defaults to `main` branch.
+# It can also be a simple git commit hash. e.g. `make ai_worker_codegen REF=c19289d`
+REF ?= refs/heads/main
+ai_worker_codegen:
+	go run github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@v2.2.0 \
+		-package worker \
+		-generate types,client,chi-server,spec \
+		https://raw.githubusercontent.com/livepeer/ai-worker/$(REF)/runner/openapi.yaml \
+		| awk '!/WARNING/' > ai/worker/runner.gen.go
 
 livepeer:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -tags "$(BUILD_TAGS)" -ldflags="$(ldflags)" cmd/livepeer/*.go
@@ -114,3 +124,48 @@ docker:
 
 docker_mtx:
 	docker buildx build -f docker/Dockerfile.mediamtx docker/
+
+swagger:
+	swag init --generalInfo server/ai_mediaserver.go --outputTypes yaml --output . && mv swagger.yaml liveai.openapi.yaml
+
+# Command to run Livepeer Realtime AI Video in a Box
+.PHONY: box
+box: box-rebuild
+	./box/box.sh
+
+.PHONY: box-rebuild
+box-rebuild:
+ifeq ($(strip ${REBUILD}),false)
+	@echo "Skipping rebuild of components"
+else
+	@$(MAKE) box-runner
+ifeq ($(strip ${DOCKER}),true)
+	docker build -t livepeer/go-livepeer -f docker/Dockerfile .
+else
+	@$(MAKE) livepeer
+endif
+endif
+
+.PHONY: box-gateway
+box-gateway: box-rebuild
+	./box/gateway.sh
+
+.PHONY: box-orchestrator
+box-orchestrator: box-rebuild
+	./box/orchestrator.sh
+
+.PHONY: box-mediamtx
+box-mediamtx:
+	./box/mediamtx.sh
+
+.PHONY: box-runner
+box-runner:
+	./box/build-runner.sh
+
+.PHONY: box-stream
+box-stream:
+	./box/stream.sh start
+
+.PHONY: box-playback
+box-playback:
+	./box/stream.sh playback

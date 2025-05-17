@@ -10,6 +10,7 @@ type streamStatusStore struct {
 }
 
 var StreamStatusStore = streamStatusStore{store: make(map[string]map[string]interface{})}
+var GatewayStatus = streamStatusStore{store: make(map[string]map[string]interface{})}
 
 // StoreStreamStatus updates the status for a stream
 func (s *streamStatusStore) Store(streamID string, status map[string]interface{}) {
@@ -31,4 +32,31 @@ func (s *streamStatusStore) Get(streamID string) (map[string]interface{}, bool) 
 	defer s.mu.RUnlock()
 	status, exists := s.store[streamID]
 	return status, exists
+}
+
+// StoreIfNotExists stores a status only if the streamID doesn't already exist or keyToCheck does not exist on the status
+func (s *streamStatusStore) StoreIfNotExists(streamID string, key string, status map[string]interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, exists := s.store[streamID]
+	if !exists {
+		s.storeKey(streamID, key, status)
+		return
+	}
+	if _, ok := existing[key]; !ok {
+		s.storeKey(streamID, key, status)
+	}
+}
+
+func (s *streamStatusStore) StoreKey(streamID, key string, status map[string]interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.storeKey(streamID, key, status)
+}
+
+func (s *streamStatusStore) storeKey(streamID, key string, status map[string]interface{}) {
+	if _, ok := s.store[streamID]; !ok {
+		s.store[streamID] = make(map[string]interface{})
+	}
+	s.store[streamID][key] = status
 }

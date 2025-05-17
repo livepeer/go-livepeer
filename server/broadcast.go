@@ -920,6 +920,10 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 		if od.LocalInfo != nil {
 			oScore = od.LocalInfo.Score
 		}
+		var initialLatency time.Duration
+		if od.LocalInfo != nil && od.LocalInfo.Latency != nil {
+			initialLatency = *od.LocalInfo.Latency
+		}
 		session := &BroadcastSession{
 			Broadcaster:       core.NewBroadcaster(n),
 			Params:            params,
@@ -934,6 +938,7 @@ func selectOrchestrator(ctx context.Context, n *core.LivepeerNode, params *core.
 			lock:              &sync.RWMutex{},
 			OrchestratorScore: oScore,
 			InitialPrice:      od.RemoteInfo.PriceInfo,
+			InitialLatency:    initialLatency,
 		}
 
 		sessions = append(sessions, session)
@@ -1271,7 +1276,7 @@ func prepareForTranscoding(ctx context.Context, cxn *rtmpConnection, sess *Broad
 		res.Name = uri // hijack seg.Name to convey the uploaded URI
 	}
 
-	if err := refreshSessionIfNeeded(ctx, sess); err != nil {
+	if err := refreshSessionIfNeeded(ctx, sess, false); err != nil {
 		clog.Errorf(ctx, "Error refreshing session manifestID=%s orch=%v err=%q", cxn.mid, sess.Transcoder(), err)
 		cxn.sessManager.suspendAndRemoveOrch(sess)
 		return nil, err
@@ -1474,7 +1479,7 @@ func verify(verifier *verification.SegmentVerifier, cxn *rtmpConnection,
 	sess.lock.RUnlock()
 	// Cache segment contents in params.Renditions
 	// If we need to retry transcoding because verification fails,
-	// the the segments' OS location will be overwritten.
+	// the segments' OS location will be overwritten.
 	// Cache the segments so we can restore them in OS if necessary.
 	params := &verification.Params{
 		ManifestID:   sess.Params.ManifestID,
@@ -1579,18 +1584,18 @@ func clearSessionBalance(sess *BroadcastSession, id core.ManifestID) {
 	}
 }
 
-func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession) error {
+func refreshSessionIfNeeded(ctx context.Context, sess *BroadcastSession, ignoreCapacityCheck bool) error {
 	shouldRefresh, err := shouldRefreshSession(ctx, sess)
 	if err != nil {
 		return err
 	}
 	if shouldRefresh {
-		return refreshSession(ctx, sess)
+		return refreshSession(ctx, sess, ignoreCapacityCheck)
 	}
 	return nil
 }
 
-func refreshSession(ctx context.Context, sess *BroadcastSession) error {
+func refreshSession(ctx context.Context, sess *BroadcastSession, ignoreCapacityCheck bool) error {
 	uri, err := url.Parse(sess.Transcoder())
 	if err != nil {
 		return err
@@ -1598,7 +1603,10 @@ func refreshSession(ctx context.Context, sess *BroadcastSession) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 
-	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri, sess.Params.Capabilities.ToNetCapabilities())
+	oInfo, err := getOrchestratorInfoRPC(ctx, sess.Broadcaster, uri, GetOrchestratorInfoParams{
+		Caps:                sess.Params.Capabilities.ToNetCapabilities(),
+		IgnoreCapacityCheck: ignoreCapacityCheck,
+	})
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 )
 
 var errPipelineNotAvailable = errors.New("pipeline not available")
@@ -32,6 +32,8 @@ type AI interface {
 	Stop(context.Context) error
 	HasCapacity(string, string) bool
 	EnsureImageAvailable(context.Context, string, string) error
+	HardwareInformation() []worker.HardwareInformation
+	Version() []worker.Version
 }
 
 // Custom type to parse a big.Rat from a JSON number.

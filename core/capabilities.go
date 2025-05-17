@@ -1,12 +1,15 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/ffmpeg"
@@ -15,8 +18,9 @@ import (
 type ModelConstraints map[string]*ModelConstraint
 
 type ModelConstraint struct {
-	Warm     bool
-	Capacity int
+	Warm          bool
+	Capacity      int
+	RunnerVersion string
 }
 
 type Capability int
@@ -98,7 +102,7 @@ var CapabilityNameLookup = map[Capability]string{
 	Capability_ProfileH264Baseline:        "H264 Baseline profile",
 	Capability_ProfileH264Main:            "H264 Main profile",
 	Capability_ProfileH264High:            "H264 High profile",
-	Capability_ProfileH264ConstrainedHigh: "H264 Constained High profile",
+	Capability_ProfileH264ConstrainedHigh: "H264 Constrained, Contained High profile",
 	Capability_GOP:                        "GOP",
 	Capability_AuthToken:                  "Auth token",
 	Capability_MPEG7VideoSignature:        "MPEG7 signature",
@@ -282,6 +286,26 @@ func (c1 PerCapabilityConstraints) CompatibleWith(c2 PerCapabilityConstraints) b
 	return true
 }
 
+func (c *PerCapabilityConstraints) SetRunnerVersion(cap Capability, modelId, version string) {
+	if c == nil {
+		return
+	}
+	if (*c)[cap] == nil {
+		(*c)[cap] = &CapabilityConstraints{Models: make(ModelConstraints)}
+	}
+	if (*c)[cap].Models[modelId] == nil {
+		(*c)[cap].Models[modelId] = &ModelConstraint{}
+	}
+	(*c)[cap].Models[modelId].RunnerVersion = version
+}
+
+func (c *PerCapabilityConstraints) GetRunnerVersion(cap Capability, modelId string) string {
+	if c == nil || (*c)[cap] == nil || (*c)[cap].Models[modelId] == nil {
+		return ""
+	}
+	return (*c)[cap].Models[modelId].RunnerVersion
+}
+
 func (c1 *CapabilityConstraints) CompatibleWith(c2 *CapabilityConstraints) bool {
 	return c1.Models.CompatibleWith(c2.Models)
 }
@@ -296,6 +320,10 @@ func (c1 ModelConstraints) CompatibleWith(c2 ModelConstraints) bool {
 
 		if c1ModelConstraint.Warm && !c2ModelConstraint.Warm {
 			// c1 requires the model ID to be warm, but c2's model ID is not warm so it is incompatible
+			return false
+		}
+
+		if !isVersionCompatible(c1ModelConstraint.RunnerVersion, c2ModelConstraint.RunnerVersion) {
 			return false
 		}
 	}
@@ -412,27 +440,35 @@ func JobCapabilities(params *StreamParameters, segPar *SegmentParameters) (*Capa
 }
 
 func (bcast *Capabilities) LivepeerVersionCompatibleWith(orch *net.Capabilities) bool {
-	if bcast == nil || orch == nil || bcast.constraints.minVersion == "" {
+	if bcast == nil || orch == nil {
 		// should not happen, but just in case, return true by default
 		return true
 	}
-	if orch.Version == "" || orch.Version == "undefined" {
-		// Orchestrator/Transcoder version is not set, so it's incompatible
+	return isVersionCompatible(bcast.constraints.minVersion, orch.Version)
+}
+
+func isVersionCompatible(minVersion, version string) bool {
+	if minVersion == "" {
+		// min version not defined in Gateway, any version is compatible
+		return true
+	}
+	if version == "" || version == "undefined" {
+		// Orchestrator/Transcoder/Runner version is not set, so it's incompatible
 		return false
 	}
 
-	minVer, err := semver.NewVersion(bcast.constraints.minVersion)
+	minVer, err := semver.NewVersion(minVersion)
 	if err != nil {
 		glog.Warningf("error while parsing minVersion: %v", err)
 		return true
 	}
-	ver, err := semver.NewVersion(orch.Version)
+	ver, err := semver.NewVersion(version)
 	if err != nil {
 		glog.Warningf("error while parsing version: %v", err)
 		return false
 	}
 
-	// Ignore prerelease versions as in go-livepeer we actually define post-release suffixes
+	// Ignore prerelease versions as in go-livepeer/ai-runner we actually define post-release suffixes
 	minVerNoSuffix, _ := minVer.SetPrerelease("")
 	verNoSuffix, _ := ver.SetPrerelease("")
 
@@ -486,8 +522,9 @@ func (c *Capabilities) ToNetCapabilities() *net.Capabilities {
 			models := make(map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint)
 			for modelID, modelConstraint := range constraints.Models {
 				models[modelID] = &net.Capabilities_CapabilityConstraints_ModelConstraint{
-					Warm:     modelConstraint.Warm,
-					Capacity: uint32(modelConstraint.Capacity),
+					Warm:          modelConstraint.Warm,
+					Capacity:      uint32(modelConstraint.Capacity),
+					RunnerVersion: modelConstraint.RunnerVersion,
 				}
 			}
 
@@ -530,7 +567,7 @@ func CapabilitiesFromNetCapabilities(caps *net.Capabilities) *Capabilities {
 		for capabilityInt, constraints := range caps.Constraints.PerCapability {
 			models := make(map[string]*ModelConstraint)
 			for modelID, modelConstraint := range constraints.Models {
-				models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity)}
+				models[modelID] = &ModelConstraint{Warm: modelConstraint.Warm, Capacity: int(modelConstraint.Capacity), RunnerVersion: modelConstraint.RunnerVersion}
 			}
 
 			coreCaps.constraints.perCapability[Capability(capabilityInt)] = &CapabilityConstraints{
@@ -762,4 +799,34 @@ func (bcast *Capabilities) MinVersionConstraint() string {
 		return bcast.constraints.minVersion
 	}
 	return ""
+}
+
+func (bcast *Capabilities) SetMinRunnerVersionConstraint(minVersionsJson string) {
+	type MinVersionEntry struct {
+		ModelID    string `json:"model_id"`
+		Pipeline   string `json:"pipeline"`
+		MinVersion string `json:"minVersion"`
+	}
+	var entries []MinVersionEntry
+	err := json.Unmarshal([]byte(minVersionsJson), &entries)
+	if err != nil {
+		clog.Errorf(context.Background(), "Cannot unmarshal minVersionJson: %v", err)
+		return
+	}
+	for _, e := range entries {
+		if e.ModelID == "" || e.Pipeline == "" || e.MinVersion == "" {
+			clog.Errorf(context.Background(), "Invalid minVersionJson entry: %v", e)
+			continue
+		}
+		c, err := PipelineToCapability(e.Pipeline)
+		if err != nil {
+			clog.Errorf(context.Background(), "Cannot convert pipeline to capability: %v", err)
+			continue
+		}
+		bcast.constraints.perCapability.SetRunnerVersion(c, e.ModelID, e.MinVersion)
+	}
+}
+
+func (bcast *Capabilities) MinRunnerVersionConstraint(cap Capability, modelID string) string {
+	return bcast.constraints.perCapability.GetRunnerVersion(cap, modelID)
 }

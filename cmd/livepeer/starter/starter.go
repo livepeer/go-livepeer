@@ -27,7 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/build"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -165,6 +165,10 @@ type LivepeerConfig struct {
 	TestOrchAvail              *bool
 	AIRunnerImage              *string
 	AIRunnerImageOverrides     *string
+	AIVerboseLogs              *bool
+	AIProcessingRetryTimeout   *time.Duration
+	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersion         *string
 	KafkaBootstrapServers      *string
 	KafkaUsername              *string
 	KafkaPassword              *string
@@ -172,6 +176,7 @@ type LivepeerConfig struct {
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
 	LivePaymentInterval        *time.Duration
+	LiveOutSegmentTimeout      *time.Duration
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -215,9 +220,14 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
+	defaultAIVerboseLogs := false
+	defaultAIProcessingRetryTimeout := 2 * time.Second
+	defaultAIRunnerContainersPerGPU := 1
+	defaultAIMinRunnerVersion := "[]"
 	defaultAIRunnerImageOverrides := ""
 	defaultLiveAIAuthWebhookURL := ""
 	defaultLivePaymentInterval := 5 * time.Second
+	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
 
 	// Onchain:
@@ -320,15 +330,20 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		TestTranscoder:       &defaultTestTranscoder,
 
 		// AI:
-		AIServiceRegistry:      &defaultAIServiceRegistry,
-		AIWorker:               &defaultAIWorker,
-		AIModels:               &defaultAIModels,
-		AIModelsDir:            &defaultAIModelsDir,
-		AIRunnerImage:          &defaultAIRunnerImage,
-		AIRunnerImageOverrides: &defaultAIRunnerImageOverrides,
-		LiveAIAuthWebhookURL:   &defaultLiveAIAuthWebhookURL,
-		LivePaymentInterval:    &defaultLivePaymentInterval,
-		GatewayHost:            &defaultGatewayHost,
+		AIServiceRegistry:        &defaultAIServiceRegistry,
+		AIWorker:                 &defaultAIWorker,
+		AIModels:                 &defaultAIModels,
+		AIModelsDir:              &defaultAIModelsDir,
+		AIRunnerImage:            &defaultAIRunnerImage,
+		AIVerboseLogs:            &defaultAIVerboseLogs,
+		AIProcessingRetryTimeout: &defaultAIProcessingRetryTimeout,
+		AIRunnerContainersPerGPU: &defaultAIRunnerContainersPerGPU,
+		AIMinRunnerVersion:       &defaultAIMinRunnerVersion,
+		AIRunnerImageOverrides:   &defaultAIRunnerImageOverrides,
+		LiveAIAuthWebhookURL:     &defaultLiveAIAuthWebhookURL,
+		LivePaymentInterval:      &defaultLivePaymentInterval,
+		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
+		GatewayHost:              &defaultGatewayHost,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -513,6 +528,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if err != nil {
 		glog.Errorf("Error creating livepeer node: %v", err)
 	}
+	n.AIProcesssingRetryTimeout = *cfg.AIProcessingRetryTimeout
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
@@ -635,6 +651,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			nodeType = lpmon.AIWorker
 		}
 		lpmon.InitCensus(nodeType, core.LivepeerVersion)
+	}
+
+	// Start Kafka producer
+	if *cfg.Monitor {
+		if err := startKafkaProducer(cfg); err != nil {
+			exit("Error while starting Kafka producer", err)
+		}
 	}
 
 	watcherErr := make(chan error)
@@ -1195,8 +1218,19 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		} else {
 			glog.Warningf("!!! No GPU discovered, using CPU for AIWorker !!!")
-			// Create 2 fake GPU instances, intended for the local non-GPU setup
-			gpus = []string{"emulated-0", "emulated-1"}
+			// Create 1 fake GPU instances, intended for the local non-GPU setup
+			gpus = []string{"emulated-0"}
+		}
+
+		if *cfg.AIRunnerContainersPerGPU > 1 {
+			// Transform GPU entries to allow running multiple Runner Containers on the same GPU
+			var colocatedGpus []string
+			for i := range *cfg.AIRunnerContainersPerGPU {
+				for _, g := range gpus {
+					colocatedGpus = append(colocatedGpus, fmt.Sprintf("colocated-%d-%s", i, g))
+				}
+			}
+			gpus = colocatedGpus
 		}
 
 		modelsDir := *cfg.AIModelsDir
@@ -1225,13 +1259,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		// Backwards compatibility for deprecated flags.
 		if *cfg.AIRunnerImage != "" {
-			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiWorkerImageOverrides instead")
+			glog.Warning("-aiRunnerImage flag is deprecated and will be removed in a future release. Please use -aiRunnerImageOverrides instead")
 			if imageOverrides.Default == "" {
 				imageOverrides.Default = *cfg.AIRunnerImage
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1263,9 +1297,15 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
-				// External containers do auto-scale; default to 1 or use provided capacity.
-				if config.URL != "" && config.Capacity != 0 {
-					modelConstraint.Capacity = config.Capacity
+				modelsCount := 1
+				if config.Capacity != 0 {
+					if config.URL == "" {
+						// Use multiple same configs if External Container is not used and capacity is set
+						modelsCount = config.Capacity
+					} else {
+						// External containers do auto-scale; default to 1 or use provided capacity.
+						modelConstraint.Capacity = config.Capacity
+					}
 				}
 
 				// Ensure the AI worker has the image needed to serve the job.
@@ -1274,16 +1314,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					glog.Errorf("Error ensuring AI worker image available for %v: %v", config.Pipeline, err)
 				}
 
-				if config.Warm || config.URL != "" {
-					// Register external container endpoint if URL is provided.
-					endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
+				for i := 0; i < modelsCount; i++ {
+					if config.Warm || config.URL != "" {
+						// Register external container endpoint if URL is provided.
+						endpoint := worker.RunnerEndpoint{URL: config.URL, Token: config.Token}
 
-					// Warm the AI worker container or register the endpoint.
-					if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
-						glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
-						return
+						// Warm the AI worker container or register the endpoint.
+						if err := n.AIWorker.Warm(ctx, config.Pipeline, config.ModelID, endpoint, config.OptimizationFlags); err != nil {
+							glog.Errorf("Error AI worker warming %v container: %v", config.Pipeline, err)
+							return
+						}
 					}
 				}
+
+				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
+				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
 
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {
@@ -1449,6 +1494,18 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		// Set up orchestrator discovery
+		if *cfg.OrchWebhookURL != "" {
+			whurl, err := validateURL(*cfg.OrchWebhookURL)
+			if err != nil {
+				glog.Exit("Error setting orch webhook URL ", err)
+			}
+			glog.Info("Using orchestrator webhook URL ", whurl)
+			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
+		} else if len(orchURLs) > 0 {
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+		}
+
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
 		// Right now we rely on the DBOrchestratorPoolCache constructor to do this. Consider separating the logic
 		// caching/polling from the logic for fetching orchestrators during discovery
@@ -1460,19 +1517,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				exit("Could not create orchestrator pool with DB cache: %v", err)
 			}
 
-			n.OrchestratorPool = dbOrchPoolCache
-		}
-
-		// Set up orchestrator discovery
-		if *cfg.OrchWebhookURL != "" {
-			whurl, err := validateURL(*cfg.OrchWebhookURL)
-			if err != nil {
-				glog.Exit("Error setting orch webhook URL ", err)
+			//if orchURLs is empty and webhook pool not used, use the DB orchestrator pool cache as orchestrator pool
+			if *cfg.OrchWebhookURL == "" && len(orchURLs) == 0 {
+				n.OrchestratorPool = dbOrchPoolCache
 			}
-			glog.Info("Using orchestrator webhook URL ", whurl)
-			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
-		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		if n.OrchestratorPool == nil {
@@ -1566,6 +1614,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.OrchMinLivepeerVersion != nil {
 		n.Capabilities.SetMinVersionConstraint(*cfg.OrchMinLivepeerVersion)
 	}
+	if cfg.AIMinRunnerVersion != nil {
+		n.Capabilities.SetMinRunnerVersionConstraint(*cfg.AIMinRunnerVersion)
+	}
 	if n.AIWorkerManager != nil {
 		// Set min version constraint to prevent incompatible workers.
 		n.Capabilities.SetMinVersionConstraint(core.LivepeerVersion)
@@ -1602,6 +1653,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
+	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
 	}
@@ -1677,13 +1729,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 		if n.NodeType == core.AIWorkerNode {
 			go server.RunAIWorker(n, orchURLs[0].Host, n.Capabilities.ToNetCapabilities())
-		}
-	}
-
-	// Start Kafka producer
-	if *cfg.Monitor {
-		if err := startKafkaProducer(cfg); err != nil {
-			exit("Error while starting Kafka producer", err)
 		}
 	}
 

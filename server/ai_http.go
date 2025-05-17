@@ -23,7 +23,7 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -97,13 +97,25 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+
+		streamID := r.Header.Get("streamID")
+		gatewayRequestID := r.Header.Get("requestID")
 		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "orch_request_id", requestID)
 
 		var req worker.GenLiveVideoToVideoJSONRequestBody
-		if err := jsonDecoder[worker.GenLiveVideoToVideoJSONRequestBody](&req, r); err != nil {
+		if err := jsonDecoder(&req, r); err != nil {
 			respondWithError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if req.GatewayRequestId != nil && *req.GatewayRequestId != "" {
+			gatewayRequestID = *req.GatewayRequestId
+		}
+		if req.StreamId != nil && *req.StreamId != "" {
+			streamID = *req.StreamId
+		}
+		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		orch := h.orchestrator
 		pipeline := "live-video-to-video"
@@ -209,7 +221,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 				}
 				reader := segment.Reader
 				if paymentProcessor != nil {
-					reader = paymentProcessor.process(segment.Reader)
+					reader = paymentProcessor.process(ctx, segment.Reader)
 				}
 				io.Copy(io.Discard, reader)
 			}
@@ -222,12 +234,14 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
-			ModelId:      req.ModelId,
-			PublishUrl:   publishUrlOverwrite,
-			SubscribeUrl: subscribeUrlOverwrite,
-			EventsUrl:    &eventsUrlOverwrite,
-			ControlUrl:   &controlUrlOverwrite,
-			Params:       req.Params,
+			ModelId:          req.ModelId,
+			PublishUrl:       publishUrlOverwrite,
+			SubscribeUrl:     subscribeUrlOverwrite,
+			EventsUrl:        &eventsUrlOverwrite,
+			ControlUrl:       &controlUrlOverwrite,
+			Params:           req.Params,
+			GatewayRequestId: &gatewayRequestID,
+			StreamId:         &streamID,
 		}
 
 		// Send request to the worker
@@ -252,6 +266,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
+			RequestId:    &requestID,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)

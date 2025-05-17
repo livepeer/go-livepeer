@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/livepeer/go-livepeer/clog"
 	"golang.org/x/sys/unix"
 )
@@ -36,45 +37,76 @@ type MediaSegmenter struct {
 
 func (ms *MediaSegmenter) RunSegmentation(ctx context.Context, in string, segmentHandler SegmentHandler) {
 	outFilePattern := filepath.Join(ms.Workdir, randomString()+"-%d"+outFileSuffix)
-	completionSignal := make(chan bool, 1)
-	procCtx, procCancel := context.WithCancel(context.Background()) // parent ctx is a short lived http request
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // the context should be cancelled before the end of the function, this is just a sanity measure
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
+	clog.Infof(ctx, "Starting segmentation for %s", outFilePattern)
+
+	// TODO processSegments needs to also be re-invoked after each retry;
+	//      processes that don't immediately fail are not fully retryable otherwise
+	//
+	// create first named pipe to preempt races between ffmpeg and processSegments
+	createNamedPipe(fmt.Sprintf(outFilePattern, 0))
 	go func() {
 		defer wg.Done()
-		defer procCancel()
-		processSegments(ctx, segmentHandler, outFilePattern, completionSignal)
+		defer cancel()
+		processSegments(ctx, segmentHandler, outFilePattern)
 	}()
 
 	retryCount := 0
 	for {
-		streamExists, err := ms.MediaMTXClient.StreamExists()
+		err := backoff.Retry(func() error {
+			streamExists, err := ms.MediaMTXClient.StreamExists()
+			if err != nil {
+				return fmt.Errorf("StreamExists check failed: %w", err)
+			}
+			if !streamExists {
+				clog.Errorf(ctx, "input stream does not exist")
+				return fmt.Errorf("input stream does not exist")
+			}
+			return nil
+		}, backoff.WithMaxRetries(newExponentialBackOff(), 3))
 		if err != nil {
-			clog.Errorf(ctx, "StreamExists check failed. err=%s", err)
-		}
-		if retryCount > 2 && !streamExists {
-			clog.Errorf(ctx, "Stopping segmentation, input stream does not exist. in=%s err=%s", in, err)
+			clog.Errorf(ctx, "Stopping segmentation in=%s err=%s", in, err)
 			break
 		}
-		cmd := exec.CommandContext(procCtx, "ffmpeg",
+		if retryCount > 0 {
+			time.Sleep(5 * time.Second)
+		}
+		clog.Infof(ctx, "Starting segmentation. in=%s retryCount=%d", in, retryCount)
+		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-i", in,
 			"-c:a", "copy",
 			"-c:v", "copy",
 			"-f", "segment",
 			outFilePattern,
 		)
+		// Change Cancel function to send a SIGTERM instead of SIGKILL. Still send a SIGKILL after 5s (WaitDelay) if it's stuck.
+		cmd.Cancel = func() error {
+			return cmd.Process.Signal(syscall.SIGTERM)
+		}
+		cmd.WaitDelay = 5 * time.Second
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			clog.Errorf(ctx, "Error receiving RTMP: %v", err)
-			clog.Infof(ctx, "Process output: %s", output)
-			return
+			clog.Errorf(ctx, "Error receiving RTMP: %v ffmpeg output: %s", err, output)
+			break
 		}
+		clog.Infof(ctx, "Segmentation stopped, will retry. retryCount=%d ffmpeg output: %s", retryCount, output)
 		retryCount++
-		time.Sleep(5 * time.Second)
 	}
-	completionSignal <- true
+	cancel()
 	clog.Infof(ctx, "sent completion signal, now waiting")
 	wg.Wait()
+}
+
+func newExponentialBackOff() *backoff.ExponentialBackOff {
+	backOff := backoff.NewExponentialBackOff()
+	backOff.InitialInterval = 500 * time.Millisecond
+	backOff.MaxInterval = 5 * time.Second
+	backOff.Reset()
+	return backOff
 }
 
 func createNamedPipe(pipeName string) {
@@ -177,7 +209,7 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 	}
 }
 
-func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFilePattern string, completionSignal <-chan bool) {
+func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFilePattern string) {
 
 	// things protected by the mutex mu
 	mu := &sync.Mutex{}
@@ -185,9 +217,9 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 	var currentSegment *os.File = nil
 	pipeCompletion := make(chan bool, 1)
 
-	// Start a goroutine to wait for the completion signal
+	// Start a goroutine to wait for the context to be cancelled
 	go func() {
-		<-completionSignal
+		<-ctx.Done()
 		mu.Lock()
 		defer mu.Unlock()
 		if currentSegment != nil {
@@ -201,7 +233,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 	}()
 
 	pipeNum := 0
-	createNamedPipe(fmt.Sprintf(outFilePattern, pipeNum))
+	// first named pipe should have been created already
 
 	for {
 		pipeName := fmt.Sprintf(outFilePattern, pipeNum)

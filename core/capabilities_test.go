@@ -719,6 +719,38 @@ func TestCapabilities_CapabilityConstraints(t *testing.T) {
 	assert.False(exists)
 }
 
+func TestRunnerVersion(t *testing.T) {
+	assert := assert.New(t)
+
+	c := &PerCapabilityConstraints{}
+
+	res := c.GetRunnerVersion(Capability_LiveVideoToVideo, "some-model")
+	assert.Equal("", res)
+
+	c.SetRunnerVersion(Capability_LiveVideoToVideo, "some-model", "1.2.3")
+	res = c.GetRunnerVersion(Capability_LiveVideoToVideo, "some-model")
+	assert.Equal("1.2.3", res)
+}
+
+func TestMinRunnerVersion(t *testing.T) {
+	assert := assert.New(t)
+
+	c := &Capabilities{constraints: Constraints{perCapability: PerCapabilityConstraints{}}}
+
+	// Nothing set
+	assert.Equal("", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "comfyui"))
+
+	// Set empty min version constraints
+	c.SetMinRunnerVersionConstraint("{}")
+	assert.Equal("", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "comfyui"))
+
+	// Set min versions
+	c.SetMinRunnerVersionConstraint(`[{"model_id": "comfyui", "pipeline": "live-video-to-video", "minVersion": "0.0.2"}, {"model_id": "noop", "pipeline": "live-video-to-video", "minVersion": "0.0.3"}]`)
+	assert.Equal("0.0.2", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "comfyui"))
+	assert.Equal("0.0.3", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "noop"))
+	assert.Equal("", c.MinRunnerVersionConstraint(Capability_LiveVideoToVideo, "other"))
+}
+
 func (c *Constraints) addCapabilityConstraints(cap Capability, constraint CapabilityConstraints) {
 	// the capability should be added by AddCapacity
 	for modelID, modelConstraint := range constraint.Models {

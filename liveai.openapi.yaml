@@ -1,0 +1,86 @@
+definitions:
+  server.smokeTestRequest:
+    properties:
+      duration_secs:
+        type: integer
+      stream_url:
+        type: string
+    type: object
+info:
+  contact: {}
+  title: Live Video-To-Video AI
+  version: 0.0.0
+paths:
+  /live/video-to-video/{stream}/start:
+    get:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Stream Key
+        in: path
+        name: stream
+        required: true
+        type: string
+      - description: MediaMTX source ID, used for calls back to MediaMTX
+        in: formData
+        name: source_id
+        required: true
+        type: string
+      - description: MediaMTX specific source type (webrtcSession/rtmpConn)
+        in: formData
+        name: source_type
+        required: true
+        type: string
+      - description: Queryparams from the original ingest URL
+        in: formData
+        name: query
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+      summary: Start Live Video
+  /live/video-to-video/{stream}/status:
+    get:
+      parameters:
+      - description: Stream ID
+        in: path
+        name: stream
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+      summary: Get Live Stream Status
+  /live/video-to-video/{stream}/update:
+    post:
+      parameters:
+      - description: Stream Key
+        in: path
+        name: stream
+        required: true
+        type: string
+      - description: update request
+        in: body
+        name: params
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+      summary: Update Live Stream
+  /live/video-to-video/smoketest:
+    put:
+      parameters:
+      - description: smoke test request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/server.smokeTestRequest'
+      responses:
+        "200":
+          description: OK
+      summary: Start Smoke Test
+swagger: "2.0"

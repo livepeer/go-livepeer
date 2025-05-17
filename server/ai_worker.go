@@ -1,5 +1,7 @@
 package server
 
+// ai_worker.go implements logic for orchestrators to spin up and send AI jobs to workers.
+
 import (
 	"bytes"
 	"context"
@@ -20,7 +22,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/golang/glog"
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -49,8 +51,9 @@ func (h *lphttp) RegisterAIWorker(req *net.RegisterAIWorkerRequest, stream net.A
 	if req.Capabilities == nil {
 		req.Capabilities = core.NewCapabilities(core.DefaultCapabilities(), nil).ToNetCapabilities()
 	}
+
 	// blocks until stream is finished
-	h.orchestrator.ServeAIWorker(stream, req.Capabilities)
+	h.orchestrator.ServeAIWorker(stream, req.Capabilities, req.Hardware)
 	return nil
 }
 
@@ -107,7 +110,8 @@ func runAIWorker(n *core.LivepeerNode, orchAddr string, caps *net.Capabilities) 
 	ctx, cancel := context.WithCancel(ctx)
 	// Silence linter
 	defer cancel()
-	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps})
+	hdw := workerHardwareToNetWorkerHardware(n.AIWorker.HardwareInformation())
+	r, err := c.RegisterAIWorker(ctx, &net.RegisterAIWorkerRequest{Secret: n.OrchSecret, Capabilities: caps, Hardware: hdw})
 	if err := checkAIWorkerError(err); err != nil {
 		glog.Error("Could not register aiworker to orchestrator ", err)
 		return err

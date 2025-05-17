@@ -278,10 +278,77 @@ func (w *wizard) vote() {
 	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
 }
 
+func (w *wizard) voteOnProposal() {
+	if w.offchain {
+		glog.Error("Cannot vote in 'offchain' mode")
+		return
+	}
+
+	fmt.Print("Enter the proposal ID you want to vote on -")
+	proposalID := w.readStringAndValidate(func(in string) (string, error) {
+		if _, ok := new(big.Int).SetString(in, 10); !ok {
+			return "", fmt.Errorf("invalid proposal ID id=%v", in)
+		}
+		return in, nil
+	})
+
+	var (
+		confirm = "n"
+		choice  = types.ProposalVoteChoice(-1)
+	)
+
+	for confirm == "n" {
+		w.showProposalVoteChoices()
+
+		for {
+			fmt.Printf("Enter the ID of the choice you want to vote for -")
+			choice = types.ProposalVoteChoice(w.readInt())
+			if choice.IsValid() {
+				break
+			}
+			fmt.Println("Must enter a valid ID")
+		}
+
+		fmt.Printf("Are you sure you want to vote \"%v\"? (y/n) -", choice.String())
+		confirm = w.readStringYesOrNo()
+	}
+
+	fmt.Printf("Do you want to provide a reason for your vote? (y/n) -")
+	provideReason := w.readStringYesOrNo()
+	var reason string
+	if provideReason == "y" {
+		fmt.Print("Enter your reason -")
+		reason = w.readString()
+	}
+
+	data := url.Values{
+		"proposalID": {proposalID},
+		"support":    {fmt.Sprintf("%v", int(choice))},
+		"reason":     {reason},
+	}
+
+	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/voteOnProposal", w.host, w.httpPort), data)
+
+	if !ok {
+		fmt.Printf("Error voting: %s\n", result)
+		return
+	}
+	fmt.Printf("\nVote success tx=0x%x\n", []byte(result))
+}
+
 func (w *wizard) showVoteChoices() {
 	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
 	fmt.Fprintln(wtr, "Identifier\tVoting Choices")
 	for _, choice := range types.VoteChoices {
+		fmt.Fprintf(wtr, "%v\t%v\n", int(choice), choice.String())
+	}
+	wtr.Flush()
+}
+
+func (w *wizard) showProposalVoteChoices() {
+	wtr := tabwriter.NewWriter(os.Stdout, 0, 8, 1, '\t', 0)
+	fmt.Fprintln(wtr, "Identifier\tVoting Choices")
+	for _, choice := range types.ProposalVoteChoices {
 		fmt.Fprintf(wtr, "%v\t%v\n", int(choice), choice.String())
 	}
 	wtr.Flush()

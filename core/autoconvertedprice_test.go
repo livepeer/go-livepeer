@@ -109,7 +109,7 @@ func TestAutoConvertedPrice_Update(t *testing.T) {
 	select {
 	case updatedPrice := <-priceUpdatedChan:
 		require.Equal(big.NewRat(5e16, 6), updatedPrice)  // 50 USD * 1/6000 USD/ETH
-		require.Equal(big.NewRat(5e16, 6), price.Value()) // must also udpate current value
+		require.Equal(big.NewRat(5e16, 6), price.Value()) // must also update current value
 	case <-time.After(time.Second):
 		t.Fatal("Expected price update not received")
 	}

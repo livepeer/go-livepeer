@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/livepeer/ai-worker/worker"
+	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/net"
@@ -636,4 +636,14 @@ func (a *stubAIWorker) HasCapacity(pipeline, modelID string) bool {
 func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string, modelID string) error {
 	a.Called++
 	return nil
+}
+
+func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
+	a.Called++
+	return []worker.HardwareInformation{}
+}
+
+func (a *stubAIWorker) Version() []worker.Version {
+	a.Called++
+	return []worker.Version{}
 }

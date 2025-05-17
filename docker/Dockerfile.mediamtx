@@ -1,3 +1,27 @@
+ARG MEDIAMTX_VERSION="1.11.2-livepeer-3"
+
+FROM golang:1.23 AS builder
+
+# Install any build dependencies (e.g., git)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	git \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Use this branch while we have changes waiting for upstream
+ARG MEDIAMTX_VERSION
+WORKDIR /app
+RUN git clone --branch v${MEDIAMTX_VERSION} https://github.com/livepeer/mediamtx.git .
+
+# Download Go dependencies
+RUN go mod download
+
+# Disable CGO
+ENV CGO_ENABLED=0
+
+# Generate code and build
+RUN go generate ./...
+RUN go build -o mediamtx
+
 FROM	ubuntu:24.04
 
 # we need curl in the image as it's later used in the runOnReady command
@@ -18,14 +42,10 @@ RUN	mkdir -p /var/log/ \
 
 COPY --chmod=0755	mediamtx-metrics.bash	/opt/mediamtx-metrics.bash
 
-ENV	MEDIAMTX_VERSION="1.9.3"
-
-ADD	"https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_amd64.tar.gz"	/opt/mediamtx/mediamtx.tar.gz
-
-RUN	tar xzf /opt/mediamtx/mediamtx.tar.gz -C /opt/mediamtx/ \
-	&& mkdir -p /usr/local/bin /etc/mediamtx/ \
-	&& mv /opt/mediamtx/mediamtx /usr/local/bin/mediamtx \
-	&& mv /opt/mediamtx/mediamtx.yml /etc/mediamtx/mediamtx.yml \
-	&& rm -rf /opt/mediamtx/
+# Copy artifacts from the builder stage
+ARG MEDIAMTX_VERSION
+ENV MEDIAMTX_VERSION=${MEDIAMTX_VERSION}
+COPY --from=builder /app/mediamtx /usr/local/bin/mediamtx
+COPY --from=builder /app/mediamtx.yml /etc/mediamtx/mediamtx.yml
 
 CMD	[ "/bin/bash", "-c", "declare -p >> /etc/environment && cron && /usr/local/bin/mediamtx" ]

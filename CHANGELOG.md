@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.8.5
+
+### Features ⚒
+
+#### General
+
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+- Realtime Video AI in a Box (@leszko, @victorges)
+- [#3246](https://github.com/livepeer/go-livepeer/pull/3246) Add hardware info from Orchestrators and expand network information available (@ad-astra-video)
+
+#### Gateway
+- [#3492](https://github.com/livepeer/go-livepeer/pull/3492) Improve the Gateway startup time (@leszko)
+
+#### Orchestrator
+
+- [#3522](https://github.com/livepeer/go-livepeer/pull/3522) Update install_ffmpeg.sh scripts (@hjpotter92)
+- [#3547](https://github.com/livepeer/go-livepeer/pull/3547) Add a limit of retries on the same session (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
+## v0.8.4
+
+### Features ⚒
+
+#### General
+
+- [#3411](https://github.com/livepeer/go-livepeer/pull/3411) Increase ticket params expiration from 10 (~2 min) to 40 (~8 min) (@leszko)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Broadcaster
+- [#3393](https://github.com/livepeer/go-livepeer/pull/3393) Improve AI Session Selection (@ad-astra-video)
+- [#3402](https://github.com/livepeer/go-livepeer/pull/3402) Add Min Initial Latency Selector (@leszko)
+
+#### Orchestrator
+
+- [#3345](https://github.com/livepeer/go-livepeer/pull/3345) Move `ai-worker` code to a local package
+- [#3399](https://github.com/livepeer/go-livepeer/pull/3399) Restart warm containers when they crash (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
+- [#3275](https://github.com/livepeer/go-livepeer/pull/3275) - Provide AI orchestrators with a way to vote on active proposal through the CLI.
+
+## V0.8.3
+
+### Features ⚒
+
+#### General
+- [#3365](https://github.com/livepeer/go-livepeer/pull/3336/) updated AI llm pipeline to new OpenAI compatible API format.
+
+#### Orchestrator
+
+- [#3284](https://github.com/livepeer/go-livepeer/pull/3284) deprecate `-aiRunnerImage` flag for `-aiRunnerImageOverrides`.
+
+### Bug Fixes 🐞
+
+#### CLI
+
+-   [#3364](https://github.com/livepeer/go-livepeer/pull/3364) fix orchestrator status json unmarshalling issue.
+
 ## v0.8.2
 
 ### Features ⚒
@@ -335,7 +398,7 @@ None
 
 #### Broadcaster
 
-- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Re-use a session as long as it passes the latency score threshold check (@yondonfu)
+- [#2666](https://github.com/livepeer/go-livepeer/pull/2666) Reuse a session as long as it passes the latency score threshold check (@yondonfu)
 
 #### Orchestrator
 - [#2639](https://github.com/livepeer/go-livepeer/pull/2639) Increase IdleTimeout for HTTP connections (@leszko)
@@ -945,7 +1008,7 @@ Thanks to everyone that submitted bug reports and assisted in testing!
 
 - [#1845](https://github.com/livepeer/go-livepeer/pull/1845) Staking actions with hints (@kyriediculous)
 - [#1873](https://github.com/livepeer/go-livepeer/pull/1873) Increase TicketParams expiration to 10 blocks (@kyriediculous)
-- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Re-use remote transcoders for a stream sessions (@reubenr0d)
+- [#1849](https://github.com/livepeer/go-livepeer/pull/1849) Reuse remote transcoders for a stream sessions (@reubenr0d)
 
 #### Transcoder
 

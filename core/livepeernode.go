@@ -119,8 +119,9 @@ type LivepeerNode struct {
 	Database *common.DB
 
 	// AI worker public fields
-	AIWorker        AI
-	AIWorkerManager *RemoteAIWorkerManager
+	AIWorker                  AI
+	AIWorkerManager           *RemoteAIWorkerManager
+	AIProcesssingRetryTimeout time.Duration
 
 	// Transcoder public fields
 	SegmentChans       map[ManifestID]SegmentChan
@@ -140,9 +141,10 @@ type LivepeerNode struct {
 	Sender pm.Sender
 
 	// Thread safety for config fields
-	mu             sync.RWMutex
-	StorageConfigs map[string]*transcodeConfig
-	storageMutex   *sync.RWMutex
+	mu                  sync.RWMutex
+	StorageConfigs      map[string]*transcodeConfig
+	storageMutex        *sync.RWMutex
+	NetworkCapabilities common.NetworkCapabilities
 	// Transcoder private fields
 	priceInfo        map[string]*AutoConvertedPrice
 	priceInfoForCaps map[string]CapabilityPrices
@@ -157,15 +159,16 @@ type LivepeerNode struct {
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
 	LivePaymentInterval        time.Duration
+	LiveOutSegmentTimeout      time.Duration
 
 	// Gateway
 	GatewayHost string
 }
 
 type LivePipeline struct {
+	RequestID   string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
-	EventsPub   *trickle.TricklePublisher
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
@@ -268,6 +271,19 @@ func (n *LivepeerNode) GetBasePriceForCap(b_eth_addr string, cap Capability, mod
 	return nil
 }
 
+func (n *LivepeerNode) GetCapsPrices(b_eth_addr string) *CapabilityPrices {
+	addr := strings.ToLower(b_eth_addr)
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	prices, ok := n.priceInfoForCaps[addr]
+	if !ok {
+		return nil
+	}
+
+	return &prices
+}
+
 // SetMaxFaceValue sets the faceValue upper limit for tickets received
 func (n *LivepeerNode) SetMaxFaceValue(maxfacevalue *big.Int) {
 	n.mu.Lock()
@@ -294,4 +310,23 @@ func (n *LivepeerNode) GetCurrentCapacity() int {
 	defer n.TranscoderManager.RTmutex.Unlock()
 	_, totalCapacity, _ := n.TranscoderManager.totalLoadAndCapacity()
 	return totalCapacity
+}
+
+func (n *LivepeerNode) UpdateNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.NetworkCapabilities.Orchestrators = orchNetworkCapabilities
+
+	if lpmon.Enabled {
+		lpmon.SendQueueEventAsync("network_capabilities", orchNetworkCapabilities)
+	}
+
+	return nil
+}
+
+func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilities {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.NetworkCapabilities.Orchestrators
 }

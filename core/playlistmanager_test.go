@@ -213,7 +213,7 @@ func TestPlaylists(t *testing.T) {
 
 	// Check getting a nonexistent media PL
 	if pl := c.GetHLSMediaPlaylist("nonexistent"); pl != nil {
-		t.Error("Recevied a nonexistent playlist ", pl)
+		t.Error("Received a nonexistent playlist ", pl)
 	}
 
 	// Insert one segment
