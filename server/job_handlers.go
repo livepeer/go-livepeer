@@ -443,10 +443,10 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 						return
 					default:
 						line := scanner.Text()
+						respChan <- line
 						if strings.Contains(line, "[DONE]") {
 							break
 						}
-						respChan <- scanner.Text()
 					}
 				}
 			}()
@@ -462,6 +462,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 						orchBalance = parseBalance(line)
 					}
 				case <-respCtx.Done():
+					respChan <- "data: [DONE]\n\n"
 					break proxyResp
 				}
 			}
