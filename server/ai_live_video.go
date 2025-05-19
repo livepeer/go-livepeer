@@ -89,6 +89,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				return
 			}
 			for {
+				startTime := time.Now()
 				currentSeq := slowOrchChecker.GetCount()
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
@@ -114,7 +115,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							},
 						})
 					}
-					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq, "took", time.Since(startTime))
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -614,8 +615,8 @@ func (s *SlowOrchChecker) GetCount() int {
 func LiveErrorEventSender(ctx context.Context, streamID string, event map[string]string) func(err error) {
 	return func(err error) {
 		GatewayStatus.StoreIfNotExists(streamID, "error", map[string]interface{}{
-			"error":      err.Error(),
-			"error_time": time.Now().UnixMilli(),
+			"error_message": err.Error(),
+			"error_time":    time.Now().UnixMilli(),
 		})
 
 		ev := maps.Clone(event)

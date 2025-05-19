@@ -224,7 +224,7 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 
 		trackStats = append(trackStats, TrackStats{
 			Type:            TrackType{t.Kind()},
-			Jitter:          s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate),
+			Jitter:          (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000,
 			PacketsLost:     s.InboundRTPStreamStats.PacketsLost,
 			PacketsReceived: s.InboundRTPStreamStats.PacketsReceived,
 			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
