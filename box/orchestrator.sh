@@ -3,6 +3,7 @@ set -e
 
 DOCKER=${DOCKER:-false}
 PIPELINE=${PIPELINE:-noop}
+AI_RUNNER_CONTAINERS_PER_GPU=${AI_RUNNER_CONTAINERS_PER_GPU:-1}
 
 DOCKER_HOSTNAME="172.17.0.1"
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -25,6 +26,7 @@ if [ "$DOCKER" = "false" ]; then
     -orchestrator \
     -aiWorker \
     -aiModels ./box/aiModels-${PIPELINE}.json \
+    -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${AI_MODELS_DIR_FLAG} \
     ${NVIDIA} \
     -serviceAddr localhost:8935 \
@@ -41,6 +43,7 @@ else
     -orchestrator \
     -aiWorker \
     -aiModels /opt/aiModels.json \
+    -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${AI_MODELS_DIR_FLAG} \
     -serviceAddr 127.0.0.1:8935 \
     -transcoder \
