@@ -148,7 +148,10 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
-	mw := media.NewMediaWriter()
+	mw := &media.RingBuffer{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
+	if err := mw.Initialize(); err != nil {
+		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
+	}
 
 	// read segments from trickle subscription
 	go func() {
