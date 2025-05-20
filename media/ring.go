@@ -2,7 +2,6 @@ package media
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"sync"
 )
@@ -21,30 +20,44 @@ import (
 	at the expected data rate.
 */
 
-type RingBuffer struct {
-	// Public API
-
+type RingBufferConfig struct {
 	// Ringbuffer size, in bytes
 	BufferLen int
+}
 
-	// Private API
+type RingBuffer struct {
 
 	// the buffer
 	buffer []byte
+
+	// buffer size
+	bufferLen int
+
 	// current write position within buffer
 	pos int
+
 	// total bytes written
 	nb int64
-	closed      bool
-	mu          *sync.Mutex
-	cond        *sync.Cond
+
+	// whether the ringbuffer is accepting writes
+	closed bool
+
+	// all accesses must be protected
+	mu   *sync.Mutex
+	cond *sync.Cond
 }
 
-func (rb *RingBuffer) Initialize() error {
-	rb.buffer = make([]byte, rb.BufferLen)
-	rb.mu = &sync.Mutex{}
-	rb.cond = sync.NewCond(rb.mu)
-	return nil
+func NewRingBuffer(config *RingBufferConfig) (*RingBuffer, error) {
+	if config.BufferLen <= 0 {
+		return nil, errors.New("ringbuffer: BufferLen must be more than zero")
+	}
+	mu := &sync.Mutex{}
+	return &RingBuffer{
+		bufferLen: config.BufferLen,
+		buffer:    make([]byte, config.BufferLen),
+		mu:        mu,
+		cond:      sync.NewCond(mu),
+	}, nil
 }
 
 func (rb *RingBuffer) Close() {
@@ -64,19 +77,19 @@ func (rb *RingBuffer) Write(data []byte) (int, error) {
 	if dataLen <= 0 {
 		return 0, nil
 	}
-	if dataLen > rb.BufferLen {
+	if dataLen > rb.bufferLen {
 		return 0, errors.New("data exceeds ringbuffer size")
 	}
 	start := rb.pos
 	end := start + dataLen
-	if end < rb.BufferLen {
+	if end < rb.bufferLen {
 		// contiguous write
 		copy(rb.buffer[start:end], data)
 	} else {
 		// split write
-		end = end % rb.BufferLen
-		copy(rb.buffer[start:rb.BufferLen], data[0:rb.BufferLen-start])
-		copy(rb.buffer[0:end], data[rb.BufferLen-start:])
+		end = end % rb.bufferLen
+		copy(rb.buffer[start:rb.bufferLen], data[:rb.bufferLen-start])
+		copy(rb.buffer[:end], data[rb.bufferLen-start:])
 	}
 	rb.pos = end
 	rb.nb += int64(dataLen)
@@ -85,7 +98,7 @@ func (rb *RingBuffer) Write(data []byte) (int, error) {
 }
 
 func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
-	start := int(head % int64(rb.BufferLen))
+	start := int(head % int64(rb.bufferLen))
 
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
@@ -116,7 +129,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 		return 0, errors.New("ringbuffer: reader outpaced writer")
 	}
 
-	if head < rb.nb-int64(rb.BufferLen) {
+	if head < rb.nb-int64(rb.bufferLen) {
 		// writer has lapped reader
 		//
 		// |------------------------------|
@@ -154,7 +167,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 	//
 
 	// distance from start to buffer edge
-	edge := rb.BufferLen - start
+	edge := rb.bufferLen - start
 
 	// copy as much as possible until
 	// the end of buffer or p is full

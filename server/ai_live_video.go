@@ -148,10 +148,18 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
-	mw := &media.RingBuffer{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
-	if err := mw.Initialize(); err != nil {
+	// Set up output buffers and ffmpeg processes
+	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
+	mw, err := media.NewRingBuffer(&rbc)
+	if err != nil {
 		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
 	}
+	if params.liveParams.outputRTMPURL != "" {
+		// External output ffmpeg process
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, mw.MakeReader(), params)
+	}
+	// MediaMTX Output ffmpeg process
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, mw.MakeReader(), params)
 
 	// read segments from trickle subscription
 	go func() {
@@ -233,13 +241,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		}
 	}()
 
-	// Studio Output ffmpeg process
-	if params.liveParams.outputRTMPURL != "" {
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, mw.MakeReader(), params)
-	}
-
-	// MediaMTX Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, mw.MakeReader(), params)
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {

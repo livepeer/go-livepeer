@@ -68,9 +68,15 @@ func (tw *throttledWriter) Write(p []byte) (int, error) {
 func TestRingbuffer_RW(t *testing.T) {
 	assert := assert.New(t)
 
+	// invalid configuration
+	rb, err := NewRingBuffer(&RingBufferConfig{})
+	assert.Nil(rb)
+	assert.Equal(errors.New("ringbuffer: BufferLen must be more than zero"), err)
+
 	// --- initialize ring buffer ---
-	rb := &RingBuffer{BufferLen: 100}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: 100}
+	rb, err = NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader := rb.MakeReader()
 	lateReader := rb.MakeReader()
 
@@ -110,8 +116,9 @@ func TestRingbuffer_RW(t *testing.T) {
 	assert.Equal("hello, world and how are ", string(out[:n]))
 
 	// check lapping on a boundary
-	rb = &RingBuffer{BufferLen: 4}
-	rb.Initialize()
+	rbc = &RingBufferConfig{BufferLen: 4}
+	rb, err = NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader = rb.MakeReader()
 	n, err = rb.Write([]byte("yyyy"))
 	assert.Equal(4, n)
@@ -152,8 +159,9 @@ func TestRingbuffer_RW(t *testing.T) {
 
 func TestRingBuffer_RW_Block(t *testing.T) {
 	assert := assert.New(t)
-	rb := &RingBuffer{BufferLen: 4}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: 4}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader := rb.MakeReader()
 	//next := make(chan bool)
 	//next2 := make(chan bool)
@@ -199,8 +207,9 @@ func TestRingbuffer_ConcurrentRW(t *testing.T) {
 	assert := assert.New(t)
 
 	// --- initialize ring buffer ---
-	rb := &RingBuffer{BufferLen: bufferLen}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: bufferLen}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
 
 	// prepare reader hashes
 	readerHashes := make([][]byte, numReaders)
@@ -250,8 +259,9 @@ func TestRingbuffer_ConcurrentRW(t *testing.T) {
 func TestRingbuffer_LostData(t *testing.T) {
 	assert := assert.New(t)
 
-	rb := &RingBuffer{BufferLen: 4}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: 4}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader := rb.MakeReader()
 	// write 3 bytes
 	n, err := rb.Write([]byte("abc"))
@@ -267,8 +277,8 @@ func TestRingbuffer_LostData(t *testing.T) {
 	assert.ErrorContains(err, "truncated data")
 
 	// check lapped 2 times where pos < read head
-	rb = &RingBuffer{BufferLen: 4}
-	rb.Initialize()
+	rb, err = NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader = rb.MakeReader()
 	// need to split the writes
 	_, _ = rb.Write([]byte("zzzz"))
@@ -285,8 +295,8 @@ func TestRingbuffer_LostData(t *testing.T) {
 	assert.ErrorContains(err, "truncated data")
 
 	// check pos == read head but lapped >2 times
-	rb = &RingBuffer{BufferLen: 3}
-	rb.Initialize()
+	rb, err = NewRingBuffer(rbc)
+	assert.Nil(err)
 	reader = rb.MakeReader()
 	n, err = rb.Write([]byte{1})
 	assert.Equal(1, n)
@@ -311,13 +321,19 @@ func TestRingbuffer_LostData(t *testing.T) {
 	n, err = reader.Read(buf3)
 	assert.Zero(n)
 	assert.ErrorContains(err, "truncated data")
+
+	// simulate reader outpacing writer (should never happen in practice)
+	reader.nb = rb.nb + 1
+	n, err = reader.Read(buf3)
+	assert.Zero(n)
+	assert.ErrorContains(err, "reader outpaced writer")
 }
 
-// 2–4) contiguous reads: start < pos, test p < avail, p == avail, p > avail
 func TestRingbuffer_ContiguousReads(t *testing.T) {
 	assert := assert.New(t)
-	rb := &RingBuffer{BufferLen: 8}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: 8}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
 	r := rb.MakeReader()
 
 	// write 5 bytes
@@ -346,12 +362,12 @@ func TestRingbuffer_ContiguousReads(t *testing.T) {
 	assert.Equal(io.EOF, err)
 }
 
-// 5–7) wraparound reads: start > pos, test p < edge, p == edge, p > edge
 func TestRingbuffer_WraparoundReads(t *testing.T) {
 	assert := assert.New(t)
 
-	rb := &RingBuffer{BufferLen: 8}
-	rb.Initialize()
+	rbc := &RingBufferConfig{BufferLen: 8}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
 
 	// prepare to read first 5 bytes
 	buf5 := make([]byte, 5)
@@ -385,8 +401,8 @@ func TestRingbuffer_WraparoundReads(t *testing.T) {
 	assert.Equal("Z", string(buf5[:n]))
 
 	// check reader wraparound + read all available data
-	rb = &RingBuffer{BufferLen: 8}
-	rb.Initialize()
+	rb, err = NewRingBuffer(rbc)
+	assert.Nil(err)
 	n, err = rb.Write([]byte("12345"))
 	assert.Equal(5, n)
 	assert.Nil(err)
