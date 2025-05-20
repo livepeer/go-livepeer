@@ -440,6 +440,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				for scanner.Scan() {
 					select {
 					case <-respCtx.Done():
+						respChan <- "data: [DONE]\n\n"
 						return
 					default:
 						line := scanner.Text()
@@ -451,7 +452,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				}
 			}()
 
-			var orchBalance *big.Rat
+			orchBalance := big.NewRat(0, 1)
 		proxyResp:
 			for {
 				select {
@@ -461,8 +462,11 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 					if strings.Contains(line, "balance:") {
 						orchBalance = parseBalance(line)
 					}
+					if strings.Contains(line, "[DONE]") {
+						orchBalance = parseBalance(line)
+						break proxyResp
+					}
 				case <-respCtx.Done():
-					respChan <- "data: [DONE]\n\n"
 					break proxyResp
 				}
 			}
