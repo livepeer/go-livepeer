@@ -35,8 +35,6 @@ type RingBuffer struct {
 	pos int
 	// total bytes written
 	nb int64
-	// wraparound count
-	wraparounds int
 	closed      bool
 	mu          *sync.Mutex
 	cond        *sync.Cond
@@ -82,73 +80,50 @@ func (rb *RingBuffer) Write(data []byte) (int, error) {
 	}
 	rb.pos = end
 	rb.nb += int64(dataLen)
-	rb.wraparounds = int(rb.nb / int64(rb.BufferLen))
 	rb.cond.Broadcast()
 	return dataLen, nil
 }
 
-func LostDataErr(err error) error {
-	return fmt.Errorf("ringbuffer: truncated data: %w", err)
-}
-
-func (rb *RingBuffer) readFrom(p []byte, head int) (int, error) {
-	start := head % rb.BufferLen
-	wraparounds := head / rb.BufferLen
+func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
+	start := int(head % int64(rb.BufferLen))
 
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	for rb.pos == start {
-		if rb.wraparounds == wraparounds {
-			if rb.closed {
-				return 0, io.EOF
-			}
-			// writer and reader in the same position
-			// both waiting for more data
-			//
-			// |------------------------------|
-			//         ^
-			//       start, wrap=N
-			//      rb.pos, wrap=N
-			//
-			rb.cond.Wait()
-			continue
+	for rb.nb == head {
+		if rb.closed {
+			return 0, io.EOF
 		}
-		if rb.wraparounds != wraparounds+1 {
-			// writer has lapped reader
-			// |------------------------------|
-			//         ^
-			//       start, wrap=N
-			//      rb.pos, wrap>=N+2
-			//
-			return 0, LostDataErr(errors.New("pos == start"))
-		}
-		// writer is a full lap ahead of reader
+		// writer and reader in the same position
+		// both waiting for more data
+		//
 		// |------------------------------|
 		//         ^
-		//       start, wrap=N
-		//      rb.pos, wrap=N+1
+		//       head
+		//      rb.nb
 		//
-		break
+		rb.cond.Wait()
+		continue
 	}
 
-	if rb.pos > start && rb.wraparounds != wraparounds {
+	if rb.nb < head {
+		// reader is somehow ahead of writer
+		//
+		// |------------------------------|
+		//          ^          ^
+		//        rb.nb       head
+		//
+		return 0, errors.New("ringbuffer: reader outpaced writer")
+	}
+
+	if head < rb.nb-int64(rb.BufferLen) {
 		// writer has lapped reader
 		//
 		// |------------------------------|
-		//    ^                  ^
-		//   start, wrap=N    rb.pos, wrap=N+1
+		//      ^               ^
+		//   head, wrap=N     rb.nb, wrap>=N+1
 		//
-		return 0, LostDataErr(errors.New("pos > start"))
-	}
-	if rb.pos < start && rb.wraparounds != wraparounds+1 {
-		// writer has lapped reader (or reader is in a weird state somehow)
-		//
-		// |------------------------------|
-		//    ^                  ^
-		//   rb.pos, wrap=N+2   start, wrap=N
-		//
-		return 0, LostDataErr(errors.New("pos < start"))
+		return 0, errors.New("ringbuffer: truncated data")
 	}
 
 	pos := rb.pos
@@ -157,7 +132,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int) (int, error) {
 	pAvail := len(p)
 
 	if pos > start {
-		// contiguous read - on the same wraparound
+		// contiguous read - no wraparound
 		//
 		// |------------------------------|
 		//    ^                  ^
@@ -216,18 +191,18 @@ func (rb *RingBuffer) MakeReader() *RingBufferReader {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 	return &RingBufferReader{
-		rb:  rb,
-		pos: rb.pos,
+		rb: rb,
+		nb: rb.nb,
 	}
 }
 
 type RingBufferReader struct {
-	rb  *RingBuffer
-	pos int
+	rb *RingBuffer
+	nb int64
 }
 
 func (rbr *RingBufferReader) Read(p []byte) (int, error) {
-	n, err := rbr.rb.readFrom(p, rbr.pos)
-	rbr.pos += n
+	n, err := rbr.rb.readFrom(p, rbr.nb)
+	rbr.nb += int64(n)
 	return n, err
 }

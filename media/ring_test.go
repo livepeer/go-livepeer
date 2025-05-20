@@ -264,7 +264,7 @@ func TestRingbuffer_LostData(t *testing.T) {
 	buf3 := make([]byte, 3)
 	n, err = reader.Read(buf3)
 	assert.Zero(n)
-	assert.ErrorContains(err, "pos > start")
+	assert.ErrorContains(err, "truncated data")
 
 	// check lapped 2 times where pos < read head
 	rb = &RingBuffer{BufferLen: 4}
@@ -282,7 +282,7 @@ func TestRingbuffer_LostData(t *testing.T) {
 	assert.Nil(err)
 	n, err = reader.Read(buf3)
 	assert.Zero(n)
-	assert.ErrorContains(err, "pos < start")
+	assert.ErrorContains(err, "truncated data")
 
 	// check pos == read head but lapped >2 times
 	rb = &RingBuffer{BufferLen: 3}
@@ -310,7 +310,7 @@ func TestRingbuffer_LostData(t *testing.T) {
 	assert.Nil(err)
 	n, err = reader.Read(buf3)
 	assert.Zero(n)
-	assert.ErrorContains(err, "pos == start")
+	assert.ErrorContains(err, "truncated data")
 }
 
 // 2–4) contiguous reads: start < pos, test p < avail, p == avail, p > avail
