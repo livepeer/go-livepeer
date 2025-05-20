@@ -98,6 +98,8 @@ func (rb *RingBuffer) Write(data []byte) (int, error) {
 }
 
 func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
+
+	// starting position for the reader within the buffer
 	start := int(head % int64(rb.bufferLen))
 
 	rb.mu.Lock()
@@ -119,7 +121,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 		continue
 	}
 
-	if rb.nb < head {
+	if head > rb.nb {
 		// reader is somehow ahead of writer
 		//
 		// |------------------------------|
@@ -139,6 +141,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 		return 0, errors.New("ringbuffer: truncated data")
 	}
 
+	// current writer position within the buffer
 	pos := rb.pos
 
 	// bytes available in p
@@ -196,7 +199,7 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 		remainder = pAvail
 	}
 
-	n += copy(p[n:], rb.buffer[0:remainder])
+	n += copy(p[n:], rb.buffer[:remainder])
 	return n, nil
 }
 
