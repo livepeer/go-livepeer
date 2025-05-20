@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Start multiple processes and output their logs to the console
 gateway() {
