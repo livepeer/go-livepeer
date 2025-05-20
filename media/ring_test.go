@@ -2,6 +2,7 @@ package media
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -119,6 +120,16 @@ func TestRingbuffer_RW(t *testing.T) {
 	assert.Equal(4, n)
 	assert.Nil(err)
 	assert.Equal("yyyy", string(out[:n]))
+
+	// check zero length writes
+	n, err = rb.Write([]byte{})
+	assert.Zero(n)
+	assert.Nil(err)
+
+	// check excessive writes
+	n, err = rb.Write([]byte("12345"))
+	assert.Zero(n)
+	assert.Equal(errors.New("data exceeds ringbuffer size"), err)
 
 	// check writes to a closed ringbuffer
 	n, err = rb.Write([]byte("zz"))
@@ -367,7 +378,7 @@ func TestRingbuffer_WraparoundReads(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal("FGWXY", string(buf5))
 
-	// read remainder for completenes
+	// read remainder for completeness
 	n, err = reader.Read(buf5)
 	assert.Equal(1, n)
 	assert.Nil(err)

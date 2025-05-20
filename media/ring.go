@@ -156,8 +156,6 @@ func (rb *RingBuffer) readFrom(p []byte, head int) (int, error) {
 	// bytes available in p
 	pAvail := len(p)
 
-	// TODO test rb.pos == start, should block
-
 	if pos > start {
 		// contiguous read - on the same wraparound
 		//
