@@ -71,7 +71,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
-			suspendOrchestrator(params)
+			suspendOrchestrator(ctx, params)
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -258,7 +258,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
-				suspendOrchestrator(params)
+				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
