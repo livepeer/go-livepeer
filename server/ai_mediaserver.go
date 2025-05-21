@@ -583,7 +583,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 
-			liveParams: liveRequestParams{
+			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				outputRTMPURL:          outputURL,
 				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
@@ -625,12 +625,74 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		_, err = processAIRequest(ctx, params, req)
-		if err != nil {
-			stopPipeline(err)
-		}
+		processStream(ctx, params, req)
 		close(orchSelection)
 	})
+}
+
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		clog.Errorf(ctx, "Error processing AI Request: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
+
+	if err = startProcessing(ctx, params, resp); err != nil {
+		clog.Errorf(ctx, "Error starting processing: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
+}
+
+func startOutput(ctx context.Context, params aiRequestParams) (*multiWriter, error) {
+	rMediaMTX, wMediaMTX, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err)
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err)
+	}
+	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
+	// Studio Output ffmpeg process
+	if params.liveParams.outputRTMPURL != "" {
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
+	}
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
+	return mWriter, nil
+}
+
+func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
+	resp := res.(*worker.GenLiveVideoToVideoResponse)
+
+	host := params.liveParams.sess.Transcoder()
+	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid publish URL: %w", err)
+	}
+	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid control URL: %w", err)
+	}
+	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid events URL: %w", err)
+	}
+	if resp.JSON200.ManifestId != nil {
+		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+	}
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+
+	startControlPublish(ctx, control, params)
+	startTricklePublish(ctx, pub, params, params.liveParams.sess)
+	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
+	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+	return nil
 }
 
 func getRemoteHost(remoteAddr string) (string, error) {
@@ -877,7 +939,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				os:          drivers.NodeStorage.NewSession(requestID),
 				sessManager: ls.AISessionManager,
 
-				liveParams: liveRequestParams{
+				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					outputRTMPURL:          outputURL,
 					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
@@ -900,10 +962,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				GatewayRequestId: &requestID,
 				StreamId:         &streamID,
 			}
-			_, err := processAIRequest(ctx, params, req)
-			if err != nil {
-				stopPipeline(err)
-			}
+
+			processStream(ctx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
