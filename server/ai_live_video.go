@@ -150,6 +150,10 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
 		return
 	}
+	if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
+		return
+	}
 	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
 	penalty := 5
 	clog.Infof(ctx, "suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), penalty)
