@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -70,6 +71,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
+			suspendOrchestrator(ctx, params)
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -89,6 +91,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				return
 			}
 			for {
+				startTime := time.Now()
 				currentSeq := slowOrchChecker.GetCount()
 				if seq != currentSeq {
 					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
@@ -114,7 +117,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							},
 						})
 					}
-					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq)
+					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq, "took", time.Since(startTime))
 					return
 				}
 				if errors.Is(err, trickle.StreamNotFoundErr) {
@@ -141,7 +144,25 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
-func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession, onFistSegment func()) {
+func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
+	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
+	if err != nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
+		return
+	}
+	if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
+		return
+	}
+	// Remove the session from the current pool
+	sel.Remove(params.liveParams.sess)
+	sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
+	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
+	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
+	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
+}
+
+func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
@@ -150,24 +171,25 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 	// Set up output buffers and ffmpeg processes
 	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
-	mw, err := media.NewRingBuffer(&rbc)
+	outWriter, err := media.NewRingBuffer(&rbc)
 	if err != nil {
 		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
 	}
 	if params.liveParams.outputRTMPURL != "" {
 		// External output ffmpeg process
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, mw.MakeReader(), params)
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, outWriter.MakeReader(), params)
 	}
 	// MediaMTX Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, mw.MakeReader(), params)
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, outWriter.MakeReader(), params)
 
 	// read segments from trickle subscription
 	go func() {
+		defer outWriter.Close()
+
 		var err error
 		firstSegment := true
 		var segmentsReceived int64
 
-		defer mw.Close()
 		retries := 0
 		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
 		const retryPause = 300 * time.Millisecond
@@ -208,17 +230,33 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 			var n int64
 			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(segment, mw, params.liveParams.outSegmentTimeout)
+				n, err = copySegmentWithTimeout(segment, outWriter, params.liveParams.outSegmentTimeout)
 			} else {
-				n, err = copySegment(segment, mw)
+				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
+				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
 			if firstSegment {
 				firstSegment = false
-				onFistSegment()
+				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
+				if monitor.Enabled {
+					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+						"type":        "gateway_receive_first_processed_segment",
+						"timestamp":   time.Now().UnixMilli(),
+						"stream_id":   params.liveParams.streamID,
+						"pipeline_id": params.liveParams.pipelineID,
+						"request_id":  params.liveParams.requestID,
+						"orchestrator_info": map[string]interface{}{
+							"address": params.liveParams.sess.Address(),
+							"url":     params.liveParams.sess.Transcoder(),
+						},
+					})
+				}
+				clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 			}
 			segmentsReceived += 1
 			if segmentsReceived == 3 && monitor.Enabled {
@@ -240,7 +278,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
-
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
@@ -529,6 +566,16 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 		}
 	}()
+}
+
+func (a aiRequestParams) inputStreamExists() bool {
+	if a.node == nil {
+		return false
+	}
+	a.node.LiveMu.RLock()
+	defer a.node.LiveMu.RUnlock()
+	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	return ok && p.RequestID == a.liveParams.requestID
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments
