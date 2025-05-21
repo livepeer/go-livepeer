@@ -682,6 +682,9 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
+	if resp.JSON200.ManifestId != nil {
+		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
 	startControlPublish(ctx, control, params)
