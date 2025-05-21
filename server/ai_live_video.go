@@ -156,7 +156,7 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 	}
 	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
 	penalty := 5
-	clog.Infof(ctx, "suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), penalty)
+	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), penalty)
 	sel.suspender.suspend(params.liveParams.sess.Transcoder(), penalty)
 }
 
