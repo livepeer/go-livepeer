@@ -71,6 +71,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
+			suspendOrchestrator(ctx, params)
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -141,6 +142,24 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		}(thisSeq)
 	})
 	clog.Infof(ctx, "trickle pub")
+}
+
+func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
+	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
+	if err != nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
+		return
+	}
+	if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
+		return
+	}
+	// Remove the session from the current pool
+	sel.Remove(params.liveParams.sess)
+	sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
+	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
+	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
+	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 }
 
 type multiWriter struct {
@@ -245,6 +264,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
+				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}

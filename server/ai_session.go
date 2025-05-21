@@ -16,6 +16,8 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
+const aiLiveVideoToVideoPenalty = 5
+
 type AISession struct {
 	*BroadcastSession
 
@@ -316,7 +318,12 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 		// try refresh.
 		if sel.SelectorIsEmpty() {
 			clog.Infof(ctx, "refreshing sessions, no orchestrators in pools")
-			for i := 0; i < sel.penalty; i++ {
+			penalty := sel.penalty
+			if sel.cap == core.Capability_LiveVideoToVideo {
+				// For AI Live Video to Video, we don't store penalty in the selector
+				penalty = aiLiveVideoToVideoPenalty
+			}
+			for i := 0; i < penalty; i++ {
 				sel.suspender.signalRefresh()
 			}
 		}
