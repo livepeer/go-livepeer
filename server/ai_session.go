@@ -157,6 +157,7 @@ func (pool *AISessionPool) Remove(sess *BroadcastSession) {
 	defer pool.mu.Unlock()
 
 	delete(pool.sessMap, sess.Transcoder())
+	pool.selector.Remove(sess)
 	pool.inUseSess = removeSessionFromList(pool.inUseSess, sess)
 
 	// If this method is called assume that the orch should be suspended
