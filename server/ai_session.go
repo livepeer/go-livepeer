@@ -467,6 +467,48 @@ func (sel *AISessionSelector) getSessions(ctx context.Context) ([]*BroadcastSess
 	return selectOrchestrator(ctx, sel.node, streamParams, numOrchs, sel.suspender, common.ScoreAtLeast(0), func(sessionID string) {})
 }
 
+type noopSus struct{}
+
+func (n noopSus) Suspended(orch string) int {
+	return 0
+}
+
+func (c *AISessionManager) refreshOrchCapacity() {
+	pool := c.node.OrchestratorPool
+	if pool == nil {
+		return
+	}
+	go func() {
+		refreshInterval := 10 * time.Second
+		ticker := time.NewTicker(refreshInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				clog.Info(context.TODO(), "refreshing orchestrator capacity")
+				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
+				capabilityConstraints := core.PerCapabilityConstraints{
+					core.Capability_LiveVideoToVideo: {
+						Models: map[string]*core.ModelConstraint{
+							"noop": {
+								Warm:          false,
+								RunnerVersion: c.node.Capabilities.MinRunnerVersionConstraint(core.Capability_LiveVideoToVideo, "noop"),
+							},
+						},
+					},
+				}
+				caps := core.NewCapabilities(append(core.DefaultCapabilities(), core.Capability_LiveVideoToVideo), nil)
+				caps.SetPerCapabilityConstraints(capabilityConstraints)
+				caps.SetMinVersionConstraint(c.node.Capabilities.MinVersionConstraint())
+
+				pool.GetOrchestrators(ctx, pool.Size(), noopSus{}, caps, common.ScoreAtLeast(0))
+
+				cancel()
+			}
+		}
+	}()
+}
+
 type AISessionManager struct {
 	node      *core.LivepeerNode
 	selectors map[string]*AISessionSelector
@@ -475,12 +517,14 @@ type AISessionManager struct {
 }
 
 func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionManager {
-	return &AISessionManager{
+	sessionManager := &AISessionManager{
 		node:      node,
 		selectors: make(map[string]*AISessionSelector),
 		mu:        sync.Mutex{},
 		ttl:       ttl,
 	}
+	sessionManager.refreshOrchCapacity()
+	return sessionManager
 }
 
 func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, modelID string) (*AISession, error) {
