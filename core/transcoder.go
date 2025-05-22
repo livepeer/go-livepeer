@@ -48,7 +48,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	defer recoverFromPanic(&retErr)
 
 	// Validate input duration
-	if md.Duration.Seconds() > maxAllowedSegmentDuration.Seconds() || md.Duration.Seconds() <= 0 {
+	if md.Duration.Seconds() > maxAllowedSegmentDuration.Seconds() || md.Duration.Seconds() < 0 {
 		return nil, fmt.Errorf("invalid segment duration: %v seconds", md.Duration)
 	}
 

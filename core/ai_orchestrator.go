@@ -1127,7 +1127,6 @@ func (n *LivepeerNode) transcodeFrames(ctx context.Context, sessionID string, ur
 			outProfile,
 		},
 		AuthToken: &net.AuthToken{SessionId: sessionID},
-		Duration:  1,
 	}
 
 	los := drivers.NodeStorage.NewSession(sessionID)
