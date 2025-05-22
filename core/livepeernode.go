@@ -156,6 +156,7 @@ type LivepeerNode struct {
 	LiveMu        *sync.RWMutex
 
 	MediaMTXApiPassword        string
+	MediaMTXHost               string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
 	LivePaymentInterval        time.Duration

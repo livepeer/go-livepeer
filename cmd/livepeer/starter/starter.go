@@ -173,6 +173,7 @@ type LivepeerConfig struct {
 	KafkaUsername              *string
 	KafkaPassword              *string
 	KafkaGatewayTopic          *string
+	MediaMTXHost               *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
 	LivePaymentInterval        *time.Duration
@@ -1645,6 +1646,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		default:
 			exit("Unsupported scheme in -metadataUri: %s", uri.Scheme)
 		}
+	}
+	if cfg.MediaMTXHost != nil {
+		n.MediaMTXHost = *cfg.MediaMTXHost
 	}
 	if cfg.MediaMTXApiPassword != nil {
 		n.MediaMTXApiPassword = *cfg.MediaMTXApiPassword

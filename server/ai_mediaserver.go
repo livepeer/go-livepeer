@@ -425,11 +425,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
-		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		var remoteHost = ls.LivepeerNode.MediaMTXHost
+		if remoteHost == "" {
+			var err error
+			// If MediaMTXHost is not set, use the remote host from the request
+			remoteHost, err = getRemoteHost(r.RemoteAddr)
 		if err != nil {
-			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
-			http.Error(w, "Could not find callback host", http.StatusBadRequest)
+				clog.Errorf(ctx, "Could not determine remote host: %s", err.Error())
+				http.Error(w, "Could not determine remote host", http.StatusBadRequest)
 			return
+			}
 		}
 		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
 
