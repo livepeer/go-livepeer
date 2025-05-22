@@ -53,7 +53,7 @@ func TestTranscode(t *testing.T) {
 	ffmpeg.InitFFmpeg()
 
 	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken(), Duration: 1}
 
 	// Check nil transcoder.
 	tr, err := n.sendToTranscodeLoop(context.TODO(), md, ss)
@@ -135,7 +135,7 @@ func TestTranscodeLoop_GivenNoSegmentsPastTimeout_CleansSegmentChan(t *testing.T
 	n, _ := NewLivepeerNode(seth, tmp, nil)
 	ffmpeg.InitFFmpeg()
 	ss := StubSegment()
-	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken(), Duration: 1}
 	n.Transcoder = NewLocalTranscoder(tmp)
 
 	transcodeLoopTimeout = 100 * time.Millisecond
@@ -170,7 +170,7 @@ func TestTranscodeLoop_CleanupForBroadcasterEndTranscodingSession(t *testing.T) 
 	n, _ := NewLivepeerNode(&eth.StubClient{}, tmp, nil)
 	n.Transcoder = NewLocalTranscoder(tmp)
 
-	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken()}
+	md := &SegTranscodingMetadata{Profiles: videoProfiles, AuthToken: stubAuthToken(), Duration: 1}
 	mid := ManifestID(md.AuthToken.SessionId)
 
 	ss := StubSegment()

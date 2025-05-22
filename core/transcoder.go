@@ -22,6 +22,8 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+const maxAllowedSegmentDuration = 30 * time.Second
+
 type Transcoder interface {
 	Transcode(ctx context.Context, md *SegTranscodingMetadata) (*TranscodeData, error)
 	EndTranscodingSession(sessionId string)
@@ -46,8 +48,7 @@ func (lt *LocalTranscoder) Transcode(ctx context.Context, md *SegTranscodingMeta
 	defer recoverFromPanic(&retErr)
 
 	// Validate input duration
-	maxAllowedDuration := 30 * time.Second
-	if md.Duration.Seconds() > maxAllowedDuration.Seconds() || md.Duration.Seconds() <= 0 {
+	if md.Duration.Seconds() > maxAllowedSegmentDuration.Seconds() || md.Duration.Seconds() <= 0 {
 		return nil, fmt.Errorf("invalid segment duration: %v seconds", md.Duration)
 	}
 

@@ -16,7 +16,7 @@ import (
 )
 
 func stubMetadata(sess string, profile ...ffmpeg.VideoProfile) *SegTranscodingMetadata {
-	return &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: sess}, Profiles: profile}
+	return &SegTranscodingMetadata{AuthToken: &net.AuthToken{SessionId: sess}, Profiles: profile, Duration: 1}
 }
 
 func TestLocalTranscoder(t *testing.T) {
@@ -331,7 +331,7 @@ func TestTranscode_DurationValidation(t *testing.T) {
 	}{
 		{
 			name:        "Long Duration",
-			duration:    601 * time.Second, // 10 minutes and 1 second
+			duration:    31 * time.Second, // Greater than 30 seconds
 			expectedErr: "invalid segment duration",
 		},
 		{
@@ -347,6 +347,11 @@ func TestTranscode_DurationValidation(t *testing.T) {
 		{
 			name:        "Valid Duration",
 			duration:    1 * time.Second, // 1 second
+			expectedErr: "",
+		},
+		{
+			name:        "Maximum Allowed Duration",
+			duration:    30 * time.Second, // Exactly 30 seconds
 			expectedErr: "",
 		},
 	}
