@@ -448,7 +448,7 @@ func profilesToTranscodeOptions(workDir string, accel ffmpeg.Acceleration, md *S
 	opts := make([]ffmpeg.TranscodeOptions, len(profiles))
 	for i := range profiles {
 		o := ffmpeg.TranscodeOptions{
-			Oname:        fmt.Sprintf("%s/out_%s.tempfile", workDir, common.RandName()),
+			Oname:        fmt.Sprintf("%s/out_%s_%d_%s.tempfile", workDir, string(md.ManifestID), md.Seq, common.RandName()),
 			Profile:      profiles[i],
 			Accel:        accel,
 			AudioEncoder: ffmpeg.ComponentOptions{Name: "copy"},

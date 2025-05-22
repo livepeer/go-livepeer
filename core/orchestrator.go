@@ -670,7 +670,8 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// we may still end up doing work multiple times. But this is OK for now.
 
 	//Assume d is in the right format, write it to disk
-	inName := common.RandName() + ".tempfile"
+
+	inName := fmt.Sprintf("%s_%d_%s.tempfile", string(md.ManifestID), md.Seq, common.RandName())
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {

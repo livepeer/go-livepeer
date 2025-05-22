@@ -182,7 +182,7 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		}
 	}
 	// Create input file from segment. Removed after transcoding done
-	fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
+	fname = path.Join(n.WorkDir, fmt.Sprintf("%s_%d_%s.tempfile", md.ManifestID, md.Seq, common.RandName()))
 	if err = ioutil.WriteFile(fname, data, 0600); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
@@ -329,7 +329,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	
+
 	_, exists := h.node.TranscoderManager.CheckTranscoderSecret(creds)
 	if exists == false {
 		glog.Error("Invalid shared secret")
