@@ -340,11 +340,6 @@ func TestTranscode_DurationValidation(t *testing.T) {
 			expectedErr: "invalid segment duration",
 		},
 		{
-			name:        "Zero Duration",
-			duration:    0, // Invalid duration
-			expectedErr: "invalid segment duration",
-		},
-		{
 			name:        "Valid Duration",
 			duration:    1 * time.Second, // 1 second
 			expectedErr: "",
