@@ -464,9 +464,9 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 						orchBalance = parseBalance(line)
 					}
 					if strings.Contains(line, "[DONE]") {
-						orchBalance = parseBalance(line)
 						break proxyResp
 					}
+
 				case <-respCtx.Done():
 					break proxyResp
 				}
