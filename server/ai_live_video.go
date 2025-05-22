@@ -71,6 +71,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
+			suspendOrchestrator(ctx, params)
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -143,54 +144,43 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	clog.Infof(ctx, "trickle pub")
 }
 
-type multiWriter struct {
-	ctx         context.Context
-	writers     []io.Writer
-	isErrLogged bool
-}
-
-func (t *multiWriter) Write(p []byte) (n int, err error) {
-	success := false
-	for _, w := range t.writers {
-		bytesWritten, err := w.Write(p)
-		if err != nil {
-			if !t.isErrLogged {
-				clog.Errorf(t.ctx, "multiWriter error %v", err)
-				t.isErrLogged = true
-			}
-		} else {
-			success = true
-			n = bytesWritten
-		}
+func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
+	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
+	if err != nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
+		return
 	}
-	if !success {
-		// all writes failed, return the error
-		return 0, err
+	if sel == nil || sel.suspender == nil || params.liveParams == nil || params.liveParams.sess == nil || params.liveParams.sess.OrchestratorInfo == nil {
+		clog.Warningf(ctx, "Error suspending orchestrator: selector or suspender is nil")
+		return
 	}
-
-	return n, nil
-}
-
-func (t *multiWriter) Close() {
-	for _, w := range t.writers {
-		if closer, ok := w.(io.Closer); ok {
-			closer.Close()
-		}
-	}
+	// Remove the session from the current pool
+	sel.Remove(params.liveParams.sess)
+	sel.warmPool.selector.Remove(params.liveParams.sess.BroadcastSession)
+	// We do selection every 6 min, so it effectively means the Orchestrator won't be selected for the next 30 min (unless there is no other O available)
+	clog.Infof(ctx, "Suspending orchestrator %s with penalty %d", params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
+	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	outWriter, err := startOutput(ctx, params)
-	if err != nil {
-		clog.Errorf(ctx, "Error creating output writer: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
+
+	// Set up output buffers and ffmpeg processes
+	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
+	outWriter, err := media.NewRingBuffer(&rbc)
+	if err != nil {
+		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
+	}
+	if params.liveParams.outputRTMPURL != "" {
+		// External output ffmpeg process
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, outWriter.MakeReader(), params)
+	}
+	// MediaMTX Output ffmpeg process
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, outWriter.MakeReader(), params)
 
 	// read segments from trickle subscription
 	go func() {
@@ -245,6 +235,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
+				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
 				return
 			}
@@ -289,10 +280,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 }
 
-func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params aiRequestParams) {
+func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
 	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
 	defer func() {
-		r.Close()
 		if rec := recover(); rec != nil {
 			// panicked, so shut down the stream and handle it
 			err, ok := rec.(error)

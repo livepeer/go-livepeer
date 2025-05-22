@@ -699,7 +699,7 @@ func (w *Worker) Warm(ctx context.Context, pipeline string, modelID string, endp
 		Endpoint:         endpoint,
 		containerTimeout: externalContainerTimeout,
 	}
-	rc, err := NewRunnerContainer(ctx, cfg, endpoint.URL)
+	rc, _, err := NewRunnerContainer(ctx, cfg, endpoint.URL)
 	if err != nil {
 		return err
 	}
