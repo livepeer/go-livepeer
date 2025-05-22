@@ -56,6 +56,9 @@ var maxInputBitrate = 8000 * 1000 // 8000kbps
 // Max Segment Size in bytes (cap reading HTTP response body at this size)
 var MaxSegSize = int(MaxDuration.Seconds()) * (maxInputBitrate / 8)
 
+// Max Encoder Proile Bitrate (bits/sec)
+var MaxEncoderProfileBitrate = 70 * 1000 * 1000 // 70mbps
+
 const maxInt64 = int64(math.MaxInt64)
 
 // using a scaleFactor of 1000 for orchestrator prices
