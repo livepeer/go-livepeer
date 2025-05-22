@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -681,11 +682,21 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	if remoteAddr == "" {
 		return "", errors.New("remoteAddr is empty")
 	}
-	split := strings.Split(remoteAddr, ":")
-	if len(split) < 1 {
-		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+
+	// Handle IPv6 addresses by splitting on last colon
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", fmt.Errorf("couldn't parse remote host: %w", err)
 	}
-	return split[0], nil
+
+	// Clean up IPv6 brackets if present
+	host = strings.Trim(host, "[]")
+
+	if host == "::1" {
+		return "127.0.0.1", nil
+	}
+
+	return host, nil
 }
 
 // @Summary Update Live Stream
