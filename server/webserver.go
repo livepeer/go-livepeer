@@ -86,6 +86,7 @@ func (s *LivepeerServer) cliWebServerHandlers(bindAddr string) *http.ServeMux {
 	mux.Handle("/ethAddr", ethAddrHandler(client))
 	mux.Handle("/tokenBalance", tokenBalanceHandler(client))
 	mux.Handle("/ethBalance", ethBalanceHandler(client))
+	mux.Handle("/transferEth", mustHaveFormParams(transferEthHandler(client), "to", "amount"))
 	mux.Handle("/transferTokens", mustHaveFormParams(transferTokensHandler(client), "to", "amount"))
 	mux.Handle("/requestTokens", requestTokensHandler(client))
 	mux.Handle("/signMessage", mustHaveFormParams(signMessageHandler(client), "message"))
