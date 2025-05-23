@@ -387,7 +387,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		PortBindings: nat.PortMap{
 			containerPort: []nat.PortBinding{
 				{
-					HostIP:   "0.0.0.0",
+					HostIP:   "127.0.0.1",
 					HostPort: containerHostPort,
 				},
 			},
