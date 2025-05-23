@@ -369,20 +369,20 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LivePipelines[stream]; exists {
+	if control, exists := params.node.LiveSessions[stream]; exists {
 		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
 		control.ControlPub.Close()
 		// TODO better solution than allowing existing streams to stomp over one another
 	}
 
-	params.node.LivePipelines[stream] = &core.LivePipeline{
+	params.node.LiveSessions[stream] = &core.LiveSession{
 		ControlPub:  controlPub,
 		StopControl: stop,
 		RequestID:   params.liveParams.requestID,
 	}
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
-		logCurrentLiveSessions(params.node.LivePipelines)
+		monitor.AICurrentLiveSessions(len(params.node.LiveSessions))
+		logCurrentLiveSessions(params.node.LiveSessions)
 	}
 
 	// send a keepalive periodically to keep both ends of the connection alive
@@ -574,7 +574,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 	}
 	a.node.LiveMu.RLock()
 	defer a.node.LiveMu.RUnlock()
-	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	p, ok := a.node.LiveSessions[a.liveParams.stream]
 	return ok && p.RequestID == a.liveParams.requestID
 }
 

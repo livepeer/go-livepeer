@@ -719,7 +719,7 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		}
 		ls.LivepeerNode.LiveMu.RLock()
 		defer ls.LivepeerNode.LiveMu.RUnlock()
-		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		p, ok := ls.LivepeerNode.LiveSessions[stream]
 		if !ok {
 			// Stream not found
 			http.Error(w, "Stream not found", http.StatusNotFound)
@@ -1022,16 +1022,16 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	stream := params.liveParams.stream
 	node := params.node
 	node.LiveMu.Lock()
-	pub, ok := node.LivePipelines[stream]
+	pub, ok := node.LiveSessions[stream]
 	if !ok {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
 	}
-	delete(node.LivePipelines, stream)
+	delete(node.LiveSessions, stream)
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(node.LivePipelines))
-		logCurrentLiveSessions(node.LivePipelines)
+		monitor.AICurrentLiveSessions(len(node.LiveSessions))
+		logCurrentLiveSessions(node.LiveSessions)
 	}
 	node.LiveMu.Unlock()
 
@@ -1043,7 +1043,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 }
 
-func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+func logCurrentLiveSessions(pipelines map[string]*core.LiveSession) {
 	var streams []string
 	for k := range pipelines {
 		streams = append(streams, k)
