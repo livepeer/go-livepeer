@@ -4,7 +4,7 @@ GO_BUILD_DIR?="./"
 MOCKGEN=go run github.com/golang/mock/mockgen
 ABIGEN=go run github.com/ethereum/go-ethereum/cmd/abigen
 
-all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench
+all: net/lp_rpc.pb.go net/redeemer.pb.go net/redeemer_mock.pb.go core/test_segment.go eth/contracts/chainlink/AggregatorV3Interface.go livepeer livepeer_cli livepeer_router livepeer_bench check_inputs
 
 net/lp_rpc.pb.go: net/lp_rpc.proto
 	protoc -I=. --go_out=. --go-grpc_out=. $^
@@ -95,7 +95,7 @@ ifeq ($(BUILDOS),linux)
 endif
 
 
-.PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router docker swagger
+.PHONY: ai_worker_codegen livepeer livepeer_bench livepeer_cli livepeer_router check_inputs docker swagger
 
 # Git reference to download the OpenAPI spec from, defaults to `main` branch.
 # It can also be a simple git commit hash. e.g. `make ai_worker_codegen REF=c19289d`
@@ -118,6 +118,9 @@ livepeer_bench:
 
 livepeer_router:
 	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/livepeer_router/*.go
+
+check_inputs:
+	GO111MODULE=on CGO_ENABLED=1 CC="$(cc)" CGO_CFLAGS="$(cgo_cflags)" CGO_LDFLAGS="$(cgo_ldflags) ${CGO_LDFLAGS}" go build -o $(GO_BUILD_DIR) -ldflags="$(ldflags)" cmd/check_inputs/*.go
 
 docker:
 	docker buildx build --build-arg='BUILD_TAGS=mainnet,experimental' -f docker/Dockerfile .
