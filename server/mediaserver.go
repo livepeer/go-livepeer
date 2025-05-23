@@ -828,6 +828,10 @@ func (s *LivepeerServer) HandlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mediaFormat.DurSecs > int64(common.MaxDuration) {
+		errorOut(http.StatusUnprocessableEntity, "Duration too long url=%s", r.URL)
+		return
+	}
 	var vcodec *ffmpeg.VideoCodec
 	if len(mediaFormat.Vcodec) == 0 {
 		clog.Warningf(ctx, "Couldn't detect input video stream codec")

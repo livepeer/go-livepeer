@@ -11,6 +11,7 @@ import (
 	"math/big"
 	gonet "net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -412,6 +413,24 @@ func verifySegCreds(ctx context.Context, orch Orchestrator, segCreds string, bro
 	if err != nil {
 		return nil, ctx, err
 	}
+
+	//verify segment metadata is acceptable
+	if md.Duration > common.MaxDuration {
+		clog.Errorf(ctx, "Invalid duration for segment %s: must be less than %v", md.ManifestID, common.MaxDuration)
+		return nil, ctx, errDuration
+	}
+	for profile := range md.Profiles {
+		bitrate, err := strconv.Atoi(md.Profiles[profile].Bitrate)
+		if err != nil {
+			return nil, ctx, err
+		}
+		//limit to bitrate of 70Mbps
+		if bitrate >= common.MaxEncoderProfileBitrate {
+			clog.Errorf(ctx, "Invalid bitrate for profile %s: must be less than 70 Mbps", md.Profiles[profile].Name)
+			return nil, ctx, errProfile
+		}
+	}
+
 	ctx = clog.AddManifestID(ctx, string(md.ManifestID))
 
 	if !orch.VerifySig(broadcaster, string(md.Flatten()), segData.Sig) {
