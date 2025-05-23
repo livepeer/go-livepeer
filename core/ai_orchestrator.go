@@ -398,18 +398,43 @@ type AIJobRequestData struct {
 }
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
-func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
+func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	var hasCapacity bool
 	if orch.node.AIWorker != nil {
 		// confirm local worker has capacity
-		return orch.node.AIWorker.HasCapacity(pipeline, modelID)
+		err := orch.node.ReserveAICapability(pipeline, modelID)
+		if err == nil {
+			hasCapacity = true
+		}
 	} else {
 		// remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
 		if orch.node.AIWorkerManager != nil {
-			return orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
-		} else {
-			return false
+			hasCapacity = orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
 		}
 	}
+
+	if !hasCapacity {
+		return false, nil
+	} else {
+		releaseCapacity := make(chan bool)
+		// TODO: add capacity tracking to live-video-to-video pipeline with
+		if pipeline == "live-video-to-video" {
+			orch.node.ReleaseAICapability(pipeline, modelID)
+			close(releaseCapacity)
+			return true, nil
+		}
+
+		go func() {
+			<-releaseCapacity
+			orch.node.ReleaseAICapability(pipeline, modelID)
+			glog.Infof("Released AI capacity for pipeline=%s model_id=%s", pipeline, modelID)
+			close(releaseCapacity)
+
+		}()
+
+		return true, releaseCapacity
+	}
+
 }
 
 func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
@@ -541,6 +566,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToImage(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -574,6 +600,7 @@ func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
 		} else {
@@ -607,6 +634,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToImage(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -651,6 +679,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToVideo(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
 		} else {
@@ -695,6 +724,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.Upscale(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -876,6 +906,7 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToSpeech(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
 		} else {
