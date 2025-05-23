@@ -997,14 +997,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_container_in_use",
 			Measure:     census.mAIContainersInUse,
 			Description: "Number of containers currently used for AI processing",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_container_idle",
 			Measure:     census.mAIContainersIdle,
 			Description: "Number of containers currently available for AI processing",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
@@ -1976,12 +1976,20 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 	}
 }
 
-func AIContainersInUse(currentContainersInUse int) {
-	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(currentContainersInUse)))
+func AIContainersInUse(currentContainersInUse int, model, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		census.mAIContainersInUse.M(int64(currentContainersInUse))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
-func AIContainersIdle(currentContainersIdle int) {
-	stats.Record(census.ctx, census.mAIContainersIdle.M(int64(currentContainersIdle)))
+func AIContainersIdle(currentContainersIdle int, model, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		census.mAIContainersIdle.M(int64(currentContainersIdle))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 func AIGPUsIdle(currentGPUsIdle int) {

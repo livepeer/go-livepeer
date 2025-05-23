@@ -474,6 +474,10 @@ type stubAIWorker struct {
 	Err    error
 }
 
+func (a *stubAIWorker) GetLiveAICapacity() worker.Capacity {
+	return worker.Capacity{}
+}
+
 func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	a.Called++
 	if a.Err != nil {

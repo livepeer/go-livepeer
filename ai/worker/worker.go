@@ -90,6 +90,10 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return hardware
 }
 
+func (w *Worker) GetLiveAICapacity() Capacity {
+	return w.manager.GetCapacity()
+}
+
 func (w *Worker) Version() []Version {
 	var version []Version
 	for _, rc := range w.externalContainers {
