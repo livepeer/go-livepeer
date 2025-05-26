@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -645,24 +646,6 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	}
 }
 
-func startOutput(ctx context.Context, params aiRequestParams) (*multiWriter, error) {
-	rMediaMTX, wMediaMTX, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err)
-	}
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err)
-	}
-	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
-	// Studio Output ffmpeg process
-	if params.liveParams.outputRTMPURL != "" {
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
-	}
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
-	return mWriter, nil
-}
-
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
 	resp := res.(*worker.GenLiveVideoToVideoResponse)
 
@@ -699,11 +682,21 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	if remoteAddr == "" {
 		return "", errors.New("remoteAddr is empty")
 	}
-	split := strings.Split(remoteAddr, ":")
-	if len(split) < 1 {
-		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+
+	// Handle IPv6 addresses by splitting on last colon
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", fmt.Errorf("couldn't parse remote host: %w", err)
 	}
-	return split[0], nil
+
+	// Clean up IPv6 brackets if present
+	host = strings.Trim(host, "[]")
+
+	if host == "::1" {
+		return "127.0.0.1", nil
+	}
+
+	return host, nil
 }
 
 // @Summary Update Live Stream

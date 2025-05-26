@@ -162,54 +162,25 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 	sel.suspender.suspend(params.liveParams.sess.Transcoder(), aiLiveVideoToVideoPenalty)
 }
 
-type multiWriter struct {
-	ctx         context.Context
-	writers     []io.Writer
-	isErrLogged bool
-}
-
-func (t *multiWriter) Write(p []byte) (n int, err error) {
-	success := false
-	for _, w := range t.writers {
-		bytesWritten, err := w.Write(p)
-		if err != nil {
-			if !t.isErrLogged {
-				clog.Errorf(t.ctx, "multiWriter error %v", err)
-				t.isErrLogged = true
-			}
-		} else {
-			success = true
-			n = bytesWritten
-		}
-	}
-	if !success {
-		// all writes failed, return the error
-		return 0, err
-	}
-
-	return n, nil
-}
-
-func (t *multiWriter) Close() {
-	for _, w := range t.writers {
-		if closer, ok := w.(io.Closer); ok {
-			closer.Close()
-		}
-	}
-}
-
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
-	outWriter, err := startOutput(ctx, params)
-	if err != nil {
-		clog.Errorf(ctx, "Error creating output writer: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
 	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
+
+	// Set up output buffers and ffmpeg processes
+	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
+	outWriter, err := media.NewRingBuffer(&rbc)
+	if err != nil {
+		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
+	}
+	if params.liveParams.outputRTMPURL != "" {
+		// External output ffmpeg process
+		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, outWriter.MakeReader(), params)
+	}
+	// MediaMTX Output ffmpeg process
+	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, outWriter.MakeReader(), params)
 
 	// read segments from trickle subscription
 	go func() {
@@ -309,10 +280,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 }
 
-func ffmpegOutput(ctx context.Context, outputUrl string, r io.ReadCloser, params aiRequestParams) {
+func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
 	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
 	defer func() {
-		r.Close()
 		if rec := recover(); rec != nil {
 			// panicked, so shut down the stream and handle it
 			err, ok := rec.(error)
