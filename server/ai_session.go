@@ -328,6 +328,10 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 			}
 		}
 
+		if sel.cap == core.Capability_LiveVideoToVideo {
+			return sel.SelectorIsEmpty()
+		}
+
 		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
 		// 1/2 the total # of orchs that can be queried during discovery
 		if sel.warmPool.Size()+sel.coldPool.Size() < int(math.Min(maxRefreshSessionsThreshold, math.Ceil(float64(discoveryPoolSize)/2.0))) {
