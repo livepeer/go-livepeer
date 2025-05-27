@@ -1329,6 +1329,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 				// For now, we assume that the version served by the orchestrator is the lowest from all remote workers
 				modelConstraint.RunnerVersion = worker.LowestVersion(n.AIWorker.Version(), config.Pipeline, config.ModelID)
+				glog.Infof("Model %v has runner version %v", config.ModelID, modelConstraint.RunnerVersion)
 
 				// Show warning if people set OptimizationFlags but not Warm.
 				if len(config.OptimizationFlags) > 0 && !config.Warm {

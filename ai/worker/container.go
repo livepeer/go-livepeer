@@ -99,7 +99,7 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 		glog.Error("Error getting runner version", version.StatusCode(), string(version.Body))
 	} else {
 		runnerVersion = version.JSON200
-		glog.Info("Started runner with version", runnerVersion, runnerVersion.Version)
+		glog.Info("Started runner with version", runnerVersion, " version=", runnerVersion.Version, " body=", string(version.Body))
 	}
 
 	return &RunnerContainer{
