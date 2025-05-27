@@ -93,10 +93,14 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	}
 	runnerVersion := &Version{Pipeline: cfg.Pipeline, ModelId: cfg.ModelID, Version: "0.0.0"}
 	version, err := client.VersionWithResponse(ctx)
-	if err == nil {
+	if err != nil {
+		glog.Error("Error getting runner version", err)
+	} else if version.StatusCode() != http.StatusOK {
+		glog.Error("Error getting runner version", version.StatusCode(), string(version.Body))
+	} else {
 		runnerVersion = version.JSON200
+		glog.Info("Started runner with version", runnerVersion, runnerVersion.Version)
 	}
-	glog.Info("Started runner version", runnerVersion, runnerVersion.Version)
 
 	return &RunnerContainer{
 		RunnerContainerConfig: cfg,
