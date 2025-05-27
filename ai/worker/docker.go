@@ -279,6 +279,18 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 	return err == nil
 }
 
+func (m *DockerManager) Version() []Version {
+	var version []Version
+	for _, rc := range m.containers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+	return version
+}
+
 // isImageAvailable checks if the specified image is available locally.
 func (m *DockerManager) isImageAvailable(ctx context.Context, pipeline string, modelID string) bool {
 	imageName, err := m.getContainerImageName(pipeline, modelID)

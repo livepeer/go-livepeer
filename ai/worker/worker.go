@@ -102,15 +102,7 @@ func (w *Worker) Version() []Version {
 		}
 	}
 
-	for _, rc := range w.manager.containers {
-		if rc.Version != nil {
-			version = append(version, *rc.Version)
-		} else {
-			version = append(version, Version{})
-		}
-	}
-
-	return version
+	return append(version, w.manager.Version()...)
 }
 
 func (w *Worker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
