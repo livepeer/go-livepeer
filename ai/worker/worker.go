@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	docker "github.com/docker/docker/client"
-	"github.com/golang/glog"
 )
 
 // EnvValue unmarshals JSON booleans as strings for compatibility with env variables.
@@ -94,7 +93,6 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 func (w *Worker) Version() []Version {
 	var version []Version
 	for _, rc := range w.externalContainers {
-		glog.Infof("External container %v has version %v", rc.Name, rc.Version)
 		if rc.Version != nil {
 			version = append(version, *rc.Version)
 		} else {

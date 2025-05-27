@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/deepmap/oapi-codegen/v2/pkg/securityprovider"
-	"github.com/golang/glog"
 )
 
 type RunnerContainerType int

@@ -377,14 +377,7 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 	if err := checkLiveVideoToVideoCapacity(orch, req); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
 	}
-	orchInfo, err := orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
-	if err != nil {
-		glog.Error("Error getting orchestrator info with caps", err)
-		return nil, err
-	}
-	infoRaw, _ := json.Marshal(orchInfo)
-	glog.Info("Orchestrator info with caps orchInfo=", string(infoRaw))
-	return orchInfo, nil
+	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
 }
 
 func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorRequest) interface{} {
@@ -396,19 +389,15 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
 		pipeline := "live-video-to-video"
 		for modelID := range liveCap.GetModels() {
-			hasCapacity := orch.CheckAICapacity(pipeline, modelID)
-			glog.Info("Checked capacity for pipeline", pipeline, "modelID", modelID, "hasCapacity", hasCapacity)
-			if hasCapacity {
+			if orch.CheckAICapacity(pipeline, modelID) {
 				// It has capacity for at least one of the requested models
 				return nil
 			}
 		}
 		// No capacity for any requested model
-		glog.Info("No capacity for live-video-to-video")
 		return core.ErrOrchCap
 	}
 	// For no constraints or AI Jobs (non live-video-to-video), we don't want to check capacity
-	glog.Info("No live-video-to-video capacity check")
 	return nil
 }
 
