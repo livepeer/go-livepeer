@@ -16,7 +16,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const aiLiveVideoToVideoPenalty = 5
+const aiLiveVideoToVideoPenalty = 0
 
 type AISession struct {
 	*BroadcastSession
@@ -326,6 +326,10 @@ func (sel *AISessionSelector) Select(ctx context.Context) *AISession {
 			for i := 0; i < penalty; i++ {
 				sel.suspender.signalRefresh()
 			}
+		}
+
+		if sel.cap == core.Capability_LiveVideoToVideo {
+			return sel.SelectorIsEmpty()
 		}
 
 		// Refresh if the # of sessions across warm and cold pools falls below the smaller of the maxRefreshSessionsThreshold and
