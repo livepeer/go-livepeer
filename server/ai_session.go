@@ -485,9 +485,19 @@ func (n noopSus) Suspended(orch string) int {
 }
 
 func (c *AISessionManager) refreshOrchCapacity() {
+	// TODO move to config
+	modelIDs := []string{"comfyui", "noop"}
 	pool := c.node.OrchestratorPool
 	if pool == nil {
 		return
+	}
+
+	modelsReq := make(map[string]*core.ModelConstraint)
+	for _, modelID := range modelIDs {
+		modelsReq[modelID] = &core.ModelConstraint{
+			Warm:          false,
+			RunnerVersion: c.node.Capabilities.MinRunnerVersionConstraint(core.Capability_LiveVideoToVideo, modelID),
+		}
 	}
 	go func() {
 		refreshInterval := 10 * time.Second
@@ -499,14 +509,7 @@ func (c *AISessionManager) refreshOrchCapacity() {
 				clog.Info(context.TODO(), "refreshing orchestrator capacity")
 				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
 				capabilityConstraints := core.PerCapabilityConstraints{
-					core.Capability_LiveVideoToVideo: {
-						Models: map[string]*core.ModelConstraint{
-							"noop": {
-								Warm:          false,
-								RunnerVersion: c.node.Capabilities.MinRunnerVersionConstraint(core.Capability_LiveVideoToVideo, "noop"),
-							},
-						},
-					},
+					core.Capability_LiveVideoToVideo: {Models: modelsReq},
 				}
 				caps := core.NewCapabilities(append(core.DefaultCapabilities(), core.Capability_LiveVideoToVideo), nil)
 				caps.SetPerCapabilityConstraints(capabilityConstraints)
