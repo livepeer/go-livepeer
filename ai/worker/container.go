@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/deepmap/oapi-codegen/v2/pkg/securityprovider"
+	"github.com/golang/glog"
 )
 
 type RunnerContainerType int
@@ -95,6 +96,7 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	if err == nil {
 		runnerVersion = version.JSON200
 	}
+	glog.Info("Started runner version", runnerVersion, runnerVersion.Version)
 
 	return &RunnerContainer{
 		RunnerContainerConfig: cfg,
