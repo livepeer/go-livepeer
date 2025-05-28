@@ -32,13 +32,13 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-const jobRequestHdr = "Livepeer-Job"
-const jobEthAddressHdr = "Livepeer-Job-Eth-Address"
-const jobCapabilityHdr = "Livepeer-Job-Capability"
-const jobPaymentHeaderHdr = "Livepeer-Job-Payment"
-const jobPaymentBalanceHdr = "Livepeer-Job-Balance"
-const jobOrchSearchTimeoutHdr = "Livepeer-Job-Orch-Search-Timeout"
-const jobOrchSearchRespTimeoutHdr = "Livepeer-Job-Orch-Search-Resp-Timeout"
+const jobRequestHdr = "Livepeer"
+const jobEthAddressHdr = "Livepeer-Eth-Address"
+const jobCapabilityHdr = "Livepeer-Capability"
+const jobPaymentHeaderHdr = "Livepeer-Payment"
+const jobPaymentBalanceHdr = "Livepeerb-Balance"
+const jobOrchSearchTimeoutHdr = "Livepeer-Orch-Search-Timeout"
+const jobOrchSearchRespTimeoutHdr = "Livepeer-Orch-Search-Resp-Timeout"
 const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
