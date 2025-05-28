@@ -626,24 +626,23 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		if err := processStream(ctx, params, req); err != nil {
+			stopPipeline(err)
+		}
 		close(orchSelection)
 	})
 }
 
-func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) error {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
-		clog.Errorf(ctx, "Error processing AI Request: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
+		return fmt.Errorf("Error processing AI request: %w", err)
 	}
 
 	if err = startProcessing(ctx, params, resp); err != nil {
-		clog.Errorf(ctx, "Error starting processing: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
+		return fmt.Errorf("Error starting processing: %w", err)
 	}
+	return nil
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
@@ -956,7 +955,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			if err := processStream(ctx, params, req); err != nil {
+				stopPipeline(err)
+			}
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
