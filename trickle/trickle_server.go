@@ -317,6 +317,9 @@ type timeoutReader struct {
 func (tr *timeoutReader) startRead(p []byte) {
 	go func() {
 		n, err := tr.body.Read(p)
+		if n > 0 {
+			tr.doneCh <- n
+		}
 		if err != nil {
 			tr.errCh <- err
 			return
