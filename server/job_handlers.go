@@ -72,48 +72,6 @@ type JobRequest struct {
 	orchSearchRespTimeout time.Duration
 }
 
-// Route on Gateway to get the job tokens from the Orchestrators that provide
-// the capability needed to process the job
-func (ls *LivepeerServer) GetJobTokens() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if ls.LivepeerNode.NodeType != core.BroadcasterNode {
-			http.Error(w, "request not allowed", http.StatusBadRequest)
-		}
-
-		remoteAddr := getRemoteAddr(r)
-
-		jobCapsHdr := r.Header.Get(jobCapabilityHdr)
-		if jobCapsHdr == "" {
-			glog.Infof("cannot get job tokens from orchestrators, no capability included remoteAddr=%v", remoteAddr)
-			http.Error(w, fmt.Sprintf("Job capabilities not provided, must provide comma separated capabilities in Livepeer-Job-Capability header"), http.StatusBadRequest)
-			return
-		}
-
-		searchTimeout, respTimeout := getOrchSearchTimeouts(r.Context(), r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
-
-		tokens, err := getJobOrchestrators(r.Context(), ls.LivepeerNode, jobCapsHdr, searchTimeout, respTimeout)
-		if err != nil {
-			glog.Infof("cannot get job tokens from orchestrators remoteAddr=%v err=%v ", err.Error(), remoteAddr)
-			http.Error(w, "Error getting job tokens from orchestrators", http.StatusBadRequest)
-			return
-		}
-
-		jobTokens, err := json.Marshal(tokens)
-		if err != nil {
-			glog.Infof("cannot get job tokens from orchestrators remoteAddr=%v err=%v ", err.Error(), remoteAddr)
-			http.Error(w, "Error getting job tokens from orchestrators", http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(jobTokens)
-	})
-}
-
 // worker registers to Orchestrator
 func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

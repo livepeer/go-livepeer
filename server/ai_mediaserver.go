@@ -108,7 +108,6 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 
 	//API for dynamic capabilities
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
-	ls.HTTPMux.Handle("/process/tokens", ls.GetJobTokens())
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
