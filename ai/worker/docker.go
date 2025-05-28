@@ -291,6 +291,18 @@ func (m *DockerManager) Version() []Version {
 	return version
 }
 
+func (m *DockerManager) HardwareInformation() []HardwareInformation {
+	var hardware []HardwareInformation
+	for _, rc := range m.gpuContainers {
+		if rc.Hardware != nil {
+			hardware = append(hardware, *rc.Hardware)
+		} else {
+			hardware = append(hardware, HardwareInformation{})
+		}
+	}
+	return hardware
+}
+
 // isImageAvailable checks if the specified image is available locally.
 func (m *DockerManager) isImageAvailable(ctx context.Context, pipeline string, modelID string) bool {
 	imageName, err := m.getContainerImageName(pipeline, modelID)
