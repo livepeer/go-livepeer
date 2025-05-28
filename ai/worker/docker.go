@@ -105,8 +105,8 @@ type DockerManager struct {
 	verboseLogs bool
 
 	dockerClient DockerClient
-	// gpu ID => container name
-	gpuContainers map[string]string
+	// gpu ID => container
+	gpuContainers map[string]*RunnerContainer
 	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
@@ -126,7 +126,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
 		dockerClient:  client,
-		gpuContainers: make(map[string]string),
+		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
 	}
@@ -277,6 +277,18 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 	// Check for available GPU to allocate for a new container for the requested model.
 	_, err := m.allocGPU(ctx)
 	return err == nil
+}
+
+func (m *DockerManager) Version() []Version {
+	var version []Version
+	for _, rc := range m.gpuContainers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+	return version
 }
 
 // isImageAvailable checks if the specified image is available locally.
@@ -444,7 +456,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	m.containers[containerName] = rc
-	m.gpuContainers[gpu] = containerName
+	m.gpuContainers[gpu] = rc
 
 	if keepWarm && isLoading {
 		// If the container is only being warmed up, we only want to add it to the pool when it is past the loading state.
@@ -482,11 +494,10 @@ func (m *DockerManager) allocGPU(ctx context.Context) (string, error) {
 	}
 
 	// Is there a GPU with an idle container?
-	for _, gpu := range m.gpus {
-		containerName := m.gpuContainers[gpu]
+	for gpu, rc := range m.gpuContainers {
 		// If the container exists in this map then it is idle and if it not marked as keep warm we remove it
-		rc, ok := m.containers[containerName]
-		if ok && !rc.KeepWarm {
+		_, isIdle := m.containers[rc.Name]
+		if isIdle && !rc.KeepWarm {
 			if err := m.destroyContainer(rc, true); err != nil {
 				return "", err
 			}

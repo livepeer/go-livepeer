@@ -92,8 +92,13 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	}
 	runnerVersion := &Version{Pipeline: cfg.Pipeline, ModelId: cfg.ModelID, Version: "0.0.0"}
 	version, err := client.VersionWithResponse(ctx)
-	if err == nil {
+	if err != nil {
+		slog.Error("Error getting runner version", slog.String("error", err.Error()))
+	} else if version.StatusCode() != http.StatusOK {
+		slog.Error("HTTP Status error getting runner version", slog.Int("status", version.StatusCode()), slog.String("body", string(version.Body)))
+	} else {
 		runnerVersion = version.JSON200
+		slog.Info("Started runner with version", slog.String("version", runnerVersion.Version))
 	}
 
 	return &RunnerContainer{
@@ -138,6 +143,9 @@ func getRunnerHardware(ctx context.Context, client *ClientWithResponses) (*Hardw
 	if err != nil {
 		slog.Error("Error getting hardware info for runner", slog.String("error", err.Error()))
 		return nil, err
+	} else if resp.StatusCode() != http.StatusOK {
+		slog.Error("HTTP Status error getting hardware info for runner", slog.Int("status", resp.StatusCode()), slog.String("body", string(resp.Body)))
+		return nil, fmt.Errorf("bad HTTP status: %d", resp.StatusCode())
 	}
 
 	return resp.JSON200, nil
