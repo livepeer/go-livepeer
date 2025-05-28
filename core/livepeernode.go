@@ -351,21 +351,6 @@ func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, ex
 	glog.Infof("Set price for %s to %s", extCapability, price.FloatString(2))
 }
 
-func (n *LivepeerNode) GetPriceForExternalCapability(senderEthAddress string, extCapability string) *big.Rat {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-	senderPrices, ok := n.jobPriceInfo[senderEthAddress]
-	if ok {
-		extCapPriceInfo, ok := senderPrices[extCapability]
-		if ok {
-			return extCapPriceInfo
-		}
-	}
-
-	//price is not set
-	return nil
-}
-
 func (n *LivepeerNode) GetPriceForJob(senderEthAddress string, extCapability string) *big.Rat {
 	n.mu.RLock()
 	defer n.mu.RUnlock()

@@ -90,72 +90,6 @@ func (orch *orchestrator) CheckCapacity(mid ManifestID) error {
 	return nil
 }
 
-func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings string) (*ExternalCapability, error) {
-	cap, err := orch.node.ExternalCapabilities.RegisterCapability(extCapabilitySettings)
-	if err != nil {
-		return nil, err
-	}
-
-	//set the price for the capability
-	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
-
-	return cap, nil
-}
-
-func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {
-	orch.node.ExternalCapabilities.RemoveCapability(extCapability)
-	return nil
-}
-
-func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
-	for _, capability := range orch.node.ExternalCapabilities.Capabilities {
-		if capability.Name == extCapability {
-			return capability.Url
-		}
-	}
-
-	return ""
-}
-
-func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
-	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
-		glog.Infof("External capability %s not found", extCapability)
-		return false
-	} else {
-		if cap.Load < cap.Capacity {
-			return true
-		} else {
-			return false
-		}
-	}
-}
-
-func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string) error {
-	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
-	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
-
-		cap.Load++
-		return nil
-	} else {
-		return errors.New("external capability not found")
-	}
-}
-
-func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) error {
-	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
-	if ok {
-		cap.mu.Lock()
-		defer cap.mu.Unlock()
-
-		cap.Load--
-		return nil
-	} else {
-		return errors.New("external capability not found")
-	}
-}
-
 func (orch *orchestrator) TranscodeSeg(ctx context.Context, md *SegTranscodingMetadata, seg *stream.HLSSegment) (*TranscodeResult, error) {
 	return orch.node.sendToTranscodeLoop(ctx, md, seg)
 }
@@ -417,63 +351,6 @@ func (orch *orchestrator) PriceInfoForCaps(sender ethcommon.Address, manifestID 
 		PricePerUnit:  price.Num().Int64(),
 		PixelsPerUnit: price.Denom().Int64(),
 	}, nil
-}
-
-func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
-	if orch.node == nil || orch.node.Recipient == nil {
-		//return a price of zero for offhain mode
-		return &net.PriceInfo{
-			PricePerUnit:  0,
-			PixelsPerUnit: 1,
-		}, nil
-	}
-
-	jobPrice, err := orch.jobPriceInfo(sender, jobCapability)
-	if err != nil {
-		return nil, err
-	}
-
-	return &net.PriceInfo{
-		PricePerUnit:  jobPrice.Num().Int64(),
-		PixelsPerUnit: jobPrice.Denom().Int64(),
-	}, nil
-}
-
-func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobCapability string) (*big.Rat, error) {
-	basePrice := orch.node.GetPriceForJob(sender.Hex(), jobCapability)
-
-	if basePrice == nil {
-		basePrice = orch.node.GetPriceForJob("default", jobCapability)
-	}
-
-	if !orch.node.AutoAdjustPrice {
-		return basePrice, nil
-	}
-
-	// If price = 0, overhead is 1
-	// If price > 0, overhead = 1 + (1 / txCostMultiplier)
-	overhead := big.NewRat(1, 1)
-	//turn off temporarily, Orchestrator should set min ticket EV to acceptable levels
-	//if basePrice.Num().Cmp(big.NewInt(0)) > 0 {
-	//	txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
-	//	if err != nil {
-	//		glog.Errorf("failed to get tx cost multiplier for sender %s: %v  (txCost=%v)", sender.Hex(), err)
-	//		return nil, err
-	//	}
-	//
-	//	if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
-	//		overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
-	//	}
-	//
-	//}
-
-	// pricePerPixel = basePrice * overhead
-	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(basePrice, overhead))
-	if err != nil {
-		return nil, err
-	}
-	return common.FixedToPrice(fixedPrice), nil
-
 }
 
 // priceInfo returns price per pixel as a fixed point number wrapped in a big.Rat
