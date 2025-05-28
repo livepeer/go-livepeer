@@ -1184,19 +1184,17 @@ func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobCapability s
 	// If price = 0, overhead is 1
 	// If price > 0, overhead = 1 + (1 / txCostMultiplier)
 	overhead := big.NewRat(1, 1)
-	//turn off temporarily, Orchestrator should set min ticket EV to acceptable levels
-	//if basePrice.Num().Cmp(big.NewInt(0)) > 0 {
-	//	txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
-	//	if err != nil {
-	//		glog.Errorf("failed to get tx cost multiplier for sender %s: %v  (txCost=%v)", sender.Hex(), err)
-	//		return nil, err
-	//	}
-	//
-	//	if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
-	//		overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
-	//	}
-	//
-	//}
+	if basePrice.Num().Cmp(big.NewInt(0)) > 0 {
+		txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
+		if err != nil {
+			glog.Errorf("failed to get tx cost multiplier for sender %s: %v  (txCost=%v)", sender.Hex(), err)
+			return nil, err
+		}
+
+		if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
+			overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
+		}
+	}
 
 	// pricePerPixel = basePrice * overhead
 	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(basePrice, overhead))
