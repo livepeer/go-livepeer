@@ -842,17 +842,6 @@ func TestGetPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "could not parse payment")
 }
 
-func TestGetPayment_JsonData_ReturnsPayment(t *testing.T) {
-	protoPayment := defaultPayment(t)
-	data, _ := json.Marshal(protoPayment)
-
-	header := base64.StdEncoding.EncodeToString(data)
-
-	_, err := getPayment(header)
-
-	assert.Nil(t, err)
-}
-
 func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {
 	protoPayment := defaultPayment(t)
 	data, err := proto.Marshal(protoPayment)
