@@ -64,6 +64,9 @@ type Segment struct {
 	cond   *sync.Cond
 	buffer *bytes.Buffer
 	closed bool
+
+	// to shut down any pending publishers
+	closeCh chan bool
 }
 
 type SegmentSubscriber struct {
@@ -294,6 +297,7 @@ func (sm *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 func (sm *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	stream := sm.getOrCreateStream(r.PathValue("streamName"), r.Header.Get("Content-Type"), false)
 	if stream == nil {
+		w.Header().Set("Connection", "close") // Wakes up gotrickle preconnects
 		http.Error(w, "Stream not found", http.StatusNotFound)
 		return
 	}
@@ -312,6 +316,7 @@ type timeoutReader struct {
 	readStarted   bool
 	doneCh        chan int
 	errCh         chan error
+	closeCh       chan bool
 }
 
 func (tr *timeoutReader) startRead(p []byte) {
@@ -350,6 +355,9 @@ func (tr *timeoutReader) Read(p []byte) (int, error) {
 			tr.firstByteRead = true
 		}
 		return n, nil
+	case <-tr.closeCh:
+		// Signals preconnected publishers that are waiting
+		return 0, io.EOF
 	case <-time.After(tr.timeout):
 		return 0, FirstByteTimeout
 	}
@@ -373,6 +381,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 		// This can't be too short for now but ideally it'd be like 1 second
 		// https://github.com/golang/go/issues/65035
 		timeout: 10 * time.Second,
+		closeCh: segment.closeCh,
 	}
 	defer r.Body.Close()
 
@@ -401,6 +410,21 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 				w.WriteHeader(http.StatusContinue)
 				continue
 			} else if err == io.EOF {
+				// Usually this comes from a preconnect where the underlying channel is closed
+				// The gotrickle client hangs forever waiting to write a body that never comes
+				// So in this case, hard close the TCP connection to force a gotrickle shutdown
+				// NB: For some reason, the `Connection: close` header is not enough here
+				if totalRead <= 0 {
+					w.Header().Set("Connection", "close")
+					w.Header().Set("Lp-Trickle-Closed", "terminated")
+					w.WriteHeader(http.StatusOK)
+					if hijacker, ok := w.(http.Hijacker); ok {
+						conn, _, err := hijacker.Hijack()
+						if err == nil {
+							conn.Close()
+						}
+					}
+				}
 				break
 			}
 			slog.Info("Error reading POST body", "stream", s.name, "idx", idx, "bytes written", totalRead, "err", err)
@@ -559,10 +583,11 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 func newSegment(idx int) *Segment {
 	mu := &sync.Mutex{}
 	return &Segment{
-		idx:    idx,
-		buffer: new(bytes.Buffer),
-		cond:   sync.NewCond(mu),
-		mutex:  mu,
+		idx:     idx,
+		buffer:  new(bytes.Buffer),
+		cond:    sync.NewCond(mu),
+		mutex:   mu,
+		closeCh: make(chan bool),
 	}
 }
 
@@ -608,6 +633,7 @@ func (s *Segment) close() {
 	defer s.mutex.Unlock()
 	if !s.closed {
 		s.closed = true
+		close(s.closeCh)
 		s.cond.Broadcast()
 	}
 }
