@@ -237,15 +237,13 @@ func reportLiveAICapacity(info *net.OrchestratorInfo, capsReq common.CapabilityC
 	}
 
 	for modelID := range modelsReq {
-		idle, inUse := 0, 0
+		idle := 0
 		if models != nil {
 			if model, ok := models[modelID]; ok {
-				inUse = int(model.CapacityInUse)
 				idle = int(model.Capacity)
 			}
 		}
 
-		monitor.AIContainersInUse(inUse, modelID, orchURL.String())
 		monitor.AIContainersIdle(idle, modelID, orchURL.String())
 	}
 }

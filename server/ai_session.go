@@ -484,13 +484,16 @@ func (n noopSus) Suspended(orch string) int {
 	return 0
 }
 
-func (c *AISessionManager) refreshOrchCapacity() {
-	// TODO move to config
-	modelIDs := []string{"comfyui", "noop"}
+func (c *AISessionManager) refreshOrchCapacity(modelIDs []string) {
+	if len(modelIDs) < 1 {
+		return
+	}
+
 	pool := c.node.OrchestratorPool
 	if pool == nil {
 		return
 	}
+	clog.Infof(context.Background(), "Starting periodic orchestrator refresh for capacity reporting")
 
 	modelsReq := make(map[string]*core.ModelConstraint)
 	for _, modelID := range modelIDs {
@@ -506,7 +509,6 @@ func (c *AISessionManager) refreshOrchCapacity() {
 		for {
 			select {
 			case <-ticker.C:
-				clog.Info(context.TODO(), "refreshing orchestrator capacity")
 				ctx, cancel := context.WithTimeout(context.Background(), refreshInterval)
 				capabilityConstraints := core.PerCapabilityConstraints{
 					core.Capability_LiveVideoToVideo: {Models: modelsReq},
@@ -537,7 +539,7 @@ func NewAISessionManager(node *core.LivepeerNode, ttl time.Duration) *AISessionM
 		mu:        sync.Mutex{},
 		ttl:       ttl,
 	}
-	sessionManager.refreshOrchCapacity()
+	sessionManager.refreshOrchCapacity(node.LiveAICapRefreshModels)
 	return sessionManager
 }
 
