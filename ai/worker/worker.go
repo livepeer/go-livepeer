@@ -78,16 +78,7 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 			hardware = append(hardware, HardwareInformation{})
 		}
 	}
-
-	for _, rc := range w.manager.containers {
-		if rc.Hardware != nil {
-			hardware = append(hardware, *rc.Hardware)
-		} else {
-			hardware = append(hardware, HardwareInformation{})
-		}
-	}
-
-	return hardware
+	return append(hardware, w.manager.HardwareInformation()...)
 }
 
 func (w *Worker) Version() []Version {
