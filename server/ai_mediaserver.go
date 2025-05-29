@@ -799,6 +799,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "stream", streamName)
 
+		sourceTypeStr := "livepeer-whip"
+		ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
+
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
@@ -820,11 +823,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			pipelineID := ""
 			pipeline := ""
 			pipelineParams := make(map[string]interface{})
-			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-
-			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
 			if LiveAIAuthWebhookURL != nil {
 				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
