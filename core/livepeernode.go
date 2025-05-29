@@ -167,6 +167,7 @@ type LivepeerNode struct {
 
 type LiveSession struct {
 	RequestID   string
+	Message     string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
 }

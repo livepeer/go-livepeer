@@ -732,14 +732,16 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 
+		msg := string(params)
+		p.Message = msg
 
 		if p.ControlPub == nil {
 			// Don't have an orchestrator yet, or in-between orchs
 			return
 		}
 
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
-		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+		clog.Info(ctx, "Sending Live Video Update Control API", "stream", stream, "params", msg)
+		if err := p.ControlPub.Write(strings.NewReader(msg)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

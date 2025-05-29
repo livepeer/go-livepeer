@@ -362,6 +362,15 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		return errors.New("Nonexistent or mismatched session when starting control publisher")
 	}
 
+	if sess.Message != "" {
+		// there is a cached message so send it
+		// do it here before we start the ticker or set any session fields
+		// TODO don't hold the LiveMu lock
+		if err := controlPub.Write(strings.NewReader(sess.Message)); err != nil {
+			return fmt.Errorf("Could not send cached control message: %w", err)
+		}
+	}
+
 	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool, 1)
 	once := sync.Once{}
