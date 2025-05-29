@@ -39,6 +39,7 @@ type RemoteAIWorker struct {
 	stream       net.AIWorker_RegisterAIWorkerServer
 	capabilities *Capabilities
 	hardware     []worker.HardwareInformation
+	version      []worker.Version
 	eof          chan struct{}
 	addr         string
 }
@@ -435,6 +436,10 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<
 
 	return true, releaseCapacity
 
+}
+
+func (orch *orchestrator) GetLiveAICapacity() worker.Capacity {
+	return orch.node.AIWorker.GetLiveAICapacity()
 }
 
 func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {

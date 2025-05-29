@@ -115,6 +115,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			streamID = *req.StreamId
 		}
 		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "manifest_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		orch := h.orchestrator
@@ -243,6 +244,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:       &controlUrlOverwrite,
 			Params:           req.Params,
 			GatewayRequestId: &gatewayRequestID,
+			ManifestId:       &mid,
 			StreamId:         &streamID,
 		}
 
@@ -269,6 +271,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
 			RequestId:    &requestID,
+			ManifestId:   &mid,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)

@@ -159,12 +159,15 @@ type LivepeerNode struct {
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
 	LivePaymentInterval        time.Duration
+	LiveOutSegmentTimeout      time.Duration
+	LiveAICapRefreshModels     []string
 
 	// Gateway
 	GatewayHost string
 }
 
 type LivePipeline struct {
+	RequestID   string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
 }

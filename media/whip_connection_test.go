@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/interceptor/pkg/stats"
+	"github.com/pion/webrtc/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +18,146 @@ type MockPC struct {
 	closeErr    error
 }
 
+type mockRTPTrack struct {
+	ssrc int
+	kind webrtc.RTPCodecType
+}
+
+func (t *mockRTPTrack) SSRC() webrtc.SSRC {
+	return webrtc.SSRC(t.ssrc)
+}
+
+func (t *mockRTPTrack) Kind() webrtc.RTPCodecType {
+	return t.kind
+}
+
+func (t *mockRTPTrack) Codec() webrtc.RTPCodecParameters {
+	return webrtc.RTPCodecParameters{}
+}
+
+type mockStatsGetter struct {
+	statsMap map[uint32]*stats.Stats
+}
+
+func (m *mockStatsGetter) Get(ssrc uint32) *stats.Stats {
+	return m.statsMap[ssrc]
+}
+
+func TestMediaStateStats(t *testing.T) {
+	t.Run("ReturnsErrorWhenClosedOrNilPC", func(t *testing.T) {
+		state := NewMediaState(nil)
+		// Should fail because pc == nil
+		_, err := state.Stats()
+		assert.Error(t, err, "Expected error when pc is nil")
+
+		mockPC := NewMockPC()
+		stateWithPC := NewMediaState(mockPC)
+		// Manually close
+		stateWithPC.Close()
+		_, err = stateWithPC.Stats()
+		assert.Error(t, err, "Expected error when state is closed")
+	})
+
+	t.Run("ReturnsOnlyPeerConnectionStatsWhenGetterIsNil", func(t *testing.T) {
+		mockPC := NewMockPC()
+		mockState := NewMediaState(mockPC)
+
+		// We can provide any custom logic if we need a mocked PC.GetStats()
+		// For example, we don't actually have a valid StatsReport so let's assume nil is fine
+		statsResult, err := mockState.Stats()
+		require.NoError(t, err, "Did not expect an error from Stats() call")
+		assert.NotNil(t, statsResult, "Expected a valid MediaStats result")
+		assert.Nil(t, statsResult.TrackStats, "Expected no TrackStats when getter is nil")
+	})
+
+	t.Run("ReturnsTrackStatsWhenGetterIsPopulated", func(t *testing.T) {
+		mockPC := NewMockPC()
+		mockState := NewMediaState(mockPC)
+
+		// Create a mock stats getter with two track stats
+		msGetter := &mockStatsGetter{
+			statsMap: map[uint32]*stats.Stats{
+				123: {}, // a dummy stats object
+				456: {},
+			},
+		}
+		tracks := []RTPTrack{
+			&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo},
+			&mockRTPTrack{ssrc: 999, kind: webrtc.RTPCodecTypeAudio}, // will not be found
+			&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo},
+		}
+		mockState.SetTracks(msGetter, tracks)
+
+		statsResult, err := mockState.Stats()
+		require.NoError(t, err)
+		assert.NotNil(t, statsResult)
+		assert.NotNil(t, statsResult.TrackStats, "Expected TrackStats slice to be non-nil")
+		assert.Equal(t, 2, len(statsResult.TrackStats), "Only two tracks should have been found in statsMap")
+	})
+
+	t.Run("HandlesNoStatsInGetter", func(t *testing.T) {
+		mockPC := NewMockPC()
+		mockState := NewMediaState(mockPC)
+
+		msGetter := &mockStatsGetter{
+			statsMap: map[uint32]*stats.Stats{},
+		}
+		tracks := []RTPTrack{
+			&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo},
+		}
+		mockState.SetTracks(msGetter, tracks)
+
+		statsResult, err := mockState.Stats()
+		require.NoError(t, err, "Expected no error even if tracks aren't found in getter")
+		assert.NotNil(t, statsResult)
+		assert.Empty(t, statsResult.TrackStats, "No track stats should be returned if they're not in getter")
+	})
+
+	t.Run("ConcurrentStatsCalls", func(t *testing.T) {
+		mockPC := NewMockPC()
+		mockState := NewMediaState(mockPC)
+
+		// Set up a basic stats getter and some tracks
+		msGetter := &mockStatsGetter{
+			statsMap: map[uint32]*stats.Stats{
+				111: {},
+				222: {},
+			},
+		}
+		tracks := []RTPTrack{
+			&mockRTPTrack{ssrc: 111, kind: webrtc.RTPCodecTypeVideo},
+			&mockRTPTrack{ssrc: 222, kind: webrtc.RTPCodecTypeAudio},
+		}
+		mockState.SetTracks(msGetter, tracks)
+
+		// Call Stats concurrently while also closing
+		var wg sync.WaitGroup
+		const goroutines = 10
+		wg.Add(goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				defer wg.Done()
+				// If the state isn't closed yet, Stats() should succeed
+				// If it has just been closed, Stats() can return an error
+				statsResult, err := mockState.Stats()
+				if mockState.IsClosed() {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+					assert.NotNil(t, statsResult)
+				}
+			}()
+		}
+
+		// Let some Stats() calls proceed, then close the state
+		time.Sleep(50 * time.Millisecond)
+		mockState.Close()
+
+		wg.Wait()
+	})
+}
+
 func NewMockPC() *MockPC {
 	return &MockPC{}
 }
@@ -23,6 +165,10 @@ func NewMockPC() *MockPC {
 func (m *MockPC) Close() error {
 	m.closeCalled = true
 	return m.closeErr
+}
+
+func (m *MockPC) GetStats() webrtc.StatsReport {
+	return nil
 }
 
 func (m *MockPC) WasCloseCalled() bool {

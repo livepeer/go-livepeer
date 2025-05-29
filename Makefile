@@ -127,3 +127,45 @@ docker_mtx:
 
 swagger:
 	swag init --generalInfo server/ai_mediaserver.go --outputTypes yaml --output . && mv swagger.yaml liveai.openapi.yaml
+
+# Command to run Livepeer Realtime AI Video in a Box
+.PHONY: box
+box: box-rebuild
+	./box/box.sh
+
+.PHONY: box-rebuild
+box-rebuild:
+ifeq ($(strip ${REBUILD}),false)
+	@echo "Skipping rebuild of components"
+else
+	@$(MAKE) box-runner
+ifeq ($(strip ${DOCKER}),true)
+	docker build -t livepeer/go-livepeer -f docker/Dockerfile .
+else
+	@$(MAKE) livepeer
+endif
+endif
+
+.PHONY: box-gateway
+box-gateway: box-rebuild
+	./box/gateway.sh
+
+.PHONY: box-orchestrator
+box-orchestrator: box-rebuild
+	./box/orchestrator.sh
+
+.PHONY: box-mediamtx
+box-mediamtx:
+	./box/mediamtx.sh
+
+.PHONY: box-runner
+box-runner:
+	./box/build-runner.sh
+
+.PHONY: box-stream
+box-stream:
+	./box/stream.sh start
+
+.PHONY: box-playback
+box-playback:
+	./box/stream.sh playback

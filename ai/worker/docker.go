@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +24,7 @@ import (
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
+	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/monitor"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -31,15 +32,15 @@ import (
 const containerModelDir = "/models"
 const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
-const containerTimeout = 2 * time.Minute
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
 
+var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
-var pipelineStartGracePeriod = 60 * time.Second
+var healthcheckTimeout = 5 * time.Second
 var maxHealthCheckFailures = 2
 
 // This only works right now on a single GPU because if there is another container
@@ -104,9 +105,9 @@ type DockerManager struct {
 	verboseLogs bool
 
 	dockerClient DockerClient
-	// gpu ID => container name
-	gpuContainers map[string]string
-	// container name => container
+	// gpu ID => container
+	gpuContainers map[string]*RunnerContainer
+	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
 }
@@ -125,7 +126,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
 		dockerClient:  client,
-		gpuContainers: make(map[string]string),
+		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
 	}
@@ -203,13 +204,16 @@ func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*
 		}
 	}
 
+	m.borrowContainerLocked(ctx, rc)
+	return rc, nil
+}
+
+func (m *DockerManager) borrowContainerLocked(ctx context.Context, rc *RunnerContainer) {
 	// Remove container and set the BorrowCtx so it is unavailable until returnContainer() is called by watchContainer()
 	delete(m.containers, rc.Name)
 	rc.Lock()
 	rc.BorrowCtx = ctx
 	rc.Unlock()
-
-	return rc, nil
 }
 
 // returnContainer returns a container to the pool so it can be reused. It is called automatically by watchContainer
@@ -275,6 +279,30 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 	return err == nil
 }
 
+func (m *DockerManager) Version() []Version {
+	var version []Version
+	for _, rc := range m.gpuContainers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+	return version
+}
+
+func (m *DockerManager) HardwareInformation() []HardwareInformation {
+	var hardware []HardwareInformation
+	for _, rc := range m.gpuContainers {
+		if rc.Hardware != nil {
+			hardware = append(hardware, *rc.Hardware)
+		} else {
+			hardware = append(hardware, HardwareInformation{})
+		}
+	}
+	return hardware
+}
+
 // isImageAvailable checks if the specified image is available locally.
 func (m *DockerManager) isImageAvailable(ctx context.Context, pipeline string, modelID string) bool {
 	imageName, err := m.getContainerImageName(pipeline, modelID)
@@ -321,8 +349,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		return nil, err
 	}
 
-	// NOTE: We currently allow only one container per GPU for each pipeline.
-	containerHostPort := containerHostPorts[pipeline][:3] + portOffset(gpu)
+	containerHostPort := containerHostPorts[pipeline][:2] + portOffset(gpu)
 	containerName := dockerContainerName(pipeline, modelID, containerHostPort)
 	containerImage, err := m.getContainerImageName(pipeline, modelID)
 	if err != nil {
@@ -358,8 +385,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	gpuOpts := opts.GpuOpts{}
-	if !isEmulatedGPU(gpu) {
-		gpuOpts.Set("device=" + gpu)
+	if !isEmulatedGPU(hwGPU(gpu)) {
+		gpuOpts.Set("device=" + hwGPU(gpu))
 	}
 
 	restartPolicy := container.RestartPolicy{
@@ -384,7 +411,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		PortBindings: nat.PortMap{
 			containerPort: []nat.PortBinding{
 				{
-					HostIP:   "0.0.0.0",
+					HostIP:   "127.0.0.1",
 					HostPort: containerHostPort,
 				},
 			},
@@ -434,18 +461,39 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		containerTimeout:  runnerContainerTimeout,
 	}
 
-	rc, err := NewRunnerContainer(ctx, cfg, containerName)
+	rc, isLoading, err := NewRunnerContainer(ctx, cfg, containerName)
 	if err != nil {
 		dockerRemoveContainer(m.dockerClient, resp.ID)
 		return nil, err
 	}
 
 	m.containers[containerName] = rc
-	m.gpuContainers[gpu] = containerName
+	m.gpuContainers[gpu] = rc
 
+	if keepWarm && isLoading {
+		// If the container is only being warmed up, we only want to add it to the pool when it is past the loading state.
+		// This will be done by the watchContainer() routine once the container returns IDLE on the healthcheck.
+		slog.Info("Warm container started on loading state, removing from pool on startup", slog.String("container", rc.Name))
+		m.borrowContainerLocked(context.Background(), rc)
+	}
 	go m.watchContainer(rc)
 
 	return rc, nil
+}
+
+func hwGPU(gpu string) string {
+	if !strings.HasPrefix(gpu, "colocated-") {
+		return gpu
+	}
+
+	re := regexp.MustCompile(`colocated-\d+-(.*)`)
+	matches := re.FindStringSubmatch(gpu)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+
+	clog.Warningf(context.Background(), "Invalid GPU name: %s", gpu)
+	return gpu
 }
 
 func (m *DockerManager) allocGPU(ctx context.Context) (string, error) {
@@ -458,11 +506,10 @@ func (m *DockerManager) allocGPU(ctx context.Context) (string, error) {
 	}
 
 	// Is there a GPU with an idle container?
-	for _, gpu := range m.gpus {
-		containerName := m.gpuContainers[gpu]
+	for gpu, rc := range m.gpuContainers {
 		// If the container exists in this map then it is idle and if it not marked as keep warm we remove it
-		rc, ok := m.containers[containerName]
-		if ok && !rc.KeepWarm {
+		_, isIdle := m.containers[rc.Name]
+		if isIdle && !rc.KeepWarm {
 			if err := m.destroyContainer(rc, true); err != nil {
 				return "", err
 			}
@@ -519,9 +566,9 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 
 	slog.Info("Watching container", slog.String("container", rc.Name))
 	failures := 0
-	startTime := time.Now()
+	loadingStartTime := time.Now()
 	for {
-		if failures >= maxHealthCheckFailures && time.Since(startTime) > pipelineStartGracePeriod {
+		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
 			m.destroyContainer(rc, false)
 			if rc.KeepWarm {
@@ -534,23 +581,28 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			return
 		}
 
-		rc.RLock()
-		borrowCtx := rc.BorrowCtx
-		rc.RUnlock()
+		borrowCtx := func() context.Context {
+			rc.RLock()
+			defer rc.RUnlock()
+			if rc.BorrowCtx == nil {
+				return nil
+			}
+			return rc.BorrowCtx
+		}
 
-		isBorrowed := borrowCtx != nil
+		var borrowDone <-chan struct{}
 		// The BorrowCtx is set when the container has been borrowed for a request/stream. If it is not set (nil) it means
-		// that it's not currently borrowed, so we don't need to wait for it to be done (hence using the background context).
-		if borrowCtx == nil {
-			borrowCtx = context.Background()
+		// that it's not currently borrowed, so we don't need to wait for it to be done (hence keeping the nil channel).
+		if bc := borrowCtx(); bc != nil {
+			borrowDone = bc.Done()
 		}
 
 		select {
-		case <-borrowCtx.Done():
+		case <-borrowDone:
 			m.returnContainer(rc)
 			continue
 		case <-ticker.C:
-			ctx, cancel := context.WithTimeout(context.Background(), containerWatchInterval)
+			ctx, cancel := context.WithTimeout(context.Background(), healthcheckTimeout)
 			health, err := rc.Client.HealthWithResponse(ctx)
 			cancel()
 
@@ -573,10 +625,11 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				slog.Any("JSON200", health.JSON200),
 				slog.String("body", string(health.Body)))
 
+			isBorrowed := borrowCtx() != nil
 			status := health.JSON200.Status
 			switch status {
 			case IDLE:
-				if isBorrowed && time.Since(startTime) > pipelineStartGracePeriod {
+				if isBorrowed {
 					slog.Info("Container is idle, returning to pool", slog.String("container", rc.Name))
 					m.returnContainer(rc)
 					continue
@@ -585,12 +638,30 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 			case OK:
 				failures = 0
 				continue
-			default:
-				failures++
-				slog.Error("Container not healthy",
+			case "LOADING": // TODO: Use enum when ai-runner SDK is updated
+				if !isBorrowed {
+					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
+					failures = 0
+					loadingStartTime = time.Now()
+
+					m.mu.Lock()
+					m.borrowContainerLocked(context.Background(), rc)
+					m.mu.Unlock()
+				}
+				if loadingTime := time.Since(loadingStartTime); loadingTime > containerTimeout {
+					failures++
+					slog.Error("Container is loading for too long", slog.String("container", rc.Name), slog.Duration("duration", loadingTime))
+				}
+				continue
+			case ERROR:
+				failures = maxHealthCheckFailures
+				slog.Error("Container returned ERROR state, restarting immediately",
 					slog.String("container", rc.Name),
-					slog.String("status", string(status)),
-					slog.String("failures", strconv.Itoa(failures)))
+					slog.String("status", string(status)))
+			default:
+				slog.Error("Unknown container status",
+					slog.String("container", rc.Name),
+					slog.String("status", string(status)))
 			}
 		}
 	}
@@ -600,7 +671,7 @@ func removeExistingContainers(ctx context.Context, client DockerClient) error {
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	for _, c := range containers {
@@ -679,17 +750,56 @@ tickerLoop:
 	return nil
 }
 
+type Capacity struct {
+	ContainersInUse int
+	ContainersIdle  int
+}
+
+// GetCapacity returns the current number of containers in use and idle
+// It currently only supports a setup of a single model with the number of initial warm containers equalling max capacity.
+// For example for Live AI we use this setup, we configure the number of warm containers to equal the max capacity we want
+// to accept, all with the comfyui model.
+func (m *DockerManager) GetCapacity() Capacity {
+	return Capacity{
+		ContainersInUse: len(m.gpuContainers) - len(m.containers),
+		ContainersIdle:  len(m.containers),
+	}
+}
+
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
-		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
+		capacity := m.GetCapacity()
+		monitor.AIContainersInUse(capacity.ContainersInUse, "", "")
+		monitor.AIContainersIdle(capacity.ContainersIdle, "", "")
+		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }
 
 func portOffset(gpu string) string {
-	if isEmulatedGPU(gpu) {
-		return strings.Replace(gpu, "emulated-", "", 1)
+	// last 2 digits of the port number
+	res := "00"
+
+	// If colocated, update the first digit of the port
+	if strings.Contains(gpu, "colocated-") {
+		re := regexp.MustCompile(`colocated-(\d+)-(.*)`)
+		matches := re.FindStringSubmatch(gpu)
+		if len(matches) > 1 {
+			res = matches[1] + res[1:]
+			gpu = matches[2]
+		} else {
+			clog.Warningf(context.Background(), "Invalid GPU name: %s", gpu)
+		}
 	}
-	return gpu
+
+	// If emulated, remove the prefix
+	if isEmulatedGPU(gpu) {
+		gpu = strings.Replace(gpu, "emulated-", "", 1)
+	}
+
+	// Update second digit with the gpu number
+	res = res[:1] + gpu
+
+	return res
 }
 
 func isEmulatedGPU(gpu string) bool {

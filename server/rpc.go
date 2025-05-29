@@ -53,6 +53,7 @@ type Orchestrator interface {
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
 	CheckAICapacity(pipeline, modelID string) (bool, chan<- bool)
+	GetLiveAICapacity() worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
 	TranscoderResults(job int64, res *core.RemoteTranscoderResult)
@@ -461,12 +462,15 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 		workerHardware = workerHardwareToNetWorkerHardware(orch.WorkerHardware())
 	}
 
+	capabilities := orch.Capabilities()
+	setLiveAICapacity(orch, capabilities)
+
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),
-		Capabilities:       orch.Capabilities(),
+		Capabilities:       capabilities,
 		AuthToken:          authToken,
 		Hardware:           workerHardware,
 		CapabilitiesPrices: capsPrices,
@@ -483,6 +487,31 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 	}
 
 	return &tr, nil
+}
+
+func setLiveAICapacity(orch Orchestrator, capabilities *net.Capabilities) {
+	if capabilities == nil || capabilities.Constraints == nil || capabilities.Constraints.PerCapability == nil {
+		return
+	}
+	liveAI, ok := capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return
+	}
+	if len(liveAI.Models) > 1 {
+		// Live AI capacity is calculated based on the number of warm containers and assumes all containers serving the same model
+		glog.Warning("Setting Live AI capacity is only supported in a single model setup")
+		return
+	}
+	aiCapacity := orch.GetLiveAICapacity()
+
+	for _, model := range liveAI.Models {
+		if model == nil {
+			glog.Warning("Model was nil when setting Live AI capacity")
+			continue
+		}
+		model.Capacity = uint32(aiCapacity.ContainersIdle)
+		model.CapacityInUse = uint32(aiCapacity.ContainersInUse)
+	}
 }
 
 func verifyOrchestratorReq(orch Orchestrator, addr ethcommon.Address, sig []byte) error {

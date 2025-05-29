@@ -2,8 +2,9 @@ package worker
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ type RunnerContainer struct {
 	Name     string
 	Client   *ClientWithResponses
 	Hardware *HardwareInformation
+	Version  *Version
 
 	BorrowCtx context.Context
 	sync.RWMutex
@@ -50,7 +52,7 @@ type RunnerContainerConfig struct {
 // Create global references to functions to allow for mocking in tests.
 var runnerWaitUntilReadyFunc = runnerWaitUntilReady
 
-func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name string) (*RunnerContainer, error) {
+func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name string) (rc *RunnerContainer, isLoading bool, err error) {
 	// Ensure that timeout is set to a non-zero value.
 	timeout := cfg.containerTimeout
 	if timeout == 0 {
@@ -61,7 +63,7 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	if cfg.Endpoint.Token != "" {
 		bearerTokenProvider, err := securityprovider.NewSecurityProviderBearerToken(cfg.Endpoint.Token)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		opts = append(opts, WithRequestEditorFn(bearerTokenProvider.Intercept))
@@ -69,13 +71,14 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 
 	client, err := NewClientWithResponses(cfg.Endpoint.URL, opts...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, cfg.containerTimeout)
 	defer cancel()
-	if err := runnerWaitUntilReadyFunc(cctx, client, pollingInterval); err != nil {
-		return nil, err
+	isLoading, err = runnerWaitUntilReadyFunc(cctx, client, pollingInterval)
+	if err != nil {
+		return nil, isLoading, err
 	}
 
 	var hardware *HardwareInformation
@@ -87,32 +90,52 @@ func NewRunnerContainer(ctx context.Context, cfg RunnerContainerConfig, name str
 	} else {
 		hardware = hdw
 	}
+	runnerVersion := &Version{Pipeline: cfg.Pipeline, ModelId: cfg.ModelID, Version: "0.0.0"}
+	version, err := client.VersionWithResponse(ctx)
+	if err != nil {
+		slog.Error("Error getting runner version", slog.String("error", err.Error()))
+	} else if version.StatusCode() != http.StatusOK {
+		slog.Error("HTTP Status error getting runner version", slog.Int("status", version.StatusCode()), slog.String("body", string(version.Body)))
+	} else {
+		runnerVersion = version.JSON200
+		slog.Info("Started runner with version", slog.String("version", runnerVersion.Version))
+	}
 
 	return &RunnerContainer{
 		RunnerContainerConfig: cfg,
 		Name:                  name,
 		Client:                client,
 		Hardware:              hardware,
-	}, nil
+		Version:               runnerVersion,
+	}, isLoading, nil
 }
 
-func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
+func runnerWaitUntilReady(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (isLoading bool, err error) {
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
-tickerLoop:
-	for range ticker.C {
+	var lastErr error
+	for {
 		select {
 		case <-ctx.Done():
-			return errors.New("timed out waiting for runner")
-		default:
-			if _, err := client.HealthWithResponse(ctx); err == nil {
-				break tickerLoop
+			return false, fmt.Errorf("timed out waiting for runner: %w", lastErr)
+		case <-ticker.C:
+			reqCtx, cancel := context.WithTimeout(ctx, healthcheckTimeout)
+			health, err := client.HealthWithResponse(reqCtx)
+			cancel()
+			if err != nil {
+				lastErr = err
+			} else if httpStatus := health.StatusCode(); httpStatus != http.StatusOK {
+				lastErr = fmt.Errorf("health check failed with status code %d", httpStatus)
+			} else if st := health.JSON200.Status; st == ERROR {
+				return false, fmt.Errorf("runner is in error state")
+			} else {
+				// any other state means the container is ready
+				isLoading = st == "LOADING" // TODO: Use enum when ai-runner SDK is updated
+				return isLoading, nil
 			}
 		}
 	}
-
-	return nil
 }
 
 func getRunnerHardware(ctx context.Context, client *ClientWithResponses) (*HardwareInformation, error) {
@@ -120,6 +143,9 @@ func getRunnerHardware(ctx context.Context, client *ClientWithResponses) (*Hardw
 	if err != nil {
 		slog.Error("Error getting hardware info for runner", slog.String("error", err.Error()))
 		return nil, err
+	} else if resp.StatusCode() != http.StatusOK {
+		slog.Error("HTTP Status error getting hardware info for runner", slog.Int("status", resp.StatusCode()), slog.String("body", string(resp.Body)))
+		return nil, fmt.Errorf("bad HTTP status: %d", resp.StatusCode())
 	}
 
 	return resp.JSON200, nil
