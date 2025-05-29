@@ -133,7 +133,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
 		if !hasCapacity {
 			clog.Errorf(ctx, "Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID)
-			respondWithError(w, errInsufficientCapacity.Error(), http.StatusServiceUnavailable)
+			respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
 			return
 		}
 
@@ -500,7 +500,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	hasCapacity, releaseCapacity := orch.CheckAICapacity(pipeline, modelID)
 	if !hasCapacity {
 		clog.Errorf(ctx, "Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID)
-		respondWithError(w, errInsufficientCapacity.Error(), http.StatusServiceUnavailable)
+		respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
 		return
 	}
 
