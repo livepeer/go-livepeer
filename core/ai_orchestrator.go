@@ -401,12 +401,18 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<
 	var hasCapacity bool
 	if orch.node.AIWorker != nil {
 		// confirm local worker has capacity
+		if pipeline == "live-video-to-video" {
+			return orch.node.AIWorker.HasCapacity(pipeline, modelID), nil
+		}
+
+		// batch pipelines manage the capacity at the Orchestrator level to manage local ai-worker capacity
 		err := orch.node.ReserveAICapability(pipeline, modelID)
 		if err == nil {
 			hasCapacity = true
 		}
 	} else {
 		// remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
+		// live-video-to-video is not using remote workers currently
 		if orch.node.AIWorkerManager != nil {
 			hasCapacity = orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
 		}
@@ -414,25 +420,20 @@ func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<
 
 	if !hasCapacity {
 		return false, nil
-	} else {
-		releaseCapacity := make(chan bool)
-		// TODO: add capacity tracking to live-video-to-video pipeline with
-		if pipeline == "live-video-to-video" {
-			orch.node.ReleaseAICapability(pipeline, modelID)
-			close(releaseCapacity)
-			return true, nil
-		}
-
-		go func() {
-			<-releaseCapacity
-			orch.node.ReleaseAICapability(pipeline, modelID)
-			glog.Infof("Released AI capacity for pipeline=%s model_id=%s", pipeline, modelID)
-			close(releaseCapacity)
-
-		}()
-
-		return true, releaseCapacity
 	}
+
+	// reserve AI capacity for the pipeline and modelID
+	releaseCapacity := make(chan bool)
+
+	go func() {
+		<-releaseCapacity
+		orch.node.ReleaseAICapability(pipeline, modelID)
+		glog.Infof("Released AI capacity for pipeline=%s model_id=%s", pipeline, modelID)
+		close(releaseCapacity)
+
+	}()
+
+	return true, releaseCapacity
 
 }
 
