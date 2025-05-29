@@ -669,7 +669,9 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(ctx, control, params)
+	if err := startControlPublish(ctx, control, params); err != nil {
+		return err
+	}
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)

@@ -349,12 +349,11 @@ func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Du
 	}
 }
 
-func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
+func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) error {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		clog.InfofErr(ctx, "error starting control publisher", err)
-		return
+		return fmt.Errorf("error starting control publisher: %w", err)
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
@@ -403,6 +402,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 			}
 		}
 	}()
+	return nil
 }
 
 const clearStreamDelay = 1 * time.Minute
