@@ -357,6 +357,10 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
+	sess, exists := params.node.LiveSessions[stream]
+	if !exists || sess.RequestID != params.liveParams.requestID {
+		return errors.New("Nonexistent or mismatched session when starting control publisher")
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool, 1)
@@ -368,21 +372,8 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LiveSessions[stream]; exists {
-		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
-		control.ControlPub.Close()
-		// TODO better solution than allowing existing streams to stomp over one another
-	}
-
-	params.node.LiveSessions[stream] = &core.LiveSession{
-		ControlPub:  controlPub,
-		StopControl: stop,
-		RequestID:   params.liveParams.requestID,
-	}
-	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(params.node.LiveSessions))
-		logCurrentLiveSessions(params.node.LiveSessions)
-	}
+	sess.ControlPub = controlPub
+	sess.StopControl = stop
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {

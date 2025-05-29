@@ -732,6 +732,12 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 
+
+		if p.ControlPub == nil {
+			// Don't have an orchestrator yet, or in-between orchs
+			return
+		}
+
 		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
 		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -948,6 +954,23 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					orchestrator:           orchestrator,
 				},
 			}
+
+			params.node.LiveMu.Lock()
+			if sess, exists := params.node.LiveSessions[streamName]; exists {
+				if sess.ControlPub != nil {
+					clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
+					sess.ControlPub.Close()
+					// TODO better solution than allowing existing streams to stomp over one another
+				}
+			}
+			params.node.LiveSessions[streamName] = &core.LiveSession{
+				RequestID: requestID,
+			}
+			if monitor.Enabled {
+				monitor.AICurrentLiveSessions(len(params.node.LiveSessions))
+				logCurrentLiveSessions(params.node.LiveSessions)
+			}
+			params.node.LiveMu.Unlock()
 
 			req := worker.GenLiveVideoToVideoJSONRequestBody{
 				ModelId:          &pipeline,
