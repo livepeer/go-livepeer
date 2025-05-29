@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -617,7 +616,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			})
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
-			cleanupControl(ctx, params)
+			cleanupSession(ctx, params)
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -965,7 +964,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			whipConn.AwaitClose()
 			ssr.Close()
-			cleanupControl(ctx, params)
+			cleanupSession(ctx, params)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -1018,13 +1017,13 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func cleanupControl(ctx context.Context, params aiRequestParams) {
+func cleanupSession(ctx context.Context, params aiRequestParams) {
 	clog.Infof(ctx, "Live video pipeline finished")
 	stream := params.liveParams.stream
 	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LiveSessions[stream]
-	if !ok {
+	if !ok || pub.RequestID != params.liveParams.requestID {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
@@ -1036,12 +1035,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
-		if err := pub.ControlPub.Close(); err != nil {
-			slog.Info("Error closing trickle publisher", "err", err)
-		}
-		pub.StopControl()
-	}
+	cleanupControl(ctx, pub.ControlPub, pub.StopControl)
 }
 
 func logCurrentLiveSessions(pipelines map[string]*core.LiveSession) {

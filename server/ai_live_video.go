@@ -578,6 +578,14 @@ func (a aiRequestParams) inputStreamExists() bool {
 	return ok && p.RequestID == a.liveParams.requestID
 }
 
+func cleanupControl(ctx context.Context, controlPub *trickle.TricklePublisher, stopControl func()) {
+	// TODO simplify BUT be careful of a subtle interactions between stopControl & keepalive timer!
+	if err := controlPub.Close(); err != nil {
+		clog.InfofErr(ctx, "Error closing control publisher", err)
+	}
+	stopControl()
+}
+
 // Detect 'slow' orchs by keeping track of in-flight segments
 // Count the difference between segments produced and segments completed
 type SlowOrchChecker struct {
