@@ -172,6 +172,10 @@ func (d *stubDiscovery) SizeWith(scorePred common.ScorePred) int {
 	return len(d.infos)
 }
 
+func (d *stubDiscovery) Broadcaster() common.Broadcaster {
+	return stubBroadcaster2()
+}
+
 type StubSegmenter struct {
 	skip bool
 }
