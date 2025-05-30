@@ -84,13 +84,19 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 			errCh <- err
 			return
 		}
+		isEOS := resp.Header.Get("Lp-Trickle-Closed") != ""
 		body, err := io.ReadAll(resp.Body)
-		if err != nil {
+		if err != nil && !isEOS {
 			slog.Error("Error reading body", "url", url, "err", err)
 			errCh <- err
 			return
 		}
 		defer resp.Body.Close()
+
+		if isEOS {
+			errCh <- EOS
+			return
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			slog.Error("Failed POST segment", "url", url, "status_code", resp.StatusCode, "msg", string(body))
