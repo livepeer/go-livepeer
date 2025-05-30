@@ -3,8 +3,8 @@ set -ex
 
 PIPELINE=${PIPELINE:-noop}
 
-if [[ "$PIPELINE" != "noop" && "$PIPELINE" != "comfyui" ]]; then
-  echo "Error: PIPELINE must be either 'noop' or 'comfyui'"
+if [[ "$PIPELINE" != "noop" && "$PIPELINE" != "comfyui" && "$PIPELINE" != "streamdiffusion" ]]; then
+  echo "Error: PIPELINE must be either 'noop', 'comfyui' or 'streamdiffusion'"
   exit 1
 fi
 
