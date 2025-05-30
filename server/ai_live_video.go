@@ -349,15 +349,27 @@ func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Du
 	}
 }
 
-func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
+func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) error {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		clog.InfofErr(ctx, "error starting control publisher", err)
-		return
+		return fmt.Errorf("error starting control publisher: %w", err)
 	}
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
+	sess, exists := params.node.LiveSessions[stream]
+	if !exists || sess.RequestID != params.liveParams.requestID {
+		return errors.New("Nonexistent or mismatched session when starting control publisher")
+	}
+
+	if sess.Message != "" {
+		// there is a cached message so send it
+		// do it here before we start the ticker or set any session fields
+		// TODO don't hold the LiveMu lock
+		if err := controlPub.Write(strings.NewReader(sess.Message)); err != nil {
+			return fmt.Errorf("Could not send cached control message: %w", err)
+		}
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool, 1)
@@ -369,21 +381,8 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LivePipelines[stream]; exists {
-		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
-		control.ControlPub.Close()
-		// TODO better solution than allowing existing streams to stomp over one another
-	}
-
-	params.node.LivePipelines[stream] = &core.LivePipeline{
-		ControlPub:  controlPub,
-		StopControl: stop,
-		RequestID:   params.liveParams.requestID,
-	}
-	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
-		logCurrentLiveSessions(params.node.LivePipelines)
-	}
+	sess.ControlPub = controlPub
+	sess.StopControl = stop
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
@@ -403,6 +402,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 			}
 		}
 	}()
+	return nil
 }
 
 const clearStreamDelay = 1 * time.Minute
@@ -574,8 +574,16 @@ func (a aiRequestParams) inputStreamExists() bool {
 	}
 	a.node.LiveMu.RLock()
 	defer a.node.LiveMu.RUnlock()
-	p, ok := a.node.LivePipelines[a.liveParams.stream]
+	p, ok := a.node.LiveSessions[a.liveParams.stream]
 	return ok && p.RequestID == a.liveParams.requestID
+}
+
+func cleanupControl(ctx context.Context, controlPub *trickle.TricklePublisher, stopControl func()) {
+	// TODO simplify BUT be careful of a subtle interactions between stopControl & keepalive timer!
+	if err := controlPub.Close(); err != nil {
+		clog.InfofErr(ctx, "Error closing control publisher", err)
+	}
+	stopControl()
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

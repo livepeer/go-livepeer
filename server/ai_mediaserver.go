@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -617,7 +616,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			})
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
-			cleanupControl(ctx, params)
+			cleanupSession(ctx, params)
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -626,24 +625,23 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		if err := processStream(ctx, params, req); err != nil {
+			stopPipeline(err)
+		}
 		close(orchSelection)
 	})
 }
 
-func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) error {
 	resp, err := processAIRequest(ctx, params, req)
 	if err != nil {
-		clog.Errorf(ctx, "Error processing AI Request: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
+		return fmt.Errorf("Error processing AI request: %w", err)
 	}
 
 	if err = startProcessing(ctx, params, resp); err != nil {
-		clog.Errorf(ctx, "Error starting processing: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
+		return fmt.Errorf("Error starting processing: %w", err)
 	}
+	return nil
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
@@ -671,7 +669,9 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
-	startControlPublish(ctx, control, params)
+	if err := startControlPublish(ctx, control, params); err != nil {
+		return err
+	}
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
@@ -719,7 +719,7 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		}
 		ls.LivepeerNode.LiveMu.RLock()
 		defer ls.LivepeerNode.LiveMu.RUnlock()
-		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		p, ok := ls.LivepeerNode.LiveSessions[stream]
 		if !ok {
 			// Stream not found
 			http.Error(w, "Stream not found", http.StatusNotFound)
@@ -732,8 +732,16 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
-		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+		msg := string(params)
+		p.Message = msg
+
+		if p.ControlPub == nil {
+			// Don't have an orchestrator yet, or in-between orchs
+			return
+		}
+
+		clog.Info(ctx, "Sending Live Video Update Control API", "stream", stream, "params", msg)
+		if err := p.ControlPub.Write(strings.NewReader(msg)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -800,6 +808,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "stream", streamName)
 
+		sourceTypeStr := "livepeer-whip"
+		ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
+
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
@@ -821,11 +832,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			pipelineID := ""
 			pipeline := ""
 			pipelineParams := make(map[string]interface{})
-			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-
-			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
 			if LiveAIAuthWebhookURL != nil {
 				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
@@ -949,6 +957,23 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				},
 			}
 
+			params.node.LiveMu.Lock()
+			if sess, exists := params.node.LiveSessions[streamName]; exists {
+				if sess.ControlPub != nil {
+					clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
+					sess.ControlPub.Close()
+					// TODO better solution than allowing existing streams to stomp over one another
+				}
+			}
+			params.node.LiveSessions[streamName] = &core.LiveSession{
+				RequestID: requestID,
+			}
+			if monitor.Enabled {
+				monitor.AICurrentLiveSessions(len(params.node.LiveSessions))
+				logCurrentLiveSessions(params.node.LiveSessions)
+			}
+			params.node.LiveMu.Unlock()
+
 			req := worker.GenLiveVideoToVideoJSONRequestBody{
 				ModelId:          &pipeline,
 				Params:           &pipelineParams,
@@ -956,7 +981,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			if err := processStream(ctx, params, req); err != nil {
+				stopPipeline(err)
+			}
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
@@ -964,7 +991,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			whipConn.AwaitClose()
 			ssr.Close()
-			cleanupControl(ctx, params)
+			cleanupSession(ctx, params)
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -1017,33 +1044,28 @@ func (ls *LivepeerServer) WithCode(code int) http.Handler {
 	})
 }
 
-func cleanupControl(ctx context.Context, params aiRequestParams) {
+func cleanupSession(ctx context.Context, params aiRequestParams) {
 	clog.Infof(ctx, "Live video pipeline finished")
 	stream := params.liveParams.stream
 	node := params.node
 	node.LiveMu.Lock()
-	pub, ok := node.LivePipelines[stream]
-	if !ok {
+	pub, ok := node.LiveSessions[stream]
+	if !ok || pub.RequestID != params.liveParams.requestID {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
 	}
-	delete(node.LivePipelines, stream)
+	delete(node.LiveSessions, stream)
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(node.LivePipelines))
-		logCurrentLiveSessions(node.LivePipelines)
+		monitor.AICurrentLiveSessions(len(node.LiveSessions))
+		logCurrentLiveSessions(node.LiveSessions)
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
-		if err := pub.ControlPub.Close(); err != nil {
-			slog.Info("Error closing trickle publisher", "err", err)
-		}
-		pub.StopControl()
-	}
+	cleanupControl(ctx, pub.ControlPub, pub.StopControl)
 }
 
-func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+func logCurrentLiveSessions(pipelines map[string]*core.LiveSession) {
 	var streams []string
 	for k := range pipelines {
 		streams = append(streams, k)

@@ -151,9 +151,9 @@ type LivepeerNode struct {
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
 
-	// For live video pipelines, cache for live pipelines; key is the stream name
-	LivePipelines map[string]*LivePipeline
-	LiveMu        *sync.RWMutex
+	// Connections for AI live video; key is the stream name
+	LiveSessions map[string]*LiveSession
+	LiveMu       *sync.RWMutex
 
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
@@ -166,8 +166,9 @@ type LivepeerNode struct {
 	GatewayHost string
 }
 
-type LivePipeline struct {
+type LiveSession struct {
 	RequestID   string
+	Message     string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
 }
@@ -187,7 +188,7 @@ func NewLivepeerNode(e eth.LivepeerEthClient, wd string, dbh *common.DB) (*Livep
 		priceInfoForCaps: make(map[string]CapabilityPrices),
 		StorageConfigs:   make(map[string]*transcodeConfig),
 		storageMutex:     &sync.RWMutex{},
-		LivePipelines:    make(map[string]*LivePipeline),
+		LiveSessions:     make(map[string]*LiveSession),
 		LiveMu:           &sync.RWMutex{},
 	}, nil
 }
