@@ -107,7 +107,7 @@ type TrackStats struct {
 	Jitter          float64
 	PacketsLost     int64
 	PacketsReceived int64
-	PacketLossPct   float64
+	PacketLossPct   int64
 	RTT             time.Duration
 	Warnings        []string
 }
@@ -120,7 +120,7 @@ const (
 )
 
 const acceptableJitterMs = 30
-const acceptablePacketLoss = 0.01 // 1%
+const acceptablePacketLossPct = 1
 
 func (c ConnQuality) String() string {
 	switch c {
@@ -253,14 +253,15 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		}
 
 		trackType := TrackType{t.Kind()}
-		var jitterMs, packetLossPct float64
+		var jitterMs float64
+		var packetLossPct int64
 		if t.Codec().ClockRate > 0 {
 			jitterMs = (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000
 		}
 		packetsLost := s.InboundRTPStreamStats.PacketsLost
 		packetsReceived := int64(s.InboundRTPStreamStats.PacketsReceived)
 		if packetsLost > 0 || packetsReceived > 0 {
-			packetLossPct = float64(packetsLost) / float64(packetsLost+packetsReceived)
+			packetLossPct = packetsLost / (packetsLost + packetsReceived) * 100
 		}
 
 		var warnings []string
@@ -268,9 +269,9 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 			connQuality = ConnQualityBad
 			warnings = append(warnings, fmt.Sprintf("jitter greater than %d ms", acceptableJitterMs))
 		}
-		if packetLossPct > acceptablePacketLoss {
+		if packetLossPct > acceptablePacketLossPct {
 			connQuality = ConnQualityBad
-			warnings = append(warnings, fmt.Sprintf("packet loss greater than %.2f", acceptablePacketLoss))
+			warnings = append(warnings, fmt.Sprintf("packet loss greater than %d%%", acceptablePacketLossPct))
 		}
 
 		trackStats = append(trackStats, TrackStats{
