@@ -15,8 +15,3 @@ fi
 
 cd ./box/supabase
 docker compose up
-cd ../..
-
-
-
-#docker compose -f ./box/docker-compose.supabase.yml up
