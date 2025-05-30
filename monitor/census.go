@@ -165,6 +165,8 @@ type (
 		mPaymentCreateError *stats.Int64Measure
 		mDeposit            *stats.Float64Measure
 		mReserve            *stats.Float64Measure
+		mMaxFloat           *stats.Float64Measure
+		mTicketFaceValue    *stats.Float64Measure
 		// Metrics for receiving payments
 		mTicketValueRecv       *stats.Float64Measure
 		mTicketsRecv           *stats.Int64Measure
@@ -341,6 +343,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
 	census.mDeposit = stats.Float64("gateway_deposit", "Current remaining deposit for the gateway node", "gwei")
 	census.mReserve = stats.Float64("gateway_reserve", "Current remaining reserve for the gateway node", "gwei")
+	census.mMaxFloat = stats.Float64("gateway_max_float", "Last maximum float for the gateway node", "gwei")
+	census.mTicketFaceValue = stats.Float64("ticket_face_value", "Last ticket face value for the gateway node", "gwei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -768,6 +772,20 @@ func InitCensus(nodeType NodeType, version string) {
 			Measure:     census.mReserve,
 			Description: "Current remaining reserve for the gateway node",
 			TagKeys:     baseTagsWithEthAddr,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "gateway_max_float",
+			Measure:     census.mMaxFloat,
+			Description: "Last maximum float for the gateway node",
+			TagKeys:     baseTagsWithGatewayInfo,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "gateway_ticket_face_value",
+			Measure:     census.mTicketFaceValue,
+			Description: "Last ticket face value for the gateway node",
+			TagKeys:     baseTagsWithGatewayInfo,
 			Aggregation: view.LastValue(),
 		},
 		// TODO: Keep the old names for backwards compatibility, remove in the future
@@ -1769,6 +1787,20 @@ func Reserve(sender string, reserve *big.Int) {
 	if err := stats.RecordWithTags(census.ctx,
 		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mReserve.M(wei2gwei(reserve))); err != nil {
 
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func MaxFloat(sender string, maxFloat *big.Int) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mMaxFloat.M(wei2gwei(maxFloat))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func TicketFaceValue(sender string, faceValue *big.Int) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mTicketFaceValue.M(wei2gwei(faceValue))); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
