@@ -515,8 +515,9 @@ func TestCheckAICapacity(t *testing.T) {
 	n.Capabilities = createAIWorkerCapabilities()
 	n.AIWorker = &wkr
 	// Test when local AI worker has capacity
-	hasCapacity := o.CheckAICapacity("text-to-image", "livepeer/model1")
+	hasCapacity, releaseCapacity := o.CheckAICapacity("text-to-image", "livepeer/model1")
 	assert.True(t, hasCapacity)
+	releaseCapacity <- true
 
 	o.node.AIWorker = nil
 	o.node.AIWorkerManager = NewRemoteAIWorkerManager()
@@ -534,12 +535,15 @@ func TestCheckAICapacity(t *testing.T) {
 	}()
 	time.Sleep(1 * time.Millisecond) // allow the workers to activate
 
-	hasCapacity = o.CheckAICapacity("text-to-image", "livepeer/model1")
+	hasCapacity, releaseCapacity = o.CheckAICapacity("text-to-image", "livepeer/model1")
 	assert.True(t, hasCapacity)
+	assert.NotNil(t, releaseCapacity)
+	releaseCapacity <- true
 
 	// Test when remote AI worker does not have capacity
-	hasCapacity = o.CheckAICapacity("text-to-image", "livepeer/model2")
+	hasCapacity, releaseCapacity = o.CheckAICapacity("text-to-image", "livepeer/model2")
 	assert.False(t, hasCapacity)
+	assert.Nil(t, releaseCapacity)
 }
 func TestRemoteAIWorkerProcessPipelines(t *testing.T) {
 	drivers.NodeStorage = drivers.NewMemoryDriver(nil)
