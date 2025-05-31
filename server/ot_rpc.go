@@ -182,13 +182,12 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		}
 	}
 	// Create input file from segment. Removed after transcoding done
-	fname = path.Join(n.WorkDir, common.RandName()+".tempfile")
+	fname = path.Join(n.WorkDir, fmt.Sprintf("%s-%d-%s.tempfile", md.ManifestID, md.Seq, common.RandName()))
 	if err = ioutil.WriteFile(fname, data, 0600); err != nil {
 		clog.Errorf(ctx, "Transcoder cannot write file err=%q", err)
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
-	defer os.Remove(fname)
 	md.Fname = fname
 	md.Metadata = core.MakeMetadata(notify.OrchId)
 	clog.V(common.DEBUG).Infof(ctx, "Segment from taskId=%d url=%s saved to file=%s", notify.TaskId, notify.Url, fname)
@@ -208,6 +207,21 @@ func runTranscode(n *core.LivepeerNode, orchAddr string, httpc *http.Client, not
 		sendTranscodeResult(ctx, n, orchAddr, httpc, notify, contentType, &body, tData, err)
 		return
 	}
+
+	// check for big inputs
+	keepInput := false
+	for i, seg := range tData.Segments {
+		// 840x480 30fps 10 mins ~ 7.38 billion pixels, or a 1gb output
+		if seg.Pixels > 7_378_560_000 || len(seg.Data) > 1_000_000_000 {
+			// keep input for later analysis to figure out extremely large output
+			keepInput = true
+			clog.Info(ctx, "Extremely large output detected!", "manifestID", md.ManifestID, "seq", md.Seq, "pixels", seg.Pixels, "bytes", len(seg.Data), "profile", md.Profiles[i])
+		}
+	}
+	if !keepInput {
+		defer os.Remove(fname)
+	}
+
 	boundary := common.RandName()
 	w := multipart.NewWriter(&body)
 	for i, v := range tData.Segments {
