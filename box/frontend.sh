@@ -3,6 +3,11 @@
 cd ../pipelines/apps/app
 pnpm install
 
+if [ ! -f .env ]; then
+  echo "Creating .env file..."
+  cp .env.example .env
+fi
+
 export PGPASSWORD='your-super-secret-and-long-postgres-password'
 
 DB_PREPARED=$(psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='pipelines';")
