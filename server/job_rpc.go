@@ -556,10 +556,14 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout)*time.Second)
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
+		//if the request failed with an error, remove the capability
+		if err != context.DeadlineExceeded {
+			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
+		}
 
 		chargeForCompute(start, jobPrice, orch, sender, jobId)
 		w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
-		http.Error(w, fmt.Sprintf("job not able to be processed err=%v", err.Error()), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
 		return
 	}
 
