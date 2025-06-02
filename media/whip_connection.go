@@ -107,7 +107,7 @@ type TrackStats struct {
 	Jitter          float64
 	PacketsLost     int64
 	PacketsReceived int64
-	PacketLossPct   int64
+	PacketLossPct   float64
 	RTT             time.Duration
 	Warnings        []string
 }
@@ -253,15 +253,14 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		}
 
 		trackType := TrackType{t.Kind()}
-		var jitterMs float64
-		var packetLossPct int64
+		var jitterMs, packetLossPct float64
 		if t.Codec().ClockRate > 0 {
 			jitterMs = (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000
 		}
 		packetsLost := s.InboundRTPStreamStats.PacketsLost
 		packetsReceived := int64(s.InboundRTPStreamStats.PacketsReceived)
 		if packetsLost > 0 || packetsReceived > 0 {
-			packetLossPct = packetsLost / (packetsLost + packetsReceived) * 100
+			packetLossPct = float64(packetsLost) / float64(packetsLost+packetsReceived) * 100
 		}
 
 		var warnings []string

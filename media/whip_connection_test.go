@@ -105,8 +105,8 @@ func TestMediaStateStats(t *testing.T) {
 				123: {
 					InboundRTPStreamStats: stats.InboundRTPStreamStats{
 						ReceivedRTPStreamStats: stats.ReceivedRTPStreamStats{
-							PacketsLost:     1, // 1 packet lost and none received = 100% loss
-							PacketsReceived: 0,
+							PacketsLost:     1, // 1 packet lost and 2 received = 33.33% loss
+							PacketsReceived: 2,
 						},
 					},
 				},
