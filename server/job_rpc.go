@@ -324,12 +324,6 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			req.Header.Add(jobPaymentHeaderHdr, paymentHdr)
 		}
 
-		if err != nil {
-			clog.Errorf(ctx, "Unable to create payment err=%v", err)
-			http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
-			return
-		}
-
 		start := time.Now()
 		resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
 		if err != nil {
