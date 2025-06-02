@@ -120,6 +120,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	remoteAddr := getRemoteAddr(r)
 
 	orch := h.orchestrator
+
 	jobEthAddrHdr := r.Header.Get(jobEthAddressHdr)
 	if jobEthAddrHdr == "" {
 		glog.Infof("generate token failed, invalid request remoteAddr=%v", remoteAddr)
@@ -288,12 +289,6 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 	//send the request to the Orchestrator(s)
 	//the loop ends on Gateway error and bad request errors
 	for _, orchToken := range orchs {
-		paymentHdr, err := createPayment(ctx, jobReq, orchToken, ls.LivepeerNode)
-		if err != nil {
-			clog.Errorf(ctx, "Unable to create payment err=%v", err)
-			http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
-			return
-		}
 
 		// Extract the worker resource route from the URL path
 		// The prefix is "/process/request/"
@@ -317,8 +312,23 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		// set the headers
 		req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
 		req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
-		req.Header.Add(jobPaymentHeaderHdr, paymentHdr)
+
 		req.Header.Add(jobRequestHdr, jobReqHdr)
+		if orchToken.Price.PricePerUnit > 0 {
+			paymentHdr, err := createPayment(ctx, jobReq, orchToken, ls.LivepeerNode)
+			if err != nil {
+				clog.Errorf(ctx, "Unable to create payment err=%v", err)
+				http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
+				return
+			}
+			req.Header.Add(jobPaymentHeaderHdr, paymentHdr)
+		}
+
+		if err != nil {
+			clog.Errorf(ctx, "Unable to create payment err=%v", err)
+			http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
+			return
+		}
 
 		start := time.Now()
 		resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
@@ -461,56 +471,59 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// get payment information
-	payment, err := getPayment(r.Header.Get(jobPaymentHeaderHdr))
-	if err != nil {
-		clog.Errorf(r.Context(), "Could not parse payment: %v", err)
-		http.Error(w, err.Error(), http.StatusPaymentRequired)
-		return
-	}
-
-	taskId := core.RandomManifestID()
-	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
-	ctx = clog.AddVal(ctx, "worker_task_id", string(taskId))
-	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
-	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
-	jobId := jobReq.Capability
-
 	jobPrice, err := orch.JobPriceInfo(sender, jobReq.Capability)
 	if err != nil {
 		clog.Errorf(ctx, "could not get price err=%v", err.Error())
 		http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), http.StatusBadRequest)
 		return
 	}
-
 	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+	taskId := core.RandomManifestID()
+	jobId := jobReq.Capability
+	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
+	ctx = clog.AddVal(ctx, "worker_task_id", string(taskId))
+	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
+	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
 
-	if payment.TicketParams == nil {
-		//no payment included, confirm if balance remains
-		jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-		//if price is not 0, comfirm balance
-		if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-			minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
-			orchBal := getPaymentBalance(orch, sender, jobId)
+	//no payment included, confirm if balance remains
+	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+	var payment net.Payment
+	// if price is 0, no payment required
+	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+		// get payment information
+		payment, err := getPayment(r.Header.Get(jobPaymentHeaderHdr))
+		if err != nil {
+			clog.Errorf(r.Context(), "Could not parse payment: %v", err)
+			http.Error(w, err.Error(), http.StatusPaymentRequired)
+			return
+		}
 
-			if orchBal.Cmp(minBal) < 0 {
-				clog.Errorf(ctx, "Insufficient balance for request")
-				http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
+		if payment.TicketParams == nil {
+
+			//if price is not 0, comfirm balance
+			if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+				minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+				orchBal := getPaymentBalance(orch, sender, jobId)
+
+				if orchBal.Cmp(minBal) < 0 {
+					clog.Errorf(ctx, "Insufficient balance for request")
+					http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
+					orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+					return
+				}
+			}
+		} else {
+			if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
+				clog.Errorf(ctx, "error processing payment err=%q", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
 				return
 			}
 		}
-	} else {
-		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
-			clog.Errorf(ctx, "error processing payment err=%q", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-			return
-		}
-	}
 
-	clog.Infof(ctx, "balance after payment is %v", getPaymentBalance(orch, sender, jobId).FloatString(0))
+		clog.Infof(ctx, "balance after payment is %v", getPaymentBalance(orch, sender, jobId).FloatString(0))
+	}
 
 	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing")
 
@@ -659,15 +672,18 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 			select {
 			case <-pmtWatcher.C:
 				//check balance and end response if out of funds
-				h.orchestrator.DebitFees(sender, core.ManifestID(jobId), payment.GetExpectedPrice(), 5)
-				senderBalance := getPaymentBalance(orch, sender, jobId)
-				if senderBalance != nil {
-					if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
-						w.Write([]byte("event: insufficient balance\n"))
-						w.Write([]byte("data: {\"balance\": 0}\n\n"))
-						w.Write([]byte("data: [DONE]\n\n"))
-						flusher.Flush()
-						break proxyResp
+				//skips if price is 0
+				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+					h.orchestrator.DebitFees(sender, core.ManifestID(jobId), payment.GetExpectedPrice(), 5)
+					senderBalance := getPaymentBalance(orch, sender, jobId)
+					if senderBalance != nil {
+						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
+							w.Write([]byte("event: insufficient balance\n"))
+							w.Write([]byte("data: {\"balance\": 0}\n\n"))
+							w.Write([]byte("data: [DONE]\n\n"))
+							flusher.Flush()
+							break proxyResp
+						}
 					}
 				}
 			case <-respCtx.Done():
@@ -953,6 +969,7 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 		Addr: addr.Hex(),
 		Sig:  "0x" + hex.EncodeToString(gatewayReq.Sig),
 	}
+	glog.Infof("%+v", reqSender)
 	getOrchJobToken := func(ctx context.Context, orchUrl *url.URL, reqSender JobSender, respTimeout time.Duration, tokenCh chan JobToken, errCh chan error) {
 		start := time.Now()
 		tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl.String()+"/process/token", nil)
