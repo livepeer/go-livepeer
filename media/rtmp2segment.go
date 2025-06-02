@@ -123,7 +123,7 @@ func cleanUpPipe(pipeName string) {
 	}
 }
 
-func openNonBlockingWithRetry(ctx context.Context, name string, timeout time.Duration, completed <-chan bool) (*os.File, error) {
+func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-chan bool) (*os.File, error) {
 	// Pipes block if there is no writer available
 
 	// Attempt to open the named pipe in non-blocking mode once
@@ -132,8 +132,8 @@ func openNonBlockingWithRetry(ctx context.Context, name string, timeout time.Dur
 		return nil, fmt.Errorf("error opening file in non-blocking mode: %w", err)
 	}
 
-	deadline := time.Now().Add(timeout)
-	clog.Info(ctx, "processing rtmp segment", "timeout", timeout.String(), "deadline", deadline.String())
+	start := time.Now()
+	deadline := start.Add(timeout)
 
 	// setFd sets the given file descriptor in the fdSet
 	setFd := func(fd int, fdSet *syscall.FdSet) {
@@ -167,9 +167,8 @@ func openNonBlockingWithRetry(ctx context.Context, name string, timeout time.Dur
 		// Calculate the remaining time until the deadline
 		timeLeft := time.Until(deadline)
 		if timeLeft <= 0 {
-			clog.Info(ctx, "processing rtmp segment timeout", "timeLeft", timeLeft)
 			syscall.Close(fd)
-			return nil, fmt.Errorf("timeout waiting for file to be ready: %s", name)
+			return nil, fmt.Errorf("timeout waiting for file to be ready. file=%s start=%v deadline=%v timeLeft=%s", name, start, deadline, timeLeft)
 		}
 
 		// Convert timeLeft to a syscall.Timeval for the select call
@@ -246,7 +245,7 @@ func processSegments(ctx context.Context, segmentHandler SegmentHandler, outFile
 
 		// Open the current pipe for reading
 		// Blocks if no writer is available so do some tricks to it
-		file, err := openNonBlockingWithRetry(ctx, pipeName, waitTimeout, pipeCompletion)
+		file, err := openNonBlockingWithRetry(pipeName, waitTimeout, pipeCompletion)
 		if err != nil {
 			clog.Errorf(ctx, "Error opening pipe pipeName=%s err=%s", pipeName, err)
 			cleanUpPipe(pipeName)
