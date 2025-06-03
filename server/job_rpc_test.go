@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/core"
@@ -27,27 +28,30 @@ import (
 )
 
 type mockJobOrchestrator struct {
-	node       *core.LivepeerNode
-	priv       *ecdsa.PrivateKey
-	block      *big.Int
-	signErr    error
-	sessCapErr error
-	priceInfo  *net.PriceInfo
-	serviceURI string
-	res        *core.TranscodeResult
-	offchain   bool
-	caps       *core.Capabilities
-	authToken  *net.AuthToken
+	node                 *core.LivepeerNode
+	priv                 *ecdsa.PrivateKey
+	block                *big.Int
+	signErr              error
+	sessCapErr           error
+	priceInfo            *net.PriceInfo
+	serviceURI           string
+	res                  *core.TranscodeResult
+	offchain             bool
+	caps                 *core.Capabilities
+	authToken            *net.AuthToken
+	externalCapabilities map[string]*core.ExternalCapability
 
-	registerExternalCapability func(string) (*core.ExternalCapability, error)
-	verifySignature            func(common.Address, string, []byte) bool
-	reserveCapacity            func(string) error
-	getUrlForCapability        func(string) string
-	balance                    func(common.Address, core.ManifestID) *big.Rat
-	debitFees                  func(common.Address, core.ManifestID, *net.PriceInfo, int64)
-	freeCapacity               func(string) error
-	jobPriceInfo               func(common.Address, string) (*net.PriceInfo, error)
-	ticketParams               func(ethcommon.Address, *net.PriceInfo) (*net.TicketParams, error)
+	registerExternalCapability      func(string) (*core.ExternalCapability, error)
+	unregisterExternalCapability    func(string) error
+	verifySignature                 func(common.Address, string, []byte) bool
+	checkExternalCapabilityCapacity func(string) bool
+	reserveCapacity                 func(string) error
+	getUrlForCapability             func(string) string
+	balance                         func(common.Address, core.ManifestID) *big.Rat
+	debitFees                       func(common.Address, core.ManifestID, *net.PriceInfo, int64)
+	freeCapacity                    func(string) error
+	jobPriceInfo                    func(common.Address, string) (*net.PriceInfo, error)
+	ticketParams                    func(ethcommon.Address, *net.PriceInfo) (*net.TicketParams, error)
 }
 
 func (r *mockJobOrchestrator) ServiceURI() *url.URL {
@@ -123,7 +127,11 @@ func (r *mockJobOrchestrator) DebitFees(addr ethcommon.Address, manifestID core.
 }
 
 func (r *mockJobOrchestrator) Balance(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
-	return big.NewRat(0, 1)
+	if r.balance != nil {
+		return r.balance(addr, manifestID)
+	} else {
+		return big.NewRat(0, 1)
+	}
 }
 
 func (r *mockJobOrchestrator) Capabilities() *net.Capabilities {
@@ -208,13 +216,28 @@ func (r *mockJobOrchestrator) RegisterExternalCapability(extCapabilitySettings s
 	return r.registerExternalCapability(extCapabilitySettings)
 }
 func (r *mockJobOrchestrator) RemoveExternalCapability(extCapability string) error {
+	// RemoveExternalCapability deletes the key from the external capabilities map
+	// if the key does not exist the delete is a no-op so no error is possible
+	delete(r.externalCapabilities, extCapability)
+	if r.unregisterExternalCapability != nil {
+		return r.unregisterExternalCapability(extCapability)
+	}
+
 	return nil
 }
 func (r *mockJobOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
-	return true
+	if r.checkExternalCapabilityCapacity == nil {
+		return true
+	} else {
+		return r.checkExternalCapabilityCapacity(extCap)
+	}
 }
 func (r *mockJobOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
-	return nil
+	if r.reserveCapacity == nil {
+		return nil
+	} else {
+		return r.reserveCapacity(extCap)
+	}
 }
 func (r *mockJobOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
 	return r.freeCapacity(extCap)
@@ -285,8 +308,10 @@ func TestRegisterCapability_Success(t *testing.T) {
 	mockJobOrch := newMockJobOrchestrator()
 	mockJobOrch.registerExternalCapability = func(settings string) (*core.ExternalCapability, error) {
 		return &core.ExternalCapability{
-			Name: "test-cap",
-			Url:  "http://localhost:8080",
+			Name:         "test-cap",
+			Url:          "http://localhost:8080",
+			PricePerUnit: 1,
+			PriceScaling: 1,
 		}, nil
 	}
 
@@ -294,7 +319,7 @@ func TestRegisterCapability_Success(t *testing.T) {
 		orchestrator: mockJobOrch,
 	}
 
-	req := httptest.NewRequest("POST", "/capability", bytes.NewBufferString("test settings"))
+	req := httptest.NewRequest("POST", "/capability/register", bytes.NewBufferString("test settings"))
 	req.Header.Set("Authorization", mockJobOrch.TranscoderSecret())
 	w := httptest.NewRecorder()
 
@@ -314,14 +339,110 @@ func TestRegisterCapability_Error(t *testing.T) {
 		orchestrator: mockJobOrch,
 	}
 
-	req := httptest.NewRequest("POST", "/capability", bytes.NewBufferString("test settings"))
+	req := httptest.NewRequest("POST", "/capability/register", bytes.NewBufferString("test settings"))
 	req.Header.Set("Authorization", mockJobOrch.TranscoderSecret())
 	w := httptest.NewRecorder()
 
 	h.RegisterCapability(w, req)
 
 	resp := w.Result()
-	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestUnregisterCapability(t *testing.T) {
+	// Setup
+	mockOrch := newMockJobOrchestrator()
+	secret := mockOrch.TranscoderSecret()
+	// Register a test capability we'll unregister
+	capName := "test-capability"
+	mockOrch.externalCapabilities = make(map[string]*core.ExternalCapability)
+	mockOrch.externalCapabilities[capName] = &core.ExternalCapability{Name: capName}
+
+	// Create handler with our mock orchestrator
+	handler := &lphttp{orchestrator: mockOrch}
+
+	t.Run("SuccessfulUnregister", func(t *testing.T) {
+
+		// Create test request
+		req := httptest.NewRequest(http.MethodPost, "/capability/unregister",
+			bytes.NewBufferString(capName))
+		req.Header.Set("Authorization", secret)
+
+		// Execute request
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		// Verify results
+		resp := recorder.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		_, exists := mockOrch.externalCapabilities[capName]
+		assert.False(t, exists, "Capability should be removed")
+	})
+
+	t.Run("WrongMethod", func(t *testing.T) {
+		// Try with GET instead of POST
+		req := httptest.NewRequest(http.MethodGet, "/capability/unregister",
+			bytes.NewBufferString(capName))
+		req.Header.Set("Authorization", secret)
+
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		assert.Equal(t, http.StatusMethodNotAllowed, recorder.Result().StatusCode)
+	})
+
+	t.Run("InvalidAuth", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/capability/unregister",
+			bytes.NewBufferString(capName))
+		req.Header.Set("Authorization", "wrong-secret")
+
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+	})
+
+	t.Run("MissingAuth", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/capability/unregister",
+			bytes.NewBufferString(capName))
+
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+	})
+
+	t.Run("ErrorFromOrchestrator", func(t *testing.T) {
+		// Set up orchestrator to return an error
+		mockOrch.unregisterExternalCapability = func(capability string) error {
+			return errors.New("no capability")
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/capability/unregister",
+			bytes.NewBufferString("non-existent-capability"))
+		req.Header.Set("Authorization", secret)
+
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		assert.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+
+		mockOrch.unregisterExternalCapability = nil
+	})
+
+	t.Run("EmptyCapabilityName", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/capability/unregister",
+			bytes.NewBufferString(""))
+		req.Header.Set("Authorization", secret)
+
+		recorder := httptest.NewRecorder()
+		handler.UnregisterCapability(recorder, req)
+
+		// Should still work, but will attempt to remove an empty string capability
+		assert.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+	})
 }
 
 // Tests for GetJobToken
@@ -433,6 +554,9 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
 		return true
 	}
+	mockCheckExternalCapabilityCapacity := func(extCap string) bool {
+		return false
+	}
 
 	mockReserveCapacity := func(cap string) error {
 		return errors.New("no capacity")
@@ -440,6 +564,7 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 
 	mockJobOrch := newMockJobOrchestrator()
 	mockJobOrch.verifySignature = mockVerifySig
+	mockJobOrch.checkExternalCapabilityCapacity = mockCheckExternalCapabilityCapacity
 	mockJobOrch.reserveCapacity = mockReserveCapacity
 
 	h := &lphttp{
@@ -448,9 +573,11 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
+	gateway := stubBroadcaster2()
+	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
 	js := &JobSender{
-		Addr: "0x0000000000000000000000000000000000000000",
-		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
+		Addr: hexutil.Encode(gateway.Address().Bytes()),
+		Sig:  hexutil.Encode(sig),
 	}
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
@@ -489,9 +616,11 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
+	gateway := stubBroadcaster2()
+	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
 	js := &JobSender{
-		Addr: "0x0000000000000000000000000000000000000000",
-		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
+		Addr: hexutil.Encode(gateway.Address().Bytes()),
+		Sig:  hexutil.Encode(sig),
 	}
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
@@ -531,9 +660,11 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
+	gateway := stubBroadcaster2()
+	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
 	js := &JobSender{
-		Addr: "0x0000000000000000000000000000000000000000",
-		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
+		Addr: hexutil.Encode(gateway.Address().Bytes()),
+		Sig:  hexutil.Encode(sig),
 	}
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
@@ -580,9 +711,11 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
+	gateway := stubBroadcaster2()
+	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
 	js := &JobSender{
-		Addr: "0x0000000000000000000000000000000000000000",
-		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
+		Addr: hexutil.Encode(gateway.Address().Bytes()),
+		Sig:  hexutil.Encode(sig),
 	}
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
@@ -642,9 +775,11 @@ func TestGetJobToken_Success(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
+	gateway := stubBroadcaster2()
+	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
 	js := &JobSender{
-		Addr: "0x0000000000000000000000000000000000000000",
-		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
+		Addr: hexutil.Encode(gateway.Address().Bytes()),
+		Sig:  hexutil.Encode(sig),
 	}
 	jsBytes, _ := json.Marshal(js)
 	jsBase64 := base64.StdEncoding.EncodeToString(jsBytes)
@@ -664,7 +799,7 @@ func TestGetJobToken_Success(t *testing.T) {
 	json.Unmarshal(body, &token)
 
 	assert.NotNil(t, token.TicketParams)
-	assert.Equal(t, int64(1), token.Balance)
+	assert.Equal(t, int64(1000), token.Balance)
 }
 
 // Tests for ProcessJob

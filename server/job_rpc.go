@@ -98,13 +98,15 @@ func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-	} else {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		w.WriteHeader(http.StatusBadRequest)
+		clog.Errorf(context.TODO(), "Error registering capability: %v", err)
+		w.Write([]byte(fmt.Sprintf("Error registering capability: %v", err)))
+		return
 	}
 
-	clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v", remoteAddr, cap.Name, cap.Url, cap.GetPrice().FloatString(3))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
+	clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v", remoteAddr, cap.Name, cap.Url, big.NewRat(cap.PricePerUnit, cap.PriceScaling))
 }
 
 func (h *lphttp) UnregisterCapability(w http.ResponseWriter, r *http.Request) {
@@ -136,12 +138,13 @@ func (h *lphttp) UnregisterCapability(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-	} else {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(fmt.Sprintf("Error removing capability: %v", err)))
+		return
 	}
 
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
 	clog.Infof(context.TODO(), "removed capability remoteAddr=%v capability=%v", remoteAddr, extCapName)
 }
 
