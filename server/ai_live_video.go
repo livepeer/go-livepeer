@@ -66,18 +66,12 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	return true
 }
 
-func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
-	clog.Infof(ctx, "Stopping processing, err=%v", err)
-	params.liveParams.sendErrorEvent(err)
-	params.liveParams.stopPipeline(err)
-}
-
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		clog.Infof(ctx, "error publishing trickle. err=%s", err)
-		params.liveParams.stopPipeline(fmt.Errorf("Error publishing trickle %w", err))
+		params.liveParams.stopPipeline()
 		return
 	}
 
@@ -111,16 +105,16 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
+			stopProcessing(ctx, params, errors.New("trickle publisher closed"))
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
 			suspendOrchestrator(ctx, params)
-			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
 			cancel()
+			stopProcessing(ctx, params, errors.New("orchestrator is slow"))
 			return
-			// TODO switch orchestrators
 		}
 		go func(seq int) {
 			defer slowOrchChecker.EndSegment()
@@ -132,8 +126,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
 			segment, err := publisher.Next()
 			if err != nil {
-				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
-				params.liveParams.sendErrorEvent(fmt.Errorf("Missing next handle %v", err))
+				stopProcessing(ctx, params, fmt.Errorf("error getting next publish handle; dropping segment, err=%w", err))
 				return
 			}
 			for {
@@ -145,8 +138,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					startTime := time.Now()
 					currentSeq := slowOrchChecker.GetCount()
 					if seq != currentSeq {
-						clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
-						params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
+						stopProcessing(ctx, params, fmt.Errorf("next segment has already started seq=%d currentSeq=%d", seq, currentSeq))
 						segment.Close()
 						return
 					}
@@ -172,16 +164,14 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 						return
 					}
 					if errors.Is(err, trickle.StreamNotFoundErr) {
-						clog.Infof(ctx, "Stream no longer exists on orchestrator; terminating")
-						params.liveParams.stopPipeline(fmt.Errorf("Stream does not exist"))
+						stopProcessing(ctx, params, errors.New("stream no longer exists on orchestrator; terminating"))
 						return
 					}
 					// Retry segment only if nothing has been sent yet
 					// and the next segment has not yet started
 					// otherwise drop
 					if n > 0 {
-						clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
-						params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
+						stopProcessing(ctx, params, fmt.Errorf("error publishing segment; dropping remainder wrote=%d err=%v", n, err))
 						segment.Close()
 						return
 					}
@@ -229,7 +219,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
 	outWriter, err := media.NewRingBuffer(&rbc)
 	if err != nil {
-		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
+		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
 	}
 	if params.liveParams.outputRTMPURL != "" {
 		// External output ffmpeg process
@@ -265,7 +255,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				segment, err = subscriber.Read()
 				if err != nil {
 					if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-						params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe end of stream: %w", err))
+						stopProcessing(ctx, params, fmt.Errorf("trickle subscribe stopping, stream not found, err=%w", err))
 						return
 					}
 					var sequenceNonexistent *trickle.SequenceNonexistent
@@ -277,7 +267,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 					err = fmt.Errorf("trickle subscribe error reading: %w", err)
 					clog.Infof(ctx, "%s", err)
 					if retries > maxRetries {
-						params.liveParams.stopPipeline(err)
+						stopProcessing(ctx, params, errors.New("trickle subscribe stopping, retries exceeded"))
 						return
 					}
 					retries++
@@ -297,7 +287,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				}
 				if err != nil {
 					suspendOrchestrator(ctx, params)
-					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
+					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error copying: %w", err))
 					return
 				}
 				if firstSegment {
@@ -352,7 +342,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 				err = errors.New("unknown error")
 			}
 			clog.Errorf(ctx, "LPMS panic err=%v", err)
-			params.liveParams.stopPipeline(fmt.Errorf("LPMS panic %w", err))
+			params.liveParams.stopPipeline()
 		}
 	}()
 	for {
@@ -362,7 +352,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			break
 		}
 
-		cmd := exec.Command("ffmpeg",
+		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
 			"-c:a", "copy",
@@ -416,6 +406,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
 		clog.InfofErr(ctx, "error starting control publisher", err)
+		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
 	}
 	params.node.LiveMu.Lock()
@@ -449,10 +440,9 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
+		defer params.liveParams.stopPipeline()
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case <-ticker.C:
 				const msg = `{"keep":"alive"}`
 				err := controlPub.Write(strings.NewReader(msg))
@@ -463,7 +453,10 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
+				stopProcessing(ctx, params, fmt.Errorf("stopping control publisher"))
 				return
+			case <-ctx.Done():
+				stop()
 			}
 		}
 	}()
@@ -522,9 +515,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 						subscriber.SetSeq(seqErr.Latest)
 					}
 					if retries > maxRetries {
-						clog.Infof(ctx, "Too many errors reading events; stopping subscription err=%v", err)
-						err = fmt.Errorf("Error reading subscription: %w", err)
-						params.liveParams.stopPipeline(err)
+						stopProcessing(ctx, params, fmt.Errorf("too many errors reading events; stopping subscription, err=%w", err))
 						return
 					}
 					clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
@@ -626,7 +617,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				eventTime := lastEvent
 				lastEventMu.Unlock()
 				if time.Now().Sub(eventTime) > maxEventGap {
-					params.liveParams.stopPipeline(errors.New("timeout waiting for events"))
+					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for events"))
 					eventTicker.Stop()
 					return
 				}
@@ -645,6 +636,12 @@ func (a aiRequestParams) inputStreamExists() bool {
 	defer a.node.LiveMu.RUnlock()
 	p, ok := a.node.LivePipelines[a.liveParams.stream]
 	return ok && p.RequestID == a.liveParams.requestID
+}
+
+func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
+	clog.Infof(ctx, "Stopping processing, err=%v", err)
+	params.liveParams.sendErrorEvent(err)
+	params.liveParams.stopPipeline()
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

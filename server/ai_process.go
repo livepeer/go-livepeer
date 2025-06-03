@@ -121,7 +121,7 @@ type liveRequestParams struct {
 	sess *AISession
 }
 
-func (p *liveRequestParams) stopPipeline(err error) {
+func (p *liveRequestParams) stopPipeline() {
 	select {
 	case <-p.processing:
 		// Channel is already closed
