@@ -71,7 +71,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		clog.Infof(ctx, "error publishing trickle. err=%s", err)
-		params.liveParams.stopPipeline()
+		params.liveParams.cancel()
 		return
 	}
 
@@ -342,7 +342,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 				err = errors.New("unknown error")
 			}
 			clog.Errorf(ctx, "LPMS panic err=%v", err)
-			params.liveParams.stopPipeline()
+			params.liveParams.cancel()
 		}
 	}()
 	for {
@@ -440,7 +440,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
-		defer params.liveParams.stopPipeline()
+		defer params.liveParams.cancel()
 		for {
 			select {
 			case <-ticker.C:
@@ -641,7 +641,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
 	clog.Infof(ctx, "Stopping processing, err=%v", err)
 	params.liveParams.sendErrorEvent(err)
-	params.liveParams.stopPipeline()
+	params.liveParams.cancel()
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

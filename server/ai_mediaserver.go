@@ -637,7 +637,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	go func() {
 		for {
 			perOrchCtx, perOrchCancel := context.WithCancel(ctx)
-			params.liveParams = newParams(params.liveParams)
+			params.liveParams = newParams(params.liveParams, perOrchCancel)
 			resp, err := processAIRequest(perOrchCtx, params, req)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing AI Request: %s", err)
@@ -654,19 +654,18 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				isFirst = false
 				firstProcessed <- struct{}{}
 			}
-			<-params.liveParams.processing
-			perOrchCancel()
+			<-perOrchCtx.Done()
 			if !orchSwapper.shouldSwap(ctx) {
 				break
 			}
 			clog.Infof(ctx, "Retrying stream with a different orchestrator")
 		}
-		params.liveParams.kickInput(fmt.Errorf("Done processing"))
+		params.liveParams.kickInput(fmt.Errorf("done processing"))
 	}()
 	<-firstProcessed
 }
 
-func newParams(params *liveRequestParams) *liveRequestParams {
+func newParams(params *liveRequestParams, cancel context.CancelFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		outputRTMPURL:          params.outputRTMPURL,
@@ -681,7 +680,7 @@ func newParams(params *liveRequestParams) *liveRequestParams {
 		sendErrorEvent:         params.sendErrorEvent,
 		kickInput:              params.kickInput,
 		startTime:              time.Now(),
-		processing:             make(chan struct{}),
+		cancel:                 cancel,
 	}
 }
 
