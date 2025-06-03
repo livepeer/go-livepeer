@@ -33,7 +33,12 @@ import (
 
 // TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
 
-const keyframeInterval = 2 * time.Second // TODO make configurable?
+const (
+	keyframeInterval       = 2 * time.Second // TODO make configurable?
+	iceKeepAliveInterval   = 2 * time.Second
+	iceFailedTimeout       = 10 * time.Second
+	iceDisconnectedTimeout = 5 * time.Second
+)
 
 // Generate a random ID for new resources
 func generateID() string {
@@ -80,9 +85,16 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	}
 	defer r.Body.Close()
 
+	settingEngine := webrtc.SettingEngine{}
+	settingEngine.SetICETimeouts(
+		iceDisconnectedTimeout,
+		iceFailedTimeout,
+		iceKeepAliveInterval,
+	)
+
 	// Create a new PeerConnection
 	interceptors, statsGetter := genInterceptors(s.mediaEngine)
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(s.mediaEngine), interceptors, s.settings)
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(s.mediaEngine), interceptors, s.settings, webrtc.WithSettingEngine(settingEngine))
 	peerConnection, err := api.NewPeerConnection(WebrtcConfig)
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
