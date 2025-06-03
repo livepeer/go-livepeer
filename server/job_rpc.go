@@ -107,6 +107,44 @@ func (h *lphttp) RegisterCapability(w http.ResponseWriter, r *http.Request) {
 	clog.Infof(context.TODO(), "registered capability remoteAddr=%v capability=%v url=%v price=%v", remoteAddr, cap.Name, cap.Url, cap.GetPrice().FloatString(3))
 }
 
+func (h *lphttp) UnregisterCapability(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	orch := h.orchestrator
+	auth := r.Header.Get("Authorization")
+	if auth != orch.TranscoderSecret() {
+		http.Error(w, "invalid authorization", http.StatusBadRequest)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	extCapName := string(body)
+	remoteAddr := getRemoteAddr(r)
+
+	err = orch.RemoveExternalCapability(extCapName)
+	if err != nil {
+		clog.Errorf(context.TODO(), "Error removing capability: %v", err)
+		http.Error(w, fmt.Sprintf("Error removing capability: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+	} else {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}
+
+	clog.Infof(context.TODO(), "removed capability remoteAddr=%v capability=%v", remoteAddr, extCapName)
+}
+
 func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
