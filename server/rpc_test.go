@@ -839,7 +839,7 @@ func TestGetPayment_GivenInvalidProtoData_ReturnsError(t *testing.T) {
 
 	_, err := getPayment(header)
 
-	assert.Contains(t, err.Error(), "could not parse payment")
+	assert.Contains(t, err.Error(), "protobuf")
 }
 
 func TestGetPayment_GivenValidHeader_ReturnsPayment(t *testing.T) {

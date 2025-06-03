@@ -317,7 +317,7 @@ func getPayment(header string) (net.Payment, error) {
 	}
 	var payment net.Payment
 	if err := proto.Unmarshal(buf, &payment); err != nil {
-		return net.Payment{}, errors.Wrap(err, "could not parse payment")
+		return net.Payment{}, errors.Wrap(err, "protobuf unmarshal error")
 	}
 
 	return payment, nil
