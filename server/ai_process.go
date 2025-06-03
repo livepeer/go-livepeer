@@ -108,7 +108,8 @@ type liveRequestParams struct {
 	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput  func(error)
+	processing chan struct{}
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -118,6 +119,15 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
+}
+
+func (p *liveRequestParams) stopPipeline(err error) {
+	select {
+	case <-p.processing:
+		// Channel is already closed
+	default:
+		close(p.processing)
+	}
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.

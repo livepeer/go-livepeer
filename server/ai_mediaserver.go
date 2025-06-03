@@ -563,7 +563,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
 		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
-		stopPipeline := func(err error) {
+		kickInput := func(err error) {
 			defer cancelSegmenter()
 			if err == nil {
 				return
@@ -595,7 +595,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				streamID:               streamID,
 				pipelineID:             pipelineID,
 				pipeline:               pipeline,
-				stopPipeline:           stopPipeline,
+				kickInput:              kickInput,
 				sendErrorEvent:         sendErrorEvent,
 			},
 		}
@@ -632,17 +632,56 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
-	resp, err := processAIRequest(ctx, params, req)
-	if err != nil {
-		clog.Errorf(ctx, "Error processing AI Request: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
+	orchSwapper := NewOrchestratorSwapper(params)
+	isFirst, firstProcessed := true, make(chan interface{})
+	go func() {
+		for {
+			perOrchCtx, perOrchCancel := context.WithCancel(ctx)
+			params.liveParams = newParams(params.liveParams)
+			resp, err := processAIRequest(perOrchCtx, params, req)
+			if err != nil {
+				clog.Errorf(ctx, "Error processing AI Request: %s", err)
+				perOrchCancel()
+				break
+			}
 
-	if err = startProcessing(ctx, params, resp); err != nil {
-		clog.Errorf(ctx, "Error starting processing: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
+			if err = startProcessing(perOrchCtx, params, resp); err != nil {
+				clog.Errorf(ctx, "Error starting processing: %s", err)
+				perOrchCancel()
+				break
+			}
+			if isFirst {
+				isFirst = false
+				firstProcessed <- struct{}{}
+			}
+			<-params.liveParams.processing
+			perOrchCancel()
+			if !orchSwapper.shouldSwap(ctx) {
+				break
+			}
+			clog.Infof(ctx, "Retrying stream with a different orchestrator")
+		}
+		params.liveParams.kickInput(fmt.Errorf("Done processing"))
+	}()
+	<-firstProcessed
+}
+
+func newParams(params *liveRequestParams) *liveRequestParams {
+	return &liveRequestParams{
+		segmentReader:          params.segmentReader,
+		outputRTMPURL:          params.outputRTMPURL,
+		mediaMTXOutputRTMPURL:  params.mediaMTXOutputRTMPURL,
+		stream:                 params.stream,
+		paymentProcessInterval: params.paymentProcessInterval,
+		outSegmentTimeout:      params.outSegmentTimeout,
+		requestID:              params.requestID,
+		streamID:               params.streamID,
+		pipelineID:             params.pipelineID,
+		pipeline:               params.pipeline,
+		sendErrorEvent:         params.sendErrorEvent,
+		kickInput:              params.kickInput,
+		startTime:              time.Now(),
+		processing:             make(chan struct{}),
 	}
 }
 
@@ -873,7 +912,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				"pipeline_id": pipelineID,
 				"pipeline":    pipeline,
 			})
-			stopPipeline := func(err error) {
+			kickInput := func(err error) {
 				if err == nil {
 					return
 				}
@@ -943,7 +982,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					streamID:               streamID,
 					pipelineID:             pipelineID,
 					pipeline:               pipeline,
-					stopPipeline:           stopPipeline,
+					kickInput:              kickInput,
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
 				},

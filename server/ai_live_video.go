@@ -26,6 +26,52 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
+type orchestratorSwapper struct {
+	params           aiRequestParams
+	cap              core.Capability
+	lastSwapped      time.Time
+	recentSwapsCount int
+}
+
+func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
+	return &orchestratorSwapper{
+		params:           params,
+		lastSwapped:      time.Now(),
+		recentSwapsCount: 1,
+	}
+}
+
+func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
+	if !os.params.inputStreamExists() {
+		clog.Info(ctx, "No input stream, skipping orchestrator swap")
+		return false
+	}
+
+	// Stop if too many swaps, because there may be something wrong with the input stream
+	maxRecentSwapsCount := 3
+	if os.recentSwapsCount > maxRecentSwapsCount {
+		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
+		return false
+	}
+
+	// Measure how many swaps have been done recently to avoid to many swaps in a short time
+	recentSwapInterval := 3 * time.Minute
+	if os.lastSwapped.Add(recentSwapInterval).After(time.Now()) {
+		os.recentSwapsCount++
+	} else {
+		os.recentSwapsCount = 1
+	}
+
+	os.lastSwapped = time.Now()
+	return true
+}
+
+func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
+	clog.Infof(ctx, "Stopping processing, err=%v", err)
+	params.liveParams.sendErrorEvent(err)
+	params.liveParams.stopPipeline(err)
+}
+
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
@@ -91,53 +137,59 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				return
 			}
 			for {
-				startTime := time.Now()
-				currentSeq := slowOrchChecker.GetCount()
-				if seq != currentSeq {
-					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
-					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
-					segment.Close()
+				select {
+				case <-ctx.Done():
+					stopProcessing(ctx, params, errors.New("stream processing is done"))
 					return
-				}
-				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
-				n, err := segment.Write(r)
-				if err == nil {
-					// no error, all done, let's leave
-					if monitor.Enabled && firstSegment {
-						firstSegment = false
-						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-							"type":        "gateway_send_first_ingest_segment",
-							"timestamp":   time.Now().UnixMilli(),
-							"stream_id":   params.liveParams.streamID,
-							"pipeline_id": params.liveParams.pipelineID,
-							"request_id":  params.liveParams.requestID,
-							"orchestrator_info": map[string]interface{}{
-								"address": sess.Address(),
-								"url":     sess.Transcoder(),
-							},
-						})
+				default:
+					startTime := time.Now()
+					currentSeq := slowOrchChecker.GetCount()
+					if seq != currentSeq {
+						clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
+						params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
+						segment.Close()
+						return
 					}
-					clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq, "took", time.Since(startTime))
-					return
+					logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
+					n, err := segment.Write(r)
+					if err == nil {
+						// no error, all done, let's leave
+						if monitor.Enabled && firstSegment {
+							firstSegment = false
+							monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+								"type":        "gateway_send_first_ingest_segment",
+								"timestamp":   time.Now().UnixMilli(),
+								"stream_id":   params.liveParams.streamID,
+								"pipeline_id": params.liveParams.pipelineID,
+								"request_id":  params.liveParams.requestID,
+								"orchestrator_info": map[string]interface{}{
+									"address": sess.Address(),
+									"url":     sess.Transcoder(),
+								},
+							})
+						}
+						clog.Info(ctx, "trickle publish complete", "wrote", humanize.Bytes(uint64(n)), "seq", seq, "took", time.Since(startTime))
+						return
+					}
+					if errors.Is(err, trickle.StreamNotFoundErr) {
+						clog.Infof(ctx, "Stream no longer exists on orchestrator; terminating")
+						params.liveParams.stopPipeline(fmt.Errorf("Stream does not exist"))
+						return
+					}
+					// Retry segment only if nothing has been sent yet
+					// and the next segment has not yet started
+					// otherwise drop
+					if n > 0 {
+						clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
+						params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
+						segment.Close()
+						return
+					}
+					clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
+					// Clone in case read head was incremented somewhere, which cloning resets
+					r = reader.Clone()
+					time.Sleep(250 * time.Millisecond)
 				}
-				if errors.Is(err, trickle.StreamNotFoundErr) {
-					clog.Infof(ctx, "Stream no longer exists on orchestrator; terminating")
-					params.liveParams.stopPipeline(fmt.Errorf("Stream does not exist"))
-					return
-				}
-				// Retry segment only if nothing has been sent yet
-				// and the next segment has not yet started
-				// otherwise drop
-				if n > 0 {
-					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
-					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
-					segment.Close()
-					return
-				}
-				clog.Infof(ctx, "Error publishing segment before writing; retrying err=%v", err)
-				// Clone in case read head was incremented somewhere, which cloning resets
-				r = reader.Clone()
-				time.Sleep(250 * time.Millisecond)
 			}
 		}(thisSeq)
 	})
@@ -199,87 +251,93 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		const retryPause = 300 * time.Millisecond
 		const maxRetries = 5
 		for {
-			if !params.inputStreamExists() {
-				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
-				break
-			}
-			var segment *http.Response
-			clog.V(8).Infof(ctx, "trickle subscribe read data await")
-			segment, err = subscriber.Read()
-			if err != nil {
-				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe end of stream: %w", err))
-					return
-				}
-				var sequenceNonexistent *trickle.SequenceNonexistent
-				if errors.As(err, &sequenceNonexistent) {
-					// stream exists but segment doesn't, so skip to leading edge
-					subscriber.SetSeq(sequenceNonexistent.Latest)
-				}
-				// TODO if not EOS then signal a new orchestrator is needed
-				err = fmt.Errorf("trickle subscribe error reading: %w", err)
-				clog.Infof(ctx, "%s", err)
-				if retries > maxRetries {
-					params.liveParams.stopPipeline(err)
-					return
-				}
-				retries++
-				params.liveParams.sendErrorEvent(err)
-				time.Sleep(retryPause)
-				continue
-			}
-			retries = 0
-			seq := trickle.GetSeq(segment)
-			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
-
-			var n int64
-			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(segment, outWriter, params.liveParams.outSegmentTimeout)
-			} else {
-				n, err = copySegment(segment, outWriter)
-			}
-			if err != nil {
-				suspendOrchestrator(ctx, params)
-				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
+			select {
+			case <-ctx.Done():
+				stopProcessing(ctx, params, errors.New("trickle subscribe stopping, context done"))
 				return
-			}
-			if firstSegment {
-				firstSegment = false
-				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
-				if monitor.Enabled {
-					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+			default:
+				if !params.inputStreamExists() {
+					clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
+					break
+				}
+				var segment *http.Response
+				clog.V(8).Infof(ctx, "trickle subscribe read data await")
+				segment, err = subscriber.Read()
+				if err != nil {
+					if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
+						params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe end of stream: %w", err))
+						return
+					}
+					var sequenceNonexistent *trickle.SequenceNonexistent
+					if errors.As(err, &sequenceNonexistent) {
+						// stream exists but segment doesn't, so skip to leading edge
+						subscriber.SetSeq(sequenceNonexistent.Latest)
+					}
+					// TODO if not EOS then signal a new orchestrator is needed
+					err = fmt.Errorf("trickle subscribe error reading: %w", err)
+					clog.Infof(ctx, "%s", err)
+					if retries > maxRetries {
+						params.liveParams.stopPipeline(err)
+						return
+					}
+					retries++
+					params.liveParams.sendErrorEvent(err)
+					time.Sleep(retryPause)
+					continue
+				}
+				retries = 0
+				seq := trickle.GetSeq(segment)
+				clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
+
+				var n int64
+				if params.liveParams.outSegmentTimeout > 0 {
+					n, err = copySegmentWithTimeout(segment, outWriter, params.liveParams.outSegmentTimeout)
+				} else {
+					n, err = copySegment(segment, outWriter)
+				}
+				if err != nil {
+					suspendOrchestrator(ctx, params)
+					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
+					return
+				}
+				if firstSegment {
+					firstSegment = false
+					delayMs := time.Since(params.liveParams.startTime).Milliseconds()
+					if monitor.Enabled {
+						monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+						monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+							"type":        "gateway_receive_first_processed_segment",
+							"timestamp":   time.Now().UnixMilli(),
+							"stream_id":   params.liveParams.streamID,
+							"pipeline_id": params.liveParams.pipelineID,
+							"request_id":  params.liveParams.requestID,
+							"orchestrator_info": map[string]interface{}{
+								"address": params.liveParams.sess.Address(),
+								"url":     params.liveParams.sess.Transcoder(),
+							},
+						})
+					}
+					clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
+				}
+				segmentsReceived += 1
+				if segmentsReceived == 3 && monitor.Enabled {
+					// We assume that after receiving 3 segments, the runner started successfully
+					// and we should be able to start the playback
 					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-						"type":        "gateway_receive_first_processed_segment",
+						"type":        "gateway_receive_few_processed_segments",
 						"timestamp":   time.Now().UnixMilli(),
 						"stream_id":   params.liveParams.streamID,
 						"pipeline_id": params.liveParams.pipelineID,
 						"request_id":  params.liveParams.requestID,
 						"orchestrator_info": map[string]interface{}{
-							"address": params.liveParams.sess.Address(),
-							"url":     params.liveParams.sess.Transcoder(),
+							"address": sess.Address(),
+							"url":     sess.Transcoder(),
 						},
 					})
-				}
-				clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-			}
-			segmentsReceived += 1
-			if segmentsReceived == 3 && monitor.Enabled {
-				// We assume that after receiving 3 segments, the runner started successfully
-				// and we should be able to start the playback
-				monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-					"type":        "gateway_receive_few_processed_segments",
-					"timestamp":   time.Now().UnixMilli(),
-					"stream_id":   params.liveParams.streamID,
-					"pipeline_id": params.liveParams.pipelineID,
-					"request_id":  params.liveParams.requestID,
-					"orchestrator_info": map[string]interface{}{
-						"address": sess.Address(),
-						"url":     sess.Transcoder(),
-					},
-				})
 
+				}
+				clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 			}
-			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
 		}
 	}()
 }
@@ -393,6 +451,8 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				const msg = `{"keep":"alive"}`
 				err := controlPub.Write(strings.NewReader(msg))
@@ -442,112 +502,117 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		const retryPause = 300 * time.Millisecond
 		retries := 0
 		for {
-			clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
-			segment, err := subscriber.Read()
-			if err == nil {
-				retries = 0
-			} else {
-				// handle errors from event read
-				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-					clog.Infof(ctx, "Stopping subscription due to %s", err)
-					return
-				}
-				var seqErr *trickle.SequenceNonexistent
-				if errors.As(err, &seqErr) {
-					// stream exists but segment doesn't, so skip to leading edge
-					subscriber.SetSeq(seqErr.Latest)
-				}
-				if retries > maxRetries {
-					clog.Infof(ctx, "Too many errors reading events; stopping subscription err=%v", err)
-					err = fmt.Errorf("Error reading subscription: %w", err)
-					params.liveParams.stopPipeline(err)
-					return
-				}
-				clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
-				retries++
-				time.Sleep(retryPause)
-				continue
-			}
-
-			body, err := io.ReadAll(segment.Body)
-			segment.Body.Close()
-
-			if err != nil {
-				clog.Infof(ctx, "Error reading events subscription body: %s", err)
-				continue
-			}
-
-			var eventWrapper struct {
-				QueueEventType string                 `json:"queue_event_type"`
-				Event          map[string]interface{} `json:"event"`
-			}
-			if err := json.Unmarshal(body, &eventWrapper); err != nil {
-				clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
-				continue
-			}
-
-			event := eventWrapper.Event
-			queueEventType := eventWrapper.QueueEventType
-			if event == nil {
-				// revert this once push to prod -- If no "event" field found, treat the entire body as the event
-				event = make(map[string]interface{})
-				if err := json.Unmarshal(body, &event); err != nil {
-					clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				clog.Infof(ctx, "Reading from event subscription for URL: %s", url.String())
+				segment, err := subscriber.Read()
+				if err == nil {
+					retries = 0
+				} else {
+					// handle errors from event read
+					if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
+						clog.Infof(ctx, "Stopping subscription due to %s", err)
+						return
+					}
+					var seqErr *trickle.SequenceNonexistent
+					if errors.As(err, &seqErr) {
+						// stream exists but segment doesn't, so skip to leading edge
+						subscriber.SetSeq(seqErr.Latest)
+					}
+					if retries > maxRetries {
+						clog.Infof(ctx, "Too many errors reading events; stopping subscription err=%v", err)
+						err = fmt.Errorf("Error reading subscription: %w", err)
+						params.liveParams.stopPipeline(err)
+						return
+					}
+					clog.Infof(ctx, "Error reading events subscription: err=%v retry=%d", err, retries)
+					retries++
+					time.Sleep(retryPause)
 					continue
 				}
-				queueEventType = "ai_stream_events"
-			}
 
-			event["stream_id"] = streamId
-			event["request_id"] = params.liveParams.requestID
-			event["pipeline_id"] = params.liveParams.pipelineID
-			if sess != nil {
-				event["orchestrator_info"] = map[string]interface{}{
-					"address": sess.Address(),
-					"url":     sess.Transcoder(),
+				body, err := io.ReadAll(segment.Body)
+				segment.Body.Close()
+
+				if err != nil {
+					clog.Infof(ctx, "Error reading events subscription body: %s", err)
+					continue
 				}
-			}
 
-			clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v", trickle.GetSeq(segment), event)
+				var eventWrapper struct {
+					QueueEventType string                 `json:"queue_event_type"`
+					Event          map[string]interface{} `json:"event"`
+				}
+				if err := json.Unmarshal(body, &eventWrapper); err != nil {
+					clog.Infof(ctx, "Failed to parse JSON from events subscription: %s", err)
+					continue
+				}
 
-			// record the event time
-			lastEventMu.Lock()
-			lastEvent = time.Now()
-			lastEventMu.Unlock()
-
-			eventType, ok := event["type"].(string)
-			if !ok {
-				eventType = "unknown"
-				clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
-			}
-
-			if eventType == "status" {
-				queueEventType = "ai_stream_status"
-				// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
-				// incoming status with the last non-null value that we received on such fields for the status API.
-				lastStreamStatus, _ := StreamStatusStore.Get(streamId)
-
-				// Check if inference_status exists in both current and last status
-				inferenceStatus, hasInference := event["inference_status"].(map[string]interface{})
-				lastInferenceStatus, hasLastInference := lastStreamStatus["inference_status"].(map[string]interface{})
-
-				if hasInference {
-					if logs, ok := inferenceStatus["last_restart_logs"]; !ok || logs == nil {
-						if hasLastInference {
-							inferenceStatus["last_restart_logs"] = lastInferenceStatus["last_restart_logs"]
-						}
+				event := eventWrapper.Event
+				queueEventType := eventWrapper.QueueEventType
+				if event == nil {
+					// revert this once push to prod -- If no "event" field found, treat the entire body as the event
+					event = make(map[string]interface{})
+					if err := json.Unmarshal(body, &event); err != nil {
+						clog.Infof(ctx, "Failed to parse JSON as direct event: %s", err)
+						continue
 					}
-					if params, ok := inferenceStatus["last_params"]; !ok || params == nil {
-						if hasLastInference {
-							inferenceStatus["last_params"] = lastInferenceStatus["last_params"]
-						}
+					queueEventType = "ai_stream_events"
+				}
+
+				event["stream_id"] = streamId
+				event["request_id"] = params.liveParams.requestID
+				event["pipeline_id"] = params.liveParams.pipelineID
+				if sess != nil {
+					event["orchestrator_info"] = map[string]interface{}{
+						"address": sess.Address(),
+						"url":     sess.Transcoder(),
 					}
 				}
 
-				StreamStatusStore.Store(streamId, event)
-			}
+				clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v", trickle.GetSeq(segment), event)
 
-			monitor.SendQueueEventAsync(queueEventType, event)
+				// record the event time
+				lastEventMu.Lock()
+				lastEvent = time.Now()
+				lastEventMu.Unlock()
+
+				eventType, ok := event["type"].(string)
+				if !ok {
+					eventType = "unknown"
+					clog.Warningf(ctx, "Received event without a type stream=%s event=%+v", stream, event)
+				}
+
+				if eventType == "status" {
+					queueEventType = "ai_stream_status"
+					// The large logs and params fields are only sent once and then cleared to save bandwidth. So coalesce the
+					// incoming status with the last non-null value that we received on such fields for the status API.
+					lastStreamStatus, _ := StreamStatusStore.Get(streamId)
+
+					// Check if inference_status exists in both current and last status
+					inferenceStatus, hasInference := event["inference_status"].(map[string]interface{})
+					lastInferenceStatus, hasLastInference := lastStreamStatus["inference_status"].(map[string]interface{})
+
+					if hasInference {
+						if logs, ok := inferenceStatus["last_restart_logs"]; !ok || logs == nil {
+							if hasLastInference {
+								inferenceStatus["last_restart_logs"] = lastInferenceStatus["last_restart_logs"]
+							}
+						}
+						if params, ok := inferenceStatus["last_params"]; !ok || params == nil {
+							if hasLastInference {
+								inferenceStatus["last_params"] = lastInferenceStatus["last_params"]
+							}
+						}
+					}
+
+					StreamStatusStore.Store(streamId, event)
+				}
+
+				monitor.SendQueueEventAsync(queueEventType, event)
+			}
 		}
 	}()
 
