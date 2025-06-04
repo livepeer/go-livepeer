@@ -212,6 +212,9 @@ func (r *mockJobOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *mockJobOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
+func (r *mockJobOrchestrator) GetLiveAICapacity() worker.Capacity {
+	return worker.Capacity{}
+}
 func (r *mockJobOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
 	return r.registerExternalCapability(extCapabilitySettings)
 }
