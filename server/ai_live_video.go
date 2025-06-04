@@ -70,8 +70,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
 		if atMax {
 			clog.Infof(ctx, "Orchestrator is slow - terminating")
-			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
 			suspendOrchestrator(ctx, params)
+			params.liveParams.stopPipeline(fmt.Errorf("slow orchestrator"))
 			cancel()
 			return
 			// TODO switch orchestrators
@@ -145,6 +145,10 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 }
 
 func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
+	if !params.inputStreamExists() {
+		// If the ingest was closed, then do not suspend the orchestrator
+		return
+	}
 	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
 	if err != nil {
 		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)

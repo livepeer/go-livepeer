@@ -1491,11 +1491,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 		sessTries[sess.Transcoder()]++
-		if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
-			// user requested a specific orchestrator, so ignore all the others
-			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
-			retryableSessions = append(retryableSessions, sess)
-			continue
+		if params.liveParams != nil {
+			if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
+				// user requested a specific orchestrator, so ignore all the others
+				clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+				retryableSessions = append(retryableSessions, sess)
+				continue
+			}
 		}
 
 		resp, err = submitFn(ctx, params, sess)
