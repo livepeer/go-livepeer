@@ -23,14 +23,14 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 
 	t.Run("Register valid capability", func(t *testing.T) {
 		capJSON := `{
-            "name": "test-cap",
-            "description": "Test capability",
-            "url": "http://localhost:8000",
-            "capacity": 5,
-            "price_per_unit": 100,
-            "price_scaling": 1000,
-            "currency": "wei"
-        }`
+			"name": "test-cap",
+			"description": "Test capability",
+			"url": "http://localhost:8000",
+			"capacity": 5,
+			"price_per_unit": 100,
+			"price_scaling": 1000,
+			"currency": "wei"
+		}`
 
 		cap, err := extCaps.RegisterCapability(capJSON)
 		require.NoError(t, err)
@@ -53,13 +53,13 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 
 	t.Run("Register with missing price_scaling", func(t *testing.T) {
 		capJSON := `{
-            "name": "no-scaling",
-            "description": "Missing price scaling",
-            "url": "http://localhost:8000",
-            "capacity": 5,
-            "price_per_unit": 100,
-            "currency": "wei"
-        }`
+			"name": "no-scaling",
+			"description": "Missing price scaling",
+			"url": "http://localhost:8000",
+			"capacity": 5,
+			"price_per_unit": 100,
+			"currency": "wei"
+		}`
 
 		cap, err := extCaps.RegisterCapability(capJSON)
 		require.NoError(t, err)
@@ -80,28 +80,28 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 	t.Run("Update existing capability", func(t *testing.T) {
 		// First register a capability
 		capJSON := `{
-            "name": "update-test",
-            "description": "Original description",
-            "url": "http://localhost:8000",
-            "capacity": 5,
-            "price_per_unit": 100,
-            "price_scaling": 1000,
-            "currency": "wei"
-        }`
+			"name": "update-test",
+			"description": "Original description",
+			"url": "http://localhost:8000",
+			"capacity": 5,
+			"price_per_unit": 100,
+			"price_scaling": 1000,
+			"currency": "wei"
+		}`
 
 		_, err := extCaps.RegisterCapability(capJSON)
 		require.NoError(t, err)
 
 		// Now update it
 		updatedJSON := `{
-            "name": "update-test",
-            "description": "Updated description",
-            "url": "http://localhost:9000",
-            "capacity": 10,
-            "price_per_unit": 200,
-            "price_scaling": 2000,
-            "currency": "wei"
-        }`
+			"name": "update-test",
+			"description": "Updated description",
+			"url": "http://localhost:9000",
+			"capacity": 10,
+			"price_per_unit": 200,
+			"price_scaling": 2000,
+			"currency": "wei"
+		}`
 
 		updatedCap, err := extCaps.RegisterCapability(updatedJSON)
 		require.NoError(t, err)
@@ -128,14 +128,14 @@ func TestExternalCapabilities_RemoveCapability(t *testing.T) {
 	t.Run("Remove existing capability", func(t *testing.T) {
 		// First register a capability
 		capJSON := `{
-            "name": "to-remove",
-            "description": "Will be removed",
-            "url": "http://localhost:8000",
-            "capacity": 5,
-            "price_per_unit": 100,
-            "price_scaling": 1000,
-            "currency": "wei"
-        }`
+			"name": "to-remove",
+			"description": "Will be removed",
+			"url": "http://localhost:8000",
+			"capacity": 5,
+			"price_per_unit": 100,
+			"price_scaling": 1000,
+			"currency": "wei"
+		}`
 
 		_, err := extCaps.RegisterCapability(capJSON)
 		require.NoError(t, err)
@@ -168,14 +168,14 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 
 	t.Run("Get price for valid capability", func(t *testing.T) {
 		capJSON := `{
-            "name": "price-test",
-            "description": "Price test",
-            "url": "http://localhost:8000",
-            "capacity": 5,
-            "price_per_unit": 100,
-            "price_scaling": 1000,
-            "currency": "wei"
-        }`
+			"name": "price-test",
+			"description": "Price test",
+			"url": "http://localhost:8000",
+			"capacity": 5,
+			"price_per_unit": 100,
+			"price_scaling": 1000,
+			"currency": "wei"
+		}`
 
 		cap, err := extCaps.RegisterCapability(capJSON)
 		require.NoError(t, err)
@@ -198,14 +198,14 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 
 		for _, currency := range currencies {
 			capJSON := `{
-                "name": "currency-test",
-                "description": "Currency test",
-                "url": "http://localhost:8000",
-                "capacity": 5,
-                "price_per_unit": 100,
-                "price_scaling": 1000,
-                "currency": "` + currency + `"
-            }`
+				"name": "currency-test",
+				"description": "Currency test",
+				"url": "http://localhost:8000",
+				"capacity": 5,
+				"price_per_unit": 100,
+				"price_scaling": 1000,
+				"currency": "` + currency + `"
+			}`
 
 			cap, err := extCaps.RegisterCapability(capJSON)
 			if currency == "unknown" {
@@ -224,14 +224,14 @@ func TestExternalCapabilities_MarshalJSON(t *testing.T) {
 	extCaps := NewExternalCapabilities()
 
 	capJSON := `{
-        "name": "json-test",
-        "description": "JSON test",
-        "url": "http://localhost:8000",
-        "capacity": 5,
-        "price_per_unit": 100,
-        "price_scaling": 1000,
-        "currency": "wei"
-    }`
+		"name": "json-test",
+		"description": "JSON test",
+		"url": "http://localhost:8000",
+		"capacity": 5,
+		"price_per_unit": 100,
+		"price_scaling": 1000,
+		"currency": "wei"
+	}`
 
 	cap, err := extCaps.RegisterCapability(capJSON)
 	require.NoError(t, err)
@@ -271,14 +271,14 @@ func TestExternalCapabilities_Concurrency(t *testing.T) {
 		go func() {
 			for i := 0; i < 100; i++ {
 				capJSON := `{
-                    "name": "concurrent-test-` + string(rune('A'+i%26)) + `",
-                    "description": "Concurrent test",
-                    "url": "http://localhost:8000",
-                    "capacity": 5,
-                    "price_per_unit": 100,
-                    "price_scaling": 1000,
-                    "currency": "wei"
-                }`
+					"name": "concurrent-test-` + string(rune('A'+i%26)) + `",
+					"description": "Concurrent test",
+					"url": "http://localhost:8000",
+					"capacity": 5,
+					"price_per_unit": 100,
+					"price_scaling": 1000,
+					"currency": "wei"
+				}`
 
 				_, _ = extCaps.RegisterCapability(capJSON)
 			}
