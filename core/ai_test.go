@@ -644,6 +644,10 @@ func createAIWorkerCapabilities() *Capabilities {
 
 type stubAIWorker struct{}
 
+func (a *stubAIWorker) GetLiveAICapacity() worker.Capacity {
+	return worker.Capacity{}
+}
+
 func (a *stubAIWorker) TextToImage(ctx context.Context, req worker.GenTextToImageJSONRequestBody) (*worker.ImageResponse, error) {
 	return &worker.ImageResponse{
 		Images: []worker.Media{
@@ -727,6 +731,10 @@ func (a *stubAIWorker) EnsureImageAvailable(ctx context.Context, pipeline string
 }
 
 func (a *stubAIWorker) HardwareInformation() []worker.HardwareInformation {
+	return nil
+}
+
+func (a *stubAIWorker) Version() []worker.Version {
 	return nil
 }
 

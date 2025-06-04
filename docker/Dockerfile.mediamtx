@@ -1,4 +1,4 @@
-ARG MEDIAMTX_VERSION="1.11.2-livepeer-2"
+ARG MEDIAMTX_VERSION="1.11.2-livepeer-3"
 
 FROM golang:1.23 AS builder
 

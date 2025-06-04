@@ -54,12 +54,12 @@ type Worker struct {
 func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string) (*Worker, error) {
 	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating docker client: %w", err)
 	}
 
 	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, dockerClient)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating docker manager: %w", err)
 	}
 
 	return &Worker{
@@ -78,16 +78,24 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 			hardware = append(hardware, HardwareInformation{})
 		}
 	}
+	return append(hardware, w.manager.HardwareInformation()...)
+}
 
-	for _, rc := range w.manager.containers {
-		if rc.Hardware != nil {
-			hardware = append(hardware, *rc.Hardware)
+func (w *Worker) GetLiveAICapacity() Capacity {
+	return w.manager.GetCapacity()
+}
+
+func (w *Worker) Version() []Version {
+	var version []Version
+	for _, rc := range w.externalContainers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
 		} else {
-			hardware = append(hardware, HardwareInformation{})
+			version = append(version, Version{})
 		}
 	}
 
-	return hardware
+	return append(version, w.manager.Version()...)
 }
 
 func (w *Worker) TextToImage(ctx context.Context, req GenTextToImageJSONRequestBody) (*ImageResponse, error) {
@@ -674,7 +682,7 @@ func (w *Worker) Warm(ctx context.Context, pipeline string, modelID string, endp
 		Endpoint:         endpoint,
 		containerTimeout: externalContainerTimeout,
 	}
-	rc, err := NewRunnerContainer(ctx, cfg, endpoint.URL)
+	rc, _, err := NewRunnerContainer(ctx, cfg, endpoint.URL)
 	if err != nil {
 		return err
 	}

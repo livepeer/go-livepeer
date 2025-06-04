@@ -79,6 +79,10 @@ type stubOrchestrator struct {
 	jobPriceInfo *net.PriceInfo
 }
 
+func (r *stubOrchestrator) GetLiveAICapacity() worker.Capacity {
+	return worker.Capacity{}
+}
+
 func (r *stubOrchestrator) ServiceURI() *url.URL {
 	if r.serviceURI == "" {
 		r.serviceURI = "http://localhost:1234"
@@ -1371,6 +1375,11 @@ type mockOrchestrator struct {
 	mock.Mock
 }
 
+func (o *mockOrchestrator) GetLiveAICapacity() worker.Capacity {
+	args := o.Called()
+	return args.Get(0).(worker.Capacity)
+}
+
 func (o *mockOrchestrator) ServiceURI() *url.URL {
 	args := o.Called()
 	if args.Get(0) != nil {
@@ -1572,5 +1581,75 @@ func defaultTicketSenderParams(t *testing.T) *net.TicketSenderParams {
 	return &net.TicketSenderParams{
 		SenderNonce: 456,
 		Sig:         pm.RandBytes(123),
+	}
+}
+
+func Test_setLiveAICapacity(t *testing.T) {
+	orch := &mockOrchestrator{}
+	orch.On("GetLiveAICapacity").Return(worker.Capacity{
+		ContainersInUse: 123,
+		ContainersIdle:  123,
+	})
+
+	tests := []struct {
+		name         string
+		capabilities *net.Capabilities
+		expectedSet  bool
+	}{
+		{
+			name: "nil capabilities",
+		},
+		{
+			name: "no live video",
+			capabilities: &net.Capabilities{
+				Constraints: &net.Capabilities_Constraints{
+					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+						uint32(core.Capability_ImageToText): {},
+					},
+				},
+			},
+		},
+		{
+			name: "live video",
+			capabilities: &net.Capabilities{
+				Constraints: &net.Capabilities_Constraints{
+					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+						uint32(core.Capability_LiveVideoToVideo): {
+							Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+								"foo": {},
+							},
+						},
+					},
+				},
+			},
+			expectedSet: true,
+		},
+		{
+			name: "live video - multiple models not supported",
+			capabilities: &net.Capabilities{
+				Constraints: &net.Capabilities_Constraints{
+					PerCapability: map[uint32]*net.Capabilities_CapabilityConstraints{
+						uint32(core.Capability_LiveVideoToVideo): {
+							Models: map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint{
+								"foo": {},
+								"bar": {},
+							},
+						},
+					},
+				},
+			},
+			expectedSet: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLiveAICapacity(orch, tt.capabilities)
+			if tt.expectedSet {
+				model := tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["foo"]
+				require.NotNil(t, model)
+				require.Equal(t, uint32(123), model.Capacity)
+				require.Equal(t, uint32(123), model.CapacityInUse)
+			}
+		})
 	}
 }

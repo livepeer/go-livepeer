@@ -1,8 +1,15 @@
 package media
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"sync"
+	"time"
+
+	"github.com/pion/interceptor/pkg/stats"
+	"github.com/pion/webrtc/v4"
 )
 
 // use this to set peerconnection state when we need it
@@ -54,6 +61,14 @@ func (w *WHIPConnection) AwaitClose() error {
 	return p.AwaitClose()
 }
 
+func (w *WHIPConnection) Stats() (*MediaStats, error) {
+	p := w.getWHIPConnection()
+	if p == nil {
+		return nil, errors.New("whip connection was nil")
+	}
+	return p.Stats()
+}
+
 func (w *WHIPConnection) Close() {
 	w.mu.Lock()
 	// set closed = true so getWHIPConnection returns immediately
@@ -70,11 +85,69 @@ func (w *WHIPConnection) Close() {
 
 type WHIPPeerConnection interface {
 	io.Closer
+	GetStats() webrtc.StatsReport
+}
+
+type PeerConnStats struct {
+	ID            string
+	BytesReceived uint64
+	BytesSent     uint64
+}
+
+type TrackType struct {
+	webrtc.RTPCodecType
+}
+
+func (t TrackType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.String())
+}
+
+type TrackStats struct {
+	Type            TrackType
+	Jitter          float64
+	PacketsLost     int64
+	PacketsReceived int64
+	PacketLossPct   float64
+	RTT             time.Duration
+	Warnings        []string
+}
+
+type ConnQuality int
+
+const (
+	ConnQualityGood ConnQuality = iota
+	ConnQualityBad
+)
+
+const acceptableJitterMs = 30
+const acceptablePacketLossPct = 1
+
+func (c ConnQuality) String() string {
+	switch c {
+	case ConnQualityGood:
+		return "good"
+	case ConnQualityBad:
+		return "bad"
+	default:
+		return "unknown"
+	}
+}
+
+func (c ConnQuality) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.String())
+}
+
+type MediaStats struct {
+	PeerConnStats PeerConnStats
+	TrackStats    []TrackStats
+	ConnQuality   ConnQuality
 }
 
 // MediaState manages the lifecycle of a media connection
 type MediaState struct {
 	pc     WHIPPeerConnection
+	getter stats.Getter
+	tracks []RTPTrack
 	mu     *sync.Mutex
 	cond   *sync.Cond
 	closed bool
@@ -89,6 +162,13 @@ func NewMediaState(pc WHIPPeerConnection) *MediaState {
 		mu:   mu,
 		cond: sync.NewCond(mu),
 	}
+}
+
+func (m *MediaState) SetTracks(getter stats.Getter, tracks []RTPTrack) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getter = getter
+	m.tracks = tracks
 }
 
 // Returns a mediastate that is already closed with an error
@@ -131,4 +211,81 @@ func (m *MediaState) IsClosed() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.closed
+}
+
+func (m *MediaState) Stats() (*MediaStats, error) {
+	m.mu.Lock()
+	if m.closed || m.pc == nil {
+		m.mu.Unlock()
+		return nil, errors.New("peerconnection closed")
+	}
+	var (
+		pc     = m.pc
+		getter = m.getter
+		tracks = m.tracks
+	)
+	m.mu.Unlock()
+	pcStatsReport := pc.GetStats()
+	var pcStats PeerConnStats
+	for _, stat := range pcStatsReport {
+		if s, ok := stat.(webrtc.TransportStats); ok {
+			pcStats = PeerConnStats{
+				ID:            s.ID,
+				BytesReceived: s.BytesReceived,
+				BytesSent:     s.BytesSent,
+			}
+			break
+		}
+	}
+
+	if getter == nil {
+		// tracks haven't been initialized yet
+		return &MediaStats{
+			PeerConnStats: pcStats,
+		}, nil
+	}
+	connQuality := ConnQualityGood
+	trackStats := make([]TrackStats, 0, len(tracks))
+	for _, t := range tracks {
+		s := getter.Get(uint32(t.SSRC()))
+		if s == nil {
+			continue
+		}
+
+		trackType := TrackType{t.Kind()}
+		var jitterMs, packetLossPct float64
+		if t.Codec().ClockRate > 0 {
+			jitterMs = (s.InboundRTPStreamStats.Jitter / float64(t.Codec().ClockRate)) * 1000
+		}
+		packetsLost := s.InboundRTPStreamStats.PacketsLost
+		packetsReceived := int64(s.InboundRTPStreamStats.PacketsReceived)
+		if packetsLost > 0 || packetsReceived > 0 {
+			packetLossPct = float64(packetsLost) / float64(packetsLost+packetsReceived) * 100
+		}
+
+		var warnings []string
+		if jitterMs > acceptableJitterMs {
+			connQuality = ConnQualityBad
+			warnings = append(warnings, fmt.Sprintf("jitter greater than %d ms", acceptableJitterMs))
+		}
+		if packetLossPct > acceptablePacketLossPct {
+			connQuality = ConnQualityBad
+			warnings = append(warnings, fmt.Sprintf("packet loss greater than %d%%", acceptablePacketLossPct))
+		}
+
+		trackStats = append(trackStats, TrackStats{
+			Type:            trackType,
+			Jitter:          jitterMs,
+			PacketsLost:     packetsLost,
+			PacketsReceived: packetsReceived,
+			PacketLossPct:   packetLossPct,
+			RTT:             s.RemoteInboundRTPStreamStats.RoundTripTime,
+			Warnings:        warnings,
+		})
+	}
+	return &MediaStats{
+		PeerConnStats: pcStats,
+		TrackStats:    trackStats,
+		ConnQuality:   connQuality,
+	}, nil
 }
