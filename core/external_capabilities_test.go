@@ -5,7 +5,9 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/livepeer/go-livepeer/eth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -184,6 +186,37 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 		// Verify the price is calculated correctly: price_per_unit / price_scaling = 100/1000 = 0.1
 		expected := big.NewRat(100, 1000)
 		assert.Equal(t, expected.String(), price.String())
+	})
+
+	t.Run("Price conversion with different currencies", func(t *testing.T) {
+		currencies := []string{"wei", "eth", "usd"}
+		watcherMock := NewPriceFeedWatcherMock(t)
+		PriceFeedWatcher = watcherMock
+		watcherMock.On("Currencies").Return("ETH", "USD", nil)
+		watcherMock.On("Current").Return(eth.PriceData{Price: big.NewRat(100, 1)}, nil)
+		watcherMock.On("Subscribe", mock.Anything, mock.Anything).Once()
+
+		for _, currency := range currencies {
+			capJSON := `{
+                "name": "currency-test",
+                "description": "Currency test",
+                "url": "http://localhost:8000",
+                "capacity": 5,
+                "price_per_unit": 100,
+                "price_scaling": 1000,
+                "currency": "` + currency + `"
+            }`
+
+			cap, err := extCaps.RegisterCapability(capJSON)
+			if currency == "unknown" {
+				assert.Error(t, err)
+				continue
+			}
+
+			require.NoError(t, err)
+			price := cap.GetPrice()
+			assert.NotNil(t, price)
+		}
 	})
 }
 
