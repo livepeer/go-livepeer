@@ -527,7 +527,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	// if price is 0, no payment required
 	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
 		// get payment information
-		payment, err := getPayment(r.Header.Get(jobPaymentHeaderHdr))
+		payment, err = getPayment(r.Header.Get(jobPaymentHeaderHdr))
 		if err != nil {
 			clog.Errorf(r.Context(), "Could not parse payment: %v", err)
 			http.Error(w, err.Error(), http.StatusPaymentRequired)
@@ -676,7 +676,6 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 			defer resp.Body.Close()
 			defer close(respChan)
 			scanner := bufio.NewScanner(resp.Body)
-
 			for scanner.Scan() {
 				select {
 				case <-respCtx.Done():
@@ -713,7 +712,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 				//check balance and end response if out of funds
 				//skips if price is 0
 				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-					h.orchestrator.DebitFees(sender, core.ManifestID(jobId), payment.GetExpectedPrice(), 5)
+					h.orchestrator.DebitFees(sender, core.ManifestID(jobId), jobPrice, 5)
 					senderBalance := getPaymentBalance(orch, sender, jobId)
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
