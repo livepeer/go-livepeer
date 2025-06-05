@@ -36,7 +36,7 @@ import (
 const (
 	keyframeInterval       = 2 * time.Second // TODO make configurable?
 	iceDisconnectedTimeout = 5 * time.Second
-	iceFailedTimeout       = 25 * time.Second
+	iceFailedTimeout       = 10 * time.Second
 	iceKeepAliveInterval   = 2 * time.Second
 )
 
