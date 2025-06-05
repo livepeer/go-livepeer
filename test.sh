@@ -28,6 +28,10 @@ cd media
 go test -race
 cd ..
 
+cd trickle
+go test -race
+cd ..
+
 ./test_args.sh
 
 printf "\n\nAll Tests Passed\n\n"
