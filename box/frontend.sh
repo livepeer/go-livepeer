@@ -1,5 +1,7 @@
 #!/bin/bash
 
+LIVEPEER_PWD=$(pwd)
+
 cd ../pipelines/apps/app
 pnpm install
 
@@ -22,7 +24,7 @@ pnpm db:push
 MAIN_PIPELINE_EXISTS=$(psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -tAc "SELECT 1 FROM pipelines where id = 'pip_DRQREDnSei4HQyC8';")
 if [ "$MAIN_PIPELINE_EXISTS" != "1" ]; then
   echo "Main Dreamshaper pipeline does not exist, creating..."
-  psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -f frontend.sql
+  psql -h 127.0.0.1 -p 5433 -U postgres -d postgres -f "${LIVEPEER_PWD}/box/frontend.sql"
 fi
 
 pnpm dev
