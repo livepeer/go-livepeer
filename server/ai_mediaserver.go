@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -583,7 +584,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			os:          drivers.NodeStorage.NewSession(requestID),
 			sessManager: ls.AISessionManager,
 
-			liveParams: liveRequestParams{
+			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				outputRTMPURL:          outputURL,
 				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
@@ -593,6 +594,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				requestID:              requestID,
 				streamID:               streamID,
 				pipelineID:             pipelineID,
+				pipeline:               pipeline,
 				stopPipeline:           stopPipeline,
 				sendErrorEvent:         sendErrorEvent,
 			},
@@ -624,23 +626,77 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		_, err = processAIRequest(ctx, params, req)
-		if err != nil {
-			stopPipeline(err)
-		}
+		processStream(ctx, params, req)
 		close(orchSelection)
 	})
+}
+
+func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
+	resp, err := processAIRequest(ctx, params, req)
+	if err != nil {
+		clog.Errorf(ctx, "Error processing AI Request: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
+
+	if err = startProcessing(ctx, params, resp); err != nil {
+		clog.Errorf(ctx, "Error starting processing: %s", err)
+		params.liveParams.stopPipeline(err)
+		return
+	}
+}
+
+func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
+	resp := res.(*worker.GenLiveVideoToVideoResponse)
+
+	host := params.liveParams.sess.Transcoder()
+	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid publish URL: %w", err)
+	}
+	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid subscribe URL: %w", err)
+	}
+	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid control URL: %w", err)
+	}
+	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
+	if err != nil {
+		return fmt.Errorf("invalid events URL: %w", err)
+	}
+	if resp.JSON200.ManifestId != nil {
+		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+	}
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+
+	startControlPublish(ctx, control, params)
+	startTricklePublish(ctx, pub, params, params.liveParams.sess)
+	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
+	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+	return nil
 }
 
 func getRemoteHost(remoteAddr string) (string, error) {
 	if remoteAddr == "" {
 		return "", errors.New("remoteAddr is empty")
 	}
-	split := strings.Split(remoteAddr, ":")
-	if len(split) < 1 {
-		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+
+	// Handle IPv6 addresses by splitting on last colon
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", fmt.Errorf("couldn't parse remote host: %w", err)
 	}
-	return split[0], nil
+
+	// Clean up IPv6 brackets if present
+	host = strings.Trim(host, "[]")
+
+	if host == "::1" {
+		return "127.0.0.1", nil
+	}
+
+	return host, nil
 }
 
 // @Summary Update Live Stream
@@ -876,7 +932,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				os:          drivers.NodeStorage.NewSession(requestID),
 				sessManager: ls.AISessionManager,
 
-				liveParams: liveRequestParams{
+				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					outputRTMPURL:          outputURL,
 					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
@@ -886,6 +942,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					requestID:              requestID,
 					streamID:               streamID,
 					pipelineID:             pipelineID,
+					pipeline:               pipeline,
 					stopPipeline:           stopPipeline,
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
@@ -898,18 +955,16 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				GatewayRequestId: &requestID,
 				StreamId:         &streamID,
 			}
-			_, err := processAIRequest(ctx, params, req)
-			if err != nil {
-				stopPipeline(err)
-			}
+
+			processStream(ctx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
 			go runStats(statsContext, whipConn, streamID, pipelineID, requestID)
 
 			whipConn.AwaitClose()
-			ssr.Close()
 			cleanupControl(ctx, params)
+			ssr.Close()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
