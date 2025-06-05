@@ -120,7 +120,7 @@ const (
 )
 
 const acceptableJitterMs = 30
-const acceptablePacketLossPct = 1
+const acceptablePacketLossPct = 2
 
 func (c ConnQuality) String() string {
 	switch c {
