@@ -33,7 +33,12 @@ import (
 
 // TODO handle PATCH/PUT for ICE restarts (new Offers) and DELETE
 
-const keyframeInterval = 2 * time.Second // TODO make configurable?
+const (
+	keyframeInterval       = 2 * time.Second // TODO make configurable?
+	iceDisconnectedTimeout = 5 * time.Second
+	iceFailedTimeout       = 25 * time.Second
+	iceKeepAliveInterval   = 2 * time.Second
+)
 
 // Generate a random ID for new resources
 func generateID() string {
@@ -642,6 +647,12 @@ func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	if natIP != "" {
 		se.SetNAT1To1IPs([]string{natIP}, webrtc.ICECandidateTypeHost)
 	}
+	se.SetICETimeouts(
+		iceDisconnectedTimeout,
+		iceFailedTimeout,
+		iceKeepAliveInterval,
+	)
+
 	return m, webrtc.WithSettingEngine(se)
 }
 
