@@ -50,33 +50,23 @@ func (pool *AISessionPool) Select(ctx context.Context) *BroadcastSession {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	maxTryCount := 20
-	for try := 1; try <= maxTryCount; try++ {
-		clog.V(common.DEBUG).Infof(ctx, "Selecting orchestrator, try=%d", try)
-		sess := pool.selector.Select(ctx)
-		if sess == nil {
-			sess = pool.selectInUse()
-		} else {
-			// Track in-use session the first time it is returned by the selector
-			pool.inUseSess = append(pool.inUseSess, sess)
-		}
-
-		if sess == nil {
-			return nil
-		}
-
-		if _, ok := pool.sessMap[sess.Transcoder()]; !ok {
-			// If the session is not tracked by sessMap skip it
-			continue
-		}
-
-		// Track a dummy segment for the session in indicate an in-flight request
-		sess.pushSegInFlight(&stream.HLSSegment{})
-
-		return sess
+	clog.V(common.DEBUG).Infof(ctx, "Selecting orchestrator")
+	sess := pool.selector.Select(ctx)
+	if sess == nil {
+		sess = pool.selectInUse()
+	} else {
+		// Track in-use session the first time it is returned by the selector
+		pool.inUseSess = append(pool.inUseSess, sess)
 	}
-	clog.Warningf(ctx, "Selecting orchestrator failed, max tries number reached")
-	return nil
+
+	if sess == nil {
+		return nil
+	}
+
+	// Track a dummy segment for the session in indicate an in-flight request
+	sess.pushSegInFlight(&stream.HLSSegment{})
+
+	return sess
 }
 
 func (pool *AISessionPool) Complete(sess *BroadcastSession) {
