@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM livepeerci/cuda:12.0.0-cudnn8-devel-ubuntu20.04 as build
+FROM --platform=$BUILDPLATFORM livepeerci/cuda:12.6.3-cudnn-devel-ubuntu22.04 as build
 
 ARG	TARGETARCH
 ARG	BUILDARCH
@@ -6,10 +6,10 @@ ARG	BUILDARCH
 ENV	GOARCH="$TARGETARCH" \
 	PATH="/usr/local/go/bin:/go/bin:${PATH}" \
 	PKG_CONFIG_PATH="/root/compiled/lib/pkgconfig" \
-	CPATH="/usr/local/cuda_${TARGETARCH}/include" \
-	LIBRARY_PATH="/usr/local/cuda_${TARGETARCH}/lib64" \
+	CPATH="/usr/local/cuda_${TARGETARCH}/include:/usr/local/cuda/include" \
+	LIBRARY_PATH="/usr/local/cuda_${TARGETARCH}/lib64:/usr/local/cuda/lib64" \
 	DEBIAN_FRONTEND="noninteractive" \
-	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64"
+	CGO_LDFLAGS="-L/usr/local/cuda_${TARGETARCH}/lib64 -L/usr/local/cuda/lib64"
 
 RUN	apt update \
 	&& apt install -yqq software-properties-common curl apt-transport-https lsb-release nasm \
@@ -17,15 +17,15 @@ RUN	apt update \
 	&& curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
-	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
+	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-19 main" \
 	&& apt update \
-	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev
+	&& apt -yqq install clang-19 clang-tools-19 lld-19 build-essential pkg-config autoconf git python3 docker-ce-cli pciutils gcc-multilib libgcc-11-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev
 
-RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
-	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
-	&& update-alternatives --install /usr/bin/ld ld /usr/bin/lld-14 30
+RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-19 30 \
+	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-19 30 \
+	&& update-alternatives --install /usr/bin/ld ld /usr/bin/lld-19 30
 
-RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
+RUN	GRPC_HEALTH_PROBE_VERSION=v0.4.38 \
 	&& curl -fsSL https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${TARGETARCH} -o /usr/bin/grpc_health_probe \
 	&& chmod +x /usr/bin/grpc_health_probe \
 	&& ldconfig /usr/local/lib
@@ -40,9 +40,6 @@ ENV	GOPATH=/go \
 	GOFLAGS="-mod=readonly"
 
 WORKDIR	/src
-
-RUN	mkdir -p /go \
-	&& curl -fsSLO https://github.com/livepeer/livepeer-ml/releases/download/v0.3/tasmodel.pb
 
 COPY	./install_ffmpeg.sh	./install_ffmpeg.sh
 
@@ -60,19 +57,18 @@ COPY	.	.
 
 RUN	make livepeer livepeer_cli livepeer_bench livepeer_router
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu20.04 AS livepeer-amd64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS livepeer-amd64-base
 
-FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.0.0-cudnn8-runtime-ubuntu20.04 AS livepeer-arm64-base
+FROM --platform=$TARGETPLATFORM	nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS livepeer-arm64-base
 
 FROM	livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN	apt update && apt install -y libx264-155
+RUN	apt update && apt install -y libx264-163
 
 COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe
-COPY --from=build	/src/tasmodel.pb	/tasmodel.pb
 COPY --from=build	/usr/share/misc/pci.ids	/usr/share/misc/pci.ids
 COPY --from=build /ffmpeg/build/ /usr/local
 RUN ldconfig /usr/local/lib
