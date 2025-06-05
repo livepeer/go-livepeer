@@ -118,6 +118,7 @@ type LivepeerEthClient interface {
 	ProposalVoteWithReason(*big.Int, uint8, string) (*types.Transaction, error)
 
 	// Helpers
+	TransferEth(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error)
 	ContractAddresses() map[string]ethcommon.Address
 	CheckTx(*types.Transaction) error
 	Sign([]byte) ([]byte, error)
@@ -180,6 +181,7 @@ type LivepeerEthClientConfig struct {
 func NewClient(cfg LivepeerEthClientConfig) (LivepeerEthClient, error) {
 
 	backend := NewBackend(cfg.EthClient, cfg.Signer, cfg.GasPriceMonitor, cfg.TransactionManager)
+	// Use ethclient to send ETH to a specified address
 
 	return &client{
 		accountManager:      cfg.AccountManager,
@@ -521,6 +523,35 @@ func (c *client) CurrentMintableTokens() (*big.Int, error) {
 // Token
 func (c *client) Transfer(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
 	return c.livepeerToken.Transfer(c.transactOpts(), toAddr, amount)
+}
+
+func (c *client) TransferEth(toAddr ethcommon.Address, amount *big.Int) (*types.Transaction, error) {
+	addr := c.Account().Address
+	gasPrice, err := c.backend.SuggestGasPrice(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := c.backend.PendingNonceAt(context.Background(), addr)
+	if err != nil {
+		return nil, err
+	}
+	tx := types.NewTransaction(
+		nonce,
+		toAddr,
+		amount,
+		21000, // Standard for ETH transfer
+		gasPrice,
+		nil,
+	)
+	signedTx, err := c.accountManager.SignTx(tx)
+	if err != nil {
+		return nil, err
+	}
+	err = c.backend.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		return nil, err
+	}
+	return signedTx, nil
 }
 
 func (c *client) Allowance(owner ethcommon.Address, spender ethcommon.Address) (*big.Int, error) {
