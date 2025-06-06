@@ -22,6 +22,7 @@ import (
 	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/trickle"
+	"github.com/pion/webrtc/v4"
 
 	"github.com/dustin/go-humanize"
 )
@@ -145,10 +146,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 }
 
 func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
-	if !params.inputStreamExists() {
-		// If the ingest was closed, then do not suspend the orchestrator
-		return
-	}
 	sel, err := params.sessManager.getSelector(ctx, core.Capability_LiveVideoToVideo, params.liveParams.pipeline)
 	if err != nil {
 		clog.Warningf(ctx, "Error suspending orchestrator: %v", err)
@@ -239,9 +236,11 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				n, err = copySegment(segment, outWriter)
 			}
 			if err != nil {
-				suspendOrchestrator(ctx, params)
-				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
-				return
+				if params.inputConnected() {
+					suspendOrchestrator(ctx, params)
+					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
+					return
+				}
 			}
 			if firstSegment {
 				firstSegment = false
@@ -580,6 +579,14 @@ func (a aiRequestParams) inputStreamExists() bool {
 	defer a.node.LiveMu.RUnlock()
 	p, ok := a.node.LivePipelines[a.liveParams.stream]
 	return ok && p.RequestID == a.liveParams.requestID
+}
+
+func (a aiRequestParams) inputConnected() bool {
+	return a.inputStreamExists() && (a.liveParams.whipConn == nil || connected(a.liveParams.whipConn))
+}
+
+func connected(whipConn *media.MediaState) bool {
+	return whipConn.IceState() == webrtc.ICEConnectionStateConnected
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

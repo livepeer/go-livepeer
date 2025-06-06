@@ -145,13 +145,14 @@ type MediaStats struct {
 
 // MediaState manages the lifecycle of a media connection
 type MediaState struct {
-	pc     WHIPPeerConnection
-	getter stats.Getter
-	tracks []RTPTrack
-	mu     *sync.Mutex
-	cond   *sync.Cond
-	closed bool
-	err    error
+	pc       WHIPPeerConnection
+	getter   stats.Getter
+	tracks   []RTPTrack
+	mu       *sync.Mutex
+	cond     *sync.Cond
+	iceState webrtc.ICEConnectionState
+	closed   bool
+	err      error
 }
 
 // NewMediaState creates a new MediaState with the given peerconnection
@@ -288,4 +289,10 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 		TrackStats:    trackStats,
 		ConnQuality:   connQuality,
 	}, nil
+}
+
+func (m *MediaState) IceState() webrtc.ICEConnectionState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.iceState
 }
