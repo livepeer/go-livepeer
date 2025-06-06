@@ -291,6 +291,12 @@ func (m *MediaState) Stats() (*MediaStats, error) {
 	}, nil
 }
 
+func (m *MediaState) SetIceState(iceState webrtc.ICEConnectionState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.iceState = iceState
+}
+
 func (m *MediaState) IceState() webrtc.ICEConnectionState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
