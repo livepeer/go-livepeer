@@ -71,6 +71,8 @@ type WHIPServer struct {
 func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
+	clog.Info(ctx, "Client info", "user-agent", r.Header.Get("User-Agent"))
+
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
 		http.Error(w, "Unsupported Media Type, expected application/sdp", http.StatusUnsupportedMediaType)
@@ -224,12 +226,14 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote) {
 	var frame rtp.Depacketizer
+	var tsCorrector *TimestampCorrector
 	codec := track.Codec().MimeType
 	incomingTrack := &IncomingTrack{track: track}
 	isAudio := false
 	switch codec {
 	case webrtc.MimeTypeH264:
 		frame = &codecs.H264Packet{IsAVC: true}
+		tsCorrector = NewTimestampCorrector(30.0)
 	case webrtc.MimeTypeOpus:
 		frame = &codecs.OpusPacket{}
 		isAudio = true
@@ -283,6 +287,8 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 			// h264 video from here on
 			// https://datatracker.ietf.org/doc/html/rfc6184
+
+			pts = tsCorrector.Process(ctx, pts)
 
 			if currentTS != p.Timestamp && len(au) > 0 {
 				// received a new frame, but previous frame was incomplete (lost marker bit)
