@@ -605,3 +605,13 @@ func (c *AISessionManager) getSelector(ctx context.Context, cap core.Capability,
 
 	return sel, nil
 }
+
+func (s *AISession) Clone() *AISession {
+	bSess := s.BroadcastSession.Clone()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	newSess := *s
+	newSess.BroadcastSession = bSess
+	return &newSess
+}

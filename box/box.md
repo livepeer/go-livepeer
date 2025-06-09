@@ -116,3 +116,16 @@ To rebuild and restart the runner, run the following command:
 ```bash
 make box-runner
 ```
+
+## Frontend
+
+To start the frontend, run the following commands:
+```bash
+make box-supabase
+make box-frontend
+```
+
+You can access the frontend with the following URL: http://localhost:3000/create?whipServer=http://127.0.0.1:5936/live/video-to-video/&pipeline=noop&videoJS=true
+
+Note that the box-frontend assumes you have the https://github.com/livepeer/pipelines/ repo cloned at the parent directory.
+Note also that you can start frontend together with `make box` by setting `export FRONTEND=true`.
