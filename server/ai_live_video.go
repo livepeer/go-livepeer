@@ -99,7 +99,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
-				logToDisk(ctx, reader.Clone(), params.node.WorkDir, params.liveParams.requestID, seq)
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
@@ -228,28 +228,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			var reader io.Reader = segment.Body
-			var outFile *os.File
-			if seq <= 10 {
-				p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-%d.ts", params.liveParams.requestID+"out", seq))
-				outFile, err = os.Create(p)
-				if err != nil {
-					params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error creating file: %w", err))
-				}
-				reader = io.TeeReader(segment.Body, outFile)
-			}
-
-			var n int64
-			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(reader, outWriter, params.liveParams.outSegmentTimeout)
-			} else {
-				n, err = copySegment(reader, outWriter)
-			}
-
-			if outFile != nil {
-				outFile.Close()
-			}
-			segment.Body.Close()
+			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
 				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
@@ -335,11 +314,25 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 	}
 }
 
-func copySegment(segment io.Reader, w io.Writer) (int64, error) {
-	return io.Copy(w, segment)
-}
+func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq int, params aiRequestParams) (int64, error) {
+	defer segment.Body.Close()
+	var reader io.Reader = segment.Body
+	if seq < 10 {
+		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
+		outFile, err := os.Create(p)
+		if err != nil {
+			clog.Info(ctx, "Could not create output segment file for logging", "err", err)
+		} else {
+			defer outFile.Close()
+			reader = io.TeeReader(segment.Body, outFile)
+		}
+	}
 
-func copySegmentWithTimeout(segment io.Reader, w io.Writer, timeout time.Duration) (int64, error) {
+	timeout := params.liveParams.outSegmentTimeout
+	if timeout <= 0 {
+		return io.Copy(w, reader)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -350,7 +343,7 @@ func copySegmentWithTimeout(segment io.Reader, w io.Writer, timeout time.Duratio
 
 	resultChan := make(chan result, 1)
 	go func() {
-		n, err := io.Copy(w, segment)
+		n, err := io.Copy(w, reader)
 		resultChan <- result{n, err}
 	}()
 
@@ -649,12 +642,13 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 	}
 }
 
-func logToDisk(ctx context.Context, reader io.Reader, workdir string, requestID string, seq int) {
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
 	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
 	if seq > 10 {
 		return
 	}
 	go func() {
+		reader := r.Clone()
 		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
 		file, err := os.Create(p)
 		if err != nil {
