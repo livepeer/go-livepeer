@@ -1032,6 +1032,8 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	sess = sess.Clone()
+
 	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
 	params.liveParams.sess = sess
 	params.liveParams.startTime = time.Now()
