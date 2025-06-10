@@ -1,7 +1,6 @@
 package trickle
 
 import (
-	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -35,18 +34,24 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 	stream := c.server.getOrCreateStream(c.channelName, c.mimeType, true)
 	c.mu.Lock()
 	seq := c.seq
-	segment, exists := stream.getForWrite(seq)
-	if exists {
-		c.mu.Unlock()
-		return errors.New("Entry already exists for this sequence")
-	}
+	segment := stream.getForWrite(seq)
+	/*
+		segment, exists := stream.getForWrite(seq)
+		if exists {
+			c.mu.Unlock()
+			return errors.New("Entry already exists for this sequence")
+		}
+	*/
 
 	// before we begin - let's pre-create the next segment
 	nextSeq := c.seq + 1
-	if _, exists = stream.getForWrite(nextSeq); exists {
-		c.mu.Unlock()
-		return errors.New("Next entry already exists in this sequence")
-	}
+	stream.getForWrite(nextSeq)
+	/*
+		if _, exists = stream.getForWrite(nextSeq); exists {
+			c.mu.Unlock()
+			return errors.New("Next entry already exists in this sequence")
+		}
+	*/
 	c.seq = nextSeq
 	c.mu.Unlock()
 
