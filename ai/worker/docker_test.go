@@ -100,7 +100,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		modelDir:      "/models",
 		overrides:     ImageOverrides{Default: "default-image"},
 		dockerClient:  mockDockerClient,
-		gpuContainers: make(map[string]string),
+		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
 	}
@@ -464,7 +464,7 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 				// Mock client methods to simulate the image being available locally.
 				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is available by not setting any container for the GPU.
-				dockerManager.gpuContainers = make(map[string]string)
+				dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 			},
 			expectedHasCapacity: true,
 		},
@@ -474,7 +474,11 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 				// Mock client methods to simulate the image being available locally.
 				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
+				dockerManager.gpuContainers["gpu0"] = &RunnerContainer{
+					RunnerContainerConfig: RunnerContainerConfig{
+						Pipeline: pipeline,
+						ModelID:  modelID,
+					}}
 			},
 			expectedHasCapacity: false,
 		},
@@ -569,7 +573,7 @@ func TestDockerManager_createContainer(t *testing.T) {
 
 	// Mock allocGPU and getContainerImageName methods.
 	dockerManager.gpus = []string{gpu}
-	dockerManager.gpuContainers = make(map[string]string)
+	dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 	dockerManager.containers = make(map[string]*RunnerContainer)
 	dockerManager.overrides.Default = containerImage
 
@@ -591,6 +595,16 @@ func TestDockerManager_createContainer(t *testing.T) {
 func TestDockerManager_allocGPU(t *testing.T) {
 	ctx := context.Background()
 
+	container1 := func(keepWarm bool) *RunnerContainer {
+		return &RunnerContainer{
+			Name: "container1",
+			RunnerContainerConfig: RunnerContainerConfig{
+				ID:       "container1",
+				KeepWarm: keepWarm,
+				GPU:      "gpu0",
+			},
+		}
+	}
 	tests := []struct {
 		name                 string
 		setup                func(*DockerManager, *MockDockerClient)
@@ -601,7 +615,7 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUAvailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is available by not setting any container for the GPU.
-				dockerManager.gpuContainers = make(map[string]string)
+				dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 			},
 			expectedAllocatedGPU: "gpu0",
 			errorMessage:         "",
@@ -610,7 +624,8 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
+				rc := container1(true)
+				dockerManager.gpuContainers[rc.GPU] = rc
 			},
 			expectedAllocatedGPU: "",
 			errorMessage:         "insufficient capacity",
@@ -619,13 +634,9 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailableAndWarm",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
-				dockerManager.containers["container1"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						ID:       "container1",
-						KeepWarm: true,
-					},
-				}
+				rc := container1(true)
+				dockerManager.gpuContainers[rc.GPU] = rc
+				dockerManager.containers[rc.Name] = rc
 			},
 			expectedAllocatedGPU: "",
 			errorMessage:         "insufficient capacity",
@@ -634,13 +645,9 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailableButCold",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
-				dockerManager.containers["container1"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						ID:       "container1",
-						KeepWarm: false,
-					},
-				}
+				rc := container1(false)
+				dockerManager.gpuContainers[rc.GPU] = rc
+				dockerManager.containers[rc.Name] = rc
 				// Mock client methods to simulate the removal of the warm container.
 				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
 				mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
@@ -651,19 +658,21 @@ func TestDockerManager_allocGPU(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		mockDockerClient := new(MockDockerClient)
-		dockerManager := createDockerManager(mockDockerClient)
+		t.Run(tt.name, func(t *testing.T) {
+			mockDockerClient := new(MockDockerClient)
+			dockerManager := createDockerManager(mockDockerClient)
 
-		tt.setup(dockerManager, mockDockerClient)
+			tt.setup(dockerManager, mockDockerClient)
 
-		gpu, err := dockerManager.allocGPU(ctx)
-		if tt.errorMessage != "" {
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.errorMessage)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tt.expectedAllocatedGPU, gpu)
-		}
+			gpu, err := dockerManager.allocGPU(ctx)
+			if tt.errorMessage != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMessage)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedAllocatedGPU, gpu)
+			}
+		})
 	}
 }
 
@@ -681,7 +690,7 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 			GPU: gpu,
 		},
 	}
-	dockerManager.gpuContainers[gpu] = containerID
+	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
 
 	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{}).Return(nil)
@@ -862,7 +871,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		defer mockServer.Close()
 		defer mockDockerClient.AssertExpectations(t)
 		defer mockServer.AssertExpectations(t)
-		dockerManager.gpuContainers[rc.GPU] = rc.Name
+		dockerManager.gpuContainers[rc.GPU] = rc
 
 		// Must fail twice before the watch routine gives up on it
 		healthchecks := make(chan bool, 10)

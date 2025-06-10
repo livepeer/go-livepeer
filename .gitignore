@@ -52,3 +52,5 @@ run_*.sh
 gateway.log
 orchestrator.log
 mediamtx.log
+
+box/supabase

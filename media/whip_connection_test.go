@@ -95,6 +95,38 @@ func TestMediaStateStats(t *testing.T) {
 		assert.Equal(t, 2, len(statsResult.TrackStats), "Only two tracks should have been found in statsMap")
 	})
 
+	t.Run("ReturnsConnectionWarnings", func(t *testing.T) {
+		mockPC := NewMockPC()
+		mockState := NewMediaState(mockPC)
+
+		// Create a mock stats getter with two track stats
+		msGetter := &mockStatsGetter{
+			statsMap: map[uint32]*stats.Stats{
+				123: {
+					InboundRTPStreamStats: stats.InboundRTPStreamStats{
+						ReceivedRTPStreamStats: stats.ReceivedRTPStreamStats{
+							PacketsLost:     1, // 1 packet lost and 2 received = 33.33% loss
+							PacketsReceived: 2,
+						},
+					},
+				},
+				456: {},
+			},
+		}
+		tracks := []RTPTrack{
+			&mockRTPTrack{ssrc: 123, kind: webrtc.RTPCodecTypeVideo},
+			&mockRTPTrack{ssrc: 456, kind: webrtc.RTPCodecTypeVideo},
+		}
+		mockState.SetTracks(msGetter, tracks)
+
+		statsResult, err := mockState.Stats()
+		require.NoError(t, err)
+
+		require.Len(t, statsResult.TrackStats, 2)
+		require.Len(t, statsResult.TrackStats[0].Warnings, 1)
+		require.Equal(t, ConnQualityBad, statsResult.ConnQuality)
+	})
+
 	t.Run("HandlesNoStatsInGetter", func(t *testing.T) {
 		mockPC := NewMockPC()
 		mockState := NewMediaState(mockPC)
