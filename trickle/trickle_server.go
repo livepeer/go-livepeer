@@ -314,22 +314,20 @@ type timeoutReader struct {
 	timeout       time.Duration
 	firstByteRead bool
 	readStarted   bool
-	doneCh        chan int
-	errCh         chan error
-	closeCh       chan bool
+	ch            chan struct {
+		n   int
+		err error
+	}
+	closeCh chan bool
 }
 
 func (tr *timeoutReader) startRead(p []byte) {
 	go func() {
 		n, err := tr.body.Read(p)
-		if n > 0 {
-			tr.doneCh <- n
-		}
-		if err != nil {
-			tr.errCh <- err
-			return
-		}
-		tr.doneCh <- n
+		tr.ch <- struct {
+			n   int
+			err error
+		}{n, err}
 	}()
 }
 
@@ -341,20 +339,20 @@ func (tr *timeoutReader) Read(p []byte) (int, error) {
 
 	// we only want to start the reader once
 	if !tr.readStarted {
-		tr.errCh = make(chan error, 1)
-		tr.doneCh = make(chan int, 1)
+		tr.ch = make(chan struct {
+			n   int
+			err error
+		}, 1)
 		tr.readStarted = true
 		go tr.startRead(p)
 	}
 
 	select {
-	case err := <-tr.errCh:
-		return 0, err
-	case n := <-tr.doneCh:
-		if n > 0 {
+	case res := <-tr.ch:
+		if res.n > 0 {
 			tr.firstByteRead = true
 		}
-		return n, nil
+		return res.n, res.err
 	case <-tr.closeCh:
 		// Signals preconnected publishers that are waiting
 		return 0, io.EOF
