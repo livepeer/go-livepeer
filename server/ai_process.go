@@ -1032,6 +1032,8 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	sess = sess.Clone()
+
 	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
 	params.liveParams.sess = sess
 	params.liveParams.startTime = time.Now()
@@ -1491,11 +1493,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 		sessTries[sess.Transcoder()]++
-		if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
-			// user requested a specific orchestrator, so ignore all the others
-			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
-			retryableSessions = append(retryableSessions, sess)
-			continue
+		if params.liveParams != nil {
+			if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
+				// user requested a specific orchestrator, so ignore all the others
+				clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+				retryableSessions = append(retryableSessions, sess)
+				continue
+			}
 		}
 
 		resp, err = submitFn(ctx, params, sess)

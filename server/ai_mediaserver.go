@@ -963,8 +963,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			go runStats(statsContext, whipConn, streamID, pipelineID, requestID)
 
 			whipConn.AwaitClose()
-			ssr.Close()
 			cleanupControl(ctx, params)
+			ssr.Close()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
