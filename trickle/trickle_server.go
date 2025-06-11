@@ -421,12 +421,6 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 					// body.Close() will read until EOF and we don't want that
 					// without this, body.Close() may hang under some scenarios
 					reader.skipClose = true
-					if hijacker, ok := w.(http.Hijacker); ok {
-						conn, _, err := hijacker.Hijack()
-						if err == nil {
-							conn.Close()
-						}
-					}
 				}
 				break
 			}
