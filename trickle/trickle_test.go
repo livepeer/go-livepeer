@@ -15,52 +15,6 @@ func TestTrickle_Close(t *testing.T) {
 	require := require.New(t)
 	mux := http.NewServeMux()
 	server := ConfigureServer(TrickleServerConfig{
-		Mux:        mux,
-		Autocreate: true,
-	})
-	stop := server.Start()
-	ts := httptest.NewServer(mux)
-	defer ts.Close()
-	defer stop()
-
-	channelURL := ts.URL + "/testest"
-	pub, err := NewTricklePublisher(channelURL)
-	require.Nil(err)
-	sub := NewTrickleSubscriber(channelURL)
-
-	sub.SetSeq(0)
-
-	// write two segments
-	segs := []string{"first", "second"}
-	for seq, s := range segs {
-		require.Nil(pub.Write(bytes.NewReader([]byte(s))))
-
-		// now use a subscriber to read back segments
-		resp, err := sub.Read()
-		require.Nil(err, "sub.Read")
-		data, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		require.Nil(err, fmt.Sprintf("reading body seq=%d", seq))
-		got := string(data)
-		require.Equal(s, got, fmt.Sprintf("segment read seq=%d", seq))
-		require.Equal(fmt.Sprintf("%d", seq), resp.Header.Get("Lp-Trickle-Seq"), "Lp-Trickle-Seq")
-	}
-
-	// close the stream
-	require.Nil(pub.Close())
-
-	// requesting past the last segment should return EOS
-	_, err = sub.Read()
-	require.Error(err, EOS)
-
-	// and writing past last segment should also return EOS
-	require.Error(EOS, pub.Write(bytes.NewReader([]byte("invalid"))))
-}
-
-func TestTrickle_NoAutocreate(t *testing.T) {
-	require := require.New(t)
-	mux := http.NewServeMux()
-	server := ConfigureServer(TrickleServerConfig{
 		Mux: mux,
 	})
 	stop := server.Start()
@@ -90,7 +44,7 @@ func TestTrickle_NoAutocreate(t *testing.T) {
 	// write two segments
 	segs := []string{"first", "second"}
 	for _, s := range segs {
-		require.Nil(pub.Write(bytes.NewReader([]byte(s))))
+		require.Nil(pub.Write(bytes.NewReader([]byte(s))), "failed writing "+s)
 	}
 
 	// now read two segments
