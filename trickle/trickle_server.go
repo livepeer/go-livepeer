@@ -310,7 +310,7 @@ func (sm *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 }
 
 type timeoutReader struct {
-	body          io.Reader
+	body          io.ReadCloser
 	timeout       time.Duration
 	firstByteRead bool
 	readStarted   bool
@@ -318,7 +318,8 @@ type timeoutReader struct {
 		n   int
 		err error
 	}
-	closeCh chan bool
+	closeCh   chan bool
+	skipClose bool
 }
 
 func (tr *timeoutReader) startRead(p []byte) {
@@ -361,6 +362,13 @@ func (tr *timeoutReader) Read(p []byte) (int, error) {
 	}
 }
 
+func (tr *timeoutReader) Close() error {
+	if tr.skipClose {
+		return nil
+	}
+	return tr.body.Close()
+}
+
 // Handle post requests for a given index
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment := s.getForWrite(idx)
@@ -374,7 +382,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 		timeout: 10 * time.Second,
 		closeCh: segment.closeCh,
 	}
-	defer r.Body.Close()
+	defer reader.Close()
 
 	buf := make([]byte, 1024*32) // 32kb to begin with
 	totalRead := 0
@@ -409,6 +417,10 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 					w.Header().Set("Connection", "close")
 					w.Header().Set("Lp-Trickle-Closed", "terminated")
 					w.WriteHeader(http.StatusOK)
+					// we have read nothing; don't attempt to read anything more
+					// body.Close() will read until EOF and we don't want that
+					// without this, body.Close() may hang under some scenarios
+					reader.skipClose = true
 					if hijacker, ok := w.(http.Hijacker); ok {
 						conn, _, err := hijacker.Hijack()
 						if err == nil {
