@@ -29,7 +29,7 @@ go test -race
 cd ..
 
 cd trickle
-go test -race
+go test -race -timeout 10s
 cd ..
 
 ./test_args.sh
