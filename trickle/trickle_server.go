@@ -452,7 +452,7 @@ func (s *Stream) getForWrite(idx int) *Segment {
 	return segment
 }
 
-func (s *Stream) getForRead(idx int) (*Segment, int, bool) {
+func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
 	exists := func(seg *Segment, i int) bool {
@@ -471,14 +471,14 @@ func (s *Stream) getForRead(idx int) (*Segment, int, bool) {
 	}
 	segmentPos := idx % maxSegmentsPerStream
 	segment := s.segments[segmentPos]
-	if !exists(segment, idx) && (idx == s.nextWrite || (s.nextWrite == 0 && idx == 1)) {
+	if !exists(segment, idx) && (idx == s.nextWrite || (s.nextWrite == 0 && idx == 1)) && !s.closed {
 		// read request is just a little bit ahead of write head
 		segment = newSegment(idx)
 		s.segments[segmentPos] = segment
 		slog.Info("GET precreating", "stream", s.name, "idx", idx, "next", s.nextWrite)
 	}
 	slog.Info("GET segment", "stream", s.name, "idx", idx, "next", s.nextWrite, "exists?", exists(segment, idx))
-	return segment, s.nextWrite, exists(segment, idx)
+	return segment, s.nextWrite, exists(segment, idx), s.closed
 }
 
 func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -496,12 +496,16 @@ func (sm *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
-	segment, latestSeq, exists := s.getForRead(idx)
+	segment, latestSeq, exists, closed := s.getForRead(idx)
 	if !exists {
-		// Special status to indicate "stream exists but segment doesn't"
 		w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
 		w.Header().Set("Lp-Trickle-Seq", strconv.Itoa(idx))
-		w.WriteHeader(470)
+		if closed {
+			w.Header().Set("Lp-Trickle-Closed", "terminated")
+		} else {
+			// Special status to indicate "stream exists but segment doesn't"
+			w.WriteHeader(470)
+		}
 		w.Write([]byte("Entry not found"))
 		return
 	}
