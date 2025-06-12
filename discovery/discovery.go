@@ -262,6 +262,10 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 	return size
 }
 
+func (o *orchestratorPool) Broadcaster() common.Broadcaster {
+	return o.bcast
+}
+
 func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {
 
 }

@@ -120,6 +120,10 @@ func (w *webhookPool) GetOrchestrators(ctx context.Context, numOrchestrators int
 	return w.pool.GetOrchestrators(ctx, numOrchestrators, suspender, caps, scorePred)
 }
 
+func (w *webhookPool) Broadcaster() common.Broadcaster {
+	return w.pool.bcast
+}
+
 var getURLsfromWebhook = func(cbUrl *url.URL) ([]byte, error) {
 	var httpc = &http.Client{
 		Timeout: 3 * time.Second,
