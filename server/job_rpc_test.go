@@ -196,8 +196,8 @@ func (r *mockJobOrchestrator) LiveVideoToVideo(ctx context.Context, requestID st
 	return nil, nil
 }
 
-func (r *mockJobOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *mockJobOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *mockJobOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
