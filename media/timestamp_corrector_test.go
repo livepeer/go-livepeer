@@ -51,38 +51,91 @@ func TestTimestampCorrector_NoFix_NormalClock(t *testing.T) {
 	assert.Equal(ts3, out3, "subsequent normal-clock call changed ts")
 }
 
-func TestTimestampCorrector_Fix_iOS_Bug(t *testing.T) {
-	fps := 30.0
-	ctx := context.Background()
-	assert := assert.New(t)
+func TestTimestampCorrector_Fix(t *testing.T) {
 
-	// simulate two packets spaced normally but with an inflated tsDelta to trigger fix
-	t0 := time.Date(2025, 5, 30, 0, 0, 0, 0, time.UTC)
-	dtNs := time.Duration((1.0/fps)*1e9) * time.Nanosecond
-	t1 := t0.Add(dtNs)
+	// Table driven tests for a broken set of timestamps
+	// under various conditions
 
-	tc := NewTimestampCorrector(TimestampCorrectorConfig{
-		FPS:   fps,
-		Clock: makeClock([]time.Time{t0, t1}),
-	})
+	tests := []struct {
+		name      string
+		userAgent string
+		disable   bool
+		wantFix   bool
+	}{
+		{
+			name:    "defaults",
+			wantFix: true,
+		},
+		{
+			name:      "UA matched",
+			userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15",
+			wantFix:   true,
+		},
+		{
+			name:      "UA did not match",
+			userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+			wantFix:   false,
+		},
+		{
+			name:    "Disabled",
+			disable: true,
+			wantFix: false,
+		},
+		{
+			name:      "Matching UA but disabled",
+			userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15",
+			disable:   true,
+			wantFix:   false,
+		},
+	}
 
-	ts1 := int64(1000)
-	out1 := tc.Process(ctx, ts1)
-	assert.Equal(ts1, out1, "first call changed ts")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			fps := 30.0
+			ctx := context.Background()
 
-	// choose a delta large enough: > thresholdFreq*dt
-	dtSec := dtNs.Seconds()
-	largeDelta := int64((tc.thresholdFreq * dtSec) + 2)
-	ts2 := ts1 + largeDelta
-	out2 := tc.Process(ctx, ts2)
-	expected2 := multiplyAndDivide(ts2, 90_000, 1_000_000)
-	assert.Equal(expected2, out2, "bug-clock second call")
+			// simulate two wall-clock timestamps spaced by expected dt
+			t0 := time.Date(2025, 5, 30, 0, 0, 0, 0, time.UTC)
+			dtNs := time.Duration((1.0/fps)*1e9) * time.Nanosecond
+			t1 := t0.Add(dtNs)
 
-	// subsequent calls also fixed
-	ts3 := ts2 + 20000
-	out3 := tc.Process(ctx, ts3)
-	expected3 := multiplyAndDivide(ts3, 90_000, 1_000_000)
-	assert.Equal(expected3, out3, "subsequent bug-clock call")
+			conf := TimestampCorrectorConfig{
+				FPS:       fps,
+				Clock:     makeClock([]time.Time{t0, t1}),
+				UserAgent: tc.userAgent,
+				Disable:   tc.disable,
+			}
+			corr := NewTimestampCorrector(conf)
+
+			// first packet: always unmodified
+			ts1 := int64(1000)
+			out1 := corr.Process(ctx, ts1)
+			assert.Equal(ts1, out1, "first call must not change ts")
+
+			// second packet: inflated tsDelta to trigger or not trigger fix
+			dtSec := dtNs.Seconds()
+			largeDelta := int64((corr.thresholdFreq * dtSec) + 2)
+			ts2 := ts1 + largeDelta
+			out2 := corr.Process(ctx, ts2)
+
+			// expected: either raw ts2 or fixed via multiplyAndDivide
+			want2 := ts2
+			if tc.wantFix {
+				want2 = multiplyAndDivide(ts2, 90000, 1000000)
+			}
+			assert.Equal(want2, out2, "second call")
+
+			// third packet: follow same rule as second
+			ts3 := ts2 + 20000
+			out3 := corr.Process(ctx, ts3)
+			want3 := ts3
+			if tc.wantFix {
+				want3 = multiplyAndDivide(ts3, 90000, 1000000)
+			}
+			assert.Equal(want3, out3, "third call")
+		})
+	}
 }
 
 func TestTimestampCorrector_Burst(t *testing.T) {
@@ -116,121 +169,6 @@ func TestTimestampCorrector_Burst(t *testing.T) {
 	ts3 := ts2 + 100
 	out3 := tc.Process(ctx, ts3)
 	assert.Equal(ts3, out3, "post-flush normal call changed ts")
-}
-
-func TestTimestampCorrector_WithMatchingUA(t *testing.T) {
-	// UA is Safari on MacOS - should trigger timestamp correction
-	userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15"
-	fps := 30.0
-	ctx := context.Background()
-	assert := assert.New(t)
-
-	// simulate two packets spaced normally but with an inflated tsDelta to trigger fix
-	t0 := time.Date(2025, 5, 30, 0, 0, 0, 0, time.UTC)
-	dtNs := time.Duration((1.0/fps)*1e9) * time.Nanosecond
-	t1 := t0.Add(dtNs)
-
-	tc := NewTimestampCorrector(TimestampCorrectorConfig{
-		FPS:       fps,
-		Clock:     makeClock([]time.Time{t0, t1}),
-		UserAgent: userAgent,
-	})
-
-	ts1 := int64(1000)
-	out1 := tc.Process(ctx, ts1)
-	assert.Equal(ts1, out1, "first call changed ts")
-
-	// choose a delta large enough: > thresholdFreq*dt
-	dtSec := dtNs.Seconds()
-	largeDelta := int64((tc.thresholdFreq * dtSec) + 2)
-	ts2 := ts1 + largeDelta
-	out2 := tc.Process(ctx, ts2)
-	expected2 := multiplyAndDivide(ts2, 90_000, 1_000_000)
-	assert.Equal(expected2, out2, "bug-clock second call")
-
-	// subsequent calls also fixed
-	ts3 := ts2 + 20000
-	out3 := tc.Process(ctx, ts3)
-	expected3 := multiplyAndDivide(ts3, 90_000, 1_000_000)
-	assert.Equal(expected3, out3, "subsequent bug-clock call")
-
-}
-
-func TestTimestampCorrector_WithNonMatchingUA(t *testing.T) {
-	// UA is chrome on MacOS
-	// Should *not* trigger timestamp correction even if it's detected as being broken
-	userAgent := "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
-	fps := 30.0
-	ctx := context.Background()
-	assert := assert.New(t)
-
-	// simulate two packets spaced normally but with an inflated tsDelta to trigger fix
-	t0 := time.Date(2025, 5, 30, 0, 0, 0, 0, time.UTC)
-	dtNs := time.Duration((1.0/fps)*1e9) * time.Nanosecond
-	t1 := t0.Add(dtNs)
-
-	tc := NewTimestampCorrector(TimestampCorrectorConfig{
-		FPS:       fps,
-		Clock:     makeClock([]time.Time{t0, t1}),
-		UserAgent: userAgent,
-	})
-
-	ts1 := int64(1000)
-	out1 := tc.Process(ctx, ts1)
-	assert.Equal(ts1, out1, "first call changed ts")
-
-	// choose a delta large enough: > thresholdFreq*dt
-	dtSec := dtNs.Seconds()
-	largeDelta := int64((tc.thresholdFreq * dtSec) + 2)
-	ts2 := ts1 + largeDelta
-	out2 := tc.Process(ctx, ts2)
-	expected2 := ts2
-	assert.Equal(expected2, out2, "bug-clock second call")
-
-	// subsequent calls also fixed
-	ts3 := ts2 + 20000
-	out3 := tc.Process(ctx, ts3)
-	expected3 := ts3
-	assert.Equal(expected3, out3, "subsequent bug-clock call")
-
-}
-
-func TestTimestampCorrector_Disabled(t *testing.T) {
-	// Should *not* trigger timestamp correction even if it's detected as being broken
-
-	fps := 30.0
-	ctx := context.Background()
-	assert := assert.New(t)
-
-	// simulate two packets spaced normally but with an inflated tsDelta to trigger fix
-	t0 := time.Date(2025, 5, 30, 0, 0, 0, 0, time.UTC)
-	dtNs := time.Duration((1.0/fps)*1e9) * time.Nanosecond
-	t1 := t0.Add(dtNs)
-
-	tc := NewTimestampCorrector(TimestampCorrectorConfig{
-		FPS:     fps,
-		Clock:   makeClock([]time.Time{t0, t1}),
-		Disable: true,
-	})
-
-	ts1 := int64(1000)
-	out1 := tc.Process(ctx, ts1)
-	assert.Equal(ts1, out1, "first call changed ts")
-
-	// choose a delta large enough: > thresholdFreq*dt
-	dtSec := dtNs.Seconds()
-	largeDelta := int64((tc.thresholdFreq * dtSec) + 2)
-	ts2 := ts1 + largeDelta
-	out2 := tc.Process(ctx, ts2)
-	expected2 := ts2
-	assert.Equal(expected2, out2, "bug-clock second call")
-
-	// subsequent calls also fixed
-	ts3 := ts2 + 20000
-	out3 := tc.Process(ctx, ts3)
-	expected3 := ts3
-	assert.Equal(expected3, out3, "subsequent bug-clock call")
-
 }
 
 func TestTimestampCorrector_UAFilter(t *testing.T) {
