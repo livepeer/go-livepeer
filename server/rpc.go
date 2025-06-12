@@ -52,7 +52,7 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
-	CheckAICapacity(pipeline, modelID string) bool
+	CheckAICapacity(pipeline, modelID string) (bool, chan<- bool)
 	GetLiveAICapacity() worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
@@ -402,7 +402,8 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
 		pipeline := "live-video-to-video"
 		for modelID := range liveCap.GetModels() {
-			if orch.CheckAICapacity(pipeline, modelID) {
+			hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
+			if hasCapacity {
 				// It has capacity for at least one of the requested models
 				return nil
 			}

@@ -232,12 +232,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
 
-			var n int64
-			if params.liveParams.outSegmentTimeout > 0 {
-				n, err = copySegmentWithTimeout(segment, outWriter, params.liveParams.outSegmentTimeout)
-			} else {
-				n, err = copySegment(segment, outWriter)
-			}
+			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
 				suspendOrchestrator(ctx, params)
 				params.liveParams.stopPipeline(fmt.Errorf("trickle subscribe error copying: %w", err))
@@ -323,13 +318,24 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 	}
 }
 
-func copySegment(segment *http.Response, w io.Writer) (int64, error) {
+func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq int, params aiRequestParams) (int64, error) {
 	defer segment.Body.Close()
-	return io.Copy(w, segment.Body)
-}
+	var reader io.Reader = segment.Body
+	if seq < 10 {
+		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
+		outFile, err := os.Create(p)
+		if err != nil {
+			clog.Info(ctx, "Could not create output segment file for logging", "err", err)
+		} else {
+			defer outFile.Close()
+			reader = io.TeeReader(segment.Body, outFile)
+		}
+	}
 
-func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Duration) (int64, error) {
-	defer segment.Body.Close()
+	timeout := params.liveParams.outSegmentTimeout
+	if timeout <= 0 {
+		return io.Copy(w, reader)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -341,7 +347,7 @@ func copySegmentWithTimeout(segment *http.Response, w io.Writer, timeout time.Du
 
 	resultChan := make(chan result, 1)
 	go func() {
-		n, err := io.Copy(w, segment.Body)
+		n, err := io.Copy(w, reader)
 		resultChan <- result{n, err}
 	}()
 
