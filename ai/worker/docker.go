@@ -362,8 +362,6 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	envVars := []string{
 		"PIPELINE=" + pipeline,
 		"MODEL_ID=" + modelID,
-		"WIDTH=" + optimizationFlags["width"].String(),
-		"HEIGHT=" + optimizationFlags["height"].String(),
 	}
 	for key, value := range optimizationFlags {
 		envVars = append(envVars, key+"="+value.String())
