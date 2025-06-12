@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -17,6 +18,7 @@ type TimestampCorrector struct {
 	frameInterval float64          // expected time between successive frames
 	thresholdFreq float64          // threshold in Hz to trigger correction
 	now           func() time.Time // function to obtain current time, injected for testing
+	skipFix       bool             // whether to apply the fix even if detected
 
 	// detection state
 	firstTS       int64
@@ -25,12 +27,43 @@ type TimestampCorrector struct {
 	needsFix      bool
 }
 
+type TimestampCorrectorConfig struct {
+
+	// Estimated frame rate.
+	FPS float64
+
+	// Threshold in Hz to trigger correction
+	ThresholdFreq int
+
+	// current user agent to check for inclusion
+	UserAgent string
+
+	// function to obtain current time, injected for testing
+	Clock func() time.Time
+
+	// Kill switch
+	Disable bool
+}
+
 // NewTimestampCorrector creates a detector based on your target fps.
-func NewTimestampCorrector(fps float64) *TimestampCorrector {
+func NewTimestampCorrector(conf TimestampCorrectorConfig) *TimestampCorrector {
+	if conf.FPS == 0 {
+		conf.FPS = 30
+	}
+	if conf.ThresholdFreq == 0 {
+		// anything above 800khz flags the bug
+		conf.ThresholdFreq = 800_000
+	}
+	if conf.Clock == nil {
+		// default to real clock
+		conf.Clock = time.Now
+	}
 	return &TimestampCorrector{
-		frameInterval: 1.0 / fps,
-		thresholdFreq: 800_000,  // anything above 800 kHz flags the bug
-		now:           time.Now, // default to real clock
+		frameInterval: 1.0 / conf.FPS,
+		thresholdFreq: float64(conf.ThresholdFreq),
+		now:           conf.Clock,
+		// Only apply the fix to certain user agents
+		skipFix: !shouldFix(conf.UserAgent) || conf.Disable,
 	}
 }
 
@@ -75,8 +108,10 @@ func (c *TimestampCorrector) Process(ctx context.Context, ts int64) int64 {
 		freq := tsDelta / dt
 		if freq > c.thresholdFreq {
 			// TODO remove this entire file once we stop seeing this log line
-			clog.Info(ctx, "TSCorrector: Frequency too high! Starting microsecond timestamp mode", "freq", freq, "first", c.firstTS, "ts", ts, "delta", tsDelta, "dt_ms", dt*1000)
-			c.needsFix = true
+			clog.Info(ctx, "TSCorrector: Frequency too high! Starting microsecond timestamp mode", "freq", freq, "first", c.firstTS, "ts", ts, "delta", tsDelta, "dt_ms", dt*1000, "skipping", c.skipFix)
+			if !c.skipFix {
+				c.needsFix = true
+			}
 		} else {
 			clog.Info(ctx, "TSCorrector: All good", "freq", freq, "first", c.firstTS, "ts", ts, "delta", tsDelta, "dt_ms", dt*1000)
 		}
@@ -89,4 +124,15 @@ func (c *TimestampCorrector) Process(ctx context.Context, ts int64) int64 {
 	}
 
 	return ts
+}
+
+// Should roughly match any browser on iOS or any Safari 18+ on MacOS
+// We prefer to over-match instead of under-match
+var uaRegex = regexp.MustCompile(`iPhone|iPad|Version/18`)
+
+func shouldFix(s string) bool {
+	if s == "" {
+		return true
+	}
+	return uaRegex.MatchString(s)
 }
