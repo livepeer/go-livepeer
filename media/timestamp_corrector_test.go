@@ -200,6 +200,10 @@ func TestTimestampCorrector_UAFilter(t *testing.T) {
 			name: "Facebook on iPhone",
 			ua:   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/510.0.0.47.116;FBBV/743276974;FBDV/iPhone17,3;FBMD/iPhone;FBSN/iOS;FBSV/18.5;FBSS/3;FBCR/;FBID/phone;FBLC/en_US;FBOP/80]",
 		},
+		{
+			name: "Edge on iPhone",
+			ua:   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 EdgiOS/137.3296.65 Mobile/15E148 Safari/605.1.15",
+		},
 	}
 	noMatches := []struct {
 		name string
@@ -222,8 +226,16 @@ func TestTimestampCorrector_UAFilter(t *testing.T) {
 			ua:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:139.0) Gecko/20100101 Firefox/139.0",
 		},
 		{
+			name: "Edge on MacOS",
+			ua:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.3296.68",
+		},
+		{
 			name: "Chrome on Android",
 			ua:   "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36",
+		},
+		{
+			name: "Edge on Android",
+			ua:   "Mozilla/5.0 (Linux; Android 10; HD1913) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.7151.73 Mobile Safari/537.36 EdgA/137.0.3296.65",
 		},
 		{
 			name: "Chrome on Linux",
@@ -232,6 +244,10 @@ func TestTimestampCorrector_UAFilter(t *testing.T) {
 		{
 			name: "Chrome on Windows",
 			ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+		},
+		{
+			name: "Edge on Windows",
+			ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.3296.68",
 		},
 	}
 
