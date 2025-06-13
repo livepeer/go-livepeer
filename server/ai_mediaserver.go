@@ -467,6 +467,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
+		// collect all RTMP outputs
+		var rtmpOutputs []string
+		if outputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, outputURL)
+		}
+		if mediaMTXOutputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL)
+		}
+		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
@@ -589,8 +599,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
-				outputRTMPURL:          outputURL,
-				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
+				rtmpOutputs:            rtmpOutputs,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -828,6 +837,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
 
+			// collect RTMP outputs
+			var rtmpOutputs []string
+
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
 			if LiveAIAuthWebhookURL != nil {
@@ -930,6 +942,14 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				monitor.AILiveVideoAttempt()
 			}
 
+			if outputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, outputURL)
+			}
+			if mediamtxOutputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL)
+			}
+			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+
 			params := aiRequestParams{
 				node:        ls.LivepeerNode,
 				os:          drivers.NodeStorage.NewSession(requestID),
@@ -937,8 +957,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
-					outputRTMPURL:          outputURL,
-					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
+					rtmpOutputs:            rtmpOutputs,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
