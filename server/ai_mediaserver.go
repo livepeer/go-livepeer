@@ -397,6 +397,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Create fresh context instead of using r.Context() since ctx will outlive the request
 		ctx := context.Background()
 
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
@@ -458,6 +461,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			mediaMTXInputURL = mediaMTXRtmpURL
 		}
 		mediaMTXOutputURL := mediaMTXInputURL + "-out"
+		mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -473,7 +477,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			rtmpOutputs = append(rtmpOutputs, outputURL)
 		}
 		if mediaMTXOutputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL)
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
 		}
 		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
@@ -535,8 +539,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
@@ -820,7 +822,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		if whepURL == "" {
 			whepURL = "http://localhost:8889/" // default mediamtx output
 		}
-		whepURL = whepURL + streamName + "-out/whep"
+		whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -828,6 +830,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				internalOutputHost = "rtmp://localhost/"
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
+			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
 			outputURL := ""
 			streamID := ""
 			pipelineID := ""
@@ -946,7 +949,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				rtmpOutputs = append(rtmpOutputs, outputURL)
 			}
 			if mediamtxOutputURL != "" {
-				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL)
+				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL, mediaMTXOutputAlias)
 			}
 			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
