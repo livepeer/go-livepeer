@@ -1,0 +1,47 @@
+name: AI Feature request
+description: Suggest an idea for this project.
+labels:
+  - "type: feature"
+  - "AI"
+assignees:
+  - rickstaa
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Feature Request
+        Please fill out the following information to help us understand your request.
+
+        > [!IMPORTANT]
+        > This repository is only related to feature requests related to the the AI branch of the go-livepeer software (i.e. `ai-video`). It does not cover feature requests related to the addition of new AI pipelines and AI models used on the AI subnet. For these issues, please refer to the [AI-worker repository](https://github.com/livepeer/ai-worker/issues/new/choose).
+  - type: textarea
+    attributes:
+      label: Is your feature request related to a problem? Please describe.
+      description:
+        A clear and concise description of what the problem is. Ex. I'm always
+        frustrated when [...]
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Describe the solution you'd like
+      description: A clear and concise description of what you want to happen.
+  - type: textarea
+    attributes:
+      label: Describe alternatives you've considered
+      description:
+        A clear and concise description of any alternative solutions or features
+        you've considered.
+  - type: textarea
+    attributes:
+      label: Use Case
+      description: "Please describe why you want this feature to be added. This will help us prioritize your request."
+  - type: textarea
+    attributes:
+      label: Expected Outcome
+      description: "What do you expect to happen once this feature is implemented?"
+  - type: textarea
+    attributes:
+      label: Additional context
+      description:
+        Add any other context or screenshots about the feature request here.
