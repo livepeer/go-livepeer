@@ -36,7 +36,7 @@ const jobRequestHdr = "Livepeer"
 const jobEthAddressHdr = "Livepeer-Eth-Address"
 const jobCapabilityHdr = "Livepeer-Capability"
 const jobPaymentHeaderHdr = "Livepeer-Payment"
-const jobPaymentBalanceHdr = "Livepeerb-Balance"
+const jobPaymentBalanceHdr = "Livepeer-Balance"
 const jobOrchSearchTimeoutHdr = "Livepeer-Orch-Search-Timeout"
 const jobOrchSearchRespTimeoutHdr = "Livepeer-Orch-Search-Resp-Timeout"
 const jobOrchSearchTimeoutDefault = 1 * time.Second
@@ -165,7 +165,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	jobEthAddrHdr := r.Header.Get(jobEthAddressHdr)
 	if jobEthAddrHdr == "" {
 		glog.Infof("generate token failed, invalid request remoteAddr=%v", remoteAddr)
-		http.Error(w, fmt.Sprintf("Must have eth address and signature on address in Livepeer-Job-Eth-Address header"), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Must have eth address and signature on address in Livepeer-Eth-Address header"), http.StatusBadRequest)
 		return
 	}
 	jobSenderAddr, err := verifyTokenCreds(r.Context(), orch, jobEthAddrHdr)
@@ -178,7 +178,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	jobCapsHdr := r.Header.Get(jobCapabilityHdr)
 	if jobCapsHdr == "" {
 		glog.Infof("generate token failed, invalid request, no capabilities included remoteAddr=%v", remoteAddr)
-		http.Error(w, fmt.Sprintf("Job capabilities not provided, must provide comma separated capabilities in Livepeer-Job-Capability header"), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Job capabilities not provided, must provide comma separated capabilities in Livepeer-Capability header"), http.StatusBadRequest)
 		return
 	}
 
@@ -392,7 +392,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			continue
 		}
 
-		//Orchestrator returns Livepeer-Job-Balance header for streaming and non-streaming responses
+		//Orchestrator returns Livepeer-Balance header for streaming and non-streaming responses
 		// for streaming responses: the balance is the balance before deducting cost to finish the request
 		//                          the ending balance is sent as last line before [DONE] in the SSE stream
 		// for non-streaming: the balance is the balance after deducting the cost of the request
@@ -1007,7 +1007,7 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 		Addr: addr.Hex(),
 		Sig:  "0x" + hex.EncodeToString(gatewayReq.Sig),
 	}
-	glog.Infof("%+v", reqSender)
+
 	getOrchJobToken := func(ctx context.Context, orchUrl *url.URL, reqSender JobSender, respTimeout time.Duration, tokenCh chan JobToken, errCh chan error) {
 		start := time.Now()
 		tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl.String()+"/process/token", nil)
