@@ -71,7 +71,8 @@ type WHIPServer struct {
 func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReader, whepURL string, w http.ResponseWriter, r *http.Request) *MediaState {
 	clog.Infof(ctx, "creating whip")
 
-	clog.Info(ctx, "Client info", "user-agent", r.Header.Get("User-Agent"))
+	userAgent := r.Header.Get("User-Agent")
+	clog.Info(ctx, "Client info", "user-agent", userAgent)
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
@@ -209,7 +210,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				handleRTP(ctx, segmenter, timeDecoder, track.(*webrtc.TrackRemote))
+				handleRTP(ctx, segmenter, timeDecoder, track.(*webrtc.TrackRemote), userAgent)
 			}()
 		}
 		gatherDuration := time.Since(gatherStartTime)
@@ -224,7 +225,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	return mediaState
 }
 
-func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote) {
+func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptime.GlobalDecoder2, track *webrtc.TrackRemote, userAgent string) {
 	var frame rtp.Depacketizer
 	var tsCorrector *TimestampCorrector
 	codec := track.Codec().MimeType
@@ -233,7 +234,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 	switch codec {
 	case webrtc.MimeTypeH264:
 		frame = &codecs.H264Packet{IsAVC: true}
-		tsCorrector = NewTimestampCorrector(30.0)
+		tsCorrector = NewTimestampCorrector(TimestampCorrectorConfig{
+			UserAgent: userAgent,
+			Disable:   disableTSCorrection(),
+		})
 	case webrtc.MimeTypeOpus:
 		frame = &codecs.OpusPacket{}
 		isAudio = true
@@ -547,6 +551,15 @@ func quoteCredential(v string) string {
 	b, _ := json.Marshal(v)
 	s := string(b)
 	return s[1 : len(s)-1]
+}
+
+func disableTSCorrection() bool {
+	s := os.Getenv("LIVE_AI_DISABLE_TS_CORRECTION")
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return false
+	}
+	return v
 }
 
 func getUDPListenerAddr() (*net.UDPAddr, error) {

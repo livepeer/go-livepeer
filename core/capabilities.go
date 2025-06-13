@@ -42,6 +42,7 @@ type Capabilities struct {
 	capacities  map[Capability]int
 	mutex       sync.Mutex
 }
+
 type CapabilityTest struct {
 	inVideoData []byte
 	outProfile  ffmpeg.VideoProfile

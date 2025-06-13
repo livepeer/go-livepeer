@@ -170,8 +170,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	// subscribe to the outputs and send them into LPMS
 	subscriber := trickle.NewTrickleSubscriber(url.String())
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
-	ctx = clog.AddVal(ctx, "outputRTMPURL", params.liveParams.outputRTMPURL)
-	ctx = clog.AddVal(ctx, "mediaMTXOutputRTMPURL", params.liveParams.mediaMTXOutputRTMPURL)
 
 	// Set up output buffers and ffmpeg processes
 	rbc := media.RingBufferConfig{BufferLen: 5_000_000} // 5 MB, 20-30 seconds at current rates
@@ -179,12 +177,10 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	if err != nil {
 		params.liveParams.stopPipeline(fmt.Errorf("ringbuffer init failed: %w", err))
 	}
-	if params.liveParams.outputRTMPURL != "" {
-		// External output ffmpeg process
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, outWriter.MakeReader(), params)
+	// Launch ffmpeg for each configured RTMP output
+	for _, outURL := range params.liveParams.rtmpOutputs {
+		go ffmpegOutput(ctx, outURL, outWriter.MakeReader(), params)
 	}
-	// MediaMTX Output ffmpeg process
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, outWriter.MakeReader(), params)
 
 	// read segments from trickle subscription
 	go func() {
@@ -280,7 +276,11 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
+	// Clone the context since we can call this function multiple times
+	// Adding rtmpOut val multiple times to the same context will just stomp over old ones
+	ctx = clog.Clone(ctx, ctx)
 	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
+
 	defer func() {
 		if rec := recover(); rec != nil {
 			// panicked, so shut down the stream and handle it

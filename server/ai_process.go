@@ -94,15 +94,14 @@ type aiRequestParams struct {
 
 // For live video pipelines
 type liveRequestParams struct {
-	segmentReader         *media.SwitchableSegmentReader
-	outputRTMPURL         string
-	mediaMTXOutputRTMPURL string
-	stream                string
-	requestID             string
-	streamID              string
-	pipelineID            string
-	pipeline              string
-	orchestrator          string
+	segmentReader *media.SwitchableSegmentReader
+	rtmpOutputs   []string
+	stream        string
+	requestID     string
+	streamID      string
+	pipelineID    string
+	pipeline      string
+	orchestrator  string
 
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration

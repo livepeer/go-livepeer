@@ -76,6 +76,7 @@ type stubOrchestrator struct {
 	offchain     bool
 	caps         *core.Capabilities
 	authToken    *net.AuthToken
+	jobPriceInfo *net.PriceInfo
 }
 
 func (r *stubOrchestrator) GetLiveAICapacity() worker.Capacity {
@@ -235,8 +236,8 @@ func (r *stubOrchestrator) LiveVideoToVideo(ctx context.Context, requestID strin
 	return nil, nil
 }
 
-func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *stubOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *stubOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 }
@@ -251,6 +252,28 @@ func (r *stubOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *stubOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
+func (r *stubOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (r *stubOrchestrator) RemoveExternalCapability(extCapability string) error {
+	return nil
+}
+func (r *stubOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
+	return true
+}
+func (r *stubOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (r *stubOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (r *stubOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+	return r.priceInfo, nil
+}
+func (r *stubOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
+}
+
 func stubBroadcaster2() *stubOrchestrator {
 	return newStubOrchestrator() // lazy; leverage subtyping for interface commonalities
 }
@@ -1486,8 +1509,8 @@ func (r *mockOrchestrator) TextToSpeech(ctx context.Context, requestID string, r
 func (r *mockOrchestrator) LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error) {
 	return nil, nil
 }
-func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) bool {
-	return true
+func (r *mockOrchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	return true, nil
 }
 func (r *mockOrchestrator) AIResults(job int64, res *core.RemoteAIWorkerResult) {
 
@@ -1503,6 +1526,28 @@ func (r *mockOrchestrator) WorkerHardware() []worker.HardwareInformation {
 }
 func (r *mockOrchestrator) ServeAIWorker(stream net.AIWorker_RegisterAIWorkerServer, capabilities *net.Capabilities, hardware []*net.HardwareInformation) {
 }
+func (o *mockOrchestrator) RegisterExternalCapability(extCapabilitySettings string) (*core.ExternalCapability, error) {
+	return nil, nil
+}
+func (o *mockOrchestrator) RemoveExternalCapability(extCapability string) error {
+	return nil
+}
+func (o *mockOrchestrator) CheckExternalCapabilityCapacity(extCap string) bool {
+	return true
+}
+func (o *mockOrchestrator) ReserveExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (o *mockOrchestrator) FreeExternalCapabilityCapacity(extCap string) error {
+	return nil
+}
+func (o *mockOrchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+	return &net.PriceInfo{PricePerUnit: 0, PixelsPerUnit: 1}, nil
+}
+func (o *mockOrchestrator) GetUrlForCapability(capability string) string {
+	return ""
+}
+
 func defaultTicketParams() *net.TicketParams {
 	return &net.TicketParams{
 		Recipient:         pm.RandBytes(123),
