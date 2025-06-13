@@ -397,6 +397,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Create fresh context instead of using r.Context() since ctx will outlive the request
 		ctx := context.Background()
 
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
@@ -458,6 +461,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			mediaMTXInputURL = mediaMTXRtmpURL
 		}
 		mediaMTXOutputURL := mediaMTXInputURL + "-out"
+		mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -466,6 +470,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			// skip for now; we don't want to re-publish our own outputs
 			return
 		}
+
+		// collect all RTMP outputs
+		var rtmpOutputs []string
+		if outputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, outputURL)
+		}
+		if mediaMTXOutputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+		}
+		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
@@ -525,8 +539,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
 
@@ -589,8 +601,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
-				outputRTMPURL:          outputURL,
-				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
+				rtmpOutputs:            rtmpOutputs,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -811,7 +822,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		if whepURL == "" {
 			whepURL = "http://localhost:8889/" // default mediamtx output
 		}
-		whepURL = whepURL + streamName + "-out/whep"
+		whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -819,6 +830,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				internalOutputHost = "rtmp://localhost/"
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
+			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
 			outputURL := ""
 			streamID := ""
 			pipelineID := ""
@@ -827,6 +839,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
+
+			// collect RTMP outputs
+			var rtmpOutputs []string
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
@@ -930,6 +945,14 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				monitor.AILiveVideoAttempt()
 			}
 
+			if outputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, outputURL)
+			}
+			if mediamtxOutputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL, mediaMTXOutputAlias)
+			}
+			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+
 			params := aiRequestParams{
 				node:        ls.LivepeerNode,
 				os:          drivers.NodeStorage.NewSession(requestID),
@@ -937,8 +960,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
-					outputRTMPURL:          outputURL,
-					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
+					rtmpOutputs:            rtmpOutputs,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
