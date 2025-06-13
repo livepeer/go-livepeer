@@ -118,6 +118,9 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
+
+	// Whip Only
+	whipConn *media.MediaState
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.

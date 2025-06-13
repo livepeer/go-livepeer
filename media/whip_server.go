@@ -108,6 +108,8 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 	// PeerConnection state management
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+		mediaState.SetIceState(connectionState)
+
 		clog.Info(ctx, "ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
