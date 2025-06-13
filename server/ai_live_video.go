@@ -278,7 +278,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
 	// Clone the context since we can call this function multiple times
 	// Adding rtmpOut val multiple times to the same context will just stomp over old ones
-	ctx = clog.Clone(ctx, context.Background())
+	ctx = clog.Clone(ctx, ctx)
 	ctx = clog.AddVal(ctx, "rtmpOut", outputUrl)
 
 	defer func() {
