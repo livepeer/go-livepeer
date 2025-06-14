@@ -151,7 +151,6 @@ func (c *TricklePublisher) Next() (*pendingPost, error) {
 	if pp == nil {
 		p, err := c.preconnect()
 		if err != nil {
-			c.writeLock.Unlock()
 			return nil, err
 		}
 		pp = p
@@ -160,7 +159,6 @@ func (c *TricklePublisher) Next() (*pendingPost, error) {
 	// Set up the next connection
 	nextPost, err := c.preconnect()
 	if err != nil {
-		c.writeLock.Unlock()
 		return nil, err
 	}
 	c.pendingPost = nextPost

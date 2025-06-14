@@ -56,6 +56,7 @@ type Stream struct {
 	nextWrite int
 	writeTime time.Time
 	closed    bool
+	canReset  bool
 }
 
 type Segment struct {
@@ -162,6 +163,7 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 			name:      streamName,
 			mimeType:  mimeType,
 			writeTime: time.Now(),
+			canReset:  !isLocal,
 		}
 		sm.streams[streamName] = stream
 		slog.Info("Creating stream", "stream", streamName)
@@ -371,7 +373,7 @@ func (tr *timeoutReader) Close() error {
 
 // Handle post requests for a given index
 func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
-	segment := s.getForWrite(idx)
+	segment, _ := s.getForWrite(idx)
 
 	// Wrap the request body with the custom timeoutReader so we can send
 	// provisional headers (keepalives) until receiving the first byte
@@ -434,7 +436,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	segment.close()
 }
 
-func (s *Stream) getForWrite(idx int) *Segment {
+func (s *Stream) getForWrite(idx int) (*Segment, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if idx == -1 {
@@ -444,10 +446,14 @@ func (s *Stream) getForWrite(idx int) *Segment {
 	segmentPos := idx % maxSegmentsPerStream
 	if segment := s.segments[segmentPos]; segment != nil {
 		if idx == segment.idx {
-			if reset := segment.reset(); reset > 0 {
-				slog.Warn("Reset an existing segment", "stream", s.name, "idx", idx, "bytes", reset)
+			if s.canReset {
+				reset := segment.reset()
+				if reset > 0 {
+					slog.Warn("Reset an existing segment", "stream", s.name, "idx", idx, "bytes", reset)
+				}
+				return segment, reset > 0
 			}
-			return segment
+			return segment, !segment.isFresh()
 		}
 		// something exists here but its not the expected segment
 		// probably an old segment so overwrite it
@@ -455,7 +461,7 @@ func (s *Stream) getForWrite(idx int) *Segment {
 	}
 	segment := newSegment(idx)
 	s.segments[segmentPos] = segment
-	return segment
+	return segment, false
 }
 
 func (s *Stream) getForRead(idx int) (*Segment, int, bool, bool) {
@@ -641,21 +647,31 @@ func (s *Segment) close() {
 		s.cond.Broadcast()
 	}
 }
+
 func (s *Segment) reset() int {
-	// fresh segments have not been written to yet
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	blen := s.buffer.Len()
-	if s.closed || blen > 0 {
-		// Reset the segment *without* kicking off any readers
-		// TODO unsure if this is the best approach but its what we do for now
-		s.closed = false
-		s.buffer.Reset()
-		// TODO close old segment; SAFELY (need safe channel wrapper to allow multiple closes)
-		s.closeCh = make(chan bool)
+	if blen <= 0 {
 		return blen
 	}
+	// Reset the segment *without* kicking off any readers
+	// TODO this is not a great approach but it is what we do for now
+	// TODO concurrent writes to the same segment would be pretty bad
+	if !s.closed {
+		close(s.closeCh)
+	}
+	s.closeCh = make(chan bool, 1)
+	s.closed = false
+	s.buffer.Reset()
 	return blen
+}
+
+func (s *Segment) isFresh() bool {
+	// fresh segments have not been written to yet
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return !s.closed && s.buffer.Len() == 0
 }
 
 func (ss *SegmentSubscriber) readData() ([]byte, bool) {
