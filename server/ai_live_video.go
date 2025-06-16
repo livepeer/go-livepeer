@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
@@ -25,6 +26,8 @@ import (
 
 	"github.com/dustin/go-humanize"
 )
+
+const maxRecentSwapsCount = 3
 
 type orchestratorSwapper struct {
 	params           aiRequestParams
@@ -46,9 +49,7 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 		clog.Info(ctx, "No input stream, skipping orchestrator swap")
 		return false
 	}
-
 	// Stop if too many swaps, because there may be something wrong with the input stream
-	maxRecentSwapsCount := 3
 	if os.recentSwapsCount > maxRecentSwapsCount {
 		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
 		return false
@@ -56,7 +57,7 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	recentSwapInterval := 3 * time.Minute
-	if os.lastSwapped.Add(recentSwapInterval).After(time.Now()) {
+	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
 	} else {
 		os.recentSwapsCount = 1
@@ -71,7 +72,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
 		clog.Infof(ctx, "error publishing trickle. err=%s", err)
-		params.liveParams.cancel()
+		params.liveParams.kickOrch()
 		return
 	}
 
@@ -338,7 +339,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 				err = errors.New("unknown error")
 			}
 			clog.Errorf(ctx, "LPMS panic err=%v", err)
-			params.liveParams.cancel()
+			params.liveParams.kickOrch()
 		}
 	}()
 	for {
@@ -356,6 +357,11 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			"-f", "flv",
 			outputUrl,
 		)
+		// Change Cancel function to send a SIGTERM instead of SIGKILL. Still send a SIGKILL after 5s (WaitDelay) if it's stuck.
+		cmd.Cancel = func() error {
+			return cmd.Process.Signal(syscall.SIGTERM)
+		}
+		cmd.WaitDelay = 5 * time.Second
 		cmd.Stdin = r
 		output, err := cmd.CombinedOutput()
 		clog.Infof(ctx, "Process output: %s", output)
@@ -447,7 +453,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
-		defer params.liveParams.cancel()
+		defer params.liveParams.kickOrch()
 		for {
 			select {
 			case <-ticker.C:
@@ -648,7 +654,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
 	clog.Infof(ctx, "Stopping processing, err=%v", err)
 	params.liveParams.sendErrorEvent(err)
-	params.liveParams.cancel()
+	params.liveParams.kickOrch()
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

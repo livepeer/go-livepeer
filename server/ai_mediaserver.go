@@ -679,7 +679,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	<-firstProcessed
 }
 
-func newParams(params *liveRequestParams, cancel context.CancelFunc) *liveRequestParams {
+func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		outputRTMPURL:          params.outputRTMPURL,
@@ -694,7 +694,7 @@ func newParams(params *liveRequestParams, cancel context.CancelFunc) *liveReques
 		sendErrorEvent:         params.sendErrorEvent,
 		kickInput:              params.kickInput,
 		startTime:              time.Now(),
-		cancel:                 cancel,
+		kickOrch:               cancelOrch,
 	}
 }
 
