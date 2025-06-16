@@ -682,8 +682,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
-		outputRTMPURL:          params.outputRTMPURL,
-		mediaMTXOutputRTMPURL:  params.mediaMTXOutputRTMPURL,
+		rtmpOutputs:            params.rtmpOutputs,
 		stream:                 params.stream,
 		paymentProcessInterval: params.paymentProcessInterval,
 		outSegmentTimeout:      params.outSegmentTimeout,
