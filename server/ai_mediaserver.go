@@ -471,16 +471,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			return
 		}
 
-		// collect all RTMP outputs
-		var rtmpOutputs []string
-		if outputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, outputURL)
-		}
-		if mediaMTXOutputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
-		}
-		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
-
 		// if auth webhook returns pipeline config these will be replaced
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
@@ -541,6 +531,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+
+		// collect all RTMP outputs
+		var rtmpOutputs []string
+		if outputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, outputURL)
+		}
+		if mediaMTXOutputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+		}
+		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
 		// channel that blocks until after orch selection is complete
 		// avoids a race condition with closing the control channel
