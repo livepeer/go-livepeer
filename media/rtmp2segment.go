@@ -132,7 +132,8 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 		return nil, fmt.Errorf("error opening file in non-blocking mode: %w", err)
 	}
 
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 
 	// setFd sets the given file descriptor in the fdSet
 	setFd := func(fd int, fdSet *syscall.FdSet) {
@@ -167,7 +168,7 @@ func openNonBlockingWithRetry(name string, timeout time.Duration, completed <-ch
 		timeLeft := time.Until(deadline)
 		if timeLeft <= 0 {
 			syscall.Close(fd)
-			return nil, fmt.Errorf("timeout waiting for file to be ready: %s", name)
+			return nil, fmt.Errorf("timeout waiting for file to be ready. file=%s start=%v deadline=%v timeLeft=%s", name, start, deadline, timeLeft)
 		}
 
 		// Convert timeLeft to a syscall.Timeval for the select call

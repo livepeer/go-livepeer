@@ -126,6 +126,7 @@ type OrchestratorPool interface {
 	GetOrchestrators(context.Context, int, Suspender, CapabilityComparator, ScorePred) (OrchestratorDescriptors, error)
 	Size() int
 	SizeWith(ScorePred) int
+	Broadcaster() Broadcaster
 }
 
 type SelectionAlgorithm interface {

@@ -52,7 +52,7 @@ type Orchestrator interface {
 	Sign([]byte) ([]byte, error)
 	VerifySig(ethcommon.Address, string, []byte) bool
 	CheckCapacity(core.ManifestID) error
-	CheckAICapacity(pipeline, modelID string) bool
+	CheckAICapacity(pipeline, modelID string) (bool, chan<- bool)
 	GetLiveAICapacity() worker.Capacity
 	TranscodeSeg(context.Context, *core.SegTranscodingMetadata, *stream.HLSSegment) (*core.TranscodeResult, error)
 	ServeTranscoder(stream net.Transcoder_RegisterTranscoderServer, capacity int, capabilities *net.Capabilities)
@@ -82,6 +82,13 @@ type Orchestrator interface {
 	ImageToText(ctx context.Context, requestID string, req worker.GenImageToTextMultipartRequestBody) (interface{}, error)
 	TextToSpeech(ctx context.Context, requestID string, req worker.GenTextToSpeechJSONRequestBody) (interface{}, error)
 	LiveVideoToVideo(ctx context.Context, requestID string, req worker.GenLiveVideoToVideoJSONRequestBody) (interface{}, error)
+	RegisterExternalCapability(extCapability string) (*core.ExternalCapability, error)
+	RemoveExternalCapability(extCapability string) error
+	GetUrlForCapability(extCapability string) string
+	CheckExternalCapabilityCapacity(extCapability string) bool
+	ReserveExternalCapabilityCapacity(extCapability string) error
+	FreeExternalCapabilityCapacity(extCapability string) error
+	JobPriceInfo(sender ethcommon.Address, jobCapabiliy string) (*net.PriceInfo, error)
 }
 
 // Balance describes methods for a session's balance maintenance
@@ -240,6 +247,11 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 		net.RegisterAIWorkerServer(s, &lp)
 		lp.transRPC.Handle("/aiResults", lp.AIResults())
 	}
+	//API for dynamic capabilities
+	lp.transRPC.HandleFunc("/process/request/", lp.ProcessJob)
+	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
+	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)
+	lp.transRPC.HandleFunc("/capability/unregister", lp.UnregisterCapability)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
@@ -390,7 +402,8 @@ func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorReque
 	if liveCap, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]; ok {
 		pipeline := "live-video-to-video"
 		for modelID := range liveCap.GetModels() {
-			if orch.CheckAICapacity(pipeline, modelID) {
+			hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
+			if hasCapacity {
 				// It has capacity for at least one of the requested models
 				return nil
 			}
