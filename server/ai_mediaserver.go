@@ -692,9 +692,11 @@ func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRe
 		pipeline:               params.pipeline,
 		sendErrorEvent:         params.sendErrorEvent,
 		kickInput:              params.kickInput,
+		orchestrator:           params.orchestrator,
 		startTime:              time.Now(),
 		kickOrch:               cancelOrch,
 	}
+
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
