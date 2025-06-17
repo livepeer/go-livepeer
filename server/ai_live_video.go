@@ -469,7 +469,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				}
 				// if there was another type of error, we'll just retry anyway
 			case <-done:
-				stopProcessing(ctx, params, fmt.Errorf("stopping control publisher"))
 				return
 			case <-ctx.Done():
 				stop()
