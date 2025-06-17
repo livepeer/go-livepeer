@@ -27,7 +27,10 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-const maxRecentSwapsCount = 2
+const (
+	recentSwapInterval  = 3 * time.Minute
+	maxRecentSwapsCount = 2
+)
 
 type orchestratorSwapper struct {
 	params           aiRequestParams
@@ -40,7 +43,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	return &orchestratorSwapper{
 		params:           params,
 		lastSwapped:      time.Now(),
-		recentSwapsCount: 1,
+		recentSwapsCount: 0,
 	}
 }
 
@@ -49,18 +52,16 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 		clog.Info(ctx, "No input stream, skipping orchestrator swap")
 		return false
 	}
-	// Stop if too many swaps, because there may be something wrong with the input stream
-	if os.recentSwapsCount > maxRecentSwapsCount {
-		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
-		return false
-	}
-
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
-	recentSwapInterval := 3 * time.Minute
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
 	} else {
 		os.recentSwapsCount = 1
+	}
+	// Stop if too many swaps, because there may be something wrong with the input stream
+	if os.recentSwapsCount > maxRecentSwapsCount {
+		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
+		return false
 	}
 
 	os.lastSwapped = time.Now()
