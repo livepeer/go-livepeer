@@ -27,7 +27,7 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
-const maxRecentSwapsCount = 3
+const maxRecentSwapsCount = 2
 
 type orchestratorSwapper struct {
 	params           aiRequestParams
