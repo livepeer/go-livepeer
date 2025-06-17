@@ -127,7 +127,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
 			segment, err := publisher.Next()
 			if err != nil {
-				stopProcessing(ctx, params, fmt.Errorf("error getting next publish handle; dropping segment, err=%w", err))
+				clog.Infof(ctx, "error getting next publish handle; dropping segment err=%v", err)
+				params.liveParams.sendErrorEvent(fmt.Errorf("Missing next handle %v", err))
 				return
 			}
 			for {
@@ -141,7 +142,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				startTime := time.Now()
 				currentSeq := slowOrchChecker.GetCount()
 				if seq != currentSeq {
-					stopProcessing(ctx, params, fmt.Errorf("next segment has already started seq=%d currentSeq=%d", seq, currentSeq))
+					clog.Infof(ctx, "Next segment has already started; skipping this one seq=%d currentSeq=%d", seq, currentSeq)
+					params.liveParams.sendErrorEvent(fmt.Errorf("Next segment has started"))
 					segment.Close()
 					return
 				}
@@ -174,7 +176,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				// and the next segment has not yet started
 				// otherwise drop
 				if n > 0 {
-					stopProcessing(ctx, params, fmt.Errorf("error publishing segment; dropping remainder wrote=%d err=%v", n, err))
+					clog.Infof(ctx, "Error publishing segment; dropping remainder wrote=%d err=%v", n, err)
+					params.liveParams.sendErrorEvent(fmt.Errorf("Error publishing, wrote %d dropping %v", n, err))
 					segment.Close()
 					return
 				}
