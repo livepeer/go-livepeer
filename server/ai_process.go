@@ -107,7 +107,9 @@ type liveRequestParams struct {
 	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput func(error)
+	// Cancels the execution for the given Orchestrator session
+	kickOrch context.CancelFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
