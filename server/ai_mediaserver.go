@@ -649,10 +649,12 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	orchSwapper := NewOrchestratorSwapper(params)
 	isFirst, firstProcessed := true, make(chan interface{})
 	go func() {
+		var err error
 		for {
 			perOrchCtx, perOrchCancel := context.WithCancel(ctx)
 			params.liveParams = newParams(params.liveParams, perOrchCancel)
-			resp, err := processAIRequest(perOrchCtx, params, req)
+			var resp interface{}
+			resp, err = processAIRequest(perOrchCtx, params, req)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing AI Request: %s", err)
 				perOrchCancel()
@@ -674,7 +676,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			}
 			clog.Infof(ctx, "Retrying stream with a different orchestrator")
 		}
-		params.liveParams.kickInput(fmt.Errorf("done processing"))
+		params.liveParams.kickInput(err)
 	}()
 	<-firstProcessed
 }
