@@ -88,7 +88,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				sess:      sess.BroadcastSession,
 				inPixels:  inPixels,
 				priceInfo: priceInfo,
-				mid:       extractMid(url.Path),
+				mid:       params.liveParams.manifestID,
 			})
 		}
 		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)

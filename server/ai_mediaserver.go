@@ -723,6 +723,7 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	if resp.JSON200.ManifestId != nil {
 		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+		params.liveParams.manifestID = *resp.JSON200.ManifestId
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
