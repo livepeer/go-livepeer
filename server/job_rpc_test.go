@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
+	"slices"
 	"testing"
 	"time"
 
@@ -903,33 +903,52 @@ func TestSubmitJob_MethodNotAllowed(t *testing.T) {
 }
 
 func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
-	orchURLs := []string{
-		"http://orch1.example.com",
-		"http://orch2.example.com",
-		"http://orch3.example.com",
-		"http://orch4.example.com",
-		"http://orch5.example.com",
+	// Create mock HTTP servers for orchestrators
+	mockServers := make([]*httptest.Server, 5)
+	orchURLs := make([]string, 5)
+
+	// Create a handler that returns a valid job token
+	tokenHandler := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/process/token" {
+			http.NotFound(w, r)
+			return
+		}
+
+		token := &JobToken{
+			ServiceAddr: "http://" + r.Host, // Use the server's host as the service address
+			SenderAddress: &JobSender{
+				Addr: "0x1234567890abcdef1234567890abcdef123456",
+				Sig:  "0x456",
+			},
+			TicketParams: nil,
+			Price: &net.PriceInfo{
+				PricePerUnit:  100,
+				PixelsPerUnit: 1,
+			},
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(token)
 	}
+
+	// Start HTTP test servers
+	for i := 0; i < 5; i++ {
+		server := httptest.NewServer(http.HandlerFunc(tokenHandler))
+		mockServers[i] = server
+		orchURLs[i] = server.URL
+		t.Logf("Mock server %d started at %s", i, orchURLs[i])
+	}
+
+	// Clean up servers when test completes
+	defer func() {
+		for _, server := range mockServers {
+			server.Close()
+		}
+	}()
 
 	node := mockJobLivepeerNode()
 	pool := newStubOrchestratorPool(node, orchURLs)
 	node.OrchestratorPool = pool
-	originalSendReq := sendJobReqWithTimeout
-	defer func() { sendJobReqWithTimeout = originalSendReq }()
-
-	// Mock the HTTP request function to return successful responses
-	sendJobReqWithTimeout = func(req *http.Request, timeout time.Duration) (*http.Response, error) {
-		// Mock a successful response with a job token
-		resp := &http.Response{
-			StatusCode: 200,
-			Body: io.NopCloser(strings.NewReader(`{
-                "sender_address": {"addr":"0x123", "sig":"0x456"},
-                "ticket_params": {"recipient":"0x789", "face_value":"1000", "win_prob":"1"},
-                "price": {"price_per_unit": 100, "pixels_per_unit": 1000}
-            }`)),
-		}
-		return resp, nil
-	}
 
 	// Define test cases
 	testCases := []struct {
@@ -946,21 +965,21 @@ func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
 		},
 		{
 			name:          "Include specific orchestrators",
-			include:       []string{"http://orch1.example.com", "http://orch3.example.com"},
+			include:       []string{orchURLs[0], orchURLs[2]}, // First and third servers
 			exclude:       []string{},
 			expectedCount: 2,
 		},
 		{
 			name:          "Exclude specific orchestrators",
 			include:       []string{},
-			exclude:       []string{"http://orch2.example.com", "http://orch4.example.com"},
+			exclude:       []string{orchURLs[1], orchURLs[3]}, // Second and fourth servers
 			expectedCount: 3,
 		},
 		{
 			name:          "Both include and exclude",
-			include:       []string{"http://orch1.example.com", "http://orch2.example.com", "http://orch3.example.com"},
-			exclude:       []string{"http://orch2.example.com"},
-			expectedCount: 2, // orch1 and orch3
+			include:       []string{orchURLs[0], orchURLs[1], orchURLs[2]}, // First three servers
+			exclude:       []string{orchURLs[1]},                           // Exclude second server
+			expectedCount: 2,                                               // Should have first and third servers
 		},
 		{
 			name:          "Include non-existent orchestrators",
@@ -971,7 +990,7 @@ func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
 		{
 			name:          "Exclude all orchestrators",
 			include:       []string{},
-			exclude:       orchURLs,
+			exclude:       orchURLs, // Exclude all servers
 			expectedCount: 0,
 		},
 	}
@@ -1005,24 +1024,15 @@ func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, tokens, tc.expectedCount)
 
-				// Verify each returned token has a URL that matches our expectations
-				for _, token := range tokens {
-					// For included orchestrators
-					if len(tc.include) > 0 {
-						found := false
-						for _, includeURL := range tc.include {
-							if token.ServiceAddr == includeURL {
-								found = true
-								break
-							}
-						}
-						assert.True(t, found, "Token has URL not in include list: %s", token.ServiceAddr)
+				if len(tc.include) > 0 {
+					for _, token := range tokens {
+						assert.True(t, slices.Contains(tc.include, token.ServiceAddr))
 					}
+				}
 
-					// For excluded orchestrators
-					for _, excludeURL := range tc.exclude {
-						assert.NotEqual(t, token.ServiceAddr, excludeURL,
-							"Token has URL that should be excluded: %s", token.ServiceAddr)
+				if len(tc.exclude) > 0 {
+					for _, token := range tokens {
+						assert.False(t, slices.Contains(tc.exclude, token.ServiceAddr))
 					}
 				}
 			}

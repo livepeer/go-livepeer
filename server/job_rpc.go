@@ -1083,10 +1083,12 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	for _, i := range rand.Perm(len(orchs)) {
 		//do not send to excluded Orchestrators
 		if slices.Contains(params.Orchestrators.Exclude, orchs[i].URL.String()) {
+			numAvailableOrchs--
 			continue
 		}
 		//if include is set, only send to those Orchestrators
 		if len(params.Orchestrators.Include) > 0 && !slices.Contains(params.Orchestrators.Include, orchs[i].URL.String()) {
+			numAvailableOrchs--
 			continue
 		}
 
