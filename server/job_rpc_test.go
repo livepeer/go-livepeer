@@ -12,15 +12,18 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/common"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/livepeer/go-livepeer/ai/worker"
+	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
+
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
@@ -43,14 +46,14 @@ type mockJobOrchestrator struct {
 
 	registerExternalCapability      func(string) (*core.ExternalCapability, error)
 	unregisterExternalCapability    func(string) error
-	verifySignature                 func(common.Address, string, []byte) bool
+	verifySignature                 func(ethcommon.Address, string, []byte) bool
 	checkExternalCapabilityCapacity func(string) bool
 	reserveCapacity                 func(string) error
 	getUrlForCapability             func(string) string
-	balance                         func(common.Address, core.ManifestID) *big.Rat
-	debitFees                       func(common.Address, core.ManifestID, *net.PriceInfo, int64)
+	balance                         func(ethcommon.Address, core.ManifestID) *big.Rat
+	debitFees                       func(ethcommon.Address, core.ManifestID, *net.PriceInfo, int64)
 	freeCapacity                    func(string) error
-	jobPriceInfo                    func(common.Address, string) (*net.PriceInfo, error)
+	jobPriceInfo                    func(ethcommon.Address, string) (*net.PriceInfo, error)
 	ticketParams                    func(ethcommon.Address, *net.PriceInfo) (*net.TicketParams, error)
 }
 
@@ -266,6 +269,67 @@ func newMockJobOrchestrator() *mockJobOrchestrator {
 	mockOrch.node = node
 
 	return &mockJobOrchestrator{priv: pk, block: big.NewInt(5)}
+}
+
+// stubJobOrchestratorPool is a stub implementation of the OrchestratorPool interface
+type stubJobOrchestratorPool struct {
+	uris  []*url.URL
+	infos []common.OrchestratorLocalInfo
+	node  *core.LivepeerNode
+}
+
+func newStubOrchestratorPool(node *core.LivepeerNode, uris []string) *stubJobOrchestratorPool {
+	var urlList []*url.URL
+	var infos []common.OrchestratorLocalInfo
+	for _, uri := range uris {
+		if u, err := url.Parse(uri); err == nil {
+			urlList = append(urlList, u)
+			infos = append(infos, common.OrchestratorLocalInfo{URL: u, Score: 1.0})
+		}
+	}
+	return &stubJobOrchestratorPool{
+		uris:  urlList,
+		infos: infos,
+		node:  mockJobLivepeerNode(),
+	}
+}
+
+func (s *stubJobOrchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
+	var infos []common.OrchestratorLocalInfo
+	for _, uri := range s.uris {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri})
+	}
+	return infos
+}
+func (s *stubJobOrchestratorPool) GetOrchestrators(ctx context.Context, max int, suspender common.Suspender, comparator common.CapabilityComparator, scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
+	var ods common.OrchestratorDescriptors
+	for _, uri := range s.uris {
+		ods = append(ods, common.OrchestratorDescriptor{
+			LocalInfo: &common.OrchestratorLocalInfo{URL: uri, Score: 1.0},
+			RemoteInfo: &net.OrchestratorInfo{
+				Transcoder: uri.String(),
+			},
+		})
+	}
+	return ods, nil
+}
+func (s *stubJobOrchestratorPool) Size() int {
+	return len(s.uris)
+}
+func (s *stubJobOrchestratorPool) SizeWith(scorePred common.ScorePred) int {
+	if scorePred == nil {
+		return len(s.infos)
+	}
+	count := 0
+	for _, info := range s.infos {
+		if scorePred(info.Score) {
+			count++
+		}
+	}
+	return count
+}
+func (s *stubJobOrchestratorPool) Broadcaster() common.Broadcaster {
+	return core.NewBroadcaster(s.node)
 }
 
 func mockJobLivepeerNode() *core.LivepeerNode {
@@ -495,7 +559,7 @@ func TestGetJobToken_MissingEthAddressHeader(t *testing.T) {
 }
 
 func TestGetJobToken_InvalidEthAddressHeader(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return false
 	}
 
@@ -525,7 +589,7 @@ func TestGetJobToken_InvalidEthAddressHeader(t *testing.T) {
 }
 
 func TestGetJobToken_MissingCapabilityHeader(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 	mockJobOrch := newMockJobOrchestrator()
@@ -554,7 +618,7 @@ func TestGetJobToken_MissingCapabilityHeader(t *testing.T) {
 }
 
 func TestGetJobToken_NoCapacity(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 	mockCheckExternalCapabilityCapacity := func(extCap string) bool {
@@ -597,7 +661,7 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 }
 
 func TestGetJobToken_JobPriceInfoError(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 
@@ -605,7 +669,7 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 		return nil
 	}
 
-	mockJobPriceInfo := func(addr common.Address, cap string) (*net.PriceInfo, error) {
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
 		return nil, errors.New("price error")
 	}
 
@@ -640,7 +704,7 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 }
 
 func TestGetJobToken_InsufficientReserve(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 
@@ -648,7 +712,7 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 		return nil
 	}
 
-	mockJobPriceInfo := func(addr common.Address, cap string) (*net.PriceInfo, error) {
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
 		return nil, errors.New("insufficient sender reserve")
 	}
 
@@ -684,7 +748,7 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 }
 
 func TestGetJobToken_TicketParamsError(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 
@@ -692,14 +756,14 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 		return nil
 	}
 
-	mockJobPriceInfo := func(addr common.Address, cap string) (*net.PriceInfo, error) {
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
 		return &net.PriceInfo{
 			PricePerUnit:  10,
 			PixelsPerUnit: 1,
 		}, nil
 	}
 
-	mockTicketParams := func(addr common.Address, price *net.PriceInfo) (*net.TicketParams, error) {
+	mockTicketParams := func(addr ethcommon.Address, price *net.PriceInfo) (*net.TicketParams, error) {
 		return nil, errors.New("ticket params error")
 	}
 	mockJobOrch := newMockJobOrchestrator()
@@ -735,7 +799,7 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 }
 
 func TestGetJobToken_Success(t *testing.T) {
-	mockVerifySig := func(addr common.Address, msg string, sig []byte) bool {
+	mockVerifySig := func(addr ethcommon.Address, msg string, sig []byte) bool {
 		return true
 	}
 
@@ -743,16 +807,16 @@ func TestGetJobToken_Success(t *testing.T) {
 		return nil
 	}
 
-	mockJobPriceInfo := func(addr common.Address, cap string) (*net.PriceInfo, error) {
+	mockJobPriceInfo := func(addr ethcommon.Address, cap string) (*net.PriceInfo, error) {
 		return &net.PriceInfo{
 			PricePerUnit:  10,
 			PixelsPerUnit: 1,
 		}, nil
 	}
 
-	mockTicketParams := func(addr common.Address, price *net.PriceInfo) (*net.TicketParams, error) {
+	mockTicketParams := func(addr ethcommon.Address, price *net.PriceInfo) (*net.TicketParams, error) {
 		return &net.TicketParams{
-			Recipient:         common.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
+			Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
 			FaceValue:         big.NewInt(1000).Bytes(),
 			WinProb:           big.NewInt(1).Bytes(),
 			RecipientRandHash: []byte("hash"),
@@ -761,7 +825,7 @@ func TestGetJobToken_Success(t *testing.T) {
 		}, nil
 	}
 
-	mockBalance := func(addr common.Address, manifestID core.ManifestID) *big.Rat {
+	mockBalance := func(addr ethcommon.Address, manifestID core.ManifestID) *big.Rat {
 		return big.NewRat(1000, 1)
 	}
 
@@ -836,4 +900,133 @@ func TestSubmitJob_MethodNotAllowed(t *testing.T) {
 
 	resp := w.Result()
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+}
+
+func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
+	orchURLs := []string{
+		"http://orch1.example.com",
+		"http://orch2.example.com",
+		"http://orch3.example.com",
+		"http://orch4.example.com",
+		"http://orch5.example.com",
+	}
+
+	node := mockJobLivepeerNode()
+	pool := newStubOrchestratorPool(node, orchURLs)
+	node.OrchestratorPool = pool
+	originalSendReq := sendJobReqWithTimeout
+	defer func() { sendJobReqWithTimeout = originalSendReq }()
+
+	// Mock the HTTP request function to return successful responses
+	sendJobReqWithTimeout = func(req *http.Request, timeout time.Duration) (*http.Response, error) {
+		// Mock a successful response with a job token
+		resp := &http.Response{
+			StatusCode: 200,
+			Body: io.NopCloser(strings.NewReader(`{
+                "sender_address": {"addr":"0x123", "sig":"0x456"},
+                "ticket_params": {"recipient":"0x789", "face_value":"1000", "win_prob":"1"},
+                "price": {"price_per_unit": 100, "pixels_per_unit": 1000}
+            }`)),
+		}
+		return resp, nil
+	}
+
+	// Define test cases
+	testCases := []struct {
+		name          string
+		include       []string
+		exclude       []string
+		expectedCount int
+	}{
+		{
+			name:          "No filtering",
+			include:       []string{},
+			exclude:       []string{},
+			expectedCount: 5, // All orchestrators
+		},
+		{
+			name:          "Include specific orchestrators",
+			include:       []string{"http://orch1.example.com", "http://orch3.example.com"},
+			exclude:       []string{},
+			expectedCount: 2,
+		},
+		{
+			name:          "Exclude specific orchestrators",
+			include:       []string{},
+			exclude:       []string{"http://orch2.example.com", "http://orch4.example.com"},
+			expectedCount: 3,
+		},
+		{
+			name:          "Both include and exclude",
+			include:       []string{"http://orch1.example.com", "http://orch2.example.com", "http://orch3.example.com"},
+			exclude:       []string{"http://orch2.example.com"},
+			expectedCount: 2, // orch1 and orch3
+		},
+		{
+			name:          "Include non-existent orchestrators",
+			include:       []string{"http://nonexistent.example.com"},
+			exclude:       []string{},
+			expectedCount: 0,
+		},
+		{
+			name:          "Exclude all orchestrators",
+			include:       []string{},
+			exclude:       orchURLs,
+			expectedCount: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create JobParameters with the test case's filters
+			params := JobParameters{
+				Orchestrators: JobOrchestratorsFilter{
+					Include: tc.include,
+					Exclude: tc.exclude,
+				},
+			}
+
+			// Call getJobOrchestrators
+			tokens, err := getJobOrchestrators(
+				context.Background(),
+				node,
+				"test-capability",
+				params,
+				100*time.Millisecond, // Short timeout for testing
+				50*time.Millisecond,
+			)
+
+			if tc.expectedCount == 0 {
+				// If we expect no orchestrators, we should still get a nil error
+				// because the function should return an empty list, not an error
+				assert.NoError(t, err)
+				assert.Len(t, tokens, 0)
+			} else {
+				assert.NoError(t, err)
+				assert.Len(t, tokens, tc.expectedCount)
+
+				// Verify each returned token has a URL that matches our expectations
+				for _, token := range tokens {
+					// For included orchestrators
+					if len(tc.include) > 0 {
+						found := false
+						for _, includeURL := range tc.include {
+							if token.ServiceAddr == includeURL {
+								found = true
+								break
+							}
+						}
+						assert.True(t, found, "Token has URL not in include list: %s", token.ServiceAddr)
+					}
+
+					// For excluded orchestrators
+					for _, excludeURL := range tc.exclude {
+						assert.NotEqual(t, token.ServiceAddr, excludeURL,
+							"Token has URL that should be excluded: %s", token.ServiceAddr)
+					}
+				}
+			}
+		})
+	}
+
 }
