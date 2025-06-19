@@ -598,7 +598,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 		//if the request failed with an error, remove the capability
-		if err != context.DeadlineExceeded {
+		if err != context.DeadlineExceeded && err != context.Canceled {
+			clog.Errorf(ctx, "removing capability %v due to error %v", jobReq.Capability, err.Error())
 			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
 		}
 
