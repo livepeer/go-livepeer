@@ -5,6 +5,8 @@ go 1.23.2
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/bluenviron/gortsplib/v4 v4.12.3
+	github.com/bluenviron/mediacommon/v2 v2.0.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/dustin/go-humanize v1.0.1
 	github.com/ethereum/go-ethereum v1.13.5
@@ -13,8 +15,8 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
-	github.com/jaypipes/ghw v0.10.0
-	github.com/jaypipes/pcidb v1.0.0
+	github.com/jaypipes/ghw v0.17.0
+	github.com/jaypipes/pcidb v1.0.1
 	github.com/livepeer/go-tools v0.3.6-0.20240130205227-92479de8531b
 	github.com/livepeer/livepeer-data v0.7.5-0.20231004073737-06f1f383fb18
 	github.com/livepeer/lpms v0.0.0-20250529161047-c1eefa63ff3a
@@ -25,6 +27,10 @@ require (
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/peterbourgon/ff/v3 v3.4.0
+	github.com/pion/interceptor v0.1.37
+	github.com/pion/rtp v1.8.11
+	github.com/pion/sdp/v3 v3.0.10
+	github.com/pion/webrtc/v4 v4.0.11
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/segmentio/kafka-go v0.4.47
@@ -43,25 +49,18 @@ require (
 require (
 	github.com/asticode/go-astikit v0.30.0 // indirect
 	github.com/asticode/go-astits v1.13.0 // indirect
-	github.com/bluenviron/gortsplib/v4 v4.12.3 // indirect
-	github.com/bluenviron/mediacommon/v2 v2.0.0 // indirect
 	github.com/pion/datachannel v1.5.10 // indirect
 	github.com/pion/dtls/v3 v3.0.4 // indirect
 	github.com/pion/ice/v4 v4.0.7 // indirect
-	github.com/pion/interceptor v0.1.37 // indirect
 	github.com/pion/logging v0.2.3 // indirect
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
-	github.com/pion/rtp v1.8.11 // indirect
 	github.com/pion/sctp v1.8.36 // indirect
-	github.com/pion/sdp/v3 v3.0.10 // indirect
-	github.com/pion/sdp/v4 v4.0.0-20240223200530-fb77fb3c6578 // indirect
 	github.com/pion/srtp/v3 v3.0.4 // indirect
 	github.com/pion/stun/v3 v3.0.0 // indirect
 	github.com/pion/transport/v3 v3.0.7 // indirect
 	github.com/pion/turn/v4 v4.0.0 // indirect
-	github.com/pion/webrtc/v4 v4.0.11 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.33.0 // indirect
@@ -118,7 +117,6 @@ require (
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
-	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
