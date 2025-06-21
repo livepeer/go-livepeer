@@ -111,6 +111,15 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		clog.Info(ctx, "ice connection state changed", "state", connectionState)
 		if connectionState == webrtc.ICEConnectionStateFailed {
 			mediaState.CloseError(errors.New("ICE connection state failed"))
+		} else if connectionState == webrtc.ICEConnectionStateDisconnected {
+			// NB: `disconnected` is not necessarily a terminal error; media may
+			// start flowing again before ICE times out and closes. But this
+			// happens extremely rarely; more often than not, ICE disconnects
+			// and nothing happens until timeout or something else closes it first.
+			// So let's be aggressive for now and kill the peerconnection.
+			//
+			// NB 2: We could shorten the timeouts even more instead of doing this
+			mediaState.CloseError(errors.New("ICE connection state disconnected"))
 		} else if connectionState == webrtc.ICEConnectionStateClosed {
 			// Business logic when PeerConnection done
 		}
