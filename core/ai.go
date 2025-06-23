@@ -79,6 +79,7 @@ type AIModelConfig struct {
 	Token             string                   `json:"token,omitempty"`
 	Warm              bool                     `json:"warm,omitempty"`
 	Capacity          int                      `json:"capacity,omitempty"`
+	Count             int                      `json:"count,omitempty"`
 	OptimizationFlags worker.OptimizationFlags `json:"optimization_flags,omitempty"`
 	// used by orchestrator
 	Gateway       string  `json:"gateway"`
