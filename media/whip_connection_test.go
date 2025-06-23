@@ -801,7 +801,7 @@ func TestConcurrentOperations(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(i int) {
 			defer wg.Done()
-			assert.Nil(t, conn.AwaitClose(), "expcted await close to not return an error")
+			assert.Nil(t, conn.AwaitClose(), "expected await close to not return an error")
 		}(i)
 	}
 
