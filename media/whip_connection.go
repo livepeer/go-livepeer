@@ -103,13 +103,13 @@ func (t TrackType) MarshalJSON() ([]byte, error) {
 }
 
 type TrackStats struct {
-	Type            TrackType
-	Jitter          float64
-	PacketsLost     int64
-	PacketsReceived int64
-	PacketLossPct   float64
-	RTT             time.Duration
-	Warnings        []string
+	Type            TrackType     `json:"type"`
+	Jitter          float64       `json:"jitter"`
+	PacketsLost     int64         `json:"packets_lost"`
+	PacketsReceived int64         `json:"packets_received"`
+	PacketLossPct   float64       `json:"packet_loss_pct"`
+	RTT             time.Duration `json:"rtt"`
+	Warnings        []string      `json:"warnings,omitempty"`
 }
 
 type ConnQuality int
@@ -119,7 +119,7 @@ const (
 	ConnQualityBad
 )
 
-const acceptableJitterMs = 30
+const acceptableJitterMs = 50
 const acceptablePacketLossPct = 2
 
 func (c ConnQuality) String() string {
@@ -138,9 +138,9 @@ func (c ConnQuality) MarshalJSON() ([]byte, error) {
 }
 
 type MediaStats struct {
-	PeerConnStats PeerConnStats
-	TrackStats    []TrackStats
-	ConnQuality   ConnQuality
+	PeerConnStats PeerConnStats `json:"peer_conn_stats"`
+	TrackStats    []TrackStats  `json:"track_stats,omitempty"`
+	ConnQuality   ConnQuality   `json:"conn_quality"`
 }
 
 // MediaState manages the lifecycle of a media connection
