@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -58,6 +59,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	size := res.Int64()
 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
+}
+
+func (b *Balance) Balance() *big.Rat {
+	return b.balances.balancesForAddr(b.addr).Balance(b.manifestID)
 }
 
 // AddressBalances holds credit balances for ETH addresses
@@ -182,6 +187,7 @@ func (b *Balances) Reserve(id ManifestID) *big.Rat {
 func (b *Balances) Balance(id ManifestID) *big.Rat {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
+	fmt.Printf("!!!! Balances: %v", b.balances)
 	if b.balances[id] == nil {
 		return nil
 	}

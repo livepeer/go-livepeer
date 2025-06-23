@@ -857,7 +857,7 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 		protoPayment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
-		clog.Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v balance=%v",
+		clog.Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
 			sess.Params.ManifestID,
 			sess.OrchestratorInfo.AuthToken.SessionId,
 			batch.Recipient.Hex(),
@@ -865,7 +865,6 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 			batch.WinProbRat().FloatString(10),
 			ratPrice.FloatString(3)+" wei/pixel",
 			numTickets,
-			sess.Balances.Balance(batch.Recipient, core.ManifestID(sess.PMSessionID)).FloatString(3),
 		)
 		if monitor.Enabled {
 			clientIP := clog.GetVal(ctx, clog.ClientIP)

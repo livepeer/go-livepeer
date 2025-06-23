@@ -95,6 +95,7 @@ type Orchestrator interface {
 type Balance interface {
 	Credit(amount *big.Rat)
 	StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Rat, *big.Rat)
+	Balance() *big.Rat
 }
 
 // BalanceUpdateStatus indicates the current status of a balance update
