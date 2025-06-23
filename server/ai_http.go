@@ -115,6 +115,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			streamID = *req.StreamId
 		}
 		ctx = clog.AddVal(ctx, "gateway_request_id", gatewayRequestID)
+		ctx = clog.AddVal(ctx, "manifest_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 		orch := h.orchestrator
@@ -130,8 +131,10 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}
 
 		// Check if there is capacity for the request
-		if !orch.CheckAICapacity(pipeline, modelID) {
-			respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+		hasCapacity, _ := orch.CheckAICapacity(pipeline, modelID)
+		if !hasCapacity {
+			clog.Errorf(ctx, "Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID)
+			respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
 			return
 		}
 
@@ -241,6 +244,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:       &controlUrlOverwrite,
 			Params:           req.Params,
 			GatewayRequestId: &gatewayRequestID,
+			ManifestId:       &mid,
 			StreamId:         &streamID,
 		}
 
@@ -267,6 +271,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
 			RequestId:    &requestID,
+			ManifestId:   &mid,
 		})
 		if err != nil {
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
@@ -494,8 +499,11 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 	manifestID := core.ManifestID(strconv.Itoa(int(cap)) + "_" + modelID)
 
 	// Check if there is capacity for the request.
-	if !orch.CheckAICapacity(pipeline, modelID) {
-		respondWithError(w, fmt.Sprintf("Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID), http.StatusServiceUnavailable)
+	// Capability capacity is reserved if available and released when response is received
+	hasCapacity, releaseCapacity := orch.CheckAICapacity(pipeline, modelID)
+	if !hasCapacity {
+		clog.Errorf(ctx, "Insufficient capacity for pipeline=%v modelID=%v", pipeline, modelID)
+		respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -525,6 +533,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 
 	start := time.Now()
 	resp, err := submitFn(ctx)
+
 	if err != nil {
 		if monitor.Enabled {
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
@@ -611,6 +620,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+			releaseCapacity <- true
 			return
 		}
 
@@ -628,8 +638,12 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 				break
 			}
 		}
+		//release capacity after streaming is done
+		releaseCapacity <- true
+
 	} else {
 		// Non-streaming response
+		releaseCapacity <- true
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(resp)

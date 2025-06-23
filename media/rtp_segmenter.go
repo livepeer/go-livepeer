@@ -129,7 +129,7 @@ func (s *RTPSegmenter) WriteVideo(source RTPTrack, pts, dts int64, au [][]byte) 
 			if s.tsWatermark > 0 && dts < s.tsWatermark {
 				// Packet is too old, discard it
 				// TODO increment some metric for this connection?
-				return nil
+				//return nil
 			}
 
 			// Add new packet
@@ -151,7 +151,7 @@ func (s *RTPSegmenter) WriteAudio(source RTPTrack, pts int64, au [][]byte) error
 			if s.tsWatermark > 0 && rescaledPts < s.tsWatermark {
 				// Packet is too old, discard it
 				// TODO increment some metric for this connection?
-				return nil
+				//return nil
 			}
 
 			// Add new packet
@@ -207,6 +207,7 @@ func (s *RTPSegmenter) setupTracks(rtpTracks []RTPTrack) []*trackWriter {
 }
 
 func (s *RTPSegmenter) interleaveAndWrite() error {
+	s.flushQueues(0)
 	if !s.hasAudio || !s.hasVideo {
 		// only have one or the other, nothing to interleave
 		// so flush immediately

@@ -165,6 +165,8 @@ type (
 		mPaymentCreateError *stats.Int64Measure
 		mDeposit            *stats.Float64Measure
 		mReserve            *stats.Float64Measure
+		mMaxFloat           *stats.Float64Measure
+		mTicketFaceValue    *stats.Float64Measure
 		// Metrics for receiving payments
 		mTicketValueRecv       *stats.Float64Measure
 		mTicketsRecv           *stats.Int64Measure
@@ -205,14 +207,15 @@ type (
 		mAIResultUploadTime     *stats.Float64Measure
 		mAIResultSaveFailed     *stats.Int64Measure
 		mAIContainersInUse      *stats.Int64Measure
+		mAIContainersIdle       *stats.Int64Measure
+		mAIGPUsIdle             *stats.Int64Measure
 		mAICurrentLivePipelines *stats.Int64Measure
 		mAIFirstSegmentDelay    *stats.Int64Measure
 		mAILiveAttempts         *stats.Int64Measure
+		mAINumOrchs             *stats.Int64Measure
 
-		mAIWhipTransportBytesReceived   *stats.Int64Measure
-		mAIWhipTransportBytesSent       *stats.Int64Measure
-		mAIWhipTransportPacketsReceived *stats.Int64Measure
-		mAIWhipTransportPacketsSent     *stats.Int64Measure
+		mAIWhipTransportBytesReceived *stats.Int64Measure
+		mAIWhipTransportBytesSent     *stats.Int64Measure
 
 		lock        sync.Mutex
 		emergeTimes map[uint64]map[uint64]time.Time // nonce:seqNo
@@ -340,6 +343,8 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mPaymentCreateError = stats.Int64("payment_create_errors", "PaymentCreateError", "tot")
 	census.mDeposit = stats.Float64("gateway_deposit", "Current remaining deposit for the gateway node", "gwei")
 	census.mReserve = stats.Float64("gateway_reserve", "Current remaining reserve for the gateway node", "gwei")
+	census.mMaxFloat = stats.Float64("gateway_max_float", "Last maximum float for the gateway node", "gwei")
+	census.mTicketFaceValue = stats.Float64("ticket_face_value", "Last ticket face value for the gateway node", "gwei")
 
 	// Metrics for receiving payments
 	census.mTicketValueRecv = stats.Float64("ticket_value_recv", "TicketValueRecv", "gwei")
@@ -383,14 +388,15 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultUploadTime = stats.Float64("ai_result_upload_time_seconds", "Upload (to Orchestrator) time", "sec")
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
+	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
+	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
+	census.mAINumOrchs = stats.Int64("ai_orchestrators_available_total", "AI Live number of available orchestrators", "tot")
 
 	census.mAIWhipTransportBytesReceived = stats.Int64("ai_whip_transport_bytes_received", "Number of bytes received on a WHIP connection", "byte")
 	census.mAIWhipTransportBytesSent = stats.Int64("ai_whip_transport_bytes_sent", "Number of bytes sent on a WHIP connection", "byte")
-	census.mAIWhipTransportPacketsReceived = stats.Int64("ai_whip_transport_packets_received", "Number of packets received on a WHIP connection", "tot")
-	census.mAIWhipTransportPacketsSent = stats.Int64("ai_whip_transport_packets_sent", "Number of packets sent on a WHIP connection", "tot")
 
 	glog.Infof("Compiler: %s Arch %s OS %s Go version %s", runtime.Compiler, runtime.GOARCH, runtime.GOOS, runtime.Version())
 	glog.Infof("Livepeer version: %s", version)
@@ -768,6 +774,20 @@ func InitCensus(nodeType NodeType, version string) {
 			TagKeys:     baseTagsWithEthAddr,
 			Aggregation: view.LastValue(),
 		},
+		{
+			Name:        "gateway_max_float",
+			Measure:     census.mMaxFloat,
+			Description: "Last maximum float for the gateway node",
+			TagKeys:     baseTagsWithGatewayInfo,
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "gateway_ticket_face_value",
+			Measure:     census.mTicketFaceValue,
+			Description: "Last ticket face value for the gateway node",
+			TagKeys:     baseTagsWithGatewayInfo,
+			Aggregation: view.LastValue(),
+		},
 		// TODO: Keep the old names for backwards compatibility, remove in the future
 		{
 			Name:        "broadcaster_deposit",
@@ -995,6 +1015,20 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_container_in_use",
 			Measure:     census.mAIContainersInUse,
 			Description: "Number of containers currently used for AI processing",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "ai_container_idle",
+			Measure:     census.mAIContainersIdle,
+			Description: "Number of containers currently available for AI processing",
+			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			Aggregation: view.LastValue(),
+		},
+		{
+			Name:        "ai_gpus_idle",
+			Measure:     census.mAIGPUsIdle,
+			Description: "Number of idle GPUs (with no configured container)",
 			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
@@ -1034,16 +1068,9 @@ func InitCensus(nodeType NodeType, version string) {
 			Aggregation: view.LastValue(),
 		},
 		{
-			Name:        "ai_whip_transport_packets_received",
-			Measure:     census.mAIWhipTransportPacketsReceived,
-			Description: "Number of packets received on a WHIP connection",
-			TagKeys:     baseTags,
-			Aggregation: view.LastValue(),
-		},
-		{
-			Name:        "ai_whip_transport_packets_sent",
-			Measure:     census.mAIWhipTransportPacketsSent,
-			Description: "Number of packets sent on a WHIP connection",
+			Name:        "ai_orchestrators_available_total",
+			Measure:     census.mAINumOrchs,
+			Description: "AI Live number of available orchestrators",
 			TagKeys:     baseTags,
 			Aggregation: view.LastValue(),
 		},
@@ -1764,6 +1791,20 @@ func Reserve(sender string, reserve *big.Int) {
 	}
 }
 
+func MaxFloat(sender string, maxFloat *big.Int) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mMaxFloat.M(wei2gwei(maxFloat))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func TicketFaceValue(sender string, faceValue *big.Int) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kSender, sender)}, census.mTicketFaceValue.M(wei2gwei(faceValue))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
 func MaxTranscodingPrice(maxPrice *big.Rat) {
 	floatWei, _ := maxPrice.Float64()
 	if err := stats.RecordWithTags(census.ctx,
@@ -1967,8 +2008,24 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 	}
 }
 
-func AIContainersInUse(currentContainersInUse int) {
-	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(currentContainersInUse)))
+func AIContainersInUse(currentContainersInUse int, model, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		census.mAIContainersInUse.M(int64(currentContainersInUse))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func AIContainersIdle(currentContainersIdle int, model, uri string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		census.mAIContainersIdle.M(int64(currentContainersIdle))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func AIGPUsIdle(currentGPUsIdle int) {
+	stats.Record(census.ctx, census.mAIGPUsIdle.M(int64(currentGPUsIdle)))
 }
 
 func AICurrentLiveSessions(currentPipelines int) {
@@ -1981,14 +2038,6 @@ func AIWhipTransportBytesReceived(bytes int64) {
 
 func AIWhipTransportBytesSent(bytes int64) {
 	stats.Record(census.ctx, census.mAIWhipTransportBytesSent.M(bytes))
-}
-
-func AIWhipTransportPacketsReceived(packets int64) {
-	stats.Record(census.ctx, census.mAIWhipTransportPacketsReceived.M(packets))
-}
-
-func AIWhipTransportPacketsSent(packets int64) {
-	stats.Record(census.ctx, census.mAIWhipTransportPacketsSent.M(packets))
 }
 
 // AIJobProcessed records orchestrator AI job processing metrics.
@@ -2071,6 +2120,17 @@ func AIFirstSegmentDelay(delayMs int64, orchInfo *lpnet.OrchestratorInfo) {
 
 func AILiveVideoAttempt() {
 	stats.Record(census.ctx, census.mAILiveAttempts.M(1))
+}
+
+func AINumOrchestrators(count int, modelName string) {
+	if !Enabled {
+		return
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, modelName)},
+		census.mAINumOrchs.M(int64(count))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 // Convert wei to gwei

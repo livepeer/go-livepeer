@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.8.5
+
+### Features ⚒
+
+#### General
+
+- [#3570](https://github.com/livepeer/go-livepeer/pull/3570) Add Generic Processing Pipeline (aka Bring Your Own Container) (@ad-astra-video)
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+
+#### Gateway
+
+#### Orchestrator
+- [#3505](https://github.com/livepeer/go-livepeer/pull/3505) Introduce min runner version to selection (@leszko)
+
+### Bug Fixes 🐞
+
+#### Orchestrator
+- [#3589](https://github.com/livepeer/go-livepeer/pull/3589) Change binding host for docker containers from 0.0.0.0 to 127.0.0.1 (@leszko)
+- [#3592](https://github.com/livepeer/go-livepeer/pull/3592) ai/worker: Fix version discovery on containers startup (@victorges)
+- [#3595](https://github.com/livepeer/go-livepeer/pull/3595) ai/worker: Fetch hardware info from all containers (@victorges)
+- [#3389](https://github.com/livepeer/go-livepeer/pull/3389) Fix combined orchestrator capacity management for batch pipelines (@ad-astra-video)
+
+#### CLI
+
+## v0.8.5
+
+### Features ⚒
+
+#### General
+
+- A number of changes related to the Realtime Video AI (Live Video to Video workflow)
+- Realtime Video AI in a Box (@leszko, @victorges)
+- [#3246](https://github.com/livepeer/go-livepeer/pull/3246) Add hardware info from Orchestrators and expand network information available (@ad-astra-video)
+
+#### Gateway
+- [#3492](https://github.com/livepeer/go-livepeer/pull/3492) Improve the Gateway startup time (@leszko)
+
+#### Orchestrator
+
+- [#3522](https://github.com/livepeer/go-livepeer/pull/3522) Update install_ffmpeg.sh scripts (@hjpotter92)
+- [#3547](https://github.com/livepeer/go-livepeer/pull/3547) Add a limit of retries on the same session (@victorges)
+
+### Bug Fixes 🐞
+
+#### CLI
+
 ## v0.8.4
 
 ### Features ⚒

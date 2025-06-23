@@ -1,4 +1,7 @@
 #!/bin/bash
+set -e
+
+FRONTEND=${FRONTEND:-false}
 
 # Start multiple processes and output their logs to the console
 gateway() {
@@ -16,10 +19,25 @@ mediamtx() {
   ./box/mediamtx.sh | tee mediamtx.log
 }
 
+supabase() {
+  echo "Starting Supabase..."
+  ./box/supabase.sh | tee supabase.log
+}
+
+frontend() {
+  echo "Starting Frontend..."
+  ./box/frontend.sh | tee supabase.log
+}
+
 # Run processes in the background
 gateway &
 orchestrator &
 mediamtx &
+
+if [ "$DOCKER" = "true" ]; then
+  supabase &
+  mediamtx &
+fi
 
 # Wait for all background processes to finish
 wait

@@ -39,7 +39,8 @@ const (
 	defaultLiveVideoToVideoModelID = "noop"
 	defaultTextToSpeechModelID     = "parler-tts/parler-tts-large-v1"
 
-	maxTries = 20
+	maxTries         = 20
+	maxSameSessTries = 3
 )
 
 var errWrongFormat = fmt.Errorf("result not in correct format")
@@ -88,37 +89,37 @@ type aiRequestParams struct {
 	os          drivers.OSSession
 	sessManager *AISessionManager
 
-	liveParams liveRequestParams
-}
-
-func (a aiRequestParams) inputStreamExists() bool {
-	if a.node == nil {
-		return false
-	}
-	a.node.LiveMu.RLock()
-	defer a.node.LiveMu.RUnlock()
-	p, ok := a.node.LivePipelines[a.liveParams.stream]
-	return ok && p.RequestID == a.liveParams.requestID
+	liveParams *liveRequestParams
 }
 
 // For live video pipelines
 type liveRequestParams struct {
-	segmentReader         *media.SwitchableSegmentReader
-	outputRTMPURL         string
-	mediaMTXOutputRTMPURL string
-	stream                string
-	requestID             string
-	streamID              string
-	pipelineID            string
-	orchestrator          string
+	segmentReader *media.SwitchableSegmentReader
+	rtmpOutputs   []string
+	stream        string
+	requestID     string
+	streamID      string
+	manifestID    string
+	pipelineID    string
+	pipeline      string
+	orchestrator  string
 
 	paymentProcessInterval time.Duration
+	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput func(error)
+	// Cancels the execution for the given Orchestrator session
+	kickOrch context.CancelFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
+
+	// State for the stream processing
+	// startTime is the time when the first request is sent to the orchestrator
+	startTime time.Time
+	// sess is passed from the orchestrator selection, ugly hack
+	sess *AISession
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1033,7 +1034,12 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
-	startTime := time.Now()
+	sess = sess.Clone()
+
+	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
+	params.liveParams.sess = sess
+	params.liveParams.startTime = time.Now()
+
 	// Live Video should not reuse the existing session balance, because it could lead to not sending the init
 	// payment, which in turns may cause "Insufficient Balance" on the Orchestrator's side.
 	// It works differently than other AI Jobs, because Live Video is accounted by mid on the Orchestrator's side.
@@ -1056,7 +1062,10 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	defer completeBalanceUpdate(sess.BroadcastSession, balUpdate)
 
 	// Send request to orchestrator
-	resp, err := client.GenLiveVideoToVideoWithResponse(ctx, req, paymentHeaders)
+	reqTimeout := 5 * time.Second
+	reqCtx, cancel := context.WithTimeout(ctx, reqTimeout)
+	defer cancel()
+	resp, err := client.GenLiveVideoToVideoWithResponse(reqCtx, req, paymentHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,57 +1079,7 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 		return nil, errors.New("control URL is missing")
 	}
 
-	host := sess.Transcoder()
-	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid publish URL: %w", err)
-	}
-	sub, err := common.AppendHostname(resp.JSON200.SubscribeUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid subscribe URL: %w", err)
-	}
-	control, err := common.AppendHostname(*resp.JSON200.ControlUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid control URL: %w", err)
-	}
-	events, err := common.AppendHostname(*resp.JSON200.EventsUrl, host)
-	if err != nil {
-		return nil, fmt.Errorf("invalid events URL: %w", err)
-	}
-	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
-
-	startControlPublish(ctx, control, params)
-	startTricklePublish(ctx, pub, params, sess)
-	startTrickleSubscribe(ctx, sub, params, sess, func() {
-		delayMs := time.Since(startTime).Milliseconds()
-		if monitor.Enabled {
-			monitor.AIFirstSegmentDelay(delayMs, sess.OrchestratorInfo)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_receive_first_processed_segment",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   params.liveParams.streamID,
-				"pipeline_id": params.liveParams.pipelineID,
-				"request_id":  params.liveParams.requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": sess.Address(),
-					"url":     sess.Transcoder(),
-				},
-			})
-		}
-		clog.V(common.VERBOSE).Infof(ctx, "First Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
-
-	})
-	startEventsSubscribe(ctx, events, params, sess)
 	return resp, nil
-}
-
-// extractMid extracts the mid (manifest ID) from the publish URL
-// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
-// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
-// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
-func extractMid(path string) string {
-	pubSplit := strings.Split(path, "/")
-	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1501,6 +1460,7 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 	defer cancel()
 
 	tries := 0
+	sessTries := map[string]int{}
 	var retryableSessions []*AISession
 	for tries < maxTries {
 		select {
@@ -1518,19 +1478,21 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 
 		tries++
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
-		if params.liveParams.orchestrator != "" && params.liveParams.orchestrator != sess.Transcoder() {
-			// user requested a specific orchestrator, so ignore all the others
-			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
-			retryableSessions = append(retryableSessions, sess)
-			continue
-		}
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
 			continue
 		}
-
 		if sess == nil {
 			break
+		}
+		sessTries[sess.Transcoder()]++
+		if params.liveParams != nil {
+			if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
+				// user requested a specific orchestrator, so ignore all the others
+				clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+				retryableSessions = append(retryableSessions, sess)
+				continue
+			}
 		}
 
 		resp, err = submitFn(ctx, params, sess)
@@ -1540,14 +1502,22 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		}
 
 		// Don't suspend the session if the error is a transient error.
-		if isRetryableError(err) {
+		if isRetryableError(err) && sessTries[sess.Transcoder()] < maxSameSessTries {
+			clog.Infof(ctx, "Error submitting request with retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
 			params.sessManager.Complete(ctx, sess)
 			continue
 		}
 
-		// when no capacity error is received, retry with another session, but do not suspend the session
-		if (isInvalidTicketSenderNonce(err) || isNoCapacityError(err)) && cap != core.Capability_LiveVideoToVideo {
-			retryableSessions = append(retryableSessions, sess)
+		// retry some specific errors with another session. re-check for retryable errors in case max retries were hit above
+		if isRetryableError(err) || isInvalidTicketSenderNonce(err) || isNoCapacityError(err) {
+			clog.Infof(ctx, "Error submitting request with non-retryable error modelID=%v try=%v orch=%v err=%v", modelID, tries, sess.Transcoder(), err)
+			if cap == core.Capability_LiveVideoToVideo {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			} else {
+				// for non realtime video, get the session back to the pool as soon as the request completes
+				retryableSessions = append(retryableSessions, sess)
+			}
 			continue
 		}
 

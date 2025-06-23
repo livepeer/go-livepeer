@@ -1,4 +1,5 @@
 #!/bin/bash
+set -ex
 
 PIPELINE=${PIPELINE:-noop}
 STREAM_KEY="my-stream"
@@ -10,6 +11,11 @@ case "$1" in
     QUERY="pipeline=${PIPELINE}\&streamId=${STREAM_ID}"
     if [ -n "$RTMP_OUTPUT" ]; then
       QUERY="${QUERY}\&rtmpOutput=${RTMP_OUTPUT}"
+    fi
+
+    if [ -n "$PARAMS" ]; then
+      ENCODED_PARAMS=$(node -p "encodeURIComponent('$PARAMS')")
+      QUERY="${QUERY}\&params=${ENCODED_PARAMS}"
     fi
 
     ffmpeg -re -f lavfi \

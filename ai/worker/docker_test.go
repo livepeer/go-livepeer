@@ -100,7 +100,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		modelDir:      "/models",
 		overrides:     ImageOverrides{Default: "default-image"},
 		dockerClient:  mockDockerClient,
-		gpuContainers: make(map[string]string),
+		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
 	}
@@ -208,16 +208,12 @@ func TestDockerManager_Warm(t *testing.T) {
 	optimizationFlags := OptimizationFlags{}
 
 	// Mock nested functions.
-	originalFunc := dockerWaitUntilRunningFunc
-	dockerWaitUntilRunningFunc = func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
+	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
-	}
-	defer func() { dockerWaitUntilRunningFunc = originalFunc }()
-	originalFunc2 := runnerWaitUntilReadyFunc
-	runnerWaitUntilReadyFunc = func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
-	}
-	defer func() { runnerWaitUntilReadyFunc = originalFunc2 }()
+	})()
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
+	})()
 
 	mockDockerClient.On("ContainerCreate", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: containerID}, nil)
 	mockDockerClient.On("ContainerStart", mock.Anything, containerID, mock.Anything).Return(nil)
@@ -256,16 +252,12 @@ func TestDockerManager_Borrow(t *testing.T) {
 	containerID, _ := dockerManager.getContainerImageName(pipeline, modelID)
 
 	// Mock nested functions.
-	originalFunc := dockerWaitUntilRunningFunc
-	dockerWaitUntilRunningFunc = func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
+	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
-	}
-	defer func() { dockerWaitUntilRunningFunc = originalFunc }()
-	originalFunc2 := runnerWaitUntilReadyFunc
-	runnerWaitUntilReadyFunc = func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
-	}
-	defer func() { runnerWaitUntilReadyFunc = originalFunc2 }()
+	})()
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
+	})()
 
 	mockDockerClient.On("ContainerCreate", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(container.CreateResponse{ID: containerID}, nil)
 	mockDockerClient.On("ContainerStart", mock.Anything, containerID, mock.Anything).Return(nil)
@@ -472,7 +464,7 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 				// Mock client methods to simulate the image being available locally.
 				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is available by not setting any container for the GPU.
-				dockerManager.gpuContainers = make(map[string]string)
+				dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 			},
 			expectedHasCapacity: true,
 		},
@@ -482,7 +474,11 @@ func TestDockerManager_HasCapacity(t *testing.T) {
 				// Mock client methods to simulate the image being available locally.
 				mockDockerClient.On("ImageInspectWithRaw", mock.Anything, "default-image").Return(types.ImageInspect{}, []byte{}, nil)
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
+				dockerManager.gpuContainers["gpu0"] = &RunnerContainer{
+					RunnerContainerConfig: RunnerContainerConfig{
+						Pipeline: pipeline,
+						ModelID:  modelID,
+					}}
 			},
 			expectedHasCapacity: false,
 		},
@@ -568,20 +564,16 @@ func TestDockerManager_createContainer(t *testing.T) {
 	optimizationFlags := OptimizationFlags{}
 
 	// Mock nested functions.
-	originalFunc := dockerWaitUntilRunningFunc
-	dockerWaitUntilRunningFunc = func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
+	defer updateDuringTest(&dockerWaitUntilRunningFunc, func(ctx context.Context, client DockerClient, containerID string, pollingInterval time.Duration) error {
 		return nil
-	}
-	defer func() { dockerWaitUntilRunningFunc = originalFunc }()
-	originalFunc2 := runnerWaitUntilReadyFunc
-	runnerWaitUntilReadyFunc = func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) error {
-		return nil
-	}
-	defer func() { runnerWaitUntilReadyFunc = originalFunc2 }()
+	})()
+	defer updateDuringTest(&runnerWaitUntilReadyFunc, func(ctx context.Context, client *ClientWithResponses, pollingInterval time.Duration) (bool, error) {
+		return false, nil
+	})()
 
 	// Mock allocGPU and getContainerImageName methods.
 	dockerManager.gpus = []string{gpu}
-	dockerManager.gpuContainers = make(map[string]string)
+	dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 	dockerManager.containers = make(map[string]*RunnerContainer)
 	dockerManager.overrides.Default = containerImage
 
@@ -603,6 +595,16 @@ func TestDockerManager_createContainer(t *testing.T) {
 func TestDockerManager_allocGPU(t *testing.T) {
 	ctx := context.Background()
 
+	container1 := func(keepWarm bool) *RunnerContainer {
+		return &RunnerContainer{
+			Name: "container1",
+			RunnerContainerConfig: RunnerContainerConfig{
+				ID:       "container1",
+				KeepWarm: keepWarm,
+				GPU:      "gpu0",
+			},
+		}
+	}
 	tests := []struct {
 		name                 string
 		setup                func(*DockerManager, *MockDockerClient)
@@ -613,7 +615,7 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUAvailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is available by not setting any container for the GPU.
-				dockerManager.gpuContainers = make(map[string]string)
+				dockerManager.gpuContainers = make(map[string]*RunnerContainer)
 			},
 			expectedAllocatedGPU: "gpu0",
 			errorMessage:         "",
@@ -622,7 +624,8 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailable",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
+				rc := container1(true)
+				dockerManager.gpuContainers[rc.GPU] = rc
 			},
 			expectedAllocatedGPU: "",
 			errorMessage:         "insufficient capacity",
@@ -631,13 +634,9 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailableAndWarm",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
-				dockerManager.containers["container1"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						ID:       "container1",
-						KeepWarm: true,
-					},
-				}
+				rc := container1(true)
+				dockerManager.gpuContainers[rc.GPU] = rc
+				dockerManager.containers[rc.Name] = rc
 			},
 			expectedAllocatedGPU: "",
 			errorMessage:         "insufficient capacity",
@@ -646,13 +645,9 @@ func TestDockerManager_allocGPU(t *testing.T) {
 			name: "GPUUnavailableButCold",
 			setup: func(dockerManager *DockerManager, mockDockerClient *MockDockerClient) {
 				// Ensure that the GPU is not available by setting a container for the GPU.
-				dockerManager.gpuContainers["gpu0"] = "container1"
-				dockerManager.containers["container1"] = &RunnerContainer{
-					RunnerContainerConfig: RunnerContainerConfig{
-						ID:       "container1",
-						KeepWarm: false,
-					},
-				}
+				rc := container1(false)
+				dockerManager.gpuContainers[rc.GPU] = rc
+				dockerManager.containers[rc.Name] = rc
 				// Mock client methods to simulate the removal of the warm container.
 				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
 				mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
@@ -663,19 +658,21 @@ func TestDockerManager_allocGPU(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		mockDockerClient := new(MockDockerClient)
-		dockerManager := createDockerManager(mockDockerClient)
+		t.Run(tt.name, func(t *testing.T) {
+			mockDockerClient := new(MockDockerClient)
+			dockerManager := createDockerManager(mockDockerClient)
 
-		tt.setup(dockerManager, mockDockerClient)
+			tt.setup(dockerManager, mockDockerClient)
 
-		gpu, err := dockerManager.allocGPU(ctx)
-		if tt.errorMessage != "" {
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.errorMessage)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tt.expectedAllocatedGPU, gpu)
-		}
+			gpu, err := dockerManager.allocGPU(ctx)
+			if tt.errorMessage != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.errorMessage)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedAllocatedGPU, gpu)
+			}
+		})
 	}
 }
 
@@ -693,7 +690,7 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 			GPU: gpu,
 		},
 	}
-	dockerManager.gpuContainers[gpu] = containerID
+	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
 
 	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{}).Return(nil)
@@ -708,12 +705,8 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 
 func TestDockerManager_watchContainer(t *testing.T) {
 	// Override the containerWatchInterval for testing purposes.
-	originalContainerWatchInterval, originalPipelineStartGracePeriod := containerWatchInterval, pipelineStartGracePeriod
-	containerWatchInterval = 10 * time.Millisecond
-	pipelineStartGracePeriod = 0
-	defer func() {
-		containerWatchInterval, pipelineStartGracePeriod = originalContainerWatchInterval, originalPipelineStartGracePeriod
-	}()
+	defer updateDuringTest(&containerWatchInterval, 10*time.Millisecond)()
+	defer updateDuringTest(&containerTimeout, 100*time.Millisecond)()
 
 	setup := func() (*MockDockerClient, *DockerManager, *MockServer, *RunnerContainer) {
 		mockDockerClient := new(MockDockerClient)
@@ -789,7 +782,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			mockServerSetup: func(mockServer *MockServer) {
 				mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
 					Return(200, "application/json", `{"status":"ERROR"}`).
-					Times(2)
+					Times(1) // should restart immediately with an ERROR
 			},
 		},
 		{
@@ -839,6 +832,9 @@ func TestDockerManager_watchContainer(t *testing.T) {
 	}
 	for _, tt := range notHealthyTestCases {
 		t.Run("DestroyContainerOnNotHealthy_"+tt.name, func(t *testing.T) {
+			// tight timeout for Timeout error case
+			defer updateDuringTest(&healthcheckTimeout, 10*time.Millisecond)()
+
 			mockDockerClient, dockerManager, mockServer, rc := setup()
 			defer mockServer.Close()
 			defer mockDockerClient.AssertExpectations(t)
@@ -857,7 +853,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			}()
 			select {
 			case <-done:
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(500 * time.Millisecond):
 				t.Fatal("watchContainer did not return")
 			}
 
@@ -867,22 +863,43 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		})
 	}
 
-	t.Run("RespectStartupGracePeriod", func(t *testing.T) {
-		pipelineStartGracePeriod = 50 * time.Millisecond
-		defer func() { pipelineStartGracePeriod = 0 }()
+	t.Run("RespectLoadingStateGracePeriod", func(t *testing.T) {
+		// Slightly below the time for 5 healthchecks, to avoid races
+		defer updateDuringTest(&containerTimeout, 45*time.Millisecond)()
 
 		mockDockerClient, dockerManager, mockServer, rc := setup()
 		defer mockServer.Close()
 		defer mockDockerClient.AssertExpectations(t)
 		defer mockServer.AssertExpectations(t)
+		dockerManager.gpuContainers[rc.GPU] = rc
 
 		// Must fail twice before the watch routine gives up on it
+		healthchecks := make(chan bool, 10)
 		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
-			Return(200, "application/json", `{"status":"ERROR"}`).
-			Times(4) // 4 calls during the grace period (first call only after 10ms)
+			Run(func(args mock.Arguments) { healthchecks <- true }).
+			Return(200, "application/json", `{"status":"LOADING"}`)
 
+		timeout := time.After(500 * time.Millisecond)
 		go dockerManager.watchContainer(rc)
-		time.Sleep(40 * time.Millisecond) // Almost the entire grace period
+
+		// We expect at least 6 calls (first call sets start time, then 4 calls until timeout, then 1 call for the first failure)
+		var startTime time.Time
+	graceLoop:
+		for i := 1; i <= 6; i++ {
+			select {
+			case <-healthchecks:
+				if i == 1 {
+					startTime = time.Now()
+				}
+				if time.Since(startTime) > containerTimeout && i < 6 {
+					// this is fine as there might be further delays in the healthcheck logic, just log it
+					t.Logf("healthcheck was called %d times after %s, expected 6", i, time.Since(startTime))
+					break graceLoop
+				}
+			case <-timeout:
+				t.Fatal("healthcheck was not called at least 6 times within the timeout")
+			}
+		}
 
 		// Make sure container wasn't destroyed yet
 		mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
@@ -891,58 +908,70 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 		mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
-		time.Sleep(30 * time.Millisecond) // Ensure we pass the grace period
+		// after the first failure, there should only 1 more healthcheck for the container to be stopped
+		select {
+		case <-healthchecks:
+			time.Sleep(10 * time.Millisecond) // give time for container to actually be stopped
+		case <-timeout:
+			// this is ok, we will check if the container was stopped below
+		}
 
 		// Verify that the container was destroyed.
 		_, exists := dockerManager.containers[rc.Name]
 		require.False(t, exists)
+		_, exists = dockerManager.gpuContainers[rc.GPU]
+		require.False(t, exists)
 	})
 
 	t.Run("ReturnContainerWhenIdle", func(t *testing.T) {
-		pipelineStartGracePeriod = 50 * time.Millisecond
-		defer func() { pipelineStartGracePeriod = 0 }()
-
 		mockDockerClient, dockerManager, mockServer, rc := setup()
 		defer mockServer.Close()
 		defer mockServer.AssertExpectations(t)
 		defer mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
 		// Schedule:
-		// - Return IDLE for the first 3 times during grace period (should not return)
+		// - Return LOADING for the first 3 times (should phantom borrow container)
 		// - Then OK for the next 5 times (stayin' alive)
 		// - Then back to IDLE (should return)
+		idle := make(chan bool, 10)
 		mockServer.On("ServeHTTP", "GET", "/health", mock.Anything).
-			Return(200, "application/json", `{"status":"IDLE"}`).
+			Return(200, "application/json", `{"status":"LOADING"}`).
 			Times(3).
 			On("ServeHTTP", "GET", "/health", mock.Anything).
 			Return(200, "application/json", `{"status":"OK"}`).
 			Times(5).
 			On("ServeHTTP", "GET", "/health", mock.Anything).
-			Return(200, "application/json", `{"status":"IDLE"}`).
-			Once() // once is enough and container should be returned immediately
+			Run(func(args mock.Arguments) { idle <- true }).
+			Return(200, "application/json", `{"status":"IDLE"}`) // Return only IDLE after that
 
 		startTime := time.Now()
-		sleepUntil := func(sinceStart time.Duration) {
+		timeUntil := func(sinceStart time.Duration) time.Duration {
 			dur := sinceStart - time.Since(startTime)
-			if dur > 0 {
-				time.Sleep(dur)
+			if dur <= 0 {
+				return 0
 			}
+			return dur
 		}
 		rc.BorrowCtx = context.Background() // Simulate a borrow of the container
 		go dockerManager.watchContainer(rc)
-		sleepUntil(30 * time.Millisecond) // Almost the entire grace period
+		time.Sleep(timeUntil(30 * time.Millisecond)) // Almost the entire grace period
 
 		// Verify that the container was not returned yet.
 		_, exists := dockerManager.containers[rc.Name]
 		require.False(t, exists)
 
-		sleepUntil(60 * time.Millisecond) // Ensure we pass the grace period and container is OK
+		time.Sleep(timeUntil(60 * time.Millisecond)) // Ensure we pass the grace period and container is OK
 
 		// Verify that the container was not returned yet.
 		_, exists = dockerManager.containers[rc.Name]
 		require.False(t, exists)
 
-		sleepUntil(100 * time.Millisecond) // Ensure we pass the grace period and container is now IDLE and returned
+		select {
+		case <-idle:
+			time.Sleep(10 * time.Millisecond) // give time for container to actually be returned
+		case <-time.After(timeUntil(500 * time.Millisecond)):
+			// this is ok, we will check if the container was returned below
+		}
 
 		// Verify that the container was returned.
 		_, exists = dockerManager.containers[rc.Name]
@@ -1161,4 +1190,10 @@ func TestPortOffset(t *testing.T) {
 			require.Equal(t, tt.expectedPortOffset, res)
 		})
 	}
+}
+
+func updateDuringTest[T any](variable *T, testValue T) func() {
+	originalValue := *variable
+	*variable = testValue
+	return func() { *variable = originalValue }
 }

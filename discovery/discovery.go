@@ -110,10 +110,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		return caps.CompatibleWith(info.Capabilities)
 	}
 	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
+		defer cancel()
+
 		start := time.Now()
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
+		reportLiveAICapacity(info, caps, od.LocalInfo.URL)
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
 			infoCh <- common.OrchestratorDescriptor{
 				LocalInfo: &common.OrchestratorLocalInfo{
@@ -125,7 +129,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 			return
 		}
-		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%q", od.LocalInfo.URL.String(), err)
+
+		clog.V(common.DEBUG).Infof(ctx, "Discovery unsuccessful for orchestrator %s, err=%v", od.LocalInfo.URL.String(), err)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if monitor.Enabled {
 				monitor.LogDiscoveryError(ctx, od.LocalInfo.URL.String(), err.Error())
@@ -141,12 +146,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
-	ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
-
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
 	}
+
+	// use a timer to time out the entire get info loop below
+	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
+	defer cutoffTimer.Stop()
 
 	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
 	timeout := o.discoveryTimeout
@@ -176,11 +183,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				timeout = maxGetOrchestratorCutoffTimeout
 			}
 			clog.V(common.DEBUG).Infof(ctx, "No orchestrators found, increasing discovery timeout to %s", timeout)
-		case <-ctx.Done():
+		case <-cutoffTimer.C:
 			timedOut = true
 		}
 	}
-	cancel()
 
 	// consider suspended orchestrators if we have an insufficient number of non-suspended ones
 	if len(ods) < numOrchestrators {
@@ -207,6 +213,41 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	return ods, nil
 }
 
+func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return nil
+	}
+	return liveAI.Models
+}
+
+func reportLiveAICapacity(info *net.OrchestratorInfo, capsReq common.CapabilityComparator, orchURL *url.URL) {
+	if !monitor.Enabled {
+		return
+	}
+
+	modelsReq := getModelCaps(capsReq.ToNetCapabilities())
+
+	var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
+	if info != nil {
+		models = getModelCaps(info.Capabilities)
+	}
+
+	for modelID := range modelsReq {
+		idle := 0
+		if models != nil {
+			if model, ok := models[modelID]; ok {
+				idle = int(model.Capacity)
+			}
+		}
+
+		monitor.AIContainersIdle(idle, modelID, orchURL.String())
+	}
+}
+
 func (o *orchestratorPool) Size() int {
 	return len(o.infos)
 }
@@ -219,6 +260,10 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 		}
 	}
 	return size
+}
+
+func (o *orchestratorPool) Broadcaster() common.Broadcaster {
+	return o.bcast
 }
 
 func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {
