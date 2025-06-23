@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -187,7 +186,6 @@ func (b *Balances) Reserve(id ManifestID) *big.Rat {
 func (b *Balances) Balance(id ManifestID) *big.Rat {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
-	fmt.Printf("!!!! Balances: %v", b.balances)
 	if b.balances[id] == nil {
 		return nil
 	}
