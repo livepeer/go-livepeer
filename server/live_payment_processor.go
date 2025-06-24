@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -174,28 +172,10 @@ func (p *LivePaymentProcessor) probeOne(ctx context.Context, seg *segment) {
 }
 
 func probeSegment(ctx context.Context, seg *segment) (ffmpeg.MediaFormatInfo, error) {
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-
-	go func() {
-		defer pipeWriter.Close()
-		io.Copy(pipeWriter, bytes.NewReader(seg.segData))
-	}()
-
-	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
-	status, info, err := ffmpeg.GetCodecInfo(fname)
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-	if status != ffmpeg.CodecStatusOk {
-		clog.Info(ctx, "Invalid CodecStatus while probing segment", "status", status)
-		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
-	}
-
-	// For WebRTC the probing sometimes returns FPS=90000, which is incorrect and causes issues with payment,
-	// so as a hack let's hardcode FPS to 30
-	info.FPS = 30.0
-	return info, nil
+	// Return a constant value to calculate payments based on time intervals rather than input segment pixel data
+	return ffmpeg.MediaFormatInfo{
+		Height: 720,
+		Width:  1280,
+		FPS:    30.0,
+	}, nil
 }
