@@ -44,7 +44,6 @@ const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
 var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
-var ticketDurSeconds = 60 //each ticket should be 1 minute
 var sendJobReqWithTimeout = sendReqWithTimeout
 
 type JobSender struct {
@@ -616,7 +615,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 		//if the request failed with an error, remove the capability
-		if err != context.DeadlineExceeded {
+		if err != context.DeadlineExceeded && err != context.Canceled {
+			clog.Errorf(ctx, "removing capability %v due to error %v", jobReq.Capability, err.Error())
 			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
 		}
 
@@ -782,7 +782,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))
 	} else {
 		//calc ticket count
-		ticketCnt := math.Ceil(float64(jobReq.Timeout) / float64(ticketDurSeconds))
+		ticketCnt := math.Ceil(float64(jobReq.Timeout))
 		tickets, err := node.Sender.CreateTicketBatch(sessionID, int(ticketCnt))
 		if err != nil {
 			clog.Errorf(ctx, "Unable to create ticket batch err=%v", err)
