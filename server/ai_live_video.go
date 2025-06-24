@@ -294,7 +294,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				params.liveParams.mu.Unlock()
 				segmentAge := time.Since(lastSegmentTime)
 				maxSegmentDelay := params.liveParams.outSegmentTimeout / 2
-				if segmentAge <= maxSegmentDelay && params.inputStreamExists() {
+				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
 					// we have some recent input but no output from orch, so kick
 					suspendOrchestrator(ctx, params)
 					stopProcessing(ctx, params, errors.New("no segments from orchestrator"))
