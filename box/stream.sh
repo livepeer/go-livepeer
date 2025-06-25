@@ -13,6 +13,11 @@ case "$1" in
       QUERY="${QUERY}\&rtmpOutput=${RTMP_OUTPUT}"
     fi
 
+    if [ -n "$PARAMS" ]; then
+      ENCODED_PARAMS=$(node -p "encodeURIComponent('$PARAMS')")
+      QUERY="${QUERY}\&params=${ENCODED_PARAMS}"
+    fi
+
     ffmpeg -re -f lavfi \
       -i testsrc=size=1920x1080:rate=30,format=yuv420p \
       -vf scale=1280:720 \

@@ -36,14 +36,13 @@ const jobRequestHdr = "Livepeer"
 const jobEthAddressHdr = "Livepeer-Eth-Address"
 const jobCapabilityHdr = "Livepeer-Capability"
 const jobPaymentHeaderHdr = "Livepeer-Payment"
-const jobPaymentBalanceHdr = "Livepeerb-Balance"
+const jobPaymentBalanceHdr = "Livepeer-Balance"
 const jobOrchSearchTimeoutHdr = "Livepeer-Orch-Search-Timeout"
 const jobOrchSearchRespTimeoutHdr = "Livepeer-Orch-Search-Resp-Timeout"
 const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
 var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
-var ticketDurSeconds = 60 //each ticket should be 1 minute
 
 type JobSender struct {
 	Addr string `json:"addr"`
@@ -165,7 +164,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	jobEthAddrHdr := r.Header.Get(jobEthAddressHdr)
 	if jobEthAddrHdr == "" {
 		glog.Infof("generate token failed, invalid request remoteAddr=%v", remoteAddr)
-		http.Error(w, fmt.Sprintf("Must have eth address and signature on address in Livepeer-Job-Eth-Address header"), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Must have eth address and signature on address in Livepeer-Eth-Address header"), http.StatusBadRequest)
 		return
 	}
 	jobSenderAddr, err := verifyTokenCreds(r.Context(), orch, jobEthAddrHdr)
@@ -178,7 +177,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	jobCapsHdr := r.Header.Get(jobCapabilityHdr)
 	if jobCapsHdr == "" {
 		glog.Infof("generate token failed, invalid request, no capabilities included remoteAddr=%v", remoteAddr)
-		http.Error(w, fmt.Sprintf("Job capabilities not provided, must provide comma separated capabilities in Livepeer-Job-Capability header"), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Job capabilities not provided, must provide comma separated capabilities in Livepeer-Capability header"), http.StatusBadRequest)
 		return
 	}
 
@@ -392,7 +391,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			continue
 		}
 
-		//Orchestrator returns Livepeer-Job-Balance header for streaming and non-streaming responses
+		//Orchestrator returns Livepeer-Balance header for streaming and non-streaming responses
 		// for streaming responses: the balance is the balance before deducting cost to finish the request
 		//                          the ending balance is sent as last line before [DONE] in the SSE stream
 		// for non-streaming: the balance is the balance after deducting the cost of the request
@@ -598,7 +597,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 		//if the request failed with an error, remove the capability
-		if err != context.DeadlineExceeded {
+		if err != context.DeadlineExceeded && err != context.Canceled {
+			clog.Errorf(ctx, "removing capability %v due to error %v", jobReq.Capability, err.Error())
 			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
 		}
 
@@ -764,7 +764,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))
 	} else {
 		//calc ticket count
-		ticketCnt := math.Ceil(float64(jobReq.Timeout) / float64(ticketDurSeconds))
+		ticketCnt := math.Ceil(float64(jobReq.Timeout))
 		tickets, err := node.Sender.CreateTicketBatch(sessionID, int(ticketCnt))
 		if err != nil {
 			clog.Errorf(ctx, "Unable to create ticket batch err=%v", err)
@@ -1007,7 +1007,7 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 		Addr: addr.Hex(),
 		Sig:  "0x" + hex.EncodeToString(gatewayReq.Sig),
 	}
-	glog.Infof("%+v", reqSender)
+
 	getOrchJobToken := func(ctx context.Context, orchUrl *url.URL, reqSender JobSender, respTimeout time.Duration, tokenCh chan JobToken, errCh chan error) {
 		start := time.Now()
 		tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl.String()+"/process/token", nil)

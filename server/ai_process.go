@@ -99,6 +99,7 @@ type liveRequestParams struct {
 	stream        string
 	requestID     string
 	streamID      string
+	manifestID    string
 	pipelineID    string
 	pipeline      string
 	orchestrator  string
@@ -107,7 +108,9 @@ type liveRequestParams struct {
 	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput func(error)
+	// Cancels the execution for the given Orchestrator session
+	kickOrch context.CancelFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -1028,7 +1031,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
+const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	sess = sess.Clone()
@@ -1077,15 +1080,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	return resp, nil
-}
-
-// extractMid extracts the mid (manifest ID) from the publish URL
-// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
-// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
-// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
-func extractMid(path string) string {
-	pubSplit := strings.Split(path, "/")
-	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
