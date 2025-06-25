@@ -86,3 +86,54 @@ func TestTrickle_Close(t *testing.T) {
 	pub2, err := NewTricklePublisher(channelURL)
 	require.Error(StreamNotFoundErr, pub2.Write(bytes.NewReader([]byte("bad post"))))
 }
+
+func TestTrickle_SetSeq(t *testing.T) {
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux:        mux,
+		Autocreate: true,
+	})
+
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/testest"
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+	sub := NewTrickleSubscriber(channelURL)
+
+	// give sub preconnect time to latch on
+
+	segs := []string{"first", "second", "third", "fourth"}
+	for _, s := range segs {
+		require.Nil(pub.Write(bytes.NewReader([]byte(s))), "failed writing "+s)
+	}
+
+	for i := range segs {
+		sub.SetSeq(i)
+		for j := i; j < len(segs); j++ {
+			s := segs[j]
+			resp, err := sub.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(s, string(buf))
+		}
+	}
+
+	// now do it again, backwards
+	for i := range segs {
+		j := len(segs) - i - 1
+		sub.SetSeq(j)
+		s := segs[j]
+		resp, err := sub.Read()
+		require.Nil(err)
+		buf, err := io.ReadAll(resp.Body)
+		require.Nil(err)
+		require.Equal(s, string(buf))
+	}
+}
