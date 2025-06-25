@@ -1446,7 +1446,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
-	ctx = clog.AddVal(ctx, "capability", capName)
+	if capName != "Live video to video" {
+		ctx = clog.AddVal(ctx, "capability", capName)
+	}
 	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
