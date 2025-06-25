@@ -287,6 +287,10 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					clog.Info(ctx, "trickle subscribe stopping - context canceled")
+					return
+				}
 				// Check whether the client has sent data recently.
 				// TODO ensure the threshold is some multiple of LIVE_AI_MIN_SEG_DUR
 				params.liveParams.mu.Lock()
