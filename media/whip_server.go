@@ -73,6 +73,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 
 	userAgent := r.Header.Get("User-Agent")
 	clog.Info(ctx, "Client info", "user-agent", userAgent)
+	if strings.Contains(userAgent, "Headless") {
+		clog.AddVal(ctx, "e2e", "true")
+	}
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {

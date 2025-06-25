@@ -1038,7 +1038,7 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 15 * 30 * 3200 * 1800 // 15 seconds, 30fps, 1800p
+const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
 	sess = sess.Clone()
@@ -1453,7 +1453,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
-	ctx = clog.AddVal(ctx, "capability", capName)
+	if capName != "Live video to video" {
+		ctx = clog.AddVal(ctx, "capability", capName)
+	}
 	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
