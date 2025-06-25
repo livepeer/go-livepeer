@@ -412,12 +412,14 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 				continue
 			} else if err == io.EOF {
 				// Usually this comes from a preconnect where the underlying channel is closed
-				// The gotrickle client hangs forever waiting to write a body that never comes
-				// So in this case, hard close the TCP connection to force a gotrickle shutdown
-				// NB: For some reason, the `Connection: close` header is not enough here
 				if totalRead <= 0 {
+					s.mutex.Lock()
+					isClosed := s.closed
+					s.mutex.Unlock()
+					if isClosed {
+						w.Header().Set("Lp-Trickle-Closed", "terminated")
+					}
 					w.Header().Set("Connection", "close")
-					w.Header().Set("Lp-Trickle-Closed", "terminated")
 					w.WriteHeader(http.StatusOK)
 					// we have read nothing; don't attempt to read anything more
 					// body.Close() will read until EOF and we don't want that
@@ -661,6 +663,7 @@ func (s *Segment) reset() int {
 	if !s.closed {
 		close(s.closeCh)
 	}
+	// Kick off any writers
 	s.closeCh = make(chan bool, 1)
 	s.closed = false
 	s.buffer.Reset()

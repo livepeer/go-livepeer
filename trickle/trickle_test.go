@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +30,11 @@ func TestTrickle_Close(t *testing.T) {
 
 	sub := NewTrickleSubscriber(channelURL)
 	sub.SetSeq(0)
+
+	// this is lame but there is a little race condition under the hood
+	// between lp.CreateChannel and the "second post" write since the
+	// pre-connect in the second post does not always latch on in time
+	time.Sleep(1 * time.Millisecond)
 
 	// no autocreate requires creating the channel locally on the server
 	lp := NewLocalPublisher(server, "testest", "text/plain")
