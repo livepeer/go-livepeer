@@ -180,6 +180,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 
 	makeMeta := func(p []ffmpeg.VideoProfile, c bool) *SegTranscodingMetadata {
 		return &SegTranscodingMetadata{
+			ManifestID:         "baz",
 			Profiles:           p,
 			CalcPerceptualHash: c,
 			Metadata: map[string]string{
@@ -197,7 +198,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	profiles = []ffmpeg.VideoProfile{ffmpeg.P144p30fps16x9}
 	opts = profilesToTranscodeOptions(workDir, ffmpeg.Software, makeMeta(profiles, false))
 	assert.Equal(1, len(opts))
-	assert.Equal("foo/out_bar.tempfile", opts[0].Oname)
+	assert.Equal("foo/out_baz-0-bar.tempfile", opts[0].Oname)
 	assert.Equal(ffmpeg.Software, opts[0].Accel)
 	assert.Equal(ffmpeg.P144p30fps16x9, opts[0].Profile)
 	assert.Equal("copy", opts[0].AudioEncoder.Name)
@@ -208,7 +209,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.Equal(2, len(opts))
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Software, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
@@ -227,7 +228,7 @@ func TestProfilesToTranscodeOptions(t *testing.T) {
 	assert.True(opts[1].CalcSign)
 
 	for i, p := range profiles {
-		assert.Equal("foo/out_bar.tempfile", opts[i].Oname)
+		assert.Equal("foo/out_baz-0-bar.tempfile", opts[i].Oname)
 		assert.Equal(ffmpeg.Nvidia, opts[i].Accel)
 		assert.Equal(p, opts[i].Profile)
 		assert.Equal("copy", opts[i].AudioEncoder.Name)
