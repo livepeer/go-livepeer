@@ -105,8 +105,8 @@ type DockerManager struct {
 	verboseLogs bool
 
 	dockerClient DockerClient
-	// gpu ID => container name
-	gpuContainers map[string]string
+	// gpu ID => container
+	gpuContainers map[string]*RunnerContainer
 	// Map of idle containers. container name => container
 	containers map[string]*RunnerContainer
 	mu         *sync.Mutex
@@ -126,7 +126,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
 		dockerClient:  client,
-		gpuContainers: make(map[string]string),
+		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
 	}
@@ -279,6 +279,30 @@ func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID strin
 	return err == nil
 }
 
+func (m *DockerManager) Version() []Version {
+	var version []Version
+	for _, rc := range m.gpuContainers {
+		if rc.Version != nil {
+			version = append(version, *rc.Version)
+		} else {
+			version = append(version, Version{})
+		}
+	}
+	return version
+}
+
+func (m *DockerManager) HardwareInformation() []HardwareInformation {
+	var hardware []HardwareInformation
+	for _, rc := range m.gpuContainers {
+		if rc.Hardware != nil {
+			hardware = append(hardware, *rc.Hardware)
+		} else {
+			hardware = append(hardware, HardwareInformation{})
+		}
+	}
+	return hardware
+}
+
 // isImageAvailable checks if the specified image is available locally.
 func (m *DockerManager) isImageAvailable(ctx context.Context, pipeline string, modelID string) bool {
 	imageName, err := m.getContainerImageName(pipeline, modelID)
@@ -387,7 +411,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		PortBindings: nat.PortMap{
 			containerPort: []nat.PortBinding{
 				{
-					HostIP:   "0.0.0.0",
+					HostIP:   "127.0.0.1",
 					HostPort: containerHostPort,
 				},
 			},
@@ -444,7 +468,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	m.containers[containerName] = rc
-	m.gpuContainers[gpu] = containerName
+	m.gpuContainers[gpu] = rc
 
 	if keepWarm && isLoading {
 		// If the container is only being warmed up, we only want to add it to the pool when it is past the loading state.
@@ -482,11 +506,10 @@ func (m *DockerManager) allocGPU(ctx context.Context) (string, error) {
 	}
 
 	// Is there a GPU with an idle container?
-	for _, gpu := range m.gpus {
-		containerName := m.gpuContainers[gpu]
+	for gpu, rc := range m.gpuContainers {
 		// If the container exists in this map then it is idle and if it not marked as keep warm we remove it
-		rc, ok := m.containers[containerName]
-		if ok && !rc.KeepWarm {
+		_, isIdle := m.containers[rc.Name]
+		if isIdle && !rc.KeepWarm {
 			if err := m.destroyContainer(rc, true); err != nil {
 				return "", err
 			}
@@ -727,10 +750,27 @@ tickerLoop:
 	return nil
 }
 
+type Capacity struct {
+	ContainersInUse int
+	ContainersIdle  int
+}
+
+// GetCapacity returns the current number of containers in use and idle
+// It currently only supports a setup of a single model with the number of initial warm containers equalling max capacity.
+// For example for Live AI we use this setup, we configure the number of warm containers to equal the max capacity we want
+// to accept, all with the comfyui model.
+func (m *DockerManager) GetCapacity() Capacity {
+	return Capacity{
+		ContainersInUse: len(m.gpuContainers) - len(m.containers),
+		ContainersIdle:  len(m.containers),
+	}
+}
+
 func (m *DockerManager) monitorInUse() {
 	if monitor.Enabled {
-		monitor.AIContainersInUse(len(m.gpuContainers) - len(m.containers))
-		monitor.AIContainersIdle(len(m.containers))
+		capacity := m.GetCapacity()
+		monitor.AIContainersInUse(capacity.ContainersInUse, "", "")
+		monitor.AIContainersIdle(capacity.ContainersIdle, "", "")
 		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
 	}
 }

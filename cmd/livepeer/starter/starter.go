@@ -177,6 +177,7 @@ type LivepeerConfig struct {
 	LiveAIAuthApiKey           *string
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
+	LiveAICapRefreshModels     *string
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -1656,6 +1657,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
 		n.LiveAITrickleHostForRunner = *cfg.LiveAITrickleHostForRunner
+	}
+	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
+		n.LiveAICapRefreshModels = strings.Split(*cfg.LiveAICapRefreshModels, ",")
 	}
 
 	//Create Livepeer Node

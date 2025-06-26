@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -94,21 +95,23 @@ type aiRequestParams struct {
 
 // For live video pipelines
 type liveRequestParams struct {
-	segmentReader         *media.SwitchableSegmentReader
-	outputRTMPURL         string
-	mediaMTXOutputRTMPURL string
-	stream                string
-	requestID             string
-	streamID              string
-	pipelineID            string
-	pipeline              string
-	orchestrator          string
+	segmentReader *media.SwitchableSegmentReader
+	rtmpOutputs   []string
+	stream        string
+	requestID     string
+	streamID      string
+	manifestID    string
+	pipelineID    string
+	pipeline      string
+	orchestrator  string
 
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration
 
 	// Stops the pipeline with an error. Also kicks the input
-	stopPipeline func(error)
+	kickInput func(error)
+	// Cancels the execution for the given Orchestrator session
+	kickOrch context.CancelFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -118,6 +121,12 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
+
+	// Everything below needs to be protected by `mu` for concurrent modification + access
+	mu sync.Mutex
+
+	// when the write for the last segment started
+	lastSegmentTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1029,9 +1038,11 @@ func submitAudioToText(ctx context.Context, params aiRequestParams, sess *AISess
 	return &res, nil
 }
 
-const initPixelsToPay = 10 * 30 * 3200 * 1800 // 10 seconds, 30fps, 1800p
+const initPixelsToPay = 60 * 30 * 720 * 1280 // 60 seconds, 30fps, 1280p
 
 func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *AISession, req worker.GenLiveVideoToVideoJSONRequestBody) (any, error) {
+	sess = sess.Clone()
+
 	// Storing sess in the liveParams; it's ugly, but we need to pass it back and don't want to break this function interface
 	params.liveParams.sess = sess
 	params.liveParams.startTime = time.Now()
@@ -1076,15 +1087,6 @@ func submitLiveVideoToVideo(ctx context.Context, params aiRequestParams, sess *A
 	}
 
 	return resp, nil
-}
-
-// extractMid extracts the mid (manifest ID) from the publish URL
-// e.g. public URL passed from orchestrator: /live/manifest/123456, then mid is 123456
-// we can consider improving it and passing mid directly in the JSON response from Orchestrator,
-// but currently it would require changing the OpenAPI schema in livepeer/ai-worker repo
-func extractMid(path string) string {
-	pubSplit := strings.Split(path, "/")
-	return pubSplit[len(pubSplit)-1]
 }
 
 func CalculateLLMLatencyScore(took time.Duration, tokensUsed int) float64 {
@@ -1451,7 +1453,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
-	ctx = clog.AddVal(ctx, "capability", capName)
+	if capName != "Live video to video" {
+		ctx = clog.AddVal(ctx, "capability", capName)
+	}
 	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
@@ -1491,11 +1495,13 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 			break
 		}
 		sessTries[sess.Transcoder()]++
-		if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
-			// user requested a specific orchestrator, so ignore all the others
-			clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
-			retryableSessions = append(retryableSessions, sess)
-			continue
+		if params.liveParams != nil {
+			if params.liveParams.orchestrator != "" && !strings.Contains(sess.Transcoder(), params.liveParams.orchestrator) {
+				// user requested a specific orchestrator, so ignore all the others
+				clog.Infof(ctx, "Skipping orchestrator=%s because user request specific orchestrator=%s", sess.Transcoder(), params.liveParams.orchestrator)
+				retryableSessions = append(retryableSessions, sess)
+				continue
+			}
 		}
 
 		resp, err = submitFn(ctx, params, sess)

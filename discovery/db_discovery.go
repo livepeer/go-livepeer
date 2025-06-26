@@ -399,6 +399,10 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 	return nil
 }
 
+func (dbo *DBOrchestratorPoolCache) Broadcaster() common.Broadcaster {
+	return dbo.bcast
+}
+
 func parseURI(addr string) (*url.URL, error) {
 	if !strings.HasPrefix(addr, "http") {
 		addr = "https://" + addr

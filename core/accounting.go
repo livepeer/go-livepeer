@@ -60,6 +60,10 @@ func (b *Balance) StageUpdate(minCredit, ev *big.Rat) (int, *big.Rat, *big.Rat) 
 	return int(size), new(big.Rat).Mul(new(big.Rat).SetInt64(size), ev), existingCredit
 }
 
+func (b *Balance) Balance() *big.Rat {
+	return b.balances.balancesForAddr(b.addr).Balance(b.manifestID)
+}
+
 // AddressBalances holds credit balances for ETH addresses
 type AddressBalances struct {
 	balances map[ethcommon.Address]*Balances
