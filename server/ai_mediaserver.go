@@ -675,7 +675,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				break
 			}
 			// Temporarily disable Orch Swapping, because of the following issues:
-			// 1. Frontend Playback refresh, fixes here: https://github.com/livepeer/ui-kit/pull/617
+			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
 			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
 			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
 			break
