@@ -801,6 +801,12 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		payment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(payment.ExpectedPrice)
+		balanceForOrch := node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
+		balanceForOrchStr := ""
+		if balanceForOrch != nil {
+			balanceForOrchStr = balanceForOrch.FloatString(3)
+		}
+
 		clog.V(common.DEBUG).Infof(ctx, "Created new payment - capability=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v balance=%v",
 			jobReq.Capability,
 			tickets.Recipient.Hex(),
@@ -808,7 +814,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 			tickets.WinProbRat().FloatString(10),
 			ratPrice.FloatString(3)+" wei/unit",
 			ticketCnt,
-			node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability)).FloatString(3),
+			balanceForOrchStr,
 		)
 	}
 
