@@ -1298,15 +1298,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
+				// External containers do auto-scale; default to 1 or use provided capacity.
+				if config.URL != "" && config.Capacity != 0 {
+					modelConstraint.Capacity = config.Capacity
+				}
 				modelsCount := 1
-				if config.Capacity != 0 {
-					if config.URL == "" {
-						// Use multiple same configs if External Container is not used and capacity is set
-						modelsCount = config.Capacity
-					} else {
-						// External containers do auto-scale; default to 1 or use provided capacity.
-						modelConstraint.Capacity = config.Capacity
-					}
+				if config.Count != 0 {
+					modelsCount = config.Count
 				}
 
 				// Ensure the AI worker has the image needed to serve the job.
