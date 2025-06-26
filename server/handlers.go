@@ -1245,6 +1245,32 @@ func ethBalanceHandler(client eth.LivepeerEthClient) http.Handler {
 	}))
 }
 
+func transferEthHandler(client eth.LivepeerEthClient) http.Handler {
+	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		to := r.FormValue("to")
+		amountStr := r.FormValue("amount")
+		amount, err := common.ParseBigInt(amountStr)
+		if err != nil {
+			respond400(w, err.Error())
+			return
+		}
+
+		tx, err := client.TransferEth(ethcommon.HexToAddress(to), amount)
+		if err != nil {
+			respond500(w, err.Error())
+			return
+		}
+		err = client.CheckTx(tx)
+		if err != nil {
+			respond500(w, err.Error())
+			return
+		}
+
+		glog.Infof("Transferred %v to %v", eth.FormatUnits(amount, "ETH"), to)
+		respondOk(w, nil)
+	}))
+}
+
 func transferTokensHandler(client eth.LivepeerEthClient) http.Handler {
 	return mustHaveClient(client, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		to := r.FormValue("to")
