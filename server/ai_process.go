@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -121,12 +120,6 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
-
-	// Everything below needs to be protected by `mu` for concurrent modification + access
-	mu sync.Mutex
-
-	// when the write for the last segment started
-	lastSegmentTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
