@@ -75,10 +75,11 @@ func (c *TricklePublisher) preconnect() (*pendingPost, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", c.contentType)
+	httpclient := c.client
 
 	// Start the POST request in a background goroutine
 	go func() {
-		resp, err := c.client.Do(req)
+		resp, err := httpclient.Do(req)
 		if err != nil {
 			slog.Error("Failed to complete POST for segment", "url", url, "err", err)
 			errCh <- err

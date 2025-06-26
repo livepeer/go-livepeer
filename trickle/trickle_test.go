@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,4 +137,102 @@ func TestTrickle_SetSeq(t *testing.T) {
 		require.Nil(err)
 		require.Equal(s, string(buf))
 	}
+}
+
+func TestTrickle_Reset(t *testing.T) {
+	// codifying some awful behavior for now
+	// concurrent writes will stomp over one another
+	// and subscriber has no way to distinguish
+	require := require.New(t)
+	mux := http.NewServeMux()
+	server := ConfigureServer(TrickleServerConfig{
+		Mux:        mux,
+		Autocreate: true,
+	})
+	stop := server.Start()
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	defer stop()
+
+	channelURL := ts.URL + "/testest"
+
+	pub, err := NewTricklePublisher(channelURL)
+	require.Nil(err)
+
+	sub := NewTrickleSubscriber(channelURL)
+	wg := &sync.WaitGroup{}
+
+	// give preconnects time to latch on and autocreate the channel
+	time.Sleep(5 * time.Millisecond)
+
+	respCh := make(chan *http.Response)
+	buf := make([]byte, 100)
+	go func() {
+		sub.SetSeq(0)
+		resp, err := sub.Read()
+		require.Nil(err)
+		n, err := io.ReadFull(resp.Body, buf[0:5])
+		require.Nil(err)
+		require.Equal(5, int(n))
+		require.Equal("Hello", string(buf[0:5]))
+		respCh <- resp
+	}()
+
+	t1, err := pub.Next()
+	r1, w1 := io.Pipe()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		n, err := t1.Write(r1)
+		require.Nil(err)
+		require.Equal(5, int(n))
+	}()
+
+	w1.Write([]byte("Hello"))
+
+	resp := <-respCh
+	defer resp.Body.Close()
+
+	readCh := make(chan bool)
+	go func() {
+		defer close(readCh)
+		n, err := io.ReadFull(resp.Body, buf[5:11])
+		require.Nil(err)
+		require.Equal(6, int(n))
+		require.Equal("yWorld", string(buf[5:11]))
+	}()
+
+	// give the above goroutine time to spin up
+	time.Sleep(5 * time.Millisecond)
+
+	// write again!
+	r2, w2 := io.Pipe()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		n, err := t1.Write(r2)
+		require.Nil(err)
+		require.Equal(11, int(n))
+	}()
+	w2.Write([]byte("GoodbyWorld"))
+
+	<-readCh
+
+	w1.Close()
+	w2.Close()
+
+	// this is horrible because existing read heads
+	// on the server is not reset during segment re-writes
+	// but thats the behavior right now so codify it here
+	require.Equal("HelloyWorld", string(buf[0:11]))
+
+	// now check a fresh read
+	sub.SetSeq(0)
+	resp2, err := sub.Read()
+	require.Nil(err)
+	data, err := io.ReadAll(resp2.Body)
+	defer resp2.Body.Close()
+	require.Equal("GoodbyWorld", string(data))
+
+	wg.Wait()
 }
