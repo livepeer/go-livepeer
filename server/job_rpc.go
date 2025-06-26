@@ -790,7 +790,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 
 		totalEV := big.NewRat(0, 1)
 		senderParams := make([]*net.TicketSenderParams, len(tickets.SenderParams))
-		for i := 0; i < len(senderParams); i++ {
+		for i := 0; i < len(tickets.SenderParams); i++ {
 			senderParams[i] = &net.TicketSenderParams{
 				SenderNonce: tickets.SenderParams[i].SenderNonce,
 				Sig:         tickets.SenderParams[i].Sig,
