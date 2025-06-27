@@ -48,6 +48,11 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 }
 
 func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
+	// Ensures the input stream is marked as non-existent if the ingest was closed.
+	// This prevents a race condition between shouldSwap() and ingest closure,
+	// which could otherwise result in an unnecessary (false positive) orchestrator swap.
+	time.Sleep(1 * time.Second)
+
 	if !os.params.inputStreamExists() {
 		clog.Info(ctx, "No input stream, skipping orchestrator swap")
 		return false
