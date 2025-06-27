@@ -580,17 +580,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
 		kickInput := func(err error) {
 			defer cancelSegmenter()
+			err = mediaMTXClient.KickInputConnection(ctx)
+			if err != nil {
+				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
+			}
 			if err == nil {
 				return
 			}
 			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 
 			sendErrorEvent(err)
-
-			err = mediaMTXClient.KickInputConnection(ctx)
-			if err != nil {
-				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
-			}
 		}
 
 		ssr := media.NewSwitchableSegmentReader()
@@ -938,12 +937,12 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				"pipeline":    pipeline,
 			})
 			kickInput := func(err error) {
+				whipConn.Close()
 				if err == nil {
 					return
 				}
 				clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
 				sendErrorEvent(err)
-				whipConn.Close()
 			}
 
 			clog.Info(ctx, "Received live video AI request", "pipelineParams", pipelineParams)
