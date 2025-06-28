@@ -96,7 +96,6 @@ type aiRequestParams struct {
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
-	rtmpOutputs   []string
 	stream        string
 	requestID     string
 	streamID      string
@@ -107,6 +106,11 @@ type liveRequestParams struct {
 
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration
+
+	// list of RTMP output destinations
+	rtmpOutputs []string
+	// prefix to identify local (MediaMTX) RTMP hosts
+	localRTMPPrefix string
 
 	// Stops the pipeline with an error. Also kicks the input
 	kickInput func(error)
