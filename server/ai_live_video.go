@@ -376,10 +376,16 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			break
 		}
 
+		// we receive opus by default, but re-encode to AAC for non-local outputs
+		acodec := "copy"
+		if !strings.Contains(outputUrl, params.liveParams.localRTMPPrefix) {
+			acodec = "libfdk_aac"
+		}
+
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
-			"-c:a", "copy",
+			"-c:a", acodec,
 			"-c:v", "copy",
 			"-f", "flv",
 			outputUrl,

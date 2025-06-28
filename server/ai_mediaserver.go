@@ -602,6 +602,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				rtmpOutputs:            rtmpOutputs,
+				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -689,6 +690,7 @@ func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRe
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		rtmpOutputs:            params.rtmpOutputs,
+		localRTMPPrefix:        params.localRTMPPrefix,
 		stream:                 params.stream,
 		paymentProcessInterval: params.paymentProcessInterval,
 		outSegmentTimeout:      params.outSegmentTimeout,
@@ -1007,6 +1009,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					rtmpOutputs:            rtmpOutputs,
+					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
