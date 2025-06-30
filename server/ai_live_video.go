@@ -148,9 +148,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
-				params.liveParams.mu.Lock()
-				params.liveParams.lastSegmentTime = startTime
-				params.liveParams.mu.Unlock()
 				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
@@ -289,27 +286,9 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 
 			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					clog.Info(ctx, "trickle subscribe stopping - context canceled")
-					return
-				}
-				// Check whether the client has sent data recently.
-				// TODO ensure the threshold is some multiple of LIVE_AI_MIN_SEG_DUR
-				params.liveParams.mu.Lock()
-				lastSegmentTime := params.liveParams.lastSegmentTime
-				params.liveParams.mu.Unlock()
-				segmentAge := time.Since(lastSegmentTime)
-				maxSegmentDelay := params.liveParams.outSegmentTimeout / 2
-				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
-					// we have some recent input but no output from orch, so kick
-					suspendOrchestrator(ctx, params)
-					stopProcessing(ctx, params, errors.New("no segments from orchestrator"))
-					return
-				}
-				clog.InfofErr(ctx, "trickle subscribe error copying segment seq=%d", seq, err)
-				subscriber.SetSeq(seq)
-				retries++
-				continue
+				suspendOrchestrator(ctx, params)
+				stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error copying: %w", err))
+				return
 			}
 			if firstSegment {
 				firstSegment = false
@@ -441,7 +420,6 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 
 	select {
 	case <-ctx.Done():
-		// NB: if the orch context is cancelled, it isn't really a timeout
 		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
 	case res := <-resultChan:
 		return res.n, res.err
