@@ -39,11 +39,8 @@ func (c *TrickleLocalSubscriber) Read() (*TrickleData, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	segment, latestSeq, exists, closed := stream.getForRead(c.seq)
+	segment, latestSeq, exists := stream.getForRead(c.seq)
 	if !exists {
-		if closed {
-			return nil, EOS
-		}
 		return nil, errors.New("seq not found")
 	}
 	c.seq++
