@@ -673,12 +673,14 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			}
 			<-perOrchCtx.Done()
 			if !orchSwapper.shouldSwap(ctx) {
+				err = errors.New("Not swapping: kicking")
 				break
 			}
 			// Temporarily disable Orch Swapping, because of the following issues:
 			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
 			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
 			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
+			err = errors.New("Swap disabled: kicking")
 			break
 		}
 		params.liveParams.kickInput(err)
