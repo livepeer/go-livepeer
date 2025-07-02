@@ -48,10 +48,6 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 }
 
 func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
-	if !os.params.inputStreamExists() {
-		clog.Info(ctx, "No input stream, skipping orchestrator swap")
-		return false
-	}
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++

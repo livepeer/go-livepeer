@@ -676,6 +676,10 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				firstProcessed <- struct{}{}
 			}
 			<-perOrchCtx.Done()
+			if !params.inputStreamExists() {
+				clog.Info(ctx, "No input stream, skipping orchestrator swap")
+				break
+			}
 			if !orchSwapper.shouldSwap(ctx) {
 				err = errors.New("Not swapping: kicking")
 				break
