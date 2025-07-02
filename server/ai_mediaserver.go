@@ -615,6 +615,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		// Create a special parent context for orchestrator cancellation
+		orchCtx, orchCancel := context.WithCancel(ctx)
+
 		// Kick off the RTMP pull and segmentation as soon as possible
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
@@ -633,6 +636,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
 			cleanupControl(ctx, params)
+			orchCancel()
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -641,7 +645,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		processStream(orchCtx, params, req)
 		close(orchSelection)
 	})
 }
@@ -1032,7 +1036,10 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			// Create a special parent context for orchestrator cancellation
+			orchCtx, orchCancel := context.WithCancel(ctx)
+
+			processStream(orchCtx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
@@ -1041,6 +1048,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			whipConn.AwaitClose()
 			cleanupControl(ctx, params)
 			ssr.Close()
+			orchCancel()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 

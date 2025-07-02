@@ -107,7 +107,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
-			stopProcessing(ctx, params, errors.New("trickle publisher closed"))
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
