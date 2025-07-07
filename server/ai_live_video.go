@@ -48,10 +48,6 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 }
 
 func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
-	if !os.params.inputStreamExists() {
-		clog.Info(ctx, "No input stream, skipping orchestrator swap")
-		return false
-	}
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
@@ -72,8 +68,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
-		clog.Infof(ctx, "error publishing trickle. err=%s", err)
-		params.liveParams.kickOrch()
+		stopProcessing(ctx, params, fmt.Errorf("trickle publish init err: %w", err))
 		return
 	}
 
@@ -107,7 +102,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
-			stopProcessing(ctx, params, errors.New("trickle publisher closed"))
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
@@ -135,7 +129,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			for {
 				select {
 				case <-ctx.Done():
-					stopProcessing(ctx, params, errors.New("stream processing is done"))
+					clog.Info(ctx, "trickle publish done")
 					return
 				default:
 				}
@@ -229,6 +223,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	outWriter, err := media.NewRingBuffer(&rbc)
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
+		return
 	}
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
@@ -250,7 +245,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		for {
 			select {
 			case <-ctx.Done():
-				stopProcessing(ctx, params, errors.New("trickle subscribe stopping, context done"))
+				clog.Info(ctx, "trickle subscribe done")
 				return
 			default:
 			}
@@ -365,8 +360,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			if !ok {
 				err = errors.New("unknown error")
 			}
-			clog.Errorf(ctx, "LPMS panic err=%v", err)
-			params.liveParams.kickOrch()
+			stopProcessing(ctx, params, fmt.Errorf("ffmpeg panic: %w", err))
 		}
 	}()
 	for {
@@ -452,7 +446,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		clog.InfofErr(ctx, "error starting control publisher", err)
 		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
 	}
@@ -487,7 +480,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
-		defer params.liveParams.kickOrch()
 		for {
 			select {
 			case <-ticker.C:
@@ -496,6 +488,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				if err == trickle.StreamNotFoundErr {
 					// the channel doesn't exist anymore, so stop
 					stop()
+					stopProcessing(ctx, params, errors.New("control channel does not exist"))
 					continue // loop back to consume the `done` chan
 				}
 				// if there was another type of error, we'll just retry anyway
@@ -543,6 +536,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		for {
 			select {
 			case <-ctx.Done():
+				clog.Info(ctx, "event subscription done")
 				return
 			default:
 			}
@@ -685,7 +679,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 }
 
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
-	clog.Infof(ctx, "Stopping processing, err=%v", err)
+	clog.InfofErr(ctx, "Stopping processing", err)
 	params.liveParams.sendErrorEvent(err)
 	params.liveParams.kickOrch()
 }
