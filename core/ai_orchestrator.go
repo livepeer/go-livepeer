@@ -1122,15 +1122,48 @@ func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveV
 }
 
 func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings string) (*ExternalCapability, error) {
-	cap, err := orch.node.ExternalCapabilities.RegisterCapability(extCapabilitySettings)
+	var extCap ExternalCapability
+	err := json.Unmarshal([]byte(extCapabilitySettings), &extCap)
 	if err != nil {
 		return nil, err
+	}
+
+	cap, err := orch.node.ExternalCapabilities.RegisterCapability(extCap)
+	if err != nil {
+		return nil, err
+	}
+
+	//register a live capability using the external capability name as the model id
+	if extCap.Type == "live" {
+		orch.registerLiveExternalCapability(extCap)
 	}
 
 	//set the price for the capability
 	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
 
 	return cap, nil
+}
+
+func (orch *orchestrator) registerLiveExternalCapability(extCap ExternalCapability) {
+	orch.node.Capabilities.mutex.Lock()
+	defer orch.node.Capabilities.mutex.Unlock()
+	_, capExists := orch.node.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo]
+	if !capExists {
+		orch.node.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo] = &CapabilityConstraints{
+			Models: make(map[string]*ModelConstraint),
+		}
+	}
+
+	modelId := extCap.Name
+
+	_, modelExists := orch.node.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo].Models[modelId]
+	if modelExists {
+		orch.node.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo].Models[modelId].Capacity += extCap.Capacity
+	} else {
+		orch.node.Capabilities.constraints.perCapability[Capability_LiveVideoToVideo].Models[modelId] = &ModelConstraint{Warm: true, Capacity: extCap.Capacity}
+	}
+
+	orch.node.SetBasePriceForCap("default", Capability_LiveVideoToVideo, modelId, extCap.price)
 }
 
 func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {

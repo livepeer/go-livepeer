@@ -109,6 +109,9 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 
 	//API for dynamic capabilities
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
+	ls.HTTPMux.Handle("/process/stream/{stream}/start", ls.ProcessStreamStart())
+	ls.HTTPMux.Handle("/process/stream/{prefix}/{stream}/start", ls.ProcessStreamStart())
+	ls.HTTPMux.Handle("/process/stream/{stream}/update", ls.UpdateLiveVideo())
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
@@ -396,162 +399,241 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Create fresh context instead of using r.Context() since ctx will outlive the request
 		ctx := context.Background()
+		startLiveVideo(ctx, ls, w, r)
+	})
+}
 
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
+func startLiveVideo(ctx context.Context, ls *LivepeerServer, w http.ResponseWriter, r *http.Request) {
+	// Start live video processing
 
-		streamName := r.PathValue("stream")
-		if streamName == "" {
-			clog.Errorf(ctx, "Missing stream name")
-			http.Error(w, "Missing stream name", http.StatusBadRequest)
+	requestID := string(core.RandomManifestID())
+	ctx = clog.AddVal(ctx, "request_id", requestID)
+
+	streamName := r.PathValue("stream")
+	if streamName == "" {
+		clog.Errorf(ctx, "Missing stream name")
+		http.Error(w, "Missing stream name", http.StatusBadRequest)
+		return
+	}
+
+	streamRequestTime := time.Now().UnixMilli()
+
+	ctx = clog.AddVal(ctx, "stream", streamName)
+	sourceID := r.FormValue("source_id")
+	if sourceID == "" {
+		clog.Errorf(ctx, "Missing source_id")
+		http.Error(w, "Missing source_id", http.StatusBadRequest)
+		return
+	}
+	ctx = clog.AddVal(ctx, "source_id", sourceID)
+	sourceType := r.FormValue("source_type")
+	if sourceType == "" {
+		clog.Errorf(ctx, "Missing source_type")
+		http.Error(w, "Missing source_type", http.StatusBadRequest)
+		return
+	}
+	sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
+	sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
+	if err != nil {
+		clog.Errorf(ctx, "Invalid source type %s", sourceType)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx = clog.AddVal(ctx, "source_type", sourceType)
+
+	remoteHost, err := getRemoteHost(r.RemoteAddr)
+	if err != nil {
+		clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
+		http.Error(w, "Could not find callback host", http.StatusBadRequest)
+		return
+	}
+	ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
+
+	queryParams := r.FormValue("query")
+	qp, err := url.ParseQuery(queryParams)
+	if err != nil {
+		clog.Errorf(ctx, "invalid query params, err=%w", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// If auth webhook is set and returns an output URL, this will be replaced
+	outputURL := qp.Get("rtmpOutput")
+
+	// Currently for webrtc we need to add a path prefix due to the ingress setup
+	mediaMTXStreamPrefix := r.PathValue("prefix")
+	if mediaMTXStreamPrefix != "" {
+		mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
+	}
+	mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName)
+	mediaMTXRtmpURL := r.FormValue("rtmp_url")
+	if mediaMTXRtmpURL != "" {
+		mediaMTXInputURL = mediaMTXRtmpURL
+	}
+	mediaMTXOutputURL := mediaMTXInputURL + "-out"
+	mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
+
+	// convention to avoid re-subscribing to our own streams
+	// in case we want to push outputs back into mediamtx -
+	// use an `-out` suffix for the stream name.
+	if strings.HasSuffix(streamName, "-out") {
+		// skip for now; we don't want to re-publish our own outputs
+		return
+	}
+
+	// if auth webhook returns pipeline config these will be replaced
+	pipeline := qp.Get("pipeline")
+	rawParams := qp.Get("params")
+	streamID := qp.Get("streamId")
+	var pipelineID string
+	var pipelineParams map[string]interface{}
+	if rawParams != "" {
+		if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+			clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+			http.Error(w, "Invalid model params", http.StatusBadRequest)
 			return
 		}
+	}
 
-		streamRequestTime := time.Now().UnixMilli()
+	mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
-		ctx = clog.AddVal(ctx, "stream", streamName)
-		sourceID := r.FormValue("source_id")
-		if sourceID == "" {
-			clog.Errorf(ctx, "Missing source_id")
-			http.Error(w, "Missing source_id", http.StatusBadRequest)
-			return
-		}
-		ctx = clog.AddVal(ctx, "source_id", sourceID)
-		sourceType := r.FormValue("source_type")
-		if sourceType == "" {
-			clog.Errorf(ctx, "Missing source_type")
-			http.Error(w, "Missing source_type", http.StatusBadRequest)
-			return
-		}
-		sourceType = strings.ToLower(sourceType) // mediamtx changed casing between versions
-		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
+	if LiveAIAuthWebhookURL != nil {
+		authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+			Stream:      streamName,
+			Type:        sourceTypeStr,
+			QueryParams: queryParams,
+			GatewayHost: ls.LivepeerNode.GatewayHost,
+		})
 		if err != nil {
-			clog.Errorf(ctx, "Invalid source type %s", sourceType)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			kickErr := mediaMTXClient.KickInputConnection(ctx)
+			if kickErr != nil {
+				clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
+			}
+			clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
-		remoteHost, err := getRemoteHost(r.RemoteAddr)
+		if authResp.RTMPOutputURL != "" {
+			outputURL = authResp.RTMPOutputURL
+		}
+
+		if authResp.Pipeline != "" {
+			pipeline = authResp.Pipeline
+		}
+
+		if len(authResp.paramsMap) > 0 {
+			if _, ok := authResp.paramsMap["prompt"]; !ok && pipeline == "comfyui" {
+				pipelineParams = map[string]interface{}{"prompt": authResp.paramsMap}
+			} else {
+				pipelineParams = authResp.paramsMap
+			}
+		}
+
+		if authResp.StreamID != "" {
+			streamID = authResp.StreamID
+		}
+
+		if authResp.PipelineID != "" {
+			pipelineID = authResp.PipelineID
+		}
+	}
+
+	ctx = clog.AddVal(ctx, "stream_id", streamID)
+	clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+
+	// collect all RTMP outputs
+	var rtmpOutputs []string
+	if outputURL != "" {
+		rtmpOutputs = append(rtmpOutputs, outputURL)
+	}
+	if mediaMTXOutputURL != "" {
+		rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+	}
+	clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+
+	// channel that blocks until after orch selection is complete
+	// avoids a race condition with closing the control channel
+	orchSelection := make(chan bool)
+
+	// Clear any previous gateway status
+	GatewayStatus.Clear(streamID)
+
+	monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+		"type":        "gateway_receive_stream_request",
+		"timestamp":   streamRequestTime,
+		"stream_id":   streamID,
+		"pipeline_id": pipelineID,
+		"request_id":  requestID,
+		"orchestrator_info": map[string]interface{}{
+			"address": "",
+			"url":     "",
+		},
+	})
+
+	// Count `ai_live_attempts` after successful parameters validation
+	clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
+	if monitor.Enabled {
+		monitor.AILiveVideoAttempt()
+	}
+
+	sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
+		"type":        "error",
+		"request_id":  requestID,
+		"stream_id":   streamID,
+		"pipeline_id": pipelineID,
+		"pipeline":    pipeline,
+	})
+
+	// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
+	// the client to reconnect and restart the pipeline
+	segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
+	kickInput := func(err error) {
+		defer cancelSegmenter()
+		if err == nil {
+			return
+		}
+		clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
+
+		sendErrorEvent(err)
+
+		err = mediaMTXClient.KickInputConnection(ctx)
 		if err != nil {
-			clog.Errorf(ctx, "Could not find callback host: %s", err.Error())
-			http.Error(w, "Could not find callback host", http.StatusBadRequest)
-			return
+			clog.Errorf(ctx, "Failed to kick input connection: %s", err)
 		}
-		ctx = clog.AddVal(ctx, "remote_addr", remoteHost)
+	}
 
-		queryParams := r.FormValue("query")
-		qp, err := url.ParseQuery(queryParams)
-		if err != nil {
-			clog.Errorf(ctx, "invalid query params, err=%w", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		// If auth webhook is set and returns an output URL, this will be replaced
-		outputURL := qp.Get("rtmpOutput")
+	ssr := media.NewSwitchableSegmentReader()
+	params := aiRequestParams{
+		node:        ls.LivepeerNode,
+		os:          drivers.NodeStorage.NewSession(requestID),
+		sessManager: ls.AISessionManager,
 
-		// Currently for webrtc we need to add a path prefix due to the ingress setup
-		mediaMTXStreamPrefix := r.PathValue("prefix")
-		if mediaMTXStreamPrefix != "" {
-			mediaMTXStreamPrefix = mediaMTXStreamPrefix + "/"
-		}
-		mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", remoteHost, mediaMTXStreamPrefix, streamName)
-		mediaMTXRtmpURL := r.FormValue("rtmp_url")
-		if mediaMTXRtmpURL != "" {
-			mediaMTXInputURL = mediaMTXRtmpURL
-		}
-		mediaMTXOutputURL := mediaMTXInputURL + "-out"
-		mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
+		liveParams: &liveRequestParams{
+			segmentReader:          ssr,
+			rtmpOutputs:            rtmpOutputs,
+			localRTMPPrefix:        mediaMTXInputURL,
+			stream:                 streamName,
+			paymentProcessInterval: ls.livePaymentInterval,
+			outSegmentTimeout:      ls.outSegmentTimeout,
+			requestID:              requestID,
+			streamID:               streamID,
+			pipelineID:             pipelineID,
+			pipeline:               pipeline,
+			kickInput:              kickInput,
+			sendErrorEvent:         sendErrorEvent,
+		},
+	}
 
-		// convention to avoid re-subscribing to our own streams
-		// in case we want to push outputs back into mediamtx -
-		// use an `-out` suffix for the stream name.
-		if strings.HasSuffix(streamName, "-out") {
-			// skip for now; we don't want to re-publish our own outputs
-			return
-		}
+	// Create a special parent context for orchestrator cancellation
+	orchCtx, orchCancel := context.WithCancel(ctx)
 
-		// if auth webhook returns pipeline config these will be replaced
-		pipeline := qp.Get("pipeline")
-		rawParams := qp.Get("params")
-		streamID := qp.Get("streamId")
-		var pipelineID string
-		var pipelineParams map[string]interface{}
-		if rawParams != "" {
-			if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
-				clog.Errorf(ctx, "Invalid pipeline params: %s", err)
-				http.Error(w, "Invalid model params", http.StatusBadRequest)
-				return
-			}
-		}
-
-		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
-
-		if LiveAIAuthWebhookURL != nil {
-			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
-				Stream:      streamName,
-				Type:        sourceTypeStr,
-				QueryParams: queryParams,
-				GatewayHost: ls.LivepeerNode.GatewayHost,
-			})
-			if err != nil {
-				kickErr := mediaMTXClient.KickInputConnection(ctx)
-				if kickErr != nil {
-					clog.Errorf(ctx, "failed to kick input connection: %s", kickErr.Error())
-				}
-				clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-
-			if authResp.RTMPOutputURL != "" {
-				outputURL = authResp.RTMPOutputURL
-			}
-
-			if authResp.Pipeline != "" {
-				pipeline = authResp.Pipeline
-			}
-
-			if len(authResp.paramsMap) > 0 {
-				if _, ok := authResp.paramsMap["prompt"]; !ok && pipeline == "comfyui" {
-					pipelineParams = map[string]interface{}{"prompt": authResp.paramsMap}
-				} else {
-					pipelineParams = authResp.paramsMap
-				}
-			}
-
-			if authResp.StreamID != "" {
-				streamID = authResp.StreamID
-			}
-
-			if authResp.PipelineID != "" {
-				pipelineID = authResp.PipelineID
-			}
-		}
-
-		ctx = clog.AddVal(ctx, "stream_id", streamID)
-		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
-
-		// collect all RTMP outputs
-		var rtmpOutputs []string
-		if outputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, outputURL)
-		}
-		if mediaMTXOutputURL != "" {
-			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
-		}
-		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
-
-		// channel that blocks until after orch selection is complete
-		// avoids a race condition with closing the control channel
-		orchSelection := make(chan bool)
-
-		// Clear any previous gateway status
-		GatewayStatus.Clear(streamID)
-
+	// Kick off the RTMP pull and segmentation as soon as possible
+	go func() {
+		ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
+		ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-			"type":        "gateway_receive_stream_request",
-			"timestamp":   streamRequestTime,
+			"type":        "gateway_ingest_stream_closed",
+			"timestamp":   time.Now().UnixMilli(),
 			"stream_id":   streamID,
 			"pipeline_id": pipelineID,
 			"request_id":  requestID,
@@ -560,94 +642,34 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				"url":     "",
 			},
 		})
+		ssr.Close()
+		<-orchSelection // wait for selection to complete
+		cleanupControl(ctx, params)
+		orchCancel()
+	}()
 
-		// Count `ai_live_attempts` after successful parameters validation
-		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
-		if monitor.Enabled {
-			monitor.AILiveVideoAttempt()
-		}
+	req := worker.GenLiveVideoToVideoJSONRequestBody{
+		ModelId:          &pipeline,
+		Params:           &pipelineParams,
+		GatewayRequestId: &requestID,
+		StreamId:         &streamID,
+	}
+	processStream(orchCtx, params, req)
+	close(orchSelection)
 
-		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
-			"type":        "error",
-			"request_id":  requestID,
-			"stream_id":   streamID,
-			"pipeline_id": pipelineID,
-			"pipeline":    pipeline,
-		})
+	// Add this at the end of StartLiveVideo before the closing brace
+	response := map[string]interface{}{
+		"status":             "stream_started",
+		"stream_name":        streamName,
+		"stream_id":          streamID,
+		"rtmp_outputs":       rtmpOutputs,
+		"input_url":          mediaMTXInputURL,
+		"processing_started": time.Now().Unix(),
+	}
 
-		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
-		// the client to reconnect and restart the pipeline
-		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
-		kickInput := func(err error) {
-			defer cancelSegmenter()
-			if err == nil {
-				return
-			}
-			clog.Errorf(ctx, "Live video pipeline finished with error: %s", err)
-
-			sendErrorEvent(err)
-
-			err = mediaMTXClient.KickInputConnection(ctx)
-			if err != nil {
-				clog.Errorf(ctx, "Failed to kick input connection: %s", err)
-			}
-		}
-
-		ssr := media.NewSwitchableSegmentReader()
-		params := aiRequestParams{
-			node:        ls.LivepeerNode,
-			os:          drivers.NodeStorage.NewSession(requestID),
-			sessManager: ls.AISessionManager,
-
-			liveParams: &liveRequestParams{
-				segmentReader:          ssr,
-				rtmpOutputs:            rtmpOutputs,
-				localRTMPPrefix:        mediaMTXInputURL,
-				stream:                 streamName,
-				paymentProcessInterval: ls.livePaymentInterval,
-				outSegmentTimeout:      ls.outSegmentTimeout,
-				requestID:              requestID,
-				streamID:               streamID,
-				pipelineID:             pipelineID,
-				pipeline:               pipeline,
-				kickInput:              kickInput,
-				sendErrorEvent:         sendErrorEvent,
-			},
-		}
-
-		// Create a special parent context for orchestrator cancellation
-		orchCtx, orchCancel := context.WithCancel(ctx)
-
-		// Kick off the RTMP pull and segmentation as soon as possible
-		go func() {
-			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
-			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
-			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-				"type":        "gateway_ingest_stream_closed",
-				"timestamp":   time.Now().UnixMilli(),
-				"stream_id":   streamID,
-				"pipeline_id": pipelineID,
-				"request_id":  requestID,
-				"orchestrator_info": map[string]interface{}{
-					"address": "",
-					"url":     "",
-				},
-			})
-			ssr.Close()
-			<-orchSelection // wait for selection to complete
-			cleanupControl(ctx, params)
-			orchCancel()
-		}()
-
-		req := worker.GenLiveVideoToVideoJSONRequestBody{
-			ModelId:          &pipeline,
-			Params:           &pipelineParams,
-			GatewayRequestId: &requestID,
-			StreamId:         &streamID,
-		}
-		processStream(orchCtx, params, req)
-		close(orchSelection)
-	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
@@ -783,33 +805,38 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		// Get stream from path param
-		stream := r.PathValue("stream")
-		if stream == "" {
-			http.Error(w, "Missing stream name", http.StatusBadRequest)
-			return
-		}
-		ls.LivepeerNode.LiveMu.RLock()
-		defer ls.LivepeerNode.LiveMu.RUnlock()
-		p, ok := ls.LivepeerNode.LivePipelines[stream]
-		if !ok {
-			// Stream not found
-			http.Error(w, "Stream not found", http.StatusNotFound)
-			return
-		}
-		defer r.Body.Close()
-		params, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
-		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		updateLiveVideo(ctx, ls, w, r)
 	})
+}
+
+func updateLiveVideo(ctx context.Context, ls *LivepeerServer, w http.ResponseWriter, r *http.Request) {
+	// Get stream from path param
+	stream := r.PathValue("stream")
+	if stream == "" {
+		http.Error(w, "Missing stream name", http.StatusBadRequest)
+		return
+	}
+	ls.LivepeerNode.LiveMu.RLock()
+	defer ls.LivepeerNode.LiveMu.RUnlock()
+	p, ok := ls.LivepeerNode.LivePipelines[stream]
+	if !ok {
+		// Stream not found
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+	defer r.Body.Close()
+	params, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
+	if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // @Summary Get Live Stream Status

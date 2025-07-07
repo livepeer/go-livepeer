@@ -269,6 +269,67 @@ func (ls *LivepeerServer) SubmitJob() http.Handler {
 	})
 }
 
+// Gateway handler for stream start request
+func (ls *LivepeerServer) ProcessStreamStart() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		//verify the job request
+		jobReqHdr := r.Header.Get(jobRequestHdr)
+		jobReq, err := verifyJobCreds(ctx, nil, jobReqHdr)
+		if err != nil {
+			clog.Errorf(ctx, "Unable to verify job creds err=%v", err)
+			http.Error(w, fmt.Sprintf("Unable to parse job request, err=%v", err), http.StatusBadRequest)
+			return
+		}
+		query := r.URL.Query()
+		if err != nil {
+			clog.Errorf(ctx, "Unable to parse query err=%v", err)
+			http.Error(w, fmt.Sprintf("Unable to parse query, err=%v", err), http.StatusBadRequest)
+			return
+		}
+		qpf := r.FormValue("query")
+		if qpf != "" {
+			query, err = url.ParseQuery(qpf)
+			if err != nil {
+				clog.Errorf(ctx, "Unable to parse query err=%v", err)
+				http.Error(w, fmt.Sprintf("Unable to parse query, err=%v", err), http.StatusBadRequest)
+				return
+			}
+		}
+		query.Set("pipeline", jobReq.Capability)
+		r.Form.Set("query", query.Encode())
+
+		startLiveVideo(context.Background(), ls, w, r)
+	})
+}
+
+func (ls *LivepeerServer) ProcessStreamUpdate() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		//verify the job request
+		jobReqHdr := r.Header.Get(jobRequestHdr)
+		_, err := verifyJobCreds(ctx, nil, jobReqHdr)
+		if err != nil {
+			clog.Errorf(ctx, "Unable to verify job creds err=%v", err)
+			http.Error(w, fmt.Sprintf("Unable to parse job request, err=%v", err), http.StatusBadRequest)
+			return
+		}
+
+		// Process the stream update
+		updateLiveVideo(ctx, ls, w, r)
+	})
+}
+
 func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	jobReqHdr := r.Header.Get(jobRequestHdr)
 	jobReq, err := verifyJobCreds(ctx, nil, jobReqHdr)
