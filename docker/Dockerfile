@@ -19,7 +19,7 @@ RUN	apt update \
 	&& curl -fsSl https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 	&& add-apt-repository "deb [arch=${BUILDARCH}] https://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-14 main" \
 	&& apt update \
-	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev
+	&& apt -yqq install clang-14 clang-tools-14 lld-14 build-essential pkg-config autoconf git python docker-ce-cli pciutils gcc-multilib libgcc-8-dev-arm64-cross gcc-mingw-w64-x86-64 zlib1g zlib1g-dev libx264-dev libfdk-aac-dev
 
 RUN	update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 30 \
 	&& update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 30 \
@@ -33,7 +33,7 @@ RUN	GRPC_HEALTH_PROBE_VERSION=v0.3.6 \
 RUN FFMPEG_SHA=b76053d8bf322b197a9d07bd27bbdad14fd5bc15 git clone --depth 1 https://git.ffmpeg.org/ffmpeg.git /ffmpeg \
 	&& cd /ffmpeg && git fetch --depth 1 origin ${FFMPEG_SHA} \
 	&& git checkout ${FFMPEG_SHA} \
-	&& ./configure --enable-gpl --enable-libx264 --prefix=build && make -j"$(nproc)" && make install
+	&& ./configure --enable-gpl --enable-libx264 --enable-libfdk-aac --enable-nonfree --prefix=build && make -j"$(nproc)" && make install
 
 ENV	GOPATH=/go \
 	GO_BUILD_DIR=/build/ \
@@ -68,7 +68,7 @@ FROM	livepeer-${TARGETARCH}-base
 
 ENV	NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN	apt update && apt install -y libx264-155
+RUN	apt update && apt install -y libx264-155 libfdk-aac1
 
 COPY --from=build	/build/	/usr/local/bin/
 COPY --from=build	/usr/bin/grpc_health_probe	/usr/local/bin/grpc_health_probe

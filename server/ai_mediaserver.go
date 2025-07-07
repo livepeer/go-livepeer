@@ -602,6 +602,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				rtmpOutputs:            rtmpOutputs,
+				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -613,6 +614,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				sendErrorEvent:         sendErrorEvent,
 			},
 		}
+
+		// Create a special parent context for orchestrator cancellation
+		orchCtx, orchCancel := context.WithCancel(ctx)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		go func() {
@@ -632,6 +636,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
 			cleanupControl(ctx, params)
+			orchCancel()
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -640,7 +645,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		processStream(orchCtx, params, req)
 		close(orchSelection)
 	})
 }
@@ -671,13 +676,19 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				firstProcessed <- struct{}{}
 			}
 			<-perOrchCtx.Done()
+			if !params.inputStreamExists() {
+				clog.Info(ctx, "No input stream, skipping orchestrator swap")
+				break
+			}
 			if !orchSwapper.shouldSwap(ctx) {
+				err = errors.New("Not swapping: kicking")
 				break
 			}
 			// Temporarily disable Orch Swapping, because of the following issues:
 			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
 			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
 			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
+			err = errors.New("Swap disabled: kicking")
 			break
 		}
 		params.liveParams.kickInput(err)
@@ -689,6 +700,7 @@ func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRe
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		rtmpOutputs:            params.rtmpOutputs,
+		localRTMPPrefix:        params.localRTMPPrefix,
 		stream:                 params.stream,
 		paymentProcessInterval: params.paymentProcessInterval,
 		outSegmentTimeout:      params.outSegmentTimeout,
@@ -1007,6 +1019,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					rtmpOutputs:            rtmpOutputs,
+					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
@@ -1027,7 +1040,10 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			// Create a special parent context for orchestrator cancellation
+			orchCtx, orchCancel := context.WithCancel(ctx)
+
+			processStream(orchCtx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
@@ -1036,6 +1052,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			whipConn.AwaitClose()
 			cleanupControl(ctx, params)
 			ssr.Close()
+			orchCancel()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
