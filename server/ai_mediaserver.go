@@ -622,6 +622,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
+			sendErrorEvent(errors.New("mediamtx ingest disconnected"))
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),
