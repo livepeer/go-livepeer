@@ -31,8 +31,11 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 			"price_scaling": 1000,
 			"currency": "wei"
 		}`
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		require.NoError(t, err)
 
-		cap, err := extCaps.RegisterCapability(capJSON)
+		cap, err := extCaps.RegisterCapability(extCap)
 		require.NoError(t, err)
 		require.NotNil(t, cap)
 
@@ -60,8 +63,11 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 			"price_per_unit": 100,
 			"currency": "wei"
 		}`
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		require.NoError(t, err)
 
-		cap, err := extCaps.RegisterCapability(capJSON)
+		cap, err := extCaps.RegisterCapability(extCap)
 		require.NoError(t, err)
 		require.NotNil(t, cap)
 
@@ -72,7 +78,11 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 	t.Run("Register with invalid JSON", func(t *testing.T) {
 		capJSON := `{ invalid json }`
 
-		cap, err := extCaps.RegisterCapability(capJSON)
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		assert.Error(t, err)
+
+		cap, err := extCaps.RegisterCapability(extCap)
 		assert.Error(t, err)
 		assert.Nil(t, cap)
 	})
@@ -89,7 +99,10 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 			"currency": "wei"
 		}`
 
-		_, err := extCaps.RegisterCapability(capJSON)
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		require.NoError(t, err)
+		_, err = extCaps.RegisterCapability(extCap)
 		require.NoError(t, err)
 
 		// Now update it
@@ -103,7 +116,11 @@ func TestExternalCapabilities_RegisterCapability(t *testing.T) {
 			"currency": "wei"
 		}`
 
-		updatedCap, err := extCaps.RegisterCapability(updatedJSON)
+		var updatedExtCap ExternalCapability
+		err = json.Unmarshal([]byte(updatedJSON), &updatedExtCap)
+		require.NoError(t, err)
+
+		updatedCap, err := extCaps.RegisterCapability(updatedExtCap)
 		require.NoError(t, err)
 
 		// Check the capability was updated
@@ -137,7 +154,11 @@ func TestExternalCapabilities_RemoveCapability(t *testing.T) {
 			"currency": "wei"
 		}`
 
-		_, err := extCaps.RegisterCapability(capJSON)
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		require.NoError(t, err)
+
+		_, err = extCaps.RegisterCapability(extCap)
 		require.NoError(t, err)
 		assert.Contains(t, extCaps.Capabilities, "to-remove")
 
@@ -177,7 +198,10 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 			"currency": "wei"
 		}`
 
-		cap, err := extCaps.RegisterCapability(capJSON)
+		var extCap ExternalCapability
+		err := json.Unmarshal([]byte(capJSON), &extCap)
+		require.NoError(t, err)
+		cap, err := extCaps.RegisterCapability(extCap)
 		require.NoError(t, err)
 
 		price := cap.GetPrice()
@@ -207,7 +231,11 @@ func TestExternalCapability_GetPrice(t *testing.T) {
 				"currency": "` + currency + `"
 			}`
 
-			cap, err := extCaps.RegisterCapability(capJSON)
+			var extCap ExternalCapability
+			err := json.Unmarshal([]byte(capJSON), &extCap)
+			require.NoError(t, err)
+
+			cap, err := extCaps.RegisterCapability(extCap)
 			if currency == "unknown" {
 				assert.Error(t, err)
 				continue
@@ -233,7 +261,12 @@ func TestExternalCapabilities_MarshalJSON(t *testing.T) {
 		"currency": "wei"
 	}`
 
-	cap, err := extCaps.RegisterCapability(capJSON)
+	// Register the capability
+	var extCap ExternalCapability
+	err := json.Unmarshal([]byte(capJSON), &extCap)
+	require.NoError(t, err)
+
+	cap, err := extCaps.RegisterCapability(extCap)
 	require.NoError(t, err)
 
 	// Convert the ExternalCapability to JSON
@@ -280,7 +313,11 @@ func TestExternalCapabilities_Concurrency(t *testing.T) {
 					"currency": "wei"
 				}`
 
-				_, _ = extCaps.RegisterCapability(capJSON)
+				var extCap ExternalCapability
+				err := json.Unmarshal([]byte(capJSON), &extCap)
+				require.NoError(t, err)
+
+				_, _ = extCaps.RegisterCapability(extCap)
 			}
 			done <- true
 		}()
