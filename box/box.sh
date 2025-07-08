@@ -29,6 +29,11 @@ frontend() {
   ./box/frontend.sh | tee supabase.log
 }
 
+external_live_capability() {
+  echo "Starting External Live Capability..."
+  ./box/register_live_external_capability.sh | tee external_live_capability.log
+}
+
 # Run processes in the background
 gateway &
 orchestrator &
@@ -37,6 +42,10 @@ mediamtx &
 if [ "$DOCKER" = "true" ]; then
   supabase &
   mediamtx &
+fi
+
+if [ "$EXTERNAL_CAPABILITY" = "true" ]; then
+  external_live_capability &
 fi
 
 # Wait for all background processes to finish
