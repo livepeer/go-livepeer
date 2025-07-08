@@ -52,5 +52,7 @@ run_*.sh
 gateway.log
 orchestrator.log
 mediamtx.log
+supabase.log
+external_live_capability.log
 
 box/supabase
