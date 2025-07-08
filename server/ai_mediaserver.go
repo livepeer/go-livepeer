@@ -1112,7 +1112,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
-	if !ok {
+	if !ok || pub.RequestID != params.liveParams.requestID {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
@@ -1124,7 +1124,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
+	if pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
