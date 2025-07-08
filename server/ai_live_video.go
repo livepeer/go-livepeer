@@ -298,7 +298,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
 					// we have some recent input but no output from orch, so kick
 					suspendOrchestrator(ctx, params)
-					stopProcessing(ctx, params, errors.New("no segments from orchestrator"))
+					stopProcessing(ctx, params, fmt.Errorf("trickle subscrbe error, swapping: %w", err))
 					return
 				}
 				clog.InfofErr(ctx, "trickle subscribe error copying segment seq=%d", seq, err)
