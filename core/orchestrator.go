@@ -654,7 +654,7 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 	// we may still end up doing work multiple times. But this is OK for now.
 
 	//Assume d is in the right format, write it to disk
-	inName := common.RandName() + ".tempfile"
+	inName := fmt.Sprintf("%s-%d-%s.tempfile", md.ManifestID, md.Seq, common.RandName())
 	if _, err := os.Stat(n.WorkDir); os.IsNotExist(err) {
 		err := os.Mkdir(n.WorkDir, 0700)
 		if err != nil {
@@ -751,7 +751,21 @@ func (n *LivepeerNode) transcodeSeg(ctx context.Context, config transcodeConfig,
 		hash := crypto.Keccak256(tSegments[i].Data)
 		segHashes[i] = hash
 	}
-	os.Remove(fname)
+
+	// check for big inputs
+	keepInput := false
+	for i, seg := range tData.Segments {
+		// 840x480 30fps 10 mins ~ 7.38 billion pixels, or a 1gb output
+		if seg.Pixels > 7_378_560_000 || len(seg.Data) > 1_000_000_000 {
+			// keep input for later analysis to figure out extremely large output
+			keepInput = true
+			clog.Info(ctx, "Extremely large output detected!", "manifestID", md.ManifestID, "seq", md.Seq, "pixels", seg.Pixels, "bytes", len(seg.Data), "profile", md.Profiles[i])
+		}
+	}
+	if !keepInput {
+		os.Remove(fname)
+	}
+
 	tr.OS = config.OS
 	tr.TranscodeData = tData
 
@@ -964,6 +978,8 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	defer cancel()
 	select {
 	case <-ctx.Done():
+		clog.Infof(logCtx, "Remote transcoder took too long to transcode transcoder=%s taskId=%d fname=%s dur=%v",
+			rt.addr, taskID, fname, time.Since(start))
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		segmentLen := 0
