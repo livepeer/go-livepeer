@@ -978,6 +978,8 @@ func (rt *RemoteTranscoder) Transcode(logCtx context.Context, md *SegTranscoding
 	defer cancel()
 	select {
 	case <-ctx.Done():
+		clog.Infof(logCtx, "Remote transcoder took too long to transcode transcoder=%s taskId=%d fname=%s dur=%v",
+			rt.addr, taskID, fname, time.Since(start))
 		return signalEOF(ErrRemoteTranscoderTimeout)
 	case chanData := <-taskChan:
 		segmentLen := 0
