@@ -281,6 +281,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			retries = 0
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
+			copyStartTime := time.Now()
 
 			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
@@ -342,7 +343,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				})
 
 			}
-			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
+			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
 }
