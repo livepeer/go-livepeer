@@ -893,7 +893,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			outputURL := ""
 			streamID := ""
 			pipelineID := ""
-			pipeline := ""
+			pipeline := r.URL.Query().Get("pipeline")
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
