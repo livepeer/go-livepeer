@@ -898,7 +898,13 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-
+			if len(pipelineParams) == 0 {
+				for k, v := range r.URL.Query() {
+					if k != "pipeline" && k != "streamId" {
+						pipelineParams[k] = v[0]
+					}
+				}
+			}
 			// collect RTMP outputs
 			var rtmpOutputs []string
 
