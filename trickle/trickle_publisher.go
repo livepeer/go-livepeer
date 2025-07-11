@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 )
 
 var StreamNotFoundErr = errors.New("stream not found")
@@ -291,6 +292,9 @@ func httpClient() *http.Client {
 		// DisableKeepAlives: true,
 		// ignore orch certs for now
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+
+		// Prevent old TCP connections from accumulating
+		IdleConnTimeout: 1 * time.Minute,
 	}}
 }
 
