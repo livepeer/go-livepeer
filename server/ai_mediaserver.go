@@ -890,19 +890,20 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
 			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
-			outputURL := ""
-			streamID := ""
+			outputURL := r.URL.Query().Get("rtmpOutput")
+			streamID := r.URL.Query().Get("streamId")
 			pipelineID := ""
 			pipeline := r.URL.Query().Get("pipeline")
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-			if len(pipelineParams) == 0 {
-				for k, v := range r.URL.Query() {
-					if k != "pipeline" && k != "streamId" {
-						pipelineParams[k] = v[0]
-					}
+			rawParams := r.URL.Query().Get("params")
+			if rawParams != "" {
+				if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+					clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+					http.Error(w, "Invalid pipeline params", http.StatusBadRequest)
+					return
 				}
 			}
 			// collect RTMP outputs
