@@ -657,19 +657,19 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	go func() {
 		var err error
 		for {
-			perOrchCtx, perOrchCancel := context.WithCancel(ctx)
+			perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
 			params.liveParams = newParams(params.liveParams, perOrchCancel)
 			var resp interface{}
 			resp, err = processAIRequest(perOrchCtx, params, req)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing AI Request: %s", err)
-				perOrchCancel()
+				perOrchCancel(err)
 				break
 			}
 
 			if err = startProcessing(perOrchCtx, params, resp); err != nil {
 				clog.Errorf(ctx, "Error starting processing: %s", err)
-				perOrchCancel()
+				perOrchCancel(err)
 				break
 			}
 			if isFirst {
@@ -677,27 +677,45 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				firstProcessed <- struct{}{}
 			}
 			<-perOrchCtx.Done()
+			err = context.Cause(perOrchCtx)
+			if errors.Is(err, context.Canceled) {
+				// this happens if parent ctx was cancelled without a CancelCause
+				// or if passing `nil` as a CancelCause
+				err = nil
+			}
 			if !params.inputStreamExists() {
 				clog.Info(ctx, "No input stream, skipping orchestrator swap")
 				break
 			}
 			if !orchSwapper.shouldSwap(ctx) {
-				err = errors.New("Not swapping: kicking")
+				// TODO return an error from shouldSwap
+				// and wrap the existing error with that?
+				if err == nil {
+					err = errors.New("Not swapping: kicking")
+				}
 				break
 			}
 			// Temporarily disable Orch Swapping, because of the following issues:
 			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
 			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
 			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
-			err = errors.New("Swap disabled: kicking")
+			if err == nil {
+				err = errors.New("Swap disabled: kicking")
+			}
 			break
+
+			// will swap, but first notify with the reason for the swap
+			if err == nil {
+				err = errors.New("unknown swap reason")
+			}
+			params.liveParams.sendErrorEvent(err)
 		}
 		params.liveParams.kickInput(err)
 	}()
 	<-firstProcessed
 }
 
-func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRequestParams {
+func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		rtmpOutputs:            params.rtmpOutputs,
