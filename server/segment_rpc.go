@@ -63,6 +63,9 @@ var httpClient = &http.Client{
 		// transparently support HTTP/2 while maintaining the flexibility to use HTTP/1 by running
 		// with GODEBUG=http2client=0
 		ForceAttemptHTTP2: true,
+
+		// Close the underlying connection if unused; otherwise they hang open for a long time
+		IdleConnTimeout: 1 * time.Minute,
 	},
 	// Don't set a timeout here; pass a context to the request
 }
