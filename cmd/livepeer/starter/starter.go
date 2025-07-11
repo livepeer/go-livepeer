@@ -1401,7 +1401,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 					pricePerUnit = pricePerUnitBase
 					currency = currencyBase
 					glog.Warningf("No 'pricePerUnit' specified for model '%v' in pipeline '%v'. Using default value from `-pricePerUnit`: %v", config.ModelID, config.Pipeline, *cfg.PricePerUnit)
-				} else if pricePerUnit.Sign() < 0 {
+				} else if pricePerUnit.Sign() <= 0 {
 					panic(fmt.Errorf("'pricePerUnit' value specified for model '%v' in pipeline '%v' must be a valid positive number, provided %v", config.ModelID, config.Pipeline, config.PricePerUnit))
 				}
 
