@@ -214,8 +214,17 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	// subscribe to the outputs and send them into LPMS
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	// subscribe to inference outputs and send them into the world
+
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("trickle subscription init failed: %w", err))
+		return
+	}
+
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 
 	// Set up output buffers and ffmpeg processes
@@ -505,7 +514,14 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 const clearStreamDelay = 1 * time.Minute
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
+		return
+	}
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
 
