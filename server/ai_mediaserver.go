@@ -93,6 +93,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/update", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
 
 	// Configure WHIP ingest only if an addr is specified.
@@ -810,6 +811,9 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusOK)
 	})
 }
 
@@ -819,6 +823,12 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 // @Router /live/video-to-video/{stream}/status [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodOptions {
+			corsHeaders(w, r.Method)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		streamId := r.PathValue("streamId")
 		if streamId == "" {
 			http.Error(w, "stream id is required", http.StatusBadRequest)
