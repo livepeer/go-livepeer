@@ -114,6 +114,19 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	return nil
 }
 
+func generateGatewayLiveURL(hostname, stream, pathSuffix string) string {
+	return fmt.Sprintf("https://%s/live/video-to-video/%s/%s", hostname, stream, pathSuffix)
+}
+
+func generateWhepUrl(streamName, requestID string) string {
+	whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+	if whepURL == "" {
+		whepURL = "http://localhost:8889/" // default mediamtx output
+	}
+	whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+	return whepURL
+}
+
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
@@ -493,6 +506,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
+				WhepURL:     generateWhepUrl(streamName, requestID),
+				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/status"),
+				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/update"),
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -876,12 +892,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
-
-		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
-		if whepURL == "" {
-			whepURL = "http://localhost:8889/" // default mediamtx output
-		}
-		whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+		whepURL := generateWhepUrl(streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -910,7 +921,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
 					GatewayHost: ls.LivepeerNode.GatewayHost,
-				})
+					WhepURL:     whepURL,
+					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/status"),
+					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/update")})
 				if err != nil {
 					whipConn.Close()
 					clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
