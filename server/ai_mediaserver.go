@@ -508,8 +508,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
 				WhepURL:     whepURL,
-				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/status"),
-				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/update"),
+				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -924,8 +924,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					QueryParams: queryParams,
 					GatewayHost: ls.LivepeerNode.GatewayHost,
 					WhepURL:     whepURL,
-					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/status"),
-					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/update")})
+					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
+				})
 				if err != nil {
 					whipConn.Close()
 					clog.Errorf(ctx, "Live AI auth failed: %s", err.Error())
