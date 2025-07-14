@@ -500,13 +500,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
+		whepURL := generateWhepUrl(streamName, requestID)
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
-				WhepURL:     generateWhepUrl(streamName, requestID),
+				WhepURL:     whepURL,
 				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/status"),
 				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/update"),
 			})
@@ -564,6 +565,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
+		GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
@@ -976,6 +978,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			// Clear any previous gateway status
 			GatewayStatus.Clear(streamID)
+			GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_receive_stream_request",
