@@ -55,6 +55,7 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 	totalRead := 0
 	for {
 		n, err := data.Read(buf)
+		slog.Info("Reading published data", "channel", c.channelName, "seq", seq, "bytes read", n, "err", err)
 		if n > 0 {
 			segment.writeData(buf[:n])
 			totalRead += n

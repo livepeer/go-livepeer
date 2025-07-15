@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -213,7 +214,9 @@ func (p *pendingPost) Write(data io.Reader) (int64, error) {
 
 	// Start streaming data to the current POST request
 	n, ioError := io.Copy(writer, data)
-
+	if strings.Contains(p.client.baseURL, "control") {
+		slog.Info("Streaming data to segment", "index", index, "bytes written", n, "ioError", ioError)
+	}
 	// if no io errors, close the writer
 	var closeErr error
 	if ioError == nil {
