@@ -11,6 +11,12 @@ import (
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
+var defaultSegInfo = ffmpeg.MediaFormatInfo{
+	Height: 720,
+	Width:  1280,
+	FPS:    30.0,
+}
+
 type LivePaymentProcessor struct {
 	interval time.Duration
 
@@ -32,7 +38,6 @@ type segment struct {
 }
 
 func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(inPixels int64) error) *LivePaymentProcessor {
-	defaultSegInfo := &ffmpeg.MediaFormatInfo{Height: 480, Width: 640, FPS: 30.0}
 	pp := &LivePaymentProcessor{
 		interval: processInterval,
 
@@ -41,7 +46,7 @@ func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration,
 		lastProcessedAt:    time.Now(),
 
 		lastProbedAt:      time.Now(),
-		lastProbedSegInfo: defaultSegInfo,
+		lastProbedSegInfo: &defaultSegInfo,
 		probeSegCh:        make(chan *segment, 1),
 	}
 	pp.start(ctx)
@@ -173,9 +178,5 @@ func (p *LivePaymentProcessor) probeOne(ctx context.Context, seg *segment) {
 
 func probeSegment(ctx context.Context, seg *segment) (ffmpeg.MediaFormatInfo, error) {
 	// Return a constant value to calculate payments based on time intervals rather than input segment pixel data
-	return ffmpeg.MediaFormatInfo{
-		Height: 720,
-		Width:  1280,
-		FPS:    30.0,
-	}, nil
+	return defaultSegInfo, nil
 }
