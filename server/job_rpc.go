@@ -43,7 +43,6 @@ const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
 var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
-var ticketDurSeconds = 60 //each ticket should be 1 minute
 
 type JobSender struct {
 	Addr string `json:"addr"`
@@ -765,7 +764,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))
 	} else {
 		//calc ticket count
-		ticketCnt := math.Ceil(float64(jobReq.Timeout) / float64(ticketDurSeconds))
+		ticketCnt := math.Ceil(float64(jobReq.Timeout))
 		tickets, err := node.Sender.CreateTicketBatch(sessionID, int(ticketCnt))
 		if err != nil {
 			clog.Errorf(ctx, "Unable to create ticket batch err=%v", err)
