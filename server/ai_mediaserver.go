@@ -114,6 +114,19 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	return nil
 }
 
+func generateGatewayLiveURL(hostname, stream, pathSuffix string) string {
+	return fmt.Sprintf("https://%s/live/video-to-video/%s/%s", hostname, stream, pathSuffix)
+}
+
+func generateWhepUrl(streamName, requestID string) string {
+	whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+	if whepURL == "" {
+		whepURL = "http://localhost:8889/" // default mediamtx output
+	}
+	whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+	return whepURL
+}
+
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
@@ -487,12 +500,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
+		whepURL := generateWhepUrl(streamName, requestID)
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
+				WhepURL:     whepURL,
+				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -548,6 +565,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
+		GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
@@ -894,12 +912,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
-
-		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
-		if whepURL == "" {
-			whepURL = "http://localhost:8889/" // default mediamtx output
-		}
-		whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+		whepURL := generateWhepUrl(streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -908,15 +921,22 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
 			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
-			outputURL := ""
-			streamID := ""
+			outputURL := r.URL.Query().Get("rtmpOutput")
+			streamID := r.URL.Query().Get("streamId")
 			pipelineID := ""
-			pipeline := ""
+			pipeline := r.URL.Query().Get("pipeline")
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-
+			rawParams := r.URL.Query().Get("params")
+			if rawParams != "" {
+				if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+					clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+					http.Error(w, "Invalid pipeline params", http.StatusBadRequest)
+					return
+				}
+			}
 			// collect RTMP outputs
 			var rtmpOutputs []string
 
@@ -928,6 +948,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
 					GatewayHost: ls.LivepeerNode.GatewayHost,
+					WhepURL:     whepURL,
+					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 				})
 				if err != nil {
 					whipConn.Close()
@@ -981,6 +1004,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			// Clear any previous gateway status
 			GatewayStatus.Clear(streamID)
+			GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_receive_stream_request",

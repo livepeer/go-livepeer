@@ -16,7 +16,7 @@ import (
 	"github.com/livepeer/lpms/stream"
 )
 
-const aiLiveVideoToVideoPenalty = 0
+const aiLiveVideoToVideoPenalty = 5
 
 type AISession struct {
 	*BroadcastSession
