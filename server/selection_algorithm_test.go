@@ -342,3 +342,69 @@ func TestSelectByProbability(t *testing.T) {
 		require.InDelta(t, prob, selectedRatio, 0.01)
 	}
 }
+
+func TestLiveSelectionAlgorithm(t *testing.T) {
+	tests := []struct {
+		name          string
+		maxPrice      float64
+		prices        map[string]float64
+		orchestrators []string
+		want          string
+	}{
+		{
+			name:     "First Orchestrator with price below maxPrice",
+			maxPrice: 2000,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000002": 2500,
+				"0x0000000000000000000000000000000000000003": 500,
+				"0x0000000000000000000000000000000000000004": 1000,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+				"0x0000000000000000000000000000000000000004",
+			},
+			want: "0x0000000000000000000000000000000000000003",
+		},
+		{
+			name:     "No Orchestrator with price below maxPrice",
+			maxPrice: 2000,
+			prices: map[string]float64{
+				"0x0000000000000000000000000000000000000002": 2500,
+				"0x0000000000000000000000000000000000000003": 3500,
+				"0x0000000000000000000000000000000000000004": 4000,
+			},
+			orchestrators: []string{
+				"0x0000000000000000000000000000000000000001",
+				"0x0000000000000000000000000000000000000002",
+				"0x0000000000000000000000000000000000000003",
+				"0x0000000000000000000000000000000000000004",
+			},
+			want: "0x0000000000000000000000000000000000000000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var addrs []ethcommon.Address
+			var maxPrice *big.Rat
+			prices := map[ethcommon.Address]*big.Rat{}
+			perfScores := map[ethcommon.Address]float64{}
+			for _, o := range tt.orchestrators {
+				addr := ethcommon.HexToAddress(o)
+				addrs = append(addrs, addr)
+				if price, ok := tt.prices[o]; ok {
+					prices[addr] = new(big.Rat).SetFloat64(price)
+				}
+			}
+			if tt.maxPrice > 0 {
+				maxPrice = new(big.Rat).SetFloat64(tt.maxPrice)
+			}
+			sa := &LiveSelectionAlgorithm{}
+
+			res := sa.Select(context.Background(), addrs, nil, maxPrice, prices, perfScores)
+			require.Equal(t, ethcommon.HexToAddress(tt.want), res)
+		})
+	}
+}
