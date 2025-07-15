@@ -308,7 +308,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
 					// we have some recent input but no output from orch, so kick
 					suspendOrchestrator(ctx, params)
-					stopProcessing(ctx, params, fmt.Errorf("trickle subscrbe error, swapping: %w", err))
+					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error, swapping: %w", err))
 					return
 				}
 				clog.InfofErr(ctx, "trickle subscribe error copying segment seq=%d", seq, err)
@@ -697,8 +697,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
 	clog.InfofErr(ctx, "Stopping processing", err)
-	params.liveParams.sendErrorEvent(err)
-	params.liveParams.kickOrch()
+	params.liveParams.kickOrch(err)
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments
