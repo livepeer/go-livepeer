@@ -1299,7 +1299,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			if *cfg.AIWorker {
 				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
 				// External containers do auto-scale; default to 1 or use provided capacity.
-				if config.URL != "" && config.Capacity != 0 {
+				if config.URL != "" {
 					modelConstraint.Capacity = config.Capacity
 				}
 				modelsCount := 1
