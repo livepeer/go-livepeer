@@ -281,6 +281,115 @@ func TestTrickle_CancelSub(t *testing.T) {
 	require.ErrorIs(err, customErr)
 }
 
+func TestTrickle_SetSubStart(t *testing.T) {
+	require, url := makeServer(t)
+	wg := &sync.WaitGroup{}
+
+	// Test:
+	// 1. Subscribe from the beginning
+	// 2. Subscribe from the current seq
+	// 3. Subscribe from the next seq
+	// 4. Subscribe from a specific seq
+
+	// 1. Subscribe from the beginning
+	subBeginning, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL: url,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"zeroth", "first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subBeginning.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond) // give subscriber time to latch on
+
+	pub, err := NewTricklePublisher(url)
+	require.Nil(err)
+	require.Nil(pub.Write(bytes.NewReader([]byte("zeroth"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("first"))))
+
+	// 2. Subscribe from the current seq
+	seq := Current
+	subCurrent, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subCurrent.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	// 3. Subscribe from the next seq
+	seq = Next
+	subNext, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subNext.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond) // give subscribers time to latch on
+
+	require.Nil(pub.Write(bytes.NewReader([]byte("second"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("third"))))
+	require.Nil(pub.Write(bytes.NewReader([]byte("fourth"))))
+
+	// 4. Subscribe from a specific seq
+	seq = 1
+	subSeq, err := NewTrickleSubscriber(TrickleSubscriberConfig{
+		URL:   url,
+		Start: &seq,
+	})
+	require.Nil(err)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		expected := []string{"first", "second", "third", "fourth"}
+		for _, e := range expected {
+			resp, err := subSeq.Read()
+			require.Nil(err)
+			buf, err := io.ReadAll(resp.Body)
+			require.Nil(err)
+			require.Equal(e, string(buf))
+			resp.Body.Close()
+		}
+	}()
+
+	wg.Wait()
+	pub.Close()
+}
+
 func makeServer(t *testing.T) (*require.Assertions, string) {
 	// use this function if these defaults work, otherwise copy-paste
 	require := require.New(t)
