@@ -1297,7 +1297,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				panic(fmt.Errorf("Pipeline is not valid capability: %v\n", config.Pipeline))
 			}
 			if *cfg.AIWorker {
-				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: 1}
+				modelConstraint := &core.ModelConstraint{Warm: config.Warm, Capacity: config.Capacity}
 				// External containers do auto-scale; default to 1 or use provided capacity.
 				if config.URL != "" {
 					modelConstraint.Capacity = config.Capacity
