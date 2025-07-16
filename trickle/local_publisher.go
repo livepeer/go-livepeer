@@ -35,7 +35,11 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 	stream := c.server.getOrCreateStream(c.channelName, c.mimeType, true)
 	c.mu.Lock()
 	seq := c.seq
-	segment, exists := stream.getForWrite(seq)
+	segment, exists, closed := stream.getForWrite(seq)
+	if closed {
+		c.mu.Unlock()
+		return errors.New("stream closed")
+	}
 	if exists {
 		c.mu.Unlock()
 		return errors.New("Entry already exists for this sequence")
@@ -43,8 +47,11 @@ func (c *TrickleLocalPublisher) Write(data io.Reader) error {
 
 	// before we begin - let's pre-create the next segment
 	nextSeq := c.seq + 1
-	if _, exists = stream.getForWrite(nextSeq); exists {
+	if _, exists, closed = stream.getForWrite(nextSeq); exists || closed {
 		c.mu.Unlock()
+		if closed {
+			return errors.New("Stream closed")
+		}
 		return errors.New("Next entry already exists in this sequence")
 	}
 	c.seq = nextSeq
