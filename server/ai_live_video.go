@@ -47,7 +47,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	}
 }
 
-func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
+func (os *orchestratorSwapper) shouldSwap(ctx context.Context) error {
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
@@ -57,11 +57,11 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	// Stop if too many swaps, because there may be something wrong with the input stream
 	if os.recentSwapsCount > maxRecentSwapsCount {
 		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
-		return false
+		return errors.New("Too many swaps")
 	}
 
 	os.lastSwapped = time.Now()
-	return true
+	return nil
 }
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {

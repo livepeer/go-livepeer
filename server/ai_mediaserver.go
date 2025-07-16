@@ -705,11 +705,11 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				clog.Info(ctx, "No input stream, skipping orchestrator swap")
 				break
 			}
-			if !orchSwapper.shouldSwap(ctx) {
-				// TODO return an error from shouldSwap
-				// and wrap the existing error with that?
-				if err == nil {
-					err = errors.New("Not swapping: kicking")
+			if swapErr := orchSwapper.shouldSwap(ctx); swapErr != nil {
+				if err != nil {
+					err = fmt.Errorf("%w: %w", swapErr, err)
+				} else {
+					err = swapErr
 				}
 				break
 			}
