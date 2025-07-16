@@ -222,10 +222,10 @@ func NewAISessionSelector(ctx context.Context, cap core.Capability, modelID stri
 	var warmSel, coldSel BroadcastSessionsSelector
 	var autoClear bool
 	if cap == core.Capability_LiveVideoToVideo {
-		// For Realtime Video AI, we don't use any features of MinLSSelector (preferring known sessions, etc.),
-		// We always select a fresh session which has the lowest initial latency
-		warmSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, warmCaps)
-		coldSel = NewSelector(stakeRdr, node.SelectionAlgorithm, node.OrchPerfScore, coldCaps)
+		// For Realtime Video AI, we use a dedicated selection algorithm
+		selAlg := LiveSelectionAlgorithm{}
+		warmSel = NewSelector(stakeRdr, selAlg, node.OrchPerfScore, warmCaps)
+		coldSel = NewSelector(stakeRdr, selAlg, node.OrchPerfScore, coldCaps)
 		// we don't use penalties for not in Realtime Video AI
 		penalty = 0
 		// Automatically clear the session pool from old sessions during the discovery
