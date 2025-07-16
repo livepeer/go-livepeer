@@ -66,15 +66,20 @@ func InitKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress s
 
 func newKafkaProducer(bootstrapServers, user, password, topic, gatewayAddress string) (*KafkaProducer, error) {
 	dialer := &kafka.Dialer{
-		Timeout: KafkaRequestTimeout,
-		SASLMechanism: plain.Mechanism{
+		Timeout:   KafkaRequestTimeout,
+		DualStack: true,
+	}
+
+	if user != "" && password != "" {
+		tls := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		sasl := &plain.Mechanism{
 			Username: user,
 			Password: password,
-		},
-		DualStack: true,
-		TLS: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
+		}
+		dialer.SASLMechanism = sasl
+		dialer.TLS = tls
 	}
 
 	writer := kafka.NewWriter(kafka.WriterConfig{
