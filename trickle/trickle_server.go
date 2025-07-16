@@ -43,6 +43,9 @@ type TrickleServerConfig struct {
 	// How often to sweep for idle channels (default 1 minute)
 	SweepInterval time.Duration
 
+	// Return the current time. Used mostly for testing.
+	Now func() time.Time
+
 	// Whether to delay cleanup of channel contents after closing.
 	// Writes are not allowed after closing, but reads are.
 	// Closed channels are cleared after IdleTimeout.
@@ -108,6 +111,9 @@ func applyDefaults(config *TrickleServerConfig) {
 	}
 	if config.SweepInterval == 0 {
 		config.SweepInterval = time.Minute
+	}
+	if config.Now == nil {
+		config.Now = time.Now
 	}
 }
 
@@ -175,7 +181,7 @@ func (sm *Server) getOrCreateStream(streamName, mimeType string, isLocal bool) *
 			config:    sm.config,
 			name:      streamName,
 			mimeType:  mimeType,
-			writeTime: time.Now(),
+			writeTime: sm.config.Now(),
 			canReset:  !isLocal,
 		}
 		sm.streams[streamName] = stream
@@ -214,7 +220,7 @@ func (sm *Server) sweepIdleChannels() {
 	sm.mutex.Lock()
 	streams := slices.Collect(maps.Values(sm.streams))
 	sm.mutex.Unlock()
-	now := time.Now()
+	now := sm.config.Now()
 	for _, s := range streams {
 		// skip internal channels for now, eg changefeed
 		if strings.HasPrefix(s.name, "_") {
@@ -255,7 +261,7 @@ func (sm *Server) closeStream(streamName string) error {
 
 	stream.close()
 	sm.mutex.Lock()
-	if !sm.config.DelayCleanup || time.Now().Sub(stream.writeTime) > sm.config.IdleTimeout {
+	if !sm.config.DelayCleanup || sm.config.Now().Sub(stream.writeTime) > sm.config.IdleTimeout {
 		delete(sm.streams, streamName)
 	}
 	sm.mutex.Unlock()
@@ -418,7 +424,7 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 			if totalRead == 0 {
 				s.mutex.Lock()
 				s.nextWrite = idx + 1
-				s.writeTime = time.Now()
+				s.writeTime = s.config.Now()
 				s.mutex.Unlock()
 			}
 			segment.writeData(buf[:n])
