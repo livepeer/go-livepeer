@@ -18,6 +18,9 @@ import (
 
 const CHANGEFEED = "_changes"
 
+// Stream exists but segment doesn't
+const StatusNoSegment = 470
+
 type TrickleServerConfig struct {
 	// Base HTTP path for the server
 	BasePath string
@@ -518,7 +521,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			w.Header().Set("Lp-Trickle-Closed", "terminated")
 		} else {
 			// Special status to indicate "stream exists but segment doesn't"
-			w.WriteHeader(470)
+			w.WriteHeader(StatusNoSegment)
 		}
 		w.Write([]byte("Entry not found"))
 		return
@@ -577,7 +580,7 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 						// other times, the subscriber is slow and the segment falls out of the live window
 						// send over latest seq so slow clients can grab leading edge
 						w.Header().Set("Lp-Trickle-Latest", strconv.Itoa(latestSeq))
-						w.WriteHeader(470)
+						w.WriteHeader(StatusNoSegment)
 					}
 				}
 				return totalWrites, nil
