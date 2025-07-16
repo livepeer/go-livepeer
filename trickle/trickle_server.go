@@ -390,10 +390,6 @@ func (s *Stream) handlePost(w http.ResponseWriter, r *http.Request, idx int) {
 	totalRead := 0
 	for {
 		n, err := reader.Read(buf)
-		if strings.Contains(s.name, "control") {
-			slog.Info("Reading POST body", "stream", s.name, "idx", idx, "bytes read", n, "err", err)
-		}
-
 		if n > 0 {
 			if totalRead == 0 {
 				s.mutex.Lock()
@@ -550,9 +546,6 @@ func (s *Stream) handleGet(w http.ResponseWriter, r *http.Request, idx int) {
 			}
 
 			data, eof := subscriber.readData()
-			if strings.Contains(s.name, "control") {
-				slog.Info("Sending data to client", "stream", s.name, "idx", segment.idx, "dataLen", len(data), "eof", eof)
-			}
 			if len(data) > 0 {
 				if totalWrites <= 0 {
 					if segment.idx != latestSeq {
