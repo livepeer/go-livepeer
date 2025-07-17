@@ -145,6 +145,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 			eventsUrl  = pubUrl + "-events"
+			//dataUrl    = pubUrl + "-data"
 		)
 
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
@@ -180,6 +181,8 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 		eventsCh.CreateChannel()
+		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/json")
+		dataCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		priceInfo := payment.GetExpectedPrice()
@@ -235,6 +238,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
 		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
+		//dataUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:          req.ModelId,
@@ -259,6 +263,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			subCh.Close()
 			controlPubCh.Close()
 			eventsCh.Close()
+			dataCh.Close()
 			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
