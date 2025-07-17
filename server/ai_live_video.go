@@ -47,7 +47,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	}
 }
 
-func (os *orchestratorSwapper) shouldSwap(ctx context.Context) error {
+func (os *orchestratorSwapper) checkSwap(ctx context.Context) error {
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++

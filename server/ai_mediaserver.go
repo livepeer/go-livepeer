@@ -705,7 +705,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				clog.Info(ctx, "No input stream, skipping orchestrator swap")
 				break
 			}
-			if swapErr := orchSwapper.shouldSwap(ctx); swapErr != nil {
+			if swapErr := orchSwapper.checkSwap(ctx); swapErr != nil {
 				if err != nil {
 					err = fmt.Errorf("%w: %w", swapErr, err)
 				} else {
