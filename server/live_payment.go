@@ -75,6 +75,7 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	}
 	balUpdate.Debit = fee
 	balUpdate.Status = ReceivedChange
+	defer logPaymentSent(ctx, sess)
 	defer completeBalanceUpdate(sess, balUpdate)
 
 	// Generate payment tickets
@@ -134,8 +135,16 @@ func (r *livePaymentSender) SendPayment(ctx context.Context, segmentInfo *Segmen
 	// Update session to preserve the same AuthToken.SessionID between payments
 	updateSession(sess, &ReceivedTranscodeResult{Info: pr.Info})
 
-	clog.V(common.DEBUG).Infof(ctx, "Payment sent to orchestrator=%s", url)
 	return nil
+}
+
+func logPaymentSent(ctx context.Context, sess *BroadcastSession) {
+	balance := sess.Balance.Balance()
+	if balance == nil {
+		balance = big.NewRat(0, 1)
+	}
+	clog.V(common.DEBUG).Infof(ctx, "Payment sent to orchestrator=%s, balance=%s", sess.OrchestratorInfo.Transcoder, balance.FloatString(0))
+
 }
 
 func (r *livePaymentReceiver) AccountPayment(

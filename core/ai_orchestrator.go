@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"strconv"
 	"sync"
 	"time"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -398,18 +400,48 @@ type AIJobRequestData struct {
 }
 
 // CheckAICapacity verifies if the orchestrator can process a request for a specific pipeline and modelID.
-func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) bool {
+func (orch *orchestrator) CheckAICapacity(pipeline, modelID string) (bool, chan<- bool) {
+	var hasCapacity bool
 	if orch.node.AIWorker != nil {
 		// confirm local worker has capacity
-		return orch.node.AIWorker.HasCapacity(pipeline, modelID)
+		if pipeline == "live-video-to-video" {
+			return orch.node.AIWorker.HasCapacity(pipeline, modelID), nil
+		}
+
+		// batch pipelines manage the capacity at the Orchestrator level to manage local ai-worker capacity
+		err := orch.node.ReserveAICapability(pipeline, modelID)
+		if err == nil {
+			hasCapacity = true
+		}
 	} else {
 		// remote workers: RemoteAIWorkerManager only selects remote workers if they have capacity for the pipeline/model
+		// live-video-to-video is not using remote workers currently
 		if orch.node.AIWorkerManager != nil {
-			return orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
-		} else {
-			return false
+			hasCapacity = orch.node.AIWorkerManager.workerHasCapacity(pipeline, modelID)
 		}
 	}
+
+	if !hasCapacity {
+		return false, nil
+	}
+
+	// reserve AI capacity for the pipeline and modelID
+	releaseCapacity := make(chan bool)
+
+	go func() {
+		<-releaseCapacity
+		orch.node.ReleaseAICapability(pipeline, modelID)
+		glog.Infof("Released AI capacity for pipeline=%s model_id=%s", pipeline, modelID)
+		close(releaseCapacity)
+
+	}()
+
+	return true, releaseCapacity
+
+}
+
+func (orch *orchestrator) GetLiveAICapacity() worker.Capacity {
+	return orch.node.AIWorker.GetLiveAICapacity()
 }
 
 func (orch *orchestrator) WorkerHardware() []worker.HardwareInformation {
@@ -541,6 +573,7 @@ func (orch *orchestrator) TextToImage(ctx context.Context, requestID string, req
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToImage(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -574,6 +607,7 @@ func (orch *orchestrator) LiveVideoToVideo(ctx context.Context, requestID string
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.LiveVideoToVideo(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "application/json")
 		} else {
@@ -607,6 +641,7 @@ func (orch *orchestrator) ImageToImage(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToImage(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -651,6 +686,7 @@ func (orch *orchestrator) ImageToVideo(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.ImageToVideo(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "video/mp4")
 		} else {
@@ -695,6 +731,7 @@ func (orch *orchestrator) Upscale(ctx context.Context, requestID string, req wor
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.Upscale(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "image/png")
 		} else {
@@ -876,6 +913,7 @@ func (orch *orchestrator) TextToSpeech(ctx context.Context, requestID string, re
 	// local AIWorker processes job if combined orchestrator/ai worker
 	if orch.node.AIWorker != nil {
 		workerResp, err := orch.node.TextToSpeech(ctx, req)
+
 		if err == nil {
 			return orch.node.saveLocalAIWorkerResults(ctx, *workerResp, requestID, "audio/wav")
 		} else {
@@ -1081,6 +1119,127 @@ func (n *LivepeerNode) TextToSpeech(ctx context.Context, req worker.GenTextToSpe
 
 func (n *LivepeerNode) LiveVideoToVideo(ctx context.Context, req worker.GenLiveVideoToVideoJSONRequestBody) (*worker.LiveVideoToVideoResponse, error) {
 	return n.AIWorker.LiveVideoToVideo(ctx, req)
+}
+
+func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings string) (*ExternalCapability, error) {
+	cap, err := orch.node.ExternalCapabilities.RegisterCapability(extCapabilitySettings)
+	if err != nil {
+		return nil, err
+	}
+
+	//set the price for the capability
+	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
+
+	return cap, nil
+}
+
+func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {
+	orch.node.ExternalCapabilities.RemoveCapability(extCapability)
+	return nil
+}
+
+func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
+	for _, capability := range orch.node.ExternalCapabilities.Capabilities {
+		if capability.Name == extCapability {
+			return capability.Url
+		}
+	}
+
+	return ""
+}
+
+func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
+	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
+		glog.Infof("External capability %s not found", extCapability)
+		return false
+	} else {
+		if cap.Load < cap.Capacity {
+			return true
+		} else {
+			return false
+		}
+	}
+}
+
+func (orch *orchestrator) ReserveExternalCapabilityCapacity(extCapability string) error {
+	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
+	if ok {
+		cap.mu.Lock()
+		defer cap.mu.Unlock()
+
+		cap.Load++
+		return nil
+	} else {
+		return errors.New("external capability not found")
+	}
+}
+
+func (orch *orchestrator) FreeExternalCapabilityCapacity(extCapability string) error {
+	cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]
+	if ok {
+		cap.mu.Lock()
+		defer cap.mu.Unlock()
+
+		cap.Load--
+		return nil
+	} else {
+		return errors.New("external capability not found")
+	}
+}
+
+func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability string) (*net.PriceInfo, error) {
+	if orch.node == nil || orch.node.Recipient == nil {
+		//return a price of zero for offhain mode
+		return &net.PriceInfo{
+			PricePerUnit:  0,
+			PixelsPerUnit: 1,
+		}, nil
+	}
+
+	jobPrice, err := orch.jobPriceInfo(sender, jobCapability)
+	if err != nil {
+		return nil, err
+	}
+
+	return &net.PriceInfo{
+		PricePerUnit:  jobPrice.Num().Int64(),
+		PixelsPerUnit: jobPrice.Denom().Int64(),
+	}, nil
+}
+
+func (orch *orchestrator) jobPriceInfo(sender ethcommon.Address, jobCapability string) (*big.Rat, error) {
+	basePrice := orch.node.GetPriceForJob(sender.Hex(), jobCapability)
+
+	if basePrice == nil {
+		basePrice = orch.node.GetPriceForJob("default", jobCapability)
+	}
+
+	if !orch.node.AutoAdjustPrice {
+		return basePrice, nil
+	}
+
+	// If price = 0, overhead is 1
+	// If price > 0, overhead = 1 + (1 / txCostMultiplier)
+	overhead := big.NewRat(1, 1)
+	if basePrice.Num().Cmp(big.NewInt(0)) > 0 {
+		txCostMultiplier, err := orch.node.Recipient.TxCostMultiplier(sender)
+		if err != nil {
+			glog.Errorf("failed to get tx cost multiplier for sender %s: %v  (txCost=%v)", sender.Hex(), err)
+			return nil, err
+		}
+
+		if txCostMultiplier.Cmp(big.NewRat(0, 1)) > 0 {
+			overhead = overhead.Add(overhead, new(big.Rat).Inv(txCostMultiplier))
+		}
+	}
+
+	// pricePerPixel = basePrice * overhead
+	fixedPrice, err := common.PriceToFixed(new(big.Rat).Mul(basePrice, overhead))
+	if err != nil {
+		return nil, err
+	}
+	return common.FixedToPrice(fixedPrice), nil
+
 }
 
 // transcodeFrames converts a series of image URLs into a video segment for the image-to-video pipeline.

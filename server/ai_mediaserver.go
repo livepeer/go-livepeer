@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -106,8 +107,24 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	//API for dynamic capabilities
+	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
+
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 	return nil
+}
+
+func generateGatewayLiveURL(hostname, stream, pathSuffix string) string {
+	return fmt.Sprintf("https://%s/live/video-to-video/%s/%s", hostname, stream, pathSuffix)
+}
+
+func generateWhepUrl(streamName, requestID string) string {
+	whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+	if whepURL == "" {
+		whepURL = "http://localhost:8889/" // default mediamtx output
+	}
+	whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+	return whepURL
 }
 
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
@@ -393,6 +410,9 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// Create fresh context instead of using r.Context() since ctx will outlive the request
 		ctx := context.Background()
 
+		requestID := string(core.RandomManifestID())
+		ctx = clog.AddVal(ctx, "request_id", requestID)
+
 		streamName := r.PathValue("stream")
 		if streamName == "" {
 			clog.Errorf(ctx, "Missing stream name")
@@ -454,6 +474,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			mediaMTXInputURL = mediaMTXRtmpURL
 		}
 		mediaMTXOutputURL := mediaMTXInputURL + "-out"
+		mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
 
 		// convention to avoid re-subscribing to our own streams
 		// in case we want to push outputs back into mediamtx -
@@ -479,12 +500,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
+		whepURL := generateWhepUrl(streamName, requestID)
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
+				WhepURL:     whepURL,
+				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -521,10 +546,18 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
 		ctx = clog.AddVal(ctx, "stream_id", streamID)
 		clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+
+		// collect all RTMP outputs
+		var rtmpOutputs []string
+		if outputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, outputURL)
+		}
+		if mediaMTXOutputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+		}
+		clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
 		// channel that blocks until after orch selection is complete
 		// avoids a race condition with closing the control channel
@@ -532,6 +565,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
+		GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
@@ -562,7 +596,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
 		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
-		stopPipeline := func(err error) {
+		kickInput := func(err error) {
 			defer cancelSegmenter()
 			if err == nil {
 				return
@@ -585,8 +619,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
-				outputRTMPURL:          outputURL,
-				mediaMTXOutputRTMPURL:  mediaMTXOutputURL,
+				rtmpOutputs:            rtmpOutputs,
+				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -594,15 +628,19 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				streamID:               streamID,
 				pipelineID:             pipelineID,
 				pipeline:               pipeline,
-				stopPipeline:           stopPipeline,
+				kickInput:              kickInput,
 				sendErrorEvent:         sendErrorEvent,
 			},
 		}
+
+		// Create a special parent context for orchestrator cancellation
+		orchCtx, orchCancel := context.WithCancel(ctx)
 
 		// Kick off the RTMP pull and segmentation as soon as possible
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
+			sendErrorEvent(errors.New("mediamtx ingest disconnected"))
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),
@@ -617,6 +655,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
 			cleanupControl(ctx, params)
+			orchCancel()
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -625,42 +664,87 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		processStream(orchCtx, params, req)
 		close(orchSelection)
 	})
 }
 
 func processStream(ctx context.Context, params aiRequestParams, req worker.GenLiveVideoToVideoJSONRequestBody) {
-	resp, err := processAIRequest(ctx, params, req)
-	if err != nil {
-		clog.Errorf(ctx, "Error processing AI Request: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
+	orchSwapper := NewOrchestratorSwapper(params)
+	isFirst, firstProcessed := true, make(chan interface{})
+	go func() {
+		var err error
+		for {
+			perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
+			params.liveParams = newParams(params.liveParams, perOrchCancel)
+			var resp interface{}
+			resp, err = processAIRequest(perOrchCtx, params, req)
+			if err != nil {
+				clog.Errorf(ctx, "Error processing AI Request: %s", err)
+				perOrchCancel(err)
+				break
+			}
 
-	if err = startProcessing(ctx, params, resp); err != nil {
-		clog.Errorf(ctx, "Error starting processing: %s", err)
-		params.liveParams.stopPipeline(err)
-		return
-	}
+			if err = startProcessing(perOrchCtx, params, resp); err != nil {
+				clog.Errorf(ctx, "Error starting processing: %s", err)
+				perOrchCancel(err)
+				break
+			}
+			if isFirst {
+				isFirst = false
+				firstProcessed <- struct{}{}
+			}
+			<-perOrchCtx.Done()
+			err = context.Cause(perOrchCtx)
+			if errors.Is(err, context.Canceled) {
+				// this happens if parent ctx was cancelled without a CancelCause
+				// or if passing `nil` as a CancelCause
+				err = nil
+			}
+			if !params.inputStreamExists() {
+				clog.Info(ctx, "No input stream, skipping orchestrator swap")
+				break
+			}
+			if !orchSwapper.shouldSwap(ctx) {
+				// TODO return an error from shouldSwap
+				// and wrap the existing error with that?
+				if err == nil {
+					err = errors.New("Not swapping: kicking")
+				}
+				break
+			}
+			clog.Infof(ctx, "Retrying stream with a different orchestrator")
+
+			// will swap, but first notify with the reason for the swap
+			if err == nil {
+				err = errors.New("unknown swap reason")
+			}
+			params.liveParams.sendErrorEvent(err)
+		}
+		params.liveParams.kickInput(err)
+	}()
+	<-firstProcessed
 }
 
-func startOutput(ctx context.Context, params aiRequestParams) (*multiWriter, error) {
-	rMediaMTX, wMediaMTX, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("error getting pipe for trickle-ffmpeg. url=%w", err)
+func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
+	return &liveRequestParams{
+		segmentReader:          params.segmentReader,
+		rtmpOutputs:            params.rtmpOutputs,
+		localRTMPPrefix:        params.localRTMPPrefix,
+		stream:                 params.stream,
+		paymentProcessInterval: params.paymentProcessInterval,
+		outSegmentTimeout:      params.outSegmentTimeout,
+		requestID:              params.requestID,
+		streamID:               params.streamID,
+		pipelineID:             params.pipelineID,
+		pipeline:               params.pipeline,
+		sendErrorEvent:         params.sendErrorEvent,
+		kickInput:              params.kickInput,
+		orchestrator:           params.orchestrator,
+		startTime:              time.Now(),
+		kickOrch:               cancelOrch,
 	}
-	r, w, err := os.Pipe()
-	if err != nil {
-		return nil, fmt.Errorf("error getting pipe for MediaMTX trickle-ffmpeg. %w", err)
-	}
-	mWriter := &multiWriter{ctx: ctx, writers: []io.Writer{w, wMediaMTX}}
-	// Studio Output ffmpeg process
-	if params.liveParams.outputRTMPURL != "" {
-		go ffmpegOutput(ctx, params.liveParams.outputRTMPURL, r, params)
-	}
-	go ffmpegOutput(ctx, params.liveParams.mediaMTXOutputRTMPURL, rMediaMTX, params)
-	return mWriter, nil
+
 }
 
 func startProcessing(ctx context.Context, params aiRequestParams, res interface{}) error {
@@ -685,6 +769,7 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	}
 	if resp.JSON200.ManifestId != nil {
 		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
+		params.liveParams.manifestID = *resp.JSON200.ManifestId
 	}
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
@@ -699,11 +784,21 @@ func getRemoteHost(remoteAddr string) (string, error) {
 	if remoteAddr == "" {
 		return "", errors.New("remoteAddr is empty")
 	}
-	split := strings.Split(remoteAddr, ":")
-	if len(split) < 1 {
-		return "", fmt.Errorf("couldn't find remote host: %s", remoteAddr)
+
+	// Handle IPv6 addresses by splitting on last colon
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return "", fmt.Errorf("couldn't parse remote host: %w", err)
 	}
-	return split[0], nil
+
+	// Clean up IPv6 brackets if present
+	host = strings.Trim(host, "[]")
+
+	if host == "::1" {
+		return "127.0.0.1", nil
+	}
+
+	return host, nil
 }
 
 // @Summary Update Live Stream
@@ -810,12 +905,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
-
-		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
-		if whepURL == "" {
-			whepURL = "http://localhost:8889/" // default mediamtx output
-		}
-		whepURL = whepURL + streamName + "-out/whep"
+		whepURL := generateWhepUrl(streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -823,14 +913,25 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				internalOutputHost = "rtmp://localhost/"
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
-			outputURL := ""
-			streamID := ""
+			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
+			outputURL := r.URL.Query().Get("rtmpOutput")
+			streamID := r.URL.Query().Get("streamId")
 			pipelineID := ""
-			pipeline := ""
+			pipeline := r.URL.Query().Get("pipeline")
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
+			rawParams := r.URL.Query().Get("params")
+			if rawParams != "" {
+				if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+					clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+					http.Error(w, "Invalid pipeline params", http.StatusBadRequest)
+					return
+				}
+			}
+			// collect RTMP outputs
+			var rtmpOutputs []string
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
@@ -840,6 +941,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
 					GatewayHost: ls.LivepeerNode.GatewayHost,
+					WhepURL:     whepURL,
+					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 				})
 				if err != nil {
 					whipConn.Close()
@@ -880,7 +984,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				"pipeline_id": pipelineID,
 				"pipeline":    pipeline,
 			})
-			stopPipeline := func(err error) {
+			kickInput := func(err error) {
 				if err == nil {
 					return
 				}
@@ -893,6 +997,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			// Clear any previous gateway status
 			GatewayStatus.Clear(streamID)
+			GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_receive_stream_request",
@@ -934,6 +1039,14 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				monitor.AILiveVideoAttempt()
 			}
 
+			if outputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, outputURL)
+			}
+			if mediamtxOutputURL != "" {
+				rtmpOutputs = append(rtmpOutputs, mediamtxOutputURL, mediaMTXOutputAlias)
+			}
+			clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
+
 			params := aiRequestParams{
 				node:        ls.LivepeerNode,
 				os:          drivers.NodeStorage.NewSession(requestID),
@@ -941,8 +1054,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
-					outputRTMPURL:          outputURL,
-					mediaMTXOutputRTMPURL:  mediamtxOutputURL,
+					rtmpOutputs:            rtmpOutputs,
+					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
@@ -950,7 +1063,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					streamID:               streamID,
 					pipelineID:             pipelineID,
 					pipeline:               pipeline,
-					stopPipeline:           stopPipeline,
+					kickInput:              kickInput,
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
 				},
@@ -963,15 +1076,19 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			// Create a special parent context for orchestrator cancellation
+			orchCtx, orchCancel := context.WithCancel(ctx)
+
+			processStream(orchCtx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
 			go runStats(statsContext, whipConn, streamID, pipelineID, requestID)
 
 			whipConn.AwaitClose()
-			ssr.Close()
 			cleanupControl(ctx, params)
+			ssr.Close()
+			orchCancel()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -1030,7 +1147,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
-	if !ok {
+	if !ok || pub.RequestID != params.liveParams.requestID {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
@@ -1042,7 +1159,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
+	if pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
