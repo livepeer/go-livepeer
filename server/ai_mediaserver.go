@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/monitor"
@@ -108,6 +109,9 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	// Stream status
 	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
+
+	// Stream data SSE endpoint
+	ls.HTTPMux.Handle("/live/video-to-video/{stream}/data", ls.GetLiveVideoToVideoData())
 
 	//API for dynamic capabilities
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
@@ -787,16 +791,21 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
+	data, err := common.AppendHostname(strings.Replace(*resp.JSON200.EventsUrl, "-events", "-data", 1), host)
+	if err != nil {
+		return fmt.Errorf("invalid data URL: %w", err)
+	}
 	if resp.JSON200.ManifestId != nil {
 		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
 		params.liveParams.manifestID = *resp.JSON200.ManifestId
 	}
-	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s data %s", pub, sub, control, events, data)
 
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+	startDataSubscribe(ctx, data, params, params.liveParams.sess)
 	return nil
 }
 
@@ -1319,6 +1328,158 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
 		}()
+	})
+}
+
+// DataSegmentStore stores data segments for SSE streaming
+type DataSegmentStore struct {
+	streamID string
+	segments chan []byte
+	mu       sync.RWMutex
+	closed   bool
+}
+
+func NewDataSegmentStore(streamID string) *DataSegmentStore {
+	return &DataSegmentStore{
+		streamID: streamID,
+		segments: make(chan []byte, 100), // Buffer up to 100 segments
+	}
+}
+
+func (d *DataSegmentStore) Store(data []byte) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if d.closed {
+		return
+	}
+	select {
+	case d.segments <- data:
+	default:
+		// Channel is full, drop oldest segment
+		select {
+		case <-d.segments:
+		default:
+		}
+		select {
+		case d.segments <- data:
+		default:
+		}
+	}
+}
+
+func (d *DataSegmentStore) Subscribe() <-chan []byte {
+	return d.segments
+}
+
+func (d *DataSegmentStore) Close() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.closed {
+		d.closed = true
+		close(d.segments)
+	}
+}
+
+// Global store for data segments by stream ID
+var dataStores = make(map[string]*DataSegmentStore)
+var dataStoresMu sync.RWMutex
+
+func getDataStore(stream string) *DataSegmentStore {
+	dataStoresMu.RLock()
+	store, exists := dataStores[stream]
+	dataStoresMu.RUnlock()
+	if exists {
+		return store
+	}
+
+	dataStoresMu.Lock()
+	defer dataStoresMu.Unlock()
+	// Double-check after acquiring write lock
+	if store, exists := dataStores[stream]; exists {
+		return store
+	}
+
+	store = NewDataSegmentStore(stream)
+	dataStores[stream] = store
+	return store
+}
+
+func removeDataStore(stream string) {
+	dataStoresMu.Lock()
+	defer dataStoresMu.Unlock()
+	if store, exists := dataStores[stream]; exists {
+		store.Close()
+		delete(dataStores, stream)
+	}
+}
+
+// @Summary Get Live Stream Data
+// @Param streamId path string true "Stream ID"
+// @Success 200
+// @Router /live/video-to-video/{stream}/data [get]
+func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "stream name is required", http.StatusBadRequest)
+			return
+		}
+		if r.Method == http.MethodOptions {
+			corsHeaders(w, r.Method)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", stream)
+
+		// Get the data store for this stream
+		dataStore := getDataStore(stream)
+		if dataStore == nil {
+			http.Error(w, "Stream not found", http.StatusNoContent)
+			return
+		}
+
+		// Set up SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// Get the subscription channel
+		dataChan := dataStore.Subscribe()
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Starting SSE data stream for stream=%s", stream)
+
+		// Send keep-alive ping initially
+		fmt.Fprintf(w, "event: ping\ndata: {\"type\":\"connected\"}\n\n")
+		flusher.Flush()
+
+		// Stream data segments as SSE events
+		for {
+			select {
+			case <-ctx.Done():
+				clog.Info(ctx, "SSE data stream client disconnected")
+				return
+			case data, ok := <-dataChan:
+				if !ok {
+					// Channel closed, stream ended
+					fmt.Fprintf(w, "event: end\ndata: {\"type\":\"stream_ended\"}\n\n")
+					flusher.Flush()
+					return
+				}
+
+				// Send the segment data as a data event
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
 	})
 }
 
