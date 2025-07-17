@@ -713,14 +713,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				}
 				break
 			}
-			// Temporarily disable Orch Swapping, because of the following issues:
-			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
-			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
-			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
-			if err == nil {
-				err = errors.New("Swap disabled: kicking")
-			}
-			break
+			clog.Infof(ctx, "Retrying stream with a different orchestrator")
 
 			// will swap, but first notify with the reason for the swap
 			if err == nil {
