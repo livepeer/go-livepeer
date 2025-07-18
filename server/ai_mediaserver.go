@@ -1411,7 +1411,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 				// Send the segment data as a data event
 				// You might want to encode this differently based on your needs
 				// For now, we'll send the raw bytes as base64
-				fmt.Fprintf(w, "event: segment\ndata: {\"type\":\"segment\",\"data\":\"%s\",\"size\":%d}\n\n", string(data), len(data))
+				fmt.Fprintf(w, "data: \"%s\"\n\n", string(data))
 				flusher.Flush()
 			}
 		}
