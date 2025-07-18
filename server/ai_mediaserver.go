@@ -723,6 +723,10 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			}
 			params.liveParams.sendErrorEvent(err)
 		}
+		if isFirst {
+			// failed before selecting an orchestrator
+			firstProcessed <- struct{}{}
+		}
 		params.liveParams.kickInput(err)
 	}()
 	<-firstProcessed
