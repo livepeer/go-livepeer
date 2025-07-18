@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/monitor"
@@ -14,23 +15,31 @@ import (
 var (
 	ErrRewardServiceStarted = fmt.Errorf("reward service already started")
 	ErrRewardServiceStopped = fmt.Errorf("reward service already stopped")
+
+	DefaultRetryInterval  = 30 * time.Second // Avoid same-block retries
+	DefaultMaxElapsedTime = 20 * time.Hour   // Avoid retries outside round
 )
 
 type RewardService struct {
-	client              LivepeerEthClient
-	working             bool
-	cancelWorker        context.CancelFunc
-	tw                  timeWatcher
-	mu                  sync.Mutex
-	rewardRetryInterval time.Duration
-	cancelRetryWorker   context.CancelFunc
+	client            LivepeerEthClient
+	working           bool
+	cancelWorker      context.CancelFunc
+	tw                timeWatcher
+	mu                sync.Mutex
+	cancelRetryWorker context.CancelFunc
+	rewardRetryTimes  int
+	retryInterval     time.Duration
+	maxElapsedTime    time.Duration
+	wg                sync.WaitGroup
 }
 
-func NewRewardService(client LivepeerEthClient, tw timeWatcher, rewardRetryInterval time.Duration) *RewardService {
+func NewRewardService(client LivepeerEthClient, tw timeWatcher, rewardRetryTimes int) *RewardService {
 	return &RewardService{
-		client:              client,
-		tw:                  tw,
-		rewardRetryInterval: rewardRetryInterval,
+		client:           client,
+		tw:               tw,
+		rewardRetryTimes: rewardRetryTimes,
+		retryInterval:    DefaultRetryInterval,
+		maxElapsedTime:   DefaultMaxElapsedTime,
 	}
 }
 
@@ -58,12 +67,11 @@ func (s *RewardService) Start(ctx context.Context) error {
 				glog.Errorf("Round subscription error err=%q", err)
 			}
 		case <-roundSink:
-			s.cancelRetryWorker()
+			s.stopPreviousWorker()
 
-			retryCtx, cancelRetry := context.WithCancel(cancelCtx)
-			s.cancelRetryWorker = cancelRetry
-
-			go s.callRewardWithRetries(retryCtx)
+			// Start a new worker for the initialized round.
+			currentRound := s.tw.LastInitializedRound()
+			s.startNewWorker(cancelCtx, currentRound.Int64())
 		case <-cancelCtx.Done():
 			glog.V(5).Infof("Reward service done")
 			return nil
@@ -84,6 +92,25 @@ func (s *RewardService) Stop() error {
 
 func (s *RewardService) IsWorking() bool {
 	return s.working
+}
+
+func (s *RewardService) startNewWorker(ctx context.Context, round int64) {
+	retryCtx, cancelRetry := context.WithCancel(ctx)
+	s.cancelRetryWorker = cancelRetry
+
+	// Increment WaitGroup counter to track the retry worker.
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.callRewardWithRetries(retryCtx, round)
+	}()
+}
+
+func (s *RewardService) stopPreviousWorker() {
+	if s.cancelRetryWorker != nil {
+		s.cancelRetryWorker()
+		s.wg.Wait()
+	}
 }
 
 func (s *RewardService) tryReward() error {
@@ -115,35 +142,45 @@ func (s *RewardService) tryReward() error {
 	return nil
 }
 
-func (s *RewardService) callRewardWithRetries(ctx context.Context) {
-	if s.rewardRetryInterval == 0 {
-		err := s.tryReward()
-		if err != nil {
-			glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
-			if monitor.Enabled {
-				monitor.RewardCallError(err.Error())
-			}
+func (s *RewardService) callRewardWithRetries(ctx context.Context, round int64) {
+	expBackoff := backoff.NewExponentialBackOff()
+	expBackoff.InitialInterval = s.retryInterval
+	expBackoff.MaxInterval = 1 * time.Hour // Cap maximum interval between retries.
+	expBackoff.MaxElapsedTime = s.maxElapsedTime
+
+	backoffCtx := backoff.WithContext(expBackoff, ctx)
+
+	retryCount := 0
+	err := backoff.Retry(func() error {
+		if retryCount >= s.rewardRetryTimes {
+			return backoff.Permanent(fmt.Errorf("max retry attempts reached"))
 		}
+
+		// Validate the round before retrying.
+		currentRound := s.tw.LastInitializedRound()
+		if currentRound.Int64() != round {
+			return backoff.Permanent(fmt.Errorf("round %v is no longer valid", round))
+		}
+
+		err := s.tryReward()
+		if err == nil {
+			return nil
+		}
+
+		retryCount++
+		glog.Errorf("Error trying to call reward (attempt %d): %v", retryCount, err)
+		return err // Retry on transient errors
+	}, backoffCtx)
+
+	if ctx.Err() != nil {
+		glog.Infof("Retry context canceled, stopping retries")
 		return
 	}
 
-	ticker := time.NewTicker(s.rewardRetryInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			err := s.tryReward()
-			if err == nil {
-				return
-			}
-
-			glog.Errorf("Error trying to call reward for round %v err=%q", s.tw.LastInitializedRound(), err)
-			if monitor.Enabled {
-				monitor.RewardCallError(err.Error())
-			}
-		case <-ctx.Done():
-			return
+	if err != nil {
+		glog.Errorf("Failed to call reward after %d retries for round %v: %v", retryCount, round, err)
+		if monitor.Enabled {
+			monitor.RewardCallError(err.Error())
 		}
 	}
 }

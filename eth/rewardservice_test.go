@@ -2,10 +2,12 @@ package eth
 
 import (
 	"context"
-	ethcommon "github.com/ethereum/go-ethereum/common"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
+
+	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -73,9 +75,13 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 		lastInitializedRound: big.NewInt(100),
 	}
 	ctx := context.Background()
+
 	rs := RewardService{
-		client: eth,
-		tw:     tw,
+		client:           eth,
+		tw:               tw,
+		rewardRetryTimes: 3, // Set max retries to 3 for testing
+		retryInterval:    10 * time.Millisecond,
+		maxElapsedTime:   100 * time.Millisecond,
 	}
 
 	go rs.Start(ctx)
@@ -83,7 +89,7 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	require.True(rs.IsWorking())
 
-	// Happy case , check that reward was called
+	// Happy case, check that reward was called
 	// Assert that no error was logged
 	addr := ethcommon.Address{}
 	eth.On("Account").Return(accounts.Account{Address: addr})
@@ -91,8 +97,8 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 		LastRewardRound: big.NewInt(1),
 		Active:          true,
 	}, nil)
-	eth.On("Reward").Return(&types.Transaction{}, nil).Times(1)
-	eth.On("CheckTx").Return(nil).Times(1)
+	eth.On("Reward").Return(&types.Transaction{}, nil).Once()
+	eth.On("CheckTx").Return(nil).Once()
 	eth.On("GetTranscoderEarningsPoolForRound").Return(&lpTypes.TokenPools{}, nil)
 
 	errorLogsBefore := glog.Stats.Error.Lines()
@@ -109,7 +115,8 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	assert.Equal(int64(0), errorLogsAfter-errorLogsBefore)
 	assert.Equal(int64(1), infoLogsAfter-infoLogsBefore)
 
-	// Test for transaction time out error
+	// Test for transaction timeout error with retries
+	eth.On("Reward").Return(&types.Transaction{}, errors.New("network error")).Times(2)
 	eth.On("Reward").Return(&types.Transaction{}, nil).Once()
 	eth.On("CheckTx").Return(context.DeadlineExceeded).Once()
 
@@ -119,11 +126,11 @@ func TestRewardService_ReceiveRoundEvent_TryReward(t *testing.T) {
 	tw.roundSink <- types.Log{}
 	time.Sleep(1 * time.Second)
 
-	eth.AssertNumberOfCalls(t, "Reward", 2)
-	eth.AssertNumberOfCalls(t, "CheckTx", 2)
+	eth.AssertNumberOfCalls(t, "Reward", 4)  // 1 initial call + 2 retries + 1 final success
+	eth.AssertNumberOfCalls(t, "CheckTx", 2) // 1 initial call + 1 final failure
 
 	errorLogsAfter = glog.Stats.Error.Lines()
 	infoLogsAfter = glog.Stats.Info.Lines()
-	assert.Equal(int64(1), errorLogsAfter-errorLogsBefore)
+	assert.Equal(int64(4), errorLogsAfter-errorLogsBefore)
 	assert.Equal(int64(0), infoLogsAfter-infoLogsBefore)
 }
