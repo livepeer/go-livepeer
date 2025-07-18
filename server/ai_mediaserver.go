@@ -1369,7 +1369,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 		// Get the data store for this stream
 		dataStore := getDataStore(stream)
 		if dataStore == nil {
-			http.Error(w, "Stream not found", http.StatusNotFound)
+			http.Error(w, "Stream not found", http.StatusNoContent)
 			return
 		}
 
