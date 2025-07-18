@@ -1357,7 +1357,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 			http.Error(w, "stream name is required", http.StatusBadRequest)
 			return
 		}
-		if r.Method != http.MethodOptions {
+		if r.Method == http.MethodOptions {
 			corsHeaders(w, r.Method)
 			w.WriteHeader(http.StatusNoContent)
 			return
