@@ -141,6 +141,7 @@ type LivepeerConfig struct {
 	PricePerGateway            *string
 	PricePerBroadcaster        *string
 	BlockPollingInterval       *int
+	BlockBatchSize             *int
 	Redeemer                   *bool
 	RedeemerAddr               *string
 	Reward                     *bool
@@ -258,6 +259,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultPricePerGateway := ""
 	defaultPricePerBroadcaster := ""
 	defaultBlockPollingInterval := 5
+	defaultBlockBatchSize := 1000
 	defaultRedeemer := false
 	defaultRedeemerAddr := ""
 	defaultMonitor := false
@@ -373,6 +375,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		PricePerGateway:         &defaultPricePerGateway,
 		PricePerBroadcaster:     &defaultPricePerBroadcaster,
 		BlockPollingInterval:    &defaultBlockPollingInterval,
+		BlockBatchSize:          &defaultBlockBatchSize,
 		Redeemer:                &defaultRedeemer,
 		RedeemerAddr:            &defaultRedeemerAddr,
 		Monitor:                 &defaultMonitor,
@@ -800,6 +803,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			PollingInterval:     blockPollingTime,
 			StartBlockDepth:     rpc.LatestBlockNumber,
 			BlockRetentionLimit: blockWatcherRetentionLimit,
+			BlockBatchSize:      *cfg.BlockBatchSize,
 			WithLogs:            true,
 			Topics:              topics,
 			Client:              blockWatcherClient,
