@@ -12,6 +12,33 @@ import (
 	"time"
 )
 
+type SequenceStart int
+
+const (
+	Current SequenceStart = -2
+	Next                  = -1
+)
+
+// TrickleSubscriberConfig holds all NewTrickleSubscriber inputs.
+// Pass this by value; any nil or zero will fall back to defaults.
+type TrickleSubscriberConfig struct {
+
+	// Trickle URL to subscribe to (required).
+	URL string
+
+	// Pass in a context for custom cancellation of
+	// the entire subscription.
+	//
+	// Setting a context here is unusual but aligns
+	// better with how contexts are used internally
+	// (eg, they do not strictly map to a single Read request)
+	Ctx context.Context
+
+	// Set the index of the first sequence to read.
+	// Pointer to distinguish unset from a valid zero field.
+	Start *SequenceStart
+}
+
 var EOS = errors.New("End of stream")
 
 type SequenceNonexistent struct {
@@ -25,26 +52,49 @@ func (e *SequenceNonexistent) Error() string {
 
 const preconnectRefreshTimeout = 20 * time.Second
 
+var preconnectTimeoutErr = errors.New("preconnect timed out")
+
 // TrickleSubscriber represents a trickle streaming reader that always fetches from index -1
 type TrickleSubscriber struct {
 	client     *http.Client
 	url        string
-	mu         sync.Mutex     // Mutex to manage concurrent access
-	pendingGet *http.Response // Pre-initialized GET request
-	idx        int            // Segment index to request
+	mu         sync.Mutex      // Mutex to manage concurrent access
+	pendingGet *http.Response  // Pre-initialized GET request
+	ctx        context.Context // Parent context to use for pending GETs. This is bad
+	cancelCtx  func()          // cancel the pending GET
+	idx        int             // Segment index to request
 
 	// Number of errors from preconnect
 	preconnectErrorCount int
 }
 
 // NewTrickleSubscriber creates a new trickle stream reader for GET requests
-func NewTrickleSubscriber(url string) *TrickleSubscriber {
-	// No preconnect needed here; it will be handled by the first Read call.
-	return &TrickleSubscriber{
-		client: httpClient(),
-		url:    url,
-		idx:    -1, // shortcut for 'latest'
+func NewTrickleSubscriber(config TrickleSubscriberConfig) (*TrickleSubscriber, error) {
+
+	if config.URL == "" {
+		return nil, errors.New("trickle subscription URL missing")
 	}
+
+	// Context + cancel
+	baseCtx := config.Ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(baseCtx)
+
+	// Starting index
+	idx := int(Next)
+	if config.Start != nil {
+		idx = int(*config.Start)
+	}
+
+	return &TrickleSubscriber{
+		client:    httpClient(),
+		url:       config.URL,
+		ctx:       ctx,
+		cancelCtx: cancel,
+		idx:       idx,
+	}, nil
 }
 
 func GetSeq(resp *http.Response) int {
@@ -78,9 +128,15 @@ func IsEOS(resp *http.Response) bool {
 }
 
 func (c *TrickleSubscriber) SetSeq(seq int) {
+	// cancel this outside the lock since we may be deadlocked in preconect otherwise
+	// not super safe on paper but OK in practice, just don't call SetSeq concurrently
+	c.cancelCtx()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.idx = seq
+	c.ctx, c.cancelCtx = context.WithCancel(context.Background())
+	c.pendingGet = nil
+	c.preconnectErrorCount = 0
 }
 
 func (c *TrickleSubscriber) connect(ctx context.Context) (*http.Response, error) {
@@ -122,7 +178,7 @@ func (c *TrickleSubscriber) preconnect() (*http.Response, error) {
 		go func() {
 			resp, err := c.connect(ctx)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
+				if errors.Is(err, preconnectTimeoutErr) {
 					// cancelled as part of a preconnect refresh, so ignore
 					return
 				}
@@ -132,7 +188,7 @@ func (c *TrickleSubscriber) preconnect() (*http.Response, error) {
 			respCh <- resp
 		}()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(c.ctx)
 	runConnect(ctx)
 	for {
 		select {
@@ -141,8 +197,10 @@ func (c *TrickleSubscriber) preconnect() (*http.Response, error) {
 		case resp := <-respCh:
 			return resp, nil
 		case <-time.After(preconnectRefreshTimeout):
-			cancel()
-			ctx, cancel = context.WithCancel(context.Background())
+			// Use a custom error for the timeout to avoid clashes with parent cancellations
+			// Not doing so could lead to a deadlock due to runConnect returning nothing
+			cancel(preconnectTimeoutErr)
+			ctx, cancel = context.WithCancelCause(c.ctx)
 			runConnect(ctx)
 		}
 	}

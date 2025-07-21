@@ -60,6 +60,10 @@ func (m *mockBalance) StageUpdate(minCredit *big.Rat, ev *big.Rat) (int, *big.Ra
 	return args.Int(0), newCredit, existingCredit
 }
 
+func (m *mockBalance) Balance() *big.Rat {
+	return big.NewRat(0, 1)
+}
+
 func (m *mockBalance) Clear() {
 	m.Called()
 }

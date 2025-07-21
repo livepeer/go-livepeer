@@ -63,6 +63,9 @@ var httpClient = &http.Client{
 		// transparently support HTTP/2 while maintaining the flexibility to use HTTP/1 by running
 		// with GODEBUG=http2client=0
 		ForceAttemptHTTP2: true,
+
+		// Close the underlying connection if unused; otherwise they hang open for a long time
+		IdleConnTimeout: 1 * time.Minute,
 	},
 	// Don't set a timeout here; pass a context to the request
 }
@@ -265,7 +268,7 @@ func (h *lphttp) Payment(w http.ResponseWriter, r *http.Request) {
 		clog.Errorf(ctx, "Unable to marshal transcode result err=%q", err)
 		return
 	}
-	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance = %s", currentBalanceLog(h, payment, segData))
+	clog.V(common.DEBUG).Infof(ctx, "Payment processed, current balance=%s", currentBalanceLog(h, payment, segData))
 
 	w.Write(buf)
 }
@@ -857,14 +860,14 @@ func genPayment(ctx context.Context, sess *BroadcastSession, numTickets int) (st
 		protoPayment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(protoPayment.ExpectedPrice)
-		clog.Infof(ctx, "Created new payment - manifestID=%v sessionID=%v recipient=%v faceValue=%v winProb=%v price=%v numTickets=%v",
-			sess.Params.ManifestID,
-			sess.OrchestratorInfo.AuthToken.SessionId,
-			batch.Recipient.Hex(),
-			eth.FormatUnits(batch.FaceValue, "ETH"),
-			batch.WinProbRat().FloatString(10),
-			ratPrice.FloatString(3)+" wei/pixel",
-			numTickets,
+		clog.Info(ctx, "Created new payment",
+			"manifestID", sess.Params.ManifestID,
+			"sessionID", sess.OrchestratorInfo.AuthToken.SessionId,
+			"recipient", batch.Recipient.Hex(),
+			"faceValue", eth.FormatUnits(batch.FaceValue, "ETH"),
+			"winProb", batch.WinProbRat().FloatString(10),
+			"price", ratPrice.FloatString(3)+" wei/pixel",
+			"numTickets", numTickets,
 		)
 		if monitor.Enabled {
 			clientIP := clog.GetVal(ctx, clog.ClientIP)

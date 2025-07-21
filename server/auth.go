@@ -109,6 +109,9 @@ type AIAuthRequest struct {
 
 	// Gateway host
 	GatewayHost string `json:"gateway_host"`
+	WhepURL     string `json:"whep_url"`
+	StatusURL   string `json:"status_url"`
+	UpdateURL   string `json:"update_url"`
 }
 
 // Contains the configuration parameters for this AI job

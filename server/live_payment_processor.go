@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -12,6 +10,12 @@ import (
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/lpms/ffmpeg"
 )
+
+var defaultSegInfo = ffmpeg.MediaFormatInfo{
+	Height: 720,
+	Width:  1280,
+	FPS:    30.0,
+}
 
 type LivePaymentProcessor struct {
 	interval time.Duration
@@ -34,7 +38,6 @@ type segment struct {
 }
 
 func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration, processSegmentFunc func(inPixels int64) error) *LivePaymentProcessor {
-	defaultSegInfo := &ffmpeg.MediaFormatInfo{Height: 480, Width: 640, FPS: 30.0}
 	pp := &LivePaymentProcessor{
 		interval: processInterval,
 
@@ -43,7 +46,7 @@ func NewLivePaymentProcessor(ctx context.Context, processInterval time.Duration,
 		lastProcessedAt:    time.Now(),
 
 		lastProbedAt:      time.Now(),
-		lastProbedSegInfo: defaultSegInfo,
+		lastProbedSegInfo: &defaultSegInfo,
 		probeSegCh:        make(chan *segment, 1),
 	}
 	pp.start(ctx)
@@ -174,28 +177,6 @@ func (p *LivePaymentProcessor) probeOne(ctx context.Context, seg *segment) {
 }
 
 func probeSegment(ctx context.Context, seg *segment) (ffmpeg.MediaFormatInfo, error) {
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-
-	go func() {
-		defer pipeWriter.Close()
-		io.Copy(pipeWriter, bytes.NewReader(seg.segData))
-	}()
-
-	fname := fmt.Sprintf("pipe:%d", pipeReader.Fd())
-	status, info, err := ffmpeg.GetCodecInfo(fname)
-	if err != nil {
-		return ffmpeg.MediaFormatInfo{}, err
-	}
-	if status != ffmpeg.CodecStatusOk {
-		clog.Info(ctx, "Invalid CodecStatus while probing segment", "status", status)
-		return ffmpeg.MediaFormatInfo{}, fmt.Errorf("invalid CodecStatus while probing segment, status=%d", status)
-	}
-
-	// For WebRTC the probing sometimes returns FPS=90000, which is incorrect and causes issues with payment,
-	// so as a hack let's hardcode FPS to 30
-	info.FPS = 30.0
-	return info, nil
+	// Return a constant value to calculate payments based on time intervals rather than input segment pixel data
+	return defaultSegInfo, nil
 }
