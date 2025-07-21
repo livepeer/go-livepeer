@@ -17,6 +17,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,6 +44,7 @@ const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
 var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
+var sendJobReqWithTimeout = sendReqWithTimeout
 
 type JobSender struct {
 	Addr string `json:"addr"`
@@ -69,6 +71,15 @@ type JobRequest struct {
 
 	orchSearchTimeout     time.Duration
 	orchSearchRespTimeout time.Duration
+}
+
+type JobParameters struct {
+	Orchestrators JobOrchestratorsFilter `json:"orchestrators,omitempty"` //list of orchestrators to use for the job
+}
+
+type JobOrchestratorsFilter struct {
+	Exclude []string `json:"exclude,omitempty"`
+	Include []string `json:"include,omitempty"`
 }
 
 // worker registers to Orchestrator
@@ -284,8 +295,15 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 	jobReq.orchSearchTimeout = searchTimeout
 	jobReq.orchSearchRespTimeout = respTimeout
 
+	var params JobParameters
+	if err := json.Unmarshal([]byte(jobReq.Parameters), &params); err != nil {
+		clog.Errorf(ctx, "Unable to unmarshal job parameters err=%v", err)
+		http.Error(w, fmt.Sprintf("Unable to unmarshal job parameters err=%v", err), http.StatusBadRequest)
+		return
+	}
+
 	//get pool of Orchestrators that can do the job
-	orchs, err := getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, jobReq.orchSearchTimeout, jobReq.orchSearchRespTimeout)
+	orchs, err := getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, params, jobReq.orchSearchTimeout, jobReq.orchSearchRespTimeout)
 	if err != nil {
 		clog.Errorf(ctx, "Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err)
 		http.Error(w, fmt.Sprintf("Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err), http.StatusBadRequest)
@@ -364,7 +382,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		start := time.Now()
-		resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
+		resp, err := sendJobReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
 			continue
@@ -595,8 +613,9 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout)*time.Second)
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
-		//if the request failed with an error, remove the capability
-		if err != context.DeadlineExceeded && err != context.Canceled {
+		//if the request failed with connection error, remove the capability
+		//exclude deadline exceeded or context canceled errors does not indicate a fatal error all the time
+		if err != context.DeadlineExceeded && !strings.Contains(err.Error(), "context canceled") {
 			clog.Errorf(ctx, "removing capability %v due to error %v", jobReq.Capability, err.Error())
 			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
 		}
@@ -990,7 +1009,7 @@ func getOrchSearchTimeouts(ctx context.Context, searchTimeoutHdr, respTimeoutHdr
 	return timeout, respTimeout
 }
 
-func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capability string, timeout time.Duration, respTimeout time.Duration) ([]JobToken, error) {
+func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capability string, params JobParameters, timeout time.Duration, respTimeout time.Duration) ([]JobToken, error) {
 	orchs := node.OrchestratorPool.GetInfos()
 	gateway := node.OrchestratorPool.Broadcaster()
 
@@ -1018,7 +1037,7 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 			return
 		}
 
-		resp, err := sendReqWithTimeout(tokenReq, respTimeout)
+		resp, err := sendJobReqWithTimeout(tokenReq, respTimeout)
 		if err != nil {
 			clog.Errorf(ctx, "failed to get token from Orchestrator err=%v", err)
 			errCh <- err
@@ -1062,6 +1081,17 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	tokensCtx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), timeout)
 	// Shuffle and get job tokens
 	for _, i := range rand.Perm(len(orchs)) {
+		//do not send to excluded Orchestrators
+		if slices.Contains(params.Orchestrators.Exclude, orchs[i].URL.String()) {
+			numAvailableOrchs--
+			continue
+		}
+		//if include is set, only send to those Orchestrators
+		if len(params.Orchestrators.Include) > 0 && !slices.Contains(params.Orchestrators.Include, orchs[i].URL.String()) {
+			numAvailableOrchs--
+			continue
+		}
+
 		go getOrchJobToken(ctx, orchs[i].URL, *reqSender, 500*time.Millisecond, tokenCh, errCh)
 	}
 
