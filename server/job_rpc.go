@@ -197,7 +197,6 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 
 	if !orch.CheckExternalCapabilityCapacity(jobCapsHdr) {
 		//send response indicating no capacity available
-		glog.V(common.DEBUG).Infof("generate token failed, no capacity available remoteAddr=%v", remoteAddr)
 		w.WriteHeader(http.StatusServiceUnavailable)
 	} else {
 		senderAddr := ethcommon.HexToAddress(jobSenderAddr.Addr)

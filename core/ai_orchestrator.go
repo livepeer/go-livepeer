@@ -1150,7 +1150,6 @@ func (orch *orchestrator) GetUrlForCapability(extCapability string) string {
 
 func (orch *orchestrator) CheckExternalCapabilityCapacity(extCapability string) bool {
 	if cap, ok := orch.node.ExternalCapabilities.Capabilities[extCapability]; !ok {
-		glog.Infof("External capability %s not found", extCapability)
 		return false
 	} else {
 		if cap.Load < cap.Capacity {
