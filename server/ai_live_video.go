@@ -47,11 +47,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	}
 }
 
-func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
-	if !os.params.inputStreamExists() {
-		clog.Info(ctx, "No input stream, skipping orchestrator swap")
-		return false
-	}
+func (os *orchestratorSwapper) checkSwap(ctx context.Context) error {
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
@@ -61,19 +57,18 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	// Stop if too many swaps, because there may be something wrong with the input stream
 	if os.recentSwapsCount > maxRecentSwapsCount {
 		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
-		return false
+		return errors.New("Too many swaps")
 	}
 
 	os.lastSwapped = time.Now()
-	return true
+	return nil
 }
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 	publisher, err := trickle.NewTricklePublisher(url.String())
 	if err != nil {
-		clog.Infof(ctx, "error publishing trickle. err=%s", err)
-		params.liveParams.kickOrch()
+		stopProcessing(ctx, params, fmt.Errorf("trickle publish init err: %w", err))
 		return
 	}
 
@@ -107,7 +102,6 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				clog.Infof(ctx, "Error closing trickle publisher. err=%v", err)
 			}
 			cancel()
-			stopProcessing(ctx, params, errors.New("trickle publisher closed"))
 			return
 		}
 		thisSeq, atMax := slowOrchChecker.BeginSegment()
@@ -135,7 +129,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 			for {
 				select {
 				case <-ctx.Done():
-					stopProcessing(ctx, params, errors.New("stream processing is done"))
+					clog.Info(ctx, "trickle publish done")
 					return
 				default:
 				}
@@ -148,6 +142,9 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 					segment.Close()
 					return
 				}
+				params.liveParams.mu.Lock()
+				params.liveParams.lastSegmentTime = startTime
+				params.liveParams.mu.Unlock()
 				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
@@ -217,8 +214,17 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	// subscribe to the outputs and send them into LPMS
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	// subscribe to inference outputs and send them into the world
+
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("trickle subscription init failed: %w", err))
+		return
+	}
+
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 
 	// Set up output buffers and ffmpeg processes
@@ -226,6 +232,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	outWriter, err := media.NewRingBuffer(&rbc)
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
+		return
 	}
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
@@ -247,7 +254,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		for {
 			select {
 			case <-ctx.Done():
-				stopProcessing(ctx, params, errors.New("trickle subscribe stopping, context done"))
+				clog.Info(ctx, "trickle subscribe done")
 				return
 			default:
 			}
@@ -283,12 +290,31 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			retries = 0
 			seq := trickle.GetSeq(segment)
 			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
+			copyStartTime := time.Now()
 
 			n, err := copySegment(ctx, segment, outWriter, seq, params)
 			if err != nil {
-				suspendOrchestrator(ctx, params)
-				stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error copying: %w", err))
-				return
+				if errors.Is(err, context.Canceled) {
+					clog.Info(ctx, "trickle subscribe stopping - context canceled")
+					return
+				}
+				// Check whether the client has sent data recently.
+				// TODO ensure the threshold is some multiple of LIVE_AI_MIN_SEG_DUR
+				params.liveParams.mu.Lock()
+				lastSegmentTime := params.liveParams.lastSegmentTime
+				params.liveParams.mu.Unlock()
+				segmentAge := time.Since(lastSegmentTime)
+				maxSegmentDelay := params.liveParams.outSegmentTimeout / 2
+				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
+					// we have some recent input but no output from orch, so kick
+					suspendOrchestrator(ctx, params)
+					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error, swapping: %w", err))
+					return
+				}
+				clog.InfofErr(ctx, "trickle subscribe error copying segment seq=%d", seq, err)
+				subscriber.SetSeq(seq)
+				retries++
+				continue
 			}
 			if firstSegment {
 				firstSegment = false
@@ -326,7 +352,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				})
 
 			}
-			clog.V(8).Infof(ctx, "trickle subscribe read data completed seq=%d bytes=%s", seq, humanize.Bytes(uint64(n)))
+			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
 }
@@ -344,8 +370,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			if !ok {
 				err = errors.New("unknown error")
 			}
-			clog.Errorf(ctx, "LPMS panic err=%v", err)
-			params.liveParams.kickOrch()
+			stopProcessing(ctx, params, fmt.Errorf("ffmpeg panic: %w", err))
 		}
 	}()
 	for {
@@ -355,10 +380,16 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			break
 		}
 
+		// we receive opus by default, but re-encode to AAC for non-local outputs
+		acodec := "copy"
+		if !strings.Contains(outputUrl, params.liveParams.localRTMPPrefix) {
+			acodec = "libfdk_aac"
+		}
+
 		cmd := exec.CommandContext(ctx, "ffmpeg",
 			"-analyzeduration", "2500000", // 2.5 seconds
 			"-i", "pipe:0",
-			"-c:a", "copy",
+			"-c:a", acodec,
 			"-c:v", "copy",
 			"-f", "flv",
 			outputUrl,
@@ -414,6 +445,7 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 
 	select {
 	case <-ctx.Done():
+		// NB: if the orch context is cancelled, it isn't really a timeout
 		return 0, fmt.Errorf("copy operation timed out: %w", ctx.Err())
 	case res := <-resultChan:
 		return res.n, res.err
@@ -424,7 +456,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
 	if err != nil {
-		clog.InfofErr(ctx, "error starting control publisher", err)
 		stopProcessing(ctx, params, fmt.Errorf("error starting control publisher, err=%w", err))
 		return
 	}
@@ -459,7 +490,6 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {
-		defer params.liveParams.kickOrch()
 		for {
 			select {
 			case <-ticker.C:
@@ -468,6 +498,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 				if err == trickle.StreamNotFoundErr {
 					// the channel doesn't exist anymore, so stop
 					stop()
+					stopProcessing(ctx, params, errors.New("control channel does not exist"))
 					continue // loop back to consume the `done` chan
 				}
 				// if there was another type of error, we'll just retry anyway
@@ -483,7 +514,14 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 const clearStreamDelay = 1 * time.Minute
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
+		return
+	}
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
 
@@ -515,6 +553,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 		for {
 			select {
 			case <-ctx.Done():
+				clog.Info(ctx, "event subscription done")
 				return
 			default:
 			}
@@ -657,9 +696,8 @@ func (a aiRequestParams) inputStreamExists() bool {
 }
 
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
-	clog.Infof(ctx, "Stopping processing, err=%v", err)
-	params.liveParams.sendErrorEvent(err)
-	params.liveParams.kickOrch()
+	clog.InfofErr(ctx, "Stopping processing", err)
+	params.liveParams.kickOrch(err)
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments

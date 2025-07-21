@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/livepeer/go-livepeer/ai/worker"
@@ -95,7 +96,6 @@ type aiRequestParams struct {
 // For live video pipelines
 type liveRequestParams struct {
 	segmentReader *media.SwitchableSegmentReader
-	rtmpOutputs   []string
 	stream        string
 	requestID     string
 	streamID      string
@@ -107,10 +107,15 @@ type liveRequestParams struct {
 	paymentProcessInterval time.Duration
 	outSegmentTimeout      time.Duration
 
+	// list of RTMP output destinations
+	rtmpOutputs []string
+	// prefix to identify local (MediaMTX) RTMP hosts
+	localRTMPPrefix string
+
 	// Stops the pipeline with an error. Also kicks the input
 	kickInput func(error)
 	// Cancels the execution for the given Orchestrator session
-	kickOrch context.CancelFunc
+	kickOrch context.CancelCauseFunc
 
 	// Report an error event
 	sendErrorEvent func(error)
@@ -120,6 +125,12 @@ type liveRequestParams struct {
 	startTime time.Time
 	// sess is passed from the orchestrator selection, ugly hack
 	sess *AISession
+
+	// Everything below needs to be protected by `mu` for concurrent modification + access
+	mu sync.Mutex
+
+	// when the write for the last segment started
+	lastSegmentTime time.Time
 }
 
 // CalculateTextToImageLatencyScore computes the time taken per pixel for an text-to-image request.
@@ -1446,7 +1457,9 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		return nil, fmt.Errorf("unsupported request type %T", req)
 	}
 	capName := cap.String()
-	ctx = clog.AddVal(ctx, "capability", capName)
+	if capName != "Live video to video" {
+		ctx = clog.AddVal(ctx, "capability", capName)
+	}
 	ctx = clog.AddVal(ctx, "model_id", modelID)
 
 	clog.V(common.VERBOSE).Infof(ctx, "Received AI request model_id=%s", modelID)
