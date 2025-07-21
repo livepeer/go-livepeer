@@ -42,8 +42,14 @@ if [ "$DOCKER" = "false" ]; then
     -liveAITrickleHostForRunner "$DOCKER_HOSTNAME:8935" \
     -monitor
 else
+  GPU_FLAG=""
+  if [[ "$NVIDIA" != "" ]]; then
+    GPU_FLAG="--gpus all"
+  fi
+
   docker run --rm --name orchestrator \
     --network host \
+    ${GPU_FLAG} \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v ./box/aiModels-${PIPELINE}.json:/opt/aiModels.json \
   livepeer/go-livepeer \
@@ -53,6 +59,7 @@ else
     -aiRunnerContainersPerGPU ${AI_RUNNER_CONTAINERS_PER_GPU} \
     ${VERBOSE_FLAG} \
     ${AI_MODELS_DIR_FLAG} \
+    ${NVIDIA} \
     -serviceAddr 127.0.0.1:8935 \
     -transcoder \
     -v 6 \
