@@ -20,14 +20,17 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
+	"github.com/golang/protobuf/proto"
 	"github.com/livepeer/go-livepeer/ai/worker"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
 
 	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/lpms/stream"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 type mockJobOrchestrator struct {
@@ -900,6 +903,100 @@ func TestSubmitJob_MethodNotAllowed(t *testing.T) {
 
 	resp := w.Result()
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+}
+
+func TestCreatePayment(t *testing.T) {
+	ctx := context.TODO()
+	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
+	mockSender := pm.MockSender{}
+	mockSender.On("StartSession", mock.Anything).Return("foo").Times(4)
+	node.Sender = &mockSender
+
+	node.Balances = core.NewAddressBalances(10)
+	defer node.Balances.StopCleanup()
+
+	jobReq := JobRequest{
+		Capability: "test-payment-cap",
+	}
+	sender := JobSender{
+		Addr: "0x1111111111111111111111111111111111111111",
+		Sig:  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	}
+
+	orchTocken := JobToken{
+		TicketParams: &net.TicketParams{
+			Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
+			FaceValue:         big.NewInt(1000).Bytes(),
+			WinProb:           big.NewInt(1).Bytes(),
+			RecipientRandHash: []byte("hash"),
+			Seed:              big.NewInt(1234).Bytes(),
+			ExpirationBlock:   big.NewInt(100000).Bytes(),
+		},
+		SenderAddress: &sender,
+		Balance:       0,
+		Price: &net.PriceInfo{
+			PricePerUnit:  10,
+			PixelsPerUnit: 1,
+		},
+	}
+
+	var pmTickets net.Payment
+
+	//payment with one ticket
+	jobReq.Timeout = 1
+	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
+	payment, err := createPayment(ctx, &jobReq, orchTocken, node)
+	assert.Nil(t, err)
+	pmPayment, err := base64.StdEncoding.DecodeString(payment)
+	assert.Nil(t, err)
+	err = proto.Unmarshal(pmPayment, &pmTickets)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(pmTickets.TicketSenderParams))
+
+	//test 2 tickets
+	jobReq.Timeout = 2
+	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
+	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	assert.Nil(t, err)
+	pmPayment, err = base64.StdEncoding.DecodeString(payment)
+	assert.Nil(t, err)
+	err = proto.Unmarshal(pmPayment, &pmTickets)
+	assert.Nil(t, err)
+	assert.Equal(t, 2, len(pmTickets.TicketSenderParams))
+
+	//test 600 tickets
+	jobReq.Timeout = 600
+	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
+	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	assert.Nil(t, err)
+	pmPayment, err = base64.StdEncoding.DecodeString(payment)
+	assert.Nil(t, err)
+	err = proto.Unmarshal(pmPayment, &pmTickets)
+	assert.Nil(t, err)
+	assert.Equal(t, 600, len(pmTickets.TicketSenderParams))
+}
+
+func mockTicketBatch(count int) *pm.TicketBatch {
+	senderParams := make([]*pm.TicketSenderParams, count)
+	for i := 0; i < count; i++ {
+		senderParams[i] = &pm.TicketSenderParams{
+			SenderNonce: uint32(i + 1),
+			Sig:         pm.RandBytes(42),
+		}
+	}
+
+	return &pm.TicketBatch{
+		TicketParams: &pm.TicketParams{
+			Recipient:       pm.RandAddress(),
+			FaceValue:       big.NewInt(1234),
+			WinProb:         big.NewInt(5678),
+			Seed:            big.NewInt(7777),
+			ExpirationBlock: big.NewInt(1000),
+		},
+		TicketExpirationParams: &pm.TicketExpirationParams{},
+		Sender:                 pm.RandAddress(),
+		SenderParams:           senderParams,
+	}
 }
 
 func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
