@@ -997,6 +997,7 @@ func mockTicketBatch(count int) *pm.TicketBatch {
 		Sender:                 pm.RandAddress(),
 		SenderParams:           senderParams,
 	}
+}
 
 func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
 	// Create mock HTTP servers for orchestrators
