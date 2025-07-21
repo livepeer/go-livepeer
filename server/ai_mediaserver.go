@@ -114,6 +114,19 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	return nil
 }
 
+func generateGatewayLiveURL(hostname, stream, pathSuffix string) string {
+	return fmt.Sprintf("https://%s/live/video-to-video/%s/%s", hostname, stream, pathSuffix)
+}
+
+func generateWhepUrl(streamName, requestID string) string {
+	whepURL := os.Getenv("LIVE_AI_WHEP_URL")
+	if whepURL == "" {
+		whepURL = "http://localhost:8889/" // default mediamtx output
+	}
+	whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+	return whepURL
+}
+
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
@@ -487,12 +500,16 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
+		whepURL := generateWhepUrl(streamName, requestID)
 		if LiveAIAuthWebhookURL != nil {
 			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
 				GatewayHost: ls.LivepeerNode.GatewayHost,
+				WhepURL:     whepURL,
+				UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+				StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 			})
 			if err != nil {
 				kickErr := mediaMTXClient.KickInputConnection(ctx)
@@ -548,6 +565,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Clear any previous gateway status
 		GatewayStatus.Clear(streamID)
+		GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 			"type":        "gateway_receive_stream_request",
@@ -602,6 +620,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
 				rtmpOutputs:            rtmpOutputs,
+				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
 				paymentProcessInterval: ls.livePaymentInterval,
 				outSegmentTimeout:      ls.outSegmentTimeout,
@@ -614,10 +633,14 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		// Create a special parent context for orchestrator cancellation
+		orchCtx, orchCancel := context.WithCancel(ctx)
+
 		// Kick off the RTMP pull and segmentation as soon as possible
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			ms.RunSegmentation(segmenterCtx, mediaMTXInputURL, ssr.Read)
+			sendErrorEvent(errors.New("mediamtx ingest disconnected"))
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_ingest_stream_closed",
 				"timestamp":   time.Now().UnixMilli(),
@@ -632,6 +655,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			ssr.Close()
 			<-orchSelection // wait for selection to complete
 			cleanupControl(ctx, params)
+			orchCancel()
 		}()
 
 		req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -640,7 +664,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			GatewayRequestId: &requestID,
 			StreamId:         &streamID,
 		}
-		processStream(ctx, params, req)
+		processStream(orchCtx, params, req)
 		close(orchSelection)
 	})
 }
@@ -651,19 +675,19 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 	go func() {
 		var err error
 		for {
-			perOrchCtx, perOrchCancel := context.WithCancel(ctx)
+			perOrchCtx, perOrchCancel := context.WithCancelCause(ctx)
 			params.liveParams = newParams(params.liveParams, perOrchCancel)
 			var resp interface{}
 			resp, err = processAIRequest(perOrchCtx, params, req)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing AI Request: %s", err)
-				perOrchCancel()
+				perOrchCancel(err)
 				break
 			}
 
 			if err = startProcessing(perOrchCtx, params, resp); err != nil {
 				clog.Errorf(ctx, "Error starting processing: %s", err)
-				perOrchCancel()
+				perOrchCancel(err)
 				break
 			}
 			if isFirst {
@@ -671,24 +695,42 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				firstProcessed <- struct{}{}
 			}
 			<-perOrchCtx.Done()
-			if !orchSwapper.shouldSwap(ctx) {
+			err = context.Cause(perOrchCtx)
+			if errors.Is(err, context.Canceled) {
+				// this happens if parent ctx was cancelled without a CancelCause
+				// or if passing `nil` as a CancelCause
+				err = nil
+			}
+			if !params.inputStreamExists() {
+				clog.Info(ctx, "No input stream, skipping orchestrator swap")
 				break
 			}
-			// Temporarily disable Orch Swapping, because of the following issues:
-			// 1. Frontend Playback refresh, fixed here: https://github.com/livepeer/ui-kit/pull/617
-			// 2. Suspension happening too many times, discussed here: https://github.com/livepeer/go-livepeer/pull/3614
-			clog.Infof(ctx, "[Temp Disabled] Retrying stream with a different orchestrator")
-			break
+			if swapErr := orchSwapper.checkSwap(ctx); swapErr != nil {
+				if err != nil {
+					err = fmt.Errorf("%w: %w", swapErr, err)
+				} else {
+					err = swapErr
+				}
+				break
+			}
+			clog.Infof(ctx, "Retrying stream with a different orchestrator")
+
+			// will swap, but first notify with the reason for the swap
+			if err == nil {
+				err = errors.New("unknown swap reason")
+			}
+			params.liveParams.sendErrorEvent(err)
 		}
 		params.liveParams.kickInput(err)
 	}()
 	<-firstProcessed
 }
 
-func newParams(params *liveRequestParams, cancelOrch context.CancelFunc) *liveRequestParams {
+func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
 		rtmpOutputs:            params.rtmpOutputs,
+		localRTMPPrefix:        params.localRTMPPrefix,
 		stream:                 params.stream,
 		paymentProcessInterval: params.paymentProcessInterval,
 		outSegmentTimeout:      params.outSegmentTimeout,
@@ -863,12 +905,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 		ssr := media.NewSwitchableSegmentReader()
 
 		whipConn := media.NewWHIPConnection()
-
-		whepURL := os.Getenv("LIVE_AI_WHEP_URL")
-		if whepURL == "" {
-			whepURL = "http://localhost:8889/" // default mediamtx output
-		}
-		whepURL = fmt.Sprintf("%s%s-%s-out/whep", whepURL, streamName, requestID)
+		whepURL := generateWhepUrl(streamName, requestID)
 
 		go func() {
 			internalOutputHost := os.Getenv("LIVE_AI_PLAYBACK_HOST") // TODO proper cli arg
@@ -877,15 +914,22 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			}
 			mediamtxOutputURL := internalOutputHost + streamName + "-out"
 			mediaMTXOutputAlias := fmt.Sprintf("%s%s-%s-out", internalOutputHost, streamName, requestID)
-			outputURL := ""
-			streamID := ""
+			outputURL := r.URL.Query().Get("rtmpOutput")
+			streamID := r.URL.Query().Get("streamId")
 			pipelineID := ""
-			pipeline := ""
+			pipeline := r.URL.Query().Get("pipeline")
 			pipelineParams := make(map[string]interface{})
 			sourceTypeStr := "livepeer-whip"
 			queryParams := r.URL.Query().Encode()
 			orchestrator := r.URL.Query().Get("orchestrator")
-
+			rawParams := r.URL.Query().Get("params")
+			if rawParams != "" {
+				if err := json.Unmarshal([]byte(rawParams), &pipelineParams); err != nil {
+					clog.Errorf(ctx, "Invalid pipeline params: %s", err)
+					http.Error(w, "Invalid pipeline params", http.StatusBadRequest)
+					return
+				}
+			}
 			// collect RTMP outputs
 			var rtmpOutputs []string
 
@@ -897,6 +941,9 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
 					GatewayHost: ls.LivepeerNode.GatewayHost,
+					WhepURL:     whepURL,
+					UpdateURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamName, "/update"),
+					StatusURL:   generateGatewayLiveURL(ls.LivepeerNode.GatewayHost, streamID, "/status"),
 				})
 				if err != nil {
 					whipConn.Close()
@@ -950,6 +997,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			// Clear any previous gateway status
 			GatewayStatus.Clear(streamID)
+			GatewayStatus.StoreKey(streamID, "whep_url", whepURL)
 
 			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 				"type":        "gateway_receive_stream_request",
@@ -1007,6 +1055,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
 					rtmpOutputs:            rtmpOutputs,
+					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
 					paymentProcessInterval: ls.livePaymentInterval,
 					outSegmentTimeout:      ls.outSegmentTimeout,
@@ -1027,7 +1076,10 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				StreamId:         &streamID,
 			}
 
-			processStream(ctx, params, req)
+			// Create a special parent context for orchestrator cancellation
+			orchCtx, orchCancel := context.WithCancel(ctx)
+
+			processStream(orchCtx, params, req)
 
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
@@ -1036,6 +1088,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 			whipConn.AwaitClose()
 			cleanupControl(ctx, params)
 			ssr.Close()
+			orchCancel()
 			clog.Info(ctx, "Live cleaned up")
 		}()
 
@@ -1094,7 +1147,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	node := params.node
 	node.LiveMu.Lock()
 	pub, ok := node.LivePipelines[stream]
-	if !ok {
+	if !ok || pub.RequestID != params.liveParams.requestID {
 		// already cleaned up
 		node.LiveMu.Unlock()
 		return
@@ -1106,7 +1159,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 	node.LiveMu.Unlock()
 
-	if pub != nil && pub.ControlPub != nil && pub.RequestID == params.liveParams.requestID {
+	if pub.ControlPub != nil {
 		if err := pub.ControlPub.Close(); err != nil {
 			slog.Info("Error closing trickle publisher", "err", err)
 		}
