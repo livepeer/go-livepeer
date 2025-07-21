@@ -115,7 +115,7 @@ type liveRequestParams struct {
 	// Stops the pipeline with an error. Also kicks the input
 	kickInput func(error)
 	// Cancels the execution for the given Orchestrator session
-	kickOrch context.CancelFunc
+	kickOrch context.CancelCauseFunc
 
 	// Report an error event
 	sendErrorEvent func(error)

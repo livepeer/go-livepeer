@@ -493,7 +493,7 @@ func getRequestURL(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s/%s", scheme, r.Host, r.URL.Path)
+	return fmt.Sprintf("%s://%s%s", scheme, r.Host, r.URL.Path)
 }
 
 // split h264 nalus

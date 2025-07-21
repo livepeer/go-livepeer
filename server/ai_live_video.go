@@ -47,7 +47,7 @@ func NewOrchestratorSwapper(params aiRequestParams) *orchestratorSwapper {
 	}
 }
 
-func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
+func (os *orchestratorSwapper) checkSwap(ctx context.Context) error {
 	// Measure how many swaps have been done recently to avoid to many swaps in a short time
 	if time.Since(os.lastSwapped) < recentSwapInterval {
 		os.recentSwapsCount++
@@ -57,11 +57,11 @@ func (os *orchestratorSwapper) shouldSwap(ctx context.Context) bool {
 	// Stop if too many swaps, because there may be something wrong with the input stream
 	if os.recentSwapsCount > maxRecentSwapsCount {
 		clog.Infof(ctx, "Too many swaps, skipping orchestrator swap, recentSwapsCount=%d, maxRecentSwapsCount=%d", os.recentSwapsCount, maxRecentSwapsCount)
-		return false
+		return errors.New("Too many swaps")
 	}
 
 	os.lastSwapped = time.Now()
-	return true
+	return nil
 }
 
 func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
@@ -214,8 +214,17 @@ func suspendOrchestrator(ctx context.Context, params aiRequestParams) {
 }
 
 func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	// subscribe to the outputs and send them into LPMS
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	// subscribe to inference outputs and send them into the world
+
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("trickle subscription init failed: %w", err))
+		return
+	}
+
 	ctx = clog.AddVal(ctx, "url", url.Redacted())
 
 	// Set up output buffers and ffmpeg processes
@@ -299,7 +308,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				if segmentAge < maxSegmentDelay && params.inputStreamExists() {
 					// we have some recent input but no output from orch, so kick
 					suspendOrchestrator(ctx, params)
-					stopProcessing(ctx, params, fmt.Errorf("trickle subscrbe error, swapping: %w", err))
+					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error, swapping: %w", err))
 					return
 				}
 				clog.InfofErr(ctx, "trickle subscribe error copying segment seq=%d", seq, err)
@@ -505,7 +514,14 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 const clearStreamDelay = 1 * time.Minute
 
 func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		stopProcessing(ctx, params, fmt.Errorf("event sub init failed: %w", err))
+		return
+	}
 	stream := params.liveParams.stream
 	streamId := params.liveParams.streamID
 
@@ -681,8 +697,7 @@ func (a aiRequestParams) inputStreamExists() bool {
 
 func stopProcessing(ctx context.Context, params aiRequestParams, err error) {
 	clog.InfofErr(ctx, "Stopping processing", err)
-	params.liveParams.sendErrorEvent(err)
-	params.liveParams.kickOrch()
+	params.liveParams.kickOrch(err)
 }
 
 // Detect 'slow' orchs by keeping track of in-flight segments
