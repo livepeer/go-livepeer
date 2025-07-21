@@ -452,6 +452,24 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 	}
 }
 
+func registerControl(ctx context.Context, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+
+	stream := params.liveParams.stream
+	if sess, exists := params.node.LivePipelines[stream]; exists && sess.ControlPub != nil {
+		if sess.ControlPub != nil {
+			clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
+			sess.ControlPub.Close()
+			// TODO better solution than allowing existing streams to stomp over one another
+		}
+	}
+
+	params.node.LivePipelines[stream] = &core.LivePipeline{
+		RequestID: params.liveParams.requestID,
+	}
+}
+
 func startControlPublish(ctx context.Context, control *url.URL, params aiRequestParams) {
 	stream := params.liveParams.stream
 	controlPub, err := trickle.NewTricklePublisher(control.String())
@@ -472,21 +490,39 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
-	if control, exists := params.node.LivePipelines[stream]; exists {
-		clog.Info(ctx, "Stopping existing control loop", "existing_request_id", control.RequestID)
-		control.ControlPub.Close()
-		// TODO better solution than allowing existing streams to stomp over one another
+	sess, exists := params.node.LivePipelines[stream]
+	if !exists || sess.RequestID != params.liveParams.requestID {
+		stopProcessing(ctx, params, fmt.Errorf("control session did not exist"))
+		return
 	}
+	if sess.ControlPub != nil {
+		// clean up from existing orchestrator
+		go sess.ControlPub.Close()
+	}
+	sess.ControlPub = controlPub
+	sess.StopControl = stop
 
-	params.node.LivePipelines[stream] = &core.LivePipeline{
-		ControlPub:  controlPub,
-		StopControl: stop,
-		RequestID:   params.liveParams.requestID,
-	}
 	if monitor.Enabled {
 		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
 		logCurrentLiveSessions(params.node.LivePipelines)
 	}
+
+	// Send any cached control params in a goroutine outside the lock.
+	msg := sess.Params
+	go func() {
+		if msg == "" {
+			return
+		}
+		var err error
+		for i := 0; i < 3; i++ {
+			err = controlPub.Write(strings.NewReader(msg))
+			if err == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		stopProcessing(ctx, params, fmt.Errorf("control write failed: %w", err))
+	}()
 
 	// send a keepalive periodically to keep both ends of the connection alive
 	go func() {

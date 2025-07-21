@@ -633,6 +633,8 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		registerControl(ctx, params)
+
 		// Create a special parent context for orchestrator cancellation
 		orchCtx, orchCancel := context.WithCancel(ctx)
 
@@ -720,6 +722,10 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 				err = errors.New("unknown swap reason")
 			}
 			params.liveParams.sendErrorEvent(err)
+		}
+		if isFirst {
+			// failed before selecting an orchestrator
+			firstProcessed <- struct{}{}
 		}
 		params.liveParams.kickInput(err)
 	}()
@@ -820,22 +826,36 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 		ls.LivepeerNode.LiveMu.RLock()
-		defer ls.LivepeerNode.LiveMu.RUnlock()
+		// NB: LiveMu is a global lock, avoid holding it
+		// during blocking network actions ... can't defer
 		p, ok := ls.LivepeerNode.LivePipelines[stream]
+		ls.LivepeerNode.LiveMu.RUnlock()
 		if !ok {
 			// Stream not found
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
-		defer r.Body.Close()
-		params, err := io.ReadAll(r.Body)
+		reader := http.MaxBytesReader(w, r.Body, 1*1024*104) // 1 MB
+		defer reader.Close()
+		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, string(params))
-		if err := p.ControlPub.Write(strings.NewReader(string(params))); err != nil {
+		params := string(data)
+		ls.LivepeerNode.LiveMu.Lock()
+		p.Params = params
+		controlPub := p.ControlPub
+		ls.LivepeerNode.LiveMu.Unlock()
+
+		if controlPub == nil {
+			clog.Info(ctx, "No orchestrator available, caching params", "stream", stream, "params", params)
+			return
+		}
+
+		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, params)
+		if err := controlPub.Write(strings.NewReader(params)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1068,6 +1088,8 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					orchestrator:           orchestrator,
 				},
 			}
+
+			registerControl(ctx, params)
 
 			req := worker.GenLiveVideoToVideoJSONRequestBody{
 				ModelId:          &pipeline,
