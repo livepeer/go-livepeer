@@ -762,7 +762,14 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 
 func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
 	// subscribe to the outputs and send them into LPMS
-	subscriber := trickle.NewTrickleSubscriber(url.String())
+	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
+		URL: url.String(),
+		Ctx: ctx,
+	})
+	if err != nil {
+		clog.Infof(ctx, "Failed to create trickle subscriber: %s", err)
+		return
+	}
 
 	// Set up output buffers
 	rbc := media.RingBufferConfig{BufferLen: 50_000_000} // 50 MB buffer
