@@ -145,7 +145,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			subUrl     = pubUrl + "-out"
 			controlUrl = pubUrl + "-control"
 			eventsUrl  = pubUrl + "-events"
-			//dataUrl    = pubUrl + "-data"
+			dataUrl    = pubUrl + "-data"
 		)
 
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
@@ -234,7 +234,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
 		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
-		//dataUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
+		dataUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
 
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:          req.ModelId,
@@ -242,6 +242,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl:     subscribeUrlOverwrite,
 			EventsUrl:        &eventsUrlOverwrite,
 			ControlUrl:       &controlUrlOverwrite,
+			DataUrl:          &dataUrlOverwrite,
 			Params:           req.Params,
 			GatewayRequestId: &gatewayRequestID,
 			ManifestId:       &mid,
