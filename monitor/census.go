@@ -2028,8 +2028,12 @@ func AIGPUsIdle(currentGPUsIdle int) {
 	stats.Record(census.ctx, census.mAIGPUsIdle.M(int64(currentGPUsIdle)))
 }
 
-func AICurrentLiveSessions(currentPipelines int) {
-	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(currentPipelines)))
+func AICurrentLiveSessions(currentPipelines int, pipeline string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline)},
+		census.mAICurrentLivePipelines.M(int64(currentPipelines))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 func AIWhipTransportBytesReceived(bytes int64) {

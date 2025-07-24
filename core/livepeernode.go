@@ -171,6 +171,7 @@ type LivepeerNode struct {
 type LivePipeline struct {
 	RequestID   string
 	Params      string
+	Pipeline    string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
 }

@@ -1176,8 +1176,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 	delete(node.LivePipelines, stream)
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(node.LivePipelines))
-		logCurrentLiveSessions(node.LivePipelines)
+		monitorCurrentLiveSessions(node.LivePipelines)
 	}
 	node.LiveMu.Unlock()
 
@@ -1189,11 +1188,15 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 	}
 }
 
-func logCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+func monitorCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
+	countByPipeline := make(map[string]int)
 	var streams []string
-	for k := range pipelines {
+	for k, v := range pipelines {
+		countByPipeline[v.Pipeline] = countByPipeline[v.Pipeline] + 1
 		streams = append(streams, k)
 	}
+	monitor.AICurrentLiveSessions(countByPipeline["comfyui"], "comfyui")
+	monitor.AICurrentLiveSessions(countByPipeline["streamdiffusion"], "streamdiffusion")
 	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
 }
 
