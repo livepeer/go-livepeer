@@ -862,7 +862,6 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		}
 
 		corsHeaders(w, r.Method)
-		w.WriteHeader(http.StatusOK)
 	})
 }
 
