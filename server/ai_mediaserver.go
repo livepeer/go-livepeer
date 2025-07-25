@@ -1214,7 +1214,7 @@ func corsHeaders(w http.ResponseWriter, reqMethod string) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	if reqMethod == http.MethodOptions {
-		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST")
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST, GET")
 		// Allows us send down a preferred STUN server without ICE restart
 		// https://datatracker.ietf.org/doc/html/draft-ietf-wish-whip-16#section-4.6
 		w.Header()["Link"] = media.GenICELinkHeaders(media.WebrtcConfig.ICEServers)
