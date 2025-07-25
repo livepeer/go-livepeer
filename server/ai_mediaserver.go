@@ -861,7 +861,7 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			return
 		}
 
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		corsHeaders(w, r.Method)
 		w.WriteHeader(http.StatusOK)
 	})
 }
