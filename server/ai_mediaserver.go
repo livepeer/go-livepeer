@@ -1195,8 +1195,7 @@ func monitorCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
 		countByPipeline[v.Pipeline] = countByPipeline[v.Pipeline] + 1
 		streams = append(streams, k)
 	}
-	monitor.AICurrentLiveSessions(countByPipeline["comfyui"], "comfyui")
-	monitor.AICurrentLiveSessions(countByPipeline["streamdiffusion"], "streamdiffusion")
+	monitor.AICurrentLiveSessions(countByPipeline)
 	clog.V(common.DEBUG).Infof(context.Background(), "Streams currently live (total=%d): %v", len(pipelines), streams)
 }
 
