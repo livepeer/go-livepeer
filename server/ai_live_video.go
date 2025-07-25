@@ -467,6 +467,7 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
+		Pipeline:  params.liveParams.pipeline,
 	}
 }
 
@@ -503,8 +504,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	sess.StopControl = stop
 
 	if monitor.Enabled {
-		monitor.AICurrentLiveSessions(len(params.node.LivePipelines))
-		logCurrentLiveSessions(params.node.LivePipelines)
+		monitorCurrentLiveSessions(params.node.LivePipelines)
 	}
 
 	// Send any cached control params in a goroutine outside the lock.
