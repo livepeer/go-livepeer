@@ -775,7 +775,7 @@ func TestDBUnbondingLocks(t *testing.T) {
 		return
 	}
 	if len(unbondingLocks) != 2 {
-		t.Error("Unxpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
+		t.Error("Unexpected number of unbonding locks after deletion; expected 2, got", len(unbondingLocks))
 		return
 	}
 
