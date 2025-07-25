@@ -871,8 +871,9 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 // @Router /live/video-to-video/{stream}/status [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodOptions {
-			corsHeaders(w, r.Method)
+
+		corsHeaders(w, r.Method)
+		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
