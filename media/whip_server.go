@@ -597,7 +597,7 @@ func getUDPListenerAddr() (*net.UDPAddr, error) {
 }
 
 func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
-	// Taken from Pion default codecs, but limited to to Opus and H.264
+	// Taken from Pion default codecs, but limited to Opus and H.264
 
 	m := &webrtc.MediaEngine{}
 

@@ -671,7 +671,7 @@ func TestPush_SetVideoProfileFormats(t *testing.T) {
 	hookCalled := 0
 	// Sanity check that default profile with webhook is copied
 	// Checking since there is special handling for the default set of profiles
-	// within the webhook hander.
+	// within the webhook handler.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := authWebhookResponse{ManifestID: "intweb"}
 		val, err := json.Marshal(auth)
