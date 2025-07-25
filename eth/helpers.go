@@ -79,7 +79,7 @@ func fromPerc(perc float64, multiplier *big.Float) *big.Int {
 }
 
 func ToBaseAmount(v string, maxDecimals int) (*big.Int, error) {
-	// check that string is a float represented as a string with "." as seperator
+	// check that string is a float represented as a string with "." as separator
 	ok, err := regexp.MatchString("^[-+]?[0-9]*.?[0-9]+$", v)
 	if !ok || err != nil {
 		return nil, fmt.Errorf("submitted value %v is not a valid float", v)

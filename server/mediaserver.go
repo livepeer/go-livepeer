@@ -1226,7 +1226,7 @@ func (s *LivepeerServer) streamMP4(w http.ResponseWriter, r *http.Request, jpl *
 			Profile: ffmpeg.VideoProfile{Format: ffmpeg.FormatNone},
 			Muxer: ffmpeg.ComponentOptions{
 				Name: "mp4",
-				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generatd file)
+				// main option is 'frag_keyframe' which tells ffmpeg to create fragmented MP4 (which we need to be able to stream generated file)
 				// other options is not mandatory but they will slightly improve generated MP4 file
 				Opts: map[string]string{"movflags": "frag_keyframe+negative_cts_offsets+omit_tfhd_offset+disable_chpl+default_base_moof"},
 			},
