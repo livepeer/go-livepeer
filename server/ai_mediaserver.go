@@ -106,6 +106,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	}
 
 	// Stream status
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
 	//API for dynamic capabilities
@@ -873,10 +874,6 @@ func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		corsHeaders(w, r.Method)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 
 		streamId := r.PathValue("streamId")
 		if streamId == "" {
