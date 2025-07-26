@@ -16,12 +16,6 @@ import (
 	"github.com/golang/glog"
 )
 
-// maxBlocksInGetLogsQuery is the max number of blocks to fetch logs for in a single query. There is
-// a hard limit of 10,000 logs returned by a single `eth_getLogs` query by Infura's Ethereum nodes so
-// we need to try and stay below it. Parity, Geth and Alchemy all have much higher limits (if any) on
-// the number of logs returned so Infura is by far the limiting factor.
-var maxBlocksInGetLogsQuery = 1000
-
 // EventType describes the types of events emitted by blockwatch.Watcher. A block can be discovered
 // and added to our representation of the chain. During a block re-org, a block previously stored
 // can be removed from the list.
@@ -46,6 +40,7 @@ type Config struct {
 	PollingInterval     time.Duration
 	StartBlockDepth     rpc.BlockNumber
 	BlockRetentionLimit int
+	BlockBatchSize      int
 	WithLogs            bool
 	Topics              []common.Hash
 	Client              Client
@@ -56,6 +51,7 @@ type Config struct {
 // block height, and will emit both block added and removed events.
 type Watcher struct {
 	blockRetentionLimit int
+	blockBatchSize      int
 	startBlockDepth     rpc.BlockNumber
 	stack               *Stack
 	client              Client
@@ -76,6 +72,7 @@ func New(config Config) *Watcher {
 	bs := &Watcher{
 		pollingInterval:     config.PollingInterval,
 		blockRetentionLimit: config.BlockRetentionLimit,
+		blockBatchSize:      config.BlockBatchSize,
 		startBlockDepth:     config.StartBlockDepth,
 		stack:               stack,
 		client:              config.Client,
@@ -311,7 +308,7 @@ const getLogsRequestChunkSize = 3
 // batch requests are not sent. Instead, it returns all the logs it found up until the error was
 // encountered, along with the block number after which no further logs were retrieved.
 func (w *Watcher) getLogsInBlockRange(ctx context.Context, from, to int) ([]types.Log, int) {
-	blockRanges := w.getSubBlockRanges(from, to, maxBlocksInGetLogsQuery)
+	blockRanges := w.getSubBlockRanges(from, to, w.blockBatchSize)
 
 	numChunks := 0
 	chunkChan := make(chan []*blockRange, 1000000)
