@@ -93,6 +93,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{prefix}/{stream}/start", ls.StartLiveVideo())
 	ls.HTTPMux.Handle("POST /live/video-to-video/{stream}/update", ls.UpdateLiveVideo())
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/update", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/smoketest", ls.SmokeTestLiveVideo())
 
 	// Configure WHIP ingest only if an addr is specified.
@@ -105,6 +106,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	}
 
 	// Stream status
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
 	//API for dynamic capabilities
@@ -859,6 +861,8 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		corsHeaders(w, r.Method)
 	})
 }
 
@@ -868,6 +872,9 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 // @Router /live/video-to-video/{stream}/status [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoStatus() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		corsHeaders(w, r.Method)
+
 		streamId := r.PathValue("streamId")
 		if streamId == "" {
 			http.Error(w, "stream id is required", http.StatusBadRequest)
@@ -1204,7 +1211,7 @@ func corsHeaders(w http.ResponseWriter, reqMethod string) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	if reqMethod == http.MethodOptions {
-		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST")
+		w.Header().Set("Access-Control-Allow-Methods", "OPTIONS, POST, GET")
 		// Allows us send down a preferred STUN server without ICE restart
 		// https://datatracker.ietf.org/doc/html/draft-ietf-wish-whip-16#section-4.6
 		w.Header()["Link"] = media.GenICELinkHeaders(media.WebrtcConfig.ICEServers)
