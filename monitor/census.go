@@ -2051,6 +2051,10 @@ func AICurrentLiveSessions(sessionsByPipeline map[string]int) {
 			census.mAICurrentLivePipelines.M(int64(v))); err != nil {
 			glog.Errorf("Error recording metrics for pipeline %q: %v", k, err)
 		}
+		if v == 0 {
+			// Remove zero counts, no need to report it again
+			delete(census.aiLiveSessionsByPipeline, k)
+		}
 	}
 }
 
