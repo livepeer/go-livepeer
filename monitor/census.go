@@ -197,22 +197,23 @@ type (
 		mSceneClassification *stats.Int64Measure
 
 		// Metrics for AI jobs
-		mAIModelsRequested      *stats.Int64Measure
-		mAIRequestLatencyScore  *stats.Float64Measure
-		mAIRequestPrice         *stats.Float64Measure
-		mAIRequestError         *stats.Int64Measure
-		mAIResultDownloaded     *stats.Int64Measure
-		mAIResultDownloadTime   *stats.Float64Measure
-		mAIResultUploaded       *stats.Int64Measure
-		mAIResultUploadTime     *stats.Float64Measure
-		mAIResultSaveFailed     *stats.Int64Measure
-		mAIContainersInUse      *stats.Int64Measure
-		mAIContainersIdle       *stats.Int64Measure
-		mAIGPUsIdle             *stats.Int64Measure
-		mAICurrentLivePipelines *stats.Int64Measure
-		mAIFirstSegmentDelay    *stats.Int64Measure
-		mAILiveAttempts         *stats.Int64Measure
-		mAINumOrchs             *stats.Int64Measure
+		mAIModelsRequested       *stats.Int64Measure
+		mAIRequestLatencyScore   *stats.Float64Measure
+		mAIRequestPrice          *stats.Float64Measure
+		mAIRequestError          *stats.Int64Measure
+		mAIResultDownloaded      *stats.Int64Measure
+		mAIResultDownloadTime    *stats.Float64Measure
+		mAIResultUploaded        *stats.Int64Measure
+		mAIResultUploadTime      *stats.Float64Measure
+		mAIResultSaveFailed      *stats.Int64Measure
+		mAIContainersInUse       *stats.Int64Measure
+		mAIContainersIdle        *stats.Int64Measure
+		mAIGPUsIdle              *stats.Int64Measure
+		mAICurrentLivePipelines  *stats.Int64Measure
+		aiLiveSessionsByPipeline map[string]int
+		mAIFirstSegmentDelay     *stats.Int64Measure
+		mAILiveAttempts          *stats.Int64Measure
+		mAINumOrchs              *stats.Int64Measure
 
 		mAIWhipTransportBytesReceived *stats.Int64Measure
 		mAIWhipTransportBytesSent     *stats.Int64Measure
@@ -391,6 +392,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
 	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
+	census.aiLiveSessionsByPipeline = make(map[string]int)
 	census.mAIFirstSegmentDelay = stats.Int64("ai_first_segment_delay_ms", "Delay of the first live AI segment being processed", "ms")
 	census.mAILiveAttempts = stats.Int64("ai_live_attempts", "AI Live stream attempted", "tot")
 	census.mAINumOrchs = stats.Int64("ai_orchestrators_available_total", "AI Live number of available orchestrators", "tot")
@@ -2028,8 +2030,32 @@ func AIGPUsIdle(currentGPUsIdle int) {
 	stats.Record(census.ctx, census.mAIGPUsIdle.M(int64(currentGPUsIdle)))
 }
 
-func AICurrentLiveSessions(currentPipelines int) {
-	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(currentPipelines)))
+func AICurrentLiveSessions(sessionsByPipeline map[string]int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	// Reset all existing pipeline live session counts to zero first.
+	// This ensures that pipelines that no longer have live sessions are correctly reported as 0.
+	for k := range census.aiLiveSessionsByPipeline {
+		census.aiLiveSessionsByPipeline[k] = 0
+	}
+	// Update counts for pipelines that currently have live sessions.
+	for k, v := range sessionsByPipeline {
+		census.aiLiveSessionsByPipeline[k] = v
+	}
+	// Record metrics for all pipelines.
+	// Iterate over census.aiLiveSessionsByPipeline which now holds the updated (or zeroed) counts.
+	for k, v := range census.aiLiveSessionsByPipeline {
+		if err := stats.RecordWithTags(census.ctx,
+			[]tag.Mutator{tag.Insert(census.kPipeline, k)},
+			census.mAICurrentLivePipelines.M(int64(v))); err != nil {
+			glog.Errorf("Error recording metrics for pipeline %q: %v", k, err)
+		}
+		if v == 0 {
+			// Remove zero counts, no need to report it again
+			delete(census.aiLiveSessionsByPipeline, k)
+		}
+	}
 }
 
 func AIWhipTransportBytesReceived(bytes int64) {
