@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"regexp"
 	"runtime/debug"
 	"strings"
@@ -362,6 +363,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	envVars := []string{
 		"PIPELINE=" + pipeline,
 		"MODEL_ID=" + modelID,
+		"HF_TOKEN=" + os.Getenv("HF_TOKEN"),
 	}
 	for key, value := range optimizationFlags {
 		envVars = append(envVars, key+"="+value.String())
@@ -371,8 +373,9 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	containerConfig := &container.Config{
-		Image: containerImage,
-		Env:   envVars,
+		Hostname: containerName,
+		Image:    containerImage,
+		Env:      envVars,
 		Volumes: map[string]struct{}{
 			containerModelDir: {},
 		},
