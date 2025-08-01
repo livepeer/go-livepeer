@@ -363,13 +363,15 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	envVars := []string{
 		"PIPELINE=" + pipeline,
 		"MODEL_ID=" + modelID,
-		"HF_TOKEN=" + os.Getenv("HF_TOKEN"),
 	}
 	for key, value := range optimizationFlags {
 		envVars = append(envVars, key+"="+value.String())
 	}
 	if m.verboseLogs {
 		envVars = append(envVars, "VERBOSE_LOGGING=1")
+	}
+	if token, ok := os.LookupEnv("HF_TOKEN"); ok {
+		envVars = append(envVars, token)
 	}
 
 	containerConfig := &container.Config{
