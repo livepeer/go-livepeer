@@ -19,6 +19,7 @@ var config = Config{
 	PollingInterval:     1 * time.Second,
 	BlockRetentionLimit: 10,
 	StartBlockDepth:     rpc.LatestBlockNumber,
+	BlockBatchSize:      1000,
 	WithLogs:            false,
 	Topics:              []common.Hash{},
 }
