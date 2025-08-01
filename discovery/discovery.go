@@ -242,7 +242,7 @@ func reportLiveAICapacty(ctx context.Context, ch chan common.OrchestratorDescrip
 		}
 	}
 
-	res := make(map[string]map[string]int)
+	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
 	for _, od := range allOrchInfo {
 		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
 		if od.RemoteInfo != nil {
@@ -257,10 +257,10 @@ func reportLiveAICapacty(ctx context.Context, ch chan common.OrchestratorDescrip
 				}
 			}
 
-			res[modelID] = map[string]int{od.LocalInfo.URL.String(): idle}
+			idleContainersByModelAndOrchestrator[modelID] = map[string]int{od.LocalInfo.URL.String(): idle}
 		}
 	}
-	monitor.AIContainersIdleAfterGatewayDiscovery(res)
+	monitor.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
 }
 
 func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {

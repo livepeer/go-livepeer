@@ -391,6 +391,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
 	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
+	census.aiContainersIdleByPipelineByOrchestrator = make(map[string]map[string]int)
 	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.aiLiveSessionsByPipeline = make(map[string]int)
@@ -2019,7 +2020,7 @@ func AIContainersInUse(currentContainersInUse int, model, uri string) {
 	}
 }
 
-func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesByOrchestrator map[string]map[string]int) {
+func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesAndOrchestrator map[string]map[string]int) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -2031,8 +2032,11 @@ func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesByOrchestrat
 		}
 	}
 	// Update counts.
-	for k, v := range idleContainersByPipelinesByOrchestrator {
+	for k, v := range idleContainersByPipelinesAndOrchestrator {
 		for k2, v2 := range v {
+			if _, exists := census.aiContainersIdleByPipelineByOrchestrator[k]; !exists {
+				census.aiContainersIdleByPipelineByOrchestrator[k] = make(map[string]int)
+			}
 			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = v2
 		}
 	}
