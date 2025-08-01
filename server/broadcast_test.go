@@ -1614,7 +1614,7 @@ func TestVerifier_SegDownload(t *testing.T) {
 	assert.Nil(err)
 	assert.True(downloaded[url])
 
-	// When segments are not in the broadcaster's exernal OS, segments should be downloaded
+	// When segments are not in the broadcaster's external OS, segments should be downloaded
 	url = "somewhere4"
 	cxn.sessManager = bsmWithSessList([]*BroadcastSession{genBcastSess(ctx, t, url, externalOS, mid)})
 	_, _, err = transcodeSegment(context.TODO(), cxn, seg, "dummy", verifier, nil)
