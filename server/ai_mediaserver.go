@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/livepeer/go-livepeer/monitor"
 
@@ -1314,7 +1316,7 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 }
 
 // @Summary Get Live Stream Data
-// @Param streamId path string true "Stream ID"
+// @Param stream path string true "Stream Key"
 // @Success 200
 // @Router /live/video-to-video/{stream}/data [get]
 func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
@@ -1333,21 +1335,26 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 		ctx := r.Context()
 		ctx = clog.AddVal(ctx, "stream", stream)
 
-		// Get the data store for this stream
-		dataStore := getDataStore(stream)
-		if dataStore == nil {
-			http.Error(w, "Stream not found", http.StatusNoContent)
+		// Get the live pipeline for this stream
+		livePipeline, ok := ls.LivepeerNode.LivePipelines[stream]
+		if !ok {
+			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
+
+		// Get the data readerring buffer
+		if livePipeline.DataWriter == nil {
+			clog.Infof(ctx, "No data writer available for stream %s", stream)
+			http.Error(w, "Stream data not available", http.StatusServiceUnavailable)
+			return
+		}
+		dataReader := livePipeline.DataWriter.MakeReader()
 
 		// Set up SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-
-		// Get the subscription channel
-		dataChan := dataStore.Subscribe()
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -1357,27 +1364,43 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 
 		clog.Infof(ctx, "Starting SSE data stream for stream=%s", stream)
 
-		// Send keep-alive ping initially
-		fmt.Fprintf(w, "event: ping\ndata: {\"type\":\"connected\"}\n\n")
-		flusher.Flush()
-
-		// Stream data segments as SSE events
+		// Listen for broadcast signals from ring buffer writes
+		// dataReader.Read() blocks on rb.cond.Wait() until startDataSubscribe broadcasts
 		for {
 			select {
 			case <-ctx.Done():
 				clog.Info(ctx, "SSE data stream client disconnected")
 				return
-			case data, ok := <-dataChan:
-				if !ok {
-					// Channel closed, stream ended
-					fmt.Fprintf(w, "event: end\ndata: {\"type\":\"stream_ended\"}\n\n")
-					flusher.Flush()
+			default:
+				// Listen for broadcast from ring buffer writer
+				buffer := make([]byte, 32*1024) // 32KB read buffer
+				n, err := dataReader.Read(buffer)
+				if err != nil {
+					if err == io.EOF {
+						// Stream ended
+						fmt.Fprintf(w, "event: end\ndata: {\"type\":\"stream_ended\"}\n\n")
+						flusher.Flush()
+						return
+					}
+					clog.Errorf(ctx, "Error reading from ring buffer: %v", err)
 					return
 				}
 
-				// Send the segment data as a data event
-				fmt.Fprintf(w, "data: %s\n\n", string(data))
-				flusher.Flush()
+				if n > 0 {
+					// Broadcast received - forward segment data as SSE event
+					data := buffer[:n]
+
+					// Check if data is valid UTF-8 text
+					if utf8.Valid(data) {
+						// Send as text string
+						fmt.Fprintf(w, "data: %s\n\n", string(data))
+					} else {
+						// Send as base64 encoded binary data
+						encoded := base64.StdEncoding.EncodeToString(data)
+						fmt.Fprintf(w, "data: %s\n\n", encoded)
+					}
+					flusher.Flush()
+				}
 			}
 		}
 	})

@@ -735,19 +735,22 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 	// Set up output buffers
 	rbc := media.RingBufferConfig{BufferLen: 50_000_000} // 50 MB buffer
 	outWriter, err := media.NewRingBuffer(&rbc)
+	//put the data buffer in live pipeline for clients to read from
+	pipeline := params.node.LivePipelines[params.liveParams.stream]
+	if pipeline == nil {
+		clog.Infof(ctx, "No live pipeline found for stream %s", params.liveParams.stream)
+		return
+	}
+	pipeline.DataWriter = outWriter
+
 	if err != nil {
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
 		return
 	}
 
-	// Store data segments for SSE endpoint
-	stream := params.liveParams.stream
-	dataStore := getDataStore(stream)
-
 	// read segments from trickle subscription
 	go func() {
 		defer outWriter.Close()
-		defer removeDataStore(stream) // Clean up when done
 
 		var err error
 		firstSegment := true
@@ -806,9 +809,6 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 				retries++
 				continue
 			}
-
-			// Store the raw segment data for SSE endpoint
-			dataStore.Store(body)
 
 			// Write to output buffer using the body data
 			n, err := outWriter.Write(body)

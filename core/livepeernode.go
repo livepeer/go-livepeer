@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
@@ -173,6 +174,7 @@ type LivePipeline struct {
 	Params      string
 	ControlPub  *trickle.TricklePublisher
 	StopControl func()
+	DataWriter  *media.RingBuffer
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
