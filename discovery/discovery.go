@@ -152,7 +152,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	for _, i := range rand.Perm(numAvailableOrchs) {
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh, allOrchDescrCh)
 	}
-	go reportLiveAICapacty(ctx, allOrchDescrCh, caps)
+	go reportLiveAICapacity(allOrchDescrCh, caps)
 
 	// use a timer to time out the entire get info loop below
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
@@ -216,15 +216,11 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	return ods, nil
 }
 
-func reportLiveAICapacty(ctx context.Context, ch chan common.OrchestratorDescriptor, caps common.CapabilityComparator) {
+func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.CapabilityComparator) {
 	if !monitor.Enabled {
 		return
 	}
 	modelsReq := getModelCaps(caps.ToNetCapabilities())
-
-	// Just as a safety measure, we will wait for at most 5 minutes
-	// Usually the context will be canceled way before that, but in case
-	maxTimeToWaitForOrchInfo := 5 * time.Minute
 
 	var allOrchInfo []common.OrchestratorDescriptor
 	var done bool
@@ -232,9 +228,7 @@ func reportLiveAICapacty(ctx context.Context, ch chan common.OrchestratorDescrip
 		select {
 		case od := <-ch:
 			allOrchInfo = append(allOrchInfo, od)
-		case <-ctx.Done():
-			done = true
-		case <-time.After(maxTimeToWaitForOrchInfo):
+		case <-time.After(maxGetOrchestratorCutoffTimeout):
 			done = true
 		}
 		if done {
@@ -257,7 +251,10 @@ func reportLiveAICapacty(ctx context.Context, ch chan common.OrchestratorDescrip
 				}
 			}
 
-			idleContainersByModelAndOrchestrator[modelID] = map[string]int{od.LocalInfo.URL.String(): idle}
+			if _, exists := idleContainersByModelAndOrchestrator[modelID]; !exists {
+				idleContainersByModelAndOrchestrator[modelID] = make(map[string]int)
+			}
+			idleContainersByModelAndOrchestrator[modelID][od.LocalInfo.URL.String()] = idle
 		}
 	}
 	monitor.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
