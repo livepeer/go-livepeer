@@ -197,23 +197,24 @@ type (
 		mSceneClassification *stats.Int64Measure
 
 		// Metrics for AI jobs
-		mAIModelsRequested       *stats.Int64Measure
-		mAIRequestLatencyScore   *stats.Float64Measure
-		mAIRequestPrice          *stats.Float64Measure
-		mAIRequestError          *stats.Int64Measure
-		mAIResultDownloaded      *stats.Int64Measure
-		mAIResultDownloadTime    *stats.Float64Measure
-		mAIResultUploaded        *stats.Int64Measure
-		mAIResultUploadTime      *stats.Float64Measure
-		mAIResultSaveFailed      *stats.Int64Measure
-		mAIContainersInUse       *stats.Int64Measure
-		mAIContainersIdle        *stats.Int64Measure
-		mAIGPUsIdle              *stats.Int64Measure
-		mAICurrentLivePipelines  *stats.Int64Measure
-		aiLiveSessionsByPipeline map[string]int
-		mAIFirstSegmentDelay     *stats.Int64Measure
-		mAILiveAttempts          *stats.Int64Measure
-		mAINumOrchs              *stats.Int64Measure
+		mAIModelsRequested                       *stats.Int64Measure
+		mAIRequestLatencyScore                   *stats.Float64Measure
+		mAIRequestPrice                          *stats.Float64Measure
+		mAIRequestError                          *stats.Int64Measure
+		mAIResultDownloaded                      *stats.Int64Measure
+		mAIResultDownloadTime                    *stats.Float64Measure
+		mAIResultUploaded                        *stats.Int64Measure
+		mAIResultUploadTime                      *stats.Float64Measure
+		mAIResultSaveFailed                      *stats.Int64Measure
+		mAIContainersInUse                       *stats.Int64Measure
+		mAIContainersIdle                        *stats.Int64Measure
+		aiContainersIdleByPipelineByOrchestrator map[string]map[string]int
+		mAIGPUsIdle                              *stats.Int64Measure
+		mAICurrentLivePipelines                  *stats.Int64Measure
+		aiLiveSessionsByPipeline                 map[string]int
+		mAIFirstSegmentDelay                     *stats.Int64Measure
+		mAILiveAttempts                          *stats.Int64Measure
+		mAINumOrchs                              *stats.Int64Measure
 
 		mAIWhipTransportBytesReceived *stats.Int64Measure
 		mAIWhipTransportBytesSent     *stats.Int64Measure
@@ -2015,6 +2016,44 @@ func AIContainersInUse(currentContainersInUse int, model, uri string) {
 		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
 		census.mAIContainersInUse.M(int64(currentContainersInUse))); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
+	}
+}
+
+func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesByOrchestrator map[string]map[string]int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	// Reset all existing pipeline idleContainers to zero first.
+	// This ensures we don't have any stale counts.
+	for k, v := range census.aiContainersIdleByPipelineByOrchestrator {
+		for k2 := range v {
+			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = 0
+		}
+	}
+	// Update counts.
+	for k, v := range idleContainersByPipelinesByOrchestrator {
+		for k2, v2 := range v {
+			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = v2
+		}
+	}
+
+	// Record metrics for all pipelines for all orchestrators
+	for model, v := range census.aiContainersIdleByPipelineByOrchestrator {
+		for orchURL, v2 := range v {
+			if err := stats.RecordWithTags(census.ctx,
+				[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, orchURL)},
+				census.mAIContainersIdle.M(int64(v2))); err != nil {
+				glog.Errorf("Error recording metrics err=%q", err)
+			}
+			if v2 == 0 {
+				// Remove zero counts, no need to report it again
+				delete(census.aiContainersIdleByPipelineByOrchestrator[model], orchURL)
+			}
+		}
+		if len(census.aiContainersIdleByPipelineByOrchestrator[model]) == 0 {
+			// If there are no more pipelines for this model, remove it from the map
+			delete(census.aiContainersIdleByPipelineByOrchestrator, model)
+		}
 	}
 }
 
