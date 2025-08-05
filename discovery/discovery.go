@@ -155,7 +155,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
 	defer cutoffTimer.Stop()
 
-	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
+	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timeout)
 	timeout := o.discoveryTimeout
 	timer := time.NewTimer(timeout)
 
