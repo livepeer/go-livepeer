@@ -16,6 +16,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/olekukonko/tablewriter"
 )
 
 var (
@@ -413,6 +415,24 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		KafkaPassword:         &defaultKafkaPassword,
 		KafkaGatewayTopic:     &defaultKafkaGatewayTopic,
 	}
+}
+
+func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
+	// compare current settings with default values, and print the difference
+	defCfg := DefaultLivepeerConfig()
+	vDefCfg := reflect.ValueOf(defCfg)
+	vCfg := reflect.ValueOf(cfg)
+	cfgType := vCfg.Type()
+	paramTable := tablewriter.NewWriter(w)
+	for i := 0; i < cfgType.NumField(); i++ {
+		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
+			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
+		}
+	}
+	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
+	paramTable.SetCenterSeparator("*")
+	paramTable.SetColumnSeparator("|")
+	paramTable.Render()
 }
 
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
