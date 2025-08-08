@@ -221,6 +221,7 @@ func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_Capabilit
 	if !ok {
 		return nil
 	}
+
 	return liveAI.Models
 }
 
@@ -244,7 +245,7 @@ func reportLiveAICapacity(info *net.OrchestratorInfo, capsReq common.CapabilityC
 			}
 		}
 
-		monitor.AIContainersIdle(idle, modelID, orchURL.String())
+		monitor.AIContainersIdle(idle, "", modelID, orchURL.String())
 	}
 }
 

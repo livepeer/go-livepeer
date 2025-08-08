@@ -156,7 +156,7 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(pipeline, modelID)
 
 	_, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 	if err != nil {
@@ -183,7 +183,7 @@ func (m *DockerManager) Stop(ctx context.Context) error {
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(pipeline, modelID)
 
 	var rc *RunnerContainer
 	var err error
@@ -221,7 +221,7 @@ func (m *DockerManager) borrowContainerLocked(ctx context.Context, rc *RunnerCon
 func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(rc.Pipeline, rc.ModelID)
 
 	rc.Lock()
 	rc.BorrowCtx = nil
@@ -259,7 +259,7 @@ func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string,
 func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(pipeline, modelID)
 
 	// Check if unused managed container exists for the requested model.
 	for _, rc := range m.containers {
@@ -541,7 +541,7 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 	if !locked {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		defer m.monitorInUse()
+		defer m.monitorInUse(rc.Pipeline, rc.ModelID)
 	}
 	delete(m.gpuContainers, rc.GPU)
 	delete(m.containers, rc.Name)
@@ -766,12 +766,12 @@ func (m *DockerManager) GetCapacity() Capacity {
 	}
 }
 
-func (m *DockerManager) monitorInUse() {
+func (m *DockerManager) monitorInUse(pipeline string, modelID string) {
 	if monitor.Enabled {
 		capacity := m.GetCapacity()
-		monitor.AIContainersInUse(capacity.ContainersInUse, "", "")
-		monitor.AIContainersIdle(capacity.ContainersIdle, "", "")
-		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
+		monitor.AIContainersInUse(capacity.ContainersInUse, pipeline, modelID)
+		monitor.AIContainersIdle(capacity.ContainersIdle, pipeline, modelID, "")
+		monitor.AIGPUsIdle(len(m.gpus)-len(m.gpuContainers), pipeline, modelID) // Indicates a misconfiguration so we should alert on this
 	}
 }
 
