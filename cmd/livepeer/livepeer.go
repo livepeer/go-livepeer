@@ -214,6 +214,7 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.RedeemerAddr = flag.String("redeemerAddr", *cfg.RedeemerAddr, "URL of the ticket redemption service to use")
 	// Reward service
 	cfg.Reward = flag.Bool("reward", false, "Set to true to run a reward service")
+	cfg.RewardRetryTimes = flag.Int("rewardRetryTimes", *cfg.RewardRetryTimes, "Number of times to retry the reward call in case of failure, set to 0 to disable retries")
 	// Metrics & logging:
 	cfg.Monitor = flag.Bool("monitor", *cfg.Monitor, "Set to true to send performance metrics")
 	cfg.MetricsPerStream = flag.Bool("metricsPerStream", *cfg.MetricsPerStream, "Set to true to group performance metrics per stream")
