@@ -241,7 +241,7 @@ func (s *LivepeerServer) StartMediaServer(ctx context.Context, httpAddr string) 
 	}()
 	if s.LivepeerNode.NodeType == core.BroadcasterNode {
 		go func() {
-			glog.V(4).Infof("HTTP Server listening on http://%v", httpAddr)
+			glog.Infof("HTTP Server listening on http://%v", httpAddr)
 			ec <- http.ListenAndServe(httpAddr, s.HTTPMux)
 		}()
 	}
