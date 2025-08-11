@@ -209,6 +209,8 @@ func parseLivepeerConfig() starter.LivepeerConfig {
 	cfg.PricePerBroadcaster = flag.String("pricePerBroadcaster", *cfg.PricePerBroadcaster, `json list of price per broadcaster or path to json config file. Example: {"broadcasters":[{"ethaddress":"address1","priceperunit":0.5,"currency":"USD","pixelsperunit":1000000000000},{"ethaddress":"address2","priceperunit":0.3,"currency":"USD","pixelsperunit":1000000000000}]}`)
 	// Interval to poll for blocks
 	cfg.BlockPollingInterval = flag.Int("blockPollingInterval", *cfg.BlockPollingInterval, "Interval in seconds at which different blockchain event services poll for blocks")
+	// Max blocks to fetch in a single getLogs query
+	cfg.BlockBatchSize = flag.Int("blockBatchSize", *cfg.BlockBatchSize, "Maximum number of blocks to fetch logs for in a single eth_getLogs query (default 1000)")
 	// Redemption service
 	cfg.Redeemer = flag.Bool("redeemer", *cfg.Redeemer, "Set to true to run a ticket redemption service")
 	cfg.RedeemerAddr = flag.String("redeemerAddr", *cfg.RedeemerAddr, "URL of the ticket redemption service to use")
