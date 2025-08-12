@@ -413,7 +413,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq int, params aiRequestParams) (int64, error) {
 	defer segment.Body.Close()
 	var reader io.Reader = segment.Body
-	if seq < 10 {
+	if seq < 50 {
 		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
 		outFile, err := os.Create(p)
 		if err != nil {
@@ -796,7 +796,7 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 
 func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
 	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
-	if seq > 10 {
+	if seq > 50 {
 		return
 	}
 	go func() {
