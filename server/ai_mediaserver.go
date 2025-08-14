@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/livepeer/go-livepeer/monitor"
 
@@ -112,7 +110,8 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
 	// Stream data SSE endpoint
-	ls.HTTPMux.Handle("/live/video-to-video/{stream}/data", ls.GetLiveVideoToVideoData())
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/data", ls.WithCode(http.StatusNoContent))
+	ls.HTTPMux.Handle("GET /live/video-to-video/{stream}/data", ls.GetLiveVideoToVideoData())
 
 	//API for dynamic capabilities
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
@@ -624,6 +623,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
+				dataWriter:             media.NewSegmentWriter(5),
 				rtmpOutputs:            rtmpOutputs,
 				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
@@ -1089,6 +1089,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
+					dataWriter:             media.NewSegmentWriter(5),
 					rtmpOutputs:            rtmpOutputs,
 					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
@@ -1326,11 +1327,6 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 			http.Error(w, "stream name is required", http.StatusBadRequest)
 			return
 		}
-		if r.Method == http.MethodOptions {
-			corsHeaders(w, r.Method)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 
 		ctx := r.Context()
 		ctx = clog.AddVal(ctx, "stream", stream)
@@ -1348,7 +1344,7 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 			http.Error(w, "Stream data not available", http.StatusServiceUnavailable)
 			return
 		}
-		dataReader := livePipeline.DataWriter.MakeReader()
+		dataReader := livePipeline.DataWriter.MakeReader(media.SegmentReaderConfig{})
 
 		// Set up SSE headers
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -1372,13 +1368,11 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 				clog.Info(ctx, "SSE data stream client disconnected")
 				return
 			default:
-				// Listen for broadcast from ring buffer writer
-				buffer := make([]byte, 32*1024) // 32KB read buffer
-				n, err := dataReader.Read(buffer)
+				reader, err := dataReader.Next()
 				if err != nil {
 					if err == io.EOF {
 						// Stream ended
-						fmt.Fprintf(w, "event: end\ndata: {\"type\":\"stream_ended\"}\n\n")
+						fmt.Fprintf(w, `event: end\ndata: {"type":"stream_ended"}\n\n`)
 						flusher.Flush()
 						return
 					}
@@ -1386,21 +1380,9 @@ func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
 					return
 				}
 
-				if n > 0 {
-					// Broadcast received - forward segment data as SSE event
-					data := buffer[:n]
-
-					// Check if data is valid UTF-8 text
-					if utf8.Valid(data) {
-						// Send as text string
-						fmt.Fprintf(w, "data: %s\n\n", string(data))
-					} else {
-						// Send as base64 encoded binary data
-						encoded := base64.StdEncoding.EncodeToString(data)
-						fmt.Fprintf(w, "data: %s\n\n", encoded)
-					}
-					flusher.Flush()
-				}
+				data, err := io.ReadAll(reader)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
 			}
 		}
 	})

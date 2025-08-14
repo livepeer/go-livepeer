@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -505,8 +506,9 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
-		RequestID: params.liveParams.requestID,
-		Pipeline:  params.liveParams.pipeline,
+		RequestID:  params.liveParams.requestID,
+		Pipeline:   params.liveParams.pipeline,
+		DataWriter: params.liveParams.dataWriter,
 	}
 }
 
@@ -767,29 +769,15 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 		Ctx: ctx,
 	})
 	if err != nil {
-		clog.Infof(ctx, "Failed to create trickle subscriber: %s", err)
+		clog.Infof(ctx, "Failed to create data subscriber: %s", err)
 		return
 	}
 
-	// Set up output buffers
-	rbc := media.RingBufferConfig{BufferLen: 50_000_000} // 50 MB buffer
-	outWriter, err := media.NewRingBuffer(&rbc)
-	//put the data buffer in live pipeline for clients to read from
-	pipeline := params.node.LivePipelines[params.liveParams.stream]
-	if pipeline == nil {
-		clog.Infof(ctx, "No live pipeline found for stream %s", params.liveParams.stream)
-		return
-	}
-	pipeline.DataWriter = outWriter
-
-	if err != nil {
-		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
-		return
-	}
+	dataWriter := params.liveParams.dataWriter
 
 	// read segments from trickle subscription
 	go func() {
-		defer outWriter.Close()
+		defer dataWriter.Close()
 
 		var err error
 		firstSegment := true
@@ -801,20 +789,21 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 		for {
 			select {
 			case <-ctx.Done():
-				clog.Info(ctx, "trickle subscribe done")
+				clog.Info(ctx, "data subscribe done")
 				return
 			default:
 			}
 			if !params.inputStreamExists() {
-				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
+				clog.Infof(ctx, "data subscribe stopping, input stream does not exist.")
 				break
 			}
 			var segment *http.Response
-			clog.V(8).Infof(ctx, "trickle subscribe read data await")
+			readBytes, readMessages := 0, 0
+			clog.V(8).Infof(ctx, "data subscribe await")
 			segment, err = subscriber.Read()
 			if err != nil {
 				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe stopping, stream not found, err=%w", err))
+					stopProcessing(ctx, params, fmt.Errorf("data subscribe stopping, stream not found, err=%w", err))
 					return
 				}
 				var sequenceNonexistent *trickle.SequenceNonexistent
@@ -823,10 +812,10 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 					subscriber.SetSeq(sequenceNonexistent.Latest)
 				}
 				// TODO if not EOS then signal a new orchestrator is needed
-				err = fmt.Errorf("trickle subscribe error reading: %w", err)
+				err = fmt.Errorf("data subscribe error reading: %w", err)
 				clog.Infof(ctx, "%s", err)
 				if retries > maxRetries {
-					stopProcessing(ctx, params, errors.New("trickle subscribe stopping, retries exceeded"))
+					stopProcessing(ctx, params, errors.New("data subscribe stopping, retries exceeded"))
 					return
 				}
 				retries++
@@ -836,32 +825,33 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 			}
 			retries = 0
 			seq := trickle.GetSeq(segment)
-			clog.V(8).Infof(ctx, "trickle subscribe read data received seq=%d", seq)
+			clog.V(8).Infof(ctx, "data subscribe received seq=%d", seq)
 			copyStartTime := time.Now()
 
-			// Read segment data and store it for SSE
-			body, err := io.ReadAll(segment.Body)
-			segment.Body.Close()
-			if err != nil {
-				clog.InfofErr(ctx, "trickle subscribe error reading segment body seq=%d", seq, err)
-				subscriber.SetSeq(seq)
-				retries++
-				continue
-			}
-
-			// Write to output buffer using the body data
-			n, err := outWriter.Write(body)
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					clog.Info(ctx, "trickle subscribe stopping - context canceled")
+			defer segment.Body.Close()
+			scanner := bufio.NewScanner(segment.Body)
+			for scanner.Scan() {
+				writer, err := dataWriter.Next()
+				if err != nil {
+					if err != io.EOF {
+						stopProcessing(ctx, params, fmt.Errorf("data subscribe could not get next: %w", err))
+					}
 					return
 				}
-
-				clog.InfofErr(ctx, "trickle subscribe error writing to output buffer seq=%d", seq, err)
+				n, err := writer.Write(scanner.Bytes())
+				if err != nil {
+					stopProcessing(ctx, params, fmt.Errorf("data subscribe could not write: %w", err))
+				}
+				readBytes += n
+				readMessages += 1
+			}
+			if err := scanner.Err(); err != nil {
+				clog.InfofErr(ctx, "data subscribe error reading seq=%d", seq, err)
 				subscriber.SetSeq(seq)
 				retries++
 				continue
 			}
+
 			if firstSegment {
 				firstSegment = false
 				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
@@ -881,7 +871,7 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 				}
 			}
 
-			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
+			clog.V(8).Info(ctx, "data subscribe read completed", "seq", seq, "bytes", humanize.Bytes(uint64(readBytes)), "messages", readMessages, "took", time.Since(copyStartTime))
 		}
 	}()
 }
