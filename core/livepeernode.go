@@ -180,7 +180,7 @@ type LivePipeline struct {
 	Pipeline     string
 	ControlPub   *trickle.TricklePublisher
 	StopControl  func()
-	DataWriter   *media.RingBuffer
+	DataWriter   *media.SegmentWriter
 	ReportUpdate func([]byte)
 }
 
