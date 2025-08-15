@@ -20,7 +20,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Download artifacts from build stage
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: build.yaml
           run_id: ${{ github.event.workflow_run.id }}
