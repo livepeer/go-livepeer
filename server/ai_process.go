@@ -1493,6 +1493,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
+			if cap == core.Capability_LiveVideoToVideo && sess != nil {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			}
 			continue
 		}
 		if sess == nil {
@@ -1557,6 +1561,17 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if monitor.Enabled {
 			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
 		}
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_no_orchestrators_available",
+			"timestamp":   time.Now().UnixMilli(),
+			"stream_id":   params.liveParams.streamID,
+			"pipeline_id": params.liveParams.pipelineID,
+			"request_id":  params.liveParams.requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil

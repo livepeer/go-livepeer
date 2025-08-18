@@ -156,7 +156,7 @@ func (m *DockerManager) EnsureImageAvailable(ctx context.Context, pipeline strin
 func (m *DockerManager) Warm(ctx context.Context, pipeline string, modelID string, optimizationFlags OptimizationFlags) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(pipeline, modelID)
 
 	_, err := m.createContainer(ctx, pipeline, modelID, true, optimizationFlags)
 	if err != nil {
@@ -183,7 +183,7 @@ func (m *DockerManager) Stop(ctx context.Context) error {
 func (m *DockerManager) Borrow(ctx context.Context, pipeline, modelID string) (*RunnerContainer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(pipeline, modelID)
 
 	var rc *RunnerContainer
 	var err error
@@ -221,7 +221,7 @@ func (m *DockerManager) borrowContainerLocked(ctx context.Context, rc *RunnerCon
 func (m *DockerManager) returnContainer(rc *RunnerContainer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
+	defer m.monitorInUse(rc.Pipeline, rc.ModelID)
 
 	rc.Lock()
 	rc.BorrowCtx = nil
@@ -259,7 +259,6 @@ func (m *DockerManager) getContainerImageName(pipeline, modelID string) (string,
 func (m *DockerManager) HasCapacity(ctx context.Context, pipeline, modelID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	defer m.monitorInUse()
 
 	// Check if unused managed container exists for the requested model.
 	for _, rc := range m.containers {
@@ -541,8 +540,8 @@ func (m *DockerManager) destroyContainer(rc *RunnerContainer, locked bool) error
 	if !locked {
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		defer m.monitorInUse()
 	}
+	defer m.monitorInUse(rc.Pipeline, rc.ModelID)
 	delete(m.gpuContainers, rc.GPU)
 	delete(m.containers, rc.Name)
 	return nil
@@ -759,19 +758,39 @@ type Capacity struct {
 // It currently only supports a setup of a single model with the number of initial warm containers equalling max capacity.
 // For example for Live AI we use this setup, we configure the number of warm containers to equal the max capacity we want
 // to accept, all with the comfyui model.
-func (m *DockerManager) GetCapacity() Capacity {
-	return Capacity{
-		ContainersInUse: len(m.gpuContainers) - len(m.containers),
-		ContainersIdle:  len(m.containers),
+func (m *DockerManager) GetCapacity(pipeline, modelID string) (Capacity, int) {
+	if pipeline == "" && modelID == "" {
+		return Capacity{
+			ContainersInUse: len(m.gpuContainers) - len(m.containers),
+			ContainersIdle:  len(m.containers),
+		}, len(m.gpus) - len(m.gpuContainers)
 	}
+	gpuContainers := 0
+	for _, container := range m.gpuContainers {
+		if container.RunnerContainerConfig.Pipeline == pipeline && container.RunnerContainerConfig.ModelID == modelID {
+			gpuContainers += 1
+		}
+	}
+	containers := 0
+	for _, container := range m.containers {
+		if container.RunnerContainerConfig.Pipeline == pipeline && container.RunnerContainerConfig.ModelID == modelID {
+			containers += 1
+		}
+	}
+	return Capacity{
+			ContainersInUse: gpuContainers - containers,
+			ContainersIdle:  containers,
+		},
+		len(m.gpus) - gpuContainers
+
 }
 
-func (m *DockerManager) monitorInUse() {
+func (m *DockerManager) monitorInUse(pipeline string, modelID string) {
 	if monitor.Enabled {
-		capacity := m.GetCapacity()
-		monitor.AIContainersInUse(capacity.ContainersInUse, "", "")
-		monitor.AIContainersIdle(capacity.ContainersIdle, "", "")
-		monitor.AIGPUsIdle(len(m.gpus) - len(m.gpuContainers)) // Indicates a misconfiguration so we should alert on this
+		capacity, gpusIdle := m.GetCapacity(pipeline, modelID)
+		monitor.AIContainersInUse(capacity.ContainersInUse, pipeline, modelID)
+		monitor.AIContainersIdle(capacity.ContainersIdle, pipeline, modelID, "")
+		monitor.AIGPUsIdle(gpusIdle, pipeline, modelID) // Indicates a misconfiguration so we should alert on this
 	}
 }
 

@@ -197,23 +197,24 @@ type (
 		mSceneClassification *stats.Int64Measure
 
 		// Metrics for AI jobs
-		mAIModelsRequested       *stats.Int64Measure
-		mAIRequestLatencyScore   *stats.Float64Measure
-		mAIRequestPrice          *stats.Float64Measure
-		mAIRequestError          *stats.Int64Measure
-		mAIResultDownloaded      *stats.Int64Measure
-		mAIResultDownloadTime    *stats.Float64Measure
-		mAIResultUploaded        *stats.Int64Measure
-		mAIResultUploadTime      *stats.Float64Measure
-		mAIResultSaveFailed      *stats.Int64Measure
-		mAIContainersInUse       *stats.Int64Measure
-		mAIContainersIdle        *stats.Int64Measure
-		mAIGPUsIdle              *stats.Int64Measure
-		mAICurrentLivePipelines  *stats.Int64Measure
-		aiLiveSessionsByPipeline map[string]int
-		mAIFirstSegmentDelay     *stats.Int64Measure
-		mAILiveAttempts          *stats.Int64Measure
-		mAINumOrchs              *stats.Int64Measure
+		mAIModelsRequested                       *stats.Int64Measure
+		mAIRequestLatencyScore                   *stats.Float64Measure
+		mAIRequestPrice                          *stats.Float64Measure
+		mAIRequestError                          *stats.Int64Measure
+		mAIResultDownloaded                      *stats.Int64Measure
+		mAIResultDownloadTime                    *stats.Float64Measure
+		mAIResultUploaded                        *stats.Int64Measure
+		mAIResultUploadTime                      *stats.Float64Measure
+		mAIResultSaveFailed                      *stats.Int64Measure
+		mAIContainersInUse                       *stats.Int64Measure
+		mAIContainersIdle                        *stats.Int64Measure
+		aiContainersIdleByPipelineByOrchestrator map[string]map[string]int
+		mAIGPUsIdle                              *stats.Int64Measure
+		mAICurrentLivePipelines                  *stats.Int64Measure
+		aiLiveSessionsByPipeline                 map[string]int
+		mAIFirstSegmentDelay                     *stats.Int64Measure
+		mAILiveAttempts                          *stats.Int64Measure
+		mAINumOrchs                              *stats.Int64Measure
 
 		mAIWhipTransportBytesReceived *stats.Int64Measure
 		mAIWhipTransportBytesSent     *stats.Int64Measure
@@ -390,6 +391,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
 	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
+	census.aiContainersIdleByPipelineByOrchestrator = make(map[string]map[string]int)
 	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.aiLiveSessionsByPipeline = make(map[string]int)
@@ -1017,14 +1019,14 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_container_in_use",
 			Measure:     census.mAIContainersInUse,
 			Description: "Number of containers currently used for AI processing",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
 			Name:        "ai_container_idle",
 			Measure:     census.mAIContainersIdle,
 			Description: "Number of containers currently available for AI processing",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName, census.kOrchestratorURI}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
@@ -1038,7 +1040,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_current_live_pipelines",
 			Measure:     census.mAICurrentLivePipelines,
 			Description: "Number of live AI pipelines currently running",
-			TagKeys:     append([]tag.Key{census.kOrchestratorURI, census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kPipeline}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
@@ -1052,7 +1054,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_live_attempt",
 			Measure:     census.mAILiveAttempts,
 			Description: "AI Live stream attempted",
-			TagKeys:     baseTags,
+			TagKeys:     append([]tag.Key{census.kModelName}, baseTags...),
 			Aggregation: view.Count(),
 		},
 		{
@@ -1109,8 +1111,6 @@ func InitCensus(nodeType NodeType, version string) {
 	stats.Record(census.ctx, census.mWinningTicketsRecv.M(int64(0)))
 	stats.Record(census.ctx, census.mCurrentSessions.M(int64(0)))
 	stats.Record(census.ctx, census.mValueRedeemed.M(float64(0)))
-	stats.Record(census.ctx, census.mAIContainersInUse.M(int64(0)))
-	stats.Record(census.ctx, census.mAICurrentLivePipelines.M(int64(0)))
 }
 
 /*
@@ -2010,24 +2010,69 @@ func AIRequestError(code string, pipeline string, model string, orchInfo *lpnet.
 	}
 }
 
-func AIContainersInUse(currentContainersInUse int, model, uri string) {
+func AIContainersInUse(currentContainersInUse int, pipeline, modelID string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelID)},
 		census.mAIContainersInUse.M(int64(currentContainersInUse))); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
-func AIContainersIdle(currentContainersIdle int, model, uri string) {
+func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesAndOrchestrator map[string]map[string]int) {
+	census.lock.Lock()
+	defer census.lock.Unlock()
+
+	// Reset all existing pipeline idleContainers to zero first.
+	// This ensures we don't have any stale counts.
+	for k, v := range census.aiContainersIdleByPipelineByOrchestrator {
+		for k2 := range v {
+			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = 0
+		}
+	}
+	// Update counts.
+	for pipeline, v := range idleContainersByPipelinesAndOrchestrator {
+		for orchestrator, count := range v {
+			if _, exists := census.aiContainersIdleByPipelineByOrchestrator[pipeline]; !exists {
+				census.aiContainersIdleByPipelineByOrchestrator[pipeline] = make(map[string]int)
+			}
+			census.aiContainersIdleByPipelineByOrchestrator[pipeline][orchestrator] = count
+		}
+	}
+
+	// Record metrics for all pipelines for all orchestrators
+	for model, v := range census.aiContainersIdleByPipelineByOrchestrator {
+		for orchURL, v2 := range v {
+			if err := stats.RecordWithTags(census.ctx,
+				[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, orchURL)},
+				census.mAIContainersIdle.M(int64(v2))); err != nil {
+				glog.Errorf("Error recording metrics err=%q", err)
+			}
+			if v2 == 0 {
+				// Remove zero counts, no need to report it again
+				delete(census.aiContainersIdleByPipelineByOrchestrator[model], orchURL)
+			}
+		}
+		if len(census.aiContainersIdleByPipelineByOrchestrator[model]) == 0 {
+			// If there are no more pipelines for this model, remove it from the map
+			delete(census.aiContainersIdleByPipelineByOrchestrator, model)
+		}
+	}
+}
+
+func AIContainersIdle(currentContainersIdle int, pipeline, modelID, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
-		[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, uri)},
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelID), tag.Insert(census.kOrchestratorURI, uri)},
 		census.mAIContainersIdle.M(int64(currentContainersIdle))); err != nil {
 		glog.Errorf("Error recording metrics err=%q", err)
 	}
 }
 
-func AIGPUsIdle(currentGPUsIdle int) {
-	stats.Record(census.ctx, census.mAIGPUsIdle.M(int64(currentGPUsIdle)))
+func AIGPUsIdle(currentGPUsIdle int, pipeline, modelID string) {
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kPipeline, pipeline), tag.Insert(census.kModelName, modelID)},
+		census.mAIGPUsIdle.M(int64(currentGPUsIdle))); err != nil {
+		glog.Errorf("Error recording metrics err=%q", err)
+	}
 }
 
 func AICurrentLiveSessions(sessionsByPipeline map[string]int) {
@@ -2144,8 +2189,15 @@ func AIFirstSegmentDelay(delayMs int64, orchInfo *lpnet.OrchestratorInfo) {
 	}
 }
 
-func AILiveVideoAttempt() {
-	stats.Record(census.ctx, census.mAILiveAttempts.M(1))
+func AILiveVideoAttempt(modelID string) {
+	if !Enabled {
+		return
+	}
+	if err := stats.RecordWithTags(census.ctx,
+		[]tag.Mutator{tag.Insert(census.kModelName, modelID)},
+		census.mAILiveAttempts.M(1)); err != nil {
+		glog.Errorf("Error recording %s metric err=%q", census.mAILiveAttempts.Name(), err)
+	}
 }
 
 func AINumOrchestrators(count int, modelName string) {

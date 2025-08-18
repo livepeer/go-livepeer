@@ -583,9 +583,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 		// Count `ai_live_attempts` after successful parameters validation
 		clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
-		if monitor.Enabled {
-			monitor.AILiveVideoAttempt()
-		}
+		monitor.AILiveVideoAttempt(pipeline) // this `pipeline` is actually modelID
 
 		sendErrorEvent := LiveErrorEventSender(ctx, streamID, map[string]string{
 			"type":        "error",
@@ -1037,6 +1035,10 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					"url":     "",
 				},
 			})
+
+			clog.V(common.VERBOSE).Infof(ctx, "AI Live video attempt")
+			monitor.AILiveVideoAttempt(pipeline) // this `pipeline` is actually modelID
+
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -1061,10 +1063,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					},
 				})
 			}()
-
-			if monitor.Enabled {
-				monitor.AILiveVideoAttempt()
-			}
 
 			if outputURL != "" {
 				rtmpOutputs = append(rtmpOutputs, outputURL)

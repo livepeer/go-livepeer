@@ -552,7 +552,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 
 		if payment.TicketParams == nil {
 
-			//if price is not 0, comfirm balance
+			//if price is not 0, confirm balance
 			if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
 				minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
 				orchBal := getPaymentBalance(orch, sender, jobId)

@@ -109,7 +109,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error) {
+	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
 		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
 		defer cancel()
 
@@ -117,16 +117,17 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
-		reportLiveAICapacity(info, caps, od.LocalInfo.URL)
+		orchDescr := common.OrchestratorDescriptor{
+			LocalInfo: &common.OrchestratorLocalInfo{
+				URL:     od.LocalInfo.URL,
+				Score:   od.LocalInfo.Score,
+				Latency: &latency,
+			},
+			RemoteInfo: info,
+		}
+		allOrchInfoCh <- orchDescr
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
-			infoCh <- common.OrchestratorDescriptor{
-				LocalInfo: &common.OrchestratorLocalInfo{
-					URL:     od.LocalInfo.URL,
-					Score:   od.LocalInfo.Score,
-					Latency: &latency,
-				},
-				RemoteInfo: info,
-			}
+			infoCh <- orchDescr
 			return
 		}
 
@@ -144,18 +145,20 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	timedOut := false
 	nbResp := 0
 	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
+	allOrchDescrCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
 	errCh := make(chan error, numAvailableOrchs)
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
-		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh)
+		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, odCh, errCh, allOrchDescrCh)
 	}
+	go reportLiveAICapacity(allOrchDescrCh, caps)
 
 	// use a timer to time out the entire get info loop below
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
 	defer cutoffTimer.Stop()
 
-	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
+	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timeout)
 	timeout := o.discoveryTimeout
 	timer := time.NewTimer(timeout)
 
@@ -221,31 +224,52 @@ func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_Capabilit
 	if !ok {
 		return nil
 	}
+
 	return liveAI.Models
 }
 
-func reportLiveAICapacity(info *net.OrchestratorInfo, capsReq common.CapabilityComparator, orchURL *url.URL) {
+func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.CapabilityComparator) {
 	if !monitor.Enabled {
 		return
 	}
+	modelsReq := getModelCaps(caps.ToNetCapabilities())
 
-	modelsReq := getModelCaps(capsReq.ToNetCapabilities())
-
-	var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
-	if info != nil {
-		models = getModelCaps(info.Capabilities)
+	var allOrchInfo []common.OrchestratorDescriptor
+	var done bool
+	for {
+		select {
+		case od := <-ch:
+			allOrchInfo = append(allOrchInfo, od)
+		case <-time.After(maxGetOrchestratorCutoffTimeout):
+			done = true
+		}
+		if done {
+			break
+		}
 	}
 
-	for modelID := range modelsReq {
-		idle := 0
-		if models != nil {
-			if model, ok := models[modelID]; ok {
-				idle = int(model.Capacity)
-			}
+	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
+	for _, od := range allOrchInfo {
+		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
+		if od.RemoteInfo != nil {
+			models = getModelCaps(od.RemoteInfo.Capabilities)
 		}
 
-		monitor.AIContainersIdle(idle, modelID, orchURL.String())
+		for modelID := range modelsReq {
+			idle := 0
+			if models != nil {
+				if model, ok := models[modelID]; ok {
+					idle = int(model.Capacity)
+				}
+			}
+
+			if _, exists := idleContainersByModelAndOrchestrator[modelID]; !exists {
+				idleContainersByModelAndOrchestrator[modelID] = make(map[string]int)
+			}
+			idleContainersByModelAndOrchestrator[modelID][od.LocalInfo.URL.String()] = idle
+		}
 	}
+	monitor.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
 }
 
 func (o *orchestratorPool) Size() int {
