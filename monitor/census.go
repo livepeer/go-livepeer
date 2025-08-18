@@ -2030,12 +2030,12 @@ func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesAndOrchestra
 		}
 	}
 	// Update counts.
-	for k, v := range idleContainersByPipelinesAndOrchestrator {
-		for k2, v2 := range v {
-			if _, exists := census.aiContainersIdleByPipelineByOrchestrator[k]; !exists {
-				census.aiContainersIdleByPipelineByOrchestrator[k] = make(map[string]int)
+	for pipeline, v := range idleContainersByPipelinesAndOrchestrator {
+		for orchestrator, count := range v {
+			if _, exists := census.aiContainersIdleByPipelineByOrchestrator[pipeline]; !exists {
+				census.aiContainersIdleByPipelineByOrchestrator[pipeline] = make(map[string]int)
 			}
-			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = v2
+			census.aiContainersIdleByPipelineByOrchestrator[pipeline][orchestrator] = count
 		}
 	}
 
@@ -2058,7 +2058,6 @@ func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesAndOrchestra
 		}
 	}
 }
-
 
 func AIContainersIdle(currentContainersIdle int, pipeline, modelID, uri string) {
 	if err := stats.RecordWithTags(census.ctx,
