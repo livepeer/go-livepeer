@@ -1561,6 +1561,17 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		if monitor.Enabled {
 			monitor.AIRequestError(errMsg, monitor.ToPipeline(capName), modelID, nil)
 		}
+		monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+			"type":        "gateway_no_orchestrators_available",
+			"timestamp":   time.Now().UnixMilli(),
+			"stream_id":   params.liveParams.streamID,
+			"pipeline_id": params.liveParams.pipelineID,
+			"request_id":  params.liveParams.requestID,
+			"orchestrator_info": map[string]interface{}{
+				"address": "",
+				"url":     "",
+			},
+		})
 		return nil, &ServiceUnavailableError{err: errors.New(errMsg)}
 	}
 	return resp, nil
