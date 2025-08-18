@@ -1493,6 +1493,10 @@ func processAIRequest(ctx context.Context, params aiRequestParams, req interface
 		sess, err := params.sessManager.Select(ctx, cap, modelID)
 		if err != nil {
 			clog.Infof(ctx, "Error selecting session modelID=%v err=%v", modelID, err)
+			if cap == core.Capability_LiveVideoToVideo && sess != nil {
+				// for live video, remove the session from the pool to avoid retrying it
+				params.sessManager.Remove(ctx, sess)
+			}
 			continue
 		}
 		if sess == nil {

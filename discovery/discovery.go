@@ -158,7 +158,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
 	defer cutoffTimer.Stop()
 
-	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timout)
+	// try to wait for orchestrators until at least 1 is found (with the exponential backoff timeout)
 	timeout := o.discoveryTimeout
 	timer := time.NewTimer(timeout)
 
@@ -216,6 +216,18 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	return ods, nil
 }
 
+func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return nil
+	}
+
+	return liveAI.Models
+}
+
 func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.CapabilityComparator) {
 	if !monitor.Enabled {
 		return
@@ -258,17 +270,6 @@ func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.Cap
 		}
 	}
 	monitor.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
-}
-
-func getModelCaps(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
-	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
-		return nil
-	}
-	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
-	if !ok {
-		return nil
-	}
-	return liveAI.Models
 }
 
 func (o *orchestratorPool) Size() int {

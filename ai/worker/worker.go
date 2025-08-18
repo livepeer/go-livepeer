@@ -82,7 +82,8 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 }
 
 func (w *Worker) GetLiveAICapacity() Capacity {
-	return w.manager.GetCapacity()
+	capacity, _ := w.manager.GetCapacity("", "")
+	return capacity
 }
 
 func (w *Worker) Version() []Version {
