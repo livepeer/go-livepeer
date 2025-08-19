@@ -239,9 +239,16 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		go ffmpegOutput(ctx, outURL, outWriter, params)
 	}
 
+	segmentTimeout := params.liveParams.outSegmentTimeout
+	if segmentTimeout <= 0 {
+		segmentTimeout = 30 * time.Second
+	}
+	segmentTicker := time.NewTicker(segmentTimeout)
+
 	// read segments from trickle subscription
 	go func() {
 		defer outWriter.Close()
+		defer segmentTicker.Stop()
 
 		var err error
 		firstSegment := true
@@ -262,6 +269,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
+			segmentTicker.Reset(segmentTimeout) // reset ticker on each iteration.
 			var segment *http.Response
 			clog.V(8).Infof(ctx, "trickle subscribe read data await")
 			segment, err = subscriber.Read()
@@ -355,6 +363,29 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
+
+	// watchdog: fires if orch does not produce segments for too long
+	go func() {
+		for {
+			select {
+			case <-segmentTicker.C:
+				// check whether this timeout is due to missing input
+				params.liveParams.mu.Lock()
+				lastInputSegmentTime := params.liveParams.lastSegmentTime
+				params.liveParams.mu.Unlock()
+				lastInputSegmentAge := time.Since(lastInputSegmentTime)
+				hasRecentInput := lastInputSegmentAge < segmentTimeout/2
+				if hasRecentInput && params.inputStreamExists() {
+					// abandon the orchestrator
+					suspendOrchestrator(ctx, params)
+					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for segments"))
+					segmentTicker.Stop()
+					return
+				}
+			}
+		}
+	}()
+
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBuffer, params aiRequestParams) {
