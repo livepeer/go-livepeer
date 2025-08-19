@@ -740,6 +740,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
+		dataWriter:             params.dataWriter,
 		rtmpOutputs:            params.rtmpOutputs,
 		localRTMPPrefix:        params.localRTMPPrefix,
 		stream:                 params.stream,
