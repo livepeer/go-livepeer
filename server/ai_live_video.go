@@ -237,7 +237,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
-		go ffmpegOutput(ctx, outURL, outWriter.MakeReader(), params)
+		go ffmpegOutput(ctx, outURL, outWriter, params)
 	}
 
 	// read segments from trickle subscription
@@ -358,7 +358,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 	}()
 }
 
-func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiRequestParams) {
+func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBuffer, params aiRequestParams) {
 	// Clone the context since we can call this function multiple times
 	// Adding rtmpOut val multiple times to the same context will just stomp over old ones
 	ctx = clog.Clone(ctx, ctx)
@@ -400,13 +400,18 @@ func ffmpegOutput(ctx context.Context, outputUrl string, r io.Reader, params aiR
 			return cmd.Process.Signal(syscall.SIGTERM)
 		}
 		cmd.WaitDelay = 5 * time.Second
-		cmd.Stdin = r
+		cmd.Stdin = outWriter.MakeReader() // start at leading edge of output for each retry
 		output, err := cmd.CombinedOutput()
-		clog.Infof(ctx, "Process output: %s", output)
-		if err != nil {
-			clog.Errorf(ctx, "Error sending RTMP out: %v", err)
-			return
+		clog.Infof(ctx, "Process err=%v output: %s", err, output)
+
+		select {
+		case <-ctx.Done():
+			clog.Info(ctx, "Context done, stopping rtmp output")
+			return // Returns context.Canceled or context.DeadlineExceeded
+		default:
+			// Context is still active, continue with normal processing
 		}
+
 		time.Sleep(5 * time.Second)
 	}
 }
