@@ -787,7 +787,7 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 }
 
 func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	// subscribe to the outputs and send them into LPMS
+	// subscribe to the outputs
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 		URL: url.String(),
 		Ctx: ctx,
