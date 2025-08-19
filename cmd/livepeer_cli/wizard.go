@@ -20,7 +20,7 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 )
 
-// // read reads a single line from stdin, trimming if from spaces.
+// read reads a single line from stdin, trimming if from spaces.
 func (w *wizard) read() string {
 	fmt.Printf("> ")
 	text, err := w.in.ReadString('\n')
