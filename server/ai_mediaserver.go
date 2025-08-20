@@ -793,7 +793,7 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
-	data, err := common.AppendHostname(strings.Replace(*resp.JSON200.EventsUrl, "-events", "-data", 1), host)
+	data, err := common.AppendHostname(*resp.JSON200.DataUrl, host)
 	if err != nil {
 		return fmt.Errorf("invalid data URL: %w", err)
 	}
