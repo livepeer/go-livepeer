@@ -148,6 +148,26 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			dataUrl    = pubUrl + "-data"
 		)
 
+		//if data is not enabled remove the url and do not start the data channel
+		if enableData, ok := (*req.Params)["enableData"]; ok {
+			if val, ok := enableData.(bool); ok {
+				//turn off data channel if request sets to false
+				if !val {
+					dataUrl = ""
+				} else {
+					clog.Infof(ctx, "data channel is enabled")
+				}
+			} else {
+				clog.Warningf(ctx, "enableData is not a bool, got type %T", enableData)
+			}
+
+			//delete the param used for go-livepeer signaling
+			delete((*req.Params), "enableData")
+		} else {
+			//default to no data channel
+			dataUrl = ""
+		}
+
 		// Handle initial payment, the rest of the payments are done separately from the stream processing
 		// Note that this payment is debit from the balance and acts as a buffer for the AI Realtime Video processing
 		payment, err := getPayment(r.Header.Get(paymentHeader))
@@ -181,8 +201,13 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 		eventsCh.CreateChannel()
-		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
-		dataCh.CreateChannel()
+
+		//optional channels
+		var dataCh *trickle.TrickleLocalPublisher
+		if dataUrl != "" {
+			dataCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
+			dataCh.CreateChannel()
+		}
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
 		priceInfo := payment.GetExpectedPrice()
@@ -203,6 +228,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 					subCh.Close()
 					eventsCh.Close()
 					controlPubCh.Close()
+					if dataCh != nil {
+						dataCh.Close()
+					}
 					cancel()
 				}
 				return err
@@ -230,11 +258,17 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		}()
 
 		// Prepare request to worker
+		// required channels
 		controlUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
 		eventsUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
 		subscribeUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
 		publishUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
-		dataUrlOverwrite := overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
+
+		// optional channels
+		var dataUrlOverwrite string
+		if dataCh != nil {
+			dataUrlOverwrite = overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
+		}
 
 		workerReq := worker.LiveVideoToVideoParams{
 			ModelId:          req.ModelId,
@@ -260,7 +294,9 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			subCh.Close()
 			controlPubCh.Close()
 			eventsCh.Close()
-			dataCh.Close()
+			if dataCh != nil {
+				dataCh.Close()
+			}
 			cancel()
 			respondWithError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -272,6 +308,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 			SubscribeUrl: subUrl,
 			ControlUrl:   &controlUrl,
 			EventsUrl:    &eventsUrl,
+			DataUrl:      &dataUrl,
 			RequestId:    &requestID,
 			ManifestId:   &mid,
 		})

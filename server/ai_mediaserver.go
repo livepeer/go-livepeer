@@ -625,7 +625,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 
 			liveParams: &liveRequestParams{
 				segmentReader:          ssr,
-				dataWriter:             media.NewSegmentWriter(5),
 				rtmpOutputs:            rtmpOutputs,
 				localRTMPPrefix:        mediaMTXInputURL,
 				stream:                 streamName,
@@ -638,6 +637,15 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				kickInput:              kickInput,
 				sendErrorEvent:         sendErrorEvent,
 			},
+		}
+
+		//create a dataWriter for data channel if enabled
+		if enableData, ok := pipelineParams["enableData"]; ok {
+			if enableData == true || enableData == "true" {
+				params.liveParams.dataWriter = media.NewSegmentWriter(5)
+				pipelineParams["enableData"] = true
+				clog.Infof(ctx, "Data channel enabled for stream %s", streamName)
+			}
 		}
 
 		registerControl(ctx, params)
@@ -777,6 +785,8 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	resp := res.(*worker.GenLiveVideoToVideoResponse)
 
 	host := params.liveParams.sess.Transcoder()
+
+	//required channels
 	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 	if err != nil {
 		return fmt.Errorf("invalid publish URL: %w", err)
@@ -793,21 +803,30 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
-	data, err := common.AppendHostname(*resp.JSON200.DataUrl, host)
-	if err != nil {
-		return fmt.Errorf("invalid data URL: %w", err)
-	}
+
 	if resp.JSON200.ManifestId != nil {
 		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
 		params.liveParams.manifestID = *resp.JSON200.ManifestId
 	}
-	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s data %s", pub, sub, control, events, data)
+
+	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
-	startDataSubscribe(ctx, data, params, params.liveParams.sess)
+
+	//optional channels
+	var data *url.URL
+	if *resp.JSON200.DataUrl != "" {
+		data, err = common.AppendHostname(*resp.JSON200.DataUrl, host)
+		if err != nil {
+			return fmt.Errorf("invalid data URL: %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "data %s", data)
+		startDataSubscribe(ctx, data, params, params.liveParams.sess)
+	}
+
 	return nil
 }
 
@@ -1107,7 +1126,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 				liveParams: &liveRequestParams{
 					segmentReader:          ssr,
-					dataWriter:             media.NewSegmentWriter(5),
 					rtmpOutputs:            rtmpOutputs,
 					localRTMPPrefix:        internalOutputHost,
 					stream:                 streamName,
@@ -1121,6 +1139,15 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
 				},
+			}
+
+			//create a dataWriter for data channel if enabled
+			if enableData, ok := pipelineParams["enableData"]; ok {
+				if enableData == true || enableData == "true" {
+					params.liveParams.dataWriter = media.NewSegmentWriter(5)
+					pipelineParams["enableData"] = true
+					clog.Infof(ctx, "Data channel enabled for stream %s", streamName)
+				}
 			}
 
 			registerControl(ctx, params)
