@@ -763,6 +763,11 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 }
 
 func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
+	//only start DataSubscribe if enabled
+	if params.liveParams.dataWriter == nil {
+		return
+	}
+
 	// subscribe to the outputs
 	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
 		URL: url.String(),
