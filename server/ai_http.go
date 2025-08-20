@@ -181,7 +181,7 @@ func (h *lphttp) StartLiveVideoToVideo() http.Handler {
 		controlPubCh.CreateChannel()
 		eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 		eventsCh.CreateChannel()
-		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/json")
+		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
 		dataCh.CreateChannel()
 
 		// Start payment receiver which accounts the payments and stops the stream if the payment is insufficient
