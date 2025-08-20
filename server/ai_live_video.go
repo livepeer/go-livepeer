@@ -239,6 +239,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		go ffmpegOutput(ctx, outURL, outWriter, params)
 	}
 
+	// watchdog that gets reset on every segment to catch output stalls
 	segmentTimeout := params.liveParams.outSegmentTimeout
 	if segmentTimeout <= 0 {
 		segmentTimeout = 30 * time.Second
@@ -370,6 +371,8 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			select {
 			case <-segmentTicker.C:
 				// check whether this timeout is due to missing input
+				// only suspend orchestrator if there is recent input
+				// ( no input == no output, so don't suspend for that )
 				params.liveParams.mu.Lock()
 				lastInputSegmentTime := params.liveParams.lastSegmentTime
 				params.liveParams.mu.Unlock()
