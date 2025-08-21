@@ -73,6 +73,9 @@ type JobRequest struct {
 	orchSearchRespTimeout time.Duration
 }
 
+type JobRequestDetails struct {
+	StreamId string `json:"stream_id"`
+}
 type JobParameters struct {
 	Orchestrators JobOrchestratorsFilter `json:"orchestrators,omitempty"` //list of orchestrators to use for the job
 }
@@ -80,6 +83,14 @@ type JobParameters struct {
 type JobOrchestratorsFilter struct {
 	Exclude []string `json:"exclude,omitempty"`
 	Include []string `json:"include,omitempty"`
+}
+
+type orchJob struct {
+	Req       *JobRequest
+	Details   *JobRequestDetails
+	Params    *JobParameters
+	Orchs     []JobToken
+	JobReqHdr string
 }
 
 // worker registers to Orchestrator
@@ -253,6 +264,63 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobToken)
 }
 
+func (ls *LivepeerServer) setupJob(ctx context.Context, r *http.Request) (*orchJob, error) {
+	clog.Infof(ctx, "processing job request")
+	var orchs []JobToken
+
+	jobReqHdr := r.Header.Get(jobRequestHdr)
+	jobReq, err := verifyJobCreds(ctx, nil, jobReqHdr)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to parse job request, err=%v", err))
+	}
+
+	var jobDetails JobRequestDetails
+	if err := json.Unmarshal([]byte(jobReq.Request), &jobDetails); err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to unmarshal job request err=%v", err))
+	}
+
+	var jobParams JobParameters
+	if err := json.Unmarshal([]byte(jobReq.Parameters), &jobParams); err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to unmarshal job parameters err=%v", err))
+	}
+
+	searchTimeout, respTimeout := getOrchSearchTimeouts(ctx, r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
+	jobReq.orchSearchTimeout = searchTimeout
+	jobReq.orchSearchRespTimeout = respTimeout
+
+	//get pool of Orchestrators that can do the job
+	orchs, err = getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, jobParams, jobReq.orchSearchTimeout, jobReq.orchSearchRespTimeout)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err))
+	}
+
+	if len(orchs) == 0 {
+		return nil, errors.New(fmt.Sprintf("No orchestrators found for capability %v", jobReq.Capability))
+	}
+
+	//sign the request
+	gateway := ls.LivepeerNode.OrchestratorPool.Broadcaster()
+	sig, err := gateway.Sign([]byte(jobReq.Request + jobReq.Parameters))
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
+	}
+	jobReq.Sender = gateway.Address().Hex()
+	jobReq.Sig = "0x" + hex.EncodeToString(sig)
+
+	//create the job request header with the signature
+	jobReqEncoded, err := json.Marshal(jobReq)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
+	}
+	jobReqHdr = base64.StdEncoding.EncodeToString(jobReqEncoded)
+
+	return &orchJob{Req: jobReq,
+		Details:   &jobDetails,
+		Params:    &jobParams,
+		Orchs:     orchs,
+		JobReqHdr: jobReqHdr}, nil
+}
+
 func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -280,42 +348,16 @@ func (ls *LivepeerServer) SubmitJob() http.Handler {
 }
 
 func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	jobReqHdr := r.Header.Get(jobRequestHdr)
-	jobReq, err := verifyJobCreds(ctx, nil, jobReqHdr)
+
+	orchJob, err := ls.setupJob(ctx, r)
+	clog.Infof(ctx, "Job request setup complete details=%v params=%v", orchJob.Details, orchJob.Params)
+
 	if err != nil {
-		clog.Errorf(ctx, "Unable to verify job creds err=%v", err)
-		http.Error(w, fmt.Sprintf("Unable to parse job request, err=%v", err), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Unable to setup job err=%v", err), http.StatusBadRequest)
 		return
 	}
-	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
-	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
-	clog.Infof(ctx, "processing job request")
-
-	searchTimeout, respTimeout := getOrchSearchTimeouts(ctx, r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
-	jobReq.orchSearchTimeout = searchTimeout
-	jobReq.orchSearchRespTimeout = respTimeout
-
-	var params JobParameters
-	if err := json.Unmarshal([]byte(jobReq.Parameters), &params); err != nil {
-		clog.Errorf(ctx, "Unable to unmarshal job parameters err=%v", err)
-		http.Error(w, fmt.Sprintf("Unable to unmarshal job parameters err=%v", err), http.StatusBadRequest)
-		return
-	}
-
-	//get pool of Orchestrators that can do the job
-	orchs, err := getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, params, jobReq.orchSearchTimeout, jobReq.orchSearchRespTimeout)
-	if err != nil {
-		clog.Errorf(ctx, "Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err)
-		http.Error(w, fmt.Sprintf("Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err), http.StatusBadRequest)
-		return
-	}
-
-	if len(orchs) == 0 {
-		clog.Errorf(ctx, "No orchestrators found for capability %v", jobReq.Capability)
-		http.Error(w, fmt.Sprintf("No orchestrators found for capability %v", jobReq.Capability), http.StatusServiceUnavailable)
-		return
-	}
-
+	ctx = clog.AddVal(ctx, "job_id", orchJob.Req.ID)
+	ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
 	// Read the original request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -323,29 +365,10 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		return
 	}
 	r.Body.Close()
-	//sign the request
-	gateway := ls.LivepeerNode.OrchestratorPool.Broadcaster()
-	sig, err := gateway.Sign([]byte(jobReq.Request + jobReq.Parameters))
-	if err != nil {
-		clog.Errorf(ctx, "Unable to sign request err=%v", err)
-		http.Error(w, fmt.Sprintf("Unable to sign request err=%v", err), http.StatusInternalServerError)
-		return
-	}
-	jobReq.Sender = gateway.Address().Hex()
-	jobReq.Sig = "0x" + hex.EncodeToString(sig)
-
-	//create the job request header with the signature
-	jobReqEncoded, err := json.Marshal(jobReq)
-	if err != nil {
-		clog.Errorf(ctx, "Unable to encode job request err=%v", err)
-		http.Error(w, fmt.Sprintf("Unable to encode job request err=%v", err), http.StatusInternalServerError)
-		return
-	}
-	jobReqHdr = base64.StdEncoding.EncodeToString(jobReqEncoded)
 
 	//send the request to the Orchestrator(s)
 	//the loop ends on Gateway error and bad request errors
-	for _, orchToken := range orchs {
+	for _, orchToken := range orchJob.Orchs {
 
 		// Extract the worker resource route from the URL path
 		// The prefix is "/process/request/"
@@ -370,9 +393,9 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
 		req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
 
-		req.Header.Add(jobRequestHdr, jobReqHdr)
+		req.Header.Add(jobRequestHdr, orchJob.JobReqHdr)
 		if orchToken.Price.PricePerUnit > 0 {
-			paymentHdr, err := createPayment(ctx, jobReq, orchToken, ls.LivepeerNode)
+			paymentHdr, err := createPayment(ctx, orchJob.Req, orchToken, ls.LivepeerNode)
 			if err != nil {
 				clog.Errorf(ctx, "Unable to create payment err=%v", err)
 				http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
@@ -382,7 +405,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		start := time.Now()
-		resp, err := sendJobReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
+		resp, err := sendJobReqWithTimeout(req, time.Duration(orchJob.Req.Timeout+5)*time.Second) //include 5 second buffer
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
 			continue
@@ -427,7 +450,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				continue
 			}
 
-			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, jobReq.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, orchJob.Req.Capability, time.Since(start))
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance)
 			w.Write(data)
 			return
@@ -450,7 +473,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			w.WriteHeader(http.StatusOK)
 			// Read from upstream and forward to client
 			respChan := make(chan string, 100)
-			respCtx, _ := context.WithTimeout(ctx, time.Duration(jobReq.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
+			respCtx, _ := context.WithTimeout(ctx, time.Duration(orchJob.Req.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
 
 			go func() {
 				defer resp.Body.Close()
@@ -491,7 +514,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				}
 			}
 
-			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, jobReq.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, orchJob.Req.Capability, time.Since(start))
 
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance.FloatString(0))
 		}
