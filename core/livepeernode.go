@@ -169,11 +169,12 @@ type LivepeerNode struct {
 }
 
 type LivePipeline struct {
-	RequestID   string
-	Params      string
-	Pipeline    string
-	ControlPub  *trickle.TricklePublisher
-	StopControl func()
+	RequestID    string
+	Params       []byte
+	Pipeline     string
+	ControlPub   *trickle.TricklePublisher
+	StopControl  func()
+	ReportUpdate func([]byte)
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
