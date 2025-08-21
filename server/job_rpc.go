@@ -350,6 +350,12 @@ func (ls *LivepeerServer) SubmitJob() http.Handler {
 func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
 	orchJob, err := ls.setupJob(ctx, r)
+	if err != nil {
+		clog.Errorf(ctx, "Error setting up job: %s", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	clog.Infof(ctx, "Job request setup complete details=%v params=%v", orchJob.Details, orchJob.Params)
 
 	if err != nil {
