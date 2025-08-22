@@ -115,7 +115,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	getOrchInfo := func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
+	// Pre-declare for recursion
+	var getOrchInfo func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor)
+	getOrchInfo = func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
 		// clone the original parentCtx for logging, then wrap that in a per-call timeout
 		logCtx := clog.Clone(context.Background(), parentCtx)
 		ctx, cancel := context.WithTimeout(logCtx, maxGetOrchestratorCutoffTimeout)
