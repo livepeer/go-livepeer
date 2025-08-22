@@ -544,6 +544,25 @@ func (ls *LivepeerServer) sendJobToOrch(ctx context.Context, r *http.Request, jo
 	return resp, resp.StatusCode, nil
 }
 
+func (ls *LivepeerServer) sendPayment(ctx context.Context, orchUrl string, payment string) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", orchUrl+"/stream/payment", nil)
+	if err != nil {
+		clog.Errorf(ctx, "Unable to create request err=%v", err)
+		return err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add(jobPaymentHeaderHdr, payment)
+
+	_, err = sendJobReqWithTimeout(req, 10)
+	if err != nil {
+		clog.Errorf(ctx, "job payment not able to be processed by Orchestrator %v err=%v ", orchUrl, err.Error())
+		return err
+	}
+
+	return nil
+}
+
 func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.Request) {
 	remoteAddr := getRemoteAddr(r)
 	ctx = clog.AddVal(ctx, "client_ip", remoteAddr)

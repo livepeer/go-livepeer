@@ -75,21 +75,23 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(ctx)
-	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
-	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
-		paymentSender := livePaymentSender{}
-		sendPaymentFunc := func(inPixels int64) error {
-			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
-				sess:      sess.BroadcastSession,
-				inPixels:  inPixels,
-				priceInfo: priceInfo,
-				mid:       params.liveParams.manifestID,
-			})
+	if sess != nil {
+		priceInfo := sess.OrchestratorInfo.PriceInfo
+		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+			paymentSender := livePaymentSender{}
+			sendPaymentFunc := func(inPixels int64) error {
+				return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
+					sess:      sess.BroadcastSession,
+					inPixels:  inPixels,
+					priceInfo: priceInfo,
+					mid:       params.liveParams.manifestID,
+				})
+			}
+			paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
+		} else {
+			clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 		}
-		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
-	} else {
-		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
 	slowOrchChecker := &SlowOrchChecker{}

@@ -38,7 +38,8 @@ type StreamData struct {
 	StreamID   string
 	Capability string
 	//Gateway fields
-	orchToken        interface{}
+	StreamRequest    []byte
+	OrchToken        interface{}
 	OrchUrl          string
 	ExcludeOrchs     []string
 	OrchPublishUrl   string
@@ -69,7 +70,7 @@ func NewExternalCapabilities() *ExternalCapabilities {
 	}
 }
 
-func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface{}, orchUrl, publishUrl, subscribeUrl, controlUrl, eventsUrl, dataUrl string) error {
+func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface{}, streamReq []byte) error {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
 	_, ok := extCaps.Streams[streamID]
@@ -80,15 +81,11 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface
 	//add to streams
 	ctx, cancel := context.WithCancel(context.Background())
 	extCaps.Streams[streamID] = &StreamData{
-		StreamID:         streamID,
-		Params:           params,
-		StreamCtx:        ctx,
-		CancelStream:     cancel,
-		OrchUrl:          orchUrl,
-		OrchPublishUrl:   publishUrl,
-		OrchSubscribeUrl: subscribeUrl,
-		OrchEventsUrl:    eventsUrl,
-		OrchDataUrl:      dataUrl,
+		StreamID:      streamID,
+		Params:        params,
+		StreamRequest: streamReq,
+		StreamCtx:     ctx,
+		CancelStream:  cancel,
 	}
 
 	return nil
