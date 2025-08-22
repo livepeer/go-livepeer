@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"net/url"
@@ -1720,74 +1721,62 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 }
 
 func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
-	assert := assert.New(t)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 
-	maxInstancesCases := []int{-1, 0, 1, 2, 5, 10}
-	numOrchestratorsCases := []int{-1, 0, 1, 2, 5, 10}
+	maxInstancesCases := []int{-5, -1, 0, 1, 2, 5, 10}
+	numOrchestratorsCases := []int{-5, -1, 0, 1, 2, 5, 10}
 
 	old := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = old }()
 
+	// generate many instances so discovery can be limited by parameters
+	manyInst := []string{}
+	for i := 1; i <= 20; i++ {
+		manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa(i))
+	}
+
+	// Stub GetOrchestratorInfo: initial returns many instances, instances return no more
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if u.String() == initial {
+			return &net.OrchestratorInfo{
+				Transcoder: initial,
+				Instances:  manyInst,
+			}, nil
+		}
+		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+	}
+
 	for _, maxInstances := range maxInstancesCases {
 		for _, numOrchs := range numOrchestratorsCases {
-			// Determine effectiveMax as the value used by the pool (<=0 defaults to 5)
-			effectiveMax := maxInstances
-			if effectiveMax <= 0 {
-				effectiveMax = 5
-			}
+			t.Run(fmt.Sprintf("maxInstances=%d numOrchs=%d", maxInstances, numOrchs), func(t *testing.T) {
+				// min(maxInstances +1, numOrchs) -- maxInstances does not include initial orch, but don't exceed numOrchs
+				// min( ..., 0) -- minimum of zero
+				expected := max(min(maxInstances+1, numOrchs), 0)
+				require := require.New(t)
 
-			// generate more than effectiveMax instances so discovery can be limited by MaxInstances
-			manyInst := make([]string, 0, effectiveMax*2)
-			for i := 1; i <= effectiveMax*2; i++ {
-				manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa(i))
-			}
+				pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+					URIs:             uris,
+					DiscoveryTimeout: 50 * time.Millisecond,
+					MaxInstances:     maxInstances,
+				})
+				require.Nil(err)
 
-			// Stub GetOrchestratorInfo: initial returns many instances, instances return no more
-			serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-				if u.String() == initial {
-					return &net.OrchestratorInfo{
-						Transcoder: initial,
-						Instances:  manyInst,
-					}, nil
+				odesc, err := pool.GetOrchestrators(context.TODO(), numOrchs, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+				require.Nil(err)
+
+				// Count unique discovered LocalInfo URLs
+				set := map[string]bool{}
+				for _, od := range odesc {
+					set[od.LocalInfo.URL.String()] = true
 				}
-				return &net.OrchestratorInfo{Transcoder: u.String()}, nil
-			}
 
-			pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
-				URIs:             uris,
-				DiscoveryTimeout: 50 * time.Millisecond,
-				MaxInstances:     maxInstances,
+				// Assertions
+				if expected > 0 {
+					require.True(set[initial], "initial URL should always be present")
+				}
+				require.Len(set, expected, "unexpected number of unique orchestrators")
 			})
-			require := require.New(t)
-			require.NoError(err)
-
-			odesc, err := pool.GetOrchestrators(context.TODO(), numOrchs, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
-			assert.NoError(err)
-
-			// Count unique discovered LocalInfo URLs
-			set := map[string]bool{}
-			for _, od := range odesc {
-				set[od.LocalInfo.URL.String()] = true
-			}
-
-			// Expected length:
-			// if numOrchs <= 0 => expect 0 results (GetOrchestrators uses numOrchestrators in comparisons)
-			// else expect min(1 + effectiveMax, numOrchs)
-			var expected int
-			if numOrchs <= 0 {
-				expected = 0
-			} else {
-				expected = effectiveMax + 1
-				if numOrchs < expected {
-					expected = numOrchs
-				}
-			}
-
-			// Assertions
-			assert.True(set[initial], "initial URL should always be present; maxInstances=%d numOrchs=%d", maxInstances, numOrchs)
-			assert.Len(set, expected, "unexpected number of unique orchestrators; maxInstances=%d numOrchs=%d", maxInstances, numOrchs)
 		}
 	}
 }

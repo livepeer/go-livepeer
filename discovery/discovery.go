@@ -79,21 +79,9 @@ func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPoo
 		return nil, errors.New("orchestrator pool config must contain at least one URI")
 	}
 
-	// Default score to trusted if not supplied
-	score := cfg.Score
-	if score == 0 {
-		score = float32(common.Score_Trusted)
-	}
-
-	// Default maxInstances to 5 if unset or non-positive
-	maxInstances := cfg.MaxInstances
-	if maxInstances <= 0 {
-		maxInstances = 5
-	}
-
 	infos := make([]common.OrchestratorLocalInfo, 0, len(cfg.URIs))
 	for _, uri := range cfg.URIs {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: cfg.Score})
 	}
 
 	return &orchestratorPool{
@@ -102,7 +90,7 @@ func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPoo
 		bcast:            cfg.Broadcaster,
 		orchBlacklist:    cfg.OrchBlacklist,
 		discoveryTimeout: cfg.DiscoveryTimeout,
-		maxInstances:     maxInstances,
+		maxInstances:     cfg.MaxInstances,
 	}, nil
 }
 
@@ -127,6 +115,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	numAvailableOrchs := len(linfos)
 	maxOrchInstances := numAvailableOrchs * (maxInstances + 1)
 	numOrchestrators = min(maxOrchInstances, numOrchestrators)
+
+	if numOrchestrators < 0 {
+		return common.OrchestratorDescriptors{}, nil
+	}
 
 	// The following allows us to avoid capability check for jobs that only
 	// depend on "legacy" features, since older orchestrators support these
