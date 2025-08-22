@@ -28,6 +28,19 @@ var maxGetOrchestratorCutoffTimeout = 6 * time.Second
 
 var serverGetOrchInfo = server.GetOrchestratorInfo
 
+// OrchestratorPoolConfig groups options used to construct an orchestratorPool.
+type OrchestratorPoolConfig struct {
+	Broadcaster      common.Broadcaster
+	URIs             []*url.URL
+	Pred             func(*net.OrchestratorInfo) bool
+	Score            float32
+	OrchBlacklist    []string
+	DiscoveryTimeout time.Duration
+	// MaxInsances limits the number of additional instances an orchestrator
+	// can advertise inside GetOrchestratorInfo. If <= 0 a default of 5 is used.
+	MaxInsances int
+}
+
 type orchestratorPool struct {
 	infos            []common.OrchestratorLocalInfo
 	pred             func(info *net.OrchestratorInfo) bool
@@ -35,29 +48,61 @@ type orchestratorPool struct {
 	orchBlacklist    []string
 	discoveryTimeout time.Duration
 	node             core.LivepeerNode
+
+	// config used to construct this pool (kept for runtime defaults like MaxInsances)
+	cfg OrchestratorPoolConfig
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
-	if len(uris) <= 0 {
-		// Should we return here?
-		glog.Error("Orchestrator pool does not have any URIs")
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) (*orchestratorPool, error) {
+	cfg := OrchestratorPoolConfig{
+		Broadcaster:      bcast,
+		URIs:             uris,
+		Score:            score,
+		OrchBlacklist:    orchBlacklist,
+		DiscoveryTimeout: discoveryTimeout,
+		// MaxInsances will default in NewOrchestratorPoolWithConfig / GetOrchestrators if zero
 	}
-	infos := make([]common.OrchestratorLocalInfo, 0, len(uris))
-	for _, uri := range uris {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
-	}
-	return &orchestratorPool{infos: infos, bcast: bcast, orchBlacklist: orchBlacklist, discoveryTimeout: discoveryTimeout}
+	return NewOrchestratorPoolWithConfig(cfg)
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
-	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
+	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) (*orchestratorPool, error) {
 
-	pool := NewOrchestratorPool(bcast, addresses, score, orchBlacklist, discoveryTimeout)
-	pool.pred = pred
-	return pool
+	cfg := OrchestratorPoolConfig{
+		Broadcaster:      bcast,
+		URIs:             addresses,
+		Pred:             pred,
+		Score:            score,
+		OrchBlacklist:    orchBlacklist,
+		DiscoveryTimeout: discoveryTimeout,
+	}
+	return NewOrchestratorPoolWithConfig(cfg)
 }
 
-func NewOrchestratorPoolWithConfig(config OrchestratorPoolConfig) (*orchestratorPool, error) {
+func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPool, error) {
+	if len(cfg.URIs) == 0 {
+		return nil, errors.New("orchestrator pool config must contain at least one URI")
+	}
+
+	// default score if not provided
+	score := cfg.Score
+	if score == 0 {
+		score = float32(common.Score_Trusted)
+	}
+
+	infos := make([]common.OrchestratorLocalInfo, 0, len(cfg.URIs))
+	for _, uri := range cfg.URIs {
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+	}
+
+	return &orchestratorPool{
+		infos:            infos,
+		pred:             cfg.Pred,
+		bcast:            cfg.Broadcaster,
+		orchBlacklist:    cfg.OrchBlacklist,
+		discoveryTimeout: cfg.DiscoveryTimeout,
+		cfg:              cfg,
+	}, nil
 }
 
 func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
@@ -68,7 +113,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	var seenMu sync.Mutex
-	maxInstances := 5
+	maxInstances := o.cfg.MaxInsances
+	if maxInstances <= 0 {
+		maxInstances = 5
+	}
 	seen := make(map[string]bool, len(o.infos)*maxInstances)
 	linfos := make([]*common.OrchestratorLocalInfo, 0, len(o.infos))
 	for i, _ := range o.infos {
