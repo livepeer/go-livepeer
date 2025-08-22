@@ -1701,7 +1701,12 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 		return &net.OrchestratorInfo{Transcoder: inst1}, nil
 	}
 
-	pool := NewOrchestratorPool(nil, uris, common.Score_Trusted, nil, 50*time.Millisecond)
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		MaxInstances:     5,
+	})
+	assert.NoError(err)
 	// ask for 2 so we expect both initial and inst1
 	odesc, err := pool.GetOrchestrators(context.TODO(), 2, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.NoError(err)
@@ -1718,10 +1723,11 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 	assert := assert.New(t)
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
+	maxInstances := 5
 
-	// generate more than maxInstances = 5
+	// generate more than maxInstances
 	manyInst := make([]string, 0, 8)
-	for i := 1; i <= 7; i++ {
+	for i := 1; i <= maxInstances*2; i++ {
 		manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa(i))
 	}
 
@@ -1739,9 +1745,13 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
 	}
 
-	pool := NewOrchestratorPool(nil, uris, common.Score_Trusted, nil, 50*time.Millisecond)
-	// request up to 6
-	odesc, err := pool.GetOrchestrators(context.TODO(), 6, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		MaxInstances:     5,
+	})
+	// request up to 3x
+	odesc, err := pool.GetOrchestrators(context.TODO(), maxInstances*3, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.NoError(err)
 
 	// should never see more than 5 distinct instances aside from initial
@@ -1750,5 +1760,5 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 		set[od.LocalInfo.URL.String()] = true
 	}
 	assert.True(set[initial])
-	assert.Len(set, 1+5, "Only initial + 5 discovered instances")
+	assert.Len(set, 1+maxInstances, "Only initial + maxInstances discovered instances")
 }

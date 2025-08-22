@@ -19,8 +19,6 @@ import (
 	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/server"
-
-	"github.com/golang/glog"
 )
 
 var getOrchestratorTimeoutLoop = 3 * time.Second
@@ -36,9 +34,10 @@ type OrchestratorPoolConfig struct {
 	Score            float32
 	OrchBlacklist    []string
 	DiscoveryTimeout time.Duration
-	// MaxInsances limits the number of additional instances an orchestrator
-	// can advertise inside GetOrchestratorInfo. If <= 0 a default of 5 is used.
-	MaxInsances int
+
+	// MaxInstances limits the number of additional instances an orchestrator
+	// can advertise within the GetOrchestratorInfo response. Default 0.
+	MaxInstances int
 }
 
 type orchestratorPool struct {
@@ -48,35 +47,31 @@ type orchestratorPool struct {
 	orchBlacklist    []string
 	discoveryTimeout time.Duration
 	node             core.LivepeerNode
-
-	// config used to construct this pool (kept for runtime defaults like MaxInsances)
-	cfg OrchestratorPoolConfig
+	maxInstances     int
 }
 
-func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) (*orchestratorPool, error) {
-	cfg := OrchestratorPoolConfig{
+func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
+	pool, _ := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		Broadcaster:      bcast,
 		URIs:             uris,
 		Score:            score,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
-		// MaxInsances will default in NewOrchestratorPoolWithConfig / GetOrchestrators if zero
-	}
-	return NewOrchestratorPoolWithConfig(cfg)
+	})
+	return pool
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
-	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) (*orchestratorPool, error) {
-
-	cfg := OrchestratorPoolConfig{
+	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
+	pool, _ := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		Broadcaster:      bcast,
 		URIs:             addresses,
 		Pred:             pred,
 		Score:            score,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
-	}
-	return NewOrchestratorPoolWithConfig(cfg)
+	})
+	return pool
 }
 
 func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPool, error) {
@@ -84,15 +79,9 @@ func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPoo
 		return nil, errors.New("orchestrator pool config must contain at least one URI")
 	}
 
-	// default score if not provided
-	score := cfg.Score
-	if score == 0 {
-		score = float32(common.Score_Trusted)
-	}
-
 	infos := make([]common.OrchestratorLocalInfo, 0, len(cfg.URIs))
 	for _, uri := range cfg.URIs {
-		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: score})
+		infos = append(infos, common.OrchestratorLocalInfo{URL: uri, Score: cfg.Score})
 	}
 
 	return &orchestratorPool{
@@ -101,7 +90,7 @@ func NewOrchestratorPoolWithConfig(cfg OrchestratorPoolConfig) (*orchestratorPoo
 		bcast:            cfg.Broadcaster,
 		orchBlacklist:    cfg.OrchBlacklist,
 		discoveryTimeout: cfg.DiscoveryTimeout,
-		cfg:              cfg,
+		maxInstances:     cfg.MaxInstances,
 	}, nil
 }
 
@@ -113,10 +102,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
 	var seenMu sync.Mutex
-	maxInstances := o.cfg.MaxInsances
-	if maxInstances <= 0 {
-		maxInstances = 5
-	}
+	maxInstances := o.maxInstances
 	seen := make(map[string]bool, len(o.infos)*maxInstances)
 	linfos := make([]*common.OrchestratorLocalInfo, 0, len(o.infos))
 	for i, _ := range o.infos {
@@ -190,7 +176,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		// --- begin new: discover and enqueue any newly advertised instances ---
 		if info != nil && len(info.Instances) > 0 {
 			for i, inst := range info.Instances {
-				if i > maxInstances {
+				if i >= maxInstances {
 					break
 				}
 				seenMu.Lock()
