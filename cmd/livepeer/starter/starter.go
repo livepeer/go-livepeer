@@ -1682,7 +1682,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		n.LiveAICapRefreshModels = strings.Split(*cfg.LiveAICapRefreshModels, ",")
 	}
-	n.LiveAISaveNSegments = *cfg.LiveAISaveNSegments
+	n.LiveAISaveNSegments = cfg.LiveAISaveNSegments
 
 	//Create Livepeer Node
 

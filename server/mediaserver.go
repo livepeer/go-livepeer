@@ -203,7 +203,9 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 	if lpNode.NodeType == core.BroadcasterNode && httpIngest {
 		opts.HttpMux.HandleFunc("/live/", ls.HandlePush)
 
-		liveAISaveNSegments = lpNode.LiveAISaveNSegments
+		if lpNode.LiveAISaveNSegments != nil {
+			liveAISaveNSegments = *lpNode.LiveAISaveNSegments
+		}
 		if err := startAIMediaServer(ctx, ls); err != nil {
 			return nil, fmt.Errorf("failed to start AI media server: %w", err)
 		}
