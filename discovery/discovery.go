@@ -65,20 +65,17 @@ func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrators int, suspender common.Suspender, caps common.CapabilityComparator,
 	scorePred common.ScorePred) (common.OrchestratorDescriptors, error) {
 
+	var seenMu sync.Mutex
+	maxInstances := 5
+	maxTotal := numOrchestrators * maxInstances
+	seen := make(map[string]bool, maxTotal)
 	linfos := make([]*common.OrchestratorLocalInfo, 0, len(o.infos))
 	for i, _ := range o.infos {
 		if scorePred(o.infos[i].Score) {
 			linfos = append(linfos, &o.infos[i])
+			seen[o.infos[i].URL.String()] = true
 		}
 	}
-
-	// --- begin new: track seen URLs ---
-	seen := make(map[string]bool, len(linfos))
-	var seenMu sync.Mutex
-	for _, li := range linfos {
-		seen[li.URL.String()] = true
-	}
-	// --- end new ---
 
 	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
@@ -138,7 +135,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 		// --- begin new: discover and enqueue any newly advertised instances ---
 		if info != nil && len(info.Instances) > 0 {
-			for _, inst := range info.Instances {
+			for i, inst := range info.Instances {
+				if i > maxInstances {
+					break
+				}
 				seenMu.Lock()
 				already := seen[inst]
 				if !already {
