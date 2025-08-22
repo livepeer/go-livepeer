@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/core"
@@ -51,19 +52,22 @@ type orchestratorPool struct {
 }
 
 func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
-	pool, _ := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		Broadcaster:      bcast,
 		URIs:             uris,
 		Score:            score,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
 	})
+	if err != nil {
+		glog.Error(err.Error())
+	}
 	return pool
 }
 
 func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 	pred func(*net.OrchestratorInfo) bool, score float32, orchBlacklist []string, discoveryTimeout time.Duration) *orchestratorPool {
-	pool, _ := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		Broadcaster:      bcast,
 		URIs:             addresses,
 		Pred:             pred,
@@ -71,6 +75,9 @@ func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
 	})
+	if err != nil {
+		glog.Error(err.Error())
+	}
 	return pool
 }
 

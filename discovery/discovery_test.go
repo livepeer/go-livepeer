@@ -1809,7 +1809,7 @@ func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
 		p, _ := strconv.Atoi(u.Port())
 		if p%2 == 0 {
 			// blocking/slower instance: sleep longer than discovery timeout so it is missed
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
 		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
 	}
@@ -1817,7 +1817,7 @@ func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
 	// Set discovery timeout small so the overall discovery will time out before slow instances return.
 	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
 		URIs:             uris,
-		DiscoveryTimeout: 50 * time.Millisecond,
+		DiscoveryTimeout: 25 * time.Millisecond,
 		// set a high MaxInstances so we don't hit the limit; we want timeouts to be the limiter
 		MaxInstances: 10,
 	})
@@ -1829,13 +1829,13 @@ func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
 	assert.NoError(err)
 
 	// collect URLs
-	set := map[string]bool{}
+	received := map[string]bool{}
 	for _, od := range odesc {
-		set[od.LocalInfo.URL.String()] = true
+		received[od.LocalInfo.URL.String()] = true
 	}
 
 	// initial must always be present
-	assert.True(set[initial], "initial URL should always be present")
+	assert.True(received[initial], "initial URL should always be present")
 
 	// Expect only the initial + odd-numbered instances (since even ones sleep and are missed).
 	expected := map[string]bool{initial: true}
@@ -1847,13 +1847,5 @@ func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
 		}
 	}
 
-	// The returned set should be a subset of expected (timing might cause some odd ones to be missed,
-	// but no even (slow) instance should be present).
-	for got := range set {
-		_, ok := expected[got]
-		assert.True(ok, "unexpected instance returned (should not include slow/even instances): %s", got)
-	}
-
-	// There should be at least the initial URL present.
-	assert.GreaterOrEqual(len(set), 1, "expected at least the initial orchestrator to be returned")
+	assert.Equal(expected, received)
 }
