@@ -1679,7 +1679,7 @@ func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLo
 // Tests for dynamic discovery via OrchestratorInfo.Instances
 // ----------------------------------------------------------------------------
 
-func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
+func TestGetOrchestrators_Instances_Simple(t *testing.T) {
 	assert := assert.New(t)
 	// only the initial URL plus one instance
 	// Also add a couple duplicates to the Instances field for good measure
@@ -1720,7 +1720,7 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 	assert.ElementsMatch([]string{initial, inst1}, got, "Should see both initial and discovered instance")
 }
 
-func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
+func TestGetOrchestrators_Instances_MaxInstances(t *testing.T) {
 	initial := "https://127.0.0.1:8200"
 	uris := stringsToURIs([]string{initial})
 
@@ -1781,7 +1781,7 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 	}
 }
 
-func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
+func TestGetOrchestrators_Instances_AlternatingTimeouts(t *testing.T) {
 	assert := assert.New(t)
 	initial := "https://127.0.0.1:8300"
 
