@@ -180,6 +180,7 @@ type LivepeerConfig struct {
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
 	LiveAICapRefreshModels     *string
+	LiveAISaveNSegments        *int
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -1681,6 +1682,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		n.LiveAICapRefreshModels = strings.Split(*cfg.LiveAICapRefreshModels, ",")
 	}
+	n.LiveAISaveNSegments = *cfg.LiveAISaveNSegments
 
 	//Create Livepeer Node
 
