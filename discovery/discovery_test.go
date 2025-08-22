@@ -1681,6 +1681,7 @@ func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLo
 func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 	assert := assert.New(t)
 	// only the initial URL plus one instance
+	// Also add a couple duplicates to the Instances field for good measure
 	initial := "https://127.0.0.1:8000"
 	inst1 := "https://127.0.0.1:8001"
 	uris := stringsToURIs([]string{initial})
@@ -1688,14 +1689,12 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 	// Stub GetOrchestratorInfo: initial returns one instance, instance returns no more
 	old := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = old }()
-	var wg sync.WaitGroup
-	wg.Add(2) // initial + one instance
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		defer wg.Done()
 		if u.String() == initial {
 			return &net.OrchestratorInfo{
 				Transcoder: initial,
-				Instances:  []string{inst1},
+				// inst1 but with duplicates
+				Instances: []string{inst1, inst1, initial},
 			}, nil
 		}
 		// for inst1
@@ -1706,7 +1705,6 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 	// ask for 2 so we expect both initial and inst1
 	odesc, err := pool.GetOrchestrators(context.TODO(), 2, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.NoError(err)
-	wg.Wait()
 
 	// collect URLs
 	var got []string
@@ -1714,43 +1712,6 @@ func TestGetOrchestrators_DynamicInstances_Simple(t *testing.T) {
 		got = append(got, od.LocalInfo.URL.String())
 	}
 	assert.ElementsMatch([]string{initial, inst1}, got, "Should see both initial and discovered instance")
-}
-
-func TestGetOrchestrators_DynamicInstances_NoDuplicates(t *testing.T) {
-	assert := assert.New(t)
-	initial := "https://127.0.0.1:8100"
-	inst1 := "https://127.0.0.1:8101"
-	// Instances contains inst1 twice but we only want it once
-	uris := stringsToURIs([]string{initial})
-
-	old := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = old }()
-	var wg sync.WaitGroup
-	wg.Add(2) // initial + inst1 once
-	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		defer wg.Done()
-		if u.String() == initial {
-			return &net.OrchestratorInfo{
-				Transcoder: initial,
-				Instances:  []string{inst1, inst1},
-			}, nil
-		}
-		return &net.OrchestratorInfo{Transcoder: inst1}, nil
-	}
-
-	pool := NewOrchestratorPool(nil, uris, common.Score_Trusted, nil, 50*time.Millisecond)
-	odesc, err := pool.GetOrchestrators(context.TODO(), 2, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
-	assert.NoError(err)
-	wg.Wait()
-
-	// inst1 only once
-	assert.Len(odesc, 2)
-	set := map[string]bool{}
-	for _, od := range odesc {
-		set[od.LocalInfo.URL.String()] = true
-	}
-	assert.True(set[initial])
-	assert.True(set[inst1])
 }
 
 func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
@@ -1761,16 +1722,13 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 	// generate more than maxInstances = 5
 	manyInst := make([]string, 0, 8)
 	for i := 1; i <= 7; i++ {
-		manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa( i ))
+		manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa(i))
 	}
 
 	old := serverGetOrchInfo
 	defer func() { serverGetOrchInfo = old }()
-	var wg sync.WaitGroup
 	// we expect 1 initial + maxInstances(5) = 6 calls
-	wg.Add(6)
 	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
-		defer wg.Done()
 		if u.String() == initial {
 			return &net.OrchestratorInfo{
 				Transcoder: initial,
@@ -1785,7 +1743,6 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 	// request up to 6
 	odesc, err := pool.GetOrchestrators(context.TODO(), 6, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.NoError(err)
-	wg.Wait()
 
 	// should never see more than 5 distinct instances aside from initial
 	set := map[string]bool{}

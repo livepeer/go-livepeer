@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"math"
 	"math/rand"
 	"net/url"
 	"strconv"
@@ -67,8 +66,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	var seenMu sync.Mutex
 	maxInstances := 5
-	maxTotal := numOrchestrators * maxInstances
-	seen := make(map[string]bool, maxTotal)
+	seen := make(map[string]bool, len(o.infos)*maxInstances)
 	linfos := make([]*common.OrchestratorLocalInfo, 0, len(o.infos))
 	for i, _ := range o.infos {
 		if scorePred(o.infos[i].Score) {
@@ -78,7 +76,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 
 	numAvailableOrchs := len(linfos)
-	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
+	maxOrchInstances := numAvailableOrchs * (maxInstances + 1)
+	numOrchestrators = min(maxOrchInstances, numOrchestrators)
 
 	// The following allows us to avoid capability check for jobs that only
 	// depend on "legacy" features, since older orchestrators support these
@@ -117,10 +116,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	}
 	// Pre-declare for recursion
 	var getOrchInfo func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor)
+
 	getOrchInfo = func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
 		// clone the original parentCtx for logging, then wrap that in a per-call timeout
-		logCtx := clog.Clone(context.Background(), parentCtx)
-		ctx, cancel := context.WithTimeout(logCtx, maxGetOrchestratorCutoffTimeout)
+		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
 		defer cancel()
 
 		start := time.Now()
@@ -144,22 +143,24 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 					break
 				}
 				seenMu.Lock()
-				already := seen[inst]
-				if !already {
+				alreadySeen := seen[inst]
+				if !alreadySeen {
 					seen[inst] = true
 				}
 				seenMu.Unlock()
-				if !already {
-					u, parseErr := url.Parse(inst)
-					if parseErr != nil {
-						continue
-					}
-					newOd := common.OrchestratorDescriptor{
-						LocalInfo: &common.OrchestratorLocalInfo{URL: u, Score: od.LocalInfo.Score},
-					}
-					// pass the un-timed-out parentCtx so new calls start their own timeout
-					go getOrchInfo(parentCtx, newOd, infoCh, errCh, allOrchInfoCh)
+				if alreadySeen {
+					continue
 				}
+				// haven't seen this one yet so lets continue
+				u, err := url.Parse(inst)
+				if err != nil {
+					continue
+				}
+				newOd := common.OrchestratorDescriptor{
+					LocalInfo: &common.OrchestratorLocalInfo{URL: u, Score: od.LocalInfo.Score},
+				}
+				// pass the un-timed-out parentCtx so new calls start their own timeout
+				go getOrchInfo(parentCtx, newOd, infoCh, errCh, allOrchInfoCh)
 			}
 		}
 		// --- end new ---
@@ -182,9 +183,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	suspendedInfos := newSuspensionQueue()
 	timedOut := false
 	nbResp := 0
-	odCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
-	allOrchDescrCh := make(chan common.OrchestratorDescriptor, numAvailableOrchs)
-	errCh := make(chan error, numAvailableOrchs)
+	odCh := make(chan common.OrchestratorDescriptor, maxOrchInstances)
+	allOrchDescrCh := make(chan common.OrchestratorDescriptor, maxOrchInstances)
+	errCh := make(chan error, maxOrchInstances)
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
@@ -200,7 +201,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	timeout := o.discoveryTimeout
 	timer := time.NewTimer(timeout)
 
-	for nbResp < numAvailableOrchs && len(ods) < numOrchestrators && !timedOut {
+	for nbResp < maxOrchInstances && len(ods) < numOrchestrators && !timedOut {
 		select {
 		case od := <-odCh:
 			if penalty := suspender.Suspended(od.RemoteInfo.Transcoder); penalty == 0 {
