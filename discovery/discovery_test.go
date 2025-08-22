@@ -1675,10 +1675,6 @@ func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLo
 	return res
 }
 
-// ----------------------------------------------------------------------------
-// Tests for dynamic discovery via OrchestratorInfo.Instances
-// ----------------------------------------------------------------------------
-
 func TestGetOrchestrators_Instances_Simple(t *testing.T) {
 	assert := assert.New(t)
 	// only the initial URL plus one instance
@@ -1850,7 +1846,7 @@ func TestGetOrchestrators_Instances_AlternatingTimeouts(t *testing.T) {
 	assert.Equal(expected, received)
 }
 
-func TestGetOrchestrators_Instances_NoRecursiveDiscovery(t *testing.T) {
+func TestGetOrchestrators_Instances_RecursiveDiscovery(t *testing.T) {
 	assert := assert.New(t)
 
 	// Top-level orchestrators (various recursion depths)

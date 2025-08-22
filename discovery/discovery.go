@@ -61,6 +61,7 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 	})
 	if err != nil {
 		glog.Error(err.Error())
+		return &orchestratorPool{}
 	}
 	return pool
 }
@@ -77,6 +78,7 @@ func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 	})
 	if err != nil {
 		glog.Error(err.Error())
+		return &orchestratorPool{}
 	}
 	return pool
 }
@@ -163,9 +165,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		return caps.CompatibleWith(info.Capabilities)
 	}
 	// Pre-declare for recursion
-	var getOrchInfo func(parentCtx context.Context, od common.OrchestratorDescriptor, followInstances bool, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor)
+	var getOrchInfo func(parentCtx context.Context, od common.OrchestratorDescriptor, level int, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor)
 
-	getOrchInfo = func(parentCtx context.Context, od common.OrchestratorDescriptor, followInstances bool, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
+	getOrchInfo = func(parentCtx context.Context, od common.OrchestratorDescriptor, level int, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
 		// clone the original parentCtx for logging, then wrap that in a per-call timeout
 		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
 		defer cancel()
@@ -184,8 +186,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		allOrchInfoCh <- orchDescr
 
-		// --- begin new: discover and enqueue any newly advertised instances ---
-		if followInstances && info != nil && len(info.Instances) > 0 {
+		// discover newly advertised instances. only recurse the first level for now.
+		if level == 0 && info != nil && len(info.Instances) > 0 {
 			for i, inst := range info.Instances {
 				if i >= maxInstances {
 					break
@@ -209,10 +211,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				}
 				// pass the un-timed-out parentCtx so new calls start their own timeout
 				// but do NOT follow instances any deeper than this (followInstances=false)
-				go getOrchInfo(parentCtx, newOd, false, infoCh, errCh, allOrchInfoCh)
+				go getOrchInfo(parentCtx, newOd, level+1, infoCh, errCh, allOrchInfoCh)
 			}
 		}
-		// --- end new ---
 
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
 			infoCh <- orchDescr
@@ -238,7 +239,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 
 	// Shuffle and create O descriptor
 	for _, i := range rand.Perm(numAvailableOrchs) {
-		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, true, odCh, errCh, allOrchDescrCh)
+		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, 0, odCh, errCh, allOrchDescrCh)
 	}
 	go reportLiveAICapacity(allOrchDescrCh, caps)
 
