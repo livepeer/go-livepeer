@@ -389,27 +389,6 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			workerRoute = workerRoute + "/" + workerResourceRoute
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, bytes.NewBuffer(body))
-		if err != nil {
-			clog.Errorf(ctx, "Unable to create request err=%v", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		// set the headers
-		req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
-		req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
-
-		req.Header.Add(jobRequestHdr, orchJob.JobReqHdr)
-		if orchToken.Price.PricePerUnit > 0 {
-			paymentHdr, err := createPayment(ctx, orchJob.Req, orchToken, ls.LivepeerNode)
-			if err != nil {
-				clog.Errorf(ctx, "Unable to create payment err=%v", err)
-				http.Error(w, fmt.Sprintf("Unable to create payment err=%v", err), http.StatusBadRequest)
-				return
-			}
-			req.Header.Add(jobPaymentHeaderHdr, paymentHdr)
-		}
-
 		start := time.Now()
 		resp, code, err := ls.sendJobToOrch(ctx, r, orchJob.Req, orchJob.JobReqHdr, orchToken, workerResourceRoute, body)
 		if err != nil {
@@ -428,10 +407,10 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			}
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 			//nonretryable error
-			if resp.StatusCode < 500 {
+			if code < 500 {
 				//assume non retryable bad request
 				//return error response from the worker
-				http.Error(w, string(data), resp.StatusCode)
+				http.Error(w, string(data), code)
 				return
 			}
 			//retryable error, continue to next orchestrator
