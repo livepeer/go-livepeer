@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -71,6 +72,14 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 	}
 
+	// --- begin new: track seen URLs ---
+	seen := make(map[string]bool, len(linfos))
+	var seenMu sync.Mutex
+	for _, li := range linfos {
+		seen[li.URL.String()] = true
+	}
+	// --- end new ---
+
 	numAvailableOrchs := len(linfos)
 	numOrchestrators = int(math.Min(float64(numAvailableOrchs), float64(numOrchestrators)))
 
@@ -126,6 +135,30 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			RemoteInfo: info,
 		}
 		allOrchInfoCh <- orchDescr
+
+		// --- begin new: discover and enqueue any newly advertised instances ---
+		if info != nil && len(info.Instances) > 0 {
+			for _, inst := range info.Instances {
+				seenMu.Lock()
+				already := seen[inst]
+				if !already {
+					seen[inst] = true
+				}
+				seenMu.Unlock()
+				if !already {
+					u, parseErr := url.Parse(inst)
+					if parseErr != nil {
+						continue
+					}
+					newOd := common.OrchestratorDescriptor{
+						LocalInfo: &common.OrchestratorLocalInfo{URL: u, Score: od.LocalInfo.Score},
+					}
+					go getOrchInfo(ctx, newOd, infoCh, errCh, allOrchInfoCh)
+				}
+			}
+		}
+		// --- end new ---
+
 		if err == nil && !isBlacklisted(info) && isCompatible(info) {
 			infoCh <- orchDescr
 			return
