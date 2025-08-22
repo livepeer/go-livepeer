@@ -1780,3 +1780,80 @@ func TestGetOrchestrators_DynamicInstances_MaxInstances(t *testing.T) {
 		}
 	}
 }
+
+func TestGetOrchestrators_DynamicInstances_AlternatingTimeouts(t *testing.T) {
+	assert := assert.New(t)
+	initial := "https://127.0.0.1:8300"
+
+	// create 6 instances so we can alternate timeouts
+	manyInst := []string{}
+	for i := 1; i <= 6; i++ {
+		manyInst = append(manyInst, "https://127.0.0.1:83"+strconv.Itoa(100+i))
+	}
+	uris := stringsToURIs([]string{initial})
+
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+
+	// For the initial URI return the full list immediately.
+	// For instance URIs: odd ports return immediately, even ports sleep (and thus are
+	// unlikely to be collected before the discovery timeout).
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if u.String() == initial {
+			return &net.OrchestratorInfo{
+				Transcoder: initial,
+				Instances:  manyInst,
+			}, nil
+		}
+		// determine port and alternate behaviour
+		p, _ := strconv.Atoi(u.Port())
+		if p%2 == 0 {
+			// blocking/slower instance: sleep longer than discovery timeout so it is missed
+			time.Sleep(200 * time.Millisecond)
+		}
+		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+	}
+
+	// Set discovery timeout small so the overall discovery will time out before slow instances return.
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		// set a high MaxInstances so we don't hit the limit; we want timeouts to be the limiter
+		MaxInstances: 10,
+	})
+	require := require.New(t)
+	require.NoError(err)
+
+	// ask for many orchestrators (larger than available) so numOrchs doesn't artificially limit results
+	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	assert.NoError(err)
+
+	// collect URLs
+	set := map[string]bool{}
+	for _, od := range odesc {
+		set[od.LocalInfo.URL.String()] = true
+	}
+
+	// initial must always be present
+	assert.True(set[initial], "initial URL should always be present")
+
+	// Expect only the initial + odd-numbered instances (since even ones sleep and are missed).
+	expected := map[string]bool{initial: true}
+	for _, inst := range manyInst {
+		u, _ := url.Parse(inst)
+		p, _ := strconv.Atoi(u.Port())
+		if p%2 != 0 {
+			expected[inst] = true
+		}
+	}
+
+	// The returned set should be a subset of expected (timing might cause some odd ones to be missed,
+	// but no even (slow) instance should be present).
+	for got := range set {
+		_, ok := expected[got]
+		assert.True(ok, "unexpected instance returned (should not include slow/even instances): %s", got)
+	}
+
+	// There should be at least the initial URL present.
+	assert.GreaterOrEqual(len(set), 1, "expected at least the initial orchestrator to be returned")
+}
