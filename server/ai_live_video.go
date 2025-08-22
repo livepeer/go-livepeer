@@ -533,14 +533,18 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 
 	reportUpdate := func(data []byte) {
 		// send the param update to kafka
-		event := make(map[string]interface{})
-		event["type"] = "params_update"
-		event["stream_id"] = params.liveParams.streamID
-		event["request_id"] = params.liveParams.requestID
-		event["pipeline"] = params.liveParams.pipeline
-		event["pipeline_id"] = params.liveParams.pipelineID
-		event["params"] = json.RawMessage(data)
-		monitor.SendQueueEventAsync("ai_stream_events", event)
+		monitor.SendQueueEventAsync("ai_stream_events", map[string]interface{}{
+			"type":        "params_update",
+			"stream_id":   params.liveParams.streamID,
+			"request_id":  params.liveParams.requestID,
+			"pipeline":    params.liveParams.pipeline,
+			"pipeline_id": params.liveParams.pipelineID,
+			"params":      json.RawMessage(data),
+			"orchestrator_info": map[string]interface{}{
+				"address": params.liveParams.sess.Address(),
+				"url":     params.liveParams.sess.Transcoder(),
+			},
+		})
 	}
 
 	sess, exists := params.node.LivePipelines[stream]
