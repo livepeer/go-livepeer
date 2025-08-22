@@ -411,13 +411,14 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		start := time.Now()
-		resp, err := sendJobReqWithTimeout(req, time.Duration(orchJob.Req.Timeout+5)*time.Second) //include 5 second buffer
+		resp, code, err := ls.sendJobToOrch(ctx, r, orchJob.Req, orchJob.JobReqHdr, orchToken, workerResourceRoute, body)
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
 			continue
 		}
+
 		//error response from Orchestrator
-		if resp.StatusCode > 399 {
+		if code > 399 {
 			defer resp.Body.Close()
 			data, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -524,8 +525,44 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance.FloatString(0))
 		}
-
 	}
+}
+
+func (ls *LivepeerServer) sendJobToOrch(ctx context.Context, r *http.Request, jobReq *JobRequest, signedReqHdr string, orchToken JobToken, route string, body []byte) (*http.Response, int, error) {
+	orchUrl := orchToken.ServiceAddr + route
+	req, err := http.NewRequestWithContext(ctx, "POST", orchUrl, bytes.NewBuffer(body))
+	if err != nil {
+		clog.Errorf(ctx, "Unable to create request err=%v", err)
+		return nil, http.StatusInternalServerError, err
+	}
+
+	// set the headers
+	if r != nil {
+		req.Header.Add("Content-Length", r.Header.Get("Content-Length"))
+		req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
+	} else {
+		//this is for live requests which will be json to start stream
+		// update requests should include the content type/length
+		req.Header.Add("Content-Type", "application/json")
+	}
+
+	req.Header.Add(jobRequestHdr, signedReqHdr)
+	if orchToken.Price.PricePerUnit > 0 {
+		paymentHdr, err := createPayment(ctx, jobReq, orchToken, ls.LivepeerNode)
+		if err != nil {
+			clog.Errorf(ctx, "Unable to create payment err=%v", err)
+			return nil, http.StatusInternalServerError, fmt.Errorf("Unable to create payment err=%v", err)
+		}
+		req.Header.Add(jobPaymentHeaderHdr, paymentHdr)
+	}
+
+	resp, err := sendJobReqWithTimeout(req, time.Duration(jobReq.Timeout+5)*time.Second) //include 5 second buffer
+	if err != nil {
+		clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
+		return nil, http.StatusBadRequest, err
+	}
+
+	return resp, resp.StatusCode, nil
 }
 
 func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.Request) {
