@@ -57,6 +57,9 @@ func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 	return pool
 }
 
+func NewOrchestratorPoolWithConfig(config OrchestratorPoolConfig) (*orchestratorPool, error) {
+}
+
 func (o *orchestratorPool) GetInfos() []common.OrchestratorLocalInfo {
 	return o.infos
 }
