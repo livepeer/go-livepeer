@@ -11,7 +11,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/core"
 )
 
 type ExternalCapability struct {
@@ -150,17 +149,11 @@ func (extCap *ExternalCapability) GetPrice() *big.Rat {
 }
 
 func (extCap *ExternalCapability) ToCapabilities() *Capabilities {
-	constraint := ModelConstraint{Capacity: extCap.Capacity}
+	capConstraints := make(PerCapabilityConstraints)
+	capConstraints[Capability_LiveAI].Models = make(ModelConstraints)
+	capConstraints[Capability_LiveAI].Models[extCap.Name] = &ModelConstraint{Capacity: extCap.Capacity}
 
-	capConstraints := core.CapabilityConstraints{
-		Models: map[string]ModelConstraint{
-			extCap.Name: constraint,
-		},
-	}
-
-	capConstraints[Capability_LiveAI].Models[extCap.Name] = constraint
-
-	caps := core.NewCapabilities([]core.Capability{Capability_LiveAI})
+	caps := NewCapabilities([]Capability{Capability_LiveAI}, MandatoryOCapabilities())
 	caps.SetPerCapabilityConstraints(capConstraints)
 
 	return caps

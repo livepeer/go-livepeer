@@ -1146,10 +1146,12 @@ func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings strin
 
 		orch.node.AddAICapabilities(cap.ToCapabilities())
 	}
+
 	return cap, nil
 }
 
 func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {
+	//if a live-ai external capability remove from Capabilities
 	if strings.Contains(extCapability, "live-") {
 		cap := orch.node.ExternalCapabilities.Capabilities[extCapability]
 		orch.node.RemoveAICapabilities(cap.ToCapabilities())
