@@ -1849,3 +1849,84 @@ func TestGetOrchestrators_Instances_AlternatingTimeouts(t *testing.T) {
 
 	assert.Equal(expected, received)
 }
+
+func TestGetOrchestrators_Instances_NoRecursiveDiscovery(t *testing.T) {
+	assert := assert.New(t)
+
+	// Top-level orchestrators (various recursion depths)
+	initial0 := "https://127.0.0.1:9000" // 0 levels
+	initial1 := "https://127.0.0.1:9001" // 1 level -> 9010 (which advertises 9020 but should NOT be followed)
+	initial2 := "https://127.0.0.1:9002" // 2 first-level instances -> 9011, 9012 (which advertise 9021/9022 but should NOT be followed)
+
+	// first-level instances
+	inst9010 := "https://127.0.0.1:9010"
+	inst9011 := "https://127.0.0.1:9011"
+	inst9012 := "https://127.0.0.1:9012"
+
+	// second-level instances (should NOT be discovered)
+	inst9020 := "https://127.0.0.1:9020"
+	inst9021 := "https://127.0.0.1:9021"
+	inst9022 := "https://127.0.0.1:9022"
+
+	uris := stringsToURIs([]string{initial0, initial1, initial2})
+
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+
+	// Stub GetOrchestratorInfo:
+	// - initial0: no instances
+	// - initial1: advertises inst9010, which advertises inst9020 (second-level)
+	// - initial2: advertises inst9011 and inst9012, each advertising a second-level
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		switch u.String() {
+		case initial0:
+			return &net.OrchestratorInfo{Transcoder: initial0}, nil
+		case initial1:
+			return &net.OrchestratorInfo{Transcoder: initial1, Instances: []string{inst9010}}, nil
+		case inst9010:
+			// second-level advertised, but should not be followed
+			return &net.OrchestratorInfo{Transcoder: inst9010, Instances: []string{inst9020}}, nil
+		case initial2:
+			return &net.OrchestratorInfo{Transcoder: initial2, Instances: []string{inst9011, inst9012}}, nil
+		case inst9011:
+			return &net.OrchestratorInfo{Transcoder: inst9011, Instances: []string{inst9021}}, nil
+		case inst9012:
+			return &net.OrchestratorInfo{Transcoder: inst9012, Instances: []string{inst9022}}, nil
+		default:
+			return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+		}
+	}
+
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		MaxInstances:     10, // ensure limits don't truncate first-level discovery
+	})
+	require := require.New(t)
+	require.NoError(err)
+
+	// request sufficiently many orchestrators so numOrchestrators doesn't artificially limit results
+	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	assert.NoError(err)
+
+	// Collect returned URLs
+	got := map[string]bool{}
+	for _, od := range odesc {
+		got[od.LocalInfo.URL.String()] = true
+	}
+
+	// Expected: all top-level URLs + only first-level instances (inst9010, inst9011, inst9012)
+	expectedPresent := []string{initial0, initial1, initial2, inst9010, inst9011, inst9012}
+	for _, e := range expectedPresent {
+		assert.True(got[e], "expected %s to be present", e)
+	}
+
+	// Ensure second-level instances are NOT present
+	unexpected := []string{inst9020, inst9021, inst9022}
+	for _, u := range unexpected {
+		assert.False(got[u], "did not expect second-level instance %s to be present", u)
+	}
+
+	// total expected count = 3 top-level + 3 first-level = 6
+	assert.Len(got, 6)
+}
