@@ -115,8 +115,10 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		return caps.CompatibleWith(info.Capabilities)
 	}
-	getOrchInfo := func(ctx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
-		ctx, cancel := context.WithTimeout(clog.Clone(context.Background(), ctx), maxGetOrchestratorCutoffTimeout)
+	getOrchInfo := func(parentCtx context.Context, od common.OrchestratorDescriptor, infoCh chan common.OrchestratorDescriptor, errCh chan error, allOrchInfoCh chan common.OrchestratorDescriptor) {
+		// clone the original parentCtx for logging, then wrap that in a per-call timeout
+		logCtx := clog.Clone(context.Background(), parentCtx)
+		ctx, cancel := context.WithTimeout(logCtx, maxGetOrchestratorCutoffTimeout)
 		defer cancel()
 
 		start := time.Now()
@@ -153,7 +155,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 					newOd := common.OrchestratorDescriptor{
 						LocalInfo: &common.OrchestratorLocalInfo{URL: u, Score: od.LocalInfo.Score},
 					}
-					go getOrchInfo(ctx, newOd, infoCh, errCh, allOrchInfoCh)
+					// pass the un-timed-out parentCtx so new calls start their own timeout
+					go getOrchInfo(parentCtx, newOd, infoCh, errCh, allOrchInfoCh)
 				}
 			}
 		}
