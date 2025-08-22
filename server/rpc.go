@@ -253,6 +253,8 @@ func StartTranscodeServer(orch Orchestrator, bind string, mux *http.ServeMux, wo
 	lp.transRPC.HandleFunc("/process/token", lp.GetJobToken)
 	lp.transRPC.HandleFunc("/capability/register", lp.RegisterCapability)
 	lp.transRPC.HandleFunc("/capability/unregister", lp.UnregisterCapability)
+	lp.transRPC.HandleFunc("/stream/start", lp.StartStream)
+	lp.transRPC.HandleFunc("/stream/payment", lp.StreamPayment)
 
 	cert, key, err := getCert(orch.ServiceURI(), workDir)
 	if err != nil {
