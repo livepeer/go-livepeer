@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -530,6 +531,22 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
+	reportUpdate := func(data []byte) {
+		// send the param update to kafka
+		monitor.SendQueueEventAsync("ai_stream_events", map[string]interface{}{
+			"type":        "params_update",
+			"stream_id":   params.liveParams.streamID,
+			"request_id":  params.liveParams.requestID,
+			"pipeline":    params.liveParams.pipeline,
+			"pipeline_id": params.liveParams.pipelineID,
+			"params":      json.RawMessage(data),
+			"orchestrator_info": map[string]interface{}{
+				"address": params.liveParams.sess.Address(),
+				"url":     params.liveParams.sess.Transcoder(),
+			},
+		})
+	}
+
 	sess, exists := params.node.LivePipelines[stream]
 	if !exists || sess.RequestID != params.liveParams.requestID {
 		stopProcessing(ctx, params, fmt.Errorf("control session did not exist"))
@@ -541,6 +558,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	}
 	sess.ControlPub = controlPub
 	sess.StopControl = stop
+	sess.ReportUpdate = reportUpdate
 
 	if monitor.Enabled {
 		monitorCurrentLiveSessions(params.node.LivePipelines)
@@ -549,13 +567,14 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	// Send any cached control params in a goroutine outside the lock.
 	msg := sess.Params
 	go func() {
-		if msg == "" {
+		if msg == nil {
 			return
 		}
 		var err error
 		for i := 0; i < 3; i++ {
-			err = controlPub.Write(strings.NewReader(msg))
+			err = controlPub.Write(bytes.NewReader(msg))
 			if err == nil {
+				reportUpdate(msg)
 				return
 			}
 			time.Sleep(100 * time.Millisecond)

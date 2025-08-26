@@ -845,7 +845,8 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 
 		params := string(data)
 		ls.LivepeerNode.LiveMu.Lock()
-		p.Params = params
+		p.Params = data
+		reportUpdate := p.ReportUpdate
 		controlPub := p.ControlPub
 		ls.LivepeerNode.LiveMu.Unlock()
 
@@ -855,10 +856,12 @@ func (ls *LivepeerServer) UpdateLiveVideo() http.Handler {
 		}
 
 		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, params)
-		if err := controlPub.Write(strings.NewReader(params)); err != nil {
+		if err := controlPub.Write(bytes.NewReader(data)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		reportUpdate(data)
 
 		corsHeaders(w, r.Method)
 	})
