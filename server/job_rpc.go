@@ -44,6 +44,11 @@ const jobOrchSearchTimeoutDefault = 1 * time.Second
 const jobOrchSearchRespTimeoutDefault = 500 * time.Millisecond
 
 var errNoTimeoutSet = errors.New("no timeout_seconds set with request, timeout_seconds is required")
+var errNoCapabilityCapacity = errors.New("No capacity available for capability")
+var errNoJobCreds = errors.New("Could not verify job creds")
+var errPaymentError = errors.New("Could not parse payment")
+var errInsufficientBalance = errors.New("Insufficient balance for request")
+
 var sendJobReqWithTimeout = sendReqWithTimeout
 
 type JobSender struct {
@@ -77,7 +82,13 @@ type JobRequestDetails struct {
 	StreamId string `json:"stream_id"`
 }
 type JobParameters struct {
+	//Gateway
 	Orchestrators JobOrchestratorsFilter `json:"orchestrators,omitempty"` //list of orchestrators to use for the job
+
+	//Orchestrator
+	EnableVideoIngress bool `json:"enable_video_ingress,omitempty"`
+	EnableVideoEgress  bool `json:"enable_video_egress,omitempty"`
+	EnableDataOutput   bool `json:"enable_data_output,omitempty"`
 }
 
 type JobOrchestratorsFilter struct {
@@ -86,9 +97,16 @@ type JobOrchestratorsFilter struct {
 }
 
 type orchJob struct {
-	Req       *JobRequest
-	Details   *JobRequestDetails
-	Params    *JobParameters
+	Req     *JobRequest
+	Details *JobRequestDetails
+	Params  *JobParameters
+
+	//Orchestrator fields
+	Sender   ethcommon.Address
+	JobPrice *net.PriceInfo
+}
+type gatewayJob struct {
+	Job       *orchJob
 	Orchs     []JobToken
 	JobReqHdr string
 }
@@ -264,7 +282,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobToken)
 }
 
-func (ls *LivepeerServer) setupJob(ctx context.Context, r *http.Request) (*orchJob, error) {
+func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request) (*gatewayJob, error) {
 	clog.Infof(ctx, "processing job request")
 	var orchs []JobToken
 
@@ -314,9 +332,12 @@ func (ls *LivepeerServer) setupJob(ctx context.Context, r *http.Request) (*orchJ
 	}
 	jobReqHdr = base64.StdEncoding.EncodeToString(jobReqEncoded)
 
-	return &orchJob{Req: jobReq,
-		Details:   &jobDetails,
-		Params:    &jobParams,
+	job := orchJob{Req: jobReq,
+		Details: &jobDetails,
+		Params:  &jobParams,
+	}
+
+	return &gatewayJob{Job: &job,
 		Orchs:     orchs,
 		JobReqHdr: jobReqHdr}, nil
 }
@@ -349,21 +370,21 @@ func (ls *LivepeerServer) SubmitJob() http.Handler {
 
 func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
-	orchJob, err := ls.setupJob(ctx, r)
+	gatewayJob, err := ls.setupGatewayJob(ctx, r)
 	if err != nil {
 		clog.Errorf(ctx, "Error setting up job: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	clog.Infof(ctx, "Job request setup complete details=%v params=%v", orchJob.Details, orchJob.Params)
+	clog.Infof(ctx, "Job request setup complete details=%v params=%v", gatewayJob.Job.Details, gatewayJob.Job.Params)
 
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Unable to setup job err=%v", err), http.StatusBadRequest)
 		return
 	}
-	ctx = clog.AddVal(ctx, "job_id", orchJob.Req.ID)
-	ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
+	ctx = clog.AddVal(ctx, "job_id", gatewayJob.Job.Req.ID)
+	ctx = clog.AddVal(ctx, "capability", gatewayJob.Job.Req.Capability)
 	// Read the original request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -374,7 +395,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 
 	//send the request to the Orchestrator(s)
 	//the loop ends on Gateway error and bad request errors
-	for _, orchToken := range orchJob.Orchs {
+	for _, orchToken := range gatewayJob.Orchs {
 
 		// Extract the worker resource route from the URL path
 		// The prefix is "/process/request/"
@@ -390,7 +411,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 		}
 
 		start := time.Now()
-		resp, code, err := ls.sendJobToOrch(ctx, r, orchJob.Req, orchJob.JobReqHdr, orchToken, workerResourceRoute, body)
+		resp, code, err := ls.sendJobToOrch(ctx, r, gatewayJob.Job.Req, gatewayJob.JobReqHdr, orchToken, workerResourceRoute, body)
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
 			continue
@@ -436,7 +457,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				continue
 			}
 
-			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, orchJob.Req.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance)
 			w.Write(data)
 			return
@@ -459,7 +480,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			w.WriteHeader(http.StatusOK)
 			// Read from upstream and forward to client
 			respChan := make(chan string, 100)
-			respCtx, _ := context.WithTimeout(ctx, time.Duration(orchJob.Req.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
+			respCtx, _ := context.WithTimeout(ctx, time.Duration(gatewayJob.Job.Req.Timeout+10)*time.Second) //include a small buffer to let Orchestrator close the connection on the timeout
 
 			go func() {
 				defer resp.Body.Close()
@@ -500,7 +521,7 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 				}
 			}
 
-			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, orchJob.Req.Capability, time.Since(start))
+			gatewayBalance := updateGatewayBalance(ls.LivepeerNode, orchToken, gatewayJob.Job.Req.Capability, time.Since(start))
 
 			clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v balance_from_orch=%v", time.Since(start), gatewayBalance.FloatString(0), orchBalance.FloatString(0))
 		}
@@ -544,23 +565,31 @@ func (ls *LivepeerServer) sendJobToOrch(ctx context.Context, r *http.Request, jo
 	return resp, resp.StatusCode, nil
 }
 
-func (ls *LivepeerServer) sendPayment(ctx context.Context, orchUrl string, payment string) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", orchUrl+"/stream/payment", nil)
+func (ls *LivepeerServer) sendPayment(ctx context.Context, orchPmtUrl, capability, jobReq, payment string) (*JobToken, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", orchPmtUrl, nil)
 	if err != nil {
 		clog.Errorf(ctx, "Unable to create request err=%v", err)
-		return err
+		return nil, err
 	}
 
 	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add(jobRequestHdr, jobReq)
 	req.Header.Add(jobPaymentHeaderHdr, payment)
 
-	_, err = sendJobReqWithTimeout(req, 10)
+	resp, err := sendJobReqWithTimeout(req, 10)
 	if err != nil {
-		clog.Errorf(ctx, "job payment not able to be processed by Orchestrator %v err=%v ", orchUrl, err.Error())
-		return err
+		clog.Errorf(ctx, "job payment not able to be processed by Orchestrator %v err=%v ", orchPmtUrl, err.Error())
+		return nil, err
 	}
 
-	return nil
+	var jobToken JobToken
+	if err := json.NewDecoder(resp.Body).Decode(&jobToken); err != nil {
+		clog.Errorf(ctx, "Error decoding job token response: %v", err)
+		return nil, err
+	}
+
+	//return the job token with new ticketparams, balance and price. Not all fields filled out
+	return &jobToken, nil
 }
 
 func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.Request) {
@@ -569,77 +598,20 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	orch := h.orchestrator
 	// check the prompt sig from the request
 	// confirms capacity available before processing payment info
-	job := r.Header.Get(jobRequestHdr)
-	jobReq, err := verifyJobCreds(ctx, orch, job)
+	orchJob, err := h.setupOrchJob(ctx, r)
 	if err != nil {
-		if err == errZeroCapacity {
-			clog.Errorf(ctx, "No capacity available for capability err=%q", err)
+		if err == errNoCapabilityCapacity {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		} else if err == errNoTimeoutSet {
-			clog.Errorf(ctx, "Timeout not set in request err=%q", err)
+		} else {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-		} else {
-			clog.Errorf(ctx, "Could not verify job creds err=%q", err)
-			http.Error(w, err.Error(), http.StatusForbidden)
 		}
-
 		return
 	}
-
-	sender := ethcommon.HexToAddress(jobReq.Sender)
-	jobPrice, err := orch.JobPriceInfo(sender, jobReq.Capability)
-	if err != nil {
-		clog.Errorf(ctx, "could not get price err=%v", err.Error())
-		http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), http.StatusBadRequest)
-		return
-	}
-	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 	taskId := core.RandomManifestID()
-	jobId := jobReq.Capability
-	ctx = clog.AddVal(ctx, "job_id", jobReq.ID)
+	ctx = clog.AddVal(ctx, "job_id", orchJob.Req.ID)
 	ctx = clog.AddVal(ctx, "worker_task_id", string(taskId))
-	ctx = clog.AddVal(ctx, "capability", jobReq.Capability)
-	ctx = clog.AddVal(ctx, "sender", jobReq.Sender)
-
-	//no payment included, confirm if balance remains
-	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-	var payment net.Payment
-	// if price is 0, no payment required
-	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-		// get payment information
-		payment, err = getPayment(r.Header.Get(jobPaymentHeaderHdr))
-		if err != nil {
-			clog.Errorf(r.Context(), "Could not parse payment: %v", err)
-			http.Error(w, err.Error(), http.StatusPaymentRequired)
-			return
-		}
-
-		if payment.TicketParams == nil {
-
-			//if price is not 0, confirm balance
-			if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-				minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
-				orchBal := getPaymentBalance(orch, sender, jobId)
-
-				if orchBal.Cmp(minBal) < 0 {
-					clog.Errorf(ctx, "Insufficient balance for request")
-					http.Error(w, "Insufficient balance", http.StatusPaymentRequired)
-					orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-					return
-				}
-			}
-		} else {
-			if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobId)); err != nil {
-				clog.Errorf(ctx, "error processing payment err=%q", err)
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-				return
-			}
-		}
-
-		clog.Infof(ctx, "balance after payment is %v", getPaymentBalance(orch, sender, jobId).FloatString(0))
-	}
-
+	ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
+	ctx = clog.AddVal(ctx, "sender", orchJob.Req.Sender)
 	clog.V(common.SHORT).Infof(ctx, "Received job, sending for processing")
 
 	// Read the original body
@@ -659,7 +631,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		workerResourceRoute = workerResourceRoute[len(prefix):]
 	}
 
-	workerRoute := jobReq.CapabilityUrl
+	workerRoute := orchJob.Req.CapabilityUrl
 	if workerResourceRoute != "" {
 		workerRoute = workerRoute + "/" + workerResourceRoute
 	}
@@ -674,18 +646,18 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 	req.Header.Add("Content-Type", r.Header.Get("Content-Type"))
 
 	start := time.Now()
-	resp, err := sendReqWithTimeout(req, time.Duration(jobReq.Timeout)*time.Second)
+	resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 	if err != nil {
 		clog.Errorf(ctx, "job not able to be processed err=%v ", err.Error())
 		//if the request failed with connection error, remove the capability
 		//exclude deadline exceeded or context canceled errors does not indicate a fatal error all the time
 		if err != context.DeadlineExceeded && !strings.Contains(err.Error(), "context canceled") {
-			clog.Errorf(ctx, "removing capability %v due to error %v", jobReq.Capability, err.Error())
-			h.orchestrator.RemoveExternalCapability(jobReq.Capability)
+			clog.Errorf(ctx, "removing capability %v due to error %v", orchJob.Req.Capability, err.Error())
+			h.orchestrator.RemoveExternalCapability(orchJob.Req.Capability)
 		}
 
-		chargeForCompute(start, jobPrice, orch, sender, jobId)
-		w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
+		chargeForCompute(start, orchJob.JobPrice, orch, orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 		http.Error(w, fmt.Sprintf("job not able to be processed, removing capability err=%v", err.Error()), http.StatusInternalServerError)
 		return
 	}
@@ -695,7 +667,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 
 	//release capacity for another request
 	// if requester closes the connection need to release capacity
-	defer orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+	defer orch.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
 
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		//non streaming response
@@ -705,8 +677,8 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		if err != nil {
 			clog.Errorf(ctx, "Unable to read response err=%v", err)
 
-			chargeForCompute(start, jobPrice, orch, sender, jobId)
-			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
+			chargeForCompute(start, orchJob.JobPrice, orch, orchJob.Sender, orchJob.Req.Capability)
+			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -715,16 +687,16 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		if resp.StatusCode > 399 {
 			clog.Errorf(ctx, "error processing request err=%v ", string(data))
 
-			chargeForCompute(start, jobPrice, orch, sender, jobId)
-			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
+			chargeForCompute(start, orchJob.JobPrice, orch, orchJob.Sender, orchJob.Req.Capability)
+			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			//return error response from the worker
 			http.Error(w, string(data), resp.StatusCode)
 			return
 		}
 
-		chargeForCompute(start, jobPrice, orch, sender, jobId)
-		w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, sender, jobId).FloatString(0))
+		chargeForCompute(start, orchJob.JobPrice, orch, orchJob.Sender, orchJob.Req.Capability)
+		w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 		w.Write(data)
 		//request completed and returned a response
 
@@ -737,22 +709,22 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		//send payment balance back so client can determine if payment is needed
-		addPaymentBalanceHeader(w, orch, sender, jobId)
+		addPaymentBalanceHeader(w, orch, orchJob.Sender, orchJob.Req.Capability)
 
 		// Flush to ensure data is sent immediately
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			clog.Errorf(ctx, "streaming not supported")
 
-			chargeForCompute(start, jobPrice, orch, sender, jobId)
-			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, sender, jobId).FloatString(0))
+			chargeForCompute(start, orchJob.JobPrice, orch, orchJob.Sender, orchJob.Req.Capability)
+			w.Header().Set(jobPaymentBalanceHdr, getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
 			return
 		}
 
 		// Read from upstream and forward to client
 		respChan := make(chan string, 100)
-		respCtx, _ := context.WithTimeout(ctx, time.Duration(jobReq.Timeout)*time.Second)
+		respCtx, _ := context.WithTimeout(ctx, time.Duration(orchJob.Req.Timeout)*time.Second)
 
 		go func() {
 			defer resp.Body.Close()
@@ -761,7 +733,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 			for scanner.Scan() {
 				select {
 				case <-respCtx.Done():
-					orchBal := orch.Balance(sender, core.ManifestID(jobId))
+					orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.Capability))
 					if orchBal == nil {
 						orchBal = big.NewRat(0, 1)
 					}
@@ -771,7 +743,7 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 				default:
 					line := scanner.Text()
 					if strings.Contains(line, "[DONE]") {
-						orchBal := orch.Balance(sender, core.ManifestID(jobId))
+						orchBal := orch.Balance(orchJob.Sender, core.ManifestID(orchJob.Req.Capability))
 						if orchBal == nil {
 							orchBal = big.NewRat(0, 1)
 						}
@@ -793,9 +765,10 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 			case <-pmtWatcher.C:
 				//check balance and end response if out of funds
 				//skips if price is 0
+				jobPriceRat := big.NewRat(orchJob.JobPrice.PricePerUnit, orchJob.JobPrice.PixelsPerUnit)
 				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-					h.orchestrator.DebitFees(sender, core.ManifestID(jobId), jobPrice, 5)
-					senderBalance := getPaymentBalance(orch, sender, jobId)
+					h.orchestrator.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, 5)
+					senderBalance := getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability)
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
 							w.Write([]byte("event: insufficient balance\n"))
@@ -815,8 +788,69 @@ func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.R
 		}
 
 		//capacity released with defer stmt above
-		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, sender, jobId).FloatString(0))
+		clog.V(common.SHORT).Infof(ctx, "Job processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 	}
+}
+
+// SetupOrchJob prepares the orchestrator job by extracting and validating the job request from the HTTP headers.
+// Payment is applied if applicable.
+func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request) (*orchJob, error) {
+	clog.Infof(ctx, "processing job request")
+
+	job := r.Header.Get(jobRequestHdr)
+	orch := h.orchestrator
+	jobReq, err := verifyJobCreds(ctx, orch, job)
+	if err != nil {
+		if err == errZeroCapacity {
+			return nil, errNoCapabilityCapacity
+		} else if err == errNoTimeoutSet {
+			return nil, errNoTimeoutSet
+		} else {
+			return nil, errNoJobCreds
+		}
+	}
+
+	sender := ethcommon.HexToAddress(jobReq.Sender)
+	jobPrice, err := orch.JobPriceInfo(sender, jobReq.Capability)
+	if err != nil {
+		return nil, errors.New("Could not get job price")
+	}
+	clog.V(common.DEBUG).Infof(ctx, "job price=%v units=%v", jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+
+	//no payment included, confirm if balance remains
+	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+	var payment net.Payment
+	// if price is 0, no payment required
+	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+		// get payment information
+		payment, err = getPayment(r.Header.Get(jobPaymentHeaderHdr))
+		if err != nil {
+			return nil, errPaymentError
+		}
+
+		if payment.TicketParams == nil {
+
+			//if price is not 0, confirm balance
+			if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
+				minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+				orchBal := getPaymentBalance(orch, sender, jobReq.Capability)
+
+				if orchBal.Cmp(minBal) < 0 {
+					orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+					return nil, errInsufficientBalance
+				}
+			}
+		} else {
+			if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobReq.Capability)); err != nil {
+				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+				return nil, errPaymentError
+			}
+		}
+
+		clog.Infof(ctx, "balance after payment is %v", getPaymentBalance(orch, sender, jobReq.Capability).FloatString(0))
+	}
+
+	return &orchJob{Req: jobReq, Sender: sender, JobPrice: jobPrice}, nil
 }
 
 func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, node *core.LivepeerNode) (string, error) {
@@ -1081,19 +1115,11 @@ func getOrchSearchTimeouts(ctx context.Context, searchTimeoutHdr, respTimeoutHdr
 
 func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capability string, params JobParameters, timeout time.Duration, respTimeout time.Duration) ([]JobToken, error) {
 	orchs := node.OrchestratorPool.GetInfos()
-	gateway := node.OrchestratorPool.Broadcaster()
-
 	//setup the GET request to get the Orchestrator tokens
-	//get the address and sig for the sender
-	gatewayReq, err := genOrchestratorReq(gateway, GetOrchestratorInfoParams{})
+	reqSender, err := getJobSender(ctx, node)
 	if err != nil {
-		clog.Errorf(ctx, "Failed to generate request for Orchestrator to verify to request job token err=%v", err)
+		clog.Errorf(ctx, "Failed to get job sender err=%v", err)
 		return nil, err
-	}
-	addr := ethcommon.BytesToAddress(gatewayReq.Address)
-	reqSender := &JobSender{
-		Addr: addr.Hex(),
-		Sig:  "0x" + hex.EncodeToString(gatewayReq.Sig),
 	}
 
 	getOrchJobToken := func(ctx context.Context, orchUrl *url.URL, reqSender JobSender, respTimeout time.Duration, tokenCh chan JobToken, errCh chan error) {
@@ -1179,4 +1205,62 @@ func getJobOrchestrators(ctx context.Context, node *core.LivepeerNode, capabilit
 	cancel()
 
 	return jobTokens, nil
+}
+
+func getJobSender(ctx context.Context, node *core.LivepeerNode) (*JobSender, error) {
+	gateway := node.OrchestratorPool.Broadcaster()
+	orchReq, err := genOrchestratorReq(gateway, GetOrchestratorInfoParams{})
+	if err != nil {
+		clog.Errorf(ctx, "Failed to generate request for Orchestrator to verify to request job token err=%v", err)
+		return nil, err
+	}
+	addr := ethcommon.BytesToAddress(orchReq.Address)
+	jobSender := &JobSender{
+		Addr: addr.Hex(),
+		Sig:  "0x" + hex.EncodeToString(orchReq.Sig),
+	}
+
+	return jobSender, nil
+}
+func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capability, sender, senderSig string) (*JobToken, error) {
+	start := time.Now()
+	tokenReq, err := http.NewRequestWithContext(ctx, "GET", orchUrl+"/process/token", nil)
+	jobSender := JobSender{Addr: sender, Sig: senderSig}
+
+	reqSenderStr, _ := json.Marshal(jobSender)
+	tokenReq.Header.Set(jobEthAddressHdr, base64.StdEncoding.EncodeToString(reqSenderStr))
+	tokenReq.Header.Set(jobCapabilityHdr, capability)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to create request for Orchestrator to verify job token request err=%v", err)
+		return nil, err
+	}
+
+	resp, err := sendJobReqWithTimeout(tokenReq, respTimeout)
+	if err != nil {
+		clog.Errorf(ctx, "failed to get token from Orchestrator err=%v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		clog.Errorf(ctx, "Failed to get token from Orchestrator %v err=%v", orchUrl, err)
+		return nil, fmt.Errorf("failed to get token from Orchestrator")
+	}
+
+	latency := time.Since(start)
+	clog.V(common.DEBUG).Infof(ctx, "Received job token from uri=%v, latency=%v", orchUrl, latency)
+
+	token, err := io.ReadAll(resp.Body)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to read token from Orchestrator %v err=%v", orchUrl, err)
+		return nil, err
+	}
+	var jobToken JobToken
+	err = json.Unmarshal(token, &jobToken)
+	if err != nil {
+		clog.Errorf(ctx, "Failed to unmarshal token from Orchestrator %v err=%v", orchUrl, err)
+		return nil, err
+	}
+
+	return &jobToken, nil
 }

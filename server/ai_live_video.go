@@ -78,10 +78,15 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		return
 	}
 
+	var orchAddr string
+	var orchUrl string
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(ctx)
 	var paymentProcessor *LivePaymentProcessor
 	if sess != nil {
+		orchAddr = sess.Address()
+		orchUrl = sess.Transcoder()
+
 		priceInfo := sess.OrchestratorInfo.PriceInfo
 		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
 			paymentSender := livePaymentSender{}
@@ -97,6 +102,10 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		} else {
 			clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 		}
+	} else {
+		//byoc sets as context values
+		orchAddr = clog.GetVal(ctx, "orch")
+		orchUrl = clog.GetVal(ctx, "orch_url")
 	}
 
 	slowOrchChecker := &SlowOrchChecker{}
@@ -166,8 +175,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							"pipeline_id": params.liveParams.pipelineID,
 							"request_id":  params.liveParams.requestID,
 							"orchestrator_info": map[string]interface{}{
-								"address": sess.Address(),
-								"url":     sess.Transcoder(),
+								"address": orchAddr,
+								"url":     orchUrl,
 							},
 						})
 					}
@@ -721,6 +730,13 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 				event["orchestrator_info"] = map[string]interface{}{
 					"address": sess.Address(),
 					"url":     sess.Transcoder(),
+				}
+			} else {
+				address := clog.GetVal(ctx, "orch")
+				url := clog.GetVal(ctx, "orch_url")
+				event["orchestrator_info"] = map[string]interface{}{
+					"address": address,
+					"url":     url,
 				}
 			}
 
