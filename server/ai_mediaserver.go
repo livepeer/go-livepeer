@@ -109,6 +109,10 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
 
+	// Stream data SSE endpoint
+	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/data", ls.WithCode(http.StatusNoContent))
+	ls.HTTPMux.Handle("GET /live/video-to-video/{stream}/data", ls.GetLiveVideoToVideoData())
+
 	//API for dynamic capabilities
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
 
@@ -633,6 +637,15 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			},
 		}
 
+		//create a dataWriter for data channel if enabled
+		if enableData, ok := pipelineParams["enableData"]; ok {
+			if enableData == true || enableData == "true" {
+				params.liveParams.dataWriter = media.NewSegmentWriter(5)
+				pipelineParams["enableData"] = true
+				clog.Infof(ctx, "Data channel enabled for stream %s", streamName)
+			}
+		}
+
 		registerControl(ctx, params)
 
 		// Create a special parent context for orchestrator cancellation
@@ -735,6 +748,7 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *liveRequestParams {
 	return &liveRequestParams{
 		segmentReader:          params.segmentReader,
+		dataWriter:             params.dataWriter,
 		rtmpOutputs:            params.rtmpOutputs,
 		localRTMPPrefix:        params.localRTMPPrefix,
 		stream:                 params.stream,
@@ -757,6 +771,8 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	resp := res.(*worker.GenLiveVideoToVideoResponse)
 
 	host := params.liveParams.sess.Transcoder()
+
+	//required channels
 	pub, err := common.AppendHostname(resp.JSON200.PublishUrl, host)
 	if err != nil {
 		return fmt.Errorf("invalid publish URL: %w", err)
@@ -773,16 +789,30 @@ func startProcessing(ctx context.Context, params aiRequestParams, res interface{
 	if err != nil {
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
+
 	if resp.JSON200.ManifestId != nil {
 		ctx = clog.AddVal(ctx, "manifest_id", *resp.JSON200.ManifestId)
 		params.liveParams.manifestID = *resp.JSON200.ManifestId
 	}
+
 	clog.V(common.VERBOSE).Infof(ctx, "pub %s sub %s control %s events %s", pub, sub, control, events)
 
 	startControlPublish(ctx, control, params)
 	startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
+
+	//optional channels
+	var data *url.URL
+	if *resp.JSON200.DataUrl != "" {
+		data, err = common.AppendHostname(*resp.JSON200.DataUrl, host)
+		if err != nil {
+			return fmt.Errorf("invalid data URL: %w", err)
+		}
+		clog.V(common.VERBOSE).Infof(ctx, "data %s", data)
+		startDataSubscribe(ctx, data, params, params.liveParams.sess)
+	}
+
 	return nil
 }
 
@@ -1094,6 +1124,15 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				},
 			}
 
+			//create a dataWriter for data channel if enabled
+			if enableData, ok := pipelineParams["enableData"]; ok {
+				if enableData == true || enableData == "true" {
+					params.liveParams.dataWriter = media.NewSegmentWriter(5)
+					pipelineParams["enableData"] = true
+					clog.Infof(ctx, "Data channel enabled for stream %s", streamName)
+				}
+			}
+
 			registerControl(ctx, params)
 
 			req := worker.GenLiveVideoToVideoJSONRequestBody{
@@ -1302,5 +1341,77 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 				return nil
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
 		}()
+	})
+}
+
+// @Summary Get Live Stream Data
+// @Param stream path string true "Stream Key"
+// @Success 200
+// @Router /live/video-to-video/{stream}/data [get]
+func (ls *LivepeerServer) GetLiveVideoToVideoData() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		stream := r.PathValue("stream")
+		if stream == "" {
+			http.Error(w, "stream name is required", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", stream)
+
+		// Get the live pipeline for this stream
+		livePipeline, ok := ls.LivepeerNode.LivePipelines[stream]
+		if !ok {
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+
+		// Get the data readerring buffer
+		if livePipeline.DataWriter == nil {
+			clog.Infof(ctx, "No data writer available for stream %s", stream)
+			http.Error(w, "Stream data not available", http.StatusServiceUnavailable)
+			return
+		}
+		dataReader := livePipeline.DataWriter.MakeReader(media.SegmentReaderConfig{})
+
+		// Set up SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		clog.Infof(ctx, "Starting SSE data stream for stream=%s", stream)
+
+		// Listen for broadcast signals from ring buffer writes
+		// dataReader.Read() blocks on rb.cond.Wait() until startDataSubscribe broadcasts
+		for {
+			select {
+			case <-ctx.Done():
+				clog.Info(ctx, "SSE data stream client disconnected")
+				return
+			default:
+				reader, err := dataReader.Next()
+				if err != nil {
+					if err == io.EOF {
+						// Stream ended
+						fmt.Fprintf(w, `event: end\ndata: {"type":"stream_ended"}\n\n`)
+						flusher.Flush()
+						return
+					}
+					clog.Errorf(ctx, "Error reading from ring buffer: %v", err)
+					return
+				}
+
+				data, err := io.ReadAll(reader)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
 	})
 }
