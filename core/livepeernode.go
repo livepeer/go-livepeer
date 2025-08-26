@@ -113,10 +113,11 @@ func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *Auto
 type LivepeerNode struct {
 
 	// Common fields
-	Eth      eth.LivepeerEthClient
-	WorkDir  string
-	NodeType NodeType
-	Database *common.DB
+	Eth          eth.LivepeerEthClient
+	WorkDir      string
+	NodeType     NodeType
+	Database     *common.DB
+	MaxInstances int
 
 	// AI worker public fields
 	AIWorker                  AI

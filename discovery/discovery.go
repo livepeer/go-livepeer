@@ -382,6 +382,10 @@ func (o *orchestratorPool) Broadcaster() common.Broadcaster {
 	return o.bcast
 }
 
+func (o *orchestratorPool) SetMaxInstances(max int) {
+	o.maxInstances = max
+}
+
 func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {
 
 }

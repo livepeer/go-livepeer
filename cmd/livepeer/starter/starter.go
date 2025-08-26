@@ -1540,20 +1540,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			pool, err := discovery.NewOrchestratorPoolWithConfig(discovery.OrchestratorPoolConfig{
-				Broadcaster:      bcast,
-				URIs:             orchURLs,
-				Pred:             nil,
-				Score:            common.Score_Trusted,
-				OrchBlacklist:    orchBlacklist,
-				DiscoveryTimeout: *cfg.DiscoveryTimeout,
-				MaxInstances:     *cfg.MaxInstances,
-			})
-			if err != nil {
-				glog.Error(err.Error())
-				// fall back to the old helper which will log and return an empty pool on error
+			// Persist configured max instances on the node so broadcaster can expose it
+			n.MaxInstances = *cfg.MaxInstances
+
+			pool := discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+			if pool == nil {
+				glog.Error("Could not create orchestrator pool")
+				// fallback to helper (keeps prior behavior)
 				n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 			} else {
+				// Ensure pool uses the configured value from the broadcaster/node
+				pool.SetMaxInstances(bcast.MaxInstances())
 				n.OrchestratorPool = pool
 			}
 		}
