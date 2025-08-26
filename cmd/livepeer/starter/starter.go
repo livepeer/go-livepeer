@@ -558,18 +558,13 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
 	}
 
-	// Parse -instances flag and store parsed URLs in the node
+	// Parse -instances flag and store parsed canonicalized URLs in the node
 	if cfg.Instances != nil && *cfg.Instances != "" {
 		n.Instances = parseInstances(*cfg.Instances)
 		if len(n.Instances) == 0 {
 			glog.Warning("No valid instance URLs parsed from -instances")
 		} else {
-			// Optional: log the configured instance hostnames
-			var insts []string
-			for _, u := range n.Instances {
-				insts = append(insts, u.String())
-			}
-			glog.Infof("Configured instances: %v", strings.Join(insts, ","))
+			glog.Infof("Configured instances: %v", strings.Join(n.Instances, ","))
 		}
 	}
 
@@ -1835,25 +1830,31 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	return res
 }
 
-func parseInstances(addrs string) []*url.URL {
-	var res []*url.URL
-	if len(addrs) > 0 {
-		for _, addr := range strings.Split(addrs, ",") {
-			addr = strings.TrimSpace(addr)
-			if addr == "" {
-				continue
-			}
-			// if no scheme provided, default to https
-			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
-				addr = "https://" + addr
-			}
-			uri, err := url.ParseRequestURI(addr)
-			if err != nil {
-				glog.Errorf("Could not parse instance URI '%s': %v", addr, err)
-				continue
-			}
-			res = append(res, uri)
+func parseInstances(addrs string) []string {
+	var res []string
+	if len(addrs) == 0 {
+		return res
+	}
+	for _, addr := range strings.Split(addrs, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
 		}
+		// If no scheme provided, default to https
+		if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+			addr = "https://" + addr
+		}
+		parsed, err := url.ParseRequestURI(addr)
+		if err != nil {
+			glog.Errorf("Could not parse instance URI '%s': %v", addr, err)
+			continue
+		}
+		// Ensure scheme starts with https; if http is provided, upgrade to https
+		if parsed.Scheme != "https" {
+			parsed.Scheme = "https"
+		}
+		// Use the canonical string form
+		res = append(res, parsed.String())
 	}
 	return res
 }

@@ -167,8 +167,9 @@ type LivepeerNode struct {
 	// Gateway
 	GatewayHost string
 
-	// Instances stores the parsed list of URLs provided by -instances
-	Instances []*url.URL
+	// Instances stores the canonicalized list of instance URLs provided by -instances
+	// Each entry is a string and is guaranteed to start with "https://"
+	Instances []string
 }
 
 type LivePipeline struct {
