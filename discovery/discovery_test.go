@@ -1494,7 +1494,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
-		return &net.OrchestratorInfo{}, nil
+		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
 
 	timeout := 1 * time.Millisecond
@@ -1581,12 +1581,12 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 	assert := assert.New(t)
 
 	// should succeed: legacy caps only
-	i1 := &net.OrchestratorInfo{}
+	i1 := &net.OrchestratorInfo{Transcoder: "i1"}
 	// should fail: incompatible caps
 	i2 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{}}
 	i3 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}}
 	// should succeed: compatible caps
-	i4 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: capCompatString}}
+	i4 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: capCompatString}, Transcoder: "i2"}
 	// should be blacklisted
 	address, err := hex.DecodeString("40B28ee755260ae2735950Fe1BD0a64326ce58b0")
 	assert.NoError(err)
@@ -1883,7 +1883,8 @@ func TestGetOrchestrators_Instances_RecursiveDiscovery(t *testing.T) {
 			// second-level advertised, but should not be followed
 			return &net.OrchestratorInfo{Transcoder: inst9010, Instances: []string{inst9020}}, nil
 		case initial2:
-			return &net.OrchestratorInfo{Transcoder: initial2, Instances: []string{inst9011, inst9012}}, nil
+			// Does not have a Transcoder field
+			return &net.OrchestratorInfo{Instances: []string{inst9011, inst9012}}, nil
 		case inst9011:
 			return &net.OrchestratorInfo{Transcoder: inst9011, Instances: []string{inst9021}}, nil
 		case inst9012:
@@ -1906,23 +1907,18 @@ func TestGetOrchestrators_Instances_RecursiveDiscovery(t *testing.T) {
 	assert.NoError(err)
 
 	// Collect returned URLs
-	got := map[string]bool{}
+	got := []string{}
 	for _, od := range odesc {
-		got[od.LocalInfo.URL.String()] = true
+		got = append(got, od.LocalInfo.URL.String())
 	}
 
-	// Expected: all top-level URLs + only first-level instances (inst9010, inst9011, inst9012)
-	expectedPresent := []string{initial0, initial1, initial2, inst9010, inst9011, inst9012}
-	for _, e := range expectedPresent {
-		assert.True(got[e], "expected %s to be present", e)
-	}
+	// Expected: first two top-level URLs + only first-level instances (inst9010, inst9011, inst9012)
+	expectedPresent := []string{initial0, initial1, inst9010, inst9011, inst9012}
+	assert.ElementsMatch(got, expectedPresent)
 
-	// Ensure second-level instances are NOT present
-	unexpected := []string{inst9020, inst9021, inst9022}
-	for _, u := range unexpected {
-		assert.False(got[u], "did not expect second-level instance %s to be present", u)
+	// Double checking that second-level instances and initial2 are NOT present
+	unexpected := []string{initial2, inst9020, inst9021, inst9022}
+	for _, v := range unexpected {
+		assert.NotContains(got, v)
 	}
-
-	// total expected count = 3 top-level + 3 first-level = 6
-	assert.Len(got, 6)
 }

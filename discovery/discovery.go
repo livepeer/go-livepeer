@@ -176,6 +176,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		info, err := serverGetOrchInfo(ctx, o.bcast, od.LocalInfo.URL, server.GetOrchestratorInfoParams{Caps: caps.ToNetCapabilities()})
 		latency := time.Since(start)
 		clog.V(common.DEBUG).Infof(ctx, "Received GetOrchInfo RPC Response from uri=%v, latency=%v", od.LocalInfo.URL, latency)
+		doingWork := info != nil && info.Transcoder != ""
 		orchDescr := common.OrchestratorDescriptor{
 			LocalInfo: &common.OrchestratorLocalInfo{
 				URL:     od.LocalInfo.URL,
@@ -184,7 +185,9 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			},
 			RemoteInfo: info,
 		}
-		allOrchInfoCh <- orchDescr
+		if doingWork {
+			allOrchInfoCh <- orchDescr
+		}
 
 		// discover newly advertised instances. only recurse the first level for now.
 		if level == 0 && info != nil && len(info.Instances) > 0 {
@@ -215,7 +218,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			}
 		}
 
-		if err == nil && !isBlacklisted(info) && isCompatible(info) {
+		if err == nil && !isBlacklisted(info) && isCompatible(info) && doingWork {
 			infoCh <- orchDescr
 			return
 		}
