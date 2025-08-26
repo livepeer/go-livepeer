@@ -167,8 +167,8 @@ type LivepeerNode struct {
 	// Gateway
 	GatewayHost string
 
-	// Instances stores the canonicalized list of instance URLs provided by -instances
-	// Each entry is a string and is guaranteed to start with "https://"
+	// List of other node instances of this orchestrator
+	// that are available to perform work
 	Instances []string
 }
 
