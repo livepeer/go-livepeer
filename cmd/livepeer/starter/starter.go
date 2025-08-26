@@ -113,6 +113,7 @@ type LivepeerConfig struct {
 	IgnoreMaxPriceIfNeeded     *bool
 	MinPerfScore               *float64
 	DiscoveryTimeout           *time.Duration
+	MaxInstances               *int
 	MaxSessions                *string
 	CurrentManifest            *bool
 	Nvidia                     *string
@@ -213,6 +214,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
 	defaultDiscoveryTimeout := 500 * time.Millisecond
+	defaultMaxInstances := 0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -329,6 +331,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
 		DiscoveryTimeout:     &defaultDiscoveryTimeout,
+		MaxInstances:         &defaultMaxInstances,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -1537,7 +1540,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+			pool, err := discovery.NewOrchestratorPoolWithConfig(discovery.OrchestratorPoolConfig{
+				Broadcaster:      bcast,
+				URIs:             orchURLs,
+				Pred:             nil,
+				Score:            common.Score_Trusted,
+				OrchBlacklist:    orchBlacklist,
+				DiscoveryTimeout: *cfg.DiscoveryTimeout,
+				MaxInstances:     *cfg.MaxInstances,
+			})
+			if err != nil {
+				glog.Error(err.Error())
+				// fall back to the old helper which will log and return an empty pool on error
+				n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
+			} else {
+				n.OrchestratorPool = pool
+			}
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates

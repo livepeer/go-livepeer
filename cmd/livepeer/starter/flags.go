@@ -22,6 +22,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// Broadcaster's Selection Algorithm
 	cfg.OrchAddr = fs.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
 	cfg.OrchWebhookURL = fs.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
+	cfg.MaxInstances = fs.Int("maxInstances", *cfg.MaxInstances, "Maximum number of additional instances an orchestrator can advertise within GetOrchestratorInfo response")
 	cfg.OrchBlacklist = fs.String("orchBlocklist", "", "Comma-separated list of blocklisted orchestrators")
 	cfg.OrchMinLivepeerVersion = fs.String("orchMinLivepeerVersion", *cfg.OrchMinLivepeerVersion, "Minimal go-livepeer version orchestrator should have to be selected")
 	cfg.SelectRandWeight = fs.Float64("selectRandFreq", *cfg.SelectRandWeight, "Weight of the random factor in the orchestrator selection algorithm")
