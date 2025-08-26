@@ -563,9 +563,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	// Parse -instances flag and store parsed canonicalized URLs in the node
 	if cfg.Instances != nil && *cfg.Instances != "" {
-		n.Instances = parseInstances(*cfg.Instances)
-		if len(n.Instances) == 0 {
-			glog.Warning("No valid instance URLs parsed from -instances")
+		n.Instances, err = parseInstances(*cfg.Instances)
+		if err != nil || len(n.Instances) == 0 {
+			glog.Exit("No valid instance URLs parsed from -instances: ", err)
 		} else {
 			glog.Infof("Configured instances: %v", strings.Join(n.Instances, ","))
 		}
@@ -1620,6 +1620,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Error getting service URI: ", err)
 		}
 
+		// TODO check for empty service uri *and* no additional instances. error if so
+		// TODO check for empty service uri *and* TestOrchAvail
+
 		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
 			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
 		}
@@ -1744,15 +1747,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			tc <- struct{}{}
 		}()
 
+		doingWork := orch.ServiceURI().String() != ""
+
 		// check whether or not the orchestrator is available
-		if *cfg.TestOrchAvail {
+		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
 			orchAvail := server.CheckOrchestratorAvailability(orch)
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
+				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
 				tc <- struct{}{}
 			}
+		}
+
+		if !doingWork {
+			glog.Infof("Orchestrator is not performing work")
 		}
 
 	}()
@@ -1835,33 +1844,32 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	return res
 }
 
-func parseInstances(addrs string) []string {
+func parseInstances(addrs string) ([]string, error) {
 	var res []string
 	if len(addrs) == 0 {
-		return res
+		return res, fmt.Errorf("instances empty")
 	}
 	for _, addr := range strings.Split(addrs, ",") {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
 			continue
 		}
-		// If no scheme provided, default to https
-		if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		// Add https if not provided
+		if !strings.HasPrefix(addr, "https://") {
 			addr = "https://" + addr
 		}
 		parsed, err := url.ParseRequestURI(addr)
 		if err != nil {
-			glog.Errorf("Could not parse instance URI '%s': %v", addr, err)
-			continue
+			return nil, fmt.Errorf("Could not parse instance URI '%s': %w", addr, err)
 		}
 		// Ensure scheme starts with https; if http is provided, upgrade to https
 		if parsed.Scheme != "https" {
-			parsed.Scheme = "https"
+			return nil, fmt.Errorf("Instance URI must start with https '%s'", addr)
 		}
 		// Use the canonical string form
 		res = append(res, parsed.String())
 	}
-	return res
+	return res, nil
 }
 
 func parseOrchBlacklist(b *string) []string {
