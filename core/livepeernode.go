@@ -166,6 +166,9 @@ type LivepeerNode struct {
 
 	// Gateway
 	GatewayHost string
+
+	// Instances stores the parsed list of URLs provided by -instances
+	Instances []*url.URL
 }
 
 type LivePipeline struct {

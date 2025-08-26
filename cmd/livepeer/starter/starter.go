@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	CliAddr                    *string
 	HttpAddr                   *string
 	ServiceAddr                *string
+	Instances                  *string
 	OrchAddr                   *string
 	VerifierURL                *string
 	EthController              *string
@@ -190,6 +191,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCliAddr := ""
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
+	defaultInstances := ""
 	defaultOrchAddr := ""
 	defaultVerifierURL := ""
 	defaultVerifierPath := ""
@@ -305,6 +307,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CliAddr:      &defaultCliAddr,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
+		Instances:    &defaultInstances,
 		OrchAddr:     &defaultOrchAddr,
 		VerifierURL:  &defaultVerifierURL,
 		VerifierPath: &defaultVerifierPath,
@@ -553,6 +556,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
+	}
+
+	// Parse -instances flag and store parsed URLs in the node
+	if cfg.Instances != nil && *cfg.Instances != "" {
+		n.Instances = parseInstances(*cfg.Instances)
+		if len(n.Instances) == 0 {
+			glog.Warning("No valid instance URLs parsed from -instances")
+		} else {
+			// Optional: log the configured instance hostnames
+			var insts []string
+			for _, u := range n.Instances {
+				insts = append(insts, u.String())
+			}
+			glog.Infof("Configured instances: %v", strings.Join(insts, ","))
+		}
 	}
 
 	var transcoderCaps []core.Capability
@@ -1809,6 +1827,29 @@ func parseOrchAddrs(addrs string) []*url.URL {
 			uri, err := url.ParseRequestURI(addr)
 			if err != nil {
 				glog.Error("Could not parse orchestrator URI: ", err)
+				continue
+			}
+			res = append(res, uri)
+		}
+	}
+	return res
+}
+
+func parseInstances(addrs string) []*url.URL {
+	var res []*url.URL
+	if len(addrs) > 0 {
+		for _, addr := range strings.Split(addrs, ",") {
+			addr = strings.TrimSpace(addr)
+			if addr == "" {
+				continue
+			}
+			// if no scheme provided, default to https
+			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+				addr = "https://" + addr
+			}
+			uri, err := url.ParseRequestURI(addr)
+			if err != nil {
+				glog.Errorf("Could not parse instance URI '%s': %v", addr, err)
 				continue
 			}
 			res = append(res, uri)
