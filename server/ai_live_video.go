@@ -234,6 +234,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
 		return
 	}
+	setOutputWriter(ctx, outWriter, params) // for WHEP
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
 		go ffmpegOutput(ctx, outURL, outWriter, params)
@@ -491,6 +492,20 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 	}
 }
 
+func setOutputWriter(ctx context.Context, writer *media.RingBuffer, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+	stream, requestID := params.liveParams.stream, params.liveParams.requestID
+	sess, exists := params.node.LivePipelines[stream]
+	if !exists || sess.RequestID != requestID {
+		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID")
+		return
+	}
+	sess.OutWriter = writer
+	sess.OutCond.Broadcast()
+	// TODO check if whep tracks needs to be replaced, eg swap
+}
+
 func registerControl(ctx context.Context, params aiRequestParams) {
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
@@ -501,12 +516,15 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 			clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
 			sess.ControlPub.Close()
 			// TODO better solution than allowing existing streams to stomp over one another
+			sess.Closed = true
+			sess.OutCond.Broadcast()
 		}
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
 		Pipeline:  params.liveParams.pipeline,
+		OutCond:   sync.NewCond(params.node.LiveMu),
 	}
 }
 
@@ -758,6 +776,23 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 		}
 	}()
+}
+
+func getOutWriter(stream string, node *core.LivepeerNode) (*media.RingBuffer, string) {
+	node.LiveMu.Lock()
+	defer node.LiveMu.Unlock()
+	sess, exists := node.LivePipelines[stream]
+	if !exists || sess.Closed {
+		return nil, ""
+	}
+	// could be nil if we haven't gotten an orchestrator yet
+	for sess.OutWriter == nil {
+		sess.OutCond.Wait()
+		if sess.Closed {
+			return nil, ""
+		}
+	}
+	return sess.OutWriter, sess.RequestID
 }
 
 func (a aiRequestParams) inputStreamExists() bool {

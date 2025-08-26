@@ -565,8 +565,7 @@ func disableTSCorrection() bool {
 	return v
 }
 
-func getUDPListenerAddr() (*net.UDPAddr, error) {
-	addrStr := os.Getenv("LIVE_AI_WHIP_ADDR") // TODO cli args?
+func getUDPListenerAddr(addrStr string) (*net.UDPAddr, error) {
 	if addrStr == "" {
 		// Default to all interfaces, port 7290
 		return &net.UDPAddr{
@@ -654,7 +653,7 @@ func genParams() (*webrtc.MediaEngine, func(*webrtc.API)) {
 	se := webrtc.SettingEngine{}
 
 	// Get UDP listener address from environment or use default
-	udpAddr, err := getUDPListenerAddr()
+	udpAddr, err := getUDPListenerAddr(os.Getenv("LIVE_AI_WHIP_ADDR"))
 	if err != nil {
 		log.Fatal("could not get UDP listener address: ", err)
 	}
