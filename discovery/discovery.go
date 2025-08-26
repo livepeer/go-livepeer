@@ -58,6 +58,7 @@ func NewOrchestratorPool(bcast common.Broadcaster, uris []*url.URL, score float3
 		Score:            score,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
+		MaxInstances:     bcast.AdditionalInstances(),
 	})
 	if err != nil {
 		glog.Error(err.Error())
@@ -75,6 +76,7 @@ func NewOrchestratorPoolWithPred(bcast common.Broadcaster, addresses []*url.URL,
 		Score:            score,
 		OrchBlacklist:    orchBlacklist,
 		DiscoveryTimeout: discoveryTimeout,
+		MaxInstances:     bcast.AdditionalInstances(),
 	})
 	if err != nil {
 		glog.Error(err.Error())
@@ -380,10 +382,6 @@ func (o *orchestratorPool) SizeWith(scorePred common.ScorePred) int {
 
 func (o *orchestratorPool) Broadcaster() common.Broadcaster {
 	return o.bcast
-}
-
-func (o *orchestratorPool) SetMaxInstances(max int) {
-	o.maxInstances = max
 }
 
 func (o *orchestratorPool) pollOrchestratorInfo(ctx context.Context) {

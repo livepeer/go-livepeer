@@ -113,11 +113,10 @@ func (cp CapabilityPrices) PriceForModelID(cap Capability, modelID string) *Auto
 type LivepeerNode struct {
 
 	// Common fields
-	Eth          eth.LivepeerEthClient
-	WorkDir      string
-	NodeType     NodeType
-	Database     *common.DB
-	MaxInstances int
+	Eth      eth.LivepeerEthClient
+	WorkDir  string
+	NodeType NodeType
+	Database *common.DB
 
 	// AI worker public fields
 	AIWorker                  AI
@@ -139,8 +138,10 @@ type LivepeerNode struct {
 	ExternalCapabilities *ExternalCapabilities
 	AutoAdjustPrice      bool
 	AutoSessionLimit     bool
+
 	// Broadcaster public fields
-	Sender pm.Sender
+	Sender              pm.Sender
+	AdditionalInstances int
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -153,6 +154,7 @@ type LivepeerNode struct {
 	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+	Instances        []string // instance URLs of this orch available to do work
 
 	// For live video pipelines, cache for live pipelines; key is the stream name
 	LivePipelines map[string]*LivePipeline
@@ -167,10 +169,6 @@ type LivepeerNode struct {
 
 	// Gateway
 	GatewayHost string
-
-	// List of other node instances of this orchestrator
-	// that are available to perform work
-	Instances []string
 }
 
 type LivePipeline struct {

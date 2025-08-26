@@ -481,13 +481,13 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
+		Instances:          orch.Instances(),
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),
 		Capabilities:       capabilities,
 		AuthToken:          authToken,
 		Hardware:           workerHardware,
-		Instances:          orch.Instances(),
 		CapabilitiesPrices: capsPrices,
 	}
 

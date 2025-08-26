@@ -113,7 +113,7 @@ type LivepeerConfig struct {
 	IgnoreMaxPriceIfNeeded     *bool
 	MinPerfScore               *float64
 	DiscoveryTimeout           *time.Duration
-	MaxInstances               *int
+	AdditionalInstances        *int
 	MaxSessions                *string
 	CurrentManifest            *bool
 	Nvidia                     *string
@@ -214,7 +214,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
 	defaultDiscoveryTimeout := 500 * time.Millisecond
-	defaultMaxInstances := 0
+	defaultAdditionalInstances := 0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -331,7 +331,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
 		DiscoveryTimeout:     &defaultDiscoveryTimeout,
-		MaxInstances:         &defaultMaxInstances,
+		AdditionalInstances:  &defaultAdditionalInstances,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -1531,6 +1531,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		n.AdditionalInstances = *cfg.AdditionalInstances
+
 		// Set up orchestrator discovery
 		if *cfg.OrchWebhookURL != "" {
 			whurl, err := validateURL(*cfg.OrchWebhookURL)
@@ -1540,19 +1542,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Info("Using orchestrator webhook URL ", whurl)
 			n.OrchestratorPool = discovery.NewWebhookPool(bcast, whurl, *cfg.DiscoveryTimeout)
 		} else if len(orchURLs) > 0 {
-			// Persist configured max instances on the node so broadcaster can expose it
-			n.MaxInstances = *cfg.MaxInstances
-
-			pool := discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
-			if pool == nil {
-				glog.Error("Could not create orchestrator pool")
-				// fallback to helper (keeps prior behavior)
-				n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
-			} else {
-				// Ensure pool uses the configured value from the broadcaster/node
-				pool.SetMaxInstances(bcast.MaxInstances())
-				n.OrchestratorPool = pool
-			}
+			n.OrchestratorPool = discovery.NewOrchestratorPool(bcast, orchURLs, common.Score_Trusted, orchBlacklist, *cfg.DiscoveryTimeout)
 		}
 
 		// When the node is on-chain mode always cache the on-chain orchestrators and poll for updates
