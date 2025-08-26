@@ -1862,6 +1862,10 @@ func isLocalURL(u string) (bool, error) {
 func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// Passed in via CLI
 	if serviceAddr != "" {
+		if serviceAddr == "none" {
+			// special value to signal this node is not to be used for work
+			return url.Parse("")
+		}
 		return url.ParseRequestURI("https://" + serviceAddr)
 	}
 
