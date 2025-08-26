@@ -11,6 +11,8 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/trickle"
 )
 
 type ExternalCapability struct {
@@ -34,14 +36,15 @@ type CapabilityRequirements struct {
 	DataOutput   bool `json:"data_output"`
 }
 
-type StreamData struct {
+type StreamInfo struct {
 	StreamID   string
 	Capability string
 	//Gateway fields
-	StreamRequest    []byte
-	OrchToken        interface{}
-	OrchUrl          string
-	ExcludeOrchs     []string
+	StreamRequest []byte
+	ExcludeOrchs  []string
+	OrchToken     interface{}
+	OrchUrl       string
+
 	OrchPublishUrl   string
 	OrchSubscribeUrl string
 	OrchControlUrl   string
@@ -53,20 +56,42 @@ type StreamData struct {
 
 	//Stream fields
 	Params            interface{}
-	ControlPub        interface{}
+	DataWriter        *media.SegmentWriter
+	ControlPub        *trickle.TricklePublisher
+	StopControl       func()
+	JobParams         string
 	StreamCtx         context.Context
 	CancelStream      context.CancelFunc
 	StreamStartedTime time.Time
+
+	sdm sync.Mutex
 }
+
+func (sd *StreamInfo) IsActive() bool {
+	return sd.StreamCtx.Err() == nil
+}
+
+func (sd *StreamInfo) ExcludeOrch(orchUrl string) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.ExcludeOrchs = append(sd.ExcludeOrchs, orchUrl)
+}
+
+func (sd *StreamInfo) UpdateParams(params string) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.JobParams = params
+}
+
 type ExternalCapabilities struct {
 	capm         sync.Mutex
 	Capabilities map[string]*ExternalCapability
-	Streams      map[string]*StreamData
+	Streams      map[string]*StreamInfo
 }
 
 func NewExternalCapabilities() *ExternalCapabilities {
 	return &ExternalCapabilities{Capabilities: make(map[string]*ExternalCapability),
-		Streams: make(map[string]*StreamData),
+		Streams: make(map[string]*StreamInfo),
 	}
 }
 
@@ -80,13 +105,30 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface
 
 	//add to streams
 	ctx, cancel := context.WithCancel(context.Background())
-	extCaps.Streams[streamID] = &StreamData{
+	stream := StreamInfo{
 		StreamID:      streamID,
 		Params:        params,
 		StreamRequest: streamReq,
 		StreamCtx:     ctx,
 		CancelStream:  cancel,
 	}
+	extCaps.Streams[streamID] = &stream
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				if stream.DataWriter != nil {
+					stream.DataWriter.Close()
+				}
+				if stream.ControlPub != nil {
+					stream.StopControl()
+					stream.ControlPub.Close()
+				}
+				return
+			}
+		}
+	}()
 
 	return nil
 }
@@ -95,7 +137,20 @@ func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
 
+	streamInfo, ok := extCaps.Streams[streamID]
+	if ok {
+		streamInfo.CancelStream()
+	}
+
 	delete(extCaps.Streams, streamID)
+}
+
+func (extCaps *ExternalCapabilities) StreamExists(streamID string) bool {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	_, ok := extCaps.Streams[streamID]
+	return ok
 }
 
 func (extCaps *ExternalCapabilities) RemoveCapability(extCap string) {
