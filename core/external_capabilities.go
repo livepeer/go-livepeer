@@ -107,7 +107,7 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := StreamInfo{
 		StreamID:      streamID,
-		Params:        params,
+		Params:        params, // Store the interface value directly, not a pointer to it
 		StreamRequest: streamReq,
 		StreamCtx:     ctx,
 		CancelStream:  cancel,

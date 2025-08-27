@@ -106,9 +106,29 @@ type orchJob struct {
 	JobPrice *net.PriceInfo
 }
 type gatewayJob struct {
-	Job       *orchJob
-	Orchs     []JobToken
-	JobReqHdr string
+	Job          *orchJob
+	Orchs        []JobToken
+	SignedJobReq string
+}
+
+func (g *gatewayJob) sign(node *core.LivepeerNode) error {
+	//sign the request
+	gateway := node.OrchestratorPool.Broadcaster()
+	sig, err := gateway.Sign([]byte(g.Job.Req.Request + g.Job.Req.Parameters))
+	if err != nil {
+		return errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
+	}
+	g.Job.Req.Sender = gateway.Address().Hex()
+	g.Job.Req.Sig = "0x" + hex.EncodeToString(sig)
+
+	//create the job request header with the signature
+	jobReqEncoded, err := json.Marshal(g.Job.Req)
+	if err != nil {
+		return errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
+	}
+	g.SignedJobReq = base64.StdEncoding.EncodeToString(jobReqEncoded)
+
+	return nil
 }
 
 // worker registers to Orchestrator
@@ -283,10 +303,11 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request) (*gatewayJob, error) {
-	clog.Infof(ctx, "processing job request")
+
 	var orchs []JobToken
 
 	jobReqHdr := r.Header.Get(jobRequestHdr)
+	clog.Infof(ctx, "processing job request req=%v", jobReqHdr)
 	jobReq, err := verifyJobCreds(ctx, nil, jobReqHdr)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("Unable to parse job request, err=%v", err))
@@ -316,30 +337,12 @@ func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request) 
 		return nil, errors.New(fmt.Sprintf("No orchestrators found for capability %v", jobReq.Capability))
 	}
 
-	//sign the request
-	gateway := ls.LivepeerNode.OrchestratorPool.Broadcaster()
-	sig, err := gateway.Sign([]byte(jobReq.Request + jobReq.Parameters))
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Unable to sign request err=%v", err))
-	}
-	jobReq.Sender = gateway.Address().Hex()
-	jobReq.Sig = "0x" + hex.EncodeToString(sig)
-
-	//create the job request header with the signature
-	jobReqEncoded, err := json.Marshal(jobReq)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Unable to encode job request err=%v", err))
-	}
-	jobReqHdr = base64.StdEncoding.EncodeToString(jobReqEncoded)
-
 	job := orchJob{Req: jobReq,
 		Details: &jobDetails,
 		Params:  &jobParams,
 	}
 
-	return &gatewayJob{Job: &job,
-		Orchs:     orchs,
-		JobReqHdr: jobReqHdr}, nil
+	return &gatewayJob{Job: &job, Orchs: orchs}, nil
 }
 
 func (h *lphttp) ProcessJob(w http.ResponseWriter, r *http.Request) {
@@ -410,8 +413,14 @@ func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, 
 			workerRoute = workerRoute + "/" + workerResourceRoute
 		}
 
+		err := gatewayJob.sign(ls.LivepeerNode)
+		if err != nil {
+			clog.Errorf(ctx, "Error signing job, exiting stream processing request: %v", err)
+			return
+		}
+
 		start := time.Now()
-		resp, code, err := ls.sendJobToOrch(ctx, r, gatewayJob.Job.Req, gatewayJob.JobReqHdr, orchToken, workerResourceRoute, body)
+		resp, code, err := ls.sendJobToOrch(ctx, r, gatewayJob.Job.Req, gatewayJob.SignedJobReq, orchToken, workerResourceRoute, body)
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orchToken.ServiceAddr, err.Error())
 			continue
