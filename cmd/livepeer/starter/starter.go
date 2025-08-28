@@ -177,6 +177,8 @@ type LivepeerConfig struct {
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
+	DaydreamApiBaseURL         *string
+	DaydreamApiKey             *string
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
 	LiveAICapRefreshModels     *string
@@ -1673,6 +1675,12 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	if cfg.LiveAIAuthApiKey != nil {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
+	}
+	if cfg.DaydreamApiBaseURL != nil {
+		n.DaydreamApiBaseURL = *cfg.DaydreamApiBaseURL
+	}
+	if cfg.DaydreamApiKey != nil {
+		n.DaydreamApiKey = *cfg.DaydreamApiKey
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout

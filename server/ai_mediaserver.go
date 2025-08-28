@@ -114,7 +114,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 
-	startHearbeats(ctx, ls.liveAIAuthApiKey, ls.LivepeerNode)
+	startHearbeats(ctx, ls.LivepeerNode, ls.daydreamApiBaseURL, ls.daydreamApiKey)
 	return nil
 }
 
@@ -1310,8 +1310,12 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 	})
 }
 
-func startHearbeats(ctx context.Context, liveAIAuthApiKey string, node *core.LivepeerNode) {
-	liveAIAuthApiKey = os.Getenv("DAYDREAM_API_KEY")
+func startHearbeats(ctx context.Context, node *core.LivepeerNode, daydreamApiBaseURL string, daydreamApiKey string) {
+	if daydreamApiBaseURL == "" || daydreamApiKey == "" {
+		clog.Infof(ctx, "Daydream API is not configured, skipping heartbeats")
+		return
+	}
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -1320,16 +1324,16 @@ func startHearbeats(ctx context.Context, liveAIAuthApiKey string, node *core.Liv
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				sendHeartbeat(ctx, liveAIAuthApiKey, node)
+				sendHeartbeat(ctx, node, daydreamApiBaseURL, daydreamApiKey)
 			}
 		}
 	}()
 }
 
-func sendHeartbeat(ctx context.Context, liveAIAuthApiKey string, node *core.LivepeerNode) {
+func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, daydreamApiBaseURL string, daydreamApiKey string) {
 	node.LiveMu.Lock()
 	defer node.LiveMu.Unlock()
-	liveAIAPIBaseURL, err := url.Parse("https://pipelines-api-staging.fly.dev/v1/")
+	liveAIAPIBaseURL, err := url.Parse(daydreamApiBaseURL)
 	if err != nil {
 		clog.Errorf(ctx, "heartbeat: failed to parse live AI API URL %s", err)
 		return
@@ -1355,7 +1359,7 @@ func sendHeartbeat(ctx context.Context, liveAIAuthApiKey string, node *core.Live
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+liveAIAuthApiKey)
+	request.Header.Set("Authorization", "Bearer "+daydreamApiKey)
 
 	_, err = http.DefaultClient.Do(request)
 	if err != nil {

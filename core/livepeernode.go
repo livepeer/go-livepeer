@@ -160,6 +160,8 @@ type LivepeerNode struct {
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
+	DaydreamApiBaseURL         string
+	DaydreamApiKey             string
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAICapRefreshModels     []string
