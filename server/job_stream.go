@@ -881,43 +881,48 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		dataUrl    = pubUrl + "-data"
 	)
 
-	reqBody := make(map[string]interface{})
-	reqBody["gateway_request_id"] = mid
+	reqBodyForRunner := make(map[string]interface{})
+	reqBodyForRunner["gateway_request_id"] = mid
 	//required channels
 	controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 	controlPubCh.CreateChannel()
 	controlUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
-	reqBody["control_url"] = controlUrl
+	reqBodyForRunner["control_url"] = controlUrl
+	w.Header().Set("X-Control-Url", controlUrl)
 
 	eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 	eventsCh.CreateChannel()
 	eventsUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
-	reqBody["events_url"] = eventsUrl
+	reqBodyForRunner["events_url"] = eventsUrl
+	w.Header().Set("X-Events-Url", eventsUrl)
 
 	//Optional channels
 	if jobParams.EnableVideoIngress {
 		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
 		pubCh.CreateChannel()
 		pubUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
-		reqBody["subscribe_url"] = pubUrl //runner needs to subscribe to input
+		reqBodyForRunner["subscribe_url"] = pubUrl //runner needs to subscribe to input
+		w.Header().Set("X-Publish-Url", pubUrl)    //gateway will connect to pubUrl to send ingress video
 	}
 
 	if jobParams.EnableVideoEgress {
 		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
 		subCh.CreateChannel()
 		subUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
-		reqBody["publish_url"] = subUrl //runner needs to send results -out
+		reqBodyForRunner["publish_url"] = subUrl  //runner needs to send results -out
+		w.Header().Set("X-Subscribe-Url", subUrl) //gateway will connect to subUrl to receive results
 	}
 
 	if jobParams.EnableDataOutput {
 		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
 		dataCh.CreateChannel()
 		dataUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
-		reqBody["data_url"] = dataUrl
+		reqBodyForRunner["data_url"] = dataUrl
+		w.Header().Set("X-Data-Url", dataUrl)
 	}
 
-	reqBody["request"] = base64.StdEncoding.EncodeToString(body)
-	reqBodyBytes, err := json.Marshal(reqBody)
+	reqBodyForRunner["request"] = base64.StdEncoding.EncodeToString(body)
+	reqBodyBytes, err := json.Marshal(reqBodyForRunner)
 	if err != nil {
 		clog.Errorf(ctx, "Failed to marshal request body err=%v", err)
 		http.Error(w, "Failed to marshal request body", http.StatusInternalServerError)
@@ -1016,13 +1021,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	//send back trickle urls
-	w.Header().Set("X-Publish-Url", pubUrl)
-	w.Header().Set("X-Subscribe-Url", subUrl)
-	w.Header().Set("X-Control-Url", controlUrl)
-	w.Header().Set("X-Events-Url", eventsUrl)
-	w.Header().Set("X-Data-Url", dataUrl)
-
+	//send back the trickle urls set in header
 	w.WriteHeader(http.StatusOK)
 	return
 }
