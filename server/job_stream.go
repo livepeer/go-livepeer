@@ -583,8 +583,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
 		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
-		requestID := string(core.RandomManifestID())
-		ctx = clog.AddVal(ctx, "request_id", requestID)
 
 		streamId := r.PathValue("streamId")
 		ctx = clog.AddVal(ctx, "stream_id", streamId)
@@ -598,7 +596,7 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 		params := stream.Params.(aiRequestParams)
 
 		whipConn := media.NewWHIPConnection()
-		whepURL := generateWhepUrl(streamId, requestID)
+		whepURL := generateWhepUrl(streamId, params.liveParams.requestID)
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
 		// the client to reconnect and restart the pipeline
@@ -617,7 +615,7 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 		go func() {
 			statsContext, statsCancel := context.WithCancel(ctx)
 			defer statsCancel()
-			go runStats(statsContext, whipConn, streamId, stream.Capability, requestID)
+			go runStats(statsContext, whipConn, streamId, stream.Capability, params.liveParams.requestID)
 
 			whipConn.AwaitClose()
 			stream.CancelStream() //cleanupControl(ctx, params)
@@ -901,14 +899,14 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
 		pubCh.CreateChannel()
 		pubUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
-		reqBody["publish_url"] = pubUrl
+		reqBody["subscribe_url"] = pubUrl //runner needs to subscribe to input
 	}
 
 	if jobParams.EnableVideoEgress {
 		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
 		subCh.CreateChannel()
 		subUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
-		reqBody["subscribe_url"] = subUrl
+		reqBody["publish_url"] = subUrl //runner needs to send results -out
 	}
 
 	if jobParams.EnableDataOutput {
@@ -1000,6 +998,20 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
+				//check if stream still exists
+				// if not, send stop to worker and exit monitoring
+				_, exists := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
+				if !exists {
+					req, err := http.NewRequestWithContext(ctx, "POST", orchJob.Req.CapabilityUrl+"/stream/stop", nil)
+					// set the headers
+					_, err = sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
+					if err != nil {
+						clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
+						respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
+						return
+					}
+					return
+				}
 			}
 		}
 	}()
