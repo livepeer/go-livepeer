@@ -125,8 +125,9 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 		SDP:  string(offerBytes),
 	}
 	if err := peerConnection.SetRemoteDescription(sdpOffer); err != nil {
+		// usually because the offer is incomplete or malformed
 		e := fmt.Sprintf("SetRemoteDescription failed: %v", err)
-		http.Error(w, e, http.StatusInternalServerError)
+		http.Error(w, e, http.StatusBadRequest)
 		mediaState.CloseError(errors.New(e))
 		return mediaState
 	}
