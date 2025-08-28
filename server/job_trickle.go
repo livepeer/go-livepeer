@@ -36,7 +36,6 @@ func startStreamTricklePublish(ctx context.Context, url *url.URL, streamInfo *co
 
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(ctx)
-	var paymentProcessor *LivePaymentProcessor
 	//byoc sets as context values
 	orchAddr := clog.GetVal(ctx, "orch")
 	orchUrl := clog.GetVal(ctx, "orch_url")
@@ -65,9 +64,6 @@ func startStreamTricklePublish(ctx context.Context, url *url.URL, streamInfo *co
 		go func(seq int) {
 			defer slowOrchChecker.EndSegment()
 			var r io.Reader = reader
-			if paymentProcessor != nil {
-				r = paymentProcessor.process(ctx, reader)
-			}
 
 			clog.V(8).Infof(ctx, "trickle publish writing data seq=%d", seq)
 			segment, err := publisher.Next()
@@ -244,7 +240,7 @@ func startStreamTrickleSubscribe(ctx context.Context, url *url.URL, streamInfo *
 				maxSegmentDelay := params.liveParams.outSegmentTimeout / 2
 				if segmentAge < maxSegmentDelay && streamInfo.IsActive() {
 					// we have some recent input but no output from orch, so kick
-					suspendOrchestrator(ctx, params)
+					streamInfo.ExcludeOrch(orchUrl) //suspendOrchestrator(ctx, params)
 					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error, swapping: %w", err))
 					return
 				}
@@ -257,7 +253,7 @@ func startStreamTrickleSubscribe(ctx context.Context, url *url.URL, streamInfo *
 				firstSegment = false
 				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
 				if monitor.Enabled {
-					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+					//monitor.AIFirstSegmentDelay(delayMs, streamInfo) //update this to take the address and url as strings
 					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 						"type":        "gateway_receive_first_processed_segment",
 						"timestamp":   time.Now().UnixMilli(),
@@ -398,6 +394,8 @@ func startStreamControlPublish(ctx context.Context, control *url.URL, streamInfo
 func startStreamDataSubscribe(ctx context.Context, url *url.URL, streamInfo *core.StreamInfo) {
 	//only start DataSubscribe if enabled
 	params := streamInfo.Params.(aiRequestParams)
+	orchAddr := clog.GetVal(ctx, "orch")
+	orchUrl := clog.GetVal(ctx, "orch_url")
 	if params.liveParams.dataWriter == nil {
 		return
 	}
@@ -495,7 +493,7 @@ func startStreamDataSubscribe(ctx context.Context, url *url.URL, streamInfo *cor
 				firstSegment = false
 				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
 				if monitor.Enabled {
-					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
+					//monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
 					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
 						"type":        "gateway_receive_first_data_segment",
 						"timestamp":   time.Now().UnixMilli(),
@@ -503,11 +501,13 @@ func startStreamDataSubscribe(ctx context.Context, url *url.URL, streamInfo *cor
 						"pipeline_id": params.liveParams.pipelineID,
 						"request_id":  params.liveParams.requestID,
 						"orchestrator_info": map[string]interface{}{
-							"address": params.liveParams.sess.Address(),
-							"url":     params.liveParams.sess.Transcoder(),
+							"address": orchAddr,
+							"url":     orchUrl,
 						},
 					})
 				}
+
+				clog.V(common.VERBOSE).Infof(ctx, "First Data Segment delay=%dms streamID=%s", delayMs, params.liveParams.streamID)
 			}
 
 			clog.V(8).Info(ctx, "data subscribe read completed", "seq", seq, "bytes", humanize.Bytes(uint64(readBytes)), "messages", readMessages, "took", time.Since(copyStartTime))
