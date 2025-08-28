@@ -166,6 +166,7 @@ type LivepeerNode struct {
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAICapRefreshModels     []string
+	LiveAISaveNSegments        *int
 
 	// Gateway
 	GatewayHost string
