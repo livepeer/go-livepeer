@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -114,6 +113,8 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
+
+	startHearbeats(ctx, ls.liveAIAuthApiKey, ls.LivepeerNode)
 	return nil
 }
 
@@ -631,7 +632,6 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				pipeline:               pipeline,
 				kickInput:              kickInput,
 				sendErrorEvent:         sendErrorEvent,
-				sendHeartbeat:          streamHeartbeatSender(streamID, ls.liveAIAuthApiKey),
 			},
 		}
 
@@ -751,7 +751,6 @@ func newParams(params *liveRequestParams, cancelOrch context.CancelCauseFunc) *l
 		orchestrator:           params.orchestrator,
 		startTime:              time.Now(),
 		kickOrch:               cancelOrch,
-		sendHeartbeat:          params.sendHeartbeat,
 	}
 
 }
@@ -1097,7 +1096,6 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 					kickInput:              kickInput,
 					sendErrorEvent:         sendErrorEvent,
 					orchestrator:           orchestrator,
-					sendHeartbeat:          streamHeartbeatSender(streamID, ls.liveAIAuthApiKey),
 				},
 			}
 
@@ -1312,27 +1310,55 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 	})
 }
 
-func streamHeartbeatSender(streamID, liveAIAuthApiKey string) func() {
-	return func() {
-		liveAIAPIBaseURL, err := url.Parse("https://pipelines-api-staging.fly.dev/v1/")
-		if err != nil {
-			log.Println("heartbeat: failed to parse live AI API URL", err)
-			return
+func startHearbeats(ctx context.Context, liveAIAuthApiKey string, node *core.LivepeerNode) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sendHeartbeat(ctx, liveAIAuthApiKey, node)
+			}
 		}
+	}()
+}
 
-		request, err := http.NewRequest("PUT", liveAIAPIBaseURL.JoinPath("streams", streamID, "heartbeat").String(), strings.NewReader("{}"))
-		if err != nil {
-			log.Println("heartbeat: failed to build heartbeat request", err)
-			return
-		}
+func sendHeartbeat(ctx context.Context, liveAIAuthApiKey string, node *core.LivepeerNode) {
+	node.LiveMu.Lock()
+	defer node.LiveMu.Unlock()
+	liveAIAPIBaseURL, err := url.Parse("https://pipelines-api-staging.fly.dev/v1/")
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to parse live AI API URL %s", err)
+		return
+	}
 
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("Authorization", "Bearer "+liveAIAuthApiKey)
+	var streamIDs []string
+	for _, pipeline := range node.LivePipelines {
+		streamIDs = append(streamIDs, pipeline.StreamID)
+	}
 
-		_, err = http.DefaultClient.Do(request)
-		if err != nil {
-			log.Println("heartbeat: failed to send heartbeat", err)
-			return
-		}
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"ids": streamIDs,
+	})
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to marshal request body %s", err)
+		return
+	}
+
+	request, err := http.NewRequest("PUT", liveAIAPIBaseURL.JoinPath("streams", "heartbeat").String(), bytes.NewReader(reqBody))
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to build heartbeat request %s", err)
+		return
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+liveAIAuthApiKey)
+
+	_, err = http.DefaultClient.Do(request)
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to send heartbeat %s", err)
+		return
 	}
 }

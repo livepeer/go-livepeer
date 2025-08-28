@@ -120,9 +120,6 @@ type liveRequestParams struct {
 	// Report an error event
 	sendErrorEvent func(error)
 
-	// Send a stream heartbeat event
-	sendHeartbeat func()
-
 	// State for the stream processing
 	// startTime is the time when the first request is sent to the orchestrator
 	startTime time.Time

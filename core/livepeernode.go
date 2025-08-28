@@ -171,6 +171,7 @@ type LivepeerNode struct {
 
 type LivePipeline struct {
 	RequestID    string
+	StreamID     string
 	Params       []byte
 	Pipeline     string
 	ControlPub   *trickle.TricklePublisher

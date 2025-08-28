@@ -366,8 +366,6 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				})
 
 			}
-			params.liveParams.sendHeartbeat()
-
 			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
@@ -514,6 +512,7 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
 		Pipeline:  params.liveParams.pipeline,
+		StreamID:  params.liveParams.streamID,
 	}
 }
 
