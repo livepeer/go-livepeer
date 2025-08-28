@@ -721,7 +721,19 @@ func processStream(ctx context.Context, params aiRequestParams, req worker.GenLi
 			if err == nil {
 				err = errors.New("unknown swap reason")
 			}
-			params.liveParams.sendErrorEvent(err)
+			// report the swap
+			monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
+				"type":        "orchestrator_swap",
+				"stream_id":   params.liveParams.streamID,
+				"request_id":  params.liveParams.requestID,
+				"pipeline":    params.liveParams.pipeline,
+				"pipeline_id": params.liveParams.pipelineID,
+				"message":     err.Error(),
+				"orchestrator_info": map[string]interface{}{
+					"address": params.liveParams.sess.Address(),
+					"url":     params.liveParams.sess.Transcoder(),
+				},
+			})
 		}
 		if isFirst {
 			// failed before selecting an orchestrator
