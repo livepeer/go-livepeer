@@ -1311,6 +1311,7 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 }
 
 func startHearbeats(ctx context.Context, liveAIAuthApiKey string, node *core.LivepeerNode) {
+	liveAIAuthApiKey = os.Getenv("DAYDREAM_API_KEY")
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
