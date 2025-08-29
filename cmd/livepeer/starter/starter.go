@@ -236,6 +236,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
+	defaultLiveAIHeartbeatInterval := 5 * time.Second
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -351,6 +352,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
+		LiveAIHeartbeatInterval:  &defaultLiveAIHeartbeatInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -1682,8 +1684,6 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	}
 	if cfg.LiveAIHeartbeatInterval != nil {
 		n.LiveAIHeartbeatInterval = *cfg.LiveAIHeartbeatInterval
-	} else {
-		n.LiveAIHeartbeatInterval = 5 * time.Second
 	}
 	if cfg.LiveAIHeartbeatHeaders != nil {
 		n.LiveAIHeartbeatHeaders = make(map[string]string)
