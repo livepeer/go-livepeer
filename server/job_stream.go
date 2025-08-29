@@ -122,6 +122,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 
 	start := time.Now()
 	for _, orch := range gatewayJob.Orchs {
+		stream.OrchToken = orch
 		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 		clog.Infof(ctx, "Starting stream processing")
