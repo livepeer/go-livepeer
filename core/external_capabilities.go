@@ -95,7 +95,7 @@ func NewExternalCapabilities() *ExternalCapabilities {
 	}
 }
 
-func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface{}, streamReq []byte) error {
+func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string, params interface{}, streamReq []byte) error {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
 	_, ok := extCaps.Streams[streamID]
@@ -107,6 +107,7 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := StreamInfo{
 		StreamID:      streamID,
+		Capability:    pipeline,
 		Params:        params, // Store the interface value directly, not a pointer to it
 		StreamRequest: streamReq,
 		StreamCtx:     ctx,
