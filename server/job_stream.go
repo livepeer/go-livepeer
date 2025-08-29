@@ -999,6 +999,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		stream, _ := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
 		ctx := context.Background()
 		ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
+		ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
 
 		pmtCheckDur := 30 * time.Second
 		pmtTicker := time.NewTicker(pmtCheckDur)
@@ -1007,6 +1008,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 			select {
 			case <-stream.StreamCtx.Done():
 				h.orchestrator.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
+				clog.Infof(ctx, "Stream ended, stopping payment monitoring and released capacity")
 				return
 			case <-pmtTicker.C:
 				// Check payment status
