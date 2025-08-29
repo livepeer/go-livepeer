@@ -128,8 +128,6 @@ type LivepeerServer struct {
 
 	mediaMTXApiPassword string
 	liveAIAuthApiKey    string
-	daydreamApiBaseURL  string
-	daydreamApiKey      string
 	livePaymentInterval time.Duration
 	outSegmentTimeout   time.Duration
 }
@@ -199,8 +197,6 @@ func NewLivepeerServer(ctx context.Context, rtmpAddr string, lpNode *core.Livepe
 		AISessionManager:        NewAISessionManager(lpNode, AISessionManagerTTL),
 		mediaMTXApiPassword:     lpNode.MediaMTXApiPassword,
 		liveAIAuthApiKey:        lpNode.LiveAIAuthApiKey,
-		daydreamApiBaseURL:      lpNode.DaydreamApiBaseURL,
-		daydreamApiKey:          lpNode.DaydreamApiKey,
 		livePaymentInterval:     lpNode.LivePaymentInterval,
 		outSegmentTimeout:       lpNode.LiveOutSegmentTimeout,
 	}

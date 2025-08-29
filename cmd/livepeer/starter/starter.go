@@ -177,8 +177,9 @@ type LivepeerConfig struct {
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
-	DaydreamApiBaseURL         *string
-	DaydreamApiKey             *string
+	LiveAIHeartbeatURL         *string
+	LiveAIHeartbeatHeaders     *string
+	LiveAIHeartbeatInterval    *time.Duration
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
 	LiveAICapRefreshModels     *string
@@ -1676,11 +1677,23 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAIAuthApiKey != nil {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
-	if cfg.DaydreamApiBaseURL != nil {
-		n.DaydreamApiBaseURL = *cfg.DaydreamApiBaseURL
+	if cfg.LiveAIHeartbeatURL != nil {
+		n.LiveAIHeartbeatURL = *cfg.LiveAIHeartbeatURL
 	}
-	if cfg.DaydreamApiKey != nil {
-		n.DaydreamApiKey = *cfg.DaydreamApiKey
+	if cfg.LiveAIHeartbeatInterval != nil {
+		n.LiveAIHeartbeatInterval = *cfg.LiveAIHeartbeatInterval
+	} else {
+		n.LiveAIHeartbeatInterval = 5 * time.Second
+	}
+	if cfg.LiveAIHeartbeatHeaders != nil {
+		n.LiveAIHeartbeatHeaders = make(map[string]string)
+		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
+		for _, header := range headers {
+			parts := strings.SplitN(header, "=", 2)
+			if len(parts) == 2 {
+				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
+			}
+		}
 	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout

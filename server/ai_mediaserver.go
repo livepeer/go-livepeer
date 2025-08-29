@@ -114,7 +114,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
 
-	startHearbeats(ctx, ls.LivepeerNode, ls.daydreamApiBaseURL, ls.daydreamApiKey)
+	startHearbeats(ctx, ls.LivepeerNode)
 	return nil
 }
 
@@ -1310,39 +1310,37 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 	})
 }
 
-func startHearbeats(ctx context.Context, node *core.LivepeerNode, daydreamApiBaseURL string, daydreamApiKey string) {
-	if daydreamApiBaseURL == "" || daydreamApiKey == "" {
-		clog.Infof(ctx, "Daydream API is not configured, skipping heartbeats")
+func startHearbeats(ctx context.Context, node *core.LivepeerNode) {
+	if node.LiveAIHeartbeatURL == "" {
 		return
 	}
 
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(node.LiveAIHeartbeatInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				sendHeartbeat(ctx, node, daydreamApiBaseURL, daydreamApiKey)
+				sendHeartbeat(ctx, node, node.LiveAIHeartbeatURL, node.LiveAIHeartbeatHeaders)
 			}
 		}
 	}()
 }
 
-func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, daydreamApiBaseURL string, daydreamApiKey string) {
+func getStreamIDs(node *core.LivepeerNode) []string {
 	node.LiveMu.Lock()
 	defer node.LiveMu.Unlock()
-	liveAIAPIBaseURL, err := url.Parse(daydreamApiBaseURL)
-	if err != nil {
-		clog.Errorf(ctx, "heartbeat: failed to parse live AI API URL %s", err)
-		return
-	}
-
 	var streamIDs []string
 	for _, pipeline := range node.LivePipelines {
 		streamIDs = append(streamIDs, pipeline.StreamID)
 	}
+	return streamIDs
+}
+
+func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, liveAIHeartbeatURL string, liveAIHeartbeatHeaders map[string]string) {
+	streamIDs := getStreamIDs(node)
 
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"ids": streamIDs,
@@ -1352,18 +1350,28 @@ func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, daydreamApiBase
 		return
 	}
 
-	request, err := http.NewRequest("PUT", liveAIAPIBaseURL.JoinPath("streams", "heartbeat").String(), bytes.NewReader(reqBody))
+	request, err := http.NewRequest("POST", liveAIHeartbeatURL, bytes.NewReader(reqBody))
 	if err != nil {
 		clog.Errorf(ctx, "heartbeat: failed to build heartbeat request %s", err)
 		return
 	}
 
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+daydreamApiKey)
+	for key, value := range liveAIHeartbeatHeaders {
+		request.Header.Set(key, value)
+	}
 
-	_, err = http.DefaultClient.Do(request)
+	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		clog.Errorf(ctx, "heartbeat: failed to send heartbeat %s", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(resp.Body)
+		clog.Errorf(ctx, "heartbeat: failed to send heartbeat %s", resp.Status)
+		clog.Errorf(ctx, "heartbeat: response body: %s", string(body))
 		return
 	}
 }
