@@ -190,7 +190,7 @@ func startStreamTrickleSubscribe(ctx context.Context, url *url.URL, streamInfo *
 				return
 			default:
 			}
-			if !streamInfo.IsActive() {
+			if streamInfo != nil && !streamInfo.IsActive() {
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
@@ -238,7 +238,7 @@ func startStreamTrickleSubscribe(ctx context.Context, url *url.URL, streamInfo *
 				params.liveParams.mu.Unlock()
 				segmentAge := time.Since(lastSegmentTime)
 				maxSegmentDelay := params.liveParams.outSegmentTimeout / 2
-				if segmentAge < maxSegmentDelay && streamInfo.IsActive() {
+				if segmentAge < maxSegmentDelay && streamInfo != nil && streamInfo.IsActive() {
 					// we have some recent input but no output from orch, so kick
 					streamInfo.ExcludeOrch(orchUrl) //suspendOrchestrator(ctx, params)
 					stopProcessing(ctx, params, fmt.Errorf("trickle subscribe error, swapping: %w", err))
@@ -302,7 +302,7 @@ func startStreamTrickleSubscribe(ctx context.Context, url *url.URL, streamInfo *
 				params.liveParams.mu.Unlock()
 				lastInputSegmentAge := time.Since(lastInputSegmentTime)
 				hasRecentInput := lastInputSegmentAge < segmentTimeout/2
-				if hasRecentInput && streamInfo.IsActive() {
+				if hasRecentInput && streamInfo != nil && streamInfo.IsActive() {
 					// abandon the orchestrator
 					streamInfo.ExcludeOrch(orchUrl)
 					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for segments"))
@@ -430,7 +430,7 @@ func startStreamDataSubscribe(ctx context.Context, url *url.URL, streamInfo *cor
 				return
 			default:
 			}
-			if !streamInfo.IsActive() {
+			if streamInfo != nil && !streamInfo.IsActive() {
 				clog.Infof(ctx, "data subscribe stopping, input stream does not exist.")
 				break
 			}
@@ -704,7 +704,7 @@ func ffmpegStreamOutput(ctx context.Context, outputUrl string, outWriter *media.
 	}()
 	for {
 		clog.V(6).Infof(ctx, "Starting output rtmp")
-		if !streamInfo.IsActive() {
+		if streamInfo != nil && !streamInfo.IsActive() {
 			clog.Errorf(ctx, "Stopping output rtmp stream, input stream does not exist.")
 			break
 		}

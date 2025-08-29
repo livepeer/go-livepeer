@@ -119,7 +119,7 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 
 	ls.HTTPMux.Handle("OPTIONS /ai/stream/", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("POST /ai/stream/start", ls.StartStream())
-	ls.HTTPMux.Handle("POST /ai/stream/stop", ls.StopStream())
+	ls.HTTPMux.Handle("POST /ai/stream/{streamId}/stop", ls.StopStream())
 	if os.Getenv("LIVE_AI_WHIP_ADDR") != "" {
 		ls.HTTPMux.Handle("POST /ai/stream/{streamId}/whip", ls.StartStreamWhipIngest(whipServer))
 	}
