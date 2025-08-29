@@ -160,6 +160,9 @@ type LivepeerNode struct {
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
+	LiveAIHeartbeatURL         string
+	LiveAIHeartbeatHeaders     map[string]string
+	LiveAIHeartbeatInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAICapRefreshModels     []string
@@ -171,6 +174,7 @@ type LivepeerNode struct {
 
 type LivePipeline struct {
 	RequestID    string
+	StreamID     string
 	Params       []byte
 	Pipeline     string
 	ControlPub   *trickle.TricklePublisher
