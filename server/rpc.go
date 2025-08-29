@@ -72,6 +72,7 @@ type Orchestrator interface {
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
+	Instances() []string
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
@@ -480,6 +481,7 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
+		Instances:          orch.Instances(),
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),

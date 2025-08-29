@@ -72,8 +72,7 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 		return nil, err
 	}
 
-	// pool = NewOrchestratorPool(w.bcast, addrs)
-	pool = &orchestratorPool{infos: infos, bcast: w.bcast, discoveryTimeout: w.discoveryTimeout}
+	pool = &orchestratorPool{infos: infos, bcast: w.bcast, discoveryTimeout: w.discoveryTimeout, maxInstances: w.bcast.AdditionalInstances()}
 
 	w.mu.Lock()
 	w.responseHash = hash

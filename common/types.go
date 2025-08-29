@@ -45,6 +45,7 @@ type NodeStatus struct {
 type Broadcaster interface {
 	Address() ethcommon.Address
 	Sign([]byte) ([]byte, error)
+	AdditionalInstances() int
 }
 
 type CapabilityComparator interface {

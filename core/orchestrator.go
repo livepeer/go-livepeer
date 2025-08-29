@@ -469,6 +469,13 @@ func (orch *orchestrator) Capabilities() *net.Capabilities {
 	return orch.node.Capabilities.ToNetCapabilities()
 }
 
+func (orch *orchestrator) Instances() []string {
+	if orch == nil || orch.node == nil {
+		return nil
+	}
+	return orch.node.Instances
+}
+
 func (orch *orchestrator) AuthToken(sessionID string, expiration int64) *net.AuthToken {
 	h := hmac.New(sha256.New, orch.secret)
 	msg := append([]byte(sessionID), new(big.Int).SetInt64(expiration).Bytes()...)
