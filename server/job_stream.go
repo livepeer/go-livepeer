@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -88,8 +87,8 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 				return
 			}
 
-			stopJob.sign(ls.LivepeerNode)
-			resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, streamInfoCopy.OrchToken.(JobToken), "/stream/stop", streamInfoCopy.StreamRequest)
+			stopJob.sign()
+			resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, streamInfoCopy.OrchToken.(JobToken), "/ai/stream/stop", streamInfoCopy.StreamRequest)
 			if err != nil {
 				clog.Errorf(ctx, "Error sending job to orchestrator: %s", err)
 				http.Error(w, err.Error(), code)
@@ -123,6 +122,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	start := time.Now()
 	for _, orch := range gatewayJob.Orchs {
 		stream.OrchToken = orch
+		stream.OrchUrl = orch.ServiceAddr
 		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 		clog.Infof(ctx, "Starting stream processing")
@@ -137,13 +137,13 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 
 		//set request ID to persist from Gateway to Worker
 		gatewayJob.Job.Req.ID = stream.StreamID
-		err := gatewayJob.sign(ls.LivepeerNode)
+		err := gatewayJob.sign()
 		if err != nil {
 			clog.Errorf(ctx, "Error signing job, exiting stream processing request: %v", err)
 			stream.CancelStream()
 			return
 		}
-		orchResp, _, err := ls.sendJobToOrch(ctx, nil, gatewayJob.Job.Req, gatewayJob.SignedJobReq, orch, "/stream/start", stream.StreamRequest)
+		orchResp, _, err := ls.sendJobToOrch(ctx, nil, gatewayJob.Job.Req, gatewayJob.SignedJobReq, orch, "/ai/stream/start", stream.StreamRequest)
 		if err != nil {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orch.ServiceAddr, err.Error())
 			continue
@@ -231,25 +231,25 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 			return
 		case <-pmtTicker.C:
 			// Send payment and fetch new JobToken every minute
-			req := &JobRequest{Capability: stream.Capability,
+			// TicketParams expire in about 8 minutes so have multiple chances to get new token
+			// Each payment is for 60 seconds of compute
+			jobDetails := JobRequestDetails{StreamId: streamId}
+			jobDetailsStr, err := json.Marshal(jobDetails)
+			if err != nil {
+				clog.Errorf(ctx, "Error marshalling job details: %v", err)
+				continue
+			}
+			req := &JobRequest{Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Capability,
 				Sender:  ls.LivepeerNode.OrchestratorPool.Broadcaster().Address().Hex(),
 				Timeout: 60,
 			}
 			//sign the request
-			gateway := ls.LivepeerNode.OrchestratorPool.Broadcaster()
-			sig, err := gateway.Sign([]byte(req.Request + req.Parameters))
+			job := gatewayJob{Job: &orchJob{Req: req}, node: ls.LivepeerNode}
+			err = job.sign()
 			if err != nil {
-				clog.Errorf(ctx, fmt.Sprintf("Unable to sign request err=%v", err))
+				clog.Errorf(ctx, "Error signing job, continuing monitoring: %v", err)
+				continue
 			}
-			req.Sender = gateway.Address().Hex()
-			req.Sig = "0x" + hex.EncodeToString(sig)
-
-			//create the job request header with the signature
-			jobReqEncoded, err := json.Marshal(req)
-			if err != nil {
-				clog.Errorf(ctx, fmt.Sprintf("Unable to encode job request err=%v", err))
-			}
-			jobReqHdr := base64.StdEncoding.EncodeToString(jobReqEncoded)
 
 			pmtHdr, err := createPayment(ctx, req, stream.OrchToken.(JobToken), ls.LivepeerNode)
 			if err != nil {
@@ -258,14 +258,20 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 			}
 
 			//send the payment, update the stream with the refreshed token
-			token, err := ls.sendPayment(ctx, stream.OrchUrl+"/stream/payment", stream.Capability, jobReqHdr, pmtHdr)
+			clog.Infof(ctx, "Sending stream payment for %s", streamId)
+			newToken, err := ls.sendPayment(ctx, stream.OrchUrl+"/ai/stream/payment", stream.Capability, job.SignedJobReq, pmtHdr)
 			if err != nil {
 				clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamId, err)
+				continue
+			}
+			if newToken == nil {
+				clog.Errorf(ctx, "Updated token not received for %s", streamId)
+				continue
 			}
 			streamToken := stream.OrchToken.(JobToken)
-			streamToken.TicketParams = token.TicketParams
-			streamToken.Balance = token.Balance
-			streamToken.Price = token.Price
+			streamToken.TicketParams = newToken.TicketParams
+			streamToken.Balance = newToken.Balance
+			streamToken.Price = newToken.Price
 			stream.OrchToken = streamToken
 		}
 	}
@@ -501,7 +507,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	r.Body.Close()
 
 	//save the stream setup
-	if err := ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, params, bodyBytes); err != nil {
+	if err := ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, pipeline, params, bodyBytes); err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
@@ -721,7 +727,6 @@ func (ls *LivepeerServer) GetStreamData() http.Handler {
 		params := stream.Params.(aiRequestParams)
 		// Get the data reading buffer
 		if params.liveParams.dataWriter == nil {
-			clog.Infof(ctx, "No data writer available for stream %s", stream)
 			http.Error(w, "Stream data not available", http.StatusServiceUnavailable)
 			return
 		}
@@ -859,7 +864,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	remoteAddr := getRemoteAddr(r)
 	ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
 
-	orchJob, err := h.setupOrchJob(ctx, r)
+	orchJob, err := h.setupOrchJob(ctx, r, false)
 	if err != nil {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
 		return
@@ -982,7 +987,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	clog.V(common.SHORT).Infof(ctx, "stream start processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 
 	//setup the stream
-	err = h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req, respBody)
+	err = h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req.Capability, orchJob.Req, respBody)
 	if err != nil {
 		clog.Errorf(ctx, "Error adding stream to external capabilities: %v", err)
 		respondWithError(w, "Error adding stream to external capabilities", http.StatusInternalServerError)
@@ -1001,6 +1006,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-stream.StreamCtx.Done():
+				h.orchestrator.FreeExternalCapabilityCapacity(orchJob.Req.Capability)
 				return
 			case <-pmtTicker.C:
 				// Check payment status
@@ -1048,7 +1054,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 
 func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	orchJob, err := h.setupOrchJob(ctx, r)
+	orchJob, err := h.setupOrchJob(ctx, r, false)
 	if err != nil {
 		respondWithError(w, fmt.Sprintf("Failed to stop stream, request not valid err=%v", err), http.StatusBadRequest)
 		return
@@ -1097,7 +1103,7 @@ func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 		clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
 	}
 
-	// Stop the stream
+	// Stop the stream and free capacity
 	h.node.ExternalCapabilities.RemoveStream(jobDetails.StreamId)
 
 	w.WriteHeader(resp.StatusCode)
@@ -1108,14 +1114,18 @@ func (h *lphttp) ProcessStreamPayment(w http.ResponseWriter, r *http.Request) {
 	orch := h.orchestrator
 	ctx := r.Context()
 
-	//this will process the payment
-	orchJob, err := h.setupOrchJob(ctx, r)
+	//this will validate the request and process the payment
+	orchJob, err := h.setupOrchJob(ctx, r, false)
 	if err != nil {
 		respondWithError(w, fmt.Sprintf("Failed to process payment, request not valid err=%v", err), http.StatusBadRequest)
 		return
 	}
+	ctx = clog.AddVal(ctx, "stream_id", orchJob.Details.StreamId)
+	ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
+	ctx = clog.AddVal(ctx, "sender", orchJob.Req.Sender)
 
 	senderAddr := ethcommon.HexToAddress(orchJob.Req.Sender)
+	clog.Infof(ctx, "Processing payment request")
 
 	jobPrice, err := orch.JobPriceInfo(senderAddr, orchJob.Req.Capability)
 	if err != nil {
@@ -1155,7 +1165,7 @@ func (h *lphttp) ProcessStreamPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobToken := JobToken{TicketParams: ticketParams, Balance: capBalInt, Price: jobPrice}
-	clog.Infof(ctx, "Processed payment request id=%s capability=%s balance=%v pricePerUnit=%v pixelsPerUnit=%v", orchJob.Req.ID, orchJob.Req.Capability, jobToken.Balance, jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
+	clog.Infof(ctx, "Processed payment request stream_id=%s capability=%s balance=%v pricePerUnit=%v pixelsPerUnit=%v", orchJob.Details.StreamId, orchJob.Req.Capability, jobToken.Balance, jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 
 	json.NewEncoder(w).Encode(jobToken)
 }
