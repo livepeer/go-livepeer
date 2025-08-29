@@ -125,6 +125,7 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, params interface
 					stream.StopControl()
 					stream.ControlPub.Close()
 				}
+
 				return
 			}
 		}
@@ -139,7 +140,10 @@ func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
 
 	streamInfo, ok := extCaps.Streams[streamID]
 	if ok {
-		streamInfo.CancelStream()
+		//confirm stream context is canceled before deleting
+		if streamInfo.StreamCtx.Err() == nil {
+			streamInfo.CancelStream()
+		}
 	}
 
 	delete(extCaps.Streams, streamID)

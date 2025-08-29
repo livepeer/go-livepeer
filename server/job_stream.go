@@ -55,6 +55,8 @@ func (ls *LivepeerServer) StartStream() http.Handler {
 
 		go ls.runStream(gatewayJob)
 
+		go ls.monitorStream(gatewayJob.Job.Req.ID)
+
 		if resp != nil {
 			// Stream started successfully
 			w.Header().Set("Content-Type", "application/json")
@@ -108,14 +110,15 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 
 func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	streamID := gatewayJob.Job.Req.ID
-	ctx := context.Background()
-	ctx = clog.AddVal(ctx, "stream_id", streamID)
 	stream, exists := ls.LivepeerNode.ExternalCapabilities.Streams[streamID]
 	if !exists {
-		clog.Errorf(ctx, "Stream %s not found", streamID)
+		glog.Errorf("Stream %s not found", streamID)
 		return
 	}
 	params := stream.Params.(aiRequestParams)
+	//this context passes to all channels that will close when stream is canceled
+	ctx := stream.StreamCtx
+	ctx = clog.AddVal(ctx, "stream_id", streamID)
 
 	start := time.Now()
 	for _, orch := range gatewayJob.Orchs {
@@ -191,16 +194,29 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		//	// failed before selecting an orchestrator
 		//	firstProcessed <- struct{}{}
 		//}
-		params.liveParams.kickInput(err)
+
+		//if there is ingress input then force off
+		if params.liveParams.kickInput != nil {
+			params.liveParams.kickInput(err)
+		}
 	}
+
+	//exhausted all Orchestrators, end stream
+	ls.LivepeerNode.ExternalCapabilities.RemoveStream(streamID)
 }
 
-func (ls *LivepeerServer) monitorStream(ctx context.Context, streamId string) {
+func (ls *LivepeerServer) monitorStream(streamId string) {
+	ctx := context.Background()
+	ctx = clog.AddVal(ctx, "stream_id", streamId)
+
 	stream, exists := ls.LivepeerNode.ExternalCapabilities.Streams[streamId]
 	if !exists {
 		clog.Errorf(ctx, "Stream %s not found", streamId)
 		return
 	}
+	params := stream.Params.(aiRequestParams)
+
+	ctx = clog.AddVal(ctx, "request_id", params.liveParams.requestID)
 
 	// Create a ticker that runs every minute for payments
 	pmtTicker := time.NewTicker(45 * time.Second)
@@ -210,6 +226,7 @@ func (ls *LivepeerServer) monitorStream(ctx context.Context, streamId string) {
 		select {
 		case <-stream.StreamCtx.Done():
 			clog.Infof(ctx, "Stream %s stopped, ending monitoring", streamId)
+			ls.LivepeerNode.ExternalCapabilities.RemoveStream(streamId)
 			return
 		case <-pmtTicker.C:
 			// Send payment and fetch new JobToken every minute
@@ -271,6 +288,8 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	// Create a temporary request for parsing form data
 	formReq := r.Clone(ctx)
 	formReq.Body = io.NopCloser(bodyForForm)
+	defer r.Body.Close()
+	defer formReq.Body.Close()
 
 	// Parse the form (10MB max)
 	if err := formReq.ParseMultipartForm(10 << 20); err != nil {
@@ -328,6 +347,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	if streamName != "" {
 		streamID = fmt.Sprintf("%s-%s", streamName, streamID)
 	}
+	// BYOC uses Livepeer native WHIP
 	// Currently for webrtc we need to add a path prefix due to the ingress setup
 	//mediaMTXStreamPrefix := r.PathValue("prefix")
 	//if mediaMTXStreamPrefix != "" {
@@ -390,7 +410,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	}
 
 	ctx = clog.AddVal(ctx, "stream_id", streamID)
-	clog.Infof(ctx, "Received live video AI request for %s. pipelineParams=%v", streamName, pipelineParams)
+	clog.Infof(ctx, "Received live video AI request pipelineParams=%v", streamID, pipelineParams)
 
 	// collect all RTMP outputs
 	var rtmpOutputs []string
@@ -476,14 +496,11 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 
 	clog.Infof(ctx, "stream setup videoIngress=%v videoEgress=%v dataOutput=%v", jobParams.EnableVideoIngress, jobParams.EnableVideoEgress, jobParams.EnableDataOutput)
 
-	// No need to read the body again since we already have it
-	// We're using the original request body that was already read and stored
-	// We already have the bodyBytes variable which contains the full request body
-	body := bodyBytes
+	// Close the body, done with all form variables
 	r.Body.Close()
 
 	//save the stream setup
-	if err := ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, params, body); err != nil {
+	if err := ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, params, bodyBytes); err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
@@ -632,10 +649,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 
 func startStreamProcessing(ctx context.Context, streamInfo *core.StreamInfo) error {
 	var channels []string
-
-	//this adds the stream to LivePipelines which the Control Publisher and Data Writer
-	//are accessible for reading data and sending updates
-	//registerControl(ctx, params)
 
 	//required channels
 	control, err := common.AppendHostname(streamInfo.OrchControlUrl, streamInfo.OrchUrl)
@@ -978,8 +991,11 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	//start payment monitoring
 	go func() {
 		stream, _ := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
+		ctx := context.Background()
+		ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
 
-		pmtTicker := time.NewTicker(30 * time.Second)
+		pmtCheckDur := 30 * time.Second
+		pmtTicker := time.NewTicker(pmtCheckDur)
 		defer pmtTicker.Stop()
 		for {
 			select {
@@ -987,10 +1003,10 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 				return
 			case <-pmtTicker.C:
 				// Check payment status
-				clog.V(8).Infof(ctx, "Checking payment balance for stream")
+
 				jobPriceRat := big.NewRat(orchJob.JobPrice.PricePerUnit, orchJob.JobPrice.PixelsPerUnit)
 				if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-					h.orchestrator.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, 5)
+					h.orchestrator.DebitFees(orchJob.Sender, core.ManifestID(orchJob.Req.Capability), orchJob.JobPrice, int64(pmtCheckDur.Seconds()))
 					senderBalance := getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability)
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
@@ -1000,6 +1016,8 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 								h.node.ExternalCapabilities.RemoveStream(orchJob.Req.ID)
 							}
 						}
+
+						clog.V(8).Infof(ctx, "Payment balance for stream capability is good balance=%v", senderBalance.FloatString(0))
 					}
 				}
 
@@ -1015,6 +1033,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 						respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
 						return
 					}
+					//end monitoring of stream
 					return
 				}
 			}
@@ -1135,6 +1154,7 @@ func (h *lphttp) ProcessStreamPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobToken := JobToken{TicketParams: ticketParams, Balance: capBalInt, Price: jobPrice}
+	clog.Infof(ctx, "Processed payment request id=%s capability=%s balance=%v pricePerUnit=%v pixelsPerUnit=%v", orchJob.Req.ID, orchJob.Req.Capability, jobToken.Balance, jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 
 	json.NewEncoder(w).Encode(jobToken)
 }
