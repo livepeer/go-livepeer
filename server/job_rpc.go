@@ -576,11 +576,11 @@ func (ls *LivepeerServer) sendJobToOrch(ctx context.Context, r *http.Request, jo
 	return resp, resp.StatusCode, nil
 }
 
-func (ls *LivepeerServer) sendPayment(ctx context.Context, orchPmtUrl, capability, jobReq, payment string) (*JobToken, error) {
+func (ls *LivepeerServer) sendPayment(ctx context.Context, orchPmtUrl, capability, jobReq, payment string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", orchPmtUrl, nil)
 	if err != nil {
 		clog.Errorf(ctx, "Unable to create request err=%v", err)
-		return nil, err
+		return http.StatusBadRequest, err
 	}
 
 	req.Header.Add("Content-Type", "application/json")
@@ -590,17 +590,10 @@ func (ls *LivepeerServer) sendPayment(ctx context.Context, orchPmtUrl, capabilit
 	resp, err := sendJobReqWithTimeout(req, 10*time.Second)
 	if err != nil {
 		clog.Errorf(ctx, "job payment not able to be processed by Orchestrator %v err=%v ", orchPmtUrl, err.Error())
-		return nil, err
+		return http.StatusBadRequest, err
 	}
 
-	var jobToken JobToken
-	if err := json.NewDecoder(resp.Body).Decode(&jobToken); err != nil {
-		clog.Errorf(ctx, "Error decoding job token response: %v", err)
-		return nil, err
-	}
-
-	//return the job token with new ticketparams, balance and price. Not all fields filled out
-	return &jobToken, nil
+	return resp.StatusCode, nil
 }
 
 func processJob(ctx context.Context, h *lphttp, w http.ResponseWriter, r *http.Request) {
@@ -856,6 +849,7 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 		} else {
 			if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobReq.Capability)); err != nil {
 				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
+				clog.Errorf(ctx, "Error processing payment: %v", err)
 				return nil, errPaymentError
 			}
 		}
@@ -874,6 +868,7 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 
 func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, node *core.LivepeerNode) (string, error) {
 	var payment *net.Payment
+	clog.Infof(ctx, "creating payment for job request %s", jobReq.Capability)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
 	balance := node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
@@ -885,7 +880,12 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		balance = node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
 	} else {
 		price := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
-		cost := price.Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
+		cost := new(big.Rat).Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
+		minBal := new(big.Rat).Mul(price, big.NewRat(60, 1)) //minimum 1 minute balance
+		if cost.Cmp(minBal) < 0 {
+			cost = minBal
+		}
+
 		if balance.Cmp(cost) > 0 {
 			createTickets = false
 			payment = &net.Payment{
@@ -893,6 +893,7 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 				ExpectedPrice: orchToken.Price,
 			}
 		}
+		clog.Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
 	}
 
 	if !createTickets {

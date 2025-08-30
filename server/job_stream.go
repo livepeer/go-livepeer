@@ -172,7 +172,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			err = nil
 		}
 		if !ls.LivepeerNode.ExternalCapabilities.StreamExists(streamID) {
-			clog.Info(ctx, "No input stream, skipping orchestrator swap")
+			clog.Info(ctx, "No stream exists, skipping orchestrator swap")
 			break
 		}
 		//if swapErr := orchSwapper.checkSwap(ctx); swapErr != nil {
@@ -220,9 +220,14 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 	ctx = clog.AddVal(ctx, "request_id", params.liveParams.requestID)
 
 	// Create a ticker that runs every minute for payments
-	pmtTicker := time.NewTicker(45 * time.Second)
+	dur := 50 * time.Second
+	pmtTicker := time.NewTicker(dur)
 	defer pmtTicker.Stop()
-
+	jobSender, err := getJobSender(ctx, ls.LivepeerNode)
+	if err != nil {
+		clog.Errorf(ctx, "Error getting job sender: %v", err)
+		return
+	}
 	for {
 		select {
 		case <-stream.StreamCtx.Done():
@@ -230,9 +235,18 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 			ls.LivepeerNode.ExternalCapabilities.RemoveStream(streamId)
 			return
 		case <-pmtTicker.C:
-			// Send payment and fetch new JobToken every minute
-			// TicketParams expire in about 8 minutes so have multiple chances to get new token
-			// Each payment is for 60 seconds of compute
+			// fetch new JobToken with each payment
+			token := stream.OrchToken.(JobToken)
+			updateGatewayBalance(ls.LivepeerNode, token, stream.Capability, dur)
+
+			newToken, err := getToken(ctx, 3*time.Second, stream.OrchUrl, stream.Capability, jobSender.Addr, jobSender.Sig)
+			if err != nil {
+				clog.Errorf(ctx, "Error getting new token for %s: %v", stream.OrchUrl, err)
+				continue
+			}
+			stream.OrchToken = *newToken
+
+			// send the payment
 			jobDetails := JobRequestDetails{StreamId: streamId}
 			jobDetailsStr, err := json.Marshal(jobDetails)
 			if err != nil {
@@ -259,20 +273,15 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 
 			//send the payment, update the stream with the refreshed token
 			clog.Infof(ctx, "Sending stream payment for %s", streamId)
-			newToken, err := ls.sendPayment(ctx, stream.OrchUrl+"/ai/stream/payment", stream.Capability, job.SignedJobReq, pmtHdr)
+			statusCode, err := ls.sendPayment(ctx, stream.OrchUrl+"/ai/stream/payment", stream.Capability, job.SignedJobReq, pmtHdr)
 			if err != nil {
 				clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamId, err)
 				continue
 			}
-			if newToken == nil {
-				clog.Errorf(ctx, "Updated token not received for %s", streamId)
+			if statusCode != http.StatusOK {
+				clog.Errorf(ctx, "Unexpected status code %d received for %s", statusCode, streamId)
 				continue
 			}
-			streamToken := stream.OrchToken.(JobToken)
-			streamToken.TicketParams = newToken.TicketParams
-			streamToken.Balance = newToken.Balance
-			streamToken.Price = newToken.Price
-			stream.OrchToken = streamToken
 		}
 	}
 }
@@ -507,7 +516,8 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	r.Body.Close()
 
 	//save the stream setup
-	if err := ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, pipeline, params, bodyBytes); err != nil {
+	_, err = ls.LivepeerNode.ExternalCapabilities.AddStream(streamID, pipeline, params, bodyBytes)
+	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 
@@ -892,24 +902,29 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	clog.Infof(ctx, "Processing stream start request videoIngress=%v videoEgress=%v dataOutput=%v", jobParams.EnableVideoIngress, jobParams.EnableVideoEgress, jobParams.EnableDataOutput)
 	// Start trickle server for live-video
 	var (
-		mid        = orchJob.Req.ID // Request ID is used for the manifest ID
-		pubUrl     = h.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
-		subUrl     = pubUrl + "-out"
-		controlUrl = pubUrl + "-control"
-		eventsUrl  = pubUrl + "-events"
-		dataUrl    = pubUrl + "-data"
+		mid          = orchJob.Req.ID // Request ID is used for the manifest ID
+		pubUrl       = h.orchestrator.ServiceURI().JoinPath(TrickleHTTPPath, mid).String()
+		subUrl       = pubUrl + "-out"
+		controlUrl   = pubUrl + "-control"
+		eventsUrl    = pubUrl + "-events"
+		dataUrl      = pubUrl + "-data"
+		pubCh        *trickle.TrickleLocalPublisher
+		subCh        *trickle.TrickleLocalPublisher
+		controlPubCh *trickle.TrickleLocalPublisher
+		eventsCh     *trickle.TrickleLocalPublisher
+		dataCh       *trickle.TrickleLocalPublisher
 	)
 
 	reqBodyForRunner := make(map[string]interface{})
 	reqBodyForRunner["gateway_request_id"] = mid
 	//required channels
-	controlPubCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
+	controlPubCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-control", "application/json")
 	controlPubCh.CreateChannel()
 	controlUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, controlUrl)
 	reqBodyForRunner["control_url"] = controlUrl
 	w.Header().Set("X-Control-Url", controlUrl)
 
-	eventsCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
+	eventsCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-events", "application/json")
 	eventsCh.CreateChannel()
 	eventsUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, eventsUrl)
 	reqBodyForRunner["events_url"] = eventsUrl
@@ -917,7 +932,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 
 	//Optional channels
 	if jobParams.EnableVideoIngress {
-		pubCh := trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
+		pubCh = trickle.NewLocalPublisher(h.trickleSrv, mid, "video/MP2T")
 		pubCh.CreateChannel()
 		pubUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, pubUrl)
 		reqBodyForRunner["subscribe_url"] = pubUrl //runner needs to subscribe to input
@@ -925,7 +940,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if jobParams.EnableVideoEgress {
-		subCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
+		subCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-out", "video/MP2T")
 		subCh.CreateChannel()
 		subUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, subUrl)
 		reqBodyForRunner["publish_url"] = subUrl  //runner needs to send results -out
@@ -933,7 +948,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if jobParams.EnableDataOutput {
-		dataCh := trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
+		dataCh = trickle.NewLocalPublisher(h.trickleSrv, mid+"-data", "application/jsonl")
 		dataCh.CreateChannel()
 		dataUrl = overwriteHost(h.node.LiveAITrickleHostForRunner, dataUrl)
 		reqBodyForRunner["data_url"] = dataUrl
@@ -987,12 +1002,14 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	clog.V(common.SHORT).Infof(ctx, "stream start processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 
 	//setup the stream
-	err = h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req.Capability, orchJob.Req, respBody)
+	stream, err := h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req.Capability, orchJob.Req, respBody)
 	if err != nil {
 		clog.Errorf(ctx, "Error adding stream to external capabilities: %v", err)
 		respondWithError(w, "Error adding stream to external capabilities", http.StatusInternalServerError)
 		return
 	}
+
+	stream.SetChannels(pubCh, subCh, controlPubCh, eventsCh, dataCh)
 
 	//start payment monitoring
 	go func() {
@@ -1024,6 +1041,8 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 							if exists {
 								h.node.ExternalCapabilities.RemoveStream(orchJob.Req.ID)
 							}
+
+							return
 						}
 
 						clog.V(8).Infof(ctx, "Payment balance for stream capability is good balance=%v", senderBalance.FloatString(0))
@@ -1127,47 +1146,18 @@ func (h *lphttp) ProcessStreamPayment(w http.ResponseWriter, r *http.Request) {
 	ctx = clog.AddVal(ctx, "sender", orchJob.Req.Sender)
 
 	senderAddr := ethcommon.HexToAddress(orchJob.Req.Sender)
-	clog.Infof(ctx, "Processing payment request")
-
-	jobPrice, err := orch.JobPriceInfo(senderAddr, orchJob.Req.Capability)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "insufficient sender reserve" {
-			statusCode = http.StatusServiceUnavailable
-		}
-		glog.Errorf("could not get price err=%v", err.Error())
-		http.Error(w, fmt.Sprintf("Could not get price err=%v", err.Error()), statusCode)
-		return
-	}
-	ticketParams, err := orch.TicketParams(senderAddr, jobPrice)
-	if err != nil {
-		glog.Errorf("could not get ticket params err=%v", err.Error())
-		http.Error(w, fmt.Sprintf("Could not get ticket params err=%v", err.Error()), http.StatusBadRequest)
-		return
-	}
 
 	capBal := orch.Balance(senderAddr, core.ManifestID(orchJob.Req.Capability))
 	if capBal != nil {
 		capBal, err = common.PriceToInt64(capBal)
 		if err != nil {
-			clog.Errorf(context.TODO(), "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), orchJob.Req.Capability, err.Error())
+			clog.Errorf(ctx, "could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), orchJob.Req.Capability, err.Error())
 			capBal = big.NewRat(0, 1)
 		}
 	} else {
 		capBal = big.NewRat(0, 1)
 	}
-	//convert to int64. Note: returns with 000 more digits to allow for precision of 3 decimal places.
-	capBalInt, err := common.PriceToFixed(capBal)
-	if err != nil {
-		glog.Errorf("could not convert balance to int64 sender=%v capability=%v err=%v", senderAddr.Hex(), orchJob.Req.Capability, err.Error())
-		capBalInt = 0
-	} else {
-		// Remove the last three digits from capBalInt
-		capBalInt = capBalInt / 1000
-	}
 
-	jobToken := JobToken{TicketParams: ticketParams, Balance: capBalInt, Price: jobPrice}
-	clog.Infof(ctx, "Processed payment request stream_id=%s capability=%s balance=%v pricePerUnit=%v pixelsPerUnit=%v", orchJob.Details.StreamId, orchJob.Req.Capability, jobToken.Balance, jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-
-	json.NewEncoder(w).Encode(jobToken)
+	w.Header().Set(jobPaymentBalanceHdr, capBal.FloatString(0))
+	w.WriteHeader(http.StatusOK)
 }

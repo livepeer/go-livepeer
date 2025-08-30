@@ -1223,6 +1223,12 @@ func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability s
 		return nil, err
 	}
 
+	//ensure price numerator and denominator can be int64
+	jobPrice, err = common.PriceToInt64(jobPrice)
+	if err != nil {
+		return nil, err
+	}
+
 	return &net.PriceInfo{
 		PricePerUnit:  jobPrice.Num().Int64(),
 		PixelsPerUnit: jobPrice.Denom().Int64(),

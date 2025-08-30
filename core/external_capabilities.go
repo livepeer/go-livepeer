@@ -52,8 +52,12 @@ type StreamInfo struct {
 	OrchDataUrl      string
 
 	//Orchestrator fields
-	Sender ethcommon.Address
-
+	Sender         ethcommon.Address
+	pubChannel     *trickle.TrickleLocalPublisher
+	subChannel     *trickle.TrickleLocalPublisher
+	controlChannel *trickle.TrickleLocalPublisher
+	eventsChannel  *trickle.TrickleLocalPublisher
+	dataChannel    *trickle.TrickleLocalPublisher
 	//Stream fields
 	Params            interface{}
 	DataWriter        *media.SegmentWriter
@@ -83,6 +87,16 @@ func (sd *StreamInfo) UpdateParams(params string) {
 	sd.JobParams = params
 }
 
+func (sd *StreamInfo) SetChannels(pub, sub, control, events, data *trickle.TrickleLocalPublisher) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.pubChannel = pub
+	sd.subChannel = sub
+	sd.controlChannel = control
+	sd.eventsChannel = events
+	sd.dataChannel = data
+}
+
 type ExternalCapabilities struct {
 	capm         sync.Mutex
 	Capabilities map[string]*ExternalCapability
@@ -95,12 +109,12 @@ func NewExternalCapabilities() *ExternalCapabilities {
 	}
 }
 
-func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string, params interface{}, streamReq []byte) error {
+func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string, params interface{}, streamReq []byte) (*StreamInfo, error) {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
 	_, ok := extCaps.Streams[streamID]
 	if ok {
-		return fmt.Errorf("stream already exists: %s", streamID)
+		return nil, fmt.Errorf("stream already exists: %s", streamID)
 	}
 
 	//add to streams
@@ -115,10 +129,12 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string,
 	}
 	extCaps.Streams[streamID] = &stream
 
+	//clean up when stream ends
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
+				//gateway channels shutdown
 				if stream.DataWriter != nil {
 					stream.DataWriter.Close()
 				}
@@ -127,12 +143,28 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string,
 					stream.ControlPub.Close()
 				}
 
+				//orchestrator channels shutdown
+				if stream.pubChannel != nil {
+					stream.pubChannel.Close()
+				}
+				if stream.subChannel != nil {
+					stream.subChannel.Close()
+				}
+				if stream.controlChannel != nil {
+					stream.controlChannel.Close()
+				}
+				if stream.eventsChannel != nil {
+					stream.eventsChannel.Close()
+				}
+				if stream.dataChannel != nil {
+					stream.dataChannel.Close()
+				}
 				return
 			}
 		}
 	}()
 
-	return nil
+	return &stream, nil
 }
 
 func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
