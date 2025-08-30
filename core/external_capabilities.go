@@ -72,7 +72,15 @@ type StreamInfo struct {
 }
 
 func (sd *StreamInfo) IsActive() bool {
-	return sd.StreamCtx.Err() == nil
+	if sd.StreamCtx.Err() != nil {
+		return false
+	}
+
+	if sd.controlChannel == nil && sd.ControlPub == nil {
+		return false
+	}
+
+	return true
 }
 
 func (sd *StreamInfo) ExcludeOrch(orchUrl string) {
