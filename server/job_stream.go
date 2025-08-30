@@ -270,6 +270,9 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 				clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamId, err)
 				// Continue monitoring even if payment fails
 			}
+			if pmtHdr == "" {
+				continue
+			}
 
 			//send the payment, update the stream with the refreshed token
 			clog.Infof(ctx, "Sending stream payment for %s", streamId)
