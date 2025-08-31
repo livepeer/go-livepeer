@@ -113,6 +113,8 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 	ls.HTTPMux.Handle("/process/request/", ls.SubmitJob())
 
 	media.StartFileCleanup(ctx, ls.LivepeerNode.WorkDir)
+
+	startHearbeats(ctx, ls.LivepeerNode)
 	return nil
 }
 
@@ -1318,4 +1320,70 @@ func (ls *LivepeerServer) SmokeTestLiveVideo() http.Handler {
 			}, backoff.WithMaxRetries(backoff.NewConstantBackOff(30*time.Second), 3))
 		}()
 	})
+}
+
+func startHearbeats(ctx context.Context, node *core.LivepeerNode) {
+	if node.LiveAIHeartbeatURL == "" {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(node.LiveAIHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sendHeartbeat(ctx, node, node.LiveAIHeartbeatURL, node.LiveAIHeartbeatHeaders)
+			}
+		}
+	}()
+}
+
+func getStreamIDs(node *core.LivepeerNode) []string {
+	node.LiveMu.Lock()
+	defer node.LiveMu.Unlock()
+	var streamIDs []string
+	for _, pipeline := range node.LivePipelines {
+		streamIDs = append(streamIDs, pipeline.StreamID)
+	}
+	return streamIDs
+}
+
+func sendHeartbeat(ctx context.Context, node *core.LivepeerNode, liveAIHeartbeatURL string, liveAIHeartbeatHeaders map[string]string) {
+	streamIDs := getStreamIDs(node)
+
+	reqBody, err := json.Marshal(map[string]interface{}{
+		"ids": streamIDs,
+	})
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to marshal request body %s", err)
+		return
+	}
+
+	request, err := http.NewRequest("POST", liveAIHeartbeatURL, bytes.NewReader(reqBody))
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to build heartbeat request %s", err)
+		return
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	for key, value := range liveAIHeartbeatHeaders {
+		request.Header.Set(key, value)
+	}
+
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		clog.Errorf(ctx, "heartbeat: failed to send heartbeat %s", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(resp.Body)
+		clog.Errorf(ctx, "heartbeat: failed to send heartbeat %s", resp.Status)
+		clog.Errorf(ctx, "heartbeat: response body: %s", string(body))
+		return
+	}
 }
