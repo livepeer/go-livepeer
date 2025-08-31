@@ -1689,7 +1689,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		n.LiveAIHeartbeatHeaders = make(map[string]string)
 		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
 		for _, header := range headers {
-			parts := strings.SplitN(header, "=", 2)
+			parts := strings.SplitN(header, ":", 2)
 			if len(parts) == 2 {
 				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
 			}

@@ -68,7 +68,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.LiveAITrickleHostForRunner = fs.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
 	cfg.LiveAIAuthApiKey = fs.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
 	cfg.LiveAIHeartbeatURL = fs.String("liveAIHeartbeatURL", "", "Base URL for Live AI heartbeat requests")
-	cfg.LiveAIHeartbeatHeaders = fs.String("liveAIHeartbeatHeaders", "", "Map of headers to use for Live AI heartbeat requests. e.g. 'header=val,header2=val2'")
+	cfg.LiveAIHeartbeatHeaders = fs.String("liveAIHeartbeatHeaders", "", "Map of headers to use for Live AI heartbeat requests. e.g. 'header:val,header2:val2'")
 	cfg.LiveAIHeartbeatInterval = fs.Duration("liveAIHeartbeatInterval", *cfg.LiveAIHeartbeatInterval, "Interval to send Live AI heartbeat requests")
 	cfg.LiveAIAuthWebhookURL = fs.String("liveAIAuthWebhookUrl", "", "Live AI RTMP authentication webhook URL")
 	cfg.LivePaymentInterval = fs.Duration("livePaymentInterval", *cfg.LivePaymentInterval, "Interval to pay process Gateway <> Orchestrator Payments for Live AI Video")
