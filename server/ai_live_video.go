@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,34 +72,23 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 		return
 	}
 
-	var orchAddr string
-	var orchUrl string
 	// Start payments which probes a segment every "paymentProcessInterval" and sends a payment
 	ctx, cancel := context.WithCancel(ctx)
+	priceInfo := sess.OrchestratorInfo.PriceInfo
 	var paymentProcessor *LivePaymentProcessor
-	if sess != nil {
-		orchAddr = sess.Address()
-		orchUrl = sess.Transcoder()
-
-		priceInfo := sess.OrchestratorInfo.PriceInfo
-		if priceInfo != nil && priceInfo.PricePerUnit != 0 {
-			paymentSender := livePaymentSender{}
-			sendPaymentFunc := func(inPixels int64) error {
-				return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
-					sess:      sess.BroadcastSession,
-					inPixels:  inPixels,
-					priceInfo: priceInfo,
-					mid:       params.liveParams.manifestID,
-				})
-			}
-			paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
-		} else {
-			clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
+	if priceInfo != nil && priceInfo.PricePerUnit != 0 {
+		paymentSender := livePaymentSender{}
+		sendPaymentFunc := func(inPixels int64) error {
+			return paymentSender.SendPayment(context.Background(), &SegmentInfoSender{
+				sess:      sess.BroadcastSession,
+				inPixels:  inPixels,
+				priceInfo: priceInfo,
+				mid:       params.liveParams.manifestID,
+			})
 		}
+		paymentProcessor = NewLivePaymentProcessor(ctx, params.liveParams.paymentProcessInterval, sendPaymentFunc)
 	} else {
-		//byoc sets as context values
-		orchAddr = clog.GetVal(ctx, "orch")
-		orchUrl = clog.GetVal(ctx, "orch_url")
+		clog.Warningf(ctx, "No price info found from Orchestrator, Gateway will not send payments for the video processing")
 	}
 
 	slowOrchChecker := &SlowOrchChecker{}
@@ -170,8 +158,8 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 							"pipeline_id": params.liveParams.pipelineID,
 							"request_id":  params.liveParams.requestID,
 							"orchestrator_info": map[string]interface{}{
-								"address": orchAddr,
-								"url":     orchUrl,
+								"address": sess.Address(),
+								"url":     sess.Transcoder(),
 							},
 						})
 					}
@@ -517,9 +505,8 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	}
 
 	params.node.LivePipelines[stream] = &core.LivePipeline{
-		RequestID:  params.liveParams.requestID,
-		Pipeline:   params.liveParams.pipeline,
-		DataWriter: params.liveParams.dataWriter,
+		RequestID: params.liveParams.requestID,
+		Pipeline:  params.liveParams.pipeline,
 	}
 }
 
@@ -707,13 +694,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 					"address": sess.Address(),
 					"url":     sess.Transcoder(),
 				}
-			} else {
-				address := clog.GetVal(ctx, "orch")
-				url := clog.GetVal(ctx, "orch_url")
-				event["orchestrator_info"] = map[string]interface{}{
-					"address": address,
-					"url":     url,
-				}
 			}
 
 			clog.V(8).Infof(ctx, "Received event for seq=%d event=%+v", trickle.GetSeq(segment), event)
@@ -780,125 +760,6 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 	}()
 }
 
-func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParams, sess *AISession) {
-	//only start DataSubscribe if enabled
-	if params.liveParams.dataWriter == nil {
-		return
-	}
-
-	// subscribe to the outputs
-	subscriber, err := trickle.NewTrickleSubscriber(trickle.TrickleSubscriberConfig{
-		URL: url.String(),
-		Ctx: ctx,
-	})
-	if err != nil {
-		clog.Infof(ctx, "Failed to create data subscriber: %s", err)
-		return
-	}
-
-	dataWriter := params.liveParams.dataWriter
-
-	// read segments from trickle subscription
-	go func() {
-		defer dataWriter.Close()
-
-		var err error
-		firstSegment := true
-
-		retries := 0
-		// we're trying to keep (retryPause x maxRetries) duration to fall within one output GOP length
-		const retryPause = 300 * time.Millisecond
-		const maxRetries = 5
-		for {
-			select {
-			case <-ctx.Done():
-				clog.Info(ctx, "data subscribe done")
-				return
-			default:
-			}
-			if !params.inputStreamExists() {
-				clog.Infof(ctx, "data subscribe stopping, input stream does not exist.")
-				break
-			}
-			var segment *http.Response
-			readBytes, readMessages := 0, 0
-			clog.V(8).Infof(ctx, "data subscribe await")
-			segment, err = subscriber.Read()
-			if err != nil {
-				if errors.Is(err, trickle.EOS) || errors.Is(err, trickle.StreamNotFoundErr) {
-					stopProcessing(ctx, params, fmt.Errorf("data subscribe stopping, stream not found, err=%w", err))
-					return
-				}
-				var sequenceNonexistent *trickle.SequenceNonexistent
-				if errors.As(err, &sequenceNonexistent) {
-					// stream exists but segment doesn't, so skip to leading edge
-					subscriber.SetSeq(sequenceNonexistent.Latest)
-				}
-				// TODO if not EOS then signal a new orchestrator is needed
-				err = fmt.Errorf("data subscribe error reading: %w", err)
-				clog.Infof(ctx, "%s", err)
-				if retries > maxRetries {
-					stopProcessing(ctx, params, errors.New("data subscribe stopping, retries exceeded"))
-					return
-				}
-				retries++
-				params.liveParams.sendErrorEvent(err)
-				time.Sleep(retryPause)
-				continue
-			}
-			retries = 0
-			seq := trickle.GetSeq(segment)
-			clog.V(8).Infof(ctx, "data subscribe received seq=%d", seq)
-			copyStartTime := time.Now()
-
-			defer segment.Body.Close()
-			scanner := bufio.NewScanner(segment.Body)
-			for scanner.Scan() {
-				writer, err := dataWriter.Next()
-				if err != nil {
-					if err != io.EOF {
-						stopProcessing(ctx, params, fmt.Errorf("data subscribe could not get next: %w", err))
-					}
-					return
-				}
-				n, err := writer.Write(scanner.Bytes())
-				if err != nil {
-					stopProcessing(ctx, params, fmt.Errorf("data subscribe could not write: %w", err))
-				}
-				readBytes += n
-				readMessages += 1
-			}
-			if err := scanner.Err(); err != nil {
-				clog.InfofErr(ctx, "data subscribe error reading seq=%d", seq, err)
-				subscriber.SetSeq(seq)
-				retries++
-				continue
-			}
-
-			if firstSegment {
-				firstSegment = false
-				delayMs := time.Since(params.liveParams.startTime).Milliseconds()
-				if monitor.Enabled {
-					monitor.AIFirstSegmentDelay(delayMs, params.liveParams.sess.OrchestratorInfo)
-					monitor.SendQueueEventAsync("stream_trace", map[string]interface{}{
-						"type":        "gateway_receive_first_data_segment",
-						"timestamp":   time.Now().UnixMilli(),
-						"stream_id":   params.liveParams.streamID,
-						"pipeline_id": params.liveParams.pipelineID,
-						"request_id":  params.liveParams.requestID,
-						"orchestrator_info": map[string]interface{}{
-							"address": params.liveParams.sess.Address(),
-							"url":     params.liveParams.sess.Transcoder(),
-						},
-					})
-				}
-			}
-
-			clog.V(8).Info(ctx, "data subscribe read completed", "seq", seq, "bytes", humanize.Bytes(uint64(readBytes)), "messages", readMessages, "took", time.Since(copyStartTime))
-		}
-	}()
-}
-
 func (a aiRequestParams) inputStreamExists() bool {
 	if a.node == nil {
 		return false
@@ -934,7 +795,7 @@ const maxInflightSegments = 3
 // If inflight max is hit, returns true, false otherwise.
 func (s *SlowOrchChecker) BeginSegment() (int, bool) {
 	// Returns `false` if there are multiple segments in-flight
-	// this means the orchestrator is slow reading
+	// this means the orchestrator is slow reading them
 	// If all-OK, returns `true`
 	s.mu.Lock()
 	defer s.mu.Unlock()

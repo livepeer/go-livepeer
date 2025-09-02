@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -1131,32 +1130,10 @@ func (orch *orchestrator) RegisterExternalCapability(extCapabilitySettings strin
 	//set the price for the capability
 	orch.node.SetPriceForExternalCapability("default", cap.Name, cap.GetPrice())
 
-	//if a live ai capability add it to capabilities to enable live ai payments
-	var price *AutoConvertedPrice
-	if strings.Contains(cap.Name, "live-") {
-
-		price, err = NewAutoConvertedPrice(cap.PriceCurrency, big.NewRat(cap.PricePerUnit, cap.PriceScaling), func(price *big.Rat) {
-			glog.V(6).Infof("Capability %s price set to %s wei per compute unit", cap.Name, price.FloatString(3))
-		})
-
-		if err != nil {
-			panic(fmt.Errorf("error converting price: %v", err))
-		}
-		orch.node.SetBasePriceForCap("default", Capability_LiveAI, cap.Name, price)
-
-		orch.node.AddAICapabilities(cap.ToCapabilities())
-	}
-
 	return cap, nil
 }
 
 func (orch *orchestrator) RemoveExternalCapability(extCapability string) error {
-	//if a live-ai external capability remove from Capabilities
-	if strings.Contains(extCapability, "live-") {
-		cap := orch.node.ExternalCapabilities.Capabilities[extCapability]
-		orch.node.RemoveAICapabilities(cap.ToCapabilities())
-	}
-
 	orch.node.ExternalCapabilities.RemoveCapability(extCapability)
 	return nil
 }
