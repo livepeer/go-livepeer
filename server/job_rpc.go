@@ -825,7 +825,7 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 	//no payment included, confirm if balance remains
 	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
 	var payment net.Payment
-	var orchBal *big.Rat
+	orchBal := big.NewRat(0, 1)
 	// if price is 0, no payment required
 	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
 		// get payment information
