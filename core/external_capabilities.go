@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	"time"
 
 	"sync"
 
@@ -16,40 +15,35 @@ import (
 )
 
 type ExternalCapability struct {
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description"`
-	Url           string                 `json:"url"`
-	Capacity      int                    `json:"capacity"`
-	PricePerUnit  int64                  `json:"price_per_unit"`
-	PriceScaling  int64                  `json:"price_scaling"`
-	PriceCurrency string                 `json:"currency"`
-	Requirements  CapabilityRequirements `json:"requirements"`
-	price         *AutoConvertedPrice
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Url           string `json:"url"`
+	Capacity      int    `json:"capacity"`
+	PricePerUnit  int64  `json:"price_per_unit"`
+	PriceScaling  int64  `json:"price_scaling"`
+	PriceCurrency string `json:"currency"`
+
+	price *AutoConvertedPrice
 
 	mu   sync.RWMutex
 	Load int
-}
-
-type CapabilityRequirements struct {
-	VideoIngress bool `json:"video_ingress"`
-	VideoEgress  bool `json:"video_egress"`
-	DataOutput   bool `json:"data_output"`
 }
 
 type StreamInfo struct {
 	StreamID   string
 	Capability string
 	//Gateway fields
-	StreamRequest []byte
-	ExcludeOrchs  []string
-	OrchToken     interface{}
-	OrchUrl       string
-
+	StreamRequest    []byte
+	ExcludeOrchs     []string
+	OrchToken        interface{}
+	OrchUrl          string
 	OrchPublishUrl   string
 	OrchSubscribeUrl string
 	OrchControlUrl   string
 	OrchEventsUrl    string
 	OrchDataUrl      string
+	ControlPub       *trickle.TricklePublisher
+	StopControl      func()
 
 	//Orchestrator fields
 	Sender         ethcommon.Address
@@ -59,14 +53,11 @@ type StreamInfo struct {
 	eventsChannel  *trickle.TrickleLocalPublisher
 	dataChannel    *trickle.TrickleLocalPublisher
 	//Stream fields
-	Params            interface{}
-	DataWriter        *media.SegmentWriter
-	ControlPub        *trickle.TricklePublisher
-	StopControl       func()
-	JobParams         string
-	StreamCtx         context.Context
-	CancelStream      context.CancelFunc
-	StreamStartedTime time.Time
+	Params       interface{}
+	DataWriter   *media.SegmentWriter
+	JobParams    string
+	StreamCtx    context.Context
+	CancelStream context.CancelFunc
 
 	sdm sync.Mutex
 }
@@ -243,15 +234,4 @@ func (extCap *ExternalCapability) GetPrice() *big.Rat {
 	extCap.mu.RLock()
 	defer extCap.mu.RUnlock()
 	return extCap.price.Value()
-}
-
-func (extCap *ExternalCapability) ToCapabilities() *Capabilities {
-	capConstraints := make(PerCapabilityConstraints)
-	capConstraints[Capability_LiveAI].Models = make(ModelConstraints)
-	capConstraints[Capability_LiveAI].Models[extCap.Name] = &ModelConstraint{Capacity: extCap.Capacity}
-
-	caps := NewCapabilities([]Capability{Capability_LiveAI}, MandatoryOCapabilities())
-	caps.SetPerCapabilityConstraints(capConstraints)
-
-	return caps
 }
