@@ -130,37 +130,34 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string,
 
 	//clean up when stream ends
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				//gateway channels shutdown
-				if stream.DataWriter != nil {
-					stream.DataWriter.Close()
-				}
-				if stream.ControlPub != nil {
-					stream.StopControl()
-					stream.ControlPub.Close()
-				}
+		<-ctx.Done()
 
-				//orchestrator channels shutdown
-				if stream.pubChannel != nil {
-					stream.pubChannel.Close()
-				}
-				if stream.subChannel != nil {
-					stream.subChannel.Close()
-				}
-				if stream.controlChannel != nil {
-					stream.controlChannel.Close()
-				}
-				if stream.eventsChannel != nil {
-					stream.eventsChannel.Close()
-				}
-				if stream.dataChannel != nil {
-					stream.dataChannel.Close()
-				}
-				return
-			}
+		//gateway channels shutdown
+		if stream.DataWriter != nil {
+			stream.DataWriter.Close()
 		}
+		if stream.ControlPub != nil {
+			stream.StopControl()
+			stream.ControlPub.Close()
+		}
+
+		//orchestrator channels shutdown
+		if stream.pubChannel != nil {
+			stream.pubChannel.Close()
+		}
+		if stream.subChannel != nil {
+			stream.subChannel.Close()
+		}
+		if stream.controlChannel != nil {
+			stream.controlChannel.Close()
+		}
+		if stream.eventsChannel != nil {
+			stream.eventsChannel.Close()
+		}
+		if stream.dataChannel != nil {
+			stream.dataChannel.Close()
+		}
+		return
 	}()
 
 	return &stream, nil
