@@ -126,6 +126,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 	for _, orch := range gatewayJob.Orchs {
 		stream.OrchToken = orch
 		stream.OrchUrl = orch.ServiceAddr
+
 		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 		clog.Infof(ctx, "Starting stream processing")
@@ -266,8 +267,8 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 				clog.Errorf(ctx, "Error signing job, continuing monitoring: %v", err)
 				continue
 			}
-
-			pmtHdr, err := createPayment(ctx, req, stream.OrchToken.(JobToken), ls.LivepeerNode)
+			orchToken := stream.OrchToken.(JobToken)
+			pmtHdr, err := createPayment(ctx, req, &orchToken, ls.LivepeerNode)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamId, err)
 				// Continue monitoring even if payment fails
@@ -745,8 +746,8 @@ func (ls *LivepeerServer) GetStreamData() http.Handler {
 		ctx = clog.AddVal(ctx, "stream", streamId)
 
 		// Get the live pipeline for this stream
-		stream, ok := ls.LivepeerNode.ExternalCapabilities.Streams[streamId]
-		if !ok {
+		stream, exists := ls.LivepeerNode.ExternalCapabilities.Streams[streamId]
+		if !exists {
 			http.Error(w, "Stream not found", http.StatusNotFound)
 			return
 		}
@@ -770,7 +771,7 @@ func (ls *LivepeerServer) GetStreamData() http.Handler {
 			return
 		}
 
-		clog.Infof(ctx, "Starting SSE data stream for stream=%s", stream)
+		clog.Infof(ctx, "Starting SSE data stream for stream=%s", streamId)
 
 		// Listen for broadcast signals from ring buffer writes
 		// dataReader.Read() blocks on rb.cond.Wait() until startDataSubscribe broadcasts
@@ -892,7 +893,11 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 
 	orchJob, err := h.setupOrchJob(ctx, r, false)
 	if err != nil {
-		respondWithError(w, err.Error(), http.StatusBadRequest)
+		code := http.StatusBadRequest
+		if err == errInsufficientBalance {
+			code = http.StatusPaymentRequired
+		}
+		respondWithError(w, err.Error(), code)
 		return
 	}
 	ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
@@ -1034,7 +1039,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		ctx = clog.AddVal(ctx, "stream_id", orchJob.Req.ID)
 		ctx = clog.AddVal(ctx, "capability", orchJob.Req.Capability)
 
-		pmtCheckDur := 25 * time.Second
+		pmtCheckDur := 23 * time.Second //run slightly faster than gateway so can return updated balance
 		pmtTicker := time.NewTicker(pmtCheckDur)
 		defer pmtTicker.Stop()
 		for {

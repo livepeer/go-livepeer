@@ -945,7 +945,7 @@ func TestCreatePayment(t *testing.T) {
 	//payment with one ticket
 	jobReq.Timeout = 1
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err := createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err := createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err := base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)
@@ -956,7 +956,7 @@ func TestCreatePayment(t *testing.T) {
 	//test 2 tickets
 	jobReq.Timeout = 2
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err = createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err = base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)
@@ -967,7 +967,7 @@ func TestCreatePayment(t *testing.T) {
 	//test 600 tickets
 	jobReq.Timeout = 600
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err = createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err = base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)

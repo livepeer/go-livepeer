@@ -62,6 +62,8 @@ type JobToken struct {
 	Balance       int64             `json:"balance,omitempty"`
 	Price         *net.PriceInfo    `json:"price,omitempty"`
 	ServiceAddr   string            `json:"service_addr,omitempty"`
+
+	lastNonce uint32
 }
 
 type JobRequest struct {
@@ -559,7 +561,7 @@ func (ls *LivepeerServer) sendJobToOrch(ctx context.Context, r *http.Request, jo
 
 	req.Header.Add(jobRequestHdr, signedReqHdr)
 	if orchToken.Price.PricePerUnit > 0 {
-		paymentHdr, err := createPayment(ctx, jobReq, orchToken, ls.LivepeerNode)
+		paymentHdr, err := createPayment(ctx, jobReq, &orchToken, ls.LivepeerNode)
 		if err != nil {
 			clog.Errorf(ctx, "Unable to create payment err=%v", err)
 			return nil, http.StatusInternalServerError, fmt.Errorf("Unable to create payment err=%v", err)
@@ -830,7 +832,7 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
 		// get payment information
 		paymentHdr := r.Header.Get(jobPaymentHeaderHdr)
-		minBal := jobPriceRat.Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
+		minBal := new(big.Rat).Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
 		if paymentHdr != "" {
 			payment, err = getPayment(paymentHdr)
 			if err != nil {
@@ -866,35 +868,55 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 	return &orchJob{Req: jobReq, Sender: sender, JobPrice: jobPrice, Details: &jobDetails}, nil
 }
 
-func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, node *core.LivepeerNode) (string, error) {
+func createPayment(ctx context.Context, jobReq *JobRequest, orchToken *JobToken, node *core.LivepeerNode) (string, error) {
 	var payment *net.Payment
+	createTickets := true
 	clog.Infof(ctx, "creating payment for job request %s", jobReq.Capability)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
-	balance := node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
 	sessionID := node.Sender.StartSession(*pmTicketParams(orchToken.TicketParams))
-	createTickets := true
+
+	//setup balances and update Gateway balance to Orchestrator balance, log differences
+	orchBal := big.NewRat(orchToken.Balance, 1)
+	balance := node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
 	if balance == nil {
 		//create a balance of 0
 		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), big.NewRat(0, 1))
 		balance = node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
-	} else {
-		price := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
-		cost := new(big.Rat).Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
-		minBal := new(big.Rat).Mul(price, big.NewRat(60, 1)) //minimum 1 minute balance
-		if cost.Cmp(minBal) < 0 {
-			cost = minBal
-		}
-
-		if balance.Cmp(cost) > 0 {
-			createTickets = false
-			payment = &net.Payment{
-				Sender:        sender.Bytes(),
-				ExpectedPrice: orchToken.Price,
-			}
-		}
-		clog.Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
 	}
+
+	diff := new(big.Rat).Sub(orchBal, balance)
+	if balance.Cmp(orchBal) != 0 {
+		clog.Infof(ctx, "Adjusting gateway balance to Orchestrator provided balance for sender=%v capability=%v balance=%v orchBal=%v diff=%v", sender.Hex(), jobReq.Capability, balance.FloatString(0), orchBal.FloatString(0), diff.FloatString(0))
+	}
+
+	if diff.Sign() > 0 {
+		node.Balances.Credit(orchAddr, core.ManifestID(jobReq.Capability), diff)
+	} else {
+		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), new(big.Rat).Abs(diff))
+	}
+
+	price := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
+	cost := new(big.Rat).Mul(price, big.NewRat(int64(jobReq.Timeout), 1))
+	minBal := new(big.Rat).Mul(price, big.NewRat(60, 1)) //minimum 1 minute balance
+	if cost.Cmp(minBal) < 0 {
+		cost = minBal
+	}
+
+	if balance.Sign() > 0 && orchToken.Balance == 0 {
+		clog.Infof(ctx, "Updating balance to 0 because orchestrator balance reset for sender=%v capability=%v balance=%v", sender.Hex(), jobReq.Capability, balance.FloatString(0))
+		node.Balances.Debit(orchAddr, core.ManifestID(jobReq.Capability), balance)
+		balance = node.Balances.Balance(orchAddr, core.ManifestID(jobReq.Capability))
+	}
+
+	if balance.Cmp(cost) > 0 {
+		createTickets = false
+		payment = &net.Payment{
+			Sender:        sender.Bytes(),
+			ExpectedPrice: orchToken.Price,
+		}
+	}
+	clog.Infof(ctx, "current balance for sender=%v capability=%v is %v, cost=%v price=%v", sender.Hex(), jobReq.Capability, balance.FloatString(3), cost.FloatString(3), price.FloatString(3))
 
 	if !createTickets {
 		clog.V(common.DEBUG).Infof(ctx, "No payment required, using balance=%v", balance.FloatString(3))
@@ -929,12 +951,12 @@ func createPayment(ctx context.Context, jobReq *JobRequest, orchToken JobToken, 
 		senderParams := make([]*net.TicketSenderParams, len(tickets.SenderParams))
 		for i := 0; i < len(tickets.SenderParams); i++ {
 			senderParams[i] = &net.TicketSenderParams{
-				SenderNonce: tickets.SenderParams[i].SenderNonce,
+				SenderNonce: orchToken.lastNonce + tickets.SenderParams[i].SenderNonce,
 				Sig:         tickets.SenderParams[i].Sig,
 			}
 			totalEV = totalEV.Add(totalEV, tickets.WinProbRat())
 		}
-
+		orchToken.lastNonce = tickets.SenderParams[len(tickets.SenderParams)-1].SenderNonce + 1
 		payment.TicketSenderParams = senderParams
 
 		ratPrice, _ := common.RatPriceInfo(payment.ExpectedPrice)
@@ -967,7 +989,7 @@ func updateGatewayBalance(node *core.LivepeerNode, orchToken JobToken, capabilit
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
 	// update for usage of compute
 	orchPrice := big.NewRat(orchToken.Price.PricePerUnit, orchToken.Price.PixelsPerUnit)
-	cost := orchPrice.Mul(orchPrice, big.NewRat(int64(math.Ceil(took.Seconds())), 1))
+	cost := new(big.Rat).Mul(orchPrice, big.NewRat(int64(math.Ceil(took.Seconds())), 1))
 	node.Balances.Debit(orchAddr, core.ManifestID(capability), cost)
 
 	//get the updated balance
