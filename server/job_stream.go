@@ -88,7 +88,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			}
 
 			stopJob.sign()
-			resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, streamInfoCopy.OrchToken.(JobToken), "/ai/stream/stop", streamInfoCopy.StreamRequest)
+			resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, *streamInfoCopy.OrchToken, "/ai/stream/stop", streamInfoCopy.StreamRequest)
 			if err != nil {
 				clog.Errorf(ctx, "Error sending job to orchestrator: %s", err)
 				http.Error(w, err.Error(), code)
@@ -124,20 +124,21 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 
 	firstProcessed := false
 	for _, orch := range gatewayJob.Orchs {
-		stream.OrchToken = orch
-		stream.OrchUrl = orch.ServiceAddr
-
-		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
-		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 		clog.Infof(ctx, "Starting stream processing")
 		//refresh the token if not first Orch to confirm capacity and new ticket params
 		if firstProcessed {
-			orch, err := getToken(ctx, 3*time.Second, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
+			newToken, err := getToken(ctx, 3*time.Second, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
 			if err != nil {
 				clog.Errorf(ctx, "Error getting token for orch=%v err=%v", orch.ServiceAddr, err)
 				continue
 			}
+			stream.OrchToken = newToken
+			orch = *newToken
 		}
+
+		stream.OrchToken = &orch
+		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
+		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 
 		//set request ID to persist from Gateway to Worker
 		gatewayJob.Job.Req.ID = stream.StreamID
@@ -239,15 +240,15 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 			return
 		case <-pmtTicker.C:
 			// fetch new JobToken with each payment
-			token := stream.OrchToken.(JobToken)
-			updateGatewayBalance(ls.LivepeerNode, token, stream.Capability, dur)
+			token := stream.OrchToken
+			updateGatewayBalance(ls.LivepeerNode, *token, stream.Capability, dur)
 
 			newToken, err := getToken(ctx, 3*time.Second, stream.OrchUrl, stream.Capability, jobSender.Addr, jobSender.Sig)
 			if err != nil {
 				clog.Errorf(ctx, "Error getting new token for %s: %v", stream.OrchUrl, err)
 				continue
 			}
-			stream.OrchToken = *newToken
+			stream.OrchToken = newToken
 
 			// send the payment
 			jobDetails := JobRequestDetails{StreamId: streamId}
@@ -267,8 +268,8 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 				clog.Errorf(ctx, "Error signing job, continuing monitoring: %v", err)
 				continue
 			}
-			orchToken := stream.OrchToken.(JobToken)
-			pmtHdr, err := createPayment(ctx, req, &orchToken, ls.LivepeerNode)
+			orchToken := stream.OrchToken
+			pmtHdr, err := createPayment(ctx, req, orchToken, ls.LivepeerNode)
 			if err != nil {
 				clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamId, err)
 				// Continue monitoring even if payment fails
@@ -334,23 +335,6 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 	streamRequestTime := time.Now().UnixMilli()
 
 	ctx = clog.AddVal(ctx, "stream", streamName)
-
-	//I think these are for mediamtx ingest
-
-	//sourceID := formReq.FormValue("source_id")
-	//if sourceID == "" {
-	//	return nil, http.StatusBadRequest, errors.New("missing source_id")
-	//}
-	//ctx = clog.AddVal(ctx, "source_id", sourceID)
-	//sourceType := formReq.FormValue("source_type")
-	//if sourceType == "" {
-	//	return nil, http.StatusBadRequest, errors.New("missing source_type")
-	//}
-	//sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
-	//if err != nil {
-	//	return nil, http.StatusBadRequest, errors.New("invalid source type")
-	//}
-	//ctx = clog.AddVal(ctx, "source_type", sourceType)
 
 	// If auth webhook is set and returns an output URL, this will be replaced
 	outputURL := startReq.RtmpOutput
@@ -570,6 +554,24 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 		}
 
 		params := stream.Params.(aiRequestParams)
+		sourceID := r.FormValue("source_id")
+		if sourceID == "" {
+			http.Error(w, "missing source_id", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "source_id", sourceID)
+		sourceType := r.FormValue("source_type")
+		if sourceType == "" {
+			http.Error(w, "missing source_type", http.StatusBadRequest)
+			return
+		}
+
+		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
+		if err != nil {
+			http.Error(w, "invalid source_type", http.StatusBadRequest)
+			return
+		}
+		ctx = clog.AddVal(ctx, "source_type", sourceType)
 
 		//note that mediaMtxHost is the ip address of media mtx
 		// media sends a post request in the runOnReady event setup in mediamtx.yml
@@ -579,7 +581,7 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		mediaMTXClient := media.NewMediaMTXClient(mediaMtxHost, ls.mediaMTXApiPassword, "rtmp_ingest", "rtmp")
+		mediaMTXClient := media.NewMediaMTXClient(mediaMtxHost, ls.mediaMTXApiPassword, sourceID, sourceTypeStr)
 		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
@@ -606,6 +608,7 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 		//orchCtx, orchCancel := context.WithCancel(ctx)
 
 		// Kick off the RTMP pull and segmentation
+		clog.Infof(ctx, "Starting RTMP ingest from MediaMTX")
 		go func() {
 			ms := media.MediaSegmenter{Workdir: ls.LivepeerNode.WorkDir, MediaMTXClient: mediaMTXClient}
 			//segmenter blocks until done
