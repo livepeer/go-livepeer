@@ -556,7 +556,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, req 
 func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		ctx := clog.AddVal(context.Background(), clog.ClientIP, remoteAddr)
 		requestID := string(core.RandomManifestID())
 		ctx = clog.AddVal(ctx, "request_id", requestID)
 
@@ -633,7 +633,7 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
-		ctx := clog.AddVal(r.Context(), clog.ClientIP, remoteAddr)
+		ctx := clog.AddVal(context.Background(), clog.ClientIP, remoteAddr)
 
 		streamId := r.PathValue("streamId")
 		ctx = clog.AddVal(ctx, "stream_id", streamId)
@@ -1078,7 +1078,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 					// set the headers
 					_, err = sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
 					if err != nil {
-						clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
+						clog.Errorf(ctx, "Error sending request to worker %v: %v", orchJob.Req.CapabilityUrl, err)
 						respondWithError(w, "Error sending request to worker", http.StatusInternalServerError)
 						return
 					}
