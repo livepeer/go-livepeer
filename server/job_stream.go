@@ -137,6 +137,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		}
 
 		stream.OrchToken = &orch
+		stream.OrchUrl = orch.ServiceAddr
 		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 
@@ -561,27 +562,23 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 		}
 		ctx = clog.AddVal(ctx, "source_id", sourceID)
 		sourceType := r.FormValue("source_type")
+		sourceType = strings.ToLower(sourceType) //normalize the source type so rtmpConn matches to rtmpconn
 		if sourceType == "" {
 			http.Error(w, "missing source_type", http.StatusBadRequest)
 			return
 		}
 
-		sourceTypeStr, err := media.MediamtxSourceTypeToString(sourceType)
-		if err != nil {
-			http.Error(w, "invalid source_type", http.StatusBadRequest)
-			return
-		}
-		ctx = clog.AddVal(ctx, "source_type", sourceType)
-
+		clog.Infof(ctx, "RTMP ingest from MediaMTX connected sourceID=%s sourceType=%s", sourceID, sourceType)
 		//note that mediaMtxHost is the ip address of media mtx
-		// media sends a post request in the runOnReady event setup in mediamtx.yml
+		// mediamtx sends a post request in the runOnReady event setup in mediamtx.yml
 		// StartLiveVideo calls this remoteHost
 		mediaMtxHost, err := getRemoteHost(r.RemoteAddr)
 		if err != nil {
 			respondJsonError(ctx, w, err, http.StatusBadRequest)
 			return
 		}
-		mediaMTXClient := media.NewMediaMTXClient(mediaMtxHost, ls.mediaMTXApiPassword, sourceID, sourceTypeStr)
+		mediaMTXInputURL := fmt.Sprintf("rtmp://%s/%s%s", mediaMtxHost, "", streamId)
+		mediaMTXClient := media.NewMediaMTXClient(mediaMtxHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 		segmenterCtx, cancelSegmenter := context.WithCancel(clog.Clone(context.Background(), ctx))
 
 		// this function is called when the pipeline hits a fatal error, we kick the input connection to allow
@@ -601,11 +598,9 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 			}
 		}
 
+		params.liveParams.localRTMPPrefix = mediaMTXInputURL
 		params.liveParams.kickInput = kickInput
 		stream.Params = params //update params used to kickInput
-
-		// Create a special parent context for orchestrator cancellation
-		//orchCtx, orchCancel := context.WithCancel(ctx)
 
 		// Kick off the RTMP pull and segmentation
 		clog.Infof(ctx, "Starting RTMP ingest from MediaMTX")
