@@ -192,7 +192,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			break
 		}
 		firstProcessed = true
-		clog.Infof(ctx, "Retrying stream with a different orchestrator")
+		clog.Infof(ctx, "Retrying stream with a different orchestrator err=%v", err.Error())
 
 		// will swap, but first notify with the reason for the swap
 		if err == nil {
@@ -625,6 +625,9 @@ func (ls *LivepeerServer) StartStreamRTMPIngest() http.Handler {
 
 			stream.CancelStream() //cleanupControl(ctx, params)
 		}()
+
+		//write response
+		w.WriteHeader(http.StatusOK)
 	})
 }
 
@@ -676,7 +679,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 		conn := whipServer.CreateWHIP(ctx, params.liveParams.segmentReader, whepURL, w, r)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
 	})
-
 }
 
 func startStreamProcessing(ctx context.Context, streamInfo *core.StreamInfo) error {
