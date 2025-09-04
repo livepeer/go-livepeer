@@ -5,6 +5,8 @@ PIPELINE=${PIPELINE:-noop}
 STREAM_KEY="my-stream"
 STREAM_ID="my-stream-id"
 RTMP_OUTPUT=${RTMP_OUTPUT:-""}
+FPS=${FPS:-30}
+INPUT_VIDEO=${INPUT_VIDEO:-""}
 
 case "$1" in
   start)
@@ -18,12 +20,16 @@ case "$1" in
       QUERY="${QUERY}\&params=${ENCODED_PARAMS}"
     fi
 
-    ffmpeg -re -f lavfi \
-      -i testsrc=size=1920x1080:rate=30,format=yuv420p \
-      -vf scale=1280:720 \
+    INPUT_FLAGS="-f lavfi -i testsrc=size=1280x720:rate=${FPS},format=yuv420p"
+    if [ -n "$INPUT_VIDEO" ]; then
+      INPUT_FLAGS="-stream_loop -1 -i ${INPUT_VIDEO}"
+    fi
+
+    ffmpeg -re ${INPUT_FLAGS} \
+      -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720" \
       -c:v libx264 \
       -b:v 1000k \
-      -x264-params keyint=60 \
+      -x264-params keyint=$((FPS * 2)) \
       -f flv rtmp://127.0.0.1:1935/${STREAM_KEY}?${QUERY}
     ;;
   playback)
