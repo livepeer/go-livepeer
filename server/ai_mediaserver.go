@@ -131,6 +131,19 @@ func generateWhepUrl(streamName, requestID string) string {
 	return whepURL
 }
 
+// resolveWebhookURL resolves a webhook URL with optional override from query parameters
+func resolveWebhookURL(defaultURL *url.URL, overrideParam string) *url.URL {
+	if overrideParam == "" {
+		return defaultURL
+	}
+
+	if parsed, err := url.Parse(overrideParam); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return parsed
+	}
+
+	return defaultURL
+}
+
 func aiMediaServerHandle[I, O any](ls *LivepeerServer, decoderFunc func(*I, *http.Request) error, processorFunc func(context.Context, aiRequestParams, I) (O, error)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		remoteAddr := getRemoteAddr(r)
@@ -505,13 +518,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		whepURL := generateWhepUrl(streamName, requestID)
-		authURL := LiveAIAuthWebhookURL
-		override := qp.Get("webhookUrl")
-		if override != "" {
-			if parsed, err := url.Parse(override); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-				authURL = parsed
-			}
-		}
+		authURL := resolveWebhookURL(LiveAIAuthWebhookURL, qp.Get("webhookUrl"))
 		if authURL != nil {
 			authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
@@ -984,13 +991,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
-			authURL := LiveAIAuthWebhookURL
-			override := r.URL.Query().Get("webhookUrl")
-			if override != "" {
-				if parsed, err := url.Parse(override); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-					authURL = parsed
-				}
-			}
+			authURL := resolveWebhookURL(LiveAIAuthWebhookURL, r.URL.Query().Get("webhookUrl"))
 			if authURL != nil {
 				authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
 					Stream:      streamName,
