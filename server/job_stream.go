@@ -207,7 +207,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			// or if passing `nil` as a CancelCause
 			err = nil
 		}
-		if !ls.LivepeerNode.ExternalCapabilities.StreamExists(streamID) {
+		if !params.inputStreamExists() {
 			clog.Info(ctx, "No stream exists, skipping orchestrator swap")
 			break
 		}
@@ -272,7 +272,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 		select {
 		case <-stream.StreamCtx.Done():
 			clog.Infof(ctx, "Stream %s stopped, ending monitoring", streamId)
-			ls.LivepeerNode.ExternalCapabilities.RemoveStream(streamId)
+			delete(ls.LivepeerNode.LivePipelines, streamId)
 			return
 		case <-pmtTicker.C:
 			if !params.inputStreamExists() {
@@ -291,6 +291,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 			}
 
 			// fetch new JobToken with each payment
+			// update the session for the LivePipeline with new token
 			newToken, err := getToken(ctx, 3*time.Second, token.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
 			if err != nil {
 				clog.Errorf(ctx, "Error getting new token for %s: %v", token.ServiceAddr, err)
