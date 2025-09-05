@@ -289,7 +289,7 @@ func (h *lphttp) GetJobToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(jobToken)
 }
 
-func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request) (*gatewayJob, error) {
+func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request, skipOrchSearch bool) (*gatewayJob, error) {
 
 	var orchs []core.JobToken
 
@@ -310,18 +310,22 @@ func (ls *LivepeerServer) setupGatewayJob(ctx context.Context, r *http.Request) 
 		return nil, errors.New(fmt.Sprintf("Unable to unmarshal job parameters err=%v", err))
 	}
 
-	searchTimeout, respTimeout := getOrchSearchTimeouts(ctx, r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
-	jobReq.OrchSearchTimeout = searchTimeout
-	jobReq.OrchSearchRespTimeout = respTimeout
+	// get list of Orchestrators that can do the job if needed
+	// (e.g. stop requests don't need new list of orchestrators)
+	if !skipOrchSearch {
+		searchTimeout, respTimeout := getOrchSearchTimeouts(ctx, r.Header.Get(jobOrchSearchTimeoutHdr), r.Header.Get(jobOrchSearchRespTimeoutHdr))
+		jobReq.OrchSearchTimeout = searchTimeout
+		jobReq.OrchSearchRespTimeout = respTimeout
 
-	//get pool of Orchestrators that can do the job
-	orchs, err = getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, jobParams, jobReq.OrchSearchTimeout, jobReq.OrchSearchRespTimeout)
-	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err))
-	}
+		//get pool of Orchestrators that can do the job
+		orchs, err = getJobOrchestrators(ctx, ls.LivepeerNode, jobReq.Capability, jobParams, jobReq.OrchSearchTimeout, jobReq.OrchSearchRespTimeout)
+		if err != nil {
+			return nil, errors.New(fmt.Sprintf("Unable to find orchestrators for capability %v err=%v", jobReq.Capability, err))
+		}
 
-	if len(orchs) == 0 {
-		return nil, errors.New(fmt.Sprintf("No orchestrators found for capability %v", jobReq.Capability))
+		if len(orchs) == 0 {
+			return nil, errors.New(fmt.Sprintf("No orchestrators found for capability %v", jobReq.Capability))
+		}
 	}
 
 	job := orchJob{Req: jobReq,
@@ -360,7 +364,7 @@ func (ls *LivepeerServer) SubmitJob() http.Handler {
 
 func (ls *LivepeerServer) submitJob(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 
-	gatewayJob, err := ls.setupGatewayJob(ctx, r)
+	gatewayJob, err := ls.setupGatewayJob(ctx, r, false)
 	if err != nil {
 		clog.Errorf(ctx, "Error setting up job: %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
