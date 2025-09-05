@@ -574,7 +574,7 @@ func TestGetJobToken_InvalidEthAddressHeader(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: "0x0000000000000000000000000000000000000000",
 		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
 	}
@@ -603,7 +603,7 @@ func TestGetJobToken_MissingCapabilityHeader(t *testing.T) {
 	}
 
 	// Create a valid JobSender structure
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: "0x0000000000000000000000000000000000000000",
 		Sig:  "0x000000000000000000000000000000000000000000000000000000000000000000",
 	}
@@ -645,7 +645,7 @@ func TestGetJobToken_NoCapacity(t *testing.T) {
 	// Create a valid JobSender structure
 	gateway := stubBroadcaster2()
 	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: hexutil.Encode(gateway.Address().Bytes()),
 		Sig:  hexutil.Encode(sig),
 	}
@@ -688,7 +688,7 @@ func TestGetJobToken_JobPriceInfoError(t *testing.T) {
 	// Create a valid JobSender structure
 	gateway := stubBroadcaster2()
 	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: hexutil.Encode(gateway.Address().Bytes()),
 		Sig:  hexutil.Encode(sig),
 	}
@@ -732,7 +732,7 @@ func TestGetJobToken_InsufficientReserve(t *testing.T) {
 	// Create a valid JobSender structure
 	gateway := stubBroadcaster2()
 	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: hexutil.Encode(gateway.Address().Bytes()),
 		Sig:  hexutil.Encode(sig),
 	}
@@ -783,7 +783,7 @@ func TestGetJobToken_TicketParamsError(t *testing.T) {
 	// Create a valid JobSender structure
 	gateway := stubBroadcaster2()
 	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: hexutil.Encode(gateway.Address().Bytes()),
 		Sig:  hexutil.Encode(sig),
 	}
@@ -847,7 +847,7 @@ func TestGetJobToken_Success(t *testing.T) {
 	// Create a valid JobSender structure
 	gateway := stubBroadcaster2()
 	sig, _ := gateway.Sign([]byte(hexutil.Encode(gateway.Address().Bytes())))
-	js := &JobSender{
+	js := &core.JobSender{
 		Addr: hexutil.Encode(gateway.Address().Bytes()),
 		Sig:  hexutil.Encode(sig),
 	}
@@ -864,7 +864,7 @@ func TestGetJobToken_Success(t *testing.T) {
 	resp := w.Result()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var token JobToken
+	var token core.JobToken
 	body, _ := io.ReadAll(resp.Body)
 	json.Unmarshal(body, &token)
 
@@ -918,12 +918,12 @@ func TestCreatePayment(t *testing.T) {
 	jobReq := JobRequest{
 		Capability: "test-payment-cap",
 	}
-	sender := JobSender{
+	sender := core.JobSender{
 		Addr: "0x1111111111111111111111111111111111111111",
 		Sig:  "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 	}
 
-	orchTocken := JobToken{
+	orchTocken := core.JobToken{
 		TicketParams: &net.TicketParams{
 			Recipient:         ethcommon.HexToAddress("0x1111111111111111111111111111111111111111").Bytes(),
 			FaceValue:         big.NewInt(1000).Bytes(),
@@ -945,7 +945,7 @@ func TestCreatePayment(t *testing.T) {
 	//payment with one ticket
 	jobReq.Timeout = 1
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err := createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err := createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err := base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)
@@ -956,7 +956,7 @@ func TestCreatePayment(t *testing.T) {
 	//test 2 tickets
 	jobReq.Timeout = 2
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err = createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err = base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)
@@ -967,7 +967,7 @@ func TestCreatePayment(t *testing.T) {
 	//test 600 tickets
 	jobReq.Timeout = 600
 	mockSender.On("CreateTicketBatch", "foo", jobReq.Timeout).Return(mockTicketBatch(jobReq.Timeout), nil).Once()
-	payment, err = createPayment(ctx, &jobReq, orchTocken, node)
+	payment, err = createPayment(ctx, &jobReq, &orchTocken, node)
 	assert.Nil(t, err)
 	pmPayment, err = base64.StdEncoding.DecodeString(payment)
 	assert.Nil(t, err)
@@ -1011,9 +1011,9 @@ func TestSubmitJob_OrchestratorSelectionParams(t *testing.T) {
 			return
 		}
 
-		token := &JobToken{
+		token := &core.JobToken{
 			ServiceAddr: "http://" + r.Host, // Use the server's host as the service address
-			SenderAddress: &JobSender{
+			SenderAddress: &core.JobSender{
 				Addr: "0x1234567890abcdef1234567890abcdef123456",
 				Sig:  "0x456",
 			},

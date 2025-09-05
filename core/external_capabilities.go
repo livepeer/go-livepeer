@@ -1,14 +1,33 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
 
 	"sync"
 
+	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
+	"github.com/livepeer/go-livepeer/net"
+	"github.com/livepeer/go-livepeer/trickle"
 )
+
+type JobToken struct {
+	SenderAddress *JobSender        `json:"sender_address,omitempty"`
+	TicketParams  *net.TicketParams `json:"ticket_params,omitempty"`
+	Balance       int64             `json:"balance,omitempty"`
+	Price         *net.PriceInfo    `json:"price,omitempty"`
+	ServiceAddr   string            `json:"service_addr,omitempty"`
+
+	LastNonce uint32
+}
+type JobSender struct {
+	Addr string `json:"addr"`
+	Sig  string `json:"sig"`
+}
 
 type ExternalCapability struct {
 	Name          string `json:"name"`
@@ -25,13 +44,161 @@ type ExternalCapability struct {
 	Load int
 }
 
+type StreamInfo struct {
+	StreamID   string
+	Capability string
+	//Gateway fields
+	StreamRequest    []byte
+	ExcludeOrchs     []string
+	OrchToken        *JobToken
+	OrchUrl          string
+	OrchPublishUrl   string
+	OrchSubscribeUrl string
+	OrchControlUrl   string
+	OrchEventsUrl    string
+	OrchDataUrl      string
+	ControlPub       *trickle.TricklePublisher
+	StopControl      func()
+
+	//Orchestrator fields
+	Sender         ethcommon.Address
+	pubChannel     *trickle.TrickleLocalPublisher
+	subChannel     *trickle.TrickleLocalPublisher
+	controlChannel *trickle.TrickleLocalPublisher
+	eventsChannel  *trickle.TrickleLocalPublisher
+	dataChannel    *trickle.TrickleLocalPublisher
+	//Stream fields
+	Params       interface{}
+	DataWriter   *media.SegmentWriter
+	JobParams    string
+	StreamCtx    context.Context
+	CancelStream context.CancelFunc
+
+	sdm sync.Mutex
+}
+
+func (sd *StreamInfo) IsActive() bool {
+	if sd.StreamCtx.Err() != nil {
+		return false
+	}
+
+	if sd.controlChannel == nil && sd.ControlPub == nil {
+		return false
+	}
+
+	return true
+}
+
+func (sd *StreamInfo) ExcludeOrch(orchUrl string) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.ExcludeOrchs = append(sd.ExcludeOrchs, orchUrl)
+}
+
+func (sd *StreamInfo) UpdateParams(params string) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.JobParams = params
+}
+
+func (sd *StreamInfo) SetChannels(pub, sub, control, events, data *trickle.TrickleLocalPublisher) {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
+	sd.pubChannel = pub
+	sd.subChannel = sub
+	sd.controlChannel = control
+	sd.eventsChannel = events
+	sd.dataChannel = data
+}
+
 type ExternalCapabilities struct {
 	capm         sync.Mutex
 	Capabilities map[string]*ExternalCapability
+	Streams      map[string]*StreamInfo
 }
 
 func NewExternalCapabilities() *ExternalCapabilities {
-	return &ExternalCapabilities{Capabilities: make(map[string]*ExternalCapability)}
+	return &ExternalCapabilities{Capabilities: make(map[string]*ExternalCapability),
+		Streams: make(map[string]*StreamInfo),
+	}
+}
+
+func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string, params interface{}, streamReq []byte) (*StreamInfo, error) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+	_, ok := extCaps.Streams[streamID]
+	if ok {
+		return nil, fmt.Errorf("stream already exists: %s", streamID)
+	}
+
+	//add to streams
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := StreamInfo{
+		StreamID:      streamID,
+		Capability:    pipeline,
+		Params:        params, // Store the interface value directly, not a pointer to it
+		StreamRequest: streamReq,
+		StreamCtx:     ctx,
+		CancelStream:  cancel,
+	}
+	extCaps.Streams[streamID] = &stream
+
+	//clean up when stream ends
+	go func() {
+		<-ctx.Done()
+
+		//gateway channels shutdown
+		if stream.DataWriter != nil {
+			stream.DataWriter.Close()
+		}
+		if stream.ControlPub != nil {
+			stream.StopControl()
+			stream.ControlPub.Close()
+		}
+
+		//orchestrator channels shutdown
+		if stream.pubChannel != nil {
+			stream.pubChannel.Close()
+		}
+		if stream.subChannel != nil {
+			stream.subChannel.Close()
+		}
+		if stream.controlChannel != nil {
+			stream.controlChannel.Close()
+		}
+		if stream.eventsChannel != nil {
+			stream.eventsChannel.Close()
+		}
+		if stream.dataChannel != nil {
+			stream.dataChannel.Close()
+		}
+		return
+	}()
+
+	return &stream, nil
+}
+
+func (extCaps *ExternalCapabilities) RemoveStream(streamID string) {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	streamInfo, ok := extCaps.Streams[streamID]
+	if ok {
+		//confirm stream context is canceled before deleting
+		if streamInfo.StreamCtx.Err() == nil {
+			streamInfo.CancelStream()
+		}
+	}
+
+	delete(extCaps.Streams, streamID)
+}
+
+func (extCaps *ExternalCapabilities) StreamExists(streamID string) bool {
+	extCaps.capm.Lock()
+	defer extCaps.capm.Unlock()
+
+	_, ok := extCaps.Streams[streamID]
+	return ok
 }
 
 func (extCaps *ExternalCapabilities) RemoveCapability(extCap string) {
