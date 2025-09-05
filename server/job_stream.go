@@ -100,6 +100,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 		stopJob.sign() //no changes to make, sign job
 
 		token, err := sessionToToken(params.liveParams.sess)
+		newToken, err := getToken(ctx, 3*time.Second, token.ServiceAddr, stopJob.Job.Req.Capability, stopJob.Job.Req.Sender, stopJob.Job.Req.Sig)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -114,7 +115,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 		}
 		defer r.Body.Close()
 
-		resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, token, "/ai/stream/stop", body)
+		resp, code, err := ls.sendJobToOrch(ctx, r, stopJob.Job.Req, stopJob.SignedJobReq, *newToken, "/ai/stream/stop", body)
 		if err != nil {
 			clog.Errorf(ctx, "Error sending job to orchestrator: %s", err)
 			http.Error(w, err.Error(), code)
@@ -899,7 +900,7 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 		controlPub := stream.ControlPub
 
 		if controlPub == nil {
-			clog.Info(ctx, "No orchestrator available, caching params", "stream", stream, "params", params)
+			clog.Info(ctx, "No orchestrator available, caching params", "stream", streamId, "params", params)
 			return
 		}
 
