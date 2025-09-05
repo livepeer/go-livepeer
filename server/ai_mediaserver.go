@@ -505,8 +505,15 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		mediaMTXClient := media.NewMediaMTXClient(remoteHost, ls.mediaMTXApiPassword, sourceID, sourceType)
 
 		whepURL := generateWhepUrl(streamName, requestID)
-		if LiveAIAuthWebhookURL != nil {
-			authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+		authURL := LiveAIAuthWebhookURL
+		override := qp.Get("webhookUrl")
+		if override != "" {
+			if parsed, err := url.Parse(override); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+				authURL = parsed
+			}
+		}
+		if authURL != nil {
+			authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
@@ -977,8 +984,15 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 
 			ctx = clog.AddVal(ctx, "source_type", sourceTypeStr)
 
-			if LiveAIAuthWebhookURL != nil {
-				authResp, err := authenticateAIStream(LiveAIAuthWebhookURL, ls.liveAIAuthApiKey, AIAuthRequest{
+			authURL := LiveAIAuthWebhookURL
+			override := r.URL.Query().Get("webhookUrl")
+			if override != "" {
+				if parsed, err := url.Parse(override); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+					authURL = parsed
+				}
+			}
+			if authURL != nil {
+				authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
 					Stream:      streamName,
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
