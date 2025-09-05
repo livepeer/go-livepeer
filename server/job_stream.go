@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1042,7 +1041,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Data-Url", dataUrl)
 	}
 
-	reqBodyForRunner["request"] = base64.StdEncoding.EncodeToString(body)
+	reqBodyForRunner["request"] = string(body)
 	reqBodyBytes, err := json.Marshal(reqBodyForRunner)
 	if err != nil {
 		clog.Errorf(ctx, "Failed to marshal request body err=%v", err)
@@ -1089,7 +1088,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 	clog.V(common.SHORT).Infof(ctx, "stream start processed successfully took=%v balance=%v", time.Since(start), getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability).FloatString(0))
 
 	//setup the stream
-	stream, err := h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req.Capability, orchJob.Req, respBody)
+	stream, err := h.node.ExternalCapabilities.AddStream(orchJob.Req.ID, orchJob.Req.Capability, reqBodyBytes)
 	if err != nil {
 		clog.Errorf(ctx, "Error adding stream to external capabilities: %v", err)
 		respondWithError(w, "Error adding stream to external capabilities", http.StatusInternalServerError)

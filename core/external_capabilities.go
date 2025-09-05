@@ -10,7 +10,6 @@ import (
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/golang/glog"
-	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/trickle"
 )
@@ -47,29 +46,16 @@ type ExternalCapability struct {
 type StreamInfo struct {
 	StreamID   string
 	Capability string
-	//Gateway fields
-	StreamRequest    []byte
-	ExcludeOrchs     []string
-	OrchToken        *JobToken
-	OrchUrl          string
-	OrchPublishUrl   string
-	OrchSubscribeUrl string
-	OrchControlUrl   string
-	OrchEventsUrl    string
-	OrchDataUrl      string
-	ControlPub       *trickle.TricklePublisher
-	StopControl      func()
 
 	//Orchestrator fields
 	Sender         ethcommon.Address
+	StreamRequest  []byte
 	pubChannel     *trickle.TrickleLocalPublisher
 	subChannel     *trickle.TrickleLocalPublisher
 	controlChannel *trickle.TrickleLocalPublisher
 	eventsChannel  *trickle.TrickleLocalPublisher
 	dataChannel    *trickle.TrickleLocalPublisher
 	//Stream fields
-	Params       interface{}
-	DataWriter   *media.SegmentWriter
 	JobParams    string
 	StreamCtx    context.Context
 	CancelStream context.CancelFunc
@@ -82,17 +68,11 @@ func (sd *StreamInfo) IsActive() bool {
 		return false
 	}
 
-	if sd.controlChannel == nil && sd.ControlPub == nil {
+	if sd.controlChannel == nil {
 		return false
 	}
 
 	return true
-}
-
-func (sd *StreamInfo) ExcludeOrch(orchUrl string) {
-	sd.sdm.Lock()
-	defer sd.sdm.Unlock()
-	sd.ExcludeOrchs = append(sd.ExcludeOrchs, orchUrl)
 }
 
 func (sd *StreamInfo) UpdateParams(params string) {
@@ -123,7 +103,7 @@ func NewExternalCapabilities() *ExternalCapabilities {
 	}
 }
 
-func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string, params interface{}, streamReq []byte) (*StreamInfo, error) {
+func (extCaps *ExternalCapabilities) AddStream(streamID string, capability string, streamReq []byte) (*StreamInfo, error) {
 	extCaps.capm.Lock()
 	defer extCaps.capm.Unlock()
 	_, ok := extCaps.Streams[streamID]
@@ -135,8 +115,7 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string,
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := StreamInfo{
 		StreamID:      streamID,
-		Capability:    pipeline,
-		Params:        params, // Store the interface value directly, not a pointer to it
+		Capability:    capability,
 		StreamRequest: streamReq,
 		StreamCtx:     ctx,
 		CancelStream:  cancel,
@@ -146,15 +125,6 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, pipeline string,
 	//clean up when stream ends
 	go func() {
 		<-ctx.Done()
-
-		//gateway channels shutdown
-		if stream.DataWriter != nil {
-			stream.DataWriter.Close()
-		}
-		if stream.ControlPub != nil {
-			stream.StopControl()
-			stream.ControlPub.Close()
-		}
 
 		//orchestrator channels shutdown
 		if stream.pubChannel != nil {
