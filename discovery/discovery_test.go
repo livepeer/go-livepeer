@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"net/url"
@@ -1493,7 +1494,7 @@ func TestOrchestratorPool_GetOrchestratorTimeout(t *testing.T) {
 	defer func() { serverGetOrchInfo = oldOrchInfo }()
 	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, server *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		ch <- struct{}{} // this will block if necessary to simulate a timeout
-		return &net.OrchestratorInfo{}, nil
+		return &net.OrchestratorInfo{Transcoder: server.String()}, nil
 	}
 
 	timeout := 1 * time.Millisecond
@@ -1580,12 +1581,12 @@ func TestOrchestratorPool_Capabilities(t *testing.T) {
 	assert := assert.New(t)
 
 	// should succeed: legacy caps only
-	i1 := &net.OrchestratorInfo{}
+	i1 := &net.OrchestratorInfo{Transcoder: "i1"}
 	// should fail: incompatible caps
 	i2 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{}}
 	i3 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: []uint64{1}}}
 	// should succeed: compatible caps
-	i4 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: capCompatString}}
+	i4 := &net.OrchestratorInfo{Capabilities: &net.Capabilities{Bitstring: capCompatString}, Transcoder: "i2"}
 	// should be blacklisted
 	address, err := hex.DecodeString("40B28ee755260ae2735950Fe1BD0a64326ce58b0")
 	assert.NoError(err)
@@ -1672,4 +1673,252 @@ func removeLatency(infos []common.OrchestratorLocalInfo) []common.OrchestratorLo
 		res = append(res, i)
 	}
 	return res
+}
+
+func TestGetOrchestrators_Instances_Simple(t *testing.T) {
+	assert := assert.New(t)
+	// only the initial URL plus one instance
+	// Also add a couple duplicates to the Instances field for good measure
+	initial := "https://127.0.0.1:8000"
+	inst1 := "https://127.0.0.1:8001"
+	uris := stringsToURIs([]string{initial})
+
+	// Stub GetOrchestratorInfo: initial returns one instance, instance returns no more
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+	serverGetOrchInfo = func(ctx context.Context, bcast common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if u.String() == initial {
+			return &net.OrchestratorInfo{
+				Transcoder: initial,
+				// inst1 but with duplicates
+				Instances: []string{inst1, inst1, initial},
+			}, nil
+		}
+		// for inst1
+		return &net.OrchestratorInfo{Transcoder: inst1}, nil
+	}
+
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		MaxInstances:     5,
+	})
+	assert.NoError(err)
+	// ask for 2 so we expect both initial and inst1
+	odesc, err := pool.GetOrchestrators(context.TODO(), 2, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	assert.NoError(err)
+
+	// collect URLs
+	var got []string
+	for _, od := range odesc {
+		got = append(got, od.LocalInfo.URL.String())
+	}
+	assert.ElementsMatch([]string{initial, inst1}, got, "Should see both initial and discovered instance")
+}
+
+func TestGetOrchestrators_Instances_MaxInstances(t *testing.T) {
+	initial := "https://127.0.0.1:8200"
+	uris := stringsToURIs([]string{initial})
+
+	maxInstancesCases := []int{-5, -1, 0, 1, 2, 5, 10}
+	numOrchestratorsCases := []int{-5, -1, 0, 1, 2, 5, 10}
+
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+
+	// generate many instances so discovery can be limited by parameters
+	manyInst := []string{}
+	for i := 1; i <= 20; i++ {
+		manyInst = append(manyInst, "https://127.0.0.1:82"+strconv.Itoa(i))
+	}
+
+	// Stub GetOrchestratorInfo: initial returns many instances, instances return no more
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if u.String() == initial {
+			return &net.OrchestratorInfo{
+				Transcoder: initial,
+				Instances:  manyInst,
+			}, nil
+		}
+		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+	}
+
+	for _, maxInstances := range maxInstancesCases {
+		for _, numOrchs := range numOrchestratorsCases {
+			t.Run(fmt.Sprintf("maxInstances=%d numOrchs=%d", maxInstances, numOrchs), func(t *testing.T) {
+				// min(maxInstances +1, numOrchs) -- maxInstances does not include initial orch, but don't exceed numOrchs
+				// min( ..., 0) -- minimum of zero
+				expected := max(min(maxInstances+1, numOrchs), 0)
+				require := require.New(t)
+
+				pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+					URIs:             uris,
+					DiscoveryTimeout: 50 * time.Millisecond,
+					MaxInstances:     maxInstances,
+				})
+				require.Nil(err)
+
+				odesc, err := pool.GetOrchestrators(context.TODO(), numOrchs, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+				require.Nil(err)
+
+				// Count unique discovered LocalInfo URLs
+				set := map[string]bool{}
+				for _, od := range odesc {
+					set[od.LocalInfo.URL.String()] = true
+				}
+
+				// Assertions
+				if expected > 0 {
+					require.True(set[initial], "initial URL should always be present")
+				}
+				require.Len(set, expected, "unexpected number of unique orchestrators")
+			})
+		}
+	}
+}
+
+func TestGetOrchestrators_Instances_AlternatingTimeouts(t *testing.T) {
+	assert := assert.New(t)
+	initial := "https://127.0.0.1:8300"
+
+	// create 6 instances so we can alternate timeouts
+	manyInst := []string{}
+	for i := 1; i <= 6; i++ {
+		manyInst = append(manyInst, "https://127.0.0.1:83"+strconv.Itoa(100+i))
+	}
+	uris := stringsToURIs([]string{initial})
+
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+
+	// For the initial URI return the full list immediately.
+	// For instance URIs: odd ports return immediately, even ports sleep (and thus are
+	// unlikely to be collected before the discovery timeout).
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if u.String() == initial {
+			return &net.OrchestratorInfo{
+				Transcoder: initial,
+				Instances:  manyInst,
+			}, nil
+		}
+		// determine port and alternate behaviour
+		p, _ := strconv.Atoi(u.Port())
+		if p%2 == 0 {
+			// blocking/slower instance: sleep longer than discovery timeout so it is missed
+			time.Sleep(100 * time.Millisecond)
+		}
+		return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+	}
+
+	// Set discovery timeout small so the overall discovery will time out before slow instances return.
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 25 * time.Millisecond,
+		// set a high MaxInstances so we don't hit the limit; we want timeouts to be the limiter
+		MaxInstances: 10,
+	})
+	require := require.New(t)
+	require.NoError(err)
+
+	// ask for many orchestrators (larger than available) so numOrchs doesn't artificially limit results
+	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	assert.NoError(err)
+
+	// collect URLs
+	received := map[string]bool{}
+	for _, od := range odesc {
+		received[od.LocalInfo.URL.String()] = true
+	}
+
+	// initial must always be present
+	assert.True(received[initial], "initial URL should always be present")
+
+	// Expect only the initial + odd-numbered instances (since even ones sleep and are missed).
+	expected := map[string]bool{initial: true}
+	for _, inst := range manyInst {
+		u, _ := url.Parse(inst)
+		p, _ := strconv.Atoi(u.Port())
+		if p%2 != 0 {
+			expected[inst] = true
+		}
+	}
+
+	assert.Equal(expected, received)
+}
+
+func TestGetOrchestrators_Instances_RecursiveDiscovery(t *testing.T) {
+	assert := assert.New(t)
+
+	// Top-level orchestrators (various recursion depths)
+	initial0 := "https://127.0.0.1:9000" // 0 levels
+	initial1 := "https://127.0.0.1:9001" // 1 level -> 9010 (which advertises 9020 but should NOT be followed)
+	initial2 := "https://127.0.0.1:9002" // 2 first-level instances -> 9011, 9012 (which advertise 9021/9022 but should NOT be followed)
+
+	// first-level instances
+	inst9010 := "https://127.0.0.1:9010"
+	inst9011 := "https://127.0.0.1:9011"
+	inst9012 := "https://127.0.0.1:9012"
+
+	// second-level instances (should NOT be discovered)
+	inst9020 := "https://127.0.0.1:9020"
+	inst9021 := "https://127.0.0.1:9021"
+	inst9022 := "https://127.0.0.1:9022"
+
+	uris := stringsToURIs([]string{initial0, initial1, initial2})
+
+	old := serverGetOrchInfo
+	defer func() { serverGetOrchInfo = old }()
+
+	// Stub GetOrchestratorInfo:
+	// - initial0: no instances
+	// - initial1: advertises inst9010, which advertises inst9020 (second-level)
+	// - initial2: advertises inst9011 and inst9012, each advertising a second-level
+	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		switch u.String() {
+		case initial0:
+			return &net.OrchestratorInfo{Transcoder: initial0}, nil
+		case initial1:
+			return &net.OrchestratorInfo{Transcoder: initial1, Instances: []string{inst9010}}, nil
+		case inst9010:
+			// second-level advertised, but should not be followed
+			return &net.OrchestratorInfo{Transcoder: inst9010, Instances: []string{inst9020}}, nil
+		case initial2:
+			// Does not have a Transcoder field
+			return &net.OrchestratorInfo{Instances: []string{inst9011, inst9012}}, nil
+		case inst9011:
+			return &net.OrchestratorInfo{Transcoder: inst9011, Instances: []string{inst9021}}, nil
+		case inst9012:
+			return &net.OrchestratorInfo{Transcoder: inst9012, Instances: []string{inst9022}}, nil
+		default:
+			return &net.OrchestratorInfo{Transcoder: u.String()}, nil
+		}
+	}
+
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		URIs:             uris,
+		DiscoveryTimeout: 50 * time.Millisecond,
+		MaxInstances:     10, // ensure limits don't truncate first-level discovery
+	})
+	require := require.New(t)
+	require.NoError(err)
+
+	// request sufficiently many orchestrators so numOrchestrators doesn't artificially limit results
+	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
+	assert.NoError(err)
+
+	// Collect returned URLs
+	got := []string{}
+	for _, od := range odesc {
+		got = append(got, od.LocalInfo.URL.String())
+	}
+
+	// Expected: first two top-level URLs + only first-level instances (inst9010, inst9011, inst9012)
+	expectedPresent := []string{initial0, initial1, inst9010, inst9011, inst9012}
+	assert.ElementsMatch(got, expectedPresent)
+
+	// Double checking that second-level instances and initial2 are NOT present
+	unexpected := []string{initial2, inst9020, inst9021, inst9022}
+	for _, v := range unexpected {
+		assert.NotContains(got, v)
+	}
 }

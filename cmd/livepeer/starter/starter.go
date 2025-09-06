@@ -85,6 +85,7 @@ type LivepeerConfig struct {
 	CliAddr                    *string
 	HttpAddr                   *string
 	ServiceAddr                *string
+	Instances                  *string
 	OrchAddr                   *string
 	VerifierURL                *string
 	EthController              *string
@@ -112,6 +113,7 @@ type LivepeerConfig struct {
 	IgnoreMaxPriceIfNeeded     *bool
 	MinPerfScore               *float64
 	DiscoveryTimeout           *time.Duration
+	AdditionalInstances        *int
 	MaxSessions                *string
 	CurrentManifest            *bool
 	Nvidia                     *string
@@ -194,6 +196,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCliAddr := ""
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
+	defaultInstances := ""
 	defaultOrchAddr := ""
 	defaultVerifierURL := ""
 	defaultVerifierPath := ""
@@ -215,6 +218,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
 	defaultDiscoveryTimeout := 500 * time.Millisecond
+	defaultAdditionalInstances := 0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -310,6 +314,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CliAddr:      &defaultCliAddr,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
+		Instances:    &defaultInstances,
 		OrchAddr:     &defaultOrchAddr,
 		VerifierURL:  &defaultVerifierURL,
 		VerifierPath: &defaultVerifierPath,
@@ -331,6 +336,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
 		DiscoveryTimeout:     &defaultDiscoveryTimeout,
+		AdditionalInstances:  &defaultAdditionalInstances,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -559,6 +565,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
+	}
+
+	// Parse -instances flag and store parsed canonicalized URLs in the node
+	if cfg.Instances != nil && *cfg.Instances != "" {
+		n.Instances, err = parseInstances(*cfg.Instances)
+		if err != nil || len(n.Instances) == 0 {
+			glog.Exit("No valid instance URLs parsed from -instances: ", err)
+		} else {
+			glog.Infof("Configured instances: %v", strings.Join(n.Instances, ","))
+		}
 	}
 
 	var transcoderCaps []core.Capability
@@ -1521,6 +1537,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		n.AdditionalInstances = *cfg.AdditionalInstances
+
 		// Set up orchestrator discovery
 		if *cfg.OrchWebhookURL != "" {
 			whurl, err := validateURL(*cfg.OrchWebhookURL)
@@ -1607,6 +1625,9 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		if err != nil {
 			glog.Exit("Error getting service URI: ", err)
 		}
+
+		// TODO check for empty service uri *and* no additional instances. error if so
+		// TODO check for empty service uri *and* TestOrchAvail
 
 		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
 			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
@@ -1749,15 +1770,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			tc <- struct{}{}
 		}()
 
+		doingWork := orch.ServiceURI().String() != ""
+
 		// check whether or not the orchestrator is available
-		if *cfg.TestOrchAvail {
+		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
 			orchAvail := server.CheckOrchestratorAvailability(orch)
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
+				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
 				tc <- struct{}{}
 			}
+		}
+
+		if !doingWork {
+			glog.Infof("Orchestrator is not performing work")
 		}
 
 	}()
@@ -1840,6 +1867,34 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	return res
 }
 
+func parseInstances(addrs string) ([]string, error) {
+	var res []string
+	if len(addrs) == 0 {
+		return res, fmt.Errorf("instances empty")
+	}
+	for _, addr := range strings.Split(addrs, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		// Add https if not provided
+		if !strings.HasPrefix(addr, "https://") {
+			addr = "https://" + addr
+		}
+		parsed, err := url.ParseRequestURI(addr)
+		if err != nil {
+			return nil, fmt.Errorf("Could not parse instance URI '%s': %w", addr, err)
+		}
+		// Ensure scheme starts with https; if http is provided, upgrade to https
+		if parsed.Scheme != "https" {
+			return nil, fmt.Errorf("Instance URI must start with https '%s'", addr)
+		}
+		// Use the canonical string form
+		res = append(res, parsed.String())
+	}
+	return res, nil
+}
+
 func parseOrchBlacklist(b *string) []string {
 	if b == nil {
 		return []string{}
@@ -1885,6 +1940,10 @@ func isLocalURL(u string) (bool, error) {
 func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// Passed in via CLI
 	if serviceAddr != "" {
+		if serviceAddr == "none" {
+			// special value to signal this node is not to be used for work
+			return url.Parse("")
+		}
 		return url.ParseRequestURI("https://" + serviceAddr)
 	}
 
