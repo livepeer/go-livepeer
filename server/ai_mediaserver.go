@@ -513,7 +513,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 			}
 		}
 		if authURL != nil {
-			authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
+			authResp, err := authenticateAIStream(authURL, ls.liveAIAuthSecret, AIAuthRequest{
 				Stream:      streamName,
 				Type:        sourceTypeStr,
 				QueryParams: queryParams,
@@ -992,7 +992,7 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 				}
 			}
 			if authURL != nil {
-				authResp, err := authenticateAIStream(authURL, ls.liveAIAuthApiKey, AIAuthRequest{
+				authResp, err := authenticateAIStream(authURL, ls.liveAIAuthSecret, AIAuthRequest{
 					Stream:      streamName,
 					Type:        sourceTypeStr,
 					QueryParams: queryParams,
