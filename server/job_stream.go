@@ -897,7 +897,7 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 		}
 
 		params := string(data)
-		stream.Params = params
+		stream.Params = data
 		controlPub := stream.ControlPub
 
 		if controlPub == nil {

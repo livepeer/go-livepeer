@@ -181,6 +181,8 @@ type LivePipeline struct {
 	Pipeline     string
 	ControlPub   *trickle.TricklePublisher
 	StopControl  func()
+	ReportUpdate func([]byte)
+	DataWriter   *media.SegmentWriter
 
 	StreamCtx     context.Context
 	streamCancel  context.CancelCauseFunc
@@ -217,8 +219,6 @@ func (p *LivePipeline) StreamRequest() []byte {
 func (p *LivePipeline) StopStream(err error) {
 	p.StopControl()
 	p.streamCancel(err)
-	DataWriter   *media.SegmentWriter
-	ReportUpdate func([]byte)
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
