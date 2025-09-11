@@ -1,0 +1,78 @@
+name: AI Bug report
+description: Create a report to help us improve.
+labels:
+  - "type: bug"
+  - "AI"
+assignees:
+  - rickstaa
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Bug report
+        Please fill out the following information to help us understand your issue.
+
+        > [!IMPORTANT]
+        > This repository is only related to the core bugs with the AI branch of the go-livepeer software (i.e. `ai-video`). It does not cover bugs related to running AI pipelines and AI models used on the AI subnet. For these issues, please refer to the [AI-worker repository](https://github.com/livepeer/ai-worker/issues/new/choose)
+  - type: textarea
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+      description: "How do you trigger this bug? Please walk us through it step by step."
+      value: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+  - type: textarea
+    attributes:
+      label: Expected behaviour
+      description: A clear and concise description of what you expected to happen.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: "How severe is this bug?"
+      options:
+        - Minor
+        - Major
+        - Critical
+  - type: textarea
+    attributes:
+      label: Screenshots / Live demo link
+      description: If applicable, add screenshots to help explain your problem.
+      placeholder: Paste the image link as markdown image
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      description: "What operating system are you using?"
+      options:
+        - Windows
+        - Mac
+        - Linux
+  - type: dropdown
+    id: running_on
+    attributes:
+      label: Running on
+      description: "Where are you running the application?"
+      options:
+        - Local
+        - Docker
+  - type: input
+    attributes:
+      label: AI go-livepeer version
+      description: "What version of the AI-worker are you using?"
+  - type: input
+    attributes:
+      label: AI go-livepeer commit hash
+      description: "Could you please provide the commit hash of the `ai-video` branch that you are currently using?"
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
