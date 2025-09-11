@@ -51,11 +51,11 @@ func (s *stubWriter) WriteOpus(track *mpegts.Track, pts int64, au [][]byte) erro
 func newStubTSWriter(w io.Writer, t []*mpegts.Track) MpegtsWriter {
 	return &stubWriter{
 		writeVideo: func(pts, dts int64, au [][]byte) error {
-			w.Write([]byte(fmt.Sprintf("V%d ", pts)))
+			w.Write(fmt.Appendf(nil, "V%d ", pts))
 			return nil
 		},
 		writeAudio: func(pts int64, au [][]byte) error {
-			w.Write([]byte(fmt.Sprintf("A%d ", pts)))
+			w.Write(fmt.Appendf(nil, "A%d ", pts))
 			return nil
 		},
 	}
