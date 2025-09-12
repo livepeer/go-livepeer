@@ -26,6 +26,8 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 )
 
+var getNewTokenTimeout = 3 * time.Second
+
 func (ls *LivepeerServer) StartStream() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -105,7 +107,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		newToken, err := getToken(ctx, 3*time.Second, token.ServiceAddr, stopJob.Job.Req.Capability, stopJob.Job.Req.Sender, stopJob.Job.Req.Sig)
+		newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stopJob.Job.Req.Capability, stopJob.Job.Req.Sender, stopJob.Job.Req.Sig)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -158,7 +160,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		clog.Infof(ctx, "Starting stream processing")
 		//refresh the token if not first Orch to confirm capacity and new ticket params
 		if firstProcessed {
-			newToken, err := getToken(ctx, 3*time.Second, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
+			newToken, err := getToken(ctx, getNewTokenTimeout, orch.ServiceAddr, gatewayJob.Job.Req.Capability, gatewayJob.Job.Req.Sender, gatewayJob.Job.Req.Sig)
 			if err != nil {
 				clog.Errorf(ctx, "Error getting token for orch=%v err=%v", orch.ServiceAddr, err)
 				continue
@@ -297,7 +299,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 
 			// fetch new JobToken with each payment
 			// update the session for the LivePipeline with new token
-			newToken, err := getToken(ctx, 3*time.Second, token.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
+			newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
 			if err != nil {
 				clog.Errorf(ctx, "Error getting new token for %s: %v", token.ServiceAddr, err)
 				continue
