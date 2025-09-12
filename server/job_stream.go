@@ -288,73 +288,84 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 				clog.Infof(ctx, "Input stream does not exist for stream %s, ending monitoring", streamId)
 				return
 			}
-			params, err = getStreamRequestParams(stream)
-			if err != nil {
-				clog.Errorf(ctx, "Error getting stream request params: %v", err)
-				continue
-			}
-			token, err := sessionToToken(params.liveParams.sess)
-			if err != nil {
-				clog.Errorf(ctx, "Error getting token for session: %v", err)
-				continue
-			}
 
-			// fetch new JobToken with each payment
-			// update the session for the LivePipeline with new token
-			newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
+			err := ls.sendPaymentForStream(ctx, stream, jobSender)
 			if err != nil {
-				clog.Errorf(ctx, "Error getting new token for %s: %v", token.ServiceAddr, err)
-				continue
-			}
-			newSess, err := tokenToAISession(*newToken)
-			if err != nil {
-				clog.Errorf(ctx, "Error converting token to AI session: %v", err)
-				continue
-			}
-			params.liveParams.sess = &newSess
-			stream.UpdateStreamParams(params)
-
-			// send the payment
-			jobDetails := JobRequestDetails{StreamId: streamId}
-			jobDetailsStr, err := json.Marshal(jobDetails)
-			if err != nil {
-				clog.Errorf(ctx, "Error marshalling job details: %v", err)
-				continue
-			}
-			req := &JobRequest{Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Pipeline,
-				Sender:  ls.LivepeerNode.OrchestratorPool.Broadcaster().Address().Hex(),
-				Timeout: 60,
-			}
-			//sign the request
-			job := gatewayJob{Job: &orchJob{Req: req}, node: ls.LivepeerNode}
-			err = job.sign()
-			if err != nil {
-				clog.Errorf(ctx, "Error signing job, continuing monitoring: %v", err)
-				continue
-			}
-
-			pmtHdr, err := createPayment(ctx, req, newToken, ls.LivepeerNode)
-			if err != nil {
-				clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamId, err)
-				// Continue monitoring even if payment fails
-			}
-			if pmtHdr == "" {
-				continue
-			}
-
-			//send the payment, update the stream with the refreshed token
-			clog.Infof(ctx, "Sending stream payment for %s", streamId)
-			statusCode, err := ls.sendPayment(ctx, token.ServiceAddr+"/ai/stream/payment", stream.Pipeline, job.SignedJobReq, pmtHdr)
-			if err != nil {
-				clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamId, err)
-				continue
-			}
-			if statusCode != http.StatusOK {
-				clog.Errorf(ctx, "Unexpected status code %d received for %s", statusCode, streamId)
-				continue
+				clog.Errorf(ctx, "Error sending payment for stream %s: %v", streamId, err)
 			}
 		}
 	}
+}
+
+func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core.LivePipeline, jobSender *core.JobSender) error {
+	params, err := getStreamRequestParams(stream)
+	if err != nil {
+		clog.Errorf(ctx, "Error getting stream request params: %v", err)
+		return err
+	}
+	token, err := sessionToToken(params.liveParams.sess)
+	if err != nil {
+		clog.Errorf(ctx, "Error getting token for session: %v", err)
+		return err
+	}
+
+	// fetch new JobToken with each payment
+	// update the session for the LivePipeline with new token
+	newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stream.Pipeline, jobSender.Addr, jobSender.Sig)
+	if err != nil {
+		clog.Errorf(ctx, "Error getting new token for %s: %v", token.ServiceAddr, err)
+		return err
+	}
+	newSess, err := tokenToAISession(*newToken)
+	if err != nil {
+		clog.Errorf(ctx, "Error converting token to AI session: %v", err)
+		return err
+	}
+	params.liveParams.sess = &newSess
+	stream.UpdateStreamParams(params)
+
+	// send the payment
+	streamID := params.liveParams.streamID
+	jobDetails := JobRequestDetails{StreamId: streamID}
+	jobDetailsStr, err := json.Marshal(jobDetails)
+	if err != nil {
+		clog.Errorf(ctx, "Error marshalling job details: %v", err)
+		return err
+	}
+	req := &JobRequest{Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Pipeline,
+		Sender:  jobSender.Addr,
+		Timeout: 60,
+	}
+	//sign the request
+	job := gatewayJob{Job: &orchJob{Req: req}, node: ls.LivepeerNode}
+	err = job.sign()
+	if err != nil {
+		clog.Errorf(ctx, "Error signing job, continuing monitoring: %v", err)
+		return err
+	}
+
+	pmtHdr, err := createPayment(ctx, req, newToken, ls.LivepeerNode)
+	if err != nil {
+		clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamID, err)
+		// Continue monitoring even if payment fails
+	}
+	if pmtHdr == "" {
+		return errors.New("empty payment header")
+	}
+
+	//send the payment, update the stream with the refreshed token
+	clog.Infof(ctx, "Sending stream payment for %s", streamID)
+	statusCode, err := ls.sendPayment(ctx, token.ServiceAddr+"/ai/stream/payment", stream.Pipeline, job.SignedJobReq, pmtHdr)
+	if err != nil {
+		clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamID, err)
+		return err
+	}
+	if statusCode != http.StatusOK {
+		clog.Errorf(ctx, "Unexpected status code %d received for %s", statusCode, streamID)
+		return errors.New("unexpected status code")
+	}
+
+	return nil
 }
 
 type StartRequest struct {
