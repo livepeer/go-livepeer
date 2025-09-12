@@ -13,6 +13,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	cfg.CliAddr = fs.String("cliAddr", *cfg.CliAddr, "Address to bind for  CLI commands")
 	cfg.HttpAddr = fs.String("httpAddr", *cfg.HttpAddr, "Address to bind for HTTP commands")
 	cfg.ServiceAddr = fs.String("serviceAddr", *cfg.ServiceAddr, "Orchestrator only. Overrides the on-chain serviceURI that broadcasters can use to contact this node; may be an IP or hostname.")
+	cfg.Nodes = fs.String("nodes", *cfg.Nodes, "Comma-separated list of instance URLs for this orchestrator")
 	cfg.VerifierURL = fs.String("verifierUrl", *cfg.VerifierURL, "URL of the verifier to use")
 	cfg.VerifierPath = fs.String("verifierPath", *cfg.VerifierPath, "Path to verifier shared volume")
 	cfg.LocalVerify = fs.Bool("localVerify", *cfg.LocalVerify, "Set to true to enable local verification i.e. pixel count and signature verification.")
@@ -21,6 +22,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// Broadcaster's Selection Algorithm
 	cfg.OrchAddr = fs.String("orchAddr", *cfg.OrchAddr, "Comma-separated list of orchestrators to connect to")
 	cfg.OrchWebhookURL = fs.String("orchWebhookUrl", *cfg.OrchWebhookURL, "Orchestrator discovery callback URL")
+	cfg.ExtraNodes = fs.Int("extraNodes", *cfg.ExtraNodes, "Number of extra nodes an orchestrator can advertise within the GetOrchestratorInfo response")
 	cfg.OrchBlacklist = fs.String("orchBlocklist", "", "Comma-separated list of blocklisted orchestrators")
 	cfg.OrchMinLivepeerVersion = fs.String("orchMinLivepeerVersion", *cfg.OrchMinLivepeerVersion, "Minimal go-livepeer version orchestrator should have to be selected")
 	cfg.SelectRandWeight = fs.Float64("selectRandFreq", *cfg.SelectRandWeight, "Weight of the random factor in the orchestrator selection algorithm")

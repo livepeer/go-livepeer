@@ -68,6 +68,10 @@ func (r *mockJobOrchestrator) ServiceURI() *url.URL {
 	return url
 }
 
+func (r *mockJobOrchestrator) Nodes() []string {
+	return nil
+}
+
 func (r *mockJobOrchestrator) Sign(msg []byte) ([]byte, error) {
 	if r.offchain {
 		return nil, nil

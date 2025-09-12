@@ -39,6 +39,7 @@ type DBOrchestratorPoolCache struct {
 	orchBlacklist         []string
 	discoveryTimeout      time.Duration
 	node                  *core.LivepeerNode
+	getOrchInfo           func(context.Context, common.Broadcaster, *url.URL, server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error)
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
