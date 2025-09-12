@@ -1777,7 +1777,10 @@ func TestGetOrchestrators_Nodes_ExtraNodes(t *testing.T) {
 	}
 }
 
-func TestGetOrchestrators_Nodes_AlternatingTimeouts(t *testing.T) {
+func TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
+	// Checks that recursive GetOrchestrator calls are still clamped by
+	// the top-level discovery timeout
+
 	assert := assert.New(t)
 	initial := "https://127.0.0.1:8300"
 
@@ -1814,13 +1817,12 @@ func TestGetOrchestrators_Nodes_AlternatingTimeouts(t *testing.T) {
 		// set a high ExtraNodes so we don't hit the limit; we want timeouts to be the limiter
 		ExtraNodes: 10,
 	})
-	require := require.New(t)
-	require.NoError(err)
+	assert.Nil(err)
 	pool.getOrchInfo = getOrchInfo
 
 	// ask for many orchestrators (larger than available) so numOrchs doesn't artificially limit results
 	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
-	assert.NoError(err)
+	assert.Nil(err)
 
 	// collect URLs
 	received := map[string]bool{}
@@ -1864,14 +1866,11 @@ func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
 
 	uris := stringsToURIs([]string{initial0, initial1, initial2})
 
-	old := serverGetOrchInfo
-	defer func() { serverGetOrchInfo = old }()
-
 	// Stub GetOrchestratorInfo:
 	// - initial0: no instances
 	// - initial1: advertises inst9010, which advertises inst9020 (second-level)
 	// - initial2: advertises inst9011 and inst9012, each advertising a second-level
-	serverGetOrchInfo = func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+	getOrchInfo := func(ctx context.Context, _ common.Broadcaster, u *url.URL, _ server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		switch u.String() {
 		case initial0:
 			return &net.OrchestratorInfo{Transcoder: initial0}, nil
@@ -1897,8 +1896,8 @@ func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
 		DiscoveryTimeout: 50 * time.Millisecond,
 		ExtraNodes:       10, // ensure limits don't truncate first-level discovery
 	})
-	require := require.New(t)
-	require.NoError(err)
+	assert.NoError(err)
+	pool.getOrchInfo = getOrchInfo
 
 	// request sufficiently many orchestrators so numOrchestrators doesn't artificially limit results
 	odesc, err := pool.GetOrchestrators(context.TODO(), 10, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
