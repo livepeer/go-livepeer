@@ -48,6 +48,8 @@ func (ls *LivepeerServer) StartStream() http.Handler {
 			return
 		}
 
+		//setup body size limit, will error if too large
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 		streamUrls, code, err := ls.setupStream(ctx, r, gatewayJob)
 		if err != nil {
 			clog.Errorf(ctx, "Error setting up stream: %s", err)
@@ -383,9 +385,15 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 
 	// Setup request body to be able to preserve for retries
 	// Read the entire body first with 10MB limit
-	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, http.StatusBadRequest, err
+		if errors.As(err, http.MaxBytesError{}) {
+			clog.Warningf(ctx, "Request body too large (over 10MB)")
+			return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("request body too large (max 10MB)")
+		} else {
+			clog.Errorf(ctx, "Error reading request body: %v", err)
+			return nil, http.StatusBadRequest, fmt.Errorf("error reading request body: %w", err)
+		}
 	}
 	r.Body.Close()
 
