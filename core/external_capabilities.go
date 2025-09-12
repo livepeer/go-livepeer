@@ -64,6 +64,8 @@ type StreamInfo struct {
 }
 
 func (sd *StreamInfo) IsActive() bool {
+	sd.sdm.Lock()
+	defer sd.sdm.Unlock()
 	if sd.StreamCtx.Err() != nil {
 		return false
 	}
@@ -128,19 +130,29 @@ func (extCaps *ExternalCapabilities) AddStream(streamID string, capability strin
 
 		//orchestrator channels shutdown
 		if stream.pubChannel != nil {
-			stream.pubChannel.Close()
+			if err := stream.pubChannel.Close(); err != nil {
+				glog.Errorf("error closing pubChannel for stream=%s: %v", streamID, err)
+			}
 		}
 		if stream.subChannel != nil {
-			stream.subChannel.Close()
+			if err := stream.subChannel.Close(); err != nil {
+				glog.Errorf("error closing subChannel for stream=%s: %v", streamID, err)
+			}
 		}
 		if stream.controlChannel != nil {
-			stream.controlChannel.Close()
+			if err := stream.controlChannel.Close(); err != nil {
+				glog.Errorf("error closing controlChannel for stream=%s: %v", streamID, err)
+			}
 		}
 		if stream.eventsChannel != nil {
-			stream.eventsChannel.Close()
+			if err := stream.eventsChannel.Close(); err != nil {
+				glog.Errorf("error closing eventsChannel for stream=%s: %v", streamID, err)
+			}
 		}
 		if stream.dataChannel != nil {
-			stream.dataChannel.Close()
+			if err := stream.dataChannel.Close(); err != nil {
+				glog.Errorf("error closing dataChannel for stream=%s: %v", streamID, err)
+			}
 		}
 		return
 	}()

@@ -100,6 +100,11 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 		stopJob.sign() //no changes to make, sign job
 
 		token, err := sessionToToken(params.liveParams.sess)
+		if err != nil {
+			clog.Errorf(ctx, "Error converting session to token: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		newToken, err := getToken(ctx, 3*time.Second, token.ServiceAddr, stopJob.Job.Req.Capability, stopJob.Job.Req.Sender, stopJob.Job.Req.Sig)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
