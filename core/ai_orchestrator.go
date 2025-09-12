@@ -1203,7 +1203,7 @@ func (orch *orchestrator) JobPriceInfo(sender ethcommon.Address, jobCapability s
 	//ensure price numerator and denominator can be int64
 	jobPrice, err = common.PriceToInt64(jobPrice)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid job price: %w", err)
 	}
 
 	return &net.PriceInfo{
