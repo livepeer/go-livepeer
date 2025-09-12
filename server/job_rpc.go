@@ -805,6 +805,7 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 	}
 
 	sender := ethcommon.HexToAddress(jobReq.Sender)
+
 	jobPrice, err := orch.JobPriceInfo(sender, jobReq.Capability)
 	if err != nil {
 		return nil, errors.New("Could not get job price")
@@ -813,29 +814,15 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 
 	//no payment included, confirm if balance remains
 	jobPriceRat := big.NewRat(jobPrice.PricePerUnit, jobPrice.PixelsPerUnit)
-	var payment net.Payment
 	orchBal := big.NewRat(0, 1)
 	// if price is 0, no payment required
 	if jobPriceRat.Cmp(big.NewRat(0, 1)) > 0 {
-		// get payment information
-		paymentHdr := r.Header.Get(jobPaymentHeaderHdr)
 		minBal := new(big.Rat).Mul(jobPriceRat, big.NewRat(60, 1)) //minimum 1 minute balance
-		if paymentHdr != "" {
-			payment, err = getPayment(paymentHdr)
-			if err != nil {
-				clog.Errorf(ctx, "job payment invalid: %v", err)
-				return nil, errPaymentError
-			}
-
-			if err := orch.ProcessPayment(ctx, payment, core.ManifestID(jobReq.Capability)); err != nil {
-				orch.FreeExternalCapabilityCapacity(jobReq.Capability)
-				clog.Errorf(ctx, "Error processing payment: %v", err)
-				return nil, errPaymentError
-			}
-			//update balance for payment
-			orchBal = getPaymentBalance(orch, sender, jobReq.Capability)
-		} else {
-			orchBal = getPaymentBalance(orch, sender, jobReq.Capability)
+		//process payment if included
+		orchBal, pmtErr := processPayment(ctx, orch, sender, jobReq.Capability, r.Header.Get(jobPaymentHeaderHdr))
+		if pmtErr != nil {
+			//log if there are payment errors but continue, balance will runout and clean up
+			clog.Infof(ctx, "job payment error: %v", pmtErr)
 		}
 
 		if orchBal.Cmp(minBal) < 0 {
@@ -853,6 +840,27 @@ func (h *lphttp) setupOrchJob(ctx context.Context, r *http.Request, reserveCapac
 	clog.Infof(ctx, "job request verified id=%v sender=%v capability=%v timeout=%v price=%v balance=%v", jobReq.ID, jobReq.Sender, jobReq.Capability, jobReq.Timeout, jobPriceRat.FloatString(0), orchBal.FloatString(0))
 
 	return &orchJob{Req: jobReq, Sender: sender, JobPrice: jobPrice, Details: &jobDetails}, nil
+}
+
+// process payment and return balance
+func processPayment(ctx context.Context, orch Orchestrator, sender ethcommon.Address, capability string, paymentHdr string) (*big.Rat, error) {
+	if paymentHdr != "" {
+		payment, err := getPayment(paymentHdr)
+		if err != nil {
+			clog.Errorf(ctx, "job payment invalid: %v", err)
+			return nil, errPaymentError
+		}
+
+		if err := orch.ProcessPayment(ctx, payment, core.ManifestID(capability)); err != nil {
+			orch.FreeExternalCapabilityCapacity(capability)
+			clog.Errorf(ctx, "Error processing payment: %v", err)
+			return nil, errPaymentError
+		}
+	}
+	orchBal := getPaymentBalance(orch, sender, capability)
+
+	return orchBal, nil
+
 }
 
 func createPayment(ctx context.Context, jobReq *JobRequest, orchToken *core.JobToken, node *core.LivepeerNode) (string, error) {
