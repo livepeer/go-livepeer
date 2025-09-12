@@ -209,6 +209,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				// haven't seen this one yet so lets continue
 				u, err := url.Parse(inst)
 				if err != nil {
+					clog.Info(ctx, "Invalid node URL", "orch", od.LocalInfo.URL, "node", inst)
 					continue
 				}
 				newOd := common.OrchestratorDescriptor{
@@ -305,8 +306,8 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 		}
 		monitor.SendQueueEventAsync("discovery_results", discoveryResults)
 	}
-	clog.Infof(ctx, "Done fetching orch info numOrch=%d responses=%d/%d timedOut=%t",
-		len(ods), nbResp, len(linfos), timedOut)
+	clog.Infof(ctx, "Done fetching orch info orchs=%d/%d responses=%d/%d timedOut=%t",
+		len(ods), numOrchestrators, nbResp, maxOrchNodes, timedOut)
 	return ods, nil
 }
 
