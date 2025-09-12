@@ -1267,32 +1267,46 @@ func getToken(ctx context.Context, respTimeout time.Duration, orchUrl, capabilit
 		return nil, err
 	}
 
-	resp, err := sendJobReqWithTimeout(tokenReq, respTimeout)
-	if err != nil {
-		clog.Errorf(ctx, "failed to get token from Orchestrator err=%v", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		clog.Errorf(ctx, "Failed to get token from Orchestrator %v err=%v", orchUrl, err)
-		return nil, fmt.Errorf("failed to get token from Orchestrator")
-	}
-
-	latency := time.Since(start)
-	clog.V(common.DEBUG).Infof(ctx, "Received job token from uri=%v, latency=%v", orchUrl, latency)
-
-	token, err := io.ReadAll(resp.Body)
-	if err != nil {
-		clog.Errorf(ctx, "Failed to read token from Orchestrator %v err=%v", orchUrl, err)
-		return nil, err
-	}
+	var resp *http.Response
+	var token []byte
 	var jobToken core.JobToken
-	err = json.Unmarshal(token, &jobToken)
+	var attempt int
+	var backoff time.Duration = 100 * time.Millisecond
+	deadline := time.Now().Add(respTimeout)
+
+	for attempt = 0; attempt < 3; attempt++ {
+		resp, err = sendJobReqWithTimeout(tokenReq, respTimeout)
+		if err != nil {
+			clog.Errorf(ctx, "failed to get token from Orchestrator (attempt %d) err=%v", attempt+1, err)
+		} else if resp.StatusCode != http.StatusOK {
+			clog.Errorf(ctx, "Failed to get token from Orchestrator %v status=%v (attempt %d)", orchUrl, resp.StatusCode, attempt+1)
+		} else {
+			defer resp.Body.Close()
+			latency := time.Since(start)
+			clog.V(common.DEBUG).Infof(ctx, "Received job token from uri=%v, latency=%v", orchUrl, latency)
+			token, err = io.ReadAll(resp.Body)
+			if err != nil {
+				clog.Errorf(ctx, "Failed to read token from Orchestrator %v err=%v", orchUrl, err)
+			} else {
+				err = json.Unmarshal(token, &jobToken)
+				if err != nil {
+					clog.Errorf(ctx, "Failed to unmarshal token from Orchestrator %v err=%v", orchUrl, err)
+				} else {
+					return &jobToken, nil
+				}
+			}
+		}
+		// If not last attempt and time remains, backoff
+		if time.Now().Add(backoff).Before(deadline) && attempt < 2 {
+			time.Sleep(backoff)
+			backoff *= 2
+		} else {
+			break
+		}
+	}
+	// All attempts failed
 	if err != nil {
-		clog.Errorf(ctx, "Failed to unmarshal token from Orchestrator %v err=%v", orchUrl, err)
 		return nil, err
 	}
-
-	return &jobToken, nil
+	return nil, fmt.Errorf("failed to get token from Orchestrator after %d attempts", attempt)
 }
