@@ -598,7 +598,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 		return nil, http.StatusBadRequest, errors.New("invalid job parameters")
 	}
 	if jobParams.EnableDataOutput {
-		params.liveParams.dataWriter = media.NewSegmentWriter(1)
+		params.liveParams.dataWriter = media.NewSegmentWriter(5)
 	}
 
 	//check if stream exists

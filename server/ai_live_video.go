@@ -864,6 +864,7 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 			scanner := bufio.NewScanner(segment.Body)
 			for scanner.Scan() {
 				writer, err := dataWriter.Next()
+				clog.V(8).Infof(ctx, "data subscribe writing seq=%d", seq)
 				if err != nil {
 					if err != io.EOF {
 						stopProcessing(ctx, params, fmt.Errorf("data subscribe could not get next: %w", err))
@@ -876,6 +877,8 @@ func startDataSubscribe(ctx context.Context, url *url.URL, params aiRequestParam
 				}
 				readBytes += n
 				readMessages += 1
+
+				writer.Close()
 			}
 			if err := scanner.Err(); err != nil {
 				clog.InfofErr(ctx, "data subscribe error reading seq=%d", seq, err)
