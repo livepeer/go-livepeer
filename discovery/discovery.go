@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math/rand"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -285,6 +286,20 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 			timedOut = true
 		}
 	}
+
+	// Sort available orchestrators by LocalInfo.Latency ascending.
+	sort.SliceStable(ods, func(i, j int) bool {
+		li := ods[i].LocalInfo
+		lj := ods[j].LocalInfo
+		if li == nil || li.Latency == nil {
+			// treat as "large" - sort to the end
+			return false
+		}
+		if lj == nil || lj.Latency == nil {
+			return true
+		}
+		return *li.Latency < *lj.Latency
+	})
 
 	// consider suspended orchestrators if we have an insufficient number of non-suspended ones
 	if len(ods) < numOrchestrators {

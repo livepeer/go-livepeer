@@ -1919,3 +1919,100 @@ func TestGetOrchestrators_Nodes_RecursiveDiscovery(t *testing.T) {
 		assert.NotContains(got, v)
 	}
 }
+
+func TestOrchestratorPool_LatencySorting(t *testing.T) {
+
+	// Create a set of 6 orchestrator URIs
+	uris := []string{}
+	for i := 0; i < 6; i++ {
+		uris = append(uris, "https://127.0.0.1:"+strconv.Itoa(9000+i))
+	}
+
+	// Add a few extra node URLs that are advertised in the Nodes field.
+	// We'll configure the pool to discover 1 extra node per orchestrator.
+	nodes := []string{
+		"https://127.0.0.1:9100",
+		"https://127.0.0.1:9101",
+		"https://127.0.0.1:9102",
+	}
+
+	// Assign different latencies (in ms) for each orchestrator and node.
+	// Last three main URIs will be marked suspended but have LOWER latencies.
+	// Nodes are only advertised for the first three (non-suspended) orchestrators.
+	latencies := map[string]time.Duration{
+		uris[0]: 100 * time.Millisecond, // non-suspended
+		uris[1]: 150 * time.Millisecond, // non-suspended
+		uris[2]: 200 * time.Millisecond, // non-suspended
+		uris[3]: 10 * time.Millisecond,  // suspended, low latency
+		uris[4]: 20 * time.Millisecond,  // suspended, low latency
+		uris[5]: 5 * time.Millisecond,   // suspended, lowest latency
+
+		// additional nodes
+		nodes[0]: 50 * time.Millisecond,
+		nodes[1]: 175 * time.Millisecond,
+		nodes[2]: 125 * time.Millisecond, // suspended
+	}
+
+	nodeMap := map[string][]string{
+		uris[0]: nil,
+		uris[1]: []string{nodes[0], nodes[1]},
+		uris[2]: []string{nodes[2]},
+	}
+
+	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, u *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		// simulate measured latency
+		time.Sleep(latencies[u.String()])
+
+		uri := u.String()
+
+		return &net.OrchestratorInfo{
+			Transcoder: uri,
+			Nodes:      nodeMap[uri],
+			PriceInfo:  &net.PriceInfo{PricePerUnit: 1, PixelsPerUnit: 1},
+			TicketParams: &net.TicketParams{
+				Recipient: ethcommon.BytesToAddress([]byte(uri)).Bytes(),
+			},
+		}, nil
+	}
+
+	pool, err := NewOrchestratorPoolWithConfig(OrchestratorPoolConfig{
+		Broadcaster:      &stubBroadcaster{},
+		URIs:             stringsToURIs(uris),
+		Score:            common.Score_Trusted,
+		OrchBlacklist:    []string{},
+		DiscoveryTimeout: 500 * time.Millisecond,
+		ExtraNodes:       5,
+	})
+	require := require.New(t)
+	require.NoError(err)
+	pool.getOrchInfo = getOrchInfo
+
+	// Mark a few as suspended
+	sus := newStubSuspender()
+	sus.list[uris[3]] = 5
+	sus.list[uris[4]] = 5
+	sus.list[uris[5]] = 5
+	sus.list[nodes[2]] = 5
+
+	// Request all orchestrators so suspended ones will be appended after non-suspended ones
+	infos, err := pool.GetOrchestrators(context.TODO(), len(uris), sus, newStubCapabilities(), common.ScoreAtLeast(0))
+	require.NoError(err)
+	require.Len(infos, len(uris))
+
+	// The non-suspended set now includes the first 3 initial URIs AND their discovered nodes.
+	// Based on the latencies defined above the ascending order among non-suspended should be:
+	// node9100 (50ms), 9000 (100ms), node9102 (125ms), 9001 (150ms), node9101 (175ms), 9002 (200ms)
+	expectedFirst := []string{
+		nodes[0],
+		uris[0],
+		uris[1],
+		nodes[1],
+		uris[2],
+		uris[5],
+	}
+	received := []string{}
+	for _, info := range infos {
+		received = append(received, info.LocalInfo.URL.String())
+	}
+	require.Equal(expectedFirst, received, "orchestrator latency ordering did not match")
+}
