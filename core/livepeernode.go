@@ -160,20 +160,26 @@ type LivepeerNode struct {
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
 	LiveAIAuthApiKey           string
+	LiveAIHeartbeatURL         string
+	LiveAIHeartbeatHeaders     map[string]string
+	LiveAIHeartbeatInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
 	LiveAICapRefreshModels     []string
+	LiveAISaveNSegments        *int
 
 	// Gateway
 	GatewayHost string
 }
 
 type LivePipeline struct {
-	RequestID   string
-	Params      string
-	Pipeline    string
-	ControlPub  *trickle.TricklePublisher
-	StopControl func()
+	RequestID    string
+	StreamID     string
+	Params       []byte
+	Pipeline     string
+	ControlPub   *trickle.TricklePublisher
+	StopControl  func()
+	ReportUpdate func([]byte)
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.

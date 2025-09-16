@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,10 @@ import (
 const (
 	recentSwapInterval  = 3 * time.Minute
 	maxRecentSwapsCount = 2
+)
+
+var (
+	liveAISaveNSegments = 10
 )
 
 type orchestratorSwapper struct {
@@ -239,9 +244,17 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		go ffmpegOutput(ctx, outURL, outWriter, params)
 	}
 
+	// watchdog that gets reset on every segment to catch output stalls
+	segmentTimeout := params.liveParams.outSegmentTimeout
+	if segmentTimeout <= 0 {
+		segmentTimeout = 30 * time.Second
+	}
+	segmentTicker := time.NewTicker(segmentTimeout)
+
 	// read segments from trickle subscription
 	go func() {
 		defer outWriter.Close()
+		defer segmentTicker.Stop()
 
 		var err error
 		firstSegment := true
@@ -262,6 +275,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				clog.Infof(ctx, "trickle subscribe stopping, input stream does not exist.")
 				break
 			}
+			segmentTicker.Reset(segmentTimeout) // reset ticker on each iteration.
 			var segment *http.Response
 			clog.V(8).Infof(ctx, "trickle subscribe read data await")
 			segment, err = subscriber.Read()
@@ -355,6 +369,31 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
+
+	// watchdog: fires if orch does not produce segments for too long
+	go func() {
+		for {
+			select {
+			case <-segmentTicker.C:
+				// check whether this timeout is due to missing input
+				// only suspend orchestrator if there is recent input
+				// ( no input == no output, so don't suspend for that )
+				params.liveParams.mu.Lock()
+				lastInputSegmentTime := params.liveParams.lastSegmentTime
+				params.liveParams.mu.Unlock()
+				lastInputSegmentAge := time.Since(lastInputSegmentTime)
+				hasRecentInput := lastInputSegmentAge < segmentTimeout/2
+				if hasRecentInput && params.inputStreamExists() {
+					// abandon the orchestrator
+					suspendOrchestrator(ctx, params)
+					stopProcessing(ctx, params, fmt.Errorf("timeout waiting for segments"))
+					segmentTicker.Stop()
+					return
+				}
+			}
+		}
+	}()
+
 }
 
 func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBuffer, params aiRequestParams) {
@@ -418,7 +457,7 @@ func ffmpegOutput(ctx context.Context, outputUrl string, outWriter *media.RingBu
 func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq int, params aiRequestParams) (int64, error) {
 	defer segment.Body.Close()
 	var reader io.Reader = segment.Body
-	if seq < 10 {
+	if seq < liveAISaveNSegments {
 		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
 		outFile, err := os.Create(p)
 		if err != nil {
@@ -473,6 +512,7 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 	params.node.LivePipelines[stream] = &core.LivePipeline{
 		RequestID: params.liveParams.requestID,
 		Pipeline:  params.liveParams.pipeline,
+		StreamID:  params.liveParams.streamID,
 	}
 }
 
@@ -496,6 +536,22 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 		})
 	}
 
+	reportUpdate := func(data []byte) {
+		// send the param update to kafka
+		monitor.SendQueueEventAsync("ai_stream_events", map[string]interface{}{
+			"type":        "params_update",
+			"stream_id":   params.liveParams.streamID,
+			"request_id":  params.liveParams.requestID,
+			"pipeline":    params.liveParams.pipeline,
+			"pipeline_id": params.liveParams.pipelineID,
+			"params":      json.RawMessage(data),
+			"orchestrator_info": map[string]interface{}{
+				"address": params.liveParams.sess.Address(),
+				"url":     params.liveParams.sess.Transcoder(),
+			},
+		})
+	}
+
 	sess, exists := params.node.LivePipelines[stream]
 	if !exists || sess.RequestID != params.liveParams.requestID {
 		stopProcessing(ctx, params, fmt.Errorf("control session did not exist"))
@@ -507,6 +563,7 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	}
 	sess.ControlPub = controlPub
 	sess.StopControl = stop
+	sess.ReportUpdate = reportUpdate
 
 	if monitor.Enabled {
 		monitorCurrentLiveSessions(params.node.LivePipelines)
@@ -515,13 +572,14 @@ func startControlPublish(ctx context.Context, control *url.URL, params aiRequest
 	// Send any cached control params in a goroutine outside the lock.
 	msg := sess.Params
 	go func() {
-		if msg == "" {
+		if msg == nil {
 			return
 		}
 		var err error
 		for i := 0; i < 3; i++ {
-			err = controlPub.Write(strings.NewReader(msg))
+			err = controlPub.Write(bytes.NewReader(msg))
 			if err == nil {
+				reportUpdate(msg)
 				return
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -801,7 +859,7 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 
 func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
 	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
-	if seq > 10 {
+	if seq > liveAISaveNSegments {
 		return
 	}
 	go func() {
