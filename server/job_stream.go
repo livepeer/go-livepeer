@@ -102,6 +102,12 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			return
 		}
 		stopJob.sign() //no changes to make, sign job
+		//setup sender
+		jobSender, err := getJobSender(ctx, ls.LivepeerNode)
+		if err != nil {
+			clog.Errorf(ctx, "Error getting job sender: %v", err)
+			return
+		}
 
 		token, err := sessionToToken(params.liveParams.sess)
 		if err != nil {
@@ -109,7 +115,7 @@ func (ls *LivepeerServer) StopStream() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stopJob.Job.Req.Capability, stopJob.Job.Req.Sender, stopJob.Job.Req.Sig)
+		newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, stopJob.Job.Req.Capability, jobSender.Addr, jobSender.Sig)
 		if err != nil {
 			clog.Errorf(ctx, "Error converting session to token: %s", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -350,7 +356,8 @@ func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core
 		// Continue monitoring even if payment fails
 	}
 	if pmtHdr == "" {
-		return errors.New("empty payment header")
+		// This is no payment required, error logged above
+		return nil
 	}
 
 	//send the payment, update the stream with the refreshed token
@@ -398,9 +405,9 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	// Read the entire body first with 10MB limit
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		if errors.As(err, http.MaxBytesError{}) {
+		if maxErr, ok := err.(*http.MaxBytesError); ok {
 			clog.Warningf(ctx, "Request body too large (over 10MB)")
-			return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("request body too large (max 10MB)")
+			return nil, http.StatusRequestEntityTooLarge, fmt.Errorf("request body too large (max %d bytes)", maxErr.Limit)
 		} else {
 			clog.Errorf(ctx, "Error reading request body: %v", err)
 			return nil, http.StatusBadRequest, fmt.Errorf("error reading request body: %w", err)
@@ -591,7 +598,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 		return nil, http.StatusBadRequest, errors.New("invalid job parameters")
 	}
 	if jobParams.EnableDataOutput {
-		params.liveParams.dataWriter = media.NewSegmentWriter(5)
+		params.liveParams.dataWriter = media.NewSegmentWriter(1)
 	}
 
 	//check if stream exists
@@ -885,8 +892,9 @@ func (ls *LivepeerServer) GetStreamData() http.Handler {
 					clog.Errorf(ctx, "Error reading from ring buffer: %v", err)
 					return
 				}
-
+				start := time.Now()
 				data, err := io.ReadAll(reader)
+				clog.V(6).Infof(ctx, "SSE data read took %v", time.Since(start))
 				fmt.Fprintf(w, "data: %s\n\n", data)
 				flusher.Flush()
 			}
