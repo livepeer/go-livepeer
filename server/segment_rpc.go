@@ -582,7 +582,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 					fmt.Errorf("Code: %d Error: %s", resp.StatusCode, errorString), false, sess.OrchestratorInfo.Transcoder)
 			}
 		}
-		return nil, fmt.Errorf(errorString)
+		return nil, errors.New(errorString)
 	}
 	clog.Infof(ctx, "Uploaded segment orch=%s dur=%s", ti.Transcoder, uploadDur)
 	if monitor.Enabled {
@@ -614,7 +614,7 @@ func SubmitSegment(ctx context.Context, sess *BroadcastSession, seg *stream.HLSS
 	var tdata *net.TranscodeData
 	switch res := tr.Result.(type) {
 	case *net.TranscodeResult_Error:
-		err = fmt.Errorf(res.Error)
+		err = errors.New(res.Error)
 		clog.Errorf(ctx, "Transcode failed for segment orch=%s err=%q", ti.Transcoder, err)
 		if err.Error() == "MediaStats Failure" {
 			clog.Infof(ctx, "Ensure the keyframe interval is 4 seconds or less")

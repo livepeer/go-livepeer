@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -108,14 +107,14 @@ func TestRemoteTranscoder_Profiles(t *testing.T) {
 	}))
 	defer ts.Close()
 	parsedURL, _ := url.Parse(ts.URL)
-	rand.Seed(123)
+	common.PkgRNG = rand.New(rand.NewSource(123))
 	runTranscode(node, parsedURL.Host, httpc, notify)
 	assert.Equal(2, segmentRead)
 	assert.Equal(2, tr.called)
 	assert.NotNil(body)
 	assert.Equal("742", headers.Get("TaskId"))
 	assert.Equal("999", headers.Get("Pixels"))
-	assert.Equal("multipart/mixed; boundary=57bddd1eb02b9ffae8dc", headers.Get("Content-Type"))
+	assert.Equal("multipart/mixed; boundary=9259515bf7025a291b00", headers.Get("Content-Type"))
 	assert.Equal(node.OrchSecret, headers.Get("Credentials"))
 	assert.Equal(protoVerLPT, headers.Get("Authorization"))
 	mediaType, params, err := mime.ParseMediaType(headers.Get("Content-Type"))
@@ -309,7 +308,7 @@ func TestRemoteTranscoder_Error(t *testing.T) {
 	}
 	tr := &stubTranscoder{}
 	errText := "Some error"
-	tr.err = fmt.Errorf(errText)
+	tr.err = errors.New(errText)
 	node, _ := core.NewLivepeerNode(nil, "/tmp/thisdirisnotactuallyusedinthistest", nil)
 	node.OrchSecret = "verbigsecret"
 	node.Transcoder = tr
