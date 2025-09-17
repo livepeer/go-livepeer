@@ -72,6 +72,7 @@ type Orchestrator interface {
 	CreateStorageForRequest(requestID string) error
 	GetStorageForRequest(requestID string) (drivers.OSSession, bool)
 	WorkerHardware() []worker.HardwareInformation
+	Nodes() []string
 	TextToImage(ctx context.Context, requestID string, req worker.GenTextToImageJSONRequestBody) (interface{}, error)
 	ImageToImage(ctx context.Context, requestID string, req worker.GenImageToImageMultipartRequestBody) (interface{}, error)
 	ImageToVideo(ctx context.Context, requestID string, req worker.GenImageToVideoMultipartRequestBody) (interface{}, error)
@@ -383,15 +384,17 @@ func getOrchestrator(orch Orchestrator, req *net.OrchestratorRequest) (*net.Orch
 		return nil, fmt.Errorf("authentication failed: %v", err)
 	}
 
+	serviceURI := orch.ServiceURI().String()
+
 	// currently, orchestrator == transcoder
-	if req.Capabilities == nil {
-		return orchestratorInfo(orch, addr, orch.ServiceURI().String(), "")
+	if req.Capabilities == nil || serviceURI == "" {
+		return orchestratorInfo(orch, addr, serviceURI, "")
 	}
 
 	if err := checkLiveVideoToVideoCapacity(orch, req); err != nil {
 		return nil, fmt.Errorf("Invalid orchestrator request: %v", err)
 	}
-	return orchestratorInfoWithCaps(orch, addr, orch.ServiceURI().String(), "", req.Capabilities)
+	return orchestratorInfoWithCaps(orch, addr, serviceURI, "", req.Capabilities)
 }
 
 func checkLiveVideoToVideoCapacity(orch Orchestrator, req *net.OrchestratorRequest) interface{} {
@@ -480,6 +483,7 @@ func orchestratorInfoWithCaps(orch Orchestrator, addr ethcommon.Address, service
 
 	tr := net.OrchestratorInfo{
 		Transcoder:         serviceURI,
+		Nodes:              orch.Nodes(),
 		TicketParams:       params,
 		PriceInfo:          priceInfo,
 		Address:            orch.Address().Bytes(),
