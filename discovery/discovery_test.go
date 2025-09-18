@@ -60,24 +60,29 @@ func sync_TestDeadLock(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	wg := sync.WaitGroup{}
+	discoveryTimeout := 50 * time.Millisecond
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
+		if orchestratorServer.String() == "https://127.0.0.1:8936" {
+			// sleep for longer than the discovery timeout
+			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
+		}
 		defer wg.Done()
 		return &net.OrchestratorInfo{Transcoder: "transcoderfromtestserver"}, nil
 	}
 	addresses := []string{}
 	for i := 0; i < 50; i++ {
-		addresses = append(addresses, "https://127.0.0.1:8936")
+		addresses = append(addresses, fmt.Sprintf("https://127.0.0.1:89%d", i))
 	}
 	uris := stringsToURIs(addresses)
 	assert := assert.New(t)
 	wg.Add(len(uris))
-	pool := NewOrchestratorPool(&stubBroadcaster{}, uris, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool := NewOrchestratorPool(&stubBroadcaster{}, uris, common.Score_Trusted, []string{}, discoveryTimeout)
 	pool.getOrchInfo = getOrchInfo
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
 	assert.Equal("transcoderfromtestserver", infos[0].RemoteInfo.Transcoder)
-	wgWait(&wg)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
 func TestDeadLock(t *testing.T) {
@@ -88,8 +93,13 @@ func sync_TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	gmp := runtime.GOMAXPROCS(50)
 	defer runtime.GOMAXPROCS(gmp)
 	wg := sync.WaitGroup{}
+	discoveryTimeout := 50 * time.Millisecond
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
+		if orchestratorServer.String() == "https://127.0.0.1:8936" {
+			// sleep for longer than the discovery timeout
+			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
+		}
 		return &net.OrchestratorInfo{
 			Transcoder: "transcoderfromtestserver",
 			PriceInfo: &net.PriceInfo{
@@ -114,14 +124,14 @@ func sync_TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 		return true
 	}
 
-	pool := NewOrchestratorPoolWithPred(&stubBroadcaster{}, uris, pred, common.Score_Trusted, []string{}, 50*time.Millisecond)
+	pool := NewOrchestratorPoolWithPred(&stubBroadcaster{}, uris, pred, common.Score_Trusted, []string{}, discoveryTimeout)
 	pool.getOrchInfo = getOrchInfo
 	infos, err := pool.GetOrchestrators(context.TODO(), 1, newStubSuspender(), newStubCapabilities(), common.ScoreAtLeast(0))
 
 	assert.Nil(err, "Should not be error")
 	assert.Len(infos, 1, "Should return one orchestrator")
 	assert.Equal("transcoderfromtestserver", infos[0].RemoteInfo.Transcoder)
-	wgWait(&wg)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
 func TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
@@ -1321,7 +1331,7 @@ func TestOrchestratorPool_GetOrchestrators(t *testing.T) {
 	// Ensure that the timeout did not fire
 	assert.Less(end.Sub(start).Milliseconds(),
 		pool.discoveryTimeout.Milliseconds())
-	wgWait(&wg)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
 func TestOrchestratorPool_GetOrchestrators_SuspendedOrchs(t *testing.T) {
@@ -1831,7 +1841,7 @@ func sync_TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
 	}
 
 	assert.Equal(expected, received)
-	wgWait(&wg)
+	assert.True(wgWait(&wg), "Test timed out")
 }
 
 func TestGetOrchestrators_Nodes_DiscoveryTimeout(t *testing.T) {
