@@ -63,7 +63,6 @@ func sync_TestDeadLock(t *testing.T) {
 	discoveryTimeout := 50 * time.Millisecond
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		if orchestratorServer.String() == "https://127.0.0.1:8936" {
-			// sleep for longer than the discovery timeout
 			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
 		}
 		defer wg.Done()
@@ -97,7 +96,6 @@ func sync_TestDeadLock_NewOrchestratorPoolWithPred(t *testing.T) {
 	getOrchInfo := func(ctx context.Context, bcast common.Broadcaster, orchestratorServer *url.URL, params server.GetOrchestratorInfoParams) (*net.OrchestratorInfo, error) {
 		defer wg.Done()
 		if orchestratorServer.String() == "https://127.0.0.1:8936" {
-			// sleep for longer than the discovery timeout
 			time.Sleep(discoveryTimeout * 2) // ensure orch doesn't make it past discovery
 		}
 		return &net.OrchestratorInfo{
