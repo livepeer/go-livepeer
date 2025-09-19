@@ -3,6 +3,6 @@
     "model_id": "noop",
     "pipeline": "live-video-to-video",
     "warm": true,
-    "capacity": 1
+    "count": 1
   }
 ]
