@@ -864,10 +864,22 @@ func processPayment(ctx context.Context, orch Orchestrator, sender ethcommon.Add
 }
 
 func createPayment(ctx context.Context, jobReq *JobRequest, orchToken *core.JobToken, node *core.LivepeerNode) (string, error) {
+	if orchToken == nil {
+		return "", errors.New("orchestrator token is nil, cannot create payment")
+	}
+	//if no sender or ticket params, no payment
+	if node.Sender == nil {
+		return "", errors.New("no ticket sender available, cannot create payment")
+	}
+	if orchToken.TicketParams == nil {
+		return "", errors.New("no ticket params available, cannot create payment")
+	}
+
 	var payment *net.Payment
 	createTickets := true
 	clog.Infof(ctx, "creating payment for job request %s", jobReq.Capability)
 	sender := ethcommon.HexToAddress(jobReq.Sender)
+
 	orchAddr := ethcommon.BytesToAddress(orchToken.TicketParams.Recipient)
 	sessionID := node.Sender.StartSession(*pmTicketParams(orchToken.TicketParams))
 

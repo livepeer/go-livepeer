@@ -15,6 +15,7 @@ import (
 	"time"
 
 	ethcommon "github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/clog"
 	"github.com/livepeer/go-livepeer/common"
@@ -183,7 +184,7 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		}
 		params.liveParams.sess = &orchSession
 
-		ctx = clog.AddVal(ctx, "orch", ethcommon.Bytes2Hex(orch.TicketParams.Recipient))
+		ctx = clog.AddVal(ctx, "orch", hexutil.Encode(orch.TicketParams.Recipient))
 		ctx = clog.AddVal(ctx, "orch_url", orch.ServiceAddr)
 
 		//set request ID to persist from Gateway to Worker
@@ -199,6 +200,8 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			clog.Errorf(ctx, "job not able to be processed by Orchestrator %v err=%v ", orch.ServiceAddr, err.Error())
 			continue
 		}
+
+		GatewayStatus.StoreKey(streamID, "orchestrator", orch.ServiceAddr)
 
 		params.liveParams.orchPublishUrl = orchResp.Header.Get("X-Publish-Url")
 		params.liveParams.orchSubscribeUrl = orchResp.Header.Get("X-Subscribe-Url")
@@ -237,12 +240,13 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 			break
 		}
 		firstProcessed = true
-		clog.Infof(ctx, "Retrying stream with a different orchestrator err=%v", err.Error())
-
 		// will swap, but first notify with the reason for the swap
 		if err == nil {
 			err = errors.New("unknown swap reason")
 		}
+
+		clog.Infof(ctx, "Retrying stream with a different orchestrator err=%v", err.Error())
+
 		params.liveParams.sendErrorEvent(err)
 
 		//if there is ingress input then force off
@@ -287,7 +291,7 @@ func (ls *LivepeerServer) monitorStream(streamId string) {
 		select {
 		case <-stream.StreamCtx.Done():
 			clog.Infof(ctx, "Stream %s stopped, ending monitoring", streamId)
-			delete(ls.LivepeerNode.LivePipelines, streamId)
+			ls.LivepeerNode.RemoveLivePipeline(streamId)
 			return
 		case <-pmtTicker.C:
 			if !params.inputStreamExists() {
@@ -350,26 +354,28 @@ func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core
 		return err
 	}
 
-	pmtHdr, err := createPayment(ctx, req, newToken, ls.LivepeerNode)
-	if err != nil {
-		clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamID, err)
-		// Continue monitoring even if payment fails
-	}
-	if pmtHdr == "" {
-		// This is no payment required, error logged above
-		return nil
-	}
+	if newSess.OrchestratorInfo.PriceInfo.PricePerUnit > 0 {
+		pmtHdr, err := createPayment(ctx, req, newToken, ls.LivepeerNode)
+		if err != nil {
+			clog.Errorf(ctx, "Error processing stream payment for %s: %v", streamID, err)
+			// Continue monitoring even if payment fails
+		}
+		if pmtHdr == "" {
+			// This is no payment required, error logged above
+			return nil
+		}
 
-	//send the payment, update the stream with the refreshed token
-	clog.Infof(ctx, "Sending stream payment for %s", streamID)
-	statusCode, err := ls.sendPayment(ctx, token.ServiceAddr+"/ai/stream/payment", stream.Pipeline, job.SignedJobReq, pmtHdr)
-	if err != nil {
-		clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamID, err)
-		return err
-	}
-	if statusCode != http.StatusOK {
-		clog.Errorf(ctx, "Unexpected status code %d received for %s", statusCode, streamID)
-		return errors.New("unexpected status code")
+		//send the payment, update the stream with the refreshed token
+		clog.Infof(ctx, "Sending stream payment for %s", streamID)
+		statusCode, err := ls.sendPayment(ctx, token.ServiceAddr+"/ai/stream/payment", stream.Pipeline, job.SignedJobReq, pmtHdr)
+		if err != nil {
+			clog.Errorf(ctx, "Error sending stream payment for %s: %v", streamID, err)
+			return err
+		}
+		if statusCode != http.StatusOK {
+			clog.Errorf(ctx, "Unexpected status code %d received for %s", statusCode, streamID)
+			return errors.New("unexpected status code")
+		}
 	}
 
 	return nil
@@ -473,12 +479,26 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	mediaMTXOutputURL := mediaMTXInputURL + "-out"
 	mediaMTXOutputAlias := fmt.Sprintf("%s-%s-out", mediaMTXInputURL, requestID)
 
-	whepURL := generateWhepUrl(streamID, requestID)
-	whipURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "whip")
-	rtmpURL := mediaMTXInputURL
+	var (
+		whipURL string
+		rtmpURL string
+		whepURL string
+		dataURL string
+	)
+
 	updateURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "update")
 	statusURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "status")
-	dataURL := fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "data")
+
+	if job.Job.Params.EnableVideoIngress {
+		whipURL = fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "whip")
+		rtmpURL = mediaMTXInputURL
+	}
+	if job.Job.Params.EnableVideoEgress {
+		whepURL = generateWhepUrl(streamID, requestID)
+	}
+	if job.Job.Params.EnableDataOutput {
+		dataURL = fmt.Sprintf("https://%s/ai/stream/%s/%s", ls.LivepeerNode.GatewayHost, streamID, "data")
+	}
 
 	//if set this will overwrite settings above
 	if LiveAIAuthWebhookURL != nil {
@@ -525,12 +545,15 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 
 	// collect all RTMP outputs
 	var rtmpOutputs []string
-	if outputURL != "" {
-		rtmpOutputs = append(rtmpOutputs, outputURL)
+	if job.Job.Params.EnableVideoEgress {
+		if outputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, outputURL)
+		}
+		if mediaMTXOutputURL != "" {
+			rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
+		}
 	}
-	if mediaMTXOutputURL != "" {
-		rtmpOutputs = append(rtmpOutputs, mediaMTXOutputURL, mediaMTXOutputAlias)
-	}
+
 	clog.Info(ctx, "RTMP outputs", "destinations", rtmpOutputs)
 
 	// Clear any previous gateway status
@@ -593,11 +616,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	}
 
 	//create a dataWriter for data channel if enabled
-	var jobParams JobParameters
-	if err = json.Unmarshal([]byte(job.Job.Req.Parameters), &jobParams); err != nil {
-		return nil, http.StatusBadRequest, errors.New("invalid job parameters")
-	}
-	if jobParams.EnableDataOutput {
+	if job.Job.Params.EnableDataOutput {
 		params.liveParams.dataWriter = media.NewSegmentWriter(5)
 	}
 
@@ -606,7 +625,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 		return nil, http.StatusBadRequest, fmt.Errorf("stream already exists: %s", streamID)
 	}
 
-	clog.Infof(ctx, "stream setup videoIngress=%v videoEgress=%v dataOutput=%v", jobParams.EnableVideoIngress, jobParams.EnableVideoEgress, jobParams.EnableDataOutput)
+	clog.Infof(ctx, "stream setup videoIngress=%v videoEgress=%v dataOutput=%v", job.Job.Params.EnableVideoIngress, job.Job.Params.EnableVideoEgress, job.Job.Params.EnableDataOutput)
 
 	//save the stream setup
 	ls.LivepeerNode.NewLivePipeline(requestID, streamID, pipeline, params, bodyBytes) //track the pipeline for cancellation
@@ -767,11 +786,17 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 			go runStats(statsContext, whipConn, streamId, stream.Pipeline, params.liveParams.requestID)
 
 			whipConn.AwaitClose()
-			stream.StopStream(nil)
 			params.liveParams.segmentReader.Close()
 			params.liveParams.kickOrch(errors.New("whip ingest disconnected"))
+			stream.StopStream(nil)
 			clog.Info(ctx, "Live cleaned up")
 		}()
+
+		if whipServer == nil {
+			respondJsonError(ctx, w, fmt.Errorf("whip server not configured"), http.StatusInternalServerError)
+			whipConn.Close()
+			return
+		}
 
 		conn := whipServer.CreateWHIP(ctx, params.liveParams.segmentReader, whepURL, w, r)
 		whipConn.SetWHIPConnection(conn) // might be nil if theres an error and thats okay
@@ -779,7 +804,6 @@ func (ls *LivepeerServer) StartStreamWhipIngest(whipServer *media.WHIPServer) ht
 }
 
 func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, params aiRequestParams) error {
-	var channels []string
 	//required channels
 	control, err := common.AppendHostname(params.liveParams.orchControlUrl, params.liveParams.sess.BroadcastSession.Transcoder())
 	if err != nil {
@@ -790,8 +814,6 @@ func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, param
 		return fmt.Errorf("invalid events URL: %w", err)
 	}
 
-	channels = append(channels, control.String())
-	channels = append(channels, events.String())
 	startControlPublish(ctx, control, params)
 	startEventsSubscribe(ctx, events, params, params.liveParams.sess)
 
@@ -802,7 +824,6 @@ func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, param
 		if err != nil {
 			return fmt.Errorf("invalid publish URL: %w", err)
 		}
-		channels = append(channels, pub.String())
 		startTricklePublish(ctx, pub, params, params.liveParams.sess)
 	}
 
@@ -812,7 +833,6 @@ func startStreamProcessing(ctx context.Context, stream *core.LivePipeline, param
 		if err != nil {
 			return fmt.Errorf("invalid subscribe URL: %w", err)
 		}
-		channels = append(channels, sub.String())
 		startTrickleSubscribe(ctx, sub, params, params.liveParams.sess)
 	}
 
@@ -1298,6 +1318,11 @@ func tokenToAISession(token core.JobToken) (AISession, error) {
 	// like (*BroadcastSession).Transcoder() which acquire RLock()
 	session.lock = &sync.RWMutex{}
 
+	//default to zero price if its nil, Orchestrator will reject stream if charging a price above zero
+	if token.Price == nil {
+		token.Price = &net.PriceInfo{}
+	}
+
 	orchInfo := net.OrchestratorInfo{Transcoder: token.ServiceAddr, TicketParams: token.TicketParams, PriceInfo: token.Price}
 	orchInfo.Transcoder = token.ServiceAddr
 	if token.SenderAddress != nil {
@@ -1318,6 +1343,10 @@ func sessionToToken(session *AISession) (core.JobToken, error) {
 }
 
 func getStreamRequestParams(stream *core.LivePipeline) (aiRequestParams, error) {
+	if stream == nil {
+		return aiRequestParams{}, fmt.Errorf("stream is nil")
+	}
+
 	streamParams := stream.StreamParams()
 	params, ok := streamParams.(aiRequestParams)
 	if !ok {

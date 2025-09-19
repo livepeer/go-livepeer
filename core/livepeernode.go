@@ -195,13 +195,21 @@ func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, str
 	n.LiveMu.Lock()
 	defer n.LiveMu.Unlock()
 	n.LivePipelines[streamID] = &LivePipeline{
-		RequestID:    requestID,
-		Pipeline:     pipeline,
-		StreamCtx:    streamCtx,
-		streamParams: streamParams,
-		streamCancel: streamCancel,
+		RequestID:     requestID,
+		StreamID:      streamID,
+		Pipeline:      pipeline,
+		StreamCtx:     streamCtx,
+		streamParams:  streamParams,
+		streamCancel:  streamCancel,
+		streamRequest: streamRequest,
 	}
 	return n.LivePipelines[streamID]
+}
+
+func (n *LivepeerNode) RemoveLivePipeline(streamID string) {
+	n.LiveMu.Lock()
+	defer n.LiveMu.Unlock()
+	delete(n.LivePipelines, streamID)
 }
 
 func (p *LivePipeline) StreamParams() interface{} {
@@ -217,7 +225,10 @@ func (p *LivePipeline) StreamRequest() []byte {
 }
 
 func (p *LivePipeline) StopStream(err error) {
-	p.StopControl()
+	if p.StopControl != nil {
+		p.StopControl()
+	}
+
 	p.streamCancel(err)
 }
 
