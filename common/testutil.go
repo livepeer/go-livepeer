@@ -90,12 +90,23 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
 		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal", "github.com/livepeer/lpms/stream.NewBasicRTMPVideoStream.func1", "github.com/patrickmn/go-cache.(*janitor).Run",
 		"github.com/golang/glog.(*fileSink).flushDaemon", "github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
-		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
+		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe",
+		"net/http.(*persistConn).writeLoop", "net/http.(*persistConn).readLoop", "io.(*pipe).read",
+		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}
 
-	res := make([]goleak.Option, 0, len(funcs2ignore))
+	// Functions that might have other functions on top of their stack (like time.Sleep)
+	// These need to be ignored with IgnoreAnyFunction instead of IgnoreTopFunction
+	funcsAnyIgnore := []string{
+		"github.com/livepeer/go-livepeer/server.ffmpegOutput",
+	}
+
+	res := make([]goleak.Option, 0, len(funcs2ignore)+len(funcsAnyIgnore))
 	for _, f := range funcs2ignore {
 		res = append(res, goleak.IgnoreTopFunction(f))
+	}
+	for _, f := range funcsAnyIgnore {
+		res = append(res, goleak.IgnoreAnyFunction(f))
 	}
 	return res
 }
