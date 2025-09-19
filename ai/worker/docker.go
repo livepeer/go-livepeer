@@ -570,8 +570,8 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	defer ticker.Stop()
 
 	slog.Info("Watching container", slog.String("container", rc.Name))
+	var loadingStartTime time.Time
 	failures := 0
-	loadingStartTime := 0.0
 	for {
 		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
@@ -641,20 +641,19 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				}
 				fallthrough
 			case OK:
-				failures, loadingStartTime = 0, 0
+				failures, loadingStartTime = 0, time.Time{}
 				continue
-			case "LOADING": // TODO: Use enum when ai-runner SDK is updated
-				if !isBorrowed {
-					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
-					failures = 0
+			case LOADING:
+				if startedLoading := loadingStartTime.IsZero(); startedLoading {
+					failures, loadingStartTime = 0, time.Now()
 
-					m.mu.Lock()
-					m.borrowContainerLocked(context.Background(), rc)
-					m.mu.Unlock()
-				}
+					if !isBorrowed {
+						slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
 
-				if loadingStartTime == 0 {
-					loadingStartTime = time.Now()
+						m.mu.Lock()
+						m.borrowContainerLocked(context.Background(), rc)
+						m.mu.Unlock()
+					}
 				}
 				if loadingTime := time.Since(loadingStartTime); loadingTime > containerTimeout {
 					failures++
