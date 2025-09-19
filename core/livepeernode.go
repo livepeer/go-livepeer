@@ -140,8 +140,10 @@ type LivepeerNode struct {
 	ExternalCapabilities *ExternalCapabilities
 	AutoAdjustPrice      bool
 	AutoSessionLimit     bool
+
 	// Broadcaster public fields
-	Sender pm.Sender
+	Sender     pm.Sender
+	ExtraNodes int
 
 	// Thread safety for config fields
 	mu                  sync.RWMutex
@@ -154,6 +156,7 @@ type LivepeerNode struct {
 	jobPriceInfo     map[string]map[string]*big.Rat
 	serviceURI       url.URL
 	segmentMutex     *sync.RWMutex
+	Nodes            []string // instance URLs of this orch available to do work
 
 	// For live video pipelines, cache for live pipelines; key is the stream name
 	LivePipelines map[string]*LivePipeline

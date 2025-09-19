@@ -180,6 +180,9 @@ message OrchestratorInfo {
 
   // prices for capabilities
   repeated PriceInfo capabilities_prices = 33;
+
+  // List of other node URIs belonging to this orchestrator.
+  repeated string nodes = 34;
 }
 
 // Data for transcoding authentication that is included in the OrchestratorInfo

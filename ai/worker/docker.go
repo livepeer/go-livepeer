@@ -74,9 +74,9 @@ var livePipelineToImage = map[string]string{
 	"streamdiffusion-sdxl": "livepeer/ai-runner:live-app-streamdiffusion-sdxl",
 	// streamdiffusion-sdxl-faceid is a utility image that uses an SDXL model with a FaceID IP Adapter on the default config of the pipeline. Optimizes startup time.
 	"streamdiffusion-sdxl-faceid": "livepeer/ai-runner:live-app-streamdiffusion-sdxl-faceid",
-	"comfyui":              "livepeer/ai-runner:live-app-comfyui",
-	"segment_anything_2":   "livepeer/ai-runner:live-app-segment_anything_2",
-	"noop":                 "livepeer/ai-runner:live-app-noop",
+	"comfyui":                     "livepeer/ai-runner:live-app-comfyui",
+	"segment_anything_2":          "livepeer/ai-runner:live-app-segment_anything_2",
+	"noop":                        "livepeer/ai-runner:live-app-noop",
 }
 
 type ImageOverrides struct {

@@ -77,6 +77,12 @@ res=0
 $TMPDIR/livepeer -orchestrator -serviceAddr 127.0.0.1:8935 || res=$?
 [ $res -ne 0 ]
 
+# Check some serviceAddr special cases with additional nodes
+$TMPDIR/livepeer -orchestrator -serviceAddr none 2>&1 | grep "Empty service URI and no additional nodes specified"
+$TMPDIR/livepeer -orchestrator -nodes ghi,abc:def 2>&1 | grep "No valid instance URLs parsed from -nodes: Could not parse instance URI 'https://abc:def'"
+$TMPDIR/livepeer -orchestrator -nodes ghi,abc:123,def 2>&1 | grep "Configured nodes: https://ghi,https://abc:123,https://def"
+
+
 # Run mainnet tests
 if [ -z ${MAINNET_ETH_URL+x} ]; then
   echo "MAINNET_ETH_URL is not set - skipping mainnet tests"
