@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -414,4 +415,61 @@ func TestRingbuffer_WraparoundReads(t *testing.T) {
 	assert.Equal(5, n)
 	assert.Nil(err)
 	assert.Equal("67890", string(buf5))
+}
+
+func sync_TestRingbuffer_ReadClose(t *testing.T) {
+	assert := assert.New(t)
+
+	rbc := &RingBufferConfig{BufferLen: 8}
+	rb, err := NewRingBuffer(rbc)
+	assert.Nil(err)
+
+	reader := rb.MakeReader()
+	reader2 := rb.MakeReader()
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		buf := make([]byte, 5)
+		n, err := reader.Read(buf)
+		assert.Equal(4, n)
+		assert.Nil(err)
+		assert.Equal([]byte{1, 2, 3, 4, 0}, buf)
+		n, err = reader.Read(buf)
+		assert.Equal(0, n)
+		assert.Equal(io.EOF, err)
+	})
+
+	wg.Go(func() {
+		// reader should be drained
+		buf := make([]byte, 5)
+		n, err := reader2.Read(buf)
+		assert.Equal(4, n)
+		assert.Nil(err)
+		assert.Equal([]byte{1, 2, 3, 4, 0}, buf)
+		n, err = reader2.Read(buf)
+		assert.Equal([]byte{5, 6, 7, 8, 0}, buf)
+		assert.Equal(4, n)
+		n, err = reader2.Read(buf)
+		assert.Equal(0, n)
+		assert.Equal(io.EOF, err)
+	})
+
+	// give the reader goroutine a moment to block waiting for data
+	time.Sleep(5 * time.Millisecond)
+
+	// close the reader concurrently
+	err = reader.Close()
+	assert.Nil(err)
+
+	rb.Write([]byte{1, 2, 3, 4})
+	time.Sleep(1 * time.Millisecond)
+	rb.Write([]byte{5, 6, 7, 8})
+
+	rb.Close()
+
+	wgWait(&wg)
+}
+
+func TestRingbuffer_ReadClose(t *testing.T) {
+	synctest.Test(t, sync_TestRingbuffer_ReadClose)
 }
