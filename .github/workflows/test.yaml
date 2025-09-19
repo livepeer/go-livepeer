@@ -112,7 +112,7 @@ jobs:
         with:
           version: v2.1.0
           skip-pkg-cache: true
-          args: '--output.text.path=stdout --output.text.colors=true --output.text.print-issued-lines=true --disable-all --enable=gofmt --enable=govet --enable=revive --timeout=4m pm verification'
+          args: '--output.text.path=stdout --output.text.colors=true --output.text.print-issued-lines=true --default=none --enable=gofmt --enable=govet --enable=revive --timeout=4m pm verification'
 
       - name: Run Revive Action by building from repository
         uses: docker://morphy/revive-action:v2
