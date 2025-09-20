@@ -96,6 +96,7 @@ type LivepeerConfig struct {
 	Transcoder                 *bool
 	AIServiceRegistry          *bool
 	AIWorker                   *bool
+	DockerRuntime              *string
 	Gateway                    *bool
 	Broadcaster                *bool
 	OrchSecret                 *string
@@ -228,6 +229,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	// AI:
 	defaultAIServiceRegistry := false
 	defaultAIWorker := false
+	defaultDockerRuntime := ""
 	defaultAIModels := ""
 	defaultAIModelsDir := ""
 	defaultAIRunnerImage := "livepeer/ai-runner:latest"
@@ -346,6 +348,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		// AI:
 		AIServiceRegistry:        &defaultAIServiceRegistry,
 		AIWorker:                 &defaultAIWorker,
+		DockerRuntime:            &defaultDockerRuntime,
 		AIModels:                 &defaultAIModels,
 		AIModelsDir:              &defaultAIModelsDir,
 		AIRunnerImage:            &defaultAIRunnerImage,
@@ -1308,7 +1311,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, *cfg.DockerRuntime)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return

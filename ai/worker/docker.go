@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/system"
 	docker "github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
@@ -96,6 +97,7 @@ type DockerClient interface {
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ImageInspectWithRaw(ctx context.Context, imageID string) (types.ImageInspect, []byte, error)
 	ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error)
+	Info(ctx context.Context) (system.Info, error)
 }
 
 // Compile-time assertion to ensure docker.Client implements DockerClient.
@@ -104,11 +106,29 @@ var _ DockerClient = (*docker.Client)(nil)
 // Create global references to functions to allow for mocking in tests.
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
+// checkRuntimeAvailable checks if a specified container runtime is available
+func checkRuntimeAvailable(ctx context.Context, client DockerClient, runtimeName string) (bool, error) {
+	info, err := client.Info(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to get Docker daemon info: %w", err)
+	}
+
+	// Check if the specified runtime is registered.
+	if runtimes := info.Runtimes; runtimes != nil {
+		if _, exists := runtimes[runtimeName]; exists {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
+	gpus          []string
+	modelDir      string
+	overrides     ImageOverrides
+	verboseLogs   bool
+	dockerRuntime string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -118,7 +138,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, dockerRuntime string) (*DockerManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
 	if err := removeExistingContainers(ctx, client); err != nil {
 		cancel()
@@ -126,11 +146,28 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 	cancel()
 
+	// Check runtime availability if a specific runtime is requested.
+	if dockerRuntime != "" {
+		runtimeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if available, err := checkRuntimeAvailable(runtimeCtx, client, dockerRuntime); err != nil {
+			slog.Warn("Docker runtime check failed, using default runtime", slog.String("error", err.Error()))
+		} else {
+			if available {
+				slog.Info("Docker runtime detected and will be used", slog.String("runtime", dockerRuntime))
+			} else {
+				slog.Warn("Docker runtime not available, using default runtime", slog.String("runtime", dockerRuntime))
+			}
+		}
+	}
+
 	manager := &DockerManager{
 		gpus:          gpus,
 		modelDir:      modelDir,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
+		dockerRuntime: dockerRuntime,
 		dockerClient:  client,
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
@@ -422,6 +459,12 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			},
 		},
 		RestartPolicy: restartPolicy,
+	}
+
+	// Use custom Docker runtime if specified.
+	if m.dockerRuntime != "" {
+		hostConfig.Runtime = m.dockerRuntime
+		slog.Info("Using custom Docker runtime for container", slog.String("container", containerName), slog.String("runtime", m.dockerRuntime))
 	}
 
 	resp, err := m.dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
