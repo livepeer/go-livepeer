@@ -68,7 +68,7 @@ func NewLivepeerConfig(fs *flag.FlagSet) LivepeerConfig {
 	// Live AI:
 	cfg.MediaMTXApiPassword = fs.String("mediaMTXApiPassword", "", "HTTP basic auth password for MediaMTX API requests")
 	cfg.LiveAITrickleHostForRunner = fs.String("liveAITrickleHostForRunner", "", "Trickle Host used by AI Runner; It's used to overwrite the publicly available Trickle Host")
-	cfg.LiveAIAuthApiKey = fs.String("liveAIAuthApiKey", "", "API key to use for Live AI authentication requests")
+	cfg.LiveAIAuthSecret = fs.String("liveAIAuthSecret", "", "HMAC secret for Live AI auth signing")
 	cfg.LiveAIHeartbeatURL = fs.String("liveAIHeartbeatURL", "", "Base URL for Live AI heartbeat requests")
 	cfg.LiveAIHeartbeatHeaders = fs.String("liveAIHeartbeatHeaders", "", "Map of headers to use for Live AI heartbeat requests. e.g. 'header:val,header2:val2'")
 	cfg.LiveAIHeartbeatInterval = fs.Duration("liveAIHeartbeatInterval", *cfg.LiveAIHeartbeatInterval, "Interval to send Live AI heartbeat requests")
