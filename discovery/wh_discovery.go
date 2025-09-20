@@ -59,13 +59,14 @@ func (w *webhookPool) getInfos() ([]common.OrchestratorLocalInfo, error) {
 	}
 
 	hash := ethcommon.BytesToHash(crypto.Keccak256(body))
+	w.mu.Lock()
 	if hash == w.responseHash {
-		w.mu.Lock()
 		w.lastRequest = time.Now()
 		pool = w.pool // may have been reset since beginning
 		w.mu.Unlock()
 		return pool.GetInfos(), nil
 	}
+	w.mu.Unlock()
 
 	infos, err := deserializeWebhookJSON(body)
 	if err != nil {
