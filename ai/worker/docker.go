@@ -644,7 +644,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				failures, loadingStartTime = 0, time.Time{}
 				continue
 			case LOADING:
-				if startedLoading := loadingStartTime.IsZero(); startedLoading {
+				if loadingStartTime.IsZero() {
 					failures, loadingStartTime = 0, time.Now()
 
 					if !isBorrowed {
