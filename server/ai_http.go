@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io"
@@ -703,7 +704,7 @@ func (h *lphttp) AIResults() http.Handler {
 				glog.Errorf("Unable to read ai worker error body taskId=%v err=%q", tid, err)
 				workerResult.Err = err
 			} else {
-				workerResult.Err = fmt.Errorf(string(body))
+				workerResult.Err = errors.New(string(body))
 			}
 			glog.Errorf("AI Worker error for taskId=%v err=%q", tid, workerResult.Err)
 			orch.AIResults(tid, &workerResult)
