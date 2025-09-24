@@ -14,6 +14,8 @@
 
 #### Orchestrator
 
+* [#3749](https://github.com/livepeer/go-livepeer/pull/3749) worker: Overrule resource-hog AI runner containers on startup (@victorges)
+
 #### Transcoder
 
 ### Bug Fixes 🐞
