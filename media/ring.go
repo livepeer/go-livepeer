@@ -189,15 +189,13 @@ func (rb *RingBuffer) readFrom(p []byte, head int64) (int, error) {
 	// we've read up to the edge at this point
 	// now wrap around to zero and retrieve remainder
 
-	remainder := pos
-	if remainder > pAvail {
-		// p isn't large enough for remainder
-		// |------------------------------|
-		//     ^       ^            ^
-		//   full     pos         start
-		//
-		remainder = pAvail
-	}
+
+	// p isn't large enough for remainder
+	// |------------------------------|
+	//     ^       ^            ^
+	//   full     pos         start
+	//
+	remainder = min(pos, pAvail)
 
 	n += copy(p[n:], rb.buffer[:remainder])
 	return n, nil
