@@ -132,7 +132,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if err := RemoveExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client); err != nil {
 		cancel()
 		return nil, err
 	}
