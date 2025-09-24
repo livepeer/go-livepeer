@@ -594,7 +594,6 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	//   kickInput will close the whip connection
 	//   localRTMPPrefix set by ENV variable LIVE_AI_PLAYBACK_HOST
 	ssr := media.NewSwitchableSegmentReader() //this converts ingest to segments to send to Orchestrator
-
 	params := aiRequestParams{
 		node:        ls.LivepeerNode,
 		os:          drivers.NodeStorage.NewSession(requestID),
@@ -602,6 +601,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 
 		liveParams: &liveRequestParams{
 			segmentReader:          ssr,
+			startTime:              time.Now(),
 			rtmpOutputs:            rtmpOutputs,
 			stream:                 streamID, //live video to video uses stream name, byoc combines to one id
 			paymentProcessInterval: ls.livePaymentInterval,
