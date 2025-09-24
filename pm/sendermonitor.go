@@ -41,6 +41,9 @@ type SenderMonitor interface {
 	// MaxFloat returns a remote sender's max float
 	MaxFloat(addr ethcommon.Address) (*big.Int, error)
 
+	// SenderDeposit returns a sender's deposit balance
+	SenderDeposit(addr ethcommon.Address) (*big.Int, error)
+
 	// ValidateSender checks whether a sender's unlock period ends the round after the next round
 	ValidateSender(addr ethcommon.Address) error
 }
@@ -160,6 +163,25 @@ func (sm *LocalSenderMonitor) MaxFloat(addr ethcommon.Address) (*big.Int, error)
 	sm.ensureCache(addr)
 
 	return sm.maxFloat(addr)
+}
+
+// SenderDeposit returns the sender's current deposit balance
+func (sm *LocalSenderMonitor) SenderDeposit(addr ethcommon.Address) (*big.Int, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.ensureCache(addr)
+
+	info, err := sm.smgr.GetSenderInfo(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if info.Deposit == nil {
+		return big.NewInt(0), nil
+	}
+
+	return new(big.Int).Set(info.Deposit), nil
 }
 
 // QueueTicket adds a ticket to the queue for a remote sender

@@ -388,12 +388,14 @@ type stubSenderMonitor struct {
 	maxFloatErr       error
 	validateSenderErr error
 	shouldFail        error
+	deposit           *big.Int
 }
 
 func newStubSenderMonitor() *stubSenderMonitor {
 	return &stubSenderMonitor{
 		maxFloat:   big.NewInt(0),
 		redeemable: make(chan *redemption),
+		deposit:    big.NewInt(0),
 	}
 }
 
@@ -431,6 +433,10 @@ func (s *stubSenderMonitor) MaxFloat(_ ethcommon.Address) (*big.Int, error) {
 	}
 
 	return s.maxFloat, nil
+}
+
+func (s *stubSenderMonitor) SenderDeposit(_ ethcommon.Address) (*big.Int, error) {
+	return s.deposit, nil
 }
 
 func (s *stubSenderMonitor) ValidateSender(_ ethcommon.Address) error { return s.validateSenderErr }
