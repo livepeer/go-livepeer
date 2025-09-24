@@ -466,7 +466,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
 	}
 
-	if cfg.AIWorker != nil {
+	if *cfg.AIWorker {
 		// Remove existing worker containers as soon as possible. This needs to be here so it's done before any resources
 		// are allocated by this process. That because we've seen issues where the AI worker containers hoard all the system
 		// resources and the Orchestrator cannot restart because it dies early (e.g. due to no (v)ram available).
