@@ -344,7 +344,7 @@ func (ls *LivepeerServer) sendPaymentForStream(ctx context.Context, stream *core
 	}
 	req := &JobRequest{Request: string(jobDetailsStr), Parameters: "{}", Capability: stream.Pipeline,
 		Sender:  jobSender.Addr,
-		Timeout: 60,
+		Timeout: 70,
 	}
 	//sign the request
 	job := gatewayJob{Job: &orchJob{Req: req}, node: ls.LivepeerNode}
@@ -1163,6 +1163,7 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		pmtCheckDur := 23 * time.Second //run slightly faster than gateway so can return updated balance
 		pmtTicker := time.NewTicker(pmtCheckDur)
 		defer pmtTicker.Stop()
+		shouldStopStreamNextRound := false
 		for {
 			select {
 			case <-stream.StreamCtx.Done():
@@ -1178,6 +1179,13 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 					senderBalance := getPaymentBalance(orch, orchJob.Sender, orchJob.Req.Capability)
 					if senderBalance != nil {
 						if senderBalance.Cmp(big.NewRat(0, 1)) < 0 {
+							if !shouldStopStreamNextRound {
+								//warn once
+								clog.Warningf(ctx, "Insufficient balance for stream capability, will stop stream next round if not replenished sender=%s capability=%s balance=%s", orchJob.Sender, orchJob.Req.Capability, senderBalance.FloatString(0))
+								shouldStopStreamNextRound = true
+								continue
+							}
+
 							clog.Infof(ctx, "Insufficient balance, stopping stream %s for sender %s", orchJob.Req.ID, orchJob.Sender)
 							_, exists := h.node.ExternalCapabilities.Streams[orchJob.Req.ID]
 							if exists {
