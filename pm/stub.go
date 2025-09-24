@@ -373,10 +373,18 @@ func (s *stubSenderManager) SubscribeReserveChange(sink chan<- ethcommon.Address
 
 type stubGasPriceMonitor struct {
 	gasPrice *big.Int
+	avgPrice *big.Int
 }
 
 func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 	return s.gasPrice
+}
+
+func (s *stubGasPriceMonitor) AvgGasPrice() *big.Int {
+	if s.avgPrice == nil {
+		return nil
+	}
+	return new(big.Int).Set(s.avgPrice)
 }
 
 type stubSenderMonitor struct {

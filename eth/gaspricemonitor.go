@@ -37,6 +37,10 @@ type GasPriceMonitor struct {
 	// maxGasPrice is the max acceptable gas price defined by the user
 	maxGasPrice *big.Int
 
+	avgGasPrice  *big.Int
+	smoothingNum uint64
+	smoothingDen uint64
+
 	// update is a channel used to send notifications to a listener
 	// when the gas price is updated
 	update chan struct{}
@@ -61,6 +65,9 @@ func NewGasPriceMonitor(gpo GasPriceOracle, pollingInterval time.Duration, minGa
 		gasPrice:        big.NewInt(0),
 		minGasPrice:     minGasP,
 		maxGasPrice:     maxGasPrice,
+		smoothingNum:    uint64(1),
+		smoothingDen:    uint64(5),
+		avgGasPrice:     nil,
 	}
 }
 
@@ -74,6 +81,25 @@ func (gpm *GasPriceMonitor) GasPrice() *big.Int {
 	}
 
 	return gpm.gasPrice
+}
+
+// AvgGasPrice returns a rolling average of observed gas prices
+func (gpm *GasPriceMonitor) AvgGasPrice() *big.Int {
+	gpm.gasPriceMu.RLock()
+	defer gpm.gasPriceMu.RUnlock()
+
+	var result *big.Int
+	if gpm.avgGasPrice == nil {
+		result = new(big.Int).Set(gpm.gasPrice)
+	} else {
+		result = new(big.Int).Set(gpm.avgGasPrice)
+	}
+
+	if gpm.minGasPrice != nil && result.Cmp(gpm.minGasPrice) < 0 {
+		result = new(big.Int).Set(gpm.minGasPrice)
+	}
+
+	return result
 }
 
 func (gpm *GasPriceMonitor) SetMinGasPrice(minGasPrice *big.Int) {
@@ -192,5 +218,26 @@ func (gpm *GasPriceMonitor) updateGasPrice(gasPrice *big.Int) {
 	gpm.gasPriceMu.Lock()
 	defer gpm.gasPriceMu.Unlock()
 
-	gpm.gasPrice = gasPrice
+	gpm.gasPrice = new(big.Int).Set(gasPrice)
+	gpm.updateAvgLocked(gasPrice)
+}
+
+func (gpm *GasPriceMonitor) updateAvgLocked(gasPrice *big.Int) {
+	if gpm.avgGasPrice == nil {
+		gpm.avgGasPrice = new(big.Int).Set(gasPrice)
+		return
+	}
+
+	den := int64(gpm.smoothingDen)
+	num := int64(gpm.smoothingNum)
+	if den <= 0 || num <= 0 || num >= den {
+		num = 1
+		den = 5
+	}
+
+	term1 := new(big.Int).Mul(gpm.avgGasPrice, big.NewInt(den-num))
+	term2 := new(big.Int).Mul(gasPrice, big.NewInt(num))
+	term1.Add(term1, term2)
+	term1.Add(term1, new(big.Int).Div(big.NewInt(den), big.NewInt(2)))
+	gpm.avgGasPrice = term1.Div(term1, big.NewInt(den))
 }
