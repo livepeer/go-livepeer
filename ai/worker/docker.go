@@ -104,6 +104,10 @@ var _ DockerClient = (*docker.Client)(nil)
 // Create global references to functions to allow for mocking in tests.
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
+func NewDefaultDockerClient() (DockerClient, error) {
+	return docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
+}
+
 type DockerManager struct {
 	gpus        []string
 	modelDir    string
@@ -119,8 +123,16 @@ type DockerManager struct {
 }
 
 func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if err := removeExistingContainers(ctx, client); err != nil {
+	if err := RemoveExistingContainers(ctx, client); err != nil {
 		cancel()
 		return nil, err
 	}
@@ -674,21 +686,31 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func removeExistingContainers(ctx context.Context, client DockerClient) error {
-	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	for _, c := range containers {
-		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
-		if err := dockerRemoveContainer(client, c.ID); err != nil {
-			return err
+func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return 0, err
 		}
 	}
 
-	return nil
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	removed := 0
+	for _, c := range containers {
+		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
+		if err := dockerRemoveContainer(client, c.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
 }
 
 // dockerContainerName generates a unique container name based on the pipeline, model ID, and an optional suffix.
