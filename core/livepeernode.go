@@ -10,6 +10,7 @@ orchestrator.go: Code that is called only when the node is in orchestrator mode.
 package core
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"math/rand"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/trickle"
 
@@ -183,6 +185,54 @@ type LivePipeline struct {
 	ControlPub   *trickle.TricklePublisher
 	StopControl  func()
 	ReportUpdate func([]byte)
+	DataWriter   *media.SegmentWriter
+
+	StreamCtx     context.Context
+	streamCancel  context.CancelCauseFunc
+	streamParams  interface{}
+	streamRequest []byte
+}
+
+func (n *LivepeerNode) NewLivePipeline(requestID, streamID, pipeline string, streamParams interface{}, streamRequest []byte) *LivePipeline {
+	streamCtx, streamCancel := context.WithCancelCause(context.Background())
+	n.LiveMu.Lock()
+	defer n.LiveMu.Unlock()
+	n.LivePipelines[streamID] = &LivePipeline{
+		RequestID:     requestID,
+		StreamID:      streamID,
+		Pipeline:      pipeline,
+		StreamCtx:     streamCtx,
+		streamParams:  streamParams,
+		streamCancel:  streamCancel,
+		streamRequest: streamRequest,
+	}
+	return n.LivePipelines[streamID]
+}
+
+func (n *LivepeerNode) RemoveLivePipeline(streamID string) {
+	n.LiveMu.Lock()
+	defer n.LiveMu.Unlock()
+	delete(n.LivePipelines, streamID)
+}
+
+func (p *LivePipeline) StreamParams() interface{} {
+	return p.streamParams
+}
+
+func (p *LivePipeline) UpdateStreamParams(newParams interface{}) {
+	p.streamParams = newParams
+}
+
+func (p *LivePipeline) StreamRequest() []byte {
+	return p.streamRequest
+}
+
+func (p *LivePipeline) StopStream(err error) {
+	if p.StopControl != nil {
+		p.StopControl()
+	}
+
+	p.streamCancel(err)
 }
 
 // NewLivepeerNode creates a new Livepeer Node. Eth can be nil.
