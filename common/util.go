@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -87,10 +88,6 @@ var (
 		"audio/wav":  ".wav",
 	}
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 func ParseBigInt(num string) (*big.Int, error) {
 	bigNum := new(big.Int)
@@ -312,6 +309,9 @@ func ratToFixed(rat *big.Rat, scalingFactor int64) (int64, error) {
 	return fp, nil
 }
 
+// Package-level RNG; tests can override it.
+var PkgRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 // RandomIDGenerator generates random hexadecimal string of specified length
 // defined as variable for unit tests
 var RandomIDGenerator = func(length uint) string {
@@ -320,9 +320,7 @@ var RandomIDGenerator = func(length uint) string {
 
 var RandomBytesGenerator = func(length uint) []byte {
 	x := make([]byte, length, length)
-	for i := 0; i < len(x); i++ {
-		x[i] = byte(rand.Uint32())
-	}
+	PkgRNG.Read(x)
 	return x
 }
 
@@ -333,6 +331,10 @@ func RandName() string {
 
 var RandomUintUnder = func(max uint) uint {
 	return uint(rand.Uint32()) % max
+}
+
+func RandomUint64() uint64 {
+	return binary.LittleEndian.Uint64(RandomBytesGenerator(8))
 }
 
 func ToInt64(val *big.Int) int64 {

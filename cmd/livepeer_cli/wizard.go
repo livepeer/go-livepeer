@@ -164,7 +164,7 @@ func (w *wizard) readDefaultInt(def int) int {
 
 func (w *wizard) readBigInt(prompt string) *big.Int {
 	for {
-		fmt.Printf(fmt.Sprintf("%s - > ", prompt))
+		fmt.Print(fmt.Sprintf("%s - > ", prompt))
 		text, err := w.in.ReadString('\n')
 		if err != nil {
 			log.Crit("Failed to read user input", "err", err)

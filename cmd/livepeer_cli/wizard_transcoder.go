@@ -427,7 +427,7 @@ func (w *wizard) setMaxSessions() {
 	}
 	result, ok := httpPostWithParams(fmt.Sprintf("http://%v:%v/setMaxSessions", w.host, w.httpPort), data)
 	if ok {
-		fmt.Printf(result)
+		fmt.Print(result)
 		return
 	} else {
 		fmt.Printf("Error setting max sessions: %v", result)

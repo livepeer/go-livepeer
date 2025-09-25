@@ -748,7 +748,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 		} else {
-			glog.Exit(fmt.Errorf(err.Error()))
+			glog.Exit(err)
 		}
 
 		//Get the Eth client connection information
