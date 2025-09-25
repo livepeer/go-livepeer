@@ -1083,8 +1083,9 @@ func TestServeSegment_UpdateOrchestratorInfo_WebhookCache_PriceInfo(t *testing.T
 	origRandomIDGenerator := common.RandomIDGenerator
 	defer func() { common.RandomIDGenerator = origRandomIDGenerator }()
 
-	newAuthToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
-	oldAuthToken := &net.AuthToken{Token: []byte("notfoo"), SessionId: "notbar", Expiration: time.Now().Add(authTokenValidPeriod).Unix()}
+	expiry := time.Now().Add(authTokenValidPeriod).Unix()
+	newAuthToken := &net.AuthToken{Token: []byte("foo"), SessionId: "bar", Expiration: expiry}
+	oldAuthToken := &net.AuthToken{Token: []byte("notfoo"), SessionId: "notbar", Expiration: expiry}
 	common.RandomIDGenerator = func(length uint) string { return newAuthToken.SessionId }
 
 	orch.On("VerifySig", mock.Anything, mock.Anything, mock.Anything).Return(true)
