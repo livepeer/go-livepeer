@@ -105,7 +105,7 @@ func (s *WHIPServer) CreateWHIP(ctx context.Context, ssr *SwitchableSegmentReade
 	// OnTrack callback: handle incoming media
 	trackCh := make(chan *webrtc.TrackRemote)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC())
+		clog.Info(ctx, "New track", "codec", track.Codec().MimeType, "ssrc", track.SSRC(), "rate", track.Codec().ClockRate)
 		trackCh <- track
 	})
 
@@ -249,6 +249,7 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 		clog.Info(ctx, "Unsupported codec", "mime", codec)
 		return
 	}
+	gotAudio, gotVideo := false, false
 
 	ro := rtpreorderer.New()
 	au := [][]byte{}
@@ -290,6 +291,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 			}
 			if isAudio {
 				segmenter.WriteAudio(track, pts, [][]byte{d})
+				if !gotAudio {
+					clog.Info(ctx, "First packet type=audio", "pts", pts, "rtp_ts", p.Timestamp)
+					gotAudio = true
+				}
 				continue
 			}
 
@@ -355,6 +360,10 @@ func handleRTP(ctx context.Context, segmenter *RTPSegmenter, timeDecoder *rtptim
 
 			if segmenter.IsReady() {
 				segmenter.WriteVideo(track, pts, dts, frameAU)
+				if !gotVideo {
+					clog.Info(ctx, "First packet type=video", "pts", pts, "rtp_ts", p.Timestamp)
+					gotVideo = true
+				}
 			}
 		}
 	}
