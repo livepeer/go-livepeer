@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	docker "github.com/docker/docker/client"
 )
 
 // EnvValue unmarshals JSON booleans as strings for compatibility with env variables.
@@ -52,12 +50,7 @@ type Worker struct {
 }
 
 func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string) (*Worker, error) {
-	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("error creating docker client: %w", err)
-	}
-
-	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, dockerClient)
+	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker manager: %w", err)
 	}
