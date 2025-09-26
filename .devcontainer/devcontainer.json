@@ -1,0 +1,22 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+    "name": "go-livepeer",
+    "build": {
+        "dockerfile": "../docker/Dockerfile",
+        "target": "build",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus=all",
+        "--network=host" // Required for the AI Subnet since we use Docker-outside-of-Docker.
+    ],
+    "postCreateCommand": "go install -v github.com/go-delve/delve/cmd/dlv@latest", // Enable debugging.
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go"
+            ]
+        }
+    }
+}
