@@ -100,6 +100,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		modelDir:      "/models",
 		overrides:     ImageOverrides{Default: "default-image"},
 		dockerClient:  mockDockerClient,
+        instanceID:    "instance-1",
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
@@ -110,7 +111,7 @@ func TestNewDockerManager(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
 	createAndVerifyManager := func() *DockerManager {
-		manager, err := NewDockerManager(ImageOverrides{Default: "default-image"}, false, []string{"gpu0"}, "/models", mockDockerClient)
+        manager, err := NewDockerManager(ImageOverrides{Default: "default-image"}, false, []string{"gpu0"}, "/models", mockDockerClient, "instance-1")
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 		require.Equal(t, "default-image", manager.overrides.Default)
@@ -134,7 +135,7 @@ func TestNewDockerManager(t *testing.T) {
 			{ID: "container1", Names: []string{"/container1"}},
 			{ID: "container2", Names: []string{"/container2"}},
 		}
-		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
+    mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
 		mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
@@ -997,7 +998,7 @@ func TestRemoveExistingContainers(t *testing.T) {
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
-	RemoveExistingContainers(ctx, mockDockerClient)
+    RemoveExistingContainers(ctx, mockDockerClient, "instance-1")
 	mockDockerClient.AssertExpectations(t)
 }
 
