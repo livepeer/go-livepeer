@@ -110,11 +110,11 @@ func NewDefaultDockerClient() (DockerClient, error) {
 }
 
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
-	containerCreatorID  string
+	gpus               []string
+	modelDir           string
+	overrides          ImageOverrides
+	verboseLogs        bool
+	containerCreatorID string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -141,15 +141,15 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	cancel()
 
 	manager := &DockerManager{
-		gpus:          gpus,
-		modelDir:      modelDir,
-		overrides:     overrides,
-		verboseLogs:   verboseLogs,
-		dockerClient:  client,
-		containerCreatorID:    containerCreatorID,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               gpus,
+		modelDir:           modelDir,
+		overrides:          overrides,
+		verboseLogs:        verboseLogs,
+		dockerClient:       client,
+		containerCreatorID: containerCreatorID,
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
 	}
 
 	return manager, nil
@@ -701,10 +701,10 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 		}
 	}
 
-    filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-    if containerCreatorID != "" {
-        filters.Add("label", containerCreatorIDLabel+"="+containerCreatorID)
-    }
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	if containerCreatorID != "" {
+		filters.Add("label", containerCreatorIDLabel+"="+containerCreatorID)
+	}
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
