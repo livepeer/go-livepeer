@@ -49,8 +49,8 @@ type Worker struct {
 	mu                 *sync.Mutex
 }
 
-func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, instanceID string) (*Worker, error) {
-    manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, nil, instanceID)
+func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, containerOwnerID string) (*Worker, error) {
+    manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, nil, containerOwnerID)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker manager: %w", err)
 	}

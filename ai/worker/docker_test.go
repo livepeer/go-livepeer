@@ -100,7 +100,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		modelDir:      "/models",
 		overrides:     ImageOverrides{Default: "default-image"},
 		dockerClient:  mockDockerClient,
-        instanceID:    "instance-1",
+        containerOwnerID:    "instance-1",
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
@@ -988,18 +988,56 @@ func TestRemoveExistingContainers(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock client methods to simulate the removal of existing containers.
-	existingContainers := []types.Container{
-		{ID: "container1", Names: []string{"/container1"}},
-		{ID: "container2", Names: []string{"/container2"}},
-	}
-	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
-	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
-	mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
+    existingContainers := []types.Container{
+        {ID: "container1", Names: []string{"/container1"}},
+        {ID: "container2", Names: []string{"/container2"}},
+    }
+    mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
+    mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
+    mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
+    mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
+    mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
     RemoveExistingContainers(ctx, mockDockerClient, "instance-1")
-	mockDockerClient.AssertExpectations(t)
+    mockDockerClient.AssertExpectations(t)
+}
+
+func TestRemoveExistingContainers_FiltersByContainerOwnerID(t *testing.T) {
+    mockDockerClient := new(MockDockerClient)
+
+    ctx := context.Background()
+
+    // Simulate Docker filtering by ensuring the call contains both labels and only returning our container
+    mockDockerClient.
+        On("ContainerList", mock.Anything, mock.MatchedBy(func(opts container.ListOptions) bool {
+            if !opts.All {
+                return false
+            }
+            labels := opts.Filters.Get("label")
+            hasCreator := false
+            hasOwner := false
+            for _, l := range labels {
+                if l == containerCreatorLabel+"="+containerCreator {
+                    hasCreator = true
+                }
+                if l == containerInstanceLabel+"="+"owner-A" {
+                    hasOwner = true
+                }
+            }
+            return hasCreator && hasOwner
+        })).
+        Return([]types.Container{{ID: "mine-1", Names: []string{"/mine-1"}}}, nil).
+        Once()
+    mockDockerClient.On("ContainerStop", mock.Anything, "mine-1", mock.Anything).Return(nil).Once()
+    mockDockerClient.On("ContainerRemove", mock.Anything, "mine-1", mock.Anything).Return(nil).Once()
+
+    removed, err := RemoveExistingContainers(ctx, mockDockerClient, "owner-A")
+    require.NoError(t, err)
+    // We cannot verify the server-side filter here (Docker handles it); we verify we only attempted
+    // to remove a single container, the one we consider ours from this test's perspective.
+    require.Equal(t, 1, removed)
+
+    mockDockerClient.AssertExpectations(t)
 }
 
 func TestDockerContainerName(t *testing.T) {
