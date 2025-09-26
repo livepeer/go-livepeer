@@ -37,6 +37,7 @@ const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
+const containerInstanceLabel = "creator_instance"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -113,6 +114,7 @@ type DockerManager struct {
 	modelDir    string
 	overrides   ImageOverrides
 	verboseLogs bool
+	instanceID  string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -122,7 +124,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, instanceID string) (*DockerManager, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -132,7 +134,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if _, err := RemoveExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client, instanceID); err != nil {
 		cancel()
 		return nil, err
 	}
@@ -144,6 +146,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
 		dockerClient:  client,
+		instanceID:    instanceID,
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
@@ -396,9 +399,15 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		ExposedPorts: nat.PortSet{
 			containerPort: struct{}{},
 		},
-		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
-		},
+		Labels: func() map[string]string {
+			labels := map[string]string{
+				containerCreatorLabel: containerCreator,
+			}
+			if m.instanceID != "" {
+				labels[containerInstanceLabel] = m.instanceID
+			}
+			return labels
+		}(),
 	}
 
 	gpuOpts := opts.GpuOpts{}
@@ -686,7 +695,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, error) {
+func RemoveExistingContainers(ctx context.Context, client DockerClient, instanceID string) (int, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -696,6 +705,9 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, er
 	}
 
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	if instanceID != "" {
+		filters.Add("label", containerInstanceLabel+"="+instanceID)
+	}
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
