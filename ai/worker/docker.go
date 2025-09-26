@@ -37,7 +37,7 @@ const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
-const containerInstanceLabel = "creator_instance"
+const containerCreatorIDLabel = "creator_id"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -114,7 +114,7 @@ type DockerManager struct {
 	modelDir    string
 	overrides   ImageOverrides
 	verboseLogs bool
-	containerOwnerID  string
+	containerCreatorID  string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -124,7 +124,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerOwnerID string) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -134,7 +134,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if _, err := RemoveExistingContainers(ctx, client, containerOwnerID); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client, containerCreatorID); err != nil {
 		cancel()
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 		overrides:     overrides,
 		verboseLogs:   verboseLogs,
 		dockerClient:  client,
-		containerOwnerID:    containerOwnerID,
+		containerCreatorID:    containerCreatorID,
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
@@ -403,8 +403,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerCreatorLabel: containerCreator,
 		},
 	}
-	if m.containerOwnerID != "" {
-		containerConfig.Labels[containerInstanceLabel] = m.containerOwnerID
+	if m.containerCreatorID != "" {
+		containerConfig.Labels[containerCreatorIDLabel] = m.containerCreatorID
 	}
 
 	gpuOpts := opts.GpuOpts{}
@@ -692,7 +692,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func RemoveExistingContainers(ctx context.Context, client DockerClient, containerOwnerID string) (int, error) {
+func RemoveExistingContainers(ctx context.Context, client DockerClient, containerCreatorID string) (int, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -702,8 +702,8 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 	}
 
     filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-    if containerOwnerID != "" {
-        filters.Add("label", containerInstanceLabel+"="+containerOwnerID)
+    if containerCreatorID != "" {
+        filters.Add("label", containerCreatorIDLabel+"="+containerCreatorID)
     }
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {

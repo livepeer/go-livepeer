@@ -100,7 +100,7 @@ func createDockerManager(mockDockerClient *MockDockerClient) *DockerManager {
 		modelDir:      "/models",
 		overrides:     ImageOverrides{Default: "default-image"},
 		dockerClient:  mockDockerClient,
-        containerOwnerID:    "instance-1",
+        containerCreatorID:    "instance-1",
 		gpuContainers: make(map[string]*RunnerContainer),
 		containers:    make(map[string]*RunnerContainer),
 		mu:            &sync.Mutex{},
@@ -1020,7 +1020,7 @@ func TestRemoveExistingContainers_FiltersByContainerOwnerID(t *testing.T) {
                 if l == containerCreatorLabel+"="+containerCreator {
                     hasCreator = true
                 }
-                if l == containerInstanceLabel+"="+"owner-A" {
+                if l == containerCreatorIDLabel+"="+"owner-A" {
                     hasOwner = true
                 }
             }
