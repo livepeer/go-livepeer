@@ -289,11 +289,11 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 			faceValue = maxFloat
 		}
 	} else {
-		deposit, err := r.sm.SenderDeposit(sender)
+		available, err := r.sm.SenderFunds(sender)
 		if err != nil {
 			return nil, err
 		}
-		if deposit.Cmp(faceValue) < 0 {
+		if available.Cmp(faceValue) < 0 {
 			return nil, errInsufficientSenderReserve
 		}
 	}
@@ -305,7 +305,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 	if monitor.Enabled {
 		monitor.TicketFaceValue(sender.Hex(), faceValue)
-		if maxFloat != nil {
+		if !r.cfg.IgnoreSenderReserve && maxFloat != nil {
 			monitor.MaxFloat(sender.Hex(), maxFloat)
 		}
 	}

@@ -381,6 +381,7 @@ func (s *stubGasPriceMonitor) GasPrice() *big.Int {
 
 type stubSenderMonitor struct {
 	maxFloat          *big.Int
+	funds             *big.Int
 	redeemable        chan *redemption
 	queued            []*SignedTicket
 	acceptable        bool
@@ -435,7 +436,10 @@ func (s *stubSenderMonitor) MaxFloat(_ ethcommon.Address) (*big.Int, error) {
 	return s.maxFloat, nil
 }
 
-func (s *stubSenderMonitor) SenderDeposit(_ ethcommon.Address) (*big.Int, error) {
+func (s *stubSenderMonitor) SenderFunds(_ ethcommon.Address) (*big.Int, error) {
+	if s.funds != nil {
+		return new(big.Int).Set(s.funds), nil
+	}
 	return s.deposit, nil
 }
 
