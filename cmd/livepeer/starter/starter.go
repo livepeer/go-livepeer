@@ -436,9 +436,20 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 	vCfg := reflect.ValueOf(cfg)
 	cfgType := vCfg.Type()
 	paramTable := tablewriter.NewWriter(w)
+
+	sensitiveFields := []string{"EthPassword", "KafkaPassword", "MediaMTXApiPassword", "orchSecret", "liveAIAuthApiKey"}
+	sensitiveFieldsMap := map[string]bool{}
+	for _, f := range sensitiveFields {
+		sensitiveFieldsMap[f] = true
+	}
+
 	for i := 0; i < cfgType.NumField(); i++ {
 		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
-			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
+			val := fmt.Sprintf("%v", vCfg.Field(i).Elem())
+			if _, ok := sensitiveFieldsMap[cfgType.Field(i).Name]; ok {
+				val = "***"
+			}
+			paramTable.Append([]string{cfgType.Field(i).Name, val})
 		}
 	}
 	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
