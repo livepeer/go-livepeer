@@ -364,6 +364,11 @@ func reportLiveAICapacity(ch chan common.OrchestratorDescriptor, caps common.Cap
 
 	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
 	for _, od := range allOrchInfo {
+		pricePerUnit := od.RemoteInfo.PriceInfo.PricePerUnit
+		pixelsPerUnit := od.RemoteInfo.PriceInfo.PixelsPerUnit
+		// pricePerPixel := new(big.Rat).Quo(pricePerUnit, pixelsPerUnit)
+		pricePerPixel := float64(pricePerUnit) / float64(pixelsPerUnit)
+		monitor.AIContainerPricePerPixel(od.LocalInfo.URL.String(), pricePerPixel)
 		var models map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint
 		if od.RemoteInfo != nil {
 			models = getModelCaps(od.RemoteInfo.Capabilities)
