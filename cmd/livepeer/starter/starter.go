@@ -437,7 +437,7 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 	cfgType := vCfg.Type()
 	paramTable := tablewriter.NewWriter(w)
 
-	sensitiveFields := []string{"EthPassword", "KafkaPassword", "MediaMTXApiPassword", "orchSecret", "liveAIAuthApiKey"}
+	sensitiveFields := []string{"EthPassword", "KafkaPassword", "MediaMTXApiPassword", "OrchSecret", "liveAIAuthApiKey"}
 	sensitiveFieldsMap := map[string]bool{}
 	for _, f := range sensitiveFields {
 		sensitiveFieldsMap[f] = true
