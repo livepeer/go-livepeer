@@ -531,7 +531,7 @@ func TestTicketParams(t *testing.T) {
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
 
 	// Test ignoring sender reserve requirements bypasses maxFloat enforcement
-	cfg.IgnoreSenderReserveRequirements = true
+	cfg.IgnoreSenderReserve = true
 	sm.maxFloat = big.NewInt(100)
 	sm.deposit = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	rIgnore := NewRecipientWithSecret(recipient, b, v, gm, sm, tm, secret, cfg)
@@ -543,7 +543,7 @@ func TestTicketParams(t *testing.T) {
 	sm.deposit = new(big.Int).Sub(paramsIgnore.FaceValue, big.NewInt(1))
 	_, err = rIgnore.TicketParams(sender, big.NewRat(1, 1))
 	assert.EqualError(err, errInsufficientSenderReserve.Error())
-	cfg.IgnoreSenderReserveRequirements = false
+	cfg.IgnoreSenderReserve = false
 
 	// Test faceValue < txCostWithGasPrice(current gasPrice) and faceValue > txCostWithGasPrice(avg gasPrice)
 	// Set current gasPrice higher than avg gasPrice

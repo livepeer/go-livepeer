@@ -70,8 +70,8 @@ type TicketParamsConfig struct {
 	// cost for redemption
 	TxCostMultiplier int
 
-	// IgnoreSenderReserveRequirements instructs the recipient to skip sender reserve checks and accept tickets as long as the computed face value meets EV requirements
-	IgnoreSenderReserveRequirements bool
+	// IgnoreSenderReserve instructs the recipient to skip sender reserve checks and accept tickets as long as the computed face value meets EV requirements
+	IgnoreSenderReserve bool
 }
 
 // GasPriceMonitor defines methods for monitoring gas prices
@@ -275,7 +275,7 @@ func (r *recipient) faceValue(sender ethcommon.Address) (*big.Int, error) {
 	}
 
 	var maxFloat *big.Int
-	if !r.cfg.IgnoreSenderReserveRequirements {
+	if !r.cfg.IgnoreSenderReserve {
 		// Fetch current max float for sender
 		var err error
 		maxFloat, err = r.sm.MaxFloat(sender)

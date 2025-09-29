@@ -80,113 +80,113 @@ const (
 )
 
 type LivepeerConfig struct {
-	Network                         *string
-	RtmpAddr                        *string
-	CliAddr                         *string
-	HttpAddr                        *string
-	ServiceAddr                     *string
-	Nodes                           *string
-	OrchAddr                        *string
-	VerifierURL                     *string
-	EthController                   *string
-	VerifierPath                    *string
-	LocalVerify                     *bool
-	HttpIngest                      *bool
-	Orchestrator                    *bool
-	Transcoder                      *bool
-	AIServiceRegistry               *bool
-	AIWorker                        *bool
-	Gateway                         *bool
-	Broadcaster                     *bool
-	OrchSecret                      *string
-	TranscodingOptions              *string
-	AIModels                        *string
-	MaxAttempts                     *int
-	SelectRandWeight                *float64
-	SelectStakeWeight               *float64
-	SelectPriceWeight               *float64
-	SelectPriceExpFactor            *float64
-	OrchPerfStatsURL                *string
-	Region                          *string
-	MaxPricePerUnit                 *string
-	MaxPricePerCapability           *string
-	IgnoreMaxPriceIfNeeded          *bool
-	MinPerfScore                    *float64
-	DiscoveryTimeout                *time.Duration
-	ExtraNodes                      *int
-	MaxSessions                     *string
-	CurrentManifest                 *bool
-	Nvidia                          *string
-	Netint                          *string
-	HevcDecoding                    *bool
-	TestTranscoder                  *bool
-	GatewayHost                     *string
-	EthAcctAddr                     *string
-	EthPassword                     *string
-	EthKeystorePath                 *string
-	EthOrchAddr                     *string
-	EthUrl                          *string
-	TxTimeout                       *time.Duration
-	MaxTxReplacements               *int
-	GasLimit                        *int
-	MinGasPrice                     *int64
-	MaxGasPrice                     *int
-	InitializeRound                 *bool
-	InitializeRoundMaxDelay         *time.Duration
-	TicketEV                        *string
-	MaxFaceValue                    *string
-	MaxTicketEV                     *string
-	MaxTotalEV                      *string
-	DepositMultiplier               *int
-	IgnoreSenderReserveRequirements *bool
-	PricePerUnit                    *string
-	PixelsPerUnit                   *string
-	PriceFeedAddr                   *string
-	AutoAdjustPrice                 *bool
-	PricePerGateway                 *string
-	PricePerBroadcaster             *string
-	BlockPollingInterval            *int
-	Redeemer                        *bool
-	RedeemerAddr                    *string
-	Reward                          *bool
-	Monitor                         *bool
-	MetricsPerStream                *bool
-	MetricsExposeClientIP           *bool
-	MetadataQueueUri                *string
-	MetadataAmqpExchange            *string
-	MetadataPublishTimeout          *time.Duration
-	Datadir                         *string
-	AIModelsDir                     *string
-	Objectstore                     *string
-	Recordstore                     *string
-	FVfailGsBucket                  *string
-	FVfailGsKey                     *string
-	AuthWebhookURL                  *string
-	LiveAIAuthWebhookURL            *string
-	LiveAITrickleHostForRunner      *string
-	OrchWebhookURL                  *string
-	OrchBlacklist                   *string
-	OrchMinLivepeerVersion          *string
-	TestOrchAvail                   *bool
-	AIRunnerImage                   *string
-	AIRunnerImageOverrides          *string
-	AIVerboseLogs                   *bool
-	AIProcessingRetryTimeout        *time.Duration
-	AIRunnerContainersPerGPU        *int
-	AIMinRunnerVersion              *string
-	KafkaBootstrapServers           *string
-	KafkaUsername                   *string
-	KafkaPassword                   *string
-	KafkaGatewayTopic               *string
-	MediaMTXApiPassword             *string
-	LiveAIAuthApiKey                *string
-	LiveAIHeartbeatURL              *string
-	LiveAIHeartbeatHeaders          *string
-	LiveAIHeartbeatInterval         *time.Duration
-	LivePaymentInterval             *time.Duration
-	LiveOutSegmentTimeout           *time.Duration
-	LiveAICapRefreshModels          *string
-	LiveAISaveNSegments             *int
+	Network                    *string
+	RtmpAddr                   *string
+	CliAddr                    *string
+	HttpAddr                   *string
+	ServiceAddr                *string
+	Nodes                      *string
+	OrchAddr                   *string
+	VerifierURL                *string
+	EthController              *string
+	VerifierPath               *string
+	LocalVerify                *bool
+	HttpIngest                 *bool
+	Orchestrator               *bool
+	Transcoder                 *bool
+	AIServiceRegistry          *bool
+	AIWorker                   *bool
+	Gateway                    *bool
+	Broadcaster                *bool
+	OrchSecret                 *string
+	TranscodingOptions         *string
+	AIModels                   *string
+	MaxAttempts                *int
+	SelectRandWeight           *float64
+	SelectStakeWeight          *float64
+	SelectPriceWeight          *float64
+	SelectPriceExpFactor       *float64
+	OrchPerfStatsURL           *string
+	Region                     *string
+	MaxPricePerUnit            *string
+	MaxPricePerCapability      *string
+	IgnoreMaxPriceIfNeeded     *bool
+	MinPerfScore               *float64
+	DiscoveryTimeout           *time.Duration
+	ExtraNodes                 *int
+	MaxSessions                *string
+	CurrentManifest            *bool
+	Nvidia                     *string
+	Netint                     *string
+	HevcDecoding               *bool
+	TestTranscoder             *bool
+	GatewayHost                *string
+	EthAcctAddr                *string
+	EthPassword                *string
+	EthKeystorePath            *string
+	EthOrchAddr                *string
+	EthUrl                     *string
+	TxTimeout                  *time.Duration
+	MaxTxReplacements          *int
+	GasLimit                   *int
+	MinGasPrice                *int64
+	MaxGasPrice                *int
+	InitializeRound            *bool
+	InitializeRoundMaxDelay    *time.Duration
+	TicketEV                   *string
+	MaxFaceValue               *string
+	MaxTicketEV                *string
+	MaxTotalEV                 *string
+	DepositMultiplier          *int
+	IgnoreSenderReserve        *bool
+	PricePerUnit               *string
+	PixelsPerUnit              *string
+	PriceFeedAddr              *string
+	AutoAdjustPrice            *bool
+	PricePerGateway            *string
+	PricePerBroadcaster        *string
+	BlockPollingInterval       *int
+	Redeemer                   *bool
+	RedeemerAddr               *string
+	Reward                     *bool
+	Monitor                    *bool
+	MetricsPerStream           *bool
+	MetricsExposeClientIP      *bool
+	MetadataQueueUri           *string
+	MetadataAmqpExchange       *string
+	MetadataPublishTimeout     *time.Duration
+	Datadir                    *string
+	AIModelsDir                *string
+	Objectstore                *string
+	Recordstore                *string
+	FVfailGsBucket             *string
+	FVfailGsKey                *string
+	AuthWebhookURL             *string
+	LiveAIAuthWebhookURL       *string
+	LiveAITrickleHostForRunner *string
+	OrchWebhookURL             *string
+	OrchBlacklist              *string
+	OrchMinLivepeerVersion     *string
+	TestOrchAvail              *bool
+	AIRunnerImage              *string
+	AIRunnerImageOverrides     *string
+	AIVerboseLogs              *bool
+	AIProcessingRetryTimeout   *time.Duration
+	AIRunnerContainersPerGPU   *int
+	AIMinRunnerVersion         *string
+	KafkaBootstrapServers      *string
+	KafkaUsername              *string
+	KafkaPassword              *string
+	KafkaGatewayTopic          *string
+	MediaMTXApiPassword        *string
+	LiveAIAuthApiKey           *string
+	LiveAIHeartbeatURL         *string
+	LiveAIHeartbeatHeaders     *string
+	LiveAIHeartbeatInterval    *time.Duration
+	LivePaymentInterval        *time.Duration
+	LiveOutSegmentTimeout      *time.Duration
+	LiveAICapRefreshModels     *string
+	LiveAISaveNSegments        *int
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -264,7 +264,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultMaxPricePerUnit := "0"
 	defaultMaxPricePerCapability := ""
 	defaultIgnoreMaxPriceIfNeeded := false
-	defaultIgnoreSenderReserveRequirements := false
+	defaultIgnoreSenderReserve := false
 	defaultPixelsPerUnit := "1"
 	defaultPriceFeedAddr := "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612" // ETH / USD price feed address on Arbitrum Mainnet
 	defaultAutoAdjustPrice := true
@@ -363,41 +363,41 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LiveAIHeartbeatInterval:  &defaultLiveAIHeartbeatInterval,
 
 		// Onchain:
-		EthAcctAddr:                     &defaultEthAcctAddr,
-		EthPassword:                     &defaultEthPassword,
-		EthKeystorePath:                 &defaultEthKeystorePath,
-		EthOrchAddr:                     &defaultEthOrchAddr,
-		EthUrl:                          &defaultEthUrl,
-		TxTimeout:                       &defaultTxTimeout,
-		MaxTxReplacements:               &defaultMaxTxReplacements,
-		GasLimit:                        &defaultGasLimit,
-		MaxGasPrice:                     &defaultMaxGasPrice,
-		EthController:                   &defaultEthController,
-		InitializeRound:                 &defaultInitializeRound,
-		InitializeRoundMaxDelay:         &defaultInitializeRoundMaxDelay,
-		TicketEV:                        &defaultTicketEV,
-		MaxFaceValue:                    &defaultMaxFaceValue,
-		MaxTicketEV:                     &defaultMaxTicketEV,
-		MaxTotalEV:                      &defaultMaxTotalEV,
-		DepositMultiplier:               &defaultDepositMultiplier,
-		IgnoreSenderReserveRequirements: &defaultIgnoreSenderReserveRequirements,
-		MaxPricePerUnit:                 &defaultMaxPricePerUnit,
-		MaxPricePerCapability:           &defaultMaxPricePerCapability,
-		IgnoreMaxPriceIfNeeded:          &defaultIgnoreMaxPriceIfNeeded,
-		PixelsPerUnit:                   &defaultPixelsPerUnit,
-		PriceFeedAddr:                   &defaultPriceFeedAddr,
-		AutoAdjustPrice:                 &defaultAutoAdjustPrice,
-		PricePerGateway:                 &defaultPricePerGateway,
-		PricePerBroadcaster:             &defaultPricePerBroadcaster,
-		BlockPollingInterval:            &defaultBlockPollingInterval,
-		Redeemer:                        &defaultRedeemer,
-		RedeemerAddr:                    &defaultRedeemerAddr,
-		Monitor:                         &defaultMonitor,
-		MetricsPerStream:                &defaultMetricsPerStream,
-		MetricsExposeClientIP:           &defaultMetricsExposeClientIP,
-		MetadataQueueUri:                &defaultMetadataQueueUri,
-		MetadataAmqpExchange:            &defaultMetadataAmqpExchange,
-		MetadataPublishTimeout:          &defaultMetadataPublishTimeout,
+		EthAcctAddr:             &defaultEthAcctAddr,
+		EthPassword:             &defaultEthPassword,
+		EthKeystorePath:         &defaultEthKeystorePath,
+		EthOrchAddr:             &defaultEthOrchAddr,
+		EthUrl:                  &defaultEthUrl,
+		TxTimeout:               &defaultTxTimeout,
+		MaxTxReplacements:       &defaultMaxTxReplacements,
+		GasLimit:                &defaultGasLimit,
+		MaxGasPrice:             &defaultMaxGasPrice,
+		EthController:           &defaultEthController,
+		InitializeRound:         &defaultInitializeRound,
+		InitializeRoundMaxDelay: &defaultInitializeRoundMaxDelay,
+		TicketEV:                &defaultTicketEV,
+		MaxFaceValue:            &defaultMaxFaceValue,
+		MaxTicketEV:             &defaultMaxTicketEV,
+		MaxTotalEV:              &defaultMaxTotalEV,
+		DepositMultiplier:       &defaultDepositMultiplier,
+		IgnoreSenderReserve:     &defaultIgnoreSenderReserve,
+		MaxPricePerUnit:         &defaultMaxPricePerUnit,
+		MaxPricePerCapability:   &defaultMaxPricePerCapability,
+		IgnoreMaxPriceIfNeeded:  &defaultIgnoreMaxPriceIfNeeded,
+		PixelsPerUnit:           &defaultPixelsPerUnit,
+		PriceFeedAddr:           &defaultPriceFeedAddr,
+		AutoAdjustPrice:         &defaultAutoAdjustPrice,
+		PricePerGateway:         &defaultPricePerGateway,
+		PricePerBroadcaster:     &defaultPricePerBroadcaster,
+		BlockPollingInterval:    &defaultBlockPollingInterval,
+		Redeemer:                &defaultRedeemer,
+		RedeemerAddr:            &defaultRedeemerAddr,
+		Monitor:                 &defaultMonitor,
+		MetricsPerStream:        &defaultMetricsPerStream,
+		MetricsExposeClientIP:   &defaultMetricsExposeClientIP,
+		MetadataQueueUri:        &defaultMetadataQueueUri,
+		MetadataAmqpExchange:    &defaultMetadataAmqpExchange,
+		MetadataPublishTimeout:  &defaultMetadataPublishTimeout,
 
 		// Ingest:
 		HttpIngest: &defaultHttpIngest,
@@ -1018,10 +1018,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			defer sm.Stop()
 
 			tcfg := pm.TicketParamsConfig{
-				EV:                              ev,
-				RedeemGas:                       redeemGas,
-				TxCostMultiplier:                txCostMultiplier,
-				IgnoreSenderReserveRequirements: *cfg.IgnoreSenderReserveRequirements,
+				EV:                  ev,
+				RedeemGas:           redeemGas,
+				TxCostMultiplier:    txCostMultiplier,
+				IgnoreSenderReserve: *cfg.IgnoreSenderReserve,
 			}
 			n.Recipient, err = pm.NewRecipient(
 				recipientAddr,
@@ -1036,7 +1036,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				glog.Errorf("Error setting up PM recipient: %v", err)
 				return
 			}
-			if *cfg.IgnoreSenderReserveRequirements {
+			if *cfg.IgnoreSenderReserve {
 				glog.Warning("Sender reserve requirements disabled; relying on broadcaster deposit to cover ticket face value. Double-spend protection is reduced.")
 			}
 			mfv, _ := new(big.Int).SetString(*cfg.MaxFaceValue, 10)
