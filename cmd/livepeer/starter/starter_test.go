@@ -335,3 +335,45 @@ func TestParsePricePerUnit(t *testing.T) {
 		})
 	}
 }
+
+func TestPrintConfigRedaction(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create a config with sensitive values
+	cfg := DefaultLivepeerConfig()
+	testPassword := "secretpassword123"
+	testApiKey := "api-key-abc123"
+	testOrchSecret := "orch-secret-456"
+	testServiceAddr := "127.0.0.1:8936"
+
+	cfg.EthPassword = &testPassword
+	cfg.LiveAIAuthApiKey = &testApiKey
+	cfg.OrchSecret = &testOrchSecret
+	cfg.ServiceAddr = &testServiceAddr
+
+	// Capture the output
+	var buf []byte
+	writer := &testWriter{buf: &buf}
+	cfg.PrintConfig(writer)
+
+	output := string(buf)
+
+	// Verify sensitive values are redacted
+	assert.NotContains(output, testPassword, "EthPassword should be redacted")
+	assert.NotContains(output, testApiKey, "LiveAIAuthApiKey should be redacted")
+	assert.NotContains(output, testOrchSecret, "OrchSecret should be redacted")
+	assert.Contains(output, "***", "Should contain redacted placeholder")
+
+	// Verify non-sensitive values are still shown
+	assert.Contains(output, testServiceAddr, "ServiceAddr should not be redacted")
+}
+
+// Helper struct to capture output for testing
+type testWriter struct {
+	buf *[]byte
+}
+
+func (w *testWriter) Write(p []byte) (n int, err error) {
+	*w.buf = append(*w.buf, p...)
+	return len(p), nil
+}

@@ -437,16 +437,20 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 	cfgType := vCfg.Type()
 	paramTable := tablewriter.NewWriter(w)
 
-	sensitiveFields := []string{"EthPassword", "KafkaPassword", "MediaMTXApiPassword", "OrchSecret", "liveAIAuthApiKey"}
-	sensitiveFieldsMap := map[string]bool{}
-	for _, f := range sensitiveFields {
-		sensitiveFieldsMap[f] = true
+	// Define sensitive field names that should be redacted
+	sensitiveFields := map[string]bool{
+		"EthPassword":         true,
+		"OrchSecret":          true,
+		"KafkaPassword":       true,
+		"MediaMTXApiPassword": true,
+		"LiveAIAuthApiKey":    true,
+		"FVfailGsKey":         true,
 	}
 
 	for i := 0; i < cfgType.NumField(); i++ {
 		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
 			val := fmt.Sprintf("%v", vCfg.Field(i).Elem())
-			if _, ok := sensitiveFieldsMap[cfgType.Field(i).Name]; ok {
+			if _, ok := sensitiveFields[cfgType.Field(i).Name]; ok {
 				val = "***"
 			}
 			paramTable.Append([]string{cfgType.Field(i).Name, val})
