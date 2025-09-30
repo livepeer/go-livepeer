@@ -481,11 +481,17 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
 	}
 
+	// Identify this instance using service address (preferred) or Ethereum address if available.
+	containerCreatorID := *cfg.ServiceAddr
+	if containerCreatorID == "" && *cfg.EthAcctAddr != "" {
+		containerCreatorID = *cfg.EthAcctAddr
+	}
+
 	if *cfg.AIWorker {
 		// Remove existing worker containers as soon as possible. This needs to be here so it's done before any resources
 		// are allocated by this process. That because we've seen issues where the AI worker containers hoard all the system
 		// resources and the Orchestrator cannot restart because it dies early (e.g. due to no (v)ram available).
-		removed, err := worker.RemoveExistingContainers(context.Background(), nil)
+		removed, err := worker.RemoveExistingContainers(context.Background(), nil, containerCreatorID)
 		if err != nil {
 			glog.Errorf("Error removing existing AI worker containers: %v", err)
 		}
@@ -1336,7 +1342,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
