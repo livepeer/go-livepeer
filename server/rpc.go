@@ -515,12 +515,12 @@ func setLiveAICapacity(orch Orchestrator, capabilities *net.Capabilities) {
 		return
 	}
 
-	for modelID, model := range liveAI.Models {
+	for _, model := range liveAI.Models {
 		if model == nil {
 			glog.Warning("Model was nil when setting Live AI capacity")
 			continue
 		}
-		aiCapacity := orch.GetLiveAICapacity("live-video-to-video", modelID)
+		aiCapacity := orch.GetLiveAICapacity("live-video-to-video", "foo")
 		model.Capacity = uint32(aiCapacity.ContainersIdle)
 		model.CapacityInUse = uint32(aiCapacity.ContainersInUse)
 	}
