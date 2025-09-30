@@ -1729,17 +1729,18 @@ func Test_setLiveAICapacity(t *testing.T) {
 					},
 				},
 			},
-			expectedSet: false,
+			expectedSet: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setLiveAICapacity(orch, tt.capabilities)
 			if tt.expectedSet {
-				model := tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models["foo"]
-				require.NotNil(t, model)
-				require.Equal(t, uint32(123), model.Capacity)
-				require.Equal(t, uint32(123), model.CapacityInUse)
+				for _, model := range tt.capabilities.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)].Models {
+					require.NotNil(t, model)
+					require.Equal(t, uint32(123), model.Capacity)
+					require.Equal(t, uint32(123), model.CapacityInUse)
+				}
 			}
 		})
 	}
