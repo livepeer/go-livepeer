@@ -83,7 +83,7 @@ type stubOrchestrator struct {
 	jobPriceInfo *net.PriceInfo
 }
 
-func (r *stubOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (r *stubOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
 }
 
@@ -1462,7 +1462,7 @@ type mockOrchestrator struct {
 	mock.Mock
 }
 
-func (o *mockOrchestrator) GetLiveAICapacity() worker.Capacity {
+func (o *mockOrchestrator) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	args := o.Called()
 	return args.Get(0).(worker.Capacity)
 }
