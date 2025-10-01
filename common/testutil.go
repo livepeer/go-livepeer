@@ -90,7 +90,10 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/server.(*LivepeerServer).HandlePush.func1", "github.com/rjeczalik/notify.(*nonrecursiveTree).dispatch",
 		"github.com/rjeczalik/notify.(*nonrecursiveTree).internal", "github.com/livepeer/lpms/stream.NewBasicRTMPVideoStream.func1", "github.com/patrickmn/go-cache.(*janitor).Run",
 		"github.com/golang/glog.(*fileSink).flushDaemon", "github.com/livepeer/go-livepeer/core.(*LivepeerNode).transcodeFrames.func2", "github.com/ipfs/go-log/writer.(*MirrorWriter).logRoutine",
-		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe",
+		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
+		"internal/synctest.Run",
+		"testing/synctest.testingSynctestTest",
+    "github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe",
 		"net/http.(*persistConn).writeLoop", "net/http.(*persistConn).readLoop", "io.(*pipe).read",
 		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}

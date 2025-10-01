@@ -104,6 +104,10 @@ var _ DockerClient = (*docker.Client)(nil)
 // Create global references to functions to allow for mocking in tests.
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
+func NewDefaultDockerClient() (DockerClient, error) {
+	return docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
+}
+
 type DockerManager struct {
 	gpus        []string
 	modelDir    string
@@ -119,8 +123,16 @@ type DockerManager struct {
 }
 
 func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if err := removeExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client); err != nil {
 		cancel()
 		return nil, err
 	}
@@ -570,8 +582,8 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	defer ticker.Stop()
 
 	slog.Info("Watching container", slog.String("container", rc.Name))
+	var loadingStartTime time.Time
 	failures := 0
-	loadingStartTime := time.Now()
 	for {
 		if failures >= maxHealthCheckFailures {
 			slog.Error("Container health check failed too many times", slog.String("container", rc.Name))
@@ -641,17 +653,19 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 				}
 				fallthrough
 			case OK:
-				failures = 0
+				failures, loadingStartTime = 0, time.Time{}
 				continue
-			case "LOADING": // TODO: Use enum when ai-runner SDK is updated
-				if !isBorrowed {
-					slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
-					failures = 0
-					loadingStartTime = time.Now()
+			case LOADING:
+				if loadingStartTime.IsZero() {
+					failures, loadingStartTime = 0, time.Now()
 
-					m.mu.Lock()
-					m.borrowContainerLocked(context.Background(), rc)
-					m.mu.Unlock()
+					if !isBorrowed {
+						slog.Info("Container is loading, removing from pool", slog.String("container", rc.Name))
+
+						m.mu.Lock()
+						m.borrowContainerLocked(context.Background(), rc)
+						m.mu.Unlock()
+					}
 				}
 				if loadingTime := time.Since(loadingStartTime); loadingTime > containerTimeout {
 					failures++
@@ -672,21 +686,31 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func removeExistingContainers(ctx context.Context, client DockerClient) error {
-	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	for _, c := range containers {
-		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
-		if err := dockerRemoveContainer(client, c.ID); err != nil {
-			return err
+func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return 0, err
 		}
 	}
 
-	return nil
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	removed := 0
+	for _, c := range containers {
+		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
+		if err := dockerRemoveContainer(client, c.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
 }
 
 // dockerContainerName generates a unique container name based on the pipeline, model ID, and an optional suffix.

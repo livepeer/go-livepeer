@@ -504,6 +504,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 		pipeline := qp.Get("pipeline")
 		rawParams := qp.Get("params")
 		streamID := qp.Get("streamId")
+		orchestrator := qp.Get("orchestrator")
 		var pipelineID string
 		var pipelineParams map[string]interface{}
 		if rawParams != "" {
@@ -644,6 +645,7 @@ func (ls *LivepeerServer) StartLiveVideo() http.Handler {
 				pipeline:               pipeline,
 				kickInput:              kickInput,
 				sendErrorEvent:         sendErrorEvent,
+				orchestrator:           orchestrator,
 			},
 		}
 

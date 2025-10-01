@@ -12,7 +12,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -279,7 +278,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		var oss, ross drivers.OSSession
 		profiles := []ffmpeg.VideoProfile{}
 		var VerificationFreq uint
-		nonce := rand.Uint64()
+		nonce := common.RandomUint64()
 
 		// do not replace captured _ctx variable
 		ctx := clog.AddNonce(_ctx, nonce)
@@ -317,7 +316,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 			if err != nil {
 				errMsg := fmt.Sprintf("Failed to parse JSON video profile for streamID url=%s err=%q", url.String(), err)
 				clog.Errorf(ctx, errMsg)
-				return nil, fmt.Errorf(errMsg)
+				return nil, errors.New(errMsg)
 			}
 			profiles = append(profiles, parsedProfiles...)
 
@@ -332,7 +331,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 			// set Recording OS if it was provided
@@ -341,7 +340,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 				if err != nil {
 					errMsg := fmt.Sprintf("Failed to parse recording object store url for streamID url=%s err=%q", url.String(), err)
 					clog.Errorf(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, errors.New(errMsg)
 				}
 			}
 
@@ -379,7 +378,7 @@ func createRTMPStreamIDHandler(_ctx context.Context, s *LivepeerServer, webhookR
 		if core.MaxSessions > 0 && len(s.rtmpConnections) >= core.MaxSessions {
 			errMsg := fmt.Sprintf("Too many connections for streamID url=%s err=%q", url.String(), err)
 			clog.Errorf(ctx, errMsg)
-			return nil, fmt.Errorf(errMsg)
+			return nil, errors.New(errMsg)
 
 		}
 		return &core.StreamParameters{

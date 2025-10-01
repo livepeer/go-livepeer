@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	docker "github.com/docker/docker/client"
 )
 
 // EnvValue unmarshals JSON booleans as strings for compatibility with env variables.
@@ -52,12 +50,7 @@ type Worker struct {
 }
 
 func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string) (*Worker, error) {
-	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("error creating docker client: %w", err)
-	}
-
-	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, dockerClient)
+	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker manager: %w", err)
 	}
@@ -81,8 +74,8 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return append(hardware, w.manager.HardwareInformation()...)
 }
 
-func (w *Worker) GetLiveAICapacity() Capacity {
-	capacity, _ := w.manager.GetCapacity("", "")
+func (w *Worker) GetLiveAICapacity(pipeline, modelID string) Capacity {
+	capacity, _ := w.manager.GetCapacity(pipeline, modelID)
 	return capacity
 }
 

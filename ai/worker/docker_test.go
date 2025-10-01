@@ -997,7 +997,7 @@ func TestRemoveExistingContainers(t *testing.T) {
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
-	removeExistingContainers(ctx, mockDockerClient)
+	RemoveExistingContainers(ctx, mockDockerClient)
 	mockDockerClient.AssertExpectations(t)
 }
 
