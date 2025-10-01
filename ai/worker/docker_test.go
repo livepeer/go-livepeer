@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERRORpackage worker
+package worker
 
 import (
 	"context"
