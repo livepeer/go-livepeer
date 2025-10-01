@@ -121,7 +121,7 @@ func TestNewDockerManager(t *testing.T) {
 	}
 
 	t.Run("NoExistingContainers", func(t *testing.T) {
-		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return([]types.Container{}, nil).Once()
+		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return([]types.Container{}, nil).Times(2)
 		createAndVerifyManager()
 		mockDockerClient.AssertNotCalled(t, "ContainerStop", mock.Anything, mock.Anything, mock.Anything)
 		mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, mock.Anything, mock.Anything)
@@ -134,7 +134,7 @@ func TestNewDockerManager(t *testing.T) {
 			{ID: "container1", Names: []string{"/container1"}},
 			{ID: "container2", Names: []string{"/container2"}},
 		}
-		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
+		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil).Times(2)
 		mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
@@ -991,7 +991,7 @@ func TestRemoveExistingContainers(t *testing.T) {
 		{ID: "container1", Names: []string{"/container1"}},
 		{ID: "container2", Names: []string{"/container2"}},
 	}
-	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
+	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil).Times(2)
 	mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
