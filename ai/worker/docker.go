@@ -702,9 +702,6 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 	}
 
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	if containerCreatorID != "" {
-		filters.Add("label", containerCreatorIDLabel+"="+containerCreatorID)
-	}
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
@@ -712,11 +709,29 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 
 	removed := 0
 	for _, c := range containers {
-		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
-		if err := dockerRemoveContainer(client, c.ID); err != nil {
-			return removed, err
+		// Extra safety: only consider containers with our creator label
+		if c.Labels == nil || c.Labels[containerCreatorLabel] != containerCreator {
+			continue
 		}
-		removed++
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
+		// Remove legacy containers (no creator_id)
+		if !hasCreatorID || creatorID == "" {
+			slog.Info("Removing existing managed container (legacy)", slog.String("name", c.Names[0]))
+			if err := dockerRemoveContainer(client, c.ID); err != nil {
+				return removed, err
+			}
+			removed++
+			continue
+		}
+		// Remove containers that match our creator ID (same orchestrator)
+		if containerCreatorID != "" && creatorID == containerCreatorID {
+			slog.Info("Removing existing managed container (owned)", slog.String("name", c.Names[0]))
+			if err := dockerRemoveContainer(client, c.ID); err != nil {
+				return removed, err
+			}
+			removed++
+		}
+		// Mismatched creator IDs are preserved
 	}
 
 	return removed, nil
