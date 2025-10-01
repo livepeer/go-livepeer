@@ -37,6 +37,7 @@ const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
+const containerCreatorIDLabel = "creator_id"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -109,10 +110,11 @@ func NewDefaultDockerClient() (DockerClient, error) {
 }
 
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
+	gpus               []string
+	modelDir           string
+	overrides          ImageOverrides
+	verboseLogs        bool
+	containerCreatorID string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -122,7 +124,7 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -132,21 +134,22 @@ func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if _, err := RemoveExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client, containerCreatorID); err != nil {
 		cancel()
 		return nil, err
 	}
 	cancel()
 
 	manager := &DockerManager{
-		gpus:          gpus,
-		modelDir:      modelDir,
-		overrides:     overrides,
-		verboseLogs:   verboseLogs,
-		dockerClient:  client,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               gpus,
+		modelDir:           modelDir,
+		overrides:          overrides,
+		verboseLogs:        verboseLogs,
+		dockerClient:       client,
+		containerCreatorID: containerCreatorID,
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
 	}
 
 	return manager, nil
@@ -399,6 +402,9 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		Labels: map[string]string{
 			containerCreatorLabel: containerCreator,
 		},
+	}
+	if m.containerCreatorID != "" {
+		containerConfig.Labels[containerCreatorIDLabel] = m.containerCreatorID
 	}
 
 	gpuOpts := opts.GpuOpts{}
@@ -686,7 +692,7 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, error) {
+func RemoveExistingContainers(ctx context.Context, client DockerClient, containerCreatorID string) (int, error) {
 	if client == nil {
 		var err error
 		client, err = NewDefaultDockerClient()
@@ -696,6 +702,9 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, er
 	}
 
 	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	if containerCreatorID != "" {
+		filters.Add("label", containerCreatorIDLabel+"="+containerCreatorID)
+	}
 	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
