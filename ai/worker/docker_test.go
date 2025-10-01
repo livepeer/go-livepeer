@@ -130,10 +130,10 @@ func TestNewDockerManager(t *testing.T) {
 
 	t.Run("ExistingContainers", func(t *testing.T) {
 		// Mock client methods to simulate the removal of existing containers.
-		existingContainers := []types.Container{
-			{ID: "container1", Names: []string{"/container1"}},
-			{ID: "container2", Names: []string{"/container2"}},
-		}
+    existingContainers := []types.Container{
+        {ID: "container1", Names: []string{"/container1"}, Labels: map[string]string{"creator": "ai-worker"}},
+        {ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{"creator": "ai-worker"}},
+    }
 		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil).Once()
 		mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
@@ -987,10 +987,10 @@ func TestRemoveExistingContainers(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock client methods to simulate the removal of existing containers.
-	existingContainers := []types.Container{
-		{ID: "container1", Names: []string{"/container1"}},
-		{ID: "container2", Names: []string{"/container2"}},
-	}
+    existingContainers := []types.Container{
+        {ID: "container1", Names: []string{"/container1"}, Labels: map[string]string{"creator": "ai-worker"}},
+        {ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{"creator": "ai-worker"}},
+    }
 	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil).Once()
 	mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
@@ -1001,28 +1001,39 @@ func TestRemoveExistingContainers(t *testing.T) {
 	mockDockerClient.AssertExpectations(t)
 }
 
-func TestRemoveExistingContainers_UnlabeledAndMismatchedLabels(t *testing.T) {
+func TestRemoveExistingContainers_CreatorIDFiltering(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 	ctx := context.Background()
 
-	containers := []types.Container{
-		{ID: "c1", Names: []string{"/c1"}, Labels: map[string]string{containerCreatorLabel: "other"}},
-		{ID: "c2", Names: []string{"/c2"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
-		{ID: "c3", Names: []string{"/c3"}}, // unlabeled legacy
-	}
+    // Simulate monitor.NodeID
+    prev := monitor.NodeID
+    monitor.NodeID = "this-node"
+    defer func() { monitor.NodeID = prev }()
+
+    containers := []types.Container{
+        // Different creator -> not returned by filtered list in prod; safety check keeps it
+        {ID: "c1", Names: []string{"/c1"}, Labels: map[string]string{"creator": "other", "creator-id": "other-node"}},
+        // Matching creator, no creator-id (legacy) -> should be removed
+        {ID: "c2", Names: []string{"/c2"}, Labels: map[string]string{"creator": "ai-worker"}},
+        // Matching creator, mismatched creator-id -> should NOT be removed
+        {ID: "c3", Names: []string{"/c3"}, Labels: map[string]string{"creator": "ai-worker", "creator-id": "different-node"}},
+        // Matching creator, matching creator-id -> should be removed
+        {ID: "c4", Names: []string{"/c4"}, Labels: map[string]string{"creator": "ai-worker", "creator-id": "this-node"}},
+    }
 
 	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(containers, nil).Once()
-	mockDockerClient.On("ContainerStop", mock.Anything, "c2", mock.Anything).Return(nil).Once()
-	mockDockerClient.On("ContainerRemove", mock.Anything, "c2", mock.Anything).Return(nil).Once()
-	mockDockerClient.On("ContainerStop", mock.Anything, "c3", mock.Anything).Return(nil).Once()
-	mockDockerClient.On("ContainerRemove", mock.Anything, "c3", mock.Anything).Return(nil).Once()
+    mockDockerClient.On("ContainerStop", mock.Anything, "c2", mock.Anything).Return(nil).Once()
+    mockDockerClient.On("ContainerRemove", mock.Anything, "c2", mock.Anything).Return(nil).Once()
+    mockDockerClient.On("ContainerStop", mock.Anything, "c4", mock.Anything).Return(nil).Once()
+    mockDockerClient.On("ContainerRemove", mock.Anything, "c4", mock.Anything).Return(nil).Once()
 
 	removed, err := RemoveExistingContainers(ctx, mockDockerClient)
 	require.NoError(t, err)
-	require.Equal(t, 2, removed)
+    require.Equal(t, 2, removed)
 
-	// Ensure mismatched creator container wasn't removed
-	mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, "c1", mock.Anything)
+    // Ensure containers with different creator or mismatched creator-id weren't removed
+    mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, "c1", mock.Anything)
+    mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, "c3", mock.Anything)
 	mockDockerClient.AssertExpectations(t)
 }
 

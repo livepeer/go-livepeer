@@ -36,6 +36,7 @@ const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
+const containerCreatorIDLabel = "creator-id"
 const containerCreator = "ai-worker"
 
 var containerTimeout = 3 * time.Minute
@@ -397,7 +398,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerPort: struct{}{},
 		},
 		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
+			containerCreatorLabel:   containerCreator,
+			containerCreatorIDLabel: monitor.NodeID,
 		},
 	}
 
@@ -695,22 +697,26 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, er
 		}
 	}
 
-	// Single list call; filter in-memory:
-	// - Remove containers with creator label equal to our id
-	// - Remove containers missing the creator label (legacy)
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true})
+	// Single list call limited to our managed containers (creator label)
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	removed := 0
 	for _, c := range containers {
-		labelVal, hasLabel := c.Labels[containerCreatorLabel]
-		if hasLabel && labelVal != containerCreator {
-			// Created by a different orchestrator, do not remove
+		// Safety check in case the filter is not applied by the mocked client
+		if v, ok := c.Labels[containerCreatorLabel]; !ok || v != containerCreator {
 			continue
 		}
-		// Either labeled with matching creator, or unlabeled (legacy)
+
+		// Remove if the creator-id label matches this node, or if it is missing (legacy)
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
+		if hasCreatorID && creatorID != monitor.NodeID {
+			// Different orchestrator; keep it
+			continue
+		}
 		name := ""
 		if len(c.Names) > 0 {
 			name = c.Names[0]
