@@ -707,7 +707,7 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 
 	removed := 0
 	for _, c := range containers {
-		hasCreatorID, creatorID := c.Labels[containerCreatorIDLabel]
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
 		// We also remove containers without creator-id label as a migration from previous versions that didn't have it.
 		shouldRemove := !hasCreatorID || creatorID == containerCreatorID
 		if !shouldRemove {
