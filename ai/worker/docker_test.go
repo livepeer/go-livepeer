@@ -1032,6 +1032,7 @@ func TestRemoveExistingContainers_InMemoryFilterLegacyAndOwnerID(t *testing.T) {
 		Return([]types.Container{
 			{ID: "legacy-1", Names: []string{"/legacy-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},                           // no creator_id -> remove
 			{ID: "other-1", Names: []string{"/other-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: "owner-B"}}, // mismatched -> keep
+			{ID: "other-2-empty", Names: []string{"/other-2"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: ""}}, // empty -> keep (new version but empty label)
 			{ID: "mine-1", Names: []string{"/mine-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: "owner-A"}},   // match -> remove
 		}, nil).
 		Once()

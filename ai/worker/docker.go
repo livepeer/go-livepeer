@@ -401,10 +401,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 		},
 		Labels: map[string]string{
 			containerCreatorLabel: containerCreator,
+			containerCreatorIDLabel: m.containerCreatorID,
 		},
-	}
-	if m.containerCreatorID != "" {
-		containerConfig.Labels[containerCreatorIDLabel] = m.containerCreatorID
 	}
 
 	gpuOpts := opts.GpuOpts{}
@@ -709,8 +707,10 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient, containe
 
 	removed := 0
 	for _, c := range containers {
-		creatorID := c.Labels[containerCreatorIDLabel]
-		if creatorID != "" && creatorID != containerCreatorID {
+		hasCreatorID, creatorID := c.Labels[containerCreatorIDLabel]
+		// We also remove containers without creator-id label as a migration from previous versions that didn't have it.
+		shouldRemove := !hasCreatorID || creatorID == containerCreatorID
+		if !shouldRemove {
 			continue
 		}
 		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
