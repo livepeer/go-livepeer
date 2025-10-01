@@ -253,10 +253,11 @@ func (ls *LivepeerServer) runStream(gatewayJob *gatewayJob) {
 		if params.liveParams.kickInput != nil {
 			params.liveParams.kickInput(err)
 		}
+
 	}
 
-	//exhausted all Orchestrators, end stream
-	ls.LivepeerNode.ExternalCapabilities.RemoveStream(streamID)
+	//all orchestrators tried or stream ended, stop the stream
+	stream.StopStream(errors.New("All Orchestrators exhausted, restart the stream"))
 }
 
 func (ls *LivepeerServer) monitorStream(streamId string) {
@@ -628,7 +629,11 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 	clog.Infof(ctx, "stream setup videoIngress=%v videoEgress=%v dataOutput=%v", job.Job.Params.EnableVideoIngress, job.Job.Params.EnableVideoEgress, job.Job.Params.EnableDataOutput)
 
 	//save the stream setup
-	ls.LivepeerNode.NewLivePipeline(requestID, streamID, pipeline, params, bodyBytes) //track the pipeline for cancellation
+	paramsReq := map[string]interface{}{
+		"params": startReq.Params,
+	}
+	paramsReqBytes, _ := json.Marshal(paramsReq)
+	ls.LivepeerNode.NewLivePipeline(requestID, streamID, pipeline, params, paramsReqBytes) //track the pipeline for cancellation
 
 	job.Job.Req.ID = streamID
 	streamUrls := StreamUrls{
