@@ -695,43 +695,22 @@ func RemoveExistingContainers(ctx context.Context, client DockerClient) (int, er
 		}
 	}
 
-	// We remove two categories of containers:
-	// 1) Containers explicitly labeled as created by this worker (backward-compatible behavior)
-	// 2) Containers without the creator label but that match our known naming scheme (migration clean-up)
-
-	toRemove := map[string]types.Container{}
-
-	// First, collect labeled containers
-	labeled := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: labeled})
+	// Single list call; filter in-memory:
+	// - Remove containers with creator label equal to our id
+	// - Remove containers missing the creator label (legacy)
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return 0, fmt.Errorf("failed to list labeled containers: %w", err)
-	}
-	for _, c := range containers {
-		toRemove[c.ID] = c
-	}
-
-	// Then, collect unlabeled containers that match our naming convention
-	nameFilters := filters.NewArgs()
-	for pipeline := range containerHostPorts {
-		nameFilters.Add("name", pipeline)
-	}
-	// Also include live pipeline prefix
-	nameFilters.Add("name", "live-video-to-video")
-
-	maybeManaged, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: nameFilters})
-	if err != nil {
-		return 0, fmt.Errorf("failed to list containers by name: %w", err)
-	}
-	for _, c := range maybeManaged {
-		// If the container lacks the creator label, consider it a legacy container to be removed
-		if _, ok := c.Labels[containerCreatorLabel]; !ok {
-			toRemove[c.ID] = c
-		}
+		return 0, fmt.Errorf("failed to list containers: %w", err)
 	}
 
 	removed := 0
-	for _, c := range toRemove {
+	for _, c := range containers {
+		labelVal, hasLabel := c.Labels[containerCreatorLabel]
+		if hasLabel && labelVal != containerCreator {
+			// Created by a different orchestrator, do not remove
+			continue
+		}
+		// Either labeled with matching creator, or unlabeled (legacy)
 		name := ""
 		if len(c.Names) > 0 {
 			name = c.Names[0]
