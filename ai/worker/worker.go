@@ -74,8 +74,8 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return append(hardware, w.manager.HardwareInformation()...)
 }
 
-func (w *Worker) GetLiveAICapacity() Capacity {
-	capacity, _ := w.manager.GetCapacity("", "")
+func (w *Worker) GetLiveAICapacity(pipeline, modelID string) Capacity {
+	capacity, _ := w.manager.GetCapacity(pipeline, modelID)
 	return capacity
 }
 
