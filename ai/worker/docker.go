@@ -785,18 +785,12 @@ tickerLoop:
 				break tickerLoop
 			}
 
-            // Detect terminal/non-recoverable states early and fail fast instead of
-            // waiting for the full timeout. This covers cases where the container
-            // was stopped or killed immediately after startup (e.g., by another
-            // orchestrator cleaning up), leaving it in a non-running state that
-            // will never transition to running.
+            // Fail fast on states that won't become running after startup.
             if json.State != nil {
                 status := strings.ToLower(json.State.Status)
-                // Docker statuses can be: "created", "restarting", "running",
-                // "removing", "paused", "exited", or "dead".
-                // Treat exited/dead/removing as terminal. If not running and not
-                // restarting, and we have a non-zero exit code or an error, also fail.
-                if status == "exited" || status == "dead" || status == "removing" {
+                // Consider exited/dead as terminal. "removing" will surface via
+                // inspect error or transition to exited/dead shortly.
+                if status == "exited" || status == "dead" {
                     return fmt.Errorf("container entered terminal state before running: %s (exitCode=%d)", json.State.Status, json.State.ExitCode)
                 }
                 if !json.State.Restarting && json.State.ExitCode != 0 {
