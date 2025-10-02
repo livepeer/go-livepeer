@@ -93,11 +93,23 @@ func IgnoreRoutines() []goleak.Option {
 		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup",
 		"internal/synctest.Run",
 		"testing/synctest.testingSynctestTest",
+		"github.com/livepeer/go-livepeer/core.(*Balances).StartCleanup", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe.func2", "github.com/livepeer/go-livepeer/server.startTrickleSubscribe",
+		"net/http.(*persistConn).writeLoop", "net/http.(*persistConn).readLoop", "io.(*pipe).read",
+		"github.com/livepeer/go-livepeer/media.gatherIncomingTracks",
 	}
 
-	res := make([]goleak.Option, 0, len(funcs2ignore))
+	// Functions that might have other functions on top of their stack (like time.Sleep)
+	// These need to be ignored with IgnoreAnyFunction instead of IgnoreTopFunction
+	funcsAnyIgnore := []string{
+		"github.com/livepeer/go-livepeer/server.ffmpegOutput",
+	}
+
+	res := make([]goleak.Option, 0, len(funcs2ignore)+len(funcsAnyIgnore))
 	for _, f := range funcs2ignore {
 		res = append(res, goleak.IgnoreTopFunction(f))
+	}
+	for _, f := range funcsAnyIgnore {
+		res = append(res, goleak.IgnoreAnyFunction(f))
 	}
 	return res
 }
