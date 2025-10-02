@@ -1165,6 +1165,63 @@ func TestDockerWaitUntilRunning(t *testing.T) {
 		require.Contains(t, err.Error(), "timed out waiting for managed container")
 		mockDockerClient.AssertExpectations(t)
 	})
+
+	t.Run("FailFastOnExited", func(t *testing.T) {
+		// If the container is immediately exited, we should fail fast instead of waiting.
+		mockDockerClient := new(MockDockerClient)
+		// Always return non-running, exited state
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:   "exited",
+					Running:  false,
+					ExitCode: 137,
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "terminal state")
+		mockDockerClient.AssertExpectations(t)
+	})
+
+	t.Run("FailFastOnDead", func(t *testing.T) {
+		mockDockerClient := new(MockDockerClient)
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:  "dead",
+					Running: false,
+					Error:   "killed",
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "container entered terminal state")
+		mockDockerClient.AssertExpectations(t)
+	})
+
+	t.Run("FailFastOnExitCodeNonZeroWithoutRestarting", func(t *testing.T) {
+		mockDockerClient := new(MockDockerClient)
+		mockDockerClient.On("ContainerInspect", mock.Anything, containerID).Return(types.ContainerJSON{
+			ContainerJSONBase: &types.ContainerJSONBase{
+				State: &types.ContainerState{
+					Status:     "created",
+					Running:    false,
+					Restarting: false,
+					ExitCode:   1,
+				},
+			},
+		}, nil)
+
+		err := dockerWaitUntilRunning(ctx, mockDockerClient, containerID, pollingInterval)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "exited before running")
+		mockDockerClient.AssertExpectations(t)
+	})
 }
 
 func TestHwGPU(t *testing.T) {
