@@ -400,7 +400,7 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerPort: struct{}{},
 		},
 		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
+			containerCreatorLabel:   containerCreator,
 			containerCreatorIDLabel: m.containerCreatorID,
 		},
 	}
