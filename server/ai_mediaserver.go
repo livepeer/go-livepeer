@@ -105,6 +105,15 @@ func startAIMediaServer(ctx context.Context, ls *LivepeerServer) error {
 		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{stream}/whip", ls.WithCode(http.StatusNoContent))
 	}
 
+	if os.Getenv("LIVE_AI_WHEP_ADDR") != "" {
+		whepServer := media.NewWHEPServer()
+		// path is {stream}-{request}-out but golang router won't match that
+		ls.HTTPMux.Handle("POST /live/video-to-video/{path}/whep", ls.CreateWhep(whepServer))
+		ls.HTTPMux.Handle("HEAD /live/video-to-video/{path}/whep", ls.WithCode(http.StatusMethodNotAllowed))
+		ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{path}/whep", ls.WithCode(http.StatusNoContent))
+		ls.HTTPMux.Handle("PATCH /live/video-to-video/{path}/whep", ls.WithCode(http.StatusNotImplemented))
+	}
+
 	// Stream status
 	ls.HTTPMux.Handle("OPTIONS /live/video-to-video/{streamId}/status", ls.WithCode(http.StatusNoContent))
 	ls.HTTPMux.Handle("/live/video-to-video/{streamId}/status", ls.GetLiveVideoToVideoStatus())
@@ -1143,6 +1152,31 @@ func (ls *LivepeerServer) CreateWhip(server *media.WHIPServer) http.Handler {
 	})
 }
 
+func (ls *LivepeerServer) CreateWhep(server *media.WHEPServer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("path")
+		parts := strings.Split(path, "-")
+		if len(parts) != 3 || parts[2] != "out" {
+			if len(parts) != 2 || parts[1] != "out" {
+				http.Error(w, "Malformed stream ID", http.StatusNotFound)
+				return
+			}
+			parts[1] = ""
+		}
+		stream, requestID := parts[0], parts[1]
+		ctx := r.Context()
+		ctx = clog.AddVal(ctx, "stream", stream)
+		outWriter, rid := getOutWriter(stream, ls.LivepeerNode)
+		if outWriter == nil || (requestID != rid && requestID != "") {
+			http.Error(w, "Stream not found", http.StatusNotFound)
+			return
+		}
+		ctx = clog.AddVal(ctx, "request_id", rid)
+		corsHeaders(w, r.Method)
+		server.CreateWHEP(ctx, w, r, outWriter.MakeReader())
+	})
+}
+
 func runStats(ctx context.Context, whipConn *media.WHIPConnection, streamID string, pipelineID string, requestID string) {
 	// Periodically check whip stats and write logs and metrics
 	ticker := time.NewTicker(5 * time.Second)
@@ -1210,6 +1244,7 @@ func cleanupControl(ctx context.Context, params aiRequestParams) {
 		}
 		pub.StopControl()
 	}
+	pub.Closed = true
 }
 
 func monitorCurrentLiveSessions(pipelines map[string]*core.LivePipeline) {
