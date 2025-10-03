@@ -630,7 +630,7 @@ func (ls *LivepeerServer) setupStream(ctx context.Context, r *http.Request, job 
 
 	//save the stream setup
 	paramsReq := map[string]interface{}{
-		"params": startReq.Params,
+		"params": pipelineParams,
 	}
 	paramsReqBytes, _ := json.Marshal(paramsReq)
 	ls.LivepeerNode.NewLivePipeline(requestID, streamID, pipeline, params, paramsReqBytes) //track the pipeline for cancellation
@@ -934,6 +934,9 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+
+		corsHeaders(w, r.Method)
+
 		// Get stream from path param
 		streamId := r.PathValue("streamId")
 		if streamId == "" {
@@ -947,30 +950,73 @@ func (ls *LivepeerServer) UpdateStream() http.Handler {
 			return
 		}
 
+		params, err := getStreamRequestParams(stream)
+		if err != nil {
+			clog.Errorf(ctx, "Error getting stream request params: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		updateJob, err := ls.setupGatewayJob(ctx, r, true)
+		if err != nil {
+			clog.Errorf(ctx, "Error setting up update job: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		updateJob.sign()
+		//setup sender
+		jobSender, err := getJobSender(ctx, ls.LivepeerNode)
+		if err != nil {
+			clog.Errorf(ctx, "Error getting job sender: %v", err)
+			return
+		}
+		token, err := sessionToToken(params.liveParams.sess)
+		if err != nil {
+			clog.Errorf(ctx, "Error converting session to token: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		newToken, err := getToken(ctx, getNewTokenTimeout, token.ServiceAddr, updateJob.Job.Req.Capability, jobSender.Addr, jobSender.Sig)
+		if err != nil {
+			clog.Errorf(ctx, "Error converting session to token: %s", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		//had issues with control publisher not sending down full data when including base64 encoded binary data
+		// switched to using regular post request like /stream/start and /stream/stop
+		//controlPub := stream.ControlPub
+
 		reader := http.MaxBytesReader(w, r.Body, 10*1024*1024) // 10 MB
 		defer reader.Close()
+
+		reportUpdate := stream.ReportUpdate
+
 		data, err := io.ReadAll(reader)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		params := string(data)
 		stream.Params = data
-		controlPub := stream.ControlPub
 
-		if controlPub == nil {
-			clog.Info(ctx, "No orchestrator available, caching params", "stream", streamId, "params", params)
+		resp, code, err := ls.sendJobToOrch(ctx, r, updateJob.Job.Req, updateJob.SignedJobReq, *newToken, "/ai/stream/update", data)
+		if err != nil {
+			clog.Errorf(ctx, "Error sending job to orchestrator: %s", err)
+			http.Error(w, err.Error(), code)
 			return
 		}
 
-		clog.V(6).Infof(ctx, "Sending Live Video Update Control API stream=%s, params=%s", stream, params)
-		if err := controlPub.Write(strings.NewReader(params)); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		if resp.StatusCode != http.StatusOK {
+			// Call reportUpdate callback if available
+			if reportUpdate != nil {
+				reportUpdate(data)
+			}
 		}
 
-		corsHeaders(w, r.Method)
+		clog.Infof(ctx, "stream params updated for stream=%s, but orchestrator returned status %d", streamId, resp.StatusCode)
+
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 	})
 }
 
@@ -1101,8 +1147,17 @@ func (h *lphttp) StartStream(w http.ResponseWriter, r *http.Request) {
 		reqBodyForRunner["data_url"] = dataUrl
 		w.Header().Set("X-Data-Url", dataUrl)
 	}
+	//parse the request body json to add to the request to the runner
+	var bodyJSON map[string]interface{}
+	if err := json.Unmarshal(body, &bodyJSON); err != nil {
+		clog.Errorf(ctx, "Failed to parse body as JSON, using as string: %v", err)
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	for key, value := range bodyJSON {
+		reqBodyForRunner[key] = value
+	}
 
-	reqBodyForRunner["request"] = string(body)
 	reqBodyBytes, err := json.Marshal(reqBodyForRunner)
 	if err != nil {
 		clog.Errorf(ctx, "Failed to marshal request body err=%v", err)
@@ -1262,7 +1317,61 @@ func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 	workerRoute := orchJob.Req.CapabilityUrl + "/stream/stop"
 	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, bytes.NewBuffer(body))
 	if err != nil {
-		clog.Errorf(ctx, "failed to create /stop/stream request to worker err=%v", err)
+		clog.Errorf(ctx, "failed to create /stream/stop request to worker err=%v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp, err := sendReqWithTimeout(req, time.Duration(orchJob.Req.Timeout)*time.Second)
+	if err != nil {
+		clog.Errorf(ctx, "Error sending request to worker %v: %v", workerRoute, err)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		clog.Errorf(ctx, "Error reading response body: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode > 399 {
+		clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
+	}
+
+	// Stop the stream and free capacity
+	h.node.ExternalCapabilities.RemoveStream(jobDetails.StreamId)
+
+	w.WriteHeader(resp.StatusCode)
+	w.Write(respBody)
+}
+
+func (h *lphttp) UpdateStream(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	orchJob, err := h.setupOrchJob(ctx, r, false)
+	if err != nil {
+		respondWithError(w, fmt.Sprintf("Failed to stop stream, request not valid err=%v", err), http.StatusBadRequest)
+		return
+	}
+
+	var jobDetails JobRequestDetails
+	err = json.Unmarshal([]byte(orchJob.Req.Request), &jobDetails)
+	if err != nil {
+		respondWithError(w, fmt.Sprintf("Failed to stop stream, request not valid, failed to parse stream id err=%v", err), http.StatusBadRequest)
+		return
+	}
+	clog.Infof(ctx, "Stopping stream %s", jobDetails.StreamId)
+
+	// Read the original body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error reading request body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	workerRoute := orchJob.Req.CapabilityUrl + "/stream/params"
+	req, err := http.NewRequestWithContext(ctx, "POST", workerRoute, bytes.NewBuffer(body))
+	if err != nil {
+		clog.Errorf(ctx, "failed to create /stream/params request to worker err=%v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1283,11 +1392,8 @@ func (h *lphttp) StopStream(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode > 399 {
-		clog.Errorf(ctx, "error processing stream stop request statusCode=%d", resp.StatusCode)
+		clog.Errorf(ctx, "error processing stream update request statusCode=%d", resp.StatusCode)
 	}
-
-	// Stop the stream and free capacity
-	h.node.ExternalCapabilities.RemoveStream(jobDetails.StreamId)
 
 	w.WriteHeader(resp.StatusCode)
 	w.Write(respBody)
