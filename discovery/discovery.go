@@ -319,7 +319,7 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 				"latency_ms": strconv.FormatInt(o.LocalInfo.Latency.Milliseconds(), 10),
 			})
 		}
-		monitor.SendQueueEventAsync("discovery_results", discoveryResults)
+		monitor.QueueEvent("discovery_results", discoveryResults)
 	}
 	clog.Infof(ctx, "Done fetching orch info orchs=%d/%d responses=%d/%d timedOut=%t",
 		len(ods), numOrchestrators, nbResp, maxOrchNodes, timedOut)
