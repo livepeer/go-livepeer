@@ -733,7 +733,8 @@ func dockerRemoveContainer(client DockerClient, containerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 
-	err := client.ContainerStop(ctx, containerID, container.StopOptions{})
+	killTimeout := 1 // 1s timeout to give SIGTERM a chance then SIGKILL forcefully
+	err := client.ContainerStop(ctx, containerID, container.StopOptions{Signal: "SIGKILL", Timeout: &killTimeout})
 	// Ignore "not found" or "already stopped" errors
 	if err != nil && !docker.IsErrNotFound(err) && !errdefs.IsNotModified(err) {
 		return err

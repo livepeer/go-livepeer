@@ -236,7 +236,8 @@ func TestDockerManager_Stop(t *testing.T) {
 		},
 	}
 
-	MockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{Timeout: nil}).Return(nil)
+	timeout := 1
+	MockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{Signal: "SIGKILL", Timeout: &timeout}).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 	err := dockerManager.Stop(ctx)
 	require.NoError(t, err)
@@ -650,7 +651,8 @@ func TestDockerManager_allocGPU(t *testing.T) {
 				dockerManager.gpuContainers[rc.GPU] = rc
 				dockerManager.containers[rc.Name] = rc
 				// Mock client methods to simulate the removal of the warm container.
-				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+				timeout := 1
+				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{Signal: "SIGKILL", Timeout: &timeout}).Return(nil)
 				mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 			},
 			expectedAllocatedGPU: "gpu0",
@@ -694,7 +696,8 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
 
-	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{}).Return(nil)
+	timeout := 1
+	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{Signal: "SIGKILL", Timeout: &timeout}).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 
 	err := dockerManager.destroyContainer(rc, true)
@@ -1095,7 +1098,8 @@ func TestDockerContainerName(t *testing.T) {
 func TestDockerRemoveContainer(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+	timeout := 1
+	mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{Signal: "SIGKILL", Timeout: &timeout}).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 
 	err := dockerRemoveContainer(mockDockerClient, "container1")
