@@ -503,6 +503,7 @@ func (c *AISessionManager) refreshOrchCapacity(modelIDs []string) {
 		}
 	}
 	go func() {
+		// TODO configurable?
 		refreshInterval := 10 * time.Second
 		ticker := time.NewTicker(refreshInterval)
 		defer ticker.Stop()

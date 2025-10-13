@@ -25,6 +25,7 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
+	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -339,6 +340,9 @@ func (n *LivepeerNode) UpdateNetworkCapabilities(orchNetworkCapabilities []*comm
 
 	if lpmon.Enabled {
 		lpmon.SendQueueEventAsync("network_capabilities", orchNetworkCapabilities)
+
+		// Report AI container capacity metrics
+		reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities)
 	}
 
 	return nil
@@ -348,6 +352,39 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.NetworkCapabilities.Orchestrators
+}
+
+func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
+	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
+
+	for _, orchCap := range orchNetworkCapabilities {
+		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
+
+		for modelID, model := range models {
+			if _, exists := idleContainersByModelAndOrchestrator[modelID]; !exists {
+				idleContainersByModelAndOrchestrator[modelID] = make(map[string]int)
+			}
+
+			idle := int(model.Capacity)
+			idleContainersByModelAndOrchestrator[modelID][orchCap.OrchURI] = idle
+			inUse := int(model.CapacityInUse)
+			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d", modelID, orchCap.OrchURI, inUse, idle)
+		}
+	}
+
+	lpmon.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
+}
+
+func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(Capability_LiveVideoToVideo)]
+	if !ok {
+		return nil
+	}
+
+	return liveAI.Models
 }
 
 func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {

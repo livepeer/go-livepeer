@@ -21,7 +21,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 25 * time.Minute
+var cacheRefreshInterval = 10 * time.Second
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
