@@ -503,12 +503,11 @@ func setOutWriter(ctx context.Context, writer *media.RingBuffer, params aiReques
 	stream, requestID := params.liveParams.stream, params.liveParams.requestID
 	sess, exists := params.node.LivePipelines[stream]
 	if !exists || sess.RequestID != requestID {
-		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID")
+		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID", "exists", exists, "requestID", requestID, "session-requestID", sess.RequestID)
 		return
 	}
 	sess.OutWriter = writer
 	sess.OutCond.Broadcast()
-	// TODO check if whep tracks needs to be replaced, eg swap
 }
 
 func registerControl(ctx context.Context, params aiRequestParams) {

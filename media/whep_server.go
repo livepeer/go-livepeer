@@ -26,7 +26,7 @@ type WHEPServer struct {
 }
 
 func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *http.Request, mediaReader io.ReadCloser) {
-	clog.Info(ctx, "creating whep")
+	clog.Info(ctx, "creating whep", "user-agent", r.Header.Get("User-Agent"), "ip", r.RemoteAddr)
 
 	// Must have Content-Type: application/sdp (the spec strongly recommends it)
 	if r.Header.Get("Content-Type") != "application/sdp" {
@@ -112,7 +112,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 				// NB: Don't signal sample rate or channel count here. Leave empty to use defaults.
 				// Opus RTP RFC 7587 requires opus/48000/2 regardless of the actual content
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
-				"audio", "livepeer", // TODO can be another MediaID to desync a/v for latency
+				"audio", "livepeer", // NB: can be another MediaID to desync a/v for latency
 			)
 			if err != nil {
 				clog.InfofErr(ctx, "Error creating track for opus", err)
@@ -141,12 +141,8 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		http.Error(w, "No audio or video in media stream", http.StatusInternalServerError)
 		peerConnection.Close()
 		return
-	} else if !hasVideo {
-		clog.Info(ctx, "No video in output")
-	} else if !hasAudio {
-		clog.Info(ctx, "No audio in output")
 	}
-	clog.Info(ctx, "Outputs", " tracks", trackCodecs)
+	clog.Info(ctx, "Outputs", "hasVideo", hasVideo, "hasAudio", hasAudio, "tracks", trackCodecs)
 
 	if err := peerConnection.SetRemoteDescription(offer); err != nil {
 		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
