@@ -3,6 +3,19 @@ set -e
 
 FRONTEND=${FRONTEND:-false}
 
+# Ensure backgrounded services are stopped gracefully when this script is
+# interrupted or exits.
+cleanup() {
+  if [ "$DOCKER" = "true" ]; then
+    echo "Stopping services..."
+    # Stop dockerized services if present; ignore errors if not running
+    docker stop orchestrator --timeout 15 >/dev/null 2>&1 || true
+    docker stop gateway --timeout 15 >/dev/null 2>&1 || true
+    docker stop mediamtx --timeout 15 >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup INT TERM HUP EXIT
+
 # Start multiple processes and output their logs to the console
 gateway() {
   echo "Starting Gateway..."
