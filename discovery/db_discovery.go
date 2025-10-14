@@ -14,6 +14,7 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 	"github.com/livepeer/go-livepeer/eth"
 	lpTypes "github.com/livepeer/go-livepeer/eth/types"
+	"github.com/livepeer/go-livepeer/monitor"
 	"github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/go-livepeer/server"
@@ -22,6 +23,8 @@ import (
 )
 
 var cacheRefreshInterval = 10 * time.Second
+var networkCapabilitiesReportingInterval = 25 * time.Minute
+
 var getTicker = func() *time.Ticker {
 	return time.NewTicker(cacheRefreshInterval)
 }
@@ -31,14 +34,15 @@ type ticketParamsValidator interface {
 }
 
 type DBOrchestratorPoolCache struct {
-	store                 common.OrchestratorStore
-	lpEth                 eth.LivepeerEthClient
-	ticketParamsValidator ticketParamsValidator
-	rm                    common.RoundsManager
-	bcast                 common.Broadcaster
-	orchBlacklist         []string
-	discoveryTimeout      time.Duration
-	node                  *core.LivepeerNode
+	store                           common.OrchestratorStore
+	lpEth                           eth.LivepeerEthClient
+	ticketParamsValidator           ticketParamsValidator
+	rm                              common.RoundsManager
+	bcast                           common.Broadcaster
+	orchBlacklist                   []string
+	discoveryTimeout                time.Duration
+	node                            *core.LivepeerNode
+	lastNetworkCapabilitiesReported time.Time
 }
 
 func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
@@ -393,10 +397,60 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchInfos() error {
 			i = numOrchs //exit loop
 		}
 	}
-	//save network capabilities in LivepeerNode
-	dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
+
+	// Only update network capabilities every 25 minutes
+	if time.Since(dbo.lastNetworkCapabilitiesReported) >= networkCapabilitiesReportingInterval {
+		// Save network capabilities in LivepeerNode
+		dbo.node.UpdateNetworkCapabilities(orchNetworkCapabilities)
+
+		dbo.lastNetworkCapabilitiesReported = time.Now()
+	}
+
+	// Report AI container capacity metrics
+	reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities)
 
 	return nil
+}
+
+func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
+	// Build structured capacity data
+	modelCapacities := make(map[string]*monitor.ModelAICapacities)
+
+	for _, orchCap := range orchNetworkCapabilities {
+		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
+
+		for modelID, model := range models {
+			if _, exists := modelCapacities[modelID]; !exists {
+				modelCapacities[modelID] = &monitor.ModelAICapacities{
+					ModelID:       modelID,
+					Orchestrators: make(map[string]monitor.AIContainerCapacity),
+				}
+			}
+
+			capacity := monitor.AIContainerCapacity{
+				Idle:  int(model.Capacity),
+				InUse: int(model.CapacityInUse),
+			}
+			modelCapacities[modelID].Orchestrators[orchCap.OrchURI] = capacity
+
+			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d",
+				modelID, orchCap.OrchURI, capacity.InUse, capacity.Idle)
+		}
+	}
+
+	monitor.ReportAIContainerCapacity(modelCapacities)
+}
+
+func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
+	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
+		return nil
+	}
+	liveAI, ok := caps.Constraints.PerCapability[uint32(core.Capability_LiveVideoToVideo)]
+	if !ok {
+		return nil
+	}
+
+	return liveAI.Models
 }
 
 func (dbo *DBOrchestratorPoolCache) Broadcaster() common.Broadcaster {

@@ -25,7 +25,6 @@ import (
 	"github.com/livepeer/go-livepeer/common"
 	"github.com/livepeer/go-livepeer/eth"
 	lpmon "github.com/livepeer/go-livepeer/monitor"
-	"github.com/livepeer/go-livepeer/net"
 )
 
 var ErrTranscoderAvail = errors.New("ErrTranscoderUnavailable")
@@ -339,9 +338,6 @@ func (n *LivepeerNode) UpdateNetworkCapabilities(orchNetworkCapabilities []*comm
 
 	if lpmon.Enabled {
 		lpmon.SendQueueEventAsync("network_capabilities", orchNetworkCapabilities)
-
-		// Report AI container capacity metrics
-		reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities)
 	}
 
 	return nil
@@ -351,47 +347,6 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.NetworkCapabilities.Orchestrators
-}
-
-func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
-	// Build structured capacity data
-	modelCapacities := make(map[string]*lpmon.ModelAICapacities)
-
-	for _, orchCap := range orchNetworkCapabilities {
-		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
-
-		for modelID, model := range models {
-			if _, exists := modelCapacities[modelID]; !exists {
-				modelCapacities[modelID] = &lpmon.ModelAICapacities{
-					ModelID:       modelID,
-					Orchestrators: make(map[string]lpmon.AIContainerCapacity),
-				}
-			}
-
-			capacity := lpmon.AIContainerCapacity{
-				Idle:  int(model.Capacity),
-				InUse: int(model.CapacityInUse),
-			}
-			modelCapacities[modelID].Orchestrators[orchCap.OrchURI] = capacity
-
-			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d",
-				modelID, orchCap.OrchURI, capacity.InUse, capacity.Idle)
-		}
-	}
-
-	lpmon.ReportAIContainerCapacity(modelCapacities)
-}
-
-func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
-	if caps == nil || caps.Constraints == nil || caps.Constraints.PerCapability == nil {
-		return nil
-	}
-	liveAI, ok := caps.Constraints.PerCapability[uint32(Capability_LiveVideoToVideo)]
-	if !ok {
-		return nil
-	}
-
-	return liveAI.Models
 }
 
 func (n *LivepeerNode) SetPriceForExternalCapability(senderEthAddress string, extCapability string, price *big.Rat) {
