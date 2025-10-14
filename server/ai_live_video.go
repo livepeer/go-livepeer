@@ -150,7 +150,7 @@ func startTricklePublish(ctx context.Context, url *url.URL, params aiRequestPara
 				params.liveParams.mu.Lock()
 				params.liveParams.lastSegmentTime = startTime
 				params.liveParams.mu.Unlock()
-				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, seq)
+				logToDisk(ctx, reader, params.node.WorkDir, params.liveParams.requestID, params.liveParams.manifestID, seq)
 				n, err := segment.Write(r)
 				if err == nil {
 					// no error, all done, let's leave
@@ -459,7 +459,7 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 	defer segment.Body.Close()
 	var reader io.Reader = segment.Body
 	if seq < liveAISaveNSegments {
-		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-out-%d.ts", params.liveParams.requestID, seq))
+		p := filepath.Join(params.node.WorkDir, fmt.Sprintf("%s-%s-out-%d.ts", params.liveParams.requestID, params.liveParams.manifestID, seq))
 		outFile, err := os.Create(p)
 		if err != nil {
 			clog.Info(ctx, "Could not create output segment file for logging", "err", err)
@@ -892,14 +892,14 @@ func LiveErrorEventSender(ctx context.Context, streamID string, event map[string
 	}
 }
 
-func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID string, seq int) {
+func logToDisk(ctx context.Context, r media.CloneableReader, workdir string, requestID, manifestID string, seq int) {
 	// NB these segments are cleaned up periodically by the temp file sweeper in rtmp2segment
 	if seq > liveAISaveNSegments {
 		return
 	}
 	go func() {
 		reader := r.Clone()
-		p := filepath.Join(workdir, fmt.Sprintf("%s-%d.ts", requestID, seq))
+		p := filepath.Join(workdir, fmt.Sprintf("%s-%s-%d.ts", requestID, manifestID, seq))
 		file, err := os.Create(p)
 		if err != nil {
 			clog.InfofErr(ctx, "Could not create segment file for logging", err)

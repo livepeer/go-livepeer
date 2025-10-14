@@ -436,9 +436,24 @@ func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
 	vCfg := reflect.ValueOf(cfg)
 	cfgType := vCfg.Type()
 	paramTable := tablewriter.NewWriter(w)
+
+	// Define sensitive field names that should be redacted
+	sensitiveFields := map[string]bool{
+		"EthPassword":         true,
+		"OrchSecret":          true,
+		"KafkaPassword":       true,
+		"MediaMTXApiPassword": true,
+		"LiveAIAuthApiKey":    true,
+		"FVfailGsKey":         true,
+	}
+
 	for i := 0; i < cfgType.NumField(); i++ {
 		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
-			paramTable.Append([]string{cfgType.Field(i).Name, fmt.Sprintf("%v", vCfg.Field(i).Elem())})
+			val := fmt.Sprintf("%v", vCfg.Field(i).Elem())
+			if _, ok := sensitiveFields[cfgType.Field(i).Name]; ok {
+				val = "***"
+			}
+			paramTable.Append([]string{cfgType.Field(i).Name, val})
 		}
 	}
 	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
@@ -464,6 +479,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
+	}
+
+	// Identify this instance using service address (preferred) or Ethereum address if available.
+	containerCreatorID := *cfg.ServiceAddr
+	if containerCreatorID == "" && *cfg.EthAcctAddr != "" {
+		containerCreatorID = *cfg.EthAcctAddr
+	}
+
+	if *cfg.AIWorker {
+		// Remove existing worker containers as soon as possible. This needs to be here so it's done before any resources
+		// are allocated by this process. That because we've seen issues where the AI worker containers hoard all the system
+		// resources and the Orchestrator cannot restart because it dies early (e.g. due to no (v)ram available).
+		removed, err := worker.RemoveExistingContainers(context.Background(), nil, containerCreatorID)
+		if err != nil {
+			glog.Errorf("Error removing existing AI worker containers: %v", err)
+		}
+		if removed > 0 {
+			glog.Infof("Removed %d existing AI worker containers", removed)
+		}
 	}
 
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
@@ -1308,7 +1342,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return

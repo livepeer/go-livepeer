@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.8
+
+### Features ⚒
+
+#### General
+
+* [#3719](https://github.com/livepeer/go-livepeer/pull/3719) Support multiple instances per orchestrator in discovery (@j0sh)
+
+#### Orchestrator
+
+* [#3749](https://github.com/livepeer/go-livepeer/pull/3749) worker: Overrule resource-hog AI runner containers on startup (@victorges)
+
 ## v0.8.7
 
 ### Breaking Changes 🚨🚨
@@ -32,7 +44,7 @@
 - [#3634](https://github.com/livepeer/go-livepeer/pull/3634) BYOC: Allow clients to include or exclude specific Orchestrators by serviceAddr in requests (@ad-astra-video)
 - [#3682](https://github.com/livepeer/go-livepeer/pull/3682) AI/Live: store & forward parameter updates (@j0sh)
 - [#3688](https://github.com/livepeer/go-livepeer/pull/3688) AI: options for `/live/video-to-video` update & status routes to support local browser tests (@ad-astra-video)
-  
+
 #### Orchestrator
 
 - [#3665](https://github.com/livepeer/go-livepeer/pull/3665) Box: give GPUs to orchestrator if running GPU pipeline (@victorges)

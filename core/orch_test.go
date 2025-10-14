@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/golang/glog"
@@ -56,7 +57,7 @@ func TestServeTranscoder(t *testing.T) {
 	}
 }
 
-func TestRemoteTranscoder(t *testing.T) {
+func sync_TestRemoteTranscoder(t *testing.T) {
 	m := NewRemoteTranscoderManager()
 	initTranscoder := func() (*RemoteTranscoder, *StubTranscoderServer) {
 		strm := &StubTranscoderServer{manager: m}
@@ -153,6 +154,10 @@ func TestRemoteTranscoder(t *testing.T) {
 	assert.Greater(ticksWhenSegIsLong, ticksWhenSegIsShort*2, "not enough of a difference between default and long timeouts")
 	// sanity check that ticksWhenSegIsShort is also a reasonable value
 	assert.Greater(ticksWhenSegIsShort*25, ticksWhenSegIsLong)
+}
+
+func TestRemoteTranscoder(t *testing.T) {
+	synctest.Test(t, sync_TestRemoteTranscoder)
 }
 
 func newWg(delta int) *sync.WaitGroup {

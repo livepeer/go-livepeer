@@ -37,6 +37,7 @@ const optFlagsContainerTimeout = 5 * time.Minute
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
+const containerCreatorIDLabel = "creator_id"
 
 var containerTimeout = 3 * time.Minute
 var containerWatchInterval = 5 * time.Second
@@ -104,11 +105,16 @@ var _ DockerClient = (*docker.Client)(nil)
 // Create global references to functions to allow for mocking in tests.
 var dockerWaitUntilRunningFunc = dockerWaitUntilRunning
 
+func NewDefaultDockerClient() (DockerClient, error) {
+	return docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
+}
+
 type DockerManager struct {
-	gpus        []string
-	modelDir    string
-	overrides   ImageOverrides
-	verboseLogs bool
+	gpus               []string
+	modelDir           string
+	overrides          ImageOverrides
+	verboseLogs        bool
+	containerCreatorID string
 
 	dockerClient DockerClient
 	// gpu ID => container
@@ -118,23 +124,32 @@ type DockerManager struct {
 	mu         *sync.Mutex
 }
 
-func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient) (*DockerManager, error) {
+func NewDockerManager(overrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, client DockerClient, containerCreatorID string) (*DockerManager, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
-	if err := removeExistingContainers(ctx, client); err != nil {
+	if _, err := RemoveExistingContainers(ctx, client, containerCreatorID); err != nil {
 		cancel()
 		return nil, err
 	}
 	cancel()
 
 	manager := &DockerManager{
-		gpus:          gpus,
-		modelDir:      modelDir,
-		overrides:     overrides,
-		verboseLogs:   verboseLogs,
-		dockerClient:  client,
-		gpuContainers: make(map[string]*RunnerContainer),
-		containers:    make(map[string]*RunnerContainer),
-		mu:            &sync.Mutex{},
+		gpus:               gpus,
+		modelDir:           modelDir,
+		overrides:          overrides,
+		verboseLogs:        verboseLogs,
+		dockerClient:       client,
+		containerCreatorID: containerCreatorID,
+		gpuContainers:      make(map[string]*RunnerContainer),
+		containers:         make(map[string]*RunnerContainer),
+		mu:                 &sync.Mutex{},
 	}
 
 	return manager, nil
@@ -385,7 +400,8 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 			containerPort: struct{}{},
 		},
 		Labels: map[string]string{
-			containerCreatorLabel: containerCreator,
+			containerCreatorLabel:   containerCreator,
+			containerCreatorIDLabel: m.containerCreatorID,
 		},
 	}
 
@@ -674,21 +690,37 @@ func (m *DockerManager) watchContainer(rc *RunnerContainer) {
 	}
 }
 
-func removeExistingContainers(ctx context.Context, client DockerClient) error {
-	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
-	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
-	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
-	}
-
-	for _, c := range containers {
-		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
-		if err := dockerRemoveContainer(client, c.ID); err != nil {
-			return err
+func RemoveExistingContainers(ctx context.Context, client DockerClient, containerCreatorID string) (int, error) {
+	if client == nil {
+		var err error
+		client, err = NewDefaultDockerClient()
+		if err != nil {
+			return 0, err
 		}
 	}
 
-	return nil
+	filters := filters.NewArgs(filters.Arg("label", containerCreatorLabel+"="+containerCreator))
+	containers, err := client.ContainerList(ctx, container.ListOptions{All: true, Filters: filters})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	removed := 0
+	for _, c := range containers {
+		creatorID, hasCreatorID := c.Labels[containerCreatorIDLabel]
+		// We also remove containers without creator-id label as a migration from previous versions that didn't have it.
+		shouldRemove := !hasCreatorID || creatorID == containerCreatorID
+		if !shouldRemove {
+			continue
+		}
+		slog.Info("Removing existing managed container", slog.String("name", c.Names[0]))
+		if err := dockerRemoveContainer(client, c.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+
+	return removed, nil
 }
 
 // dockerContainerName generates a unique container name based on the pipeline, model ID, and an optional suffix.
