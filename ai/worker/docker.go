@@ -411,11 +411,11 @@ func (m *DockerManager) createContainer(ctx context.Context, pipeline string, mo
 	}
 
 	restartPolicy := container.RestartPolicy{
-		Name:              "on-failure",
+		Name:              container.RestartPolicyOnFailure,
 		MaximumRetryCount: 3,
 	}
 	if keepWarm {
-		restartPolicy = container.RestartPolicy{Name: "always"}
+		restartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
 	}
 
 	hostConfig := &container.HostConfig{
