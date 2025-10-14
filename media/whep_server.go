@@ -51,6 +51,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	if err != nil {
 		clog.InfofErr(ctx, "Failed to create peerconnection", err)
 		http.Error(w, "Failed to create PeerConnection", http.StatusInternalServerError)
+		peerConnection.Close()
 		return
 	}
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
@@ -65,6 +66,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	if err := mpegtsReader.Initialize(); err != nil {
 		clog.InfofErr(ctx, "Failed to initialize mpegts reader", err)
 		http.Error(w, "Failed to initialize mpegts reader", http.StatusInternalServerError)
+		peerConnection.Close()
 		return
 	}
 	tracks := mpegtsReader.Tracks()
@@ -81,12 +83,14 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			if err != nil {
 				clog.InfofErr(ctx, "Error creating track for h264", err)
 				http.Error(w, "Error creating track for h264", http.StatusInternalServerError)
+				peerConnection.Close()
 				return
 			}
 			// TODO use RTPSender.ReplaceTrack on orch swaps
 			if _, err := peerConnection.AddTrack(webrtcTrack); err != nil {
 				clog.InfofErr(ctx, "Error adding track for video", err)
 				http.Error(w, "Error adding track for h264", http.StatusInternalServerError)
+				peerConnection.Close()
 				return
 			}
 			mpegtsReader.OnDataH264(track, func(pts, dts int64, au [][]byte) error {
@@ -113,12 +117,14 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			if err != nil {
 				clog.InfofErr(ctx, "Error creating track for opus", err)
 				http.Error(w, "Error creating track for opus", http.StatusInternalServerError)
+				peerConnection.Close()
 				return
 			}
 			// TODO use RTPSender.ReplaceTrack on orch swaps
 			if _, err := peerConnection.AddTrack(webrtcTrack); err != nil {
 				clog.InfofErr(ctx, "Error adding track for audio", err)
 				http.Error(w, "Error adding track for audio", http.StatusInternalServerError)
+				peerConnection.Close()
 				return
 			}
 			mpegtsReader.OnDataOpus(track, func(pts int64, packets [][]byte) error {
@@ -133,6 +139,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	if !hasAudio && !hasVideo {
 		clog.InfofErr(ctx, "No audio or video in media stream", errors.New("no audio or video"))
 		http.Error(w, "No audio or video in media stream", http.StatusInternalServerError)
+		peerConnection.Close()
 		return
 	} else if !hasVideo {
 		clog.Info(ctx, "No video in output")
@@ -144,6 +151,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	if err := peerConnection.SetRemoteDescription(offer); err != nil {
 		clog.InfofErr(ctx, "SetRemoteDescription failed", err)
 		http.Error(w, "SetRemoteDescription failed", http.StatusBadRequest)
+		peerConnection.Close()
 		return
 	}
 
@@ -152,11 +160,13 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	if err != nil {
 		clog.InfofErr(ctx, "CreateAnswer failed", err)
 		http.Error(w, "CreateAnswer failed", http.StatusInternalServerError)
+		peerConnection.Close()
 		return
 	}
 	if err := peerConnection.SetLocalDescription(answer); err != nil {
 		clog.InfofErr(ctx, "SetLocalDescription failed", err)
 		http.Error(w, "SetLocalDescription failed", http.StatusInternalServerError)
+		peerConnection.Close()
 		return
 	}
 
@@ -168,6 +178,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusCreated)
 	if _, err := w.Write([]byte(peerConnection.LocalDescription().SDP)); err != nil {
 		clog.InfofErr(ctx, "Failed to write SDP answer", err)
+		peerConnection.Close()
 		return
 	}
 
