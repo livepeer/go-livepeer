@@ -21,6 +21,8 @@ import (
 	"github.com/livepeer/go-livepeer/core"
 )
 
+const shutdownTimeout = 10 * time.Second
+
 func main() {
 	// Override the default flag set since there are dependencies that
 	// incorrectly add their own flags (specifically, due to the 'testing'
@@ -94,7 +96,7 @@ func main() {
 	select {
 	case <-lc:
 		glog.Infof("Graceful shutdown complete")
-	case <-time.After(time.Second * 2):
+	case <-time.After(shutdownTimeout):
 		glog.Infof("Shutdown timed out, forcing exit")
 		os.Exit(1)
 	}
