@@ -169,7 +169,6 @@ type LivepeerNode struct {
 	LiveAIHeartbeatInterval    time.Duration
 	LivePaymentInterval        time.Duration
 	LiveOutSegmentTimeout      time.Duration
-	LiveAICapRefreshModels     []string
 	LiveAISaveNSegments        *int
 
 	// Gateway
@@ -355,24 +354,32 @@ func (n *LivepeerNode) GetNetworkCapabilities() []*common.OrchNetworkCapabilitie
 }
 
 func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.OrchNetworkCapabilities) {
-	idleContainersByModelAndOrchestrator := make(map[string]map[string]int)
+	// Build structured capacity data
+	modelCapacities := make(map[string]*lpmon.ModelAICapacities)
 
 	for _, orchCap := range orchNetworkCapabilities {
 		models := getModelCapsFromNetCapabilities(orchCap.Capabilities)
 
 		for modelID, model := range models {
-			if _, exists := idleContainersByModelAndOrchestrator[modelID]; !exists {
-				idleContainersByModelAndOrchestrator[modelID] = make(map[string]int)
+			if _, exists := modelCapacities[modelID]; !exists {
+				modelCapacities[modelID] = &lpmon.ModelAICapacities{
+					ModelID:       modelID,
+					Orchestrators: make(map[string]lpmon.AIContainerCapacity),
+				}
 			}
 
-			idle := int(model.Capacity)
-			idleContainersByModelAndOrchestrator[modelID][orchCap.OrchURI] = idle
-			inUse := int(model.CapacityInUse)
-			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d", modelID, orchCap.OrchURI, inUse, idle)
+			capacity := lpmon.AIContainerCapacity{
+				Idle:  int(model.Capacity),
+				InUse: int(model.CapacityInUse),
+			}
+			modelCapacities[modelID].Orchestrators[orchCap.OrchURI] = capacity
+
+			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d",
+				modelID, orchCap.OrchURI, capacity.InUse, capacity.Idle)
 		}
 	}
 
-	lpmon.AIContainersIdleAfterGatewayDiscovery(idleContainersByModelAndOrchestrator)
+	lpmon.AIContainersIdleAfterGatewayDiscovery(modelCapacities)
 }
 
 func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {

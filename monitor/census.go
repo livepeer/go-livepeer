@@ -73,6 +73,18 @@ const (
 	segTypeRec     = "recorded" // segment in the stream for which recording is enabled
 )
 
+// AIContainerCapacity holds capacity information for AI containers
+type AIContainerCapacity struct {
+	Idle  int
+	InUse int
+}
+
+// ModelAICapacities holds all orchestrator capacities for a specific model
+type ModelAICapacities struct {
+	ModelID       string
+	Orchestrators map[string]AIContainerCapacity // orchURI -> capacity
+}
+
 const (
 	//mpeg7-sign comparison fail of fast verification
 	FVType1Error = 1
@@ -197,24 +209,24 @@ type (
 		mSceneClassification *stats.Int64Measure
 
 		// Metrics for AI jobs
-		mAIModelsRequested                       *stats.Int64Measure
-		mAIRequestLatencyScore                   *stats.Float64Measure
-		mAIRequestPrice                          *stats.Float64Measure
-		mAIRequestError                          *stats.Int64Measure
-		mAIResultDownloaded                      *stats.Int64Measure
-		mAIResultDownloadTime                    *stats.Float64Measure
-		mAIResultUploaded                        *stats.Int64Measure
-		mAIResultUploadTime                      *stats.Float64Measure
-		mAIResultSaveFailed                      *stats.Int64Measure
-		mAIContainersInUse                       *stats.Int64Measure
-		mAIContainersIdle                        *stats.Int64Measure
-		aiContainersIdleByPipelineByOrchestrator map[string]map[string]int
-		mAIGPUsIdle                              *stats.Int64Measure
-		mAICurrentLivePipelines                  *stats.Int64Measure
-		aiLiveSessionsByPipeline                 map[string]int
-		mAIFirstSegmentDelay                     *stats.Int64Measure
-		mAILiveAttempts                          *stats.Int64Measure
-		mAINumOrchs                              *stats.Int64Measure
+		mAIModelsRequested          *stats.Int64Measure
+		mAIRequestLatencyScore      *stats.Float64Measure
+		mAIRequestPrice             *stats.Float64Measure
+		mAIRequestError             *stats.Int64Measure
+		mAIResultDownloaded         *stats.Int64Measure
+		mAIResultDownloadTime       *stats.Float64Measure
+		mAIResultUploaded           *stats.Int64Measure
+		mAIResultUploadTime         *stats.Float64Measure
+		mAIResultSaveFailed         *stats.Int64Measure
+		mAIContainersInUse          *stats.Int64Measure
+		mAIContainersIdle           *stats.Int64Measure
+		aiContainersCapacityByModel map[string]*ModelAICapacities
+		mAIGPUsIdle                 *stats.Int64Measure
+		mAICurrentLivePipelines     *stats.Int64Measure
+		aiLiveSessionsByPipeline    map[string]int
+		mAIFirstSegmentDelay        *stats.Int64Measure
+		mAILiveAttempts             *stats.Int64Measure
+		mAINumOrchs                 *stats.Int64Measure
 
 		mAIWhipTransportBytesReceived *stats.Int64Measure
 		mAIWhipTransportBytesSent     *stats.Int64Measure
@@ -391,7 +403,7 @@ func InitCensus(nodeType NodeType, version string) {
 	census.mAIResultSaveFailed = stats.Int64("ai_result_upload_failed_total", "AIResultUploadFailed", "tot")
 	census.mAIContainersInUse = stats.Int64("ai_container_in_use", "Number of containers currently used for AI processing", "tot")
 	census.mAIContainersIdle = stats.Int64("ai_container_idle", "Number of containers currently available for AI processing", "tot")
-	census.aiContainersIdleByPipelineByOrchestrator = make(map[string]map[string]int)
+	census.aiContainersCapacityByModel = make(map[string]*ModelAICapacities)
 	census.mAIGPUsIdle = stats.Int64("ai_gpus_idle", "Number of idle GPUs (with no configured container)", "tot")
 	census.mAICurrentLivePipelines = stats.Int64("ai_current_live_pipelines", "Number of live AI pipelines currently running", "tot")
 	census.aiLiveSessionsByPipeline = make(map[string]int)
@@ -2018,43 +2030,47 @@ func AIContainersInUse(currentContainersInUse int, pipeline, modelID string) {
 	}
 }
 
-func AIContainersIdleAfterGatewayDiscovery(idleContainersByPipelinesAndOrchestrator map[string]map[string]int) {
+func AIContainersIdleAfterGatewayDiscovery(modelCapacities map[string]*ModelAICapacities) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
-	// Reset all existing pipeline idleContainers to zero first.
+	// Reset all existing model container counts to zero first.
 	// This ensures we don't have any stale counts.
-	for k, v := range census.aiContainersIdleByPipelineByOrchestrator {
-		for k2 := range v {
-			census.aiContainersIdleByPipelineByOrchestrator[k][k2] = 0
-		}
-	}
-	// Update counts.
-	for pipeline, v := range idleContainersByPipelinesAndOrchestrator {
-		for orchestrator, count := range v {
-			if _, exists := census.aiContainersIdleByPipelineByOrchestrator[pipeline]; !exists {
-				census.aiContainersIdleByPipelineByOrchestrator[pipeline] = make(map[string]int)
-			}
-			census.aiContainersIdleByPipelineByOrchestrator[pipeline][orchestrator] = count
+	for _, modelCap := range census.aiContainersCapacityByModel {
+		for orchURI := range modelCap.Orchestrators {
+			modelCap.Orchestrators[orchURI] = AIContainerCapacity{Idle: 0, InUse: 0}
 		}
 	}
 
-	// Record metrics for all pipelines for all orchestrators
-	for model, v := range census.aiContainersIdleByPipelineByOrchestrator {
-		for orchURL, v2 := range v {
-			if err := stats.RecordWithTags(census.ctx,
-				[]tag.Mutator{tag.Insert(census.kModelName, model), tag.Insert(census.kOrchestratorURI, orchURL)},
-				census.mAIContainersIdle.M(int64(v2))); err != nil {
-				glog.Errorf("Error recording metrics err=%q", err)
-			}
-			if v2 == 0 {
-				// Remove zero counts, no need to report it again
-				delete(census.aiContainersIdleByPipelineByOrchestrator[model], orchURL)
+	// Update counts with new data
+	for modelID, newModelCap := range modelCapacities {
+		if _, exists := census.aiContainersCapacityByModel[modelID]; !exists {
+			census.aiContainersCapacityByModel[modelID] = &ModelAICapacities{
+				ModelID:       modelID,
+				Orchestrators: make(map[string]AIContainerCapacity),
 			}
 		}
-		if len(census.aiContainersIdleByPipelineByOrchestrator[model]) == 0 {
-			// If there are no more pipelines for this model, remove it from the map
-			delete(census.aiContainersIdleByPipelineByOrchestrator, model)
+		for orchURI, capacity := range newModelCap.Orchestrators {
+			census.aiContainersCapacityByModel[modelID].Orchestrators[orchURI] = capacity
+		}
+	}
+
+	// Record metrics for all models for all orchestrators
+	for modelID, modelCap := range census.aiContainersCapacityByModel {
+		for orchURI, capacity := range modelCap.Orchestrators {
+			if err := stats.RecordWithTags(census.ctx,
+				[]tag.Mutator{tag.Insert(census.kModelName, modelID), tag.Insert(census.kOrchestratorURI, orchURI)},
+				census.mAIContainersIdle.M(int64(capacity.Idle))); err != nil {
+				glog.Errorf("Error recording metrics err=%q", err)
+			}
+			if capacity.Idle == 0 && capacity.InUse == 0 {
+				// Remove zero counts, no need to report it again
+				delete(census.aiContainersCapacityByModel[modelID].Orchestrators, orchURI)
+			}
+		}
+		if len(census.aiContainersCapacityByModel[modelID].Orchestrators) == 0 {
+			// If there are no more orchestrators for this model, remove it from the map
+			delete(census.aiContainersCapacityByModel, modelID)
 		}
 	}
 }
