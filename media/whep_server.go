@@ -74,7 +74,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 		switch track.Codec.(type) {
 		case *mpegts.CodecH264:
 			// TODO this track can probably be reused for multiple viewers
-			webrtcTrack, err := NewLocalVideoTrack(
+			webrtcTrack, err := NewLocalTrack(
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
 				"video", "livepeer",
 			)
@@ -98,13 +98,13 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 						return nil
 					}
 				}
-				return webrtcTrack.WriteVideo(au, pts)
+				return webrtcTrack.WriteSample(au, pts)
 			})
 			trackCodecs = append(trackCodecs, "h264")
 			hasVideo = true
 
 		case *mpegts.CodecOpus:
-			webrtcTrack, err := NewLocalVideoTrack(
+			webrtcTrack, err := NewLocalTrack(
 				// NB: Don't signal sample rate or channel count here. Leave empty to use defaults.
 				// Opus RTP RFC 7587 requires opus/48000/2 regardless of the actual content
 				webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus},
@@ -123,7 +123,7 @@ func (s *WHEPServer) CreateWHEP(ctx context.Context, w http.ResponseWriter, r *h
 			}
 			mpegtsReader.OnDataOpus(track, func(pts int64, packets [][]byte) error {
 				pts = multiplyAndDivide(pts, 48_000, 90_000)
-				return webrtcTrack.WriteVideo(packets, pts)
+				return webrtcTrack.WriteSample(packets, pts)
 			})
 			trackCodecs = append(trackCodecs, "opus")
 			hasAudio = true
@@ -217,36 +217,34 @@ func NewWHEPServer() *WHEPServer {
 // Implements the TrackLocal interface in Pion
 // https://github.com/pion/webrtc/blob/7a94394db0b429b0136265f4556512d5f4a05a0b/track_local.go#L102-L105
 // This mostly borrows from TrackLocalStaticRTP *except* WriteSample takes a timestamp instead of a duration
-type LocalVideoTrack struct {
-	packetizer  rtp.Packetizer
-	sequencer   rtp.Sequencer
-	rtpTrack    *webrtc.TrackLocalStaticRTP
-	timestamper *RTPTimestamper
+type LocalTrack struct {
+	packetizer rtp.Packetizer
+	sequencer  rtp.Sequencer
+	rtpTrack   *webrtc.TrackLocalStaticRTP
 
 	isH264 bool
 }
 
-func NewLocalVideoTrack(
+func NewLocalTrack(
 	c webrtc.RTPCodecCapability,
 	id, streamID string,
 	options ...func(*webrtc.TrackLocalStaticRTP),
-) (*LocalVideoTrack, error) {
+) (*LocalTrack, error) {
 	rtpTrack, err := webrtc.NewTrackLocalStaticRTP(c, id, streamID, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	return &LocalVideoTrack{
-		rtpTrack:    rtpTrack,
-		timestamper: NewRTPTimestamper(),
+	return &LocalTrack{
+		rtpTrack: rtpTrack,
 	}, nil
 }
 
-// WriteSample writes a Sample to the TrackLocalStaticSample
+// WriteSample writes a video / audio Sample to PeerConnections via RTP
 // If one PeerConnection fails the packets will still be sent to
 // all PeerConnections. The error message will contain the ID of the failed
 // PeerConnections so you can remove them.
-func (s *LocalVideoTrack) WriteVideo(au [][]byte, pts int64) error {
+func (s *LocalTrack) WriteSample(au [][]byte, pts int64) error {
 	packetizer := s.packetizer
 
 	if packetizer == nil {
@@ -260,13 +258,15 @@ func (s *LocalVideoTrack) WriteVideo(au [][]byte, pts int64) error {
 	} else {
 		data = bytes.Join(au, []byte{})
 	}
-	duration := uint32(0) // technically 'samples' ; would be framerate
+	duration := uint32(0) // samples for audio; video would be framerate
 	packets := packetizer.Packetize(data, duration)
-	ts := s.timestamper.ToTS(pts)
 
 	writeErrs := []error{}
 	for _, p := range packets {
-		p.Timestamp = ts // ¯\_(ツ)_/¯
+		// Directly assignment of the timestamp here is
+		// the only reason for having this LocalTrack class
+		// If Pion ever adds this ability, use it instead
+		p.Timestamp = uint32(pts)
 		if err := s.rtpTrack.WriteRTP(p); err != nil {
 			writeErrs = append(writeErrs, err)
 		}
@@ -275,7 +275,7 @@ func (s *LocalVideoTrack) WriteVideo(au [][]byte, pts int64) error {
 	return errors.Join(writeErrs...)
 }
 
-func (s *LocalVideoTrack) Bind(trackContext webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
+func (s *LocalTrack) Bind(trackContext webrtc.TrackLocalContext) (webrtc.RTPCodecParameters, error) {
 	codec, err := s.rtpTrack.Bind(trackContext)
 	if err != nil {
 		return codec, err
@@ -313,20 +313,20 @@ func (s *LocalVideoTrack) Bind(trackContext webrtc.TrackLocalContext) (webrtc.RT
 
 // Unbind implements the teardown logic when the track is no longer needed. This happens
 // because a track has been stopped.
-func (s *LocalVideoTrack) Unbind(t webrtc.TrackLocalContext) error {
+func (s *LocalTrack) Unbind(t webrtc.TrackLocalContext) error {
 	return s.rtpTrack.Unbind(t)
 }
 
 // ID is the unique identifier for this Track. This should be unique for the
 // stream, but doesn't have to globally unique. A common example would be 'audio' or 'video'
 // and StreamID would be 'desktop' or 'webcam'.
-func (s *LocalVideoTrack) ID() string { return s.rtpTrack.ID() }
+func (s *LocalTrack) ID() string { return s.rtpTrack.ID() }
 
 // StreamID is the group this track belongs too. This must be unique.
-func (s *LocalVideoTrack) StreamID() string { return s.rtpTrack.StreamID() }
+func (s *LocalTrack) StreamID() string { return s.rtpTrack.StreamID() }
 
 // RID is the RTP stream identifier.
-func (s *LocalVideoTrack) RID() string { return s.rtpTrack.RID() }
+func (s *LocalTrack) RID() string { return s.rtpTrack.RID() }
 
 // Kind controls if this TrackLocal is audio or video.
-func (s *LocalVideoTrack) Kind() webrtc.RTPCodecType { return s.rtpTrack.Kind() }
+func (s *LocalTrack) Kind() webrtc.RTPCodecType { return s.rtpTrack.Kind() }
