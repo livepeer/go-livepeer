@@ -2030,7 +2030,7 @@ func AIContainersInUse(currentContainersInUse int, pipeline, modelID string) {
 	}
 }
 
-func AIContainersIdleAfterGatewayDiscovery(modelCapacities map[string]*ModelAICapacities) {
+func ReportAIContainerCapacity(modelCapacities map[string]*ModelAICapacities) {
 	census.lock.Lock()
 	defer census.lock.Unlock()
 
@@ -2058,11 +2058,20 @@ func AIContainersIdleAfterGatewayDiscovery(modelCapacities map[string]*ModelAICa
 	// Record metrics for all models for all orchestrators
 	for modelID, modelCap := range census.aiContainersCapacityByModel {
 		for orchURI, capacity := range modelCap.Orchestrators {
+			// Record idle containers metric
 			if err := stats.RecordWithTags(census.ctx,
 				[]tag.Mutator{tag.Insert(census.kModelName, modelID), tag.Insert(census.kOrchestratorURI, orchURI)},
 				census.mAIContainersIdle.M(int64(capacity.Idle))); err != nil {
-				glog.Errorf("Error recording metrics err=%q", err)
+				glog.Errorf("Error recording idle containers metric err=%q", err)
 			}
+
+			// Record in-use containers metric
+			if err := stats.RecordWithTags(census.ctx,
+				[]tag.Mutator{tag.Insert(census.kModelName, modelID), tag.Insert(census.kOrchestratorURI, orchURI)},
+				census.mAIContainersInUse.M(int64(capacity.InUse))); err != nil {
+				glog.Errorf("Error recording in-use containers metric err=%q", err)
+			}
+
 			if capacity.Idle == 0 && capacity.InUse == 0 {
 				// Remove zero counts, no need to report it again
 				delete(census.aiContainersCapacityByModel[modelID].Orchestrators, orchURI)

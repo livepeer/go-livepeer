@@ -379,7 +379,7 @@ func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.O
 		}
 	}
 
-	lpmon.AIContainersIdleAfterGatewayDiscovery(modelCapacities)
+	lpmon.ReportAIContainerCapacity(modelCapacities)
 }
 
 func getModelCapsFromNetCapabilities(caps *net.Capabilities) map[string]*net.Capabilities_CapabilityConstraints_ModelConstraint {
