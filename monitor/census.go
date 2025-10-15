@@ -1031,7 +1031,7 @@ func InitCensus(nodeType NodeType, version string) {
 			Name:        "ai_container_in_use",
 			Measure:     census.mAIContainersInUse,
 			Description: "Number of containers currently used for AI processing",
-			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName}, baseTags...),
+			TagKeys:     append([]tag.Key{census.kPipeline, census.kModelName, census.kOrchestratorURI}, baseTags...),
 			Aggregation: view.LastValue(),
 		},
 		{
