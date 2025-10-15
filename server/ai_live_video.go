@@ -239,6 +239,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 		stopProcessing(ctx, params, fmt.Errorf("ringbuffer init failed: %w", err))
 		return
 	}
+	setOutWriter(ctx, outWriter, params) // for WHEP
 	// Launch ffmpeg for each configured RTMP output
 	for _, outURL := range params.liveParams.rtmpOutputs {
 		go ffmpegOutput(ctx, outURL, outWriter, params)
@@ -366,7 +367,7 @@ func startTrickleSubscribe(ctx context.Context, url *url.URL, params aiRequestPa
 				})
 
 			}
-			clog.V(8).Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
+			clog.Info(ctx, "trickle subscribe read data completed", "seq", seq, "bytes", humanize.Bytes(uint64(n)), "took", time.Since(copyStartTime))
 		}
 	}()
 
@@ -496,6 +497,19 @@ func copySegment(ctx context.Context, segment *http.Response, w io.Writer, seq i
 	}
 }
 
+func setOutWriter(ctx context.Context, writer *media.RingBuffer, params aiRequestParams) {
+	params.node.LiveMu.Lock()
+	defer params.node.LiveMu.Unlock()
+	stream, requestID := params.liveParams.stream, params.liveParams.requestID
+	sess, exists := params.node.LivePipelines[stream]
+	if !exists || sess.RequestID != requestID {
+		clog.Info(ctx, "Did not set output writer due to nonexistent stream or mismatched request ID", "exists", exists, "requestID", requestID, "session-requestID", sess.RequestID)
+		return
+	}
+	sess.OutWriter = writer
+	sess.OutCond.Broadcast()
+}
+
 func registerControl(ctx context.Context, params aiRequestParams) {
 	params.node.LiveMu.Lock()
 	defer params.node.LiveMu.Unlock()
@@ -506,6 +520,8 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 			clog.Info(ctx, "Stopping existing control loop", "existing_request_id", sess.RequestID)
 			sess.ControlPub.Close()
 			// TODO better solution than allowing existing streams to stomp over one another
+			sess.Closed = true
+			sess.OutCond.Broadcast()
 		}
 	}
 
@@ -513,6 +529,7 @@ func registerControl(ctx context.Context, params aiRequestParams) {
 		RequestID: params.liveParams.requestID,
 		Pipeline:  params.liveParams.pipeline,
 		StreamID:  params.liveParams.streamID,
+		OutCond:   sync.NewCond(params.node.LiveMu),
 	}
 }
 
@@ -782,6 +799,23 @@ func startEventsSubscribe(ctx context.Context, url *url.URL, params aiRequestPar
 			}
 		}
 	}()
+}
+
+func getOutWriter(stream string, node *core.LivepeerNode) (*media.RingBuffer, string) {
+	node.LiveMu.Lock()
+	defer node.LiveMu.Unlock()
+	sess, exists := node.LivePipelines[stream]
+	if !exists || sess.Closed {
+		return nil, ""
+	}
+	// could be nil if we haven't gotten an orchestrator yet
+	for sess.OutWriter == nil {
+		sess.OutCond.Wait()
+		if sess.Closed {
+			return nil, ""
+		}
+	}
+	return sess.OutWriter, sess.RequestID
 }
 
 func (a aiRequestParams) inputStreamExists() bool {

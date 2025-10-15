@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
 /*
@@ -213,12 +214,24 @@ func (rb *RingBuffer) MakeReader() *RingBufferReader {
 }
 
 type RingBufferReader struct {
-	rb *RingBuffer
-	nb int64
+	rb     *RingBuffer
+	nb     int64
+	closed atomic.Bool
 }
 
 func (rbr *RingBufferReader) Read(p []byte) (int, error) {
+	if closed := rbr.closed.Load(); closed {
+		return 0, io.EOF
+	}
 	n, err := rbr.rb.readFrom(p, rbr.nb)
 	rbr.nb += int64(n)
 	return n, err
+}
+
+func (rbr *RingBufferReader) Close() error {
+	// NB: If already blocking in Read(),
+	// EOF occurs on the *next* Read() call
+	// This does not wake up blocked readers.
+	rbr.closed.Store(true)
+	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/livepeer/go-livepeer/cmd/livepeer/starter"
@@ -19,6 +20,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/livepeer/go-livepeer/core"
 )
+
+const shutdownTimeout = 10 * time.Second
 
 func main() {
 	// Override the default flag set since there are dependencies that
@@ -76,17 +79,25 @@ func main() {
 	lc := make(chan struct{})
 
 	go func() {
+		defer close(lc)
 		starter.StartLivepeer(ctx, cfg)
-		lc <- struct{}{}
 	}()
 
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
 	select {
 	case sig := <-c:
 		glog.Infof("Exiting Livepeer: %v", sig)
 		cancel()
-		time.Sleep(time.Second * 2) //Give time for other processes to shut down completely
 	case <-lc:
+		// fallthrough to normal shutdown below
+	}
+	select {
+	case <-lc:
+		glog.Infof("Graceful shutdown complete")
+	case <-time.After(shutdownTimeout):
+		glog.Infof("Shutdown timed out, forcing exit")
+		os.Exit(1)
 	}
 }
