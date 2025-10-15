@@ -246,8 +246,6 @@ func (o *orchestratorPool) GetOrchestrators(ctx context.Context, numOrchestrator
 	for _, i := range rand.Perm(numAvailableOrchs) {
 		go getOrchInfo(ctx, common.OrchestratorDescriptor{linfos[i], nil}, 0, odCh, errCh, allOrchDescrCh)
 	}
-	// TODO revert the changes from https://github.com/livepeer/go-livepeer/commit/905c3144707f1b682667828f350006c5a2e0a3a8#diff-f032101b11930379f2dd15d9a82631fa0a38d87f16760d7bc5423d25c56d3b4f ?
-	// go reportLiveAICapacity(allOrchDescrCh, caps)
 
 	// use a timer to time out the entire get info loop below
 	cutoffTimer := time.NewTimer(maxGetOrchestratorCutoffTimeout)
