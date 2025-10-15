@@ -1,7 +1,13 @@
 #!/bin/bash
 set -e
 
+DOCKER=${DOCKER:-false}
 FRONTEND=${FRONTEND:-false}
+
+if [ "$FRONTEND" = "true" && "$DOCKER" = "false" ]; then
+  echo "Running the box with FRONTEND=true requires DOCKER=true"
+  exit 1
+fi
 
 # Start multiple processes and output their logs to the console
 gateway() {
@@ -34,9 +40,9 @@ gateway &
 orchestrator &
 mediamtx &
 
-if [ "$DOCKER" = "true" ]; then
+if [ "$FRONTEND" = "true" ]; then
   supabase &
-  mediamtx &
+  frontend &
 fi
 
 # Wait for all background processes to finish
