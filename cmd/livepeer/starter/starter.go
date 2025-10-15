@@ -16,6 +16,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ import (
 	"github.com/livepeer/go-tools/drivers"
 	"github.com/livepeer/livepeer-data/pkg/event"
 	"github.com/livepeer/lpms/ffmpeg"
+	"github.com/olekukonko/tablewriter"
 )
 
 var (
@@ -83,6 +85,7 @@ type LivepeerConfig struct {
 	CliAddr                    *string
 	HttpAddr                   *string
 	ServiceAddr                *string
+	Nodes                      *string
 	OrchAddr                   *string
 	VerifierURL                *string
 	EthController              *string
@@ -110,6 +113,7 @@ type LivepeerConfig struct {
 	IgnoreMaxPriceIfNeeded     *bool
 	MinPerfScore               *float64
 	DiscoveryTimeout           *time.Duration
+	ExtraNodes                 *int
 	MaxSessions                *string
 	CurrentManifest            *bool
 	Nvidia                     *string
@@ -175,9 +179,13 @@ type LivepeerConfig struct {
 	KafkaGatewayTopic          *string
 	MediaMTXApiPassword        *string
 	LiveAIAuthApiKey           *string
+	LiveAIHeartbeatURL         *string
+	LiveAIHeartbeatHeaders     *string
+	LiveAIHeartbeatInterval    *time.Duration
 	LivePaymentInterval        *time.Duration
 	LiveOutSegmentTimeout      *time.Duration
 	LiveAICapRefreshModels     *string
+	LiveAISaveNSegments        *int
 }
 
 // DefaultLivepeerConfig creates LivepeerConfig exactly the same as when no flags are passed to the livepeer process.
@@ -188,6 +196,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultCliAddr := ""
 	defaultHttpAddr := ""
 	defaultServiceAddr := ""
+	defaultNodes := ""
 	defaultOrchAddr := ""
 	defaultVerifierURL := ""
 	defaultVerifierPath := ""
@@ -209,6 +218,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultRegion := ""
 	defaultMinPerfScore := 0.0
 	defaultDiscoveryTimeout := 500 * time.Millisecond
+	defaultExtraNodes := 0
 	defaultCurrentManifest := false
 	defaultNvidia := ""
 	defaultNetint := ""
@@ -230,6 +240,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	defaultLivePaymentInterval := 5 * time.Second
 	defaultLiveOutSegmentTimeout := 0 * time.Second
 	defaultGatewayHost := ""
+	defaultLiveAIHeartbeatInterval := 5 * time.Second
 
 	// Onchain:
 	defaultEthAcctAddr := ""
@@ -303,6 +314,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		CliAddr:      &defaultCliAddr,
 		HttpAddr:     &defaultHttpAddr,
 		ServiceAddr:  &defaultServiceAddr,
+		Nodes:        &defaultNodes,
 		OrchAddr:     &defaultOrchAddr,
 		VerifierURL:  &defaultVerifierURL,
 		VerifierPath: &defaultVerifierPath,
@@ -324,6 +336,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		Region:               &defaultRegion,
 		MinPerfScore:         &defaultMinPerfScore,
 		DiscoveryTimeout:     &defaultDiscoveryTimeout,
+		ExtraNodes:           &defaultExtraNodes,
 		CurrentManifest:      &defaultCurrentManifest,
 		Nvidia:               &defaultNvidia,
 		Netint:               &defaultNetint,
@@ -345,6 +358,7 @@ func DefaultLivepeerConfig() LivepeerConfig {
 		LivePaymentInterval:      &defaultLivePaymentInterval,
 		LiveOutSegmentTimeout:    &defaultLiveOutSegmentTimeout,
 		GatewayHost:              &defaultGatewayHost,
+		LiveAIHeartbeatInterval:  &defaultLiveAIHeartbeatInterval,
 
 		// Onchain:
 		EthAcctAddr:             &defaultEthAcctAddr,
@@ -415,6 +429,39 @@ func DefaultLivepeerConfig() LivepeerConfig {
 	}
 }
 
+func (cfg LivepeerConfig) PrintConfig(w io.Writer) {
+	// compare current settings with default values, and print the difference
+	defCfg := DefaultLivepeerConfig()
+	vDefCfg := reflect.ValueOf(defCfg)
+	vCfg := reflect.ValueOf(cfg)
+	cfgType := vCfg.Type()
+	paramTable := tablewriter.NewWriter(w)
+
+	// Define sensitive field names that should be redacted
+	sensitiveFields := map[string]bool{
+		"EthPassword":         true,
+		"OrchSecret":          true,
+		"KafkaPassword":       true,
+		"MediaMTXApiPassword": true,
+		"LiveAIAuthApiKey":    true,
+		"FVfailGsKey":         true,
+	}
+
+	for i := 0; i < cfgType.NumField(); i++ {
+		if !vDefCfg.Field(i).IsNil() && !vCfg.Field(i).IsNil() && vCfg.Field(i).Elem().Interface() != vDefCfg.Field(i).Elem().Interface() {
+			val := fmt.Sprintf("%v", vCfg.Field(i).Elem())
+			if _, ok := sensitiveFields[cfgType.Field(i).Name]; ok {
+				val = "***"
+			}
+			paramTable.Append([]string{cfgType.Field(i).Name, val})
+		}
+	}
+	paramTable.SetAlignment(tablewriter.ALIGN_LEFT)
+	paramTable.SetCenterSeparator("*")
+	paramTable.SetColumnSeparator("|")
+	paramTable.Render()
+}
+
 func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if *cfg.MaxSessions == "auto" && *cfg.Orchestrator {
 		if *cfg.Transcoder {
@@ -432,6 +479,25 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.Netint != "" && *cfg.Nvidia != "" {
 		glog.Exit("both -netint and -nvidia arguments specified, this is not supported")
+	}
+
+	// Identify this instance using service address (preferred) or Ethereum address if available.
+	containerCreatorID := *cfg.ServiceAddr
+	if containerCreatorID == "" && *cfg.EthAcctAddr != "" {
+		containerCreatorID = *cfg.EthAcctAddr
+	}
+
+	if *cfg.AIWorker {
+		// Remove existing worker containers as soon as possible. This needs to be here so it's done before any resources
+		// are allocated by this process. That because we've seen issues where the AI worker containers hoard all the system
+		// resources and the Orchestrator cannot restart because it dies early (e.g. due to no (v)ram available).
+		removed, err := worker.RemoveExistingContainers(context.Background(), nil, containerCreatorID)
+		if err != nil {
+			glog.Errorf("Error removing existing AI worker containers: %v", err)
+		}
+		if removed > 0 {
+			glog.Infof("Removed %d existing AI worker containers", removed)
+		}
 	}
 
 	blockPollingTime := time.Duration(*cfg.BlockPollingInterval) * time.Second
@@ -533,6 +599,16 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 
 	if *cfg.OrchSecret != "" {
 		n.OrchSecret, _ = common.ReadFromFile(*cfg.OrchSecret)
+	}
+
+	// Parse -instances flag and store parsed canonicalized URLs in the node
+	if cfg.Nodes != nil && *cfg.Nodes != "" {
+		n.Nodes, err = parseNodes(*cfg.Nodes)
+		if err != nil || len(n.Nodes) == 0 {
+			glog.Exit("No valid instance URLs parsed from -nodes: ", err)
+		} else {
+			glog.Infof("Configured nodes: %v", strings.Join(n.Nodes, ","))
+		}
 	}
 
 	var transcoderCaps []core.Capability
@@ -693,7 +769,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 				}
 			}
 		} else {
-			glog.Exit(fmt.Errorf(err.Error()))
+			glog.Exit(err)
 		}
 
 		//Get the Eth client connection information
@@ -1266,7 +1342,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			}
 		}
 
-		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir)
+		n.AIWorker, err = worker.NewWorker(imageOverrides, *cfg.AIVerboseLogs, gpus, modelsDir, containerCreatorID)
 		if err != nil {
 			glog.Errorf("Error starting AI worker: %v", err)
 			return
@@ -1495,6 +1571,8 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			go refreshOrchPerfScoreLoop(ctx, strings.ToUpper(*cfg.Region), *cfg.OrchPerfStatsURL, n.OrchPerfScore)
 		}
 
+		n.ExtraNodes = *cfg.ExtraNodes
+
 		// Set up orchestrator discovery
 		if *cfg.OrchWebhookURL != "" {
 			whurl, err := validateURL(*cfg.OrchWebhookURL)
@@ -1582,6 +1660,10 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			glog.Exit("Error getting service URI: ", err)
 		}
 
+		if suri.String() == "" && len(n.Nodes) == 0 {
+			glog.Exit("Empty service URI and no additional nodes specified; set -serviceAddr or -nodes")
+		}
+
 		if *cfg.Network != "offchain" && !common.ValidateServiceURI(suri) {
 			glog.Warning("**Warning -serviceAddr is a not a public address or hostname; this is not recommended for onchain networks**")
 		}
@@ -1653,6 +1735,22 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAIAuthApiKey != nil {
 		n.LiveAIAuthApiKey = *cfg.LiveAIAuthApiKey
 	}
+	if cfg.LiveAIHeartbeatURL != nil {
+		n.LiveAIHeartbeatURL = *cfg.LiveAIHeartbeatURL
+	}
+	if cfg.LiveAIHeartbeatInterval != nil {
+		n.LiveAIHeartbeatInterval = *cfg.LiveAIHeartbeatInterval
+	}
+	if cfg.LiveAIHeartbeatHeaders != nil {
+		n.LiveAIHeartbeatHeaders = make(map[string]string)
+		headers := strings.Split(*cfg.LiveAIHeartbeatHeaders, ",")
+		for _, header := range headers {
+			parts := strings.SplitN(header, ":", 2)
+			if len(parts) == 2 {
+				n.LiveAIHeartbeatHeaders[parts[0]] = parts[1]
+			}
+		}
+	}
 	n.LivePaymentInterval = *cfg.LivePaymentInterval
 	n.LiveOutSegmentTimeout = *cfg.LiveOutSegmentTimeout
 	if cfg.LiveAITrickleHostForRunner != nil {
@@ -1661,6 +1759,7 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 	if cfg.LiveAICapRefreshModels != nil && *cfg.LiveAICapRefreshModels != "" {
 		n.LiveAICapRefreshModels = strings.Split(*cfg.LiveAICapRefreshModels, ",")
 	}
+	n.LiveAISaveNSegments = cfg.LiveAISaveNSegments
 
 	//Create Livepeer Node
 
@@ -1706,15 +1805,21 @@ func StartLivepeer(ctx context.Context, cfg LivepeerConfig) {
 			tc <- struct{}{}
 		}()
 
+		doingWork := orch.ServiceURI().String() != ""
+
 		// check whether or not the orchestrator is available
-		if *cfg.TestOrchAvail {
+		if *cfg.TestOrchAvail && doingWork {
 			time.Sleep(2 * time.Second)
 			orchAvail := server.CheckOrchestratorAvailability(orch)
 			if !orchAvail {
 				// shut down orchestrator
-				glog.Infof("Orchestrator not available at %v; shutting down", orch.ServiceURI())
+				glog.Infof("Orchestrator not available at %v (%v); shutting down", orch.ServiceURI(), *cfg.HttpAddr)
 				tc <- struct{}{}
 			}
+		}
+
+		if !doingWork {
+			glog.Infof("Orchestrator is not performing work")
 		}
 
 	}()
@@ -1797,6 +1902,34 @@ func parseOrchAddrs(addrs string) []*url.URL {
 	return res
 }
 
+func parseNodes(addrs string) ([]string, error) {
+	var res []string
+	if len(addrs) == 0 {
+		return res, fmt.Errorf("instances empty")
+	}
+	for _, addr := range strings.Split(addrs, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		// Add https if not provided
+		if !strings.HasPrefix(addr, "https://") {
+			addr = "https://" + addr
+		}
+		parsed, err := url.ParseRequestURI(addr)
+		if err != nil {
+			return nil, fmt.Errorf("Could not parse instance URI '%s': %w", addr, err)
+		}
+		// Ensure scheme starts with https; if http is provided, upgrade to https
+		if parsed.Scheme != "https" {
+			return nil, fmt.Errorf("Node URI must start with https '%s'", addr)
+		}
+		// Use the canonical string form
+		res = append(res, parsed.String())
+	}
+	return res, nil
+}
+
 func parseOrchBlacklist(b *string) []string {
 	if b == nil {
 		return []string{}
@@ -1842,6 +1975,10 @@ func isLocalURL(u string) (bool, error) {
 func getServiceURI(n *core.LivepeerNode, serviceAddr string) (*url.URL, error) {
 	// Passed in via CLI
 	if serviceAddr != "" {
+		if serviceAddr == "none" {
+			// special value to signal this node is not to be used for work
+			return url.Parse("")
+		}
 		return url.ParseRequestURI("https://" + serviceAddr)
 	}
 

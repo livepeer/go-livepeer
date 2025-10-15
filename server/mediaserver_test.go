@@ -696,11 +696,11 @@ func TestCreateRTMPStreamHandler(t *testing.T) {
 	expectedSid := core.MakeStreamIDFromString("ghijkl", "secretkey")
 	u := mustParseUrl(t, "rtmp://localhost/"+expectedSid.String()) // with key
 
-	rand.Seed(123)
+	common.PkgRNG = rand.New(rand.NewSource(123))
 	sid, err := createSid(u)
 	require.NoError(t, err)
 	sap := sid.(*core.StreamParameters)
-	assert.Equal(t, uint64(0x4a68998bed5c40f1), sap.Nonce)
+	assert.Equal(t, uint64(0xba68998bed5c40f1), sap.Nonce)
 
 	sid, err = createSid(u)
 	require.NoError(t, err)
@@ -1022,10 +1022,10 @@ func TestMultiStream(t *testing.T) {
 	defer cancel()
 	s.RTMPSegmenter = &StubSegmenter{skip: true}
 	handler := gotRTMPStreamHandler(s)
-	u := mustParseUrl(t, "rtmp://localhost")
 	createSid := createRTMPStreamIDHandler(context.TODO(), s, nil)
 
 	handleStream := func(i int) {
+		u := mustParseUrl(t, fmt.Sprintf("rtmp://localhost/%d", i))
 		id, err := createSid(u)
 		require.NoError(t, err)
 		st := stream.NewBasicRTMPVideoStream(id)

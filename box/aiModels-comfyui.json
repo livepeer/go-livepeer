@@ -1,8 +1,0 @@
-[
-  {
-    "model_id": "comfyui",
-    "pipeline": "live-video-to-video",
-    "warm": true,
-    "capacity": 1
-  }
-]

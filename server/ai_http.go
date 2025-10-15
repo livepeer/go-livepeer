@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io"
@@ -502,24 +503,28 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 		respondWithError(w, "insufficient capacity", http.StatusServiceUnavailable)
 		return
 	}
-
 	// Known limitation:
 	// This call will set a fixed price for all requests in a session identified by a manifestID.
 	// Since all requests for a capability + modelID are treated as "session" with a single manifestID, all
 	// requests for a capability + modelID will get the same fixed price for as long as the orch is running
 	if err := orch.ProcessPayment(ctx, payment, manifestID); err != nil {
 		respondWithError(w, err.Error(), http.StatusBadRequest)
+		releaseCapacity <- true
 		return
 	}
 
 	if payment.GetExpectedPrice().GetPricePerUnit() > 0 && !orch.SufficientBalance(sender, manifestID) {
 		respondWithError(w, "Insufficient balance", http.StatusBadRequest)
+		//release capacity, payment issue is not orchestrator's fault
+		releaseCapacity <- true
 		return
 	}
 
 	err = orch.CreateStorageForRequest(requestID)
 	if err != nil {
 		respondWithError(w, "Could not create storage to receive results", http.StatusInternalServerError)
+		//do not release capacity, this is an unrecoverable error
+		return
 	}
 	// Note: At the moment, we do not return a new OrchestratorInfo with updated ticket params + price with
 	// extended expiry because the response format does not include such a field. As a result, the broadcaster
@@ -535,6 +540,7 @@ func handleAIRequest(ctx context.Context, w http.ResponseWriter, r *http.Request
 			monitor.AIProcessingError(err.Error(), pipeline, modelID, sender.Hex())
 		}
 		respondWithError(w, err.Error(), http.StatusInternalServerError)
+		releaseCapacity <- true
 		return
 	}
 
@@ -698,7 +704,7 @@ func (h *lphttp) AIResults() http.Handler {
 				glog.Errorf("Unable to read ai worker error body taskId=%v err=%q", tid, err)
 				workerResult.Err = err
 			} else {
-				workerResult.Err = fmt.Errorf(string(body))
+				workerResult.Err = errors.New(string(body))
 			}
 			glog.Errorf("AI Worker error for taskId=%v err=%q", tid, workerResult.Err)
 			orch.AIResults(tid, &workerResult)

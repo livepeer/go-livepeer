@@ -405,7 +405,7 @@ func TestRemoveFromRemoteAIWorkers(t *testing.T) {
 	remoteWorkerList = append(remoteWorkerList, wkr...)
 	assert.Len(remoteWorkerList, 5)
 
-	// Remove ai worker froms head of the list
+	// Remove ai worker from the head of the list
 	remoteWorkerList = removeFromRemoteWorkers(wkr[0], remoteWorkerList)
 	assert.Equal(remoteWorkerList[0], wkr[1])
 	assert.Equal(remoteWorkerList[1], wkr[2])
@@ -648,7 +648,7 @@ func createAIWorkerCapabilities() *Capabilities {
 
 type stubAIWorker struct{}
 
-func (a *stubAIWorker) GetLiveAICapacity() worker.Capacity {
+func (a *stubAIWorker) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
 }
 

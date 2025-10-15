@@ -21,7 +21,6 @@ import (
 	"github.com/livepeer/go-livepeer/eth"
 	"github.com/livepeer/go-livepeer/eth/types"
 	"github.com/livepeer/go-livepeer/net"
-	lpnet "github.com/livepeer/go-livepeer/net"
 	"github.com/livepeer/go-livepeer/pm"
 	"github.com/livepeer/lpms/ffmpeg"
 	"github.com/stretchr/testify/assert"
@@ -397,21 +396,21 @@ func TestGetNetworkCapabilitiesHandler(t *testing.T) {
 	assert := assert.New(t)
 
 	// setup orchestrator remote info to include in db
-	var capPrices []*lpnet.PriceInfo
-	capPrice := &lpnet.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
+	var capPrices []*net.PriceInfo
+	capPrice := &net.PriceInfo{Capability: uint32(core.Capability_ImageToVideo), Constraint: "livepeer/model1", PricePerUnit: 2, PixelsPerUnit: 1}
 	capPrices = append(capPrices, capPrice)
 	wkrHdw := net.HardwareInformation{
 		Pipeline: "32",
 		ModelId:  "livepeer/model1",
-		GpuInfo:  make(map[string]*lpnet.GPUComputeInfo),
+		GpuInfo:  make(map[string]*net.GPUComputeInfo),
 	}
-	wkrHdw.GpuInfo["0"] = &lpnet.GPUComputeInfo{
+	wkrHdw.GpuInfo["0"] = &net.GPUComputeInfo{
 		Id:    "gpu-2",
 		Name:  "gpu-name",
 		Major: 8,
 		Minor: 9,
 	}
-	var hdwList []*lpnet.HardwareInformation
+	var hdwList []*net.HardwareInformation
 	hdwList = append(hdwList, &wkrHdw)
 	caps := newAICapabilities(core.Capability_ImageToVideo, "livepeer/model1", true, &core.Capabilities{})
 	orchAddress := pm.RandAddress()

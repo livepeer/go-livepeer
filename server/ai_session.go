@@ -556,7 +556,7 @@ func (c *AISessionManager) Select(ctx context.Context, cap core.Capability, mode
 	}
 
 	if err := refreshSessionIfNeeded(ctx, sess.BroadcastSession, false); err != nil {
-		return nil, err
+		return sess, err
 	}
 
 	clog.V(common.DEBUG).Infof(ctx, "selected orchestrator=%s", sess.Transcoder())

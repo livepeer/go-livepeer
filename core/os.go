@@ -84,7 +84,7 @@ func downloadDataHTTP(ctx context.Context, uri string) ([]byte, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		clog.Errorf(ctx, "Non-200 response for status=%v uri=%s", resp.Status, uri)
-		return nil, fmt.Errorf(resp.Status)
+		return nil, fmt.Errorf("%v", resp.Status)
 	}
 	body, err := common.ReadAtMost(resp.Body, common.MaxSegSize)
 	if err != nil {

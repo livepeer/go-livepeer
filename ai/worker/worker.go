@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	docker "github.com/docker/docker/client"
 )
 
 // EnvValue unmarshals JSON booleans as strings for compatibility with env variables.
@@ -51,13 +49,8 @@ type Worker struct {
 	mu                 *sync.Mutex
 }
 
-func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string) (*Worker, error) {
-	dockerClient, err := docker.NewClientWithOpts(docker.FromEnv, docker.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("error creating docker client: %w", err)
-	}
-
-	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, dockerClient)
+func NewWorker(imageOverrides ImageOverrides, verboseLogs bool, gpus []string, modelDir string, containerCreatorID string) (*Worker, error) {
+	manager, err := NewDockerManager(imageOverrides, verboseLogs, gpus, modelDir, nil, containerCreatorID)
 	if err != nil {
 		return nil, fmt.Errorf("error creating docker manager: %w", err)
 	}
@@ -81,8 +74,9 @@ func (w *Worker) HardwareInformation() []HardwareInformation {
 	return append(hardware, w.manager.HardwareInformation()...)
 }
 
-func (w *Worker) GetLiveAICapacity() Capacity {
-	return w.manager.GetCapacity()
+func (w *Worker) GetLiveAICapacity(pipeline, modelID string) Capacity {
+	capacity, _ := w.manager.GetCapacity(pipeline, modelID)
+	return capacity
 }
 
 func (w *Worker) Version() []Version {

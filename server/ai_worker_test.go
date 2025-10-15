@@ -474,7 +474,7 @@ type stubAIWorker struct {
 	Err    error
 }
 
-func (a *stubAIWorker) GetLiveAICapacity() worker.Capacity {
+func (a *stubAIWorker) GetLiveAICapacity(pipeline, modelID string) worker.Capacity {
 	return worker.Capacity{}
 }
 

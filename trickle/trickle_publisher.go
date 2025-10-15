@@ -170,7 +170,7 @@ func (c *TricklePublisher) Next() (*pendingPost, error) {
 
 func (p *pendingPost) reconnect() (*pendingPost, error) {
 	// This is a little gnarly but works for now:
-	// Set the publisher's sequence sequence to the intended reconnect
+	// Set the publisher's sequence to the intended reconnect
 	// Call publisher's preconnect (which increments its sequence)
 	// then reset publisher's sequence back to the original
 	// Also recreate the client to force a fresh connection

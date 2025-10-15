@@ -371,7 +371,7 @@ func (h *lphttp) TranscodeResults(w http.ResponseWriter, r *http.Request) {
 			glog.Errorf("Unable to read transcoding error body taskId=%v err=%q", tid, err)
 			res.Err = err
 		} else {
-			res.Err = fmt.Errorf(string(body))
+			res.Err = errors.New(string(body))
 		}
 		glog.Errorf("Transcoding error for taskId=%v err=%q", tid, res.Err)
 		orch.TranscoderResults(tid, &res)

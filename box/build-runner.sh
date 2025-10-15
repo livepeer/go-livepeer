@@ -3,8 +3,8 @@ set -ex
 
 PIPELINE=${PIPELINE:-noop}
 
-if [[ "$PIPELINE" != "noop" && "$PIPELINE" != "comfyui" && "$PIPELINE" != "streamdiffusion" ]]; then
-  echo "Error: PIPELINE must be either 'noop', 'comfyui' or 'streamdiffusion'"
+if [[ "$PIPELINE" != "noop" && "$PIPELINE" != "comfyui" && "$PIPELINE" != "streamdiffusion" && ! "$PIPELINE" =~ ^streamdiffusion- ]]; then
+  echo "Error: PIPELINE must be either 'noop', 'comfyui', 'streamdiffusion' or start with 'streamdiffusion-'"
   exit 1
 fi
 
@@ -18,8 +18,22 @@ docker build -t livepeer/ai-runner:live-base -f docker/Dockerfile.live-base .
 if [ "${PIPELINE}" = "noop" ]; then
     docker build -t livepeer/ai-runner:live-app-noop -f docker/Dockerfile.live-app-noop --build-arg VERSION=${VERSION} .
 else
-    docker build -t livepeer/ai-runner:live-base-${PIPELINE} -f docker/Dockerfile.live-base-${PIPELINE} .
-    docker build -t livepeer/ai-runner:live-app-${PIPELINE} -f docker/Dockerfile.live-app__PIPELINE__ --build-arg PIPELINE=${PIPELINE} --build-arg VERSION=${VERSION} .
+    BASE_PIPELINE=${PIPELINE}
+    INFERPY_INITIAL_PARAMS=""
+    if [[ "$PIPELINE" =~ ^streamdiffusion- ]]; then
+        BASE_PIPELINE="streamdiffusion"
+        FILE_NAME="${PIPELINE//-/_}"
+        JSON_FILE=./app/live/pipelines/${FILE_NAME}_default_params.json
+        INFERPY_INITIAL_PARAMS=$(tr -d '\n' < "$JSON_FILE")
+    fi
+    docker build -t livepeer/ai-runner:live-base-${BASE_PIPELINE} -f docker/Dockerfile.live-base-${BASE_PIPELINE} .
+    docker build \
+      -f docker/Dockerfile.live-app__PIPELINE__ \
+      -t livepeer/ai-runner:live-app-${PIPELINE} \
+      --build-arg PIPELINE=${BASE_PIPELINE} \
+      --build-arg VERSION=${VERSION} \
+      --build-arg INFERPY_INITIAL_PARAMS="$INFERPY_INITIAL_PARAMS" \
+      .
 fi
 
 docker stop live-video-to-video_${PIPELINE}_8900 || true
