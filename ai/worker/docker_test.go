@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var stopTimeout = 8
+var expectedContainerStopOptions = container.StopOptions{Timeout: &stopTimeout}
+
 type MockDockerClient struct {
 	mock.Mock
 }
@@ -136,15 +139,15 @@ func TestNewDockerManager(t *testing.T) {
 			{ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
 		}
 		mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
-		mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
-		mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
+		mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
+		mockDockerClient.On("ContainerStop", mock.Anything, "container2", expectedContainerStopOptions).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 		mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
 		// Verify that existing containers were stopped and removed.
 		createAndVerifyManager()
-		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container1", mock.Anything)
-		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container2", mock.Anything)
+		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container1", expectedContainerStopOptions)
+		mockDockerClient.AssertCalled(t, "ContainerStop", mock.Anything, "container2", expectedContainerStopOptions)
 		mockDockerClient.AssertCalled(t, "ContainerRemove", mock.Anything, "container1", mock.Anything)
 		mockDockerClient.AssertCalled(t, "ContainerRemove", mock.Anything, "container2", mock.Anything)
 		mockDockerClient.AssertExpectations(t)
@@ -236,7 +239,7 @@ func TestDockerManager_Stop(t *testing.T) {
 		},
 	}
 
-	MockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{Timeout: nil}).Return(nil)
+	MockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	MockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 	err := dockerManager.Stop(ctx)
 	require.NoError(t, err)
@@ -650,7 +653,7 @@ func TestDockerManager_allocGPU(t *testing.T) {
 				dockerManager.gpuContainers[rc.GPU] = rc
 				dockerManager.containers[rc.Name] = rc
 				// Mock client methods to simulate the removal of the warm container.
-				mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+				mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
 				mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 			},
 			expectedAllocatedGPU: "gpu0",
@@ -694,7 +697,7 @@ func TestDockerManager_destroyContainer(t *testing.T) {
 	dockerManager.gpuContainers[gpu] = rc
 	dockerManager.containers[containerID] = rc
 
-	mockDockerClient.On("ContainerStop", mock.Anything, containerID, container.StopOptions{}).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, containerID, expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, containerID, container.RemoveOptions{}).Return(nil)
 
 	err := dockerManager.destroyContainer(rc, true)
@@ -844,7 +847,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 			tt.mockServerSetup(mockServer)
 
 			// Mock destroyContainer to verify it is called.
-			mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
+			mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Once()
 			mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
 			done := make(chan struct{})
@@ -906,7 +909,7 @@ func TestDockerManager_watchContainer(t *testing.T) {
 		mockDockerClient.AssertNotCalled(t, "ContainerRemove", mock.Anything, rc.Name, mock.Anything)
 
 		// Mock destroyContainer to verify it is called.
-		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
+		mockDockerClient.On("ContainerStop", mock.Anything, rc.Name, expectedContainerStopOptions).Return(nil).Once()
 		mockDockerClient.On("ContainerRemove", mock.Anything, rc.Name, mock.Anything).Return(nil).Once()
 
 		// after the first failure, there should only 1 more healthcheck for the container to be stopped
@@ -993,8 +996,8 @@ func TestRemoveExistingContainers(t *testing.T) {
 		{ID: "container2", Names: []string{"/container2"}, Labels: map[string]string{containerCreatorLabel: containerCreator}},
 	}
 	mockDockerClient.On("ContainerList", mock.Anything, mock.Anything).Return(existingContainers, nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", mock.Anything).Return(nil)
-	mockDockerClient.On("ContainerStop", mock.Anything, "container2", mock.Anything).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container2", expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", mock.Anything).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container2", mock.Anything).Return(nil)
 
@@ -1036,9 +1039,9 @@ func TestRemoveExistingContainers_InMemoryFilterLegacyAndOwnerID(t *testing.T) {
 			{ID: "mine-1", Names: []string{"/mine-1"}, Labels: map[string]string{containerCreatorLabel: containerCreator, containerCreatorIDLabel: "owner-A"}},   // match -> remove
 		}, nil).
 		Once()
-	mockDockerClient.On("ContainerStop", mock.Anything, "legacy-1", mock.Anything).Return(nil).Once()
+	mockDockerClient.On("ContainerStop", mock.Anything, "legacy-1", expectedContainerStopOptions).Return(nil).Once()
 	mockDockerClient.On("ContainerRemove", mock.Anything, "legacy-1", mock.Anything).Return(nil).Once()
-	mockDockerClient.On("ContainerStop", mock.Anything, "mine-1", mock.Anything).Return(nil).Once()
+	mockDockerClient.On("ContainerStop", mock.Anything, "mine-1", expectedContainerStopOptions).Return(nil).Once()
 	mockDockerClient.On("ContainerRemove", mock.Anything, "mine-1", mock.Anything).Return(nil).Once()
 
 	removed, err := RemoveExistingContainers(ctx, mockDockerClient, "owner-A")
@@ -1095,7 +1098,7 @@ func TestDockerContainerName(t *testing.T) {
 func TestDockerRemoveContainer(t *testing.T) {
 	mockDockerClient := new(MockDockerClient)
 
-	mockDockerClient.On("ContainerStop", mock.Anything, "container1", container.StopOptions{}).Return(nil)
+	mockDockerClient.On("ContainerStop", mock.Anything, "container1", expectedContainerStopOptions).Return(nil)
 	mockDockerClient.On("ContainerRemove", mock.Anything, "container1", container.RemoveOptions{}).Return(nil)
 
 	err := dockerRemoveContainer(mockDockerClient, "container1")

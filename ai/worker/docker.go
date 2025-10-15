@@ -34,6 +34,7 @@ const containerPort = "8000/tcp"
 const pollingInterval = 500 * time.Millisecond
 const externalContainerTimeout = 2 * time.Minute
 const optFlagsContainerTimeout = 5 * time.Minute
+const containerStopTimeout = 8 * time.Second
 const containerRemoveTimeout = 30 * time.Second
 const containerCreatorLabel = "creator"
 const containerCreator = "ai-worker"
@@ -733,7 +734,8 @@ func dockerRemoveContainer(client DockerClient, containerID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), containerRemoveTimeout)
 	defer cancel()
 
-	err := client.ContainerStop(ctx, containerID, container.StopOptions{})
+	timeoutSec := int(containerStopTimeout.Seconds())
+	err := client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeoutSec})
 	// Ignore "not found" or "already stopped" errors
 	if err != nil && !docker.IsErrNotFound(err) && !errdefs.IsNotModified(err) {
 		return err
