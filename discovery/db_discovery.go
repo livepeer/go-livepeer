@@ -22,12 +22,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var cacheRefreshInterval = 10 * time.Second
 var networkCapabilitiesReportingInterval = 25 * time.Minute
-
-var getTicker = func() *time.Ticker {
-	return time.NewTicker(cacheRefreshInterval)
-}
 
 type ticketParamsValidator interface {
 	ValidateTicketParams(ticketParams *pm.TicketParams) error
@@ -45,7 +40,7 @@ type DBOrchestratorPoolCache struct {
 	lastNetworkCapabilitiesReported time.Time
 }
 
-func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration) (*DBOrchestratorPoolCache, error) {
+func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm common.RoundsManager, orchBlacklist []string, discoveryTimeout time.Duration, liveAICapReportInterval time.Duration) (*DBOrchestratorPoolCache, error) {
 	if node.Eth == nil {
 		return nil, fmt.Errorf("could not create DBOrchestratorPoolCache: LivepeerEthClient is nil")
 	}
@@ -70,7 +65,7 @@ func NewDBOrchestratorPoolCache(ctx context.Context, node *core.LivepeerNode, rm
 			return err
 		}
 
-		if err := dbo.pollOrchestratorInfo(ctx); err != nil {
+		if err := dbo.pollOrchestratorInfo(ctx, liveAICapReportInterval); err != nil {
 			return err
 		}
 		return nil
@@ -256,13 +251,13 @@ func (dbo *DBOrchestratorPoolCache) cacheOrchestratorStake() error {
 	return nil
 }
 
-func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context) error {
+func (dbo *DBOrchestratorPoolCache) pollOrchestratorInfo(ctx context.Context, liveAICapReportInterval time.Duration) error {
 	if err := dbo.cacheOrchInfos(); err != nil {
 		glog.Errorf("unable to poll orchestrator info: %v", err)
 		return err
 	}
 
-	ticker := getTicker()
+	ticker := time.NewTicker(liveAICapReportInterval)
 	go func() {
 		for {
 			select {
@@ -432,9 +427,6 @@ func reportAICapacityFromNetworkCapabilities(orchNetworkCapabilities []*common.O
 				InUse: int(model.CapacityInUse),
 			}
 			modelCapacities[modelID].Orchestrators[orchCap.OrchURI] = capacity
-
-			glog.Infof("HELLOO AI container %s %s inUse:%d idle:%d",
-				modelID, orchCap.OrchURI, capacity.InUse, capacity.Idle)
 		}
 	}
 
