@@ -777,8 +777,25 @@ tickerLoop:
 				return err
 			}
 
+			// If the container is running, we're done.
 			if json.State.Running {
 				break tickerLoop
+			}
+
+			// Fail fast on states that won't become running after startup.
+			if json.State != nil {
+				status := strings.ToLower(json.State.Status)
+				// Consider exited/dead as terminal. "removing" will surface via
+				// inspect error or transition to exited/dead shortly.
+				if status == "exited" || status == "dead" {
+					return fmt.Errorf("container entered terminal state before running: %s (exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.ExitCode != 0 {
+					return fmt.Errorf("container exited before running (status=%s, exitCode=%d)", json.State.Status, json.State.ExitCode)
+				}
+				if !json.State.Restarting && json.State.Error != "" {
+					return fmt.Errorf("container error before running: %s", json.State.Error)
+				}
 			}
 		}
 	}
