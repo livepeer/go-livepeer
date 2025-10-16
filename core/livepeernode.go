@@ -163,7 +163,7 @@ type LivepeerNode struct {
 
 	MediaMTXApiPassword        string
 	LiveAITrickleHostForRunner string
-	LiveAIAuthApiKey           string
+	LiveAIAuthSecret           string
 	LiveAIHeartbeatURL         string
 	LiveAIHeartbeatHeaders     map[string]string
 	LiveAIHeartbeatInterval    time.Duration
