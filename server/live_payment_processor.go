@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/livepeer/go-livepeer/clog"
+	"github.com/livepeer/go-livepeer/media"
 	"github.com/livepeer/lpms/ffmpeg"
 )
 
@@ -106,20 +107,13 @@ func (p *LivePaymentProcessor) processOne(ctx context.Context, timestamp time.Ti
 	p.lastProcessedAt = timestamp
 }
 
-func (p *LivePaymentProcessor) process(ctx context.Context, reader io.Reader) io.Reader {
+func (p *LivePaymentProcessor) process(ctx context.Context, reader media.CloneableReader) {
 	timestamp := time.Now()
 	if p.shouldSkip(timestamp) {
 		// We don't process every segment, because it's too compute-expensive
-		return reader
+		return
 	}
 
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		clog.InfofErr(ctx, "Error creating pipe", err)
-		return reader
-	}
-
-	resReader := io.TeeReader(reader, pipeWriter)
 	go func() {
 		select {
 		case p.processCh <- timestamp:
@@ -129,8 +123,7 @@ func (p *LivePaymentProcessor) process(ctx context.Context, reader io.Reader) io
 
 		// read the segment into the buffer, because the direct use of the reader causes Broken pipe
 		// it's probably related to different pace of reading by trickle and ffmpeg.GetCodecInfo()
-		defer pipeReader.Close()
-		segData, err := io.ReadAll(pipeReader)
+		segData, err := io.ReadAll(reader.Clone())
 		if err != nil {
 			clog.InfofErr(ctx, "Error reading segment data", err)
 			return
@@ -142,8 +135,6 @@ func (p *LivePaymentProcessor) process(ctx context.Context, reader io.Reader) io
 			// We process one segment at the time, no need to buffer them
 		}
 	}()
-
-	return resReader
 }
 
 func (p *LivePaymentProcessor) shouldSkip(timestamp time.Time) bool {
